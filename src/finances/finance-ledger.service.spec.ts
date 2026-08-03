@@ -7,6 +7,8 @@ const key = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const entryId = '10000000-0000-0000-0000-000000000001';
 const evidenceId = '20000000-0000-0000-0000-000000000002';
 const voucherId = '30000000-0000-0000-0000-000000000003';
+const allocationId = '40000000-0000-0000-0000-000000000004';
+const obligationId = '50000000-0000-0000-0000-000000000005';
 const input = {
   clubId: 1,
   clubSectionId: 7,
@@ -62,6 +64,7 @@ describe('FinanceLedgerService', () => {
     },
     club_sections: { findUnique: jest.fn() },
     finance_vouchers: { create: jest.fn() },
+    finance_receipt_allocations: { create: jest.fn(), aggregate: jest.fn() },
     finance_ledger_events: { create: jest.fn() },
     audit_logs: { create: jest.fn() },
   };
@@ -113,6 +116,15 @@ describe('FinanceLedgerService', () => {
       finance_ledger_evidence_id: evidenceId,
       amount_centavos: 125050,
       currency: 'MXN',
+    });
+    tx.finance_receipt_allocations.aggregate.mockResolvedValue({
+      _sum: { amount_centavos: 0 },
+    });
+    tx.finance_receipt_allocations.create.mockResolvedValue({
+      finance_receipt_allocation_id: allocationId,
+      finance_voucher_id: voucherId,
+      obligation_entry_id: obligationId,
+      amount_centavos: 5000,
     });
   });
 
@@ -656,5 +668,237 @@ describe('FinanceLedgerService', () => {
         ),
       ).rejects.toMatchObject({ code: 'FINANCE_LEDGER_STATUS_INVALID' });
     }
+  });
+
+  describe('receipt allocation', () => {
+    const allocation = {
+      clubId: 1,
+      clubSectionId: 7,
+      financeVoucherId: voucherId,
+      obligationEntryId: obligationId,
+      amountCentavos: 5000,
+    };
+    const voucher = (overrides: Record<string, any> = {}) => ({
+      finance_voucher_id: voucherId,
+      amount_centavos: 10000,
+      currency: 'MXN',
+      ledger_entry: ledgerEntry({ status: 'approved' }),
+      ...overrides,
+    });
+    const payable = (overrides: Record<string, any> = {}) =>
+      ledgerEntry({
+        finance_ledger_entry_id: obligationId,
+        status: 'approved',
+        kind: 'payable',
+        amount_centavos: 8000,
+        ...overrides,
+      });
+
+    beforeEach(() => {
+      tx.finance_vouchers.findUnique = jest.fn().mockResolvedValue(voucher());
+      tx.finance_ledger_entries.findUnique.mockResolvedValue(payable());
+    });
+
+    it('allocates an approved voucher atomically with its unique event, audit, and receipt', async () => {
+      await (service as any).allocateReceipt(allocation, actor, key);
+      expect(tx.finance_receipt_allocations.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          finance_voucher_id: voucherId,
+          obligation_entry_id: obligationId,
+          amount_centavos: 5000,
+        }),
+        select: expect.any(Object),
+      });
+      expect(tx.finance_ledger_events.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          finance_receipt_allocation_id: allocationId,
+          event_type: 'RECEIPT_ALLOCATED',
+        }),
+      });
+      expect(tx.audit_logs.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'FINANCE_RECEIPT_ALLOCATED',
+          entity_id: allocationId,
+        }),
+      });
+      expect(tx.finance_idempotency_receipts.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('authorizes before all allocation lookups and deterministically locks obligation then voucher', async () => {
+      await (service as any).allocateReceipt(allocation, actor, key);
+
+      const auth = authorization.assertCanRegister.mock.invocationCallOrder[0];
+      const voucherLookup =
+        tx.finance_vouchers.findUnique.mock.invocationCallOrder[0];
+      const obligationLookup =
+        tx.finance_ledger_entries.findUnique.mock.invocationCallOrder.at(-1);
+      const locks = tx.$executeRaw.mock.calls
+        .map(([sql]) => sql.values[0])
+        .filter((value) =>
+          /finance-ledger-(obligation|voucher):/.test(String(value)),
+        );
+      expect(auth).toBeLessThan(voucherLookup);
+      expect(auth).toBeLessThan(obligationLookup);
+      expect(locks).toStrictEqual([
+        `finance-ledger-obligation:${obligationId}`,
+        `finance-ledger-voucher:${voucherId}`,
+      ]);
+    });
+
+    it.each([{ amountCentavos: 0 }, { financeVoucherId: 'not-a-uuid' }])(
+      'rejects malformed allocation material before a transaction: %p',
+      async (invalid) => {
+        await expect(
+          (service as any).allocateReceipt(
+            { ...allocation, ...invalid },
+            actor,
+            key,
+          ),
+        ).rejects.toMatchObject({
+          code: 'FINANCE_LEDGER_INPUT_INVALID',
+          status: 400,
+        });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      [
+        'voucher missing',
+        undefined,
+        payable(),
+        'FINANCE_LEDGER_STATUS_INVALID',
+      ],
+      [
+        'voucher source pending',
+        voucher({ ledger_entry: ledgerEntry() }),
+        payable(),
+        'FINANCE_LEDGER_STATUS_INVALID',
+      ],
+      [
+        'other voucher section',
+        voucher({ ledger_entry: ledgerEntry({ club_section_id: 8 }) }),
+        payable(),
+        'FINANCE_LEDGER_STATUS_INVALID',
+      ],
+      [
+        'other payable section',
+        voucher(),
+        payable({ club_section_id: 8 }),
+        'FINANCE_LEDGER_STATUS_INVALID',
+      ],
+      [
+        'non-payable target',
+        voucher(),
+        payable({ kind: 'expense' }),
+        'FINANCE_LEDGER_STATUS_INVALID',
+      ],
+      [
+        'target pending',
+        voucher(),
+        payable({ status: 'pending_approval' }),
+        'FINANCE_LEDGER_STATUS_INVALID',
+      ],
+      [
+        'currency mismatch',
+        voucher({ currency: 'USD' }),
+        payable(),
+        'FINANCE_LEDGER_STATUS_INVALID',
+      ],
+    ])(
+      'rejects %s without creating an allocation',
+      async (_name, source, target, code) => {
+        tx.finance_vouchers.findUnique.mockResolvedValue(source);
+        tx.finance_ledger_entries.findUnique.mockResolvedValue(target);
+
+        await expect(
+          (service as any).allocateReceipt(allocation, actor, key),
+        ).rejects.toMatchObject({ code, status: 409 });
+        expect(tx.finance_receipt_allocations.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      [6000, 3000, 5000],
+      [0, 4000, 5000],
+    ])(
+      'rejects dual capacity over-allocation (%i voucher used, %i payable used)',
+      async (voucherUsed, payableUsed, amount) => {
+        tx.finance_receipt_allocations.aggregate
+          .mockResolvedValueOnce({ _sum: { amount_centavos: voucherUsed } })
+          .mockResolvedValueOnce({ _sum: { amount_centavos: payableUsed } });
+        await expect(
+          (service as any).allocateReceipt(
+            { ...allocation, amountCentavos: amount },
+            actor,
+            key,
+          ),
+        ).rejects.toMatchObject({
+          code: 'FINANCE_LEDGER_STATUS_INVALID',
+          status: 409,
+        });
+        expect(tx.finance_receipt_allocations.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('replays identical material once, rejects changed material, and maps pair P2002 generically', async () => {
+      let receipt: any;
+      tx.finance_idempotency_receipts.create.mockImplementation(({ data }) => {
+        receipt = data;
+        return data;
+      });
+      tx.finance_idempotency_receipts.findUnique.mockImplementation(
+        () => receipt,
+      );
+      await (service as any).allocateReceipt(allocation, actor, key);
+      await (service as any).allocateReceipt(allocation, actor, key);
+      await expect(
+        (service as any).allocateReceipt(
+          { ...allocation, amountCentavos: 1 },
+          actor,
+          key,
+        ),
+      ).rejects.toMatchObject({
+        code: 'FINANCE_LEDGER_IDEMPOTENCY_REUSED',
+        status: 409,
+      });
+      expect(tx.finance_receipt_allocations.create).toHaveBeenCalledTimes(1);
+      expect(authorization.assertCanRegister).toHaveBeenCalledTimes(3);
+
+      tx.finance_idempotency_receipts.findUnique.mockResolvedValue(null);
+      tx.finance_receipt_allocations.create.mockRejectedValueOnce({
+        code: 'P2002',
+      });
+      await expect(
+        (service as any).allocateReceipt(
+          allocation,
+          actor,
+          key.replace(/^a/, 'b'),
+        ),
+      ).rejects.toMatchObject({
+        code: 'FINANCE_LEDGER_STATUS_INVALID',
+        status: 409,
+      });
+    });
+
+    it('fails closed before disclosure and on transaction side-effect failure', async () => {
+      authorization.assertCanRegister.mockRejectedValueOnce(forbidden());
+      await expect(
+        (service as any).allocateReceipt(allocation, actor, key),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(tx.finance_vouchers.findUnique).not.toHaveBeenCalled();
+
+      tx.finance_ledger_events.create.mockRejectedValueOnce(
+        new Error('event failed'),
+      );
+      await expect(
+        (service as any).allocateReceipt(
+          allocation,
+          actor,
+          key.replace(/^a/, 'b'),
+        ),
+      ).rejects.toThrow('event failed');
+      expect(tx.finance_idempotency_receipts.create).not.toHaveBeenCalled();
+    });
   });
 });

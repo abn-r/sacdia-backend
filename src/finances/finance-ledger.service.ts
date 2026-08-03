@@ -91,6 +91,14 @@ export interface AttachFinanceVoucherInput {
   opaqueEvidenceHandle: string;
 }
 
+export interface AllocateFinanceReceiptInput {
+  clubId: number;
+  clubSectionId: number;
+  financeVoucherId: string;
+  obligationEntryId: string;
+  amountCentavos: number;
+}
+
 @Injectable()
 export class FinanceLedgerService {
   constructor(
@@ -388,6 +396,149 @@ export class FinanceLedgerService {
           },
         });
         return voucher;
+      },
+    );
+  }
+
+  async allocateReceipt(
+    input: AllocateFinanceReceiptInput,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<Record<string, any>> {
+    if (
+      !Number.isSafeInteger(input.clubId) ||
+      input.clubId <= 0 ||
+      !Number.isSafeInteger(input.clubSectionId) ||
+      input.clubSectionId <= 0 ||
+      !Number.isSafeInteger(input.amountCentavos) ||
+      input.amountCentavos <= 0 ||
+      input.amountCentavos > 2147483647 ||
+      !this.isUuid(input.financeVoucherId) ||
+      !this.isUuid(input.obligationEntryId)
+    ) {
+      throw new AppBadRequestException(ErrorCode.FINANCE_LEDGER_INPUT_INVALID);
+    }
+    return this.idempotent(
+      'allocate-receipt',
+      actorUserId,
+      idempotencyKey,
+      input,
+      async (tx) => {
+        const db = tx as PrismaLike;
+        await this.authorization.assertCanRegister({
+          transaction: tx,
+          actorUserId,
+          clubId: input.clubId,
+          clubSectionId: input.clubSectionId,
+        });
+        for (const lock of [
+          `finance-ledger-voucher:${input.financeVoucherId}`,
+          `finance-ledger-obligation:${input.obligationEntryId}`,
+        ].sort()) {
+          await db.$executeRaw(
+            Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${lock}, 0))`,
+          );
+        }
+        const voucher = await db.finance_vouchers.findUnique({
+          where: { finance_voucher_id: input.financeVoucherId },
+          include: { ledger_entry: true },
+        });
+        const obligation = await db.finance_ledger_entries.findUnique({
+          where: { finance_ledger_entry_id: input.obligationEntryId },
+        });
+        if (
+          !voucher ||
+          !obligation ||
+          voucher.ledger_entry?.status !== 'approved' ||
+          voucher.ledger_entry?.club_section_id !== input.clubSectionId ||
+          obligation.status !== 'approved' ||
+          obligation.kind !== 'payable' ||
+          obligation.club_section_id !== input.clubSectionId ||
+          voucher.currency !== obligation.currency
+        ) {
+          throw new AppConflictException(
+            ErrorCode.FINANCE_LEDGER_STATUS_INVALID,
+          );
+        }
+        return { voucher, obligation };
+      },
+      async (db, { voucher, obligation }) => {
+        const voucherAllocated = await db.finance_receipt_allocations.aggregate(
+          {
+            where: { finance_voucher_id: input.financeVoucherId },
+            _sum: { amount_centavos: true },
+          },
+        );
+        const obligationAllocated =
+          await db.finance_receipt_allocations.aggregate({
+            where: { obligation_entry_id: input.obligationEntryId },
+            _sum: { amount_centavos: true },
+          });
+        if (
+          (voucherAllocated._sum.amount_centavos ?? 0) + input.amountCentavos >
+            voucher.amount_centavos ||
+          (obligationAllocated._sum.amount_centavos ?? 0) +
+            input.amountCentavos >
+            obligation.amount_centavos
+        ) {
+          throw new AppConflictException(
+            ErrorCode.FINANCE_LEDGER_STATUS_INVALID,
+          );
+        }
+        let allocation: Record<string, any>;
+        try {
+          allocation = await db.finance_receipt_allocations.create({
+            data: {
+              finance_voucher_id: input.financeVoucherId,
+              obligation_entry_id: input.obligationEntryId,
+              amount_centavos: input.amountCentavos,
+            },
+            select: {
+              finance_receipt_allocation_id: true,
+              finance_voucher_id: true,
+              obligation_entry_id: true,
+              amount_centavos: true,
+            },
+          });
+        } catch (error) {
+          if ((error as { code?: string }).code === 'P2002') {
+            throw new AppConflictException(
+              ErrorCode.FINANCE_LEDGER_STATUS_INVALID,
+            );
+          }
+          throw error;
+        }
+        const payload = {
+          club_id: input.clubId,
+          club_section_id: input.clubSectionId,
+          finance_voucher_id: input.financeVoucherId,
+          obligation_entry_id: input.obligationEntryId,
+          amount_centavos: input.amountCentavos,
+          currency: voucher.currency,
+        };
+        await db.finance_ledger_events.create({
+          data: {
+            finance_receipt_allocation_id:
+              allocation.finance_receipt_allocation_id,
+            event_type: 'RECEIPT_ALLOCATED',
+            actor_user_id: actorUserId,
+            payload,
+          },
+        });
+        await db.audit_logs.create({
+          data: {
+            entity_type: 'finance_receipt_allocation',
+            entity_id: allocation.finance_receipt_allocation_id,
+            action: 'FINANCE_RECEIPT_ALLOCATED',
+            club_id: input.clubId,
+            actor_user_id: actorUserId,
+            changes: payload,
+            event_key: `finance-ledger:RECEIPT_ALLOCATED:${actorUserId}:${idempotencyKey.toLowerCase()}`,
+            correlation_id: idempotencyKey.toLowerCase(),
+            idempotency_key: idempotencyKey.toLowerCase(),
+          },
+        });
+        return allocation;
       },
     );
   }
