@@ -546,6 +546,7 @@
   "ECCLESIASTICAL_CYCLE_FORBIDDEN": "No tienes autorización para operar el ciclo eclesiástico",
   "ECCLESIASTICAL_CYCLE_CAPABILITY_UNAVAILABLE": "Una dependencia del ciclo eclesiástico no está disponible",
   "ECCLESIASTICAL_CYCLE_CAPABILITY_VERSION_INCOMPATIBLE": "Una dependencia del ciclo eclesiástico no es compatible",
+  "ECCLESIASTICAL_CYCLE_RUN_INTEGRITY": "El journal de la ejecución del ciclo eclesiástico está incompleto o es inconsistente",
   "RBAC_BOOTSTRAP_FORBIDDEN": "Bootstrap RBAC no disponible en producción",
   "RBAC_BOOTSTRAP_SECRET_INVALID": "Secreto de bootstrap inválido",
   "NOTIF_BROADCAST_USER_ID_FORBIDDEN": "userId no puede incluirse en notificaciones broadcast",

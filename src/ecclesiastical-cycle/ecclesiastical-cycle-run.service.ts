@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AppConflictException } from '../common/errors/app.exception';
+// prettier-ignore
+import { AppConflictException, AppInternalServerErrorException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { EcclesiasticalCycleDestinationPreflightService } from './ecclesiastical-cycle-destination-preflight.service';
@@ -12,17 +13,8 @@ const LEASE_MS = 5 * 60 * 1000;
 const keys = ['run_id','user_id','source_assignment_id','source_enrollment_id','target_year_id','canonical_transition_id','target_class_id','target_club_section_id','status','reason_code','actor_user_id','effect_refs'];
 // prettier-ignore
 const normalize = (value: any): any => value instanceof Date ? value.toISOString() : Array.isArray(value) ? value.map(normalize) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, normalize(child)])) : value;
-const stable = (value: any) => JSON.stringify(normalize(value));
-const digest = (value: any) =>
-  createHash('sha256').update(stable(value)).digest('hex');
-const conflict = (): never => {
-  throw new AppConflictException(ErrorCode.IDEMPOTENCY_KEY_REUSED);
-};
-const same = (left: any, right: any) => {
-  if (stable(left) !== stable(right)) conflict();
-};
-const payload = (value: any) =>
-  value && Object.fromEntries(keys.map((key) => [key, value[key]]));
+// prettier-ignore
+const stable = (value: any) => JSON.stringify(normalize(value)), digest = (value: any) => createHash('sha256').update(stable(value)).digest('hex'), conflict = (): never => { throw new AppConflictException(ErrorCode.IDEMPOTENCY_KEY_REUSED); }, integrity = (): never => { throw new AppInternalServerErrorException(ErrorCode.ECCLESIASTICAL_CYCLE_RUN_INTEGRITY); }, same = (left: any, right: any) => { if (stable(left) !== stable(right)) conflict(); }, payload = (value: any) => value && Object.fromEntries(keys.map((key) => [key, value[key]]));
 // prettier-ignore
 const snapshot = (input: EcclesiasticalCycleAccessDto, preflight: any) => ({ request: input, preflight: { capabilities: preflight.capabilities, reasons: preflight.reasons, summary: preflight.summary, cases: preflight.cases } });
 // prettier-ignore
@@ -37,11 +29,9 @@ export class EcclesiasticalCycleRunService {
     private readonly preflight: EcclesiasticalCycleDestinationPreflightService,
   ) {}
 
+  // prettier-ignore
   async plan(input: EcclesiasticalCycleAccessDto) {
-    return this.prisma.$transaction((tx) => this.persist(tx as any, input), {
-      maxWait: 5_000,
-      timeout: 20_000,
-    });
+    return this.prisma.$transaction((tx) => this.persist(tx as any, input), { maxWait: 5_000, timeout: 20_000 });
   }
 
   private async persist(db: any, input: EcclesiasticalCycleAccessDto) {
@@ -50,14 +40,8 @@ export class EcclesiasticalCycleRunService {
     );
     const now = (await db.$queryRaw(Prisma.sql`SELECT now() AS now`))[0]
       .now as Date;
-    const existing = await db.ecclesiastical_cycle_runs.findUnique({
-      where: {
-        local_field_id_target_year_id: {
-          local_field_id: input.localFieldId,
-          target_year_id: input.targetYearId,
-        },
-      },
-    });
+    // prettier-ignore
+    const existing = await db.ecclesiastical_cycle_runs.findUnique({ where: { local_field_id_target_year_id: { local_field_id: input.localFieldId, target_year_id: input.targetYearId } } });
     if (existing?.status === 'running' && existing.lease_expires_at > now) {
       await this.preflight.execute(input);
       return { disposition: 'leased' as const, runId: existing.run_id };
@@ -69,33 +53,14 @@ export class EcclesiasticalCycleRunService {
       await this.replay(db, existing.run_id, input, preflight, state);
       return { disposition: 'replayed' as const, runId: existing.run_id };
     }
-    const lease = {
-      lease_token: randomUUID(),
-      lease_expires_at: new Date(now.getTime() + LEASE_MS),
-    };
-    const run = existing
-      ? await db.ecclesiastical_cycle_runs.update({
-          where: { run_id: existing.run_id },
-          data: {
-            status: 'running',
-            owner_user_id: input.actorUserId,
-            ...lease,
-          },
-        })
-      : await db.ecclesiastical_cycle_runs.create({
-          data: {
-            local_field_id: input.localFieldId,
-            target_year_id: input.targetYearId,
-            owner_user_id: input.actorUserId,
-            status: 'running',
-            capabilities_snapshot: {},
-            started_at: now,
-            ...lease,
-          },
-        });
+    // prettier-ignore
+    const lease = { lease_token: randomUUID(), lease_expires_at: new Date(now.getTime() + LEASE_MS) };
+    // prettier-ignore
+    const run = existing ? await db.ecclesiastical_cycle_runs.update({ where: { run_id: existing.run_id }, data: { status: 'running', owner_user_id: input.actorUserId, ...lease } }) : await db.ecclesiastical_cycle_runs.create({ data: { local_field_id: input.localFieldId, target_year_id: input.targetYearId, owner_user_id: input.actorUserId, status: 'running', capabilities_snapshot: {}, started_at: now, ...lease } });
     const preflight = await this.preflight.execute(input),
       state = snapshot(input, preflight);
-    if (existing?.summary) same(existing.summary, state);
+    if (existing?.summary && existing.status !== 'blocked')
+      same(existing.summary, state);
     if (preflight.reasons.length)
       return this.block(db, run.run_id, input, preflight, state);
     await db.ecclesiastical_cycle_runs.update({
@@ -103,8 +68,8 @@ export class EcclesiasticalCycleRunService {
       data: { capabilities_snapshot: preflight.capabilities, summary: state },
     });
     const wanted = decisions(run.run_id, input, preflight.cases),
-      rows = await this.persistDecisions(db, wanted);
-    await this.persistEvents(
+      rows = await this.createDecisions(db, wanted);
+    await this.createEvents(
       db,
       events(run.run_id, input.actorUserId, state, rows),
     );
@@ -126,7 +91,7 @@ export class EcclesiasticalCycleRunService {
     };
   }
 
-  private async persistDecisions(db: any, wanted: any[]) {
+  private async createDecisions(db: any, wanted: any[]) {
     if (!wanted.length) return [];
     const current = await db.ecclesiastical_cycle_decisions.findMany({
       where: {
@@ -161,7 +126,7 @@ export class EcclesiasticalCycleRunService {
     return rows;
   }
 
-  private async persistEvents(db: any, wanted: any[]) {
+  private async createEvents(db: any, wanted: any[]) {
     const current = await db.ecclesiastical_cycle_events.findMany({
       where: { event_key: { in: wanted.map((event) => event.event_key) } },
       orderBy: { event_key: 'asc' },
@@ -194,11 +159,47 @@ export class EcclesiasticalCycleRunService {
     preflight: any,
     state: any,
   ) {
-    const rows = await this.persistDecisions(
-      db,
-      decisions(runId, input, preflight.cases),
-    );
-    await this.persistEvents(db, events(runId, input.actorUserId, state, rows));
+    const wanted = decisions(runId, input, preflight.cases);
+    const rows = await db.ecclesiastical_cycle_decisions.findMany({
+      where: { run_id: runId },
+      orderBy: { source_assignment_id: 'asc' },
+    });
+    if (rows.length !== wanted.length) integrity();
+    wanted.forEach((item) => {
+      const row = rows.find(
+        (candidate: any) =>
+          candidate.source_assignment_id === item.source_assignment_id,
+      );
+      if (!row || stable(payload(row)) !== stable(payload(item))) integrity();
+    });
+    const wantedEvents = events(runId, input.actorUserId, state, rows);
+    const current = await db.ecclesiastical_cycle_events.findMany({
+      where: { run_id: runId },
+      orderBy: { event_key: 'asc' },
+    });
+    const requiredKeys = new Set(wantedEvents.map((event) => event.event_key));
+    // prettier-ignore
+    const required = current.filter((event: any) => requiredKeys.has(event.event_key));
+    if (required.length !== wantedEvents.length) integrity();
+    // prettier-ignore
+    current.filter((event: any) => !requiredKeys.has(event.event_key)).forEach((event: any) => { if (event.run_id !== runId || event.decision_id !== null || event.event_type !== 'RUN_BLOCKED' || !event.event_key.startsWith(`run.${runId}.blocked.`)) integrity(); });
+    wantedEvents.forEach((event) => {
+      const row = required.find(
+        (item: any) => item.event_key === event.event_key,
+      );
+      if (
+        !row ||
+        stable({
+          run_id: row.run_id,
+          decision_id: row.decision_id,
+          event_key: row.event_key,
+          event_type: row.event_type,
+          actor_user_id: row.actor_user_id,
+          payload: row.payload,
+        }) !== stable(event)
+      )
+        integrity();
+    });
   }
 
   private async block(
@@ -227,7 +228,7 @@ export class EcclesiasticalCycleRunService {
         capabilities_snapshot: preflight.capabilities,
       },
     });
-    await this.persistEvents(db, [event]);
+    await this.createEvents(db, [event]);
     return {
       disposition: 'blocked' as const,
       runId,
