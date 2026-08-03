@@ -54,7 +54,7 @@ export class GlobalUserRoleWriteService {
       try {
         return await this.prisma.$transaction(
           (tx) => this.inTransaction(tx, mutation, input),
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
         );
       } catch (error) {
         if (!this.isRetryable(error)) throw error;
