@@ -1040,6 +1040,7 @@ model enrollments {
   investiture_history      investiture_validation_history[]
   renewed_from_enrollment  enrollments?                     @relation("enrollment_renewal_lineage", fields: [renewed_from_enrollment_id], references: [enrollment_id], onDelete: Restrict, onUpdate: NoAction)
   renewed_enrollments      enrollments[]                    @relation("enrollment_renewal_lineage")
+  capacity_claim           enrollment_program_capacity_claims?
 
   @@unique([user_id, class_id, ecclesiastical_year_id])
   @@unique([renewed_from_enrollment_id], map: "enrollments_renewed_from_enrollment_id_key")
@@ -1052,6 +1053,17 @@ model enrollments {
   @@index([user_id, ecclesiastical_year_id, active], map: "idx_enrollments_user_year_active")
   @@index([user_id, class_id, active], map: "idx_enrollments_user_class_active")
   @@index([last_progress_change], map: "idx_enrollments_last_progress")
+}
+
+model enrollment_program_capacity_claims {
+  enrollment_id           Int                         @id
+  user_id                 String                      @db.Uuid
+  ecclesiastical_year_id  Int
+  formative_program_type  formative_program_type_enum
+  capacity_slot           Int
+  enrollment              enrollments                 @relation(fields: [enrollment_id], references: [enrollment_id], onDelete: Cascade)
+
+  @@unique([user_id, ecclesiastical_year_id, formative_program_type, capacity_slot], map: "enrollment_program_capacity_claims_slot_key")
 }
 
 model error_logs {
