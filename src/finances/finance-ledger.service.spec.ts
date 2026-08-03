@@ -5,6 +5,8 @@ import { FinanceLedgerService } from './finance-ledger.service';
 const actor = '00000000-0000-0000-0000-000000000001';
 const key = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const entryId = '10000000-0000-0000-0000-000000000001';
+const evidenceId = '20000000-0000-0000-0000-000000000002';
+const voucherId = '30000000-0000-0000-0000-000000000003';
 const input = {
   clubId: 1,
   clubSectionId: 7,
@@ -59,6 +61,7 @@ describe('FinanceLedgerService', () => {
       update: jest.fn(),
     },
     club_sections: { findUnique: jest.fn() },
+    finance_vouchers: { create: jest.fn() },
     finance_ledger_events: { create: jest.fn() },
     audit_logs: { create: jest.fn() },
   };
@@ -67,6 +70,7 @@ describe('FinanceLedgerService', () => {
   };
   const authorization = { assertCanRegister: jest.fn() };
   const decisionAuthorization = { assertCanDecide: jest.fn() };
+  const evidenceOwnership = { resolveOwnedEvidence: jest.fn() };
   let service: FinanceLedgerService;
 
   beforeEach(() => {
@@ -75,6 +79,7 @@ describe('FinanceLedgerService', () => {
       prisma,
       authorization,
       decisionAuthorization,
+      evidenceOwnership,
     );
     authorization.assertCanRegister.mockResolvedValue(undefined);
     decisionAuthorization.assertCanDecide.mockResolvedValue(undefined);
@@ -99,6 +104,16 @@ describe('FinanceLedgerService', () => {
     );
     tx.club_sections.findUnique.mockResolvedValue({ main_club_id: 1 });
     tx.$queryRaw.mockResolvedValue([{ club_section_id: 7, main_club_id: 1 }]);
+    evidenceOwnership.resolveOwnedEvidence.mockResolvedValue({
+      financeLedgerEvidenceId: evidenceId,
+    });
+    tx.finance_vouchers.create.mockResolvedValue({
+      finance_voucher_id: voucherId,
+      ledger_entry_id: entryId,
+      finance_ledger_evidence_id: evidenceId,
+      amount_centavos: 125050,
+      currency: 'MXN',
+    });
   });
 
   afterEach(() => {
@@ -424,6 +439,190 @@ describe('FinanceLedgerService', () => {
       clubId: 2,
       clubSectionId: 8,
     });
+  });
+
+  it('attaches an owned approved voucher without persisting opaque evidence material', async () => {
+    let receipt: any;
+    tx.finance_ledger_entries.findUnique.mockResolvedValue({
+      ...ledgerEntry({ status: 'approved' }),
+      club_section: { main_club_id: 1 },
+    });
+    tx.$queryRaw.mockResolvedValue([
+      {
+        finance_ledger_evidence_id: evidenceId,
+        storage_key: 'finance-ledger/receipt.pdf',
+        mime_type: 'application/pdf',
+        file_size: 512,
+      },
+    ]);
+    tx.finance_idempotency_receipts.create.mockImplementation(({ data }) => {
+      receipt = data;
+      return data;
+    });
+    tx.finance_idempotency_receipts.findUnique.mockImplementation(
+      () => receipt,
+    );
+
+    const first = await service.attachVoucher(
+      {
+        clubId: 1,
+        clubSectionId: 7,
+        entryId,
+        opaqueEvidenceHandle: 'opaque-a',
+      },
+      actor,
+      key,
+    );
+    const replay = await service.attachVoucher(
+      {
+        clubId: 1,
+        clubSectionId: 7,
+        entryId,
+        opaqueEvidenceHandle: 'opaque-a',
+      },
+      actor,
+      key,
+    );
+
+    expect(replay).toEqual(first);
+    expect(tx.finance_vouchers.create).toHaveBeenCalledTimes(1);
+    expect(authorization.assertCanRegister).toHaveBeenCalledTimes(2);
+    expect(evidenceOwnership.resolveOwnedEvidence).toHaveBeenCalledTimes(2);
+    expect(evidenceOwnership.resolveOwnedEvidence).toHaveBeenCalledWith({
+      transaction: tx,
+      actorUserId: actor,
+      clubId: 1,
+      clubSectionId: 7,
+      opaqueEvidenceHandle: 'opaque-a',
+    });
+    expect(tx.finance_vouchers.create.mock.calls[0][0].data).toMatchObject({
+      ledger_entry_id: entryId,
+      finance_ledger_evidence_id: evidenceId,
+      amount_centavos: 125050,
+      currency: 'MXN',
+      source_uri: 'finance-ledger/receipt.pdf',
+      mime_type: 'application/pdf',
+      file_size: 512,
+      recorded_by_id: actor,
+    });
+    const event = tx.finance_ledger_events.create.mock.calls[0][0].data;
+    const audit = tx.audit_logs.create.mock.calls[0][0].data;
+    expect(event).toStrictEqual({
+      finance_voucher_id: voucherId,
+      event_type: 'VOUCHER_ATTACHED',
+      actor_user_id: actor,
+      payload: { club_id: 1, club_section_id: 7, entry_id: entryId },
+    });
+    expect(audit.changes).toStrictEqual(event.payload);
+    expect(JSON.stringify(event.payload)).not.toContain('opaque-a');
+    expect(JSON.stringify(event.payload)).not.toContain('receipt.pdf');
+    const [actorKeyLock, entryLock] = tx.$executeRaw.mock.invocationCallOrder;
+    const authorizationCall =
+      authorization.assertCanRegister.mock.invocationCallOrder[0];
+    const entryLookup =
+      tx.finance_ledger_entries.findUnique.mock.invocationCallOrder[0];
+    const ownershipLookup =
+      evidenceOwnership.resolveOwnedEvidence.mock.invocationCallOrder[0];
+    const evidenceLock = tx.$queryRaw.mock.invocationCallOrder[0];
+    expect(actorKeyLock).toBeLessThan(authorizationCall);
+    expect(authorizationCall).toBeLessThan(entryLock);
+    expect(entryLock).toBeLessThan(entryLookup);
+    expect(entryLookup).toBeLessThan(ownershipLookup);
+    expect(ownershipLookup).toBeLessThan(evidenceLock);
+  });
+
+  it.each([undefined, ''])(
+    'rejects malformed opaque attachment handles before opening a transaction: %p',
+    async (opaqueEvidenceHandle) => {
+      await expect(
+        service.attachVoucher(
+          {
+            clubId: 1,
+            clubSectionId: 7,
+            entryId,
+            opaqueEvidenceHandle: opaqueEvidenceHandle as string,
+          },
+          actor,
+          key,
+        ),
+      ).rejects.toMatchObject({
+        code: 'FINANCE_LEDGER_INPUT_INVALID',
+        status: 400,
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it('fails before entry disclosure when the DB-scoped authorization is denied', async () => {
+    authorization.assertCanRegister.mockRejectedValueOnce(forbidden());
+
+    await expect(
+      service.attachVoucher(
+        {
+          clubId: 1,
+          clubSectionId: 7,
+          entryId,
+          opaqueEvidenceHandle: 'opaque-a',
+        },
+        actor,
+        key,
+      ),
+    ).rejects.toMatchObject({ code: 'GUARD_PERMISSION_DENIED', status: 403 });
+
+    expect(tx.finance_ledger_entries.findUnique).not.toHaveBeenCalled();
+    expect(evidenceOwnership.resolveOwnedEvidence).not.toHaveBeenCalled();
+    expect(tx.finance_vouchers.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects changed opaque material under an existing idempotency key without another voucher', async () => {
+    tx.finance_ledger_entries.findUnique.mockResolvedValue({
+      ...ledgerEntry({ status: 'approved' }),
+      club_section: { main_club_id: 1 },
+    });
+    tx.$queryRaw.mockResolvedValue([
+      {
+        finance_ledger_evidence_id: evidenceId,
+        storage_key: 'finance-ledger/receipt.pdf',
+        mime_type: 'application/pdf',
+        file_size: 512,
+      },
+    ]);
+    let receipt: any;
+    tx.finance_idempotency_receipts.create.mockImplementation(({ data }) => {
+      receipt = data;
+      return data;
+    });
+    tx.finance_idempotency_receipts.findUnique.mockImplementation(
+      () => receipt,
+    );
+    await service.attachVoucher(
+      {
+        clubId: 1,
+        clubSectionId: 7,
+        entryId,
+        opaqueEvidenceHandle: 'opaque-a',
+      },
+      actor,
+      key,
+    );
+
+    await expect(
+      service.attachVoucher(
+        {
+          clubId: 1,
+          clubSectionId: 7,
+          entryId,
+          opaqueEvidenceHandle: 'opaque-b',
+        },
+        actor,
+        key,
+      ),
+    ).rejects.toMatchObject({
+      code: 'FINANCE_LEDGER_IDEMPOTENCY_REUSED',
+      status: 409,
+    });
+    expect(tx.finance_vouchers.create).toHaveBeenCalledTimes(1);
+    expect(evidenceOwnership.resolveOwnedEvidence).toHaveBeenCalledTimes(2);
   });
 
   it('records a rejection reason and denies terminal entries', async () => {

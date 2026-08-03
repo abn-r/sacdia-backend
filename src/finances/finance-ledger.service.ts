@@ -38,6 +38,10 @@ export const FINANCE_LEDGER_DECISION_AUTHORIZATION = Symbol(
   'FINANCE_LEDGER_DECISION_AUTHORIZATION',
 );
 
+export const FINANCE_VOUCHER_EVIDENCE_OWNERSHIP = Symbol(
+  'FINANCE_VOUCHER_EVIDENCE_OWNERSHIP',
+);
+
 export interface FinanceLedgerDecisionAuthorizationPort {
   assertCanDecide(context: {
     transaction: Prisma.TransactionClient;
@@ -45,6 +49,16 @@ export interface FinanceLedgerDecisionAuthorizationPort {
     clubId: number;
     clubSectionId: number;
   }): Promise<void>;
+}
+
+export interface FinanceVoucherEvidenceOwnershipPort {
+  resolveOwnedEvidence(context: {
+    transaction: Prisma.TransactionClient;
+    actorUserId: string;
+    clubId: number;
+    clubSectionId: number;
+    opaqueEvidenceHandle: string;
+  }): Promise<{ financeLedgerEvidenceId: string }>;
 }
 
 export interface RegisterLedgerEntryInput {
@@ -70,6 +84,13 @@ export interface AmendLedgerEntryInput extends Omit<
   entryId: string;
 }
 
+export interface AttachFinanceVoucherInput {
+  clubId: number;
+  clubSectionId: number;
+  entryId: string;
+  opaqueEvidenceHandle: string;
+}
+
 @Injectable()
 export class FinanceLedgerService {
   constructor(
@@ -78,6 +99,8 @@ export class FinanceLedgerService {
     private readonly authorization: FinanceLedgerRegistrationAuthorizationPort,
     @Inject(FINANCE_LEDGER_DECISION_AUTHORIZATION)
     private readonly decisionAuthorization: FinanceLedgerDecisionAuthorizationPort,
+    @Inject(FINANCE_VOUCHER_EVIDENCE_OWNERSHIP)
+    private readonly evidenceOwnership: FinanceVoucherEvidenceOwnershipPort,
   ) {}
 
   async registerEntry(
@@ -240,6 +263,135 @@ export class FinanceLedgerService {
     );
   }
 
+  async attachVoucher(
+    input: AttachFinanceVoucherInput,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<Record<string, any>> {
+    if (
+      !Number.isSafeInteger(input.clubId) ||
+      input.clubId <= 0 ||
+      !Number.isSafeInteger(input.clubSectionId) ||
+      input.clubSectionId <= 0 ||
+      !this.isUuid(input.entryId) ||
+      typeof input.opaqueEvidenceHandle !== 'string' ||
+      !input.opaqueEvidenceHandle.trim()
+    ) {
+      throw new AppBadRequestException(ErrorCode.FINANCE_LEDGER_INPUT_INVALID);
+    }
+    return this.idempotent(
+      'attach-voucher',
+      actorUserId,
+      idempotencyKey,
+      {
+        clubId: input.clubId,
+        clubSectionId: input.clubSectionId,
+        entryId: input.entryId,
+        opaqueEvidenceHandle: input.opaqueEvidenceHandle,
+      },
+      async (tx) => {
+        const db = tx as PrismaLike;
+        await this.authorization.assertCanRegister({
+          transaction: tx,
+          actorUserId,
+          clubId: input.clubId,
+          clubSectionId: input.clubSectionId,
+        });
+        await db.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`finance-ledger-entry:${input.entryId}`}, 0))`,
+        );
+        const entry = await db.finance_ledger_entries.findUnique({
+          where: { finance_ledger_entry_id: input.entryId },
+        });
+        if (!entry || entry.club_section_id !== input.clubSectionId) {
+          throw new AppConflictException(
+            ErrorCode.FINANCE_LEDGER_STATUS_INVALID,
+          );
+        }
+        const owned = await this.evidenceOwnership.resolveOwnedEvidence({
+          transaction: tx,
+          actorUserId,
+          clubId: input.clubId,
+          clubSectionId: input.clubSectionId,
+          opaqueEvidenceHandle: input.opaqueEvidenceHandle,
+        });
+        const evidence = (await db.$queryRaw(
+          Prisma.sql`SELECT "finance_ledger_evidence_id", "storage_key", "mime_type", "file_size"
+            FROM "finance_ledger_evidence"
+            WHERE "finance_ledger_evidence_id" = ${owned.financeLedgerEvidenceId}::uuid
+              AND "club_section_id" = ${input.clubSectionId}::integer
+            FOR UPDATE`,
+        )) as Array<Record<string, any>>;
+        if (evidence.length !== 1 || entry.status !== 'approved') {
+          throw new AppConflictException(
+            ErrorCode.FINANCE_LEDGER_STATUS_INVALID,
+          );
+        }
+        return { entry, evidence: evidence[0] };
+      },
+      async (db, context) => {
+        let voucher: Record<string, any>;
+        try {
+          voucher = await db.finance_vouchers.create({
+            data: {
+              ledger_entry_id: context.entry.finance_ledger_entry_id,
+              finance_ledger_evidence_id:
+                context.evidence.finance_ledger_evidence_id,
+              amount_centavos: context.entry.amount_centavos,
+              currency: context.entry.currency,
+              source_uri: context.evidence.storage_key,
+              file_name: 'finance-ledger-evidence',
+              mime_type: context.evidence.mime_type,
+              file_size: context.evidence.file_size,
+              recorded_by_id: actorUserId,
+            },
+            select: {
+              finance_voucher_id: true,
+              ledger_entry_id: true,
+              finance_ledger_evidence_id: true,
+              amount_centavos: true,
+              currency: true,
+            },
+          });
+        } catch (error) {
+          if ((error as { code?: string }).code === 'P2002') {
+            throw new AppConflictException(
+              ErrorCode.FINANCE_LEDGER_STATUS_INVALID,
+            );
+          }
+          throw error;
+        }
+        const payload = {
+          club_id: input.clubId,
+          club_section_id: input.clubSectionId,
+          entry_id: context.entry.finance_ledger_entry_id,
+        };
+        await db.finance_ledger_events.create({
+          data: {
+            finance_voucher_id: voucher.finance_voucher_id,
+            event_type: 'VOUCHER_ATTACHED',
+            actor_user_id: actorUserId,
+            payload,
+          },
+        });
+        await db.audit_logs.create({
+          data: {
+            entity_type: 'finance_voucher',
+            entity_id: voucher.finance_voucher_id,
+            action: 'FINANCE_VOUCHER_ATTACHED',
+            club_id: input.clubId,
+            actor_user_id: actorUserId,
+            changes: payload,
+            event_key: `finance-ledger:VOUCHER_ATTACHED:${actorUserId}:${idempotencyKey.toLowerCase()}`,
+            correlation_id: idempotencyKey.toLowerCase(),
+            idempotency_key: idempotencyKey.toLowerCase(),
+          },
+        });
+        return voucher;
+      },
+    );
+  }
+
   async amendEntry(
     input: AmendLedgerEntryInput,
     actorUserId: string,
@@ -390,6 +542,15 @@ export class FinanceLedgerService {
       });
       return response;
     });
+  }
+
+  private isUuid(value: string) {
+    return (
+      typeof value === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        value,
+      )
+    );
   }
 
   private validateEntry(
