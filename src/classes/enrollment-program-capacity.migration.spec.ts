@@ -44,6 +44,8 @@ const fixtures = (schema: string) => `
 `;
 const insert = (id: number, userId: string, classId: number, active = true) =>
   `INSERT INTO enrollments VALUES (${id}, '${userId}', ${classId}, 2027, ${active})`;
+const insertCanonical = (schema: string, id: number, classId: number) =>
+  `INSERT INTO ${schema}.enrollments VALUES (${id}, '${userA}', ${classId}, 2027, true)`;
 
 describe('enrollment program capacity migration', () => {
   dbIt('enforces canonical capacities and remains idempotent', async () => {
@@ -134,6 +136,62 @@ describe('enrollment program capacity migration', () => {
       await Promise.allSettled([first.end(), second.end()]);
     }
   });
+
+  dbIt(
+    'ignores pg_temp relation hijacks and survives cleanup/rerun',
+    async () => {
+      if (!databaseUrl) throw new Error('integration URL required');
+      const schema = `enrollment_capacity_path_${randomBytes(6).toString('hex')}`;
+      const client = new Client({ connectionString: databaseUrl });
+      await client.connect();
+      try {
+        await client.query(fixtures(schema));
+        await client.query(migration);
+        await expect(
+          client.query(`SELECT proname, proconfig FROM pg_proc
+          WHERE pronamespace='${schema}'::regnamespace
+            AND proname IN ('enforce_active_enrollment_capacity',
+              'prevent_formative_program_reclassification')
+          ORDER BY proname`),
+        ).resolves.toMatchObject({
+          rows: [
+            {
+              proname: 'enforce_active_enrollment_capacity',
+              proconfig: ['search_path=pg_catalog, pg_temp'],
+            },
+            {
+              proname: 'prevent_formative_program_reclassification',
+              proconfig: ['search_path=pg_catalog, pg_temp'],
+            },
+          ],
+        });
+        await client.query(`
+        CREATE TEMP TABLE classes (LIKE ${schema}.classes INCLUDING ALL);
+        CREATE TEMP TABLE enrollments (LIKE ${schema}.enrollments INCLUDING ALL);
+      `);
+        await client.query(insertCanonical(schema, 1, 3));
+        await client.query(insertCanonical(schema, 2, 4));
+        await expect(
+          client.query(insertCanonical(schema, 3, 5)),
+        ).rejects.toMatchObject({
+          code: '23514',
+          constraint: 'enrollments_active_program_capacity_check',
+        });
+        await client.query('DROP TABLE pg_temp.enrollments, pg_temp.classes');
+        await expect(client.query(migration)).resolves.toBeDefined();
+        await expect(
+          client.query(insertCanonical(schema, 3, 5)),
+        ).rejects.toMatchObject({
+          code: '23514',
+          constraint: 'enrollments_active_program_capacity_check',
+        });
+      } finally {
+        await client.query('ROLLBACK');
+        await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+        await client.end();
+      }
+    },
+  );
 
   dbIt(
     'aborts incompatible legacy data and rolls back failed DDL',
