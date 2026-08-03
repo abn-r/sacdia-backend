@@ -31,7 +31,8 @@ const protectedVocabulary = (value: string) => {
 };
 const contractualHash = (path: string, value: string) =>
   (path === 'release.commit' && /^[0-9a-f]{7,64}$/.test(value)) ||
-  (path === 'integrity.digest' && /^[0-9a-f]{64}$/.test(value)) ||
+  (path === 'integrity.digest' &&
+    /^(?:[0-9a-f]{64}|[0-9a-f]{128})$/.test(value)) ||
   (/^gates\.\d+\.evidence\.\d+\.sha256$/.test(path) &&
     /^[0-9a-f]{64}$/.test(value));
 

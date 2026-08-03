@@ -62,7 +62,7 @@ const optionalRow = (
 };
 const id = (value: unknown) =>
   typeof value === 'string' && /^[a-z0-9][a-z0-9._:-]{1,127}$/i.test(value);
-const rfc3339 = (value: unknown) => {
+export const isRfc3339 = (value: unknown) => {
   if (typeof value !== 'string') return false;
   const match =
     /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(
@@ -157,7 +157,7 @@ export function validateReadinessManifest(value: unknown): ReadinessManifestV1 {
     typeof release.commit !== 'string' ||
     !/^[0-9a-f]{7,64}$/.test(release.commit) ||
     (release.version !== undefined && !id(release.version)) ||
-    (release.deployedAt !== undefined && !rfc3339(release.deployedAt)) ||
+    (release.deployedAt !== undefined && !isRfc3339(release.deployedAt)) ||
     !origin(origins.api) ||
     !origin(origins.admin) ||
     !idList(migrations.expected) ||
@@ -166,8 +166,8 @@ export function validateReadinessManifest(value: unknown): ReadinessManifestV1 {
     !Number.isInteger(backup.maxAgeHours) ||
     Number(backup.maxAgeHours) <= 0 ||
     !id(backup.restoreRunbookRef) ||
-    !rfc3339(window.startsAt) ||
-    !rfc3339(window.endsAt) ||
+    !isRfc3339(window.startsAt) ||
+    !isRfc3339(window.endsAt) ||
     Date.parse(String(window.startsAt)) >= Date.parse(String(window.endsAt)) ||
     !id(window.owner) ||
     typeof scope.adultsOnly !== 'boolean' ||
