@@ -337,6 +337,7 @@ export class ClubsController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 201, description: 'Rol asignado' })
+  @ApiResponse({ status: 400, description: 'Rango de fechas de rol inválido' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   async assignRole(
     @Param('sectionId', ParseIntPipe) sectionId: number,
@@ -366,7 +367,10 @@ export class ClubsController {
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 201, description: 'Director asignado' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  @ApiResponse({ status: 409, description: 'La sección ya tiene director activo' })
+  @ApiResponse({
+    status: 409,
+    description: 'La sección ya tiene director activo',
+  })
   async assignInitialDirector(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @CurrentUser() user: { sub: string },
@@ -417,6 +421,7 @@ export class ClubRolesController {
   @ApiOperation({ summary: 'Actualizar asignación de rol' })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Asignación actualizada' })
+  @ApiResponse({ status: 400, description: 'Rango de fechas de rol inválido' })
   async updateAssignment(
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
     @Body() dto: UpdateRoleAssignmentDto,

@@ -532,13 +532,18 @@ export class ClubsService {
       throw new AppBadRequestException(ErrorCode.CLUB_SECTION_ID_REQUIRED);
     }
 
+    const startDate = dto.start_date ?? new Date();
+    this.assertValidRoleDateRange(startDate, dto.end_date);
     const roleId = await this.resolveRoleId(dto);
     const ecclesiasticalYearId =
       dto.ecclesiastical_year_id ??
       (await this.getActiveEcclesiasticalYearId());
-    const startDate = dto.start_date ?? new Date();
-
-    await this.validateRoleSlot(dto.club_section_id, roleId);
+    await this.validateRoleSlot(
+      dto.club_section_id,
+      roleId,
+      startDate,
+      dto.end_date,
+    );
 
     const assignment = {
       user_id: dto.user_id,
@@ -612,6 +617,9 @@ export class ClubsService {
         role_id: true,
         club_section_id: true,
         active: true,
+        status: true,
+        start_date: true,
+        end_date: true,
       },
     });
 
@@ -623,23 +631,32 @@ export class ClubsService {
       modified_at: new Date(),
     };
 
-    if (dto.role_id || dto.role) {
-      const targetRoleId = await this.resolveRoleId(dto);
-
-      if (
-        targetRoleId !== existing.role_id &&
-        existing.active &&
-        existing.club_section_id != null
-      ) {
-        await this.validateRoleSlot(
-          existing.club_section_id,
-          targetRoleId,
-          existing.assignment_id,
-        );
-      }
-
-      updateData.role_id = targetRoleId;
+    const startDate = dto.start_date ?? existing.start_date;
+    const endDate =
+      dto.end_date === undefined ? existing.end_date : dto.end_date;
+    this.assertValidRoleDateRange(startDate, endDate);
+    const targetRoleId =
+      dto.role_id || dto.role
+        ? await this.resolveRoleId(dto)
+        : existing.role_id;
+    if (
+      existing.active &&
+      existing.club_section_id != null &&
+      (targetRoleId !== existing.role_id ||
+        dto.start_date ||
+        dto.end_date !== undefined ||
+        dto.status !== undefined)
+    ) {
+      await this.validateRoleSlot(
+        existing.club_section_id,
+        targetRoleId,
+        startDate,
+        endDate,
+        existing.assignment_id,
+        dto.status ?? existing.status,
+      );
     }
+    if (targetRoleId !== existing.role_id) updateData.role_id = targetRoleId;
 
     if (dto.ecclesiastical_year_id !== undefined) {
       updateData.ecclesiastical_year_id = dto.ecclesiastical_year_id;
@@ -1301,8 +1318,12 @@ export class ClubsService {
   private async validateRoleSlot(
     sectionId: number,
     roleId: string,
+    startDate: Date,
+    endDate?: Date | null,
     excludeAssignmentId?: string,
+    status: string | null = 'active',
   ): Promise<void> {
+    if (status !== 'active') return;
     const role = await this.prisma.roles.findUnique({
       where: { role_id: roleId },
       select: { role_name: true },
@@ -1328,15 +1349,19 @@ export class ClubsService {
         club_section_id: sectionId,
         role_id: roleId,
         active: true,
+        status: 'active',
+        start_date: { lte: endDate ?? new Date('9999-12-31T00:00:00Z') },
+        OR: [{ end_date: null }, { end_date: { gte: startDate } }],
         ...(excludeAssignmentId
           ? { assignment_id: { not: excludeAssignmentId } }
           : {}),
       };
-      const currentCount = await this.prisma.club_role_assignments.count({
+      const assignments = await this.prisma.club_role_assignments.findMany({
         where,
+        select: { start_date: true, end_date: true },
       });
 
-      if (currentCount >= maxPerSection) {
+      if (this.roleSlotPeak(assignments, startDate, endDate) >= maxPerSection) {
         throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);
       }
     }
@@ -1350,18 +1375,22 @@ export class ClubsService {
 
       if (secTreasRoles.length > 0) {
         const secTreasRoleIds = secTreasRoles.map((item) => item.role_id);
-        const hasSecTreas = await this.prisma.club_role_assignments.findFirst({
+        const hasSecTreas = await this.prisma.club_role_assignments.findMany({
           where: {
             club_section_id: sectionId,
             role_id: { in: secTreasRoleIds },
             active: true,
+            status: 'active',
+            start_date: { lte: endDate ?? new Date('9999-12-31T00:00:00Z') },
+            OR: [{ end_date: null }, { end_date: { gte: startDate } }],
             ...(excludeAssignmentId
               ? { assignment_id: { not: excludeAssignmentId } }
               : {}),
           },
+          select: { start_date: true, end_date: true },
         });
 
-        if (hasSecTreas) {
+        if (this.roleSlotPeak(hasSecTreas, startDate, endDate)) {
           throw new AppConflictException(
             ErrorCode.CLUB_ROLE_EXCLUSIVE_CONFLICT,
           );
@@ -1378,27 +1407,63 @@ export class ClubsService {
       if (conflictingRoles.length > 0) {
         const conflictingIds = conflictingRoles.map((r) => r.role_id);
         const existingConflict =
-          await this.prisma.club_role_assignments.findFirst({
+          await this.prisma.club_role_assignments.findMany({
             where: {
               club_section_id: sectionId,
               role_id: { in: conflictingIds },
               active: true,
+              status: 'active',
+              start_date: { lte: endDate ?? new Date('9999-12-31T00:00:00Z') },
+              OR: [{ end_date: null }, { end_date: { gte: startDate } }],
               ...(excludeAssignmentId
                 ? { assignment_id: { not: excludeAssignmentId } }
                 : {}),
             },
-            include: {
-              roles: { select: { role_name: true } },
-            },
+            select: { start_date: true, end_date: true },
           });
 
-        if (existingConflict) {
+        if (this.roleSlotPeak(existingConflict, startDate, endDate)) {
           throw new AppConflictException(
             ErrorCode.CLUB_ROLE_EXCLUSIVE_CONFLICT,
           );
         }
       }
     }
+  }
+
+  private assertValidRoleDateRange(startDate: Date, endDate?: Date | null) {
+    if (endDate && this.utcDay(startDate) > this.utcDay(endDate)) {
+      throw new AppBadRequestException(ErrorCode.CLUB_ROLE_DATE_RANGE_INVALID);
+    }
+  }
+
+  private roleSlotPeak(
+    assignments: Array<{ start_date: Date; end_date: Date | null }>,
+    startDate: Date,
+    endDate?: Date | null,
+  ) {
+    const events = new Map<number, number>();
+    const start = this.utcDay(startDate),
+      end = endDate ? this.utcDay(endDate) : Infinity;
+    for (const assignment of assignments) {
+      const lower = Math.max(start, this.utcDay(assignment.start_date));
+      const assignmentEnd = assignment.end_date
+        ? this.utcDay(assignment.end_date)
+        : Infinity;
+      const upper = Math.min(end, assignmentEnd);
+      if (upper < lower) continue;
+      events.set(lower, (events.get(lower) ?? 0) + 1);
+      events.set(upper + 1, (events.get(upper + 1) ?? 0) - 1);
+    }
+    let current = 0,
+      peak = 0;
+    for (const [, delta] of [...events].sort(([a], [b]) => a - b))
+      peak = Math.max(peak, (current += delta));
+    return peak;
+  }
+
+  private utcDay(date: Date) {
+    return Math.floor(date.getTime() / 86400000);
   }
 
   private async assertCanSucceedSectionDirector(

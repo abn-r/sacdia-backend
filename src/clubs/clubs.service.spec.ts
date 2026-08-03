@@ -604,22 +604,57 @@ describe('ClubsService', () => {
   });
 
   describe('updateRoleAssignment', () => {
-    it('should update role_id on an existing assignment without recreating it', async () => {
+    it('rejects an inverted effective date range before Prisma writes', async () => {
       mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
         assignment_id: 'assignment-1',
         user_id: 'user-1',
         role_id: 'role-1',
         club_section_id: 1,
         active: true,
+        status: 'active',
+        start_date: new Date('2027-01-01T12:00:00.000Z'),
+        end_date: new Date('2027-01-31T12:00:00.000Z'),
+      });
+
+      await expect(
+        service.updateRoleAssignment('assignment-1', {
+          start_date: new Date('2027-02-01T00:00:00.000Z'),
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_ROLE_DATE_RANGE_INVALID,
+      });
+
+      expect(
+        mockPrismaService.club_role_assignments.update,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('updates to secretary-treasurer while ignoring inverted legacy secretary dates', async () => {
+      const date = (value: string) => new Date(value);
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+        assignment_id: 'assignment-1',
+        user_id: 'user-1',
+        role_id: 'role-1',
+        club_section_id: 1,
+        active: true,
+        status: 'active',
+        start_date: new Date('2027-01-01'),
+        end_date: null,
       });
       mockPrismaService.role_slot_limits.findUnique.mockResolvedValue({
         max_per_section: 2,
       });
-      mockPrismaService.club_role_assignments.count.mockResolvedValue(0);
+      mockPrismaService.club_role_assignments.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          { start_date: date('2027-03-01'), end_date: date('2027-01-01') },
+        ]);
       mockPrismaService.roles.findUnique.mockResolvedValue({
-        role_name: 'deputy-director',
+        role_name: 'secretary-treasurer',
       });
-      mockPrismaService.roles.findMany.mockResolvedValue([]);
+      mockPrismaService.roles.findMany.mockResolvedValue([
+        { role_id: 'role-secretary' },
+      ]);
       mockPrismaService.club_role_assignments.update.mockResolvedValue({
         assignment_id: 'assignment-1',
         role_id: 'role-2',
@@ -657,12 +692,17 @@ describe('ClubsService', () => {
         role_id: 'role-member',
         club_section_id: 7,
         active: true,
+        status: 'active',
+        start_date: new Date('2027-01-01'),
+        end_date: null,
       });
       mockPrismaService.role_slot_limits.findUnique.mockResolvedValue(null);
       mockPrismaService.roles.findUnique.mockResolvedValue({
         role_name: 'director',
       });
-      mockPrismaService.club_role_assignments.count.mockResolvedValue(1);
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { start_date: new Date('2027-01-01'), end_date: null },
+      ]);
 
       await expect(
         service.updateRoleAssignment('assignment-1', {
@@ -676,7 +716,7 @@ describe('ClubsService', () => {
         mockPrismaService.club_role_assignments.update,
       ).not.toHaveBeenCalled();
       expect(
-        mockPrismaService.club_role_assignments.count,
+        mockPrismaService.club_role_assignments.findMany,
       ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
