@@ -14,6 +14,7 @@ import { ReceiptsService } from './receipts/receipts.service';
 import { InventoryController } from './inventory/inventory.controller';
 import { InventoryService } from './inventory/inventory.service';
 import { EventsPublisher } from './shared/events.publisher';
+import { MaterialsAuditService } from './shared/materials-audit.service';
 
 /**
  * MaterialsModule — Pedidos de materiales SACDIA
@@ -59,6 +60,7 @@ import { EventsPublisher } from './shared/events.publisher';
     ReceiptsService,
     InventoryService,
     EventsPublisher,
+    MaterialsAuditService,
   ],
   exports: [EventsPublisher],
 })

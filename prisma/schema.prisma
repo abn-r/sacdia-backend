@@ -4747,6 +4747,7 @@ model MaterialAuditLog {
   action         String   @db.VarChar(96)
   before_json    Json?
   after_json     Json?
+  correlation_id String?  @db.Uuid
   created_at     DateTime @default(now()) @db.Timestamptz(6)
 
   local_field local_fields @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
@@ -4754,6 +4755,7 @@ model MaterialAuditLog {
 
   @@index([local_field_id, created_at(sort: Desc)], map: "idx_material_audit_lf_created")
   @@index([entity_type, entity_id, created_at(sort: Desc)], map: "idx_material_audit_entity_created")
+  @@index([correlation_id], map: "idx_material_audit_correlation")
   @@map("material_audit_logs")
 }
 
