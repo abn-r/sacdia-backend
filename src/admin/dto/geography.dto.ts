@@ -251,7 +251,12 @@ export class CreateLocalFieldDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ example: 'America/Mexico_City', nullable: true })
+  @ApiPropertyOptional({
+    example: 'America/Mexico_City',
+    nullable: true,
+    description:
+      'IANA timezone. Required when active is omitted or true; may be omitted only when active is false.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(64)

@@ -472,7 +472,10 @@ describe('AdminGeographyService', () => {
       );
     });
 
-    it('rejects an active local field without a timezone', async () => {
+    it.each([
+      { active: undefined, scenario: 'is omitted' },
+      { active: true, scenario: 'is true' },
+    ])('requires a timezone when active $scenario', async ({ active }) => {
       prismaMock.unions.findUnique.mockResolvedValue(baseUnion);
 
       const error = await service
@@ -481,6 +484,7 @@ describe('AdminGeographyService', () => {
             name: 'Campo sin zona',
             abbreviation: 'CSZ',
             union_id: 1,
+            ...(active === undefined ? {} : { active }),
           },
           ACTOR_ID,
         )
