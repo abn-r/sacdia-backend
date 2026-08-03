@@ -6,7 +6,7 @@ export type MaterialAuditTransaction = Pick<Prisma.TransactionClient, 'materialA
 // prettier-ignore
 export type MaterialCategoryAuditAction = 'category.created' | 'category.updated' | 'category.deactivated' | 'category.reactivated' | 'category.deleted';
 // prettier-ignore
-export type MaterialCategoryAuditField = 'active' | 'has_icon' | 'label' | 'slug' | 'sort_order';
+export type MaterialCategoryAuditField = 'active' | 'has_icon' | 'label' | 'sort_order';
 export interface MaterialCategoryAuditState {
   active: boolean;
   has_icon: boolean;
@@ -29,13 +29,14 @@ const INPUT_KEYS = ['action', 'actorUserId', 'after', 'before', 'changedFields',
 // prettier-ignore
 const ACTIONS = new Set<MaterialCategoryAuditAction>(['category.created', 'category.updated', 'category.deactivated', 'category.reactivated', 'category.deleted']);
 // prettier-ignore
-const FIELDS = new Set<MaterialCategoryAuditField>(['active', 'has_icon', 'label', 'slug', 'sort_order']);
+const FIELDS = new Set<MaterialCategoryAuditField>(['active', 'has_icon', 'label', 'sort_order']);
 const STATE_KEYS = ['active', 'has_icon'] as const;
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 type Snapshot = {
   value: Prisma.InputJsonValue | Prisma.NullTypes.JsonNull;
   bytes: number;
   active: boolean | null;
+  hasIcon: boolean | null;
 };
 
 @Injectable()
@@ -48,12 +49,7 @@ export class MaterialsAuditService {
     const changedFields = this.changedFields(entry.changedFields);
     const before = this.snapshot(entry.before, changedFields);
     const after = this.snapshot(entry.after, changedFields);
-    this.validateSemantics(
-      entry.action,
-      changedFields,
-      before.active,
-      after.active,
-    );
+    this.validateSemantics(entry.action, changedFields, before, after);
     if (before.bytes + after.bytes > MATERIAL_AUDIT_SNAPSHOT_MAX_BYTES)
       this.invalidSnapshot();
     try {
@@ -110,7 +106,7 @@ export class MaterialsAuditService {
 
   // prettier-ignore
   private snapshot(raw: MaterialCategoryAuditState | null, fields: MaterialCategoryAuditField[]): Snapshot {
-    if (raw === null) return { value: Prisma.JsonNull, bytes: 4, active: null };
+    if (raw === null) return { value: Prisma.JsonNull, bytes: 4, active: null, hasIcon: null };
     if (typeof raw !== 'object' || Object.getPrototypeOf(raw) !== Object.prototype) return this.invalidSnapshot();
     const keys = Reflect.ownKeys(raw);
     if (keys.length !== STATE_KEYS.length || keys.some((key) =>
@@ -123,19 +119,16 @@ export class MaterialsAuditService {
     const value: Prisma.InputJsonObject = {
       active, changed_fields: [...fields], has_icon: hasIcon,
     };
-    return { value, bytes: Buffer.byteLength(JSON.stringify(value), 'utf8'), active };
+    return { value, bytes: Buffer.byteLength(JSON.stringify(value), 'utf8'), active, hasIcon };
   }
 
   // prettier-ignore
-  private validateSemantics(action: MaterialCategoryAuditAction, fields: MaterialCategoryAuditField[], before: boolean | null, after: boolean | null): void {
-    if (action === 'category.created' && (before !== null || after === null || fields.length)) return this.invalidSnapshot();
-    if (action === 'category.deleted' && (before === null || after !== null || fields.length)) return this.invalidSnapshot();
-    if (action === 'category.updated' &&
-        (before === null || after === null || !fields.length || fields.includes('active'))) return this.invalidSnapshot();
-    if (action === 'category.deactivated' &&
-        (before !== true || after !== false || fields.length !== 1 || fields[0] !== 'active')) return this.invalidSnapshot();
-    if (action === 'category.reactivated' &&
-        (before !== false || after !== true || fields.length !== 1 || fields[0] !== 'active')) return this.invalidSnapshot();
+  private validateSemantics(action: MaterialCategoryAuditAction, fields: MaterialCategoryAuditField[], before: Snapshot, after: Snapshot): void {
+    if (action === 'category.created' && (before.active !== null || after.active === null || fields.length)) return this.invalidSnapshot();
+    if (action === 'category.deleted' && (before.active === null || after.active !== null || fields.length)) return this.invalidSnapshot();
+    if (action === 'category.updated' && (before.active === null || after.active === null || !fields.length || fields.includes('active') || before.active !== after.active || fields.includes('has_icon') !== (before.hasIcon !== after.hasIcon))) return this.invalidSnapshot();
+    if (action === 'category.deactivated' && (before.active !== true || after.active !== false || before.hasIcon !== after.hasIcon || fields.length !== 1 || fields[0] !== 'active')) return this.invalidSnapshot();
+    if (action === 'category.reactivated' && (before.active !== false || after.active !== true || before.hasIcon !== after.hasIcon || fields.length !== 1 || fields[0] !== 'active')) return this.invalidSnapshot();
   }
 
   private invalidSnapshot(): never {

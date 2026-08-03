@@ -121,6 +121,28 @@ describe('MaterialsAuditService', () => {
     });
   });
 
+  // prettier-ignore
+  it.each([
+    ['updated active transition hidden as label', {
+      changedFields: ['label'], after: { ...state(), active: false },
+    }],
+    ['updated has_icon transition hidden as label', {
+      changedFields: ['label'], after: { ...state(), has_icon: false },
+    }],
+    ['updated has_icon declared without a delta', { changedFields: ['has_icon'] }],
+    ['updated immutable slug', { changedFields: ['slug'] }],
+    ['deactivation has_icon transition', {
+      action: 'category.deactivated', changedFields: ['active'],
+      before: state(), after: { active: false, has_icon: false },
+    }],
+    ['reactivation has_icon transition', {
+      action: 'category.reactivated', changedFields: ['active'],
+      before: { active: false, has_icon: true }, after: { active: true, has_icon: false },
+    }],
+  ])('rejects %s before create', async (_name, overrides) => {
+    await expectInvalid(overrides);
+  });
+
   it('never swallows a database failure', async () => {
     create.mockRejectedValue(new Error('database detail'));
     await expect(
