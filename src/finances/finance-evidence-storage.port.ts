@@ -1,5 +1,7 @@
 import type { Readable } from 'node:stream';
 
+export const FINANCE_EVIDENCE_STORAGE = Symbol('FINANCE_EVIDENCE_STORAGE');
+
 export const FINANCE_EVIDENCE_MIME_TYPES = [
   'image/jpeg',
   'image/png',
