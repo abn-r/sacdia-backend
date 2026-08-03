@@ -380,9 +380,7 @@ export class ClassesService {
               user_id: userId,
               investiture_status: 'INVESTIDO',
               classes: {
-                club_types: {
-                  name: { contains: 'uía', mode: 'insensitive' },
-                },
+                formative_program_type: 'GUIDE_MAJOR',
               },
             },
           });
@@ -520,9 +518,7 @@ export class ClassesService {
       ClassRequirementEligibilityResult
     >(
       eligibilityEntries.filter(
-        (
-          entry,
-        ): entry is [number, ClassRequirementEligibilityResult] =>
+        (entry): entry is [number, ClassRequirementEligibilityResult] =>
           entry[1] !== null,
       ),
     );
@@ -651,8 +647,8 @@ export class ClassesService {
     ) =>
       Boolean(
         progress &&
-          (progress.status === evidence_validation_enum.VALIDATED ||
-            progress.score >= 70),
+        (progress.status === evidence_validation_enum.VALIDATED ||
+          progress.score >= 70),
       );
 
     const modulesProgress = classData.class_modules
@@ -686,15 +682,17 @@ export class ClassesService {
             const progress = sectionProgress.find(
               (sp) => sp.section_id === section.section_id,
             );
-            const evidenceFiles = (progress?.evidence_files ?? []).map((ef) => ({
-              id: String(ef.evidence_file_id),
-              file_id: ef.evidence_file_id,
-              file_name: ef.file_name,
-              file_type: ef.file_type,
-              file_url: signedUrlMap.get(ef.evidence_file_id) ?? ef.file_url,
-              uploaded_at: ef.uploaded_at.toISOString(),
-              uploaded_by_name: this.formatUserName(ef.uploaded_by ?? null),
-            }));
+            const evidenceFiles = (progress?.evidence_files ?? []).map(
+              (ef) => ({
+                id: String(ef.evidence_file_id),
+                file_id: ef.evidence_file_id,
+                file_name: ef.file_name,
+                file_type: ef.file_type,
+                file_url: signedUrlMap.get(ef.evidence_file_id) ?? ef.file_url,
+                uploaded_at: ef.uploaded_at.toISOString(),
+                uploaded_by_name: this.formatUserName(ef.uploaded_by ?? null),
+              }),
+            );
             return {
               section_id: section.section_id,
               id: section.section_id,
@@ -756,7 +754,8 @@ export class ClassesService {
       max_duration_years: classData.max_duration_years,
       total_sections: totalSections,
       completed_sections: completedSections,
-      overall_progress: eligibility?.overall_progress ?? fallbackOverallProgress,
+      overall_progress:
+        eligibility?.overall_progress ?? fallbackOverallProgress,
       percentage: eligibility?.overall_progress ?? fallbackOverallProgress,
       basic_progress: eligibility?.basic_progress,
       advanced_progress: eligibility?.advanced_progress,

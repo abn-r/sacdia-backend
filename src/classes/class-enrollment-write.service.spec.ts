@@ -10,6 +10,7 @@ describe('ClassEnrollmentWriteService', () => {
     class_id: 10,
     club_type_id: 2,
     active: true,
+    formative_program_type: 'STANDARD' as const,
     available_from_year: null,
     available_until_year: null,
   };
@@ -202,4 +203,63 @@ describe('ClassEnrollmentWriteService', () => {
       }
     },
   );
+
+  const programCapacityFailure = (detail: string) =>
+    Object.assign(new Error('Raw query failed'), {
+      code: 'P2010',
+      meta: {
+        driverAdapterError: {
+          cause: { code: '23514', detail },
+        },
+      },
+    });
+
+  it.each([
+    ['STANDARD', ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE],
+    ['GUIDE_MAJOR', ErrorCode.CLASS_MAX_GM_ACTIVE],
+  ])(
+    'maps only the marked %s capacity failure to its stable conflict',
+    async (formativeProgramType, domainCode) => {
+      const { service, tx } = setup();
+      tx.classes.findUnique.mockResolvedValueOnce({
+        ...targetClass,
+        formative_program_type: formativeProgramType,
+      });
+
+      await expect(
+        service.execute(params, async () =>
+          Promise.reject(
+            programCapacityFailure('SACDIA_ENROLLMENT_PROGRAM_CAPACITY'),
+          ),
+        ),
+      ).rejects.toMatchObject({
+        response: { code: domainCode, statusCode: 409 },
+      });
+    },
+  );
+
+  it('passes through an unmarked CHECK failure', async () => {
+    const { service, tx } = setup();
+    tx.classes.findUnique.mockResolvedValueOnce({
+      ...targetClass,
+      formative_program_type: 'STANDARD',
+    });
+    const failure = programCapacityFailure('another CHECK failed');
+
+    await expect(
+      service.execute(params, async () => Promise.reject(failure)),
+    ).rejects.toBe(failure);
+  });
+
+  it('passes through a marked CHECK unless Prisma reports P2010', async () => {
+    const { service } = setup();
+    const failure = Object.assign(
+      programCapacityFailure('SACDIA_ENROLLMENT_PROGRAM_CAPACITY'),
+      { code: 'P2004' },
+    );
+
+    await expect(
+      service.execute(params, async () => Promise.reject(failure)),
+    ).rejects.toBe(failure);
+  });
 });

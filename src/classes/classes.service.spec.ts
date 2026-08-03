@@ -945,33 +945,34 @@ describe('ClassesService', () => {
       });
     });
 
-    it('should allow GM class with requires_invested_gm when INVESTIDO exists', async () => {
-      // findFirst calls:
-      //   1. GM investiture check → found (INVESTIDO in GM)
-      //   2. highestInvested for display-order → same INVESTIDO enrollment with display_order 1
-      setupTransactionMock({
-        targetClass: {
-          class_id: 10,
-          club_type_id: 3,
-          requires_invested_gm: true,
-          display_order: 2,
-          club_types: { name: 'Guías Mayores' },
-        },
-        findFirstResults: [
-          { enrollment_id: 99, investiture_status: 'INVESTIDO' },
-          {
-            enrollment_id: 99,
-            investiture_status: 'INVESTIDO',
-            classes: { display_order: 1 },
+    it.each(['Guías Mayores', 'Guias Mayores', 'Liderazgo avanzado'])(
+      'uses GUIDE_MAJOR classification for a renamed club type (%s)',
+      async (clubTypeName) => {
+        const txMock = setupTransactionMock({
+          targetClass: {
+            class_id: 10,
+            club_type_id: 3,
+            formative_program_type: 'GUIDE_MAJOR',
+            requires_invested_gm: true,
+            display_order: 2,
+            club_types: { name: clubTypeName },
           },
-        ],
-        activeCount: 0,
-        createResult: { enrollment_id: 2, class_id: 10 },
-      });
+          findFirstResults: [
+            { enrollment_id: 99, investiture_status: 'INVESTIDO' },
+          ],
+          activeCount: 0,
+          createResult: { enrollment_id: 2, class_id: 10 },
+        });
 
-      const result = await service.enrollUser(userId, classId, yearId);
-      expect(result).toMatchObject({ enrollment_id: 2, class_id: 10 });
-    });
+        const result = await service.enrollUser(userId, classId, yearId);
+        expect(result).toMatchObject({ enrollment_id: 2, class_id: 10 });
+        expect(txMock.enrollments.findFirst).toHaveBeenCalledWith({
+          where: expect.objectContaining({
+            classes: { formative_program_type: 'GUIDE_MAJOR' },
+          }),
+        });
+      },
+    );
 
     it('should allow GM class without requires_invested_gm (no investiture needed)', async () => {
       // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)

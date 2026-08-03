@@ -20,6 +20,7 @@ type EnrollmentWriteContext = {
     class_id: number;
     club_type_id: number;
     active: boolean;
+    formative_program_type: 'STANDARD' | 'GUIDE_MAJOR';
     requires_invested_gm: boolean;
     available_from_year: { start_date: Date } | null;
     available_until_year: { start_date: Date } | null;
@@ -45,6 +46,7 @@ export class ClassEnrollmentWriteService {
   ): Promise<T> {
     const userId = this.normalizeUserId(params.userId);
     const poolIds = this.normalizePool(params.poolClubTypeIds);
+    let targetProgram: 'STANDARD' | 'GUIDE_MAJOR' | null = null;
     try {
       return await this.prisma.$transaction(
         async (tx) => {
@@ -73,6 +75,7 @@ export class ClassEnrollmentWriteService {
               class_id: true,
               club_type_id: true,
               active: true,
+              formative_program_type: true,
               requires_invested_gm: true,
               available_from_year: { select: { start_date: true } },
               available_until_year: { select: { start_date: true } },
@@ -81,6 +84,7 @@ export class ClassEnrollmentWriteService {
           if (!targetClass?.active) {
             throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
           }
+          targetProgram = targetClass.formative_program_type;
           if (
             (targetClass.available_from_year?.start_date ??
               targetYear.start_date) > targetYear.start_date ||
@@ -107,6 +111,17 @@ export class ClassEnrollmentWriteService {
       );
     } catch (error: unknown) {
       const code = (error as { code?: string }).code;
+      if (
+        targetProgram &&
+        code === 'P2010' &&
+        this.matchesCapacityViolation(error)
+      ) {
+        throw new AppConflictException(
+          targetProgram === 'GUIDE_MAJOR'
+            ? ErrorCode.CLASS_MAX_GM_ACTIVE
+            : ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
+        );
+      }
       if (code === 'P2002') {
         const targetMatch = this.matchesEnrollmentUnique(error);
         const winner =
@@ -184,6 +199,15 @@ export class ClassEnrollmentWriteService {
       ['user_id', 'class_id', 'ecclesiastical_year_id'].every((field) =>
         normalized.includes(field),
       )
+    );
+  }
+  private matchesCapacityViolation(error: unknown): boolean {
+    const record = this.asRecord(error);
+    const meta = this.asRecord(record?.meta);
+    const cause = this.asRecord(this.asRecord(meta?.driverAdapterError)?.cause);
+    return (
+      cause?.code === '23514' &&
+      cause.detail === 'SACDIA_ENROLLMENT_PROGRAM_CAPACITY'
     );
   }
   private asRecord(value: unknown): Record<string, unknown> | null {
