@@ -10,7 +10,7 @@ export type AssignmentQueryFinding = {
 const ASSIGNMENT_FIELDS = new Set(['active', 'status']);
 const TEMPORAL_FIELDS = new Set(['start_date', 'end_date', 'expires_at']);
 const TEMPORAL_OPERATORS = new Set(['lt', 'lte', 'gt', 'gte']);
-const LOGICAL_OPERATORS = new Set(['AND', 'OR', 'NOT']);
+const RELATION_OPERATORS = ['some', 'every', 'none', 'where', 'is', 'isNot'];
 const PRISMA_OPERATIONS = new Set([
   'findFirst',
   'findFirstOrThrow',
@@ -73,22 +73,16 @@ export function scanAssignmentQuerySource(
     }
     return scope;
   };
-  const isInScope = (declaration: ts.VariableDeclaration, use: ts.Node) => {
-    const scope = scopeOf(declaration);
-    const start = scope.getStart(sourceFile);
-    return (
-      declaration.getStart(sourceFile) < use.getStart(sourceFile) &&
-      start <= use.getStart(sourceFile) &&
-      scope.end >= use.end
-    );
-  };
   const binding = (identifier: ts.Identifier): ts.Expression | null =>
     declarations
       .filter(
         (declaration) =>
           ts.isIdentifier(declaration.name) &&
           declaration.name.text === identifier.text &&
-          isInScope(declaration, identifier) &&
+          declaration.getStart(sourceFile) < identifier.getStart(sourceFile) &&
+          scopeOf(declaration).getStart(sourceFile) <=
+            identifier.getStart(sourceFile) &&
+          scopeOf(declaration).end >= identifier.end &&
           !parameters.some(
             (parameter) =>
               parameter.name.getText(sourceFile) === identifier.text &&
@@ -191,7 +185,7 @@ export function scanAssignmentQuerySource(
         return true;
       }
       return (
-        LOGICAL_OPERATORS.has(name ?? '') &&
+        ['AND', 'OR', 'NOT'].includes(name ?? '') &&
         !!next &&
         hasAssignmentPredicate(next, seen)
       );
@@ -209,6 +203,11 @@ export function scanAssignmentQuerySource(
         node.text,
       );
     }
+    if (ts.isBinaryExpression(node))
+      return (
+        isPrismaClientRoot(node.left, seen) ||
+        isPrismaClientRoot(node.right, seen)
+      );
     if (!ts.isPropertyAccessExpression(node)) return false;
     if (node.expression.kind === ts.SyntaxKind.ThisKeyword) {
       return /^(?:prisma|db|tx|client|transaction)(?:[A-Z_].*)?$/i.test(
@@ -259,29 +258,25 @@ export function scanAssignmentQuerySource(
       fingerprint: fingerprint(kind, node.getText(sourceFile)),
     });
   };
-  const scanRelationWhere = (
-    value: ts.Expression,
-    seen = new Set<ts.Expression>(),
-  ): void => {
+  const relationNodes = new Set<ts.Expression>();
+  const scanRelationWhere = (value: ts.Expression): void => {
     const node = resolve(value);
-    if (seen.has(node)) return;
-    seen.add(node);
+    if (relationNodes.has(node)) return;
+    relationNodes.add(node);
     for (const property of properties(node)) {
       const name = propertyName(property);
       const next = initializer(property);
       if (!next) continue;
-      if (name === 'club_role_assignments') {
-        if (
-          values(next, 'some')
-            .concat(values(next, 'every'), values(next, 'none'))
-            .concat(values(next, 'is'), values(next, 'isNot'))
-            .some((filter) => hasAssignmentPredicate(filter))
-        ) {
-          add(property, 'relation');
-        }
-        continue;
-      }
-      if (LOGICAL_OPERATORS.has(name ?? '')) scanRelationWhere(next, seen);
+      if (
+        name === 'club_role_assignments' &&
+        RELATION_OPERATORS.some((operator) =>
+          values(next, operator).some((filter) =>
+            hasAssignmentPredicate(filter),
+          ),
+        )
+      )
+        add(property, 'relation');
+      else scanRelationWhere(next);
     }
   };
   const visit = (node: ts.Node): void => {
@@ -298,11 +293,10 @@ export function scanAssignmentQuerySource(
           if (where.some((filter) => hasAssignmentPredicate(filter))) {
             add(node, 'prisma');
           }
-        } else {
-          where.forEach((filter) => scanRelationWhere(filter));
         }
       }
     }
+    if (ts.isObjectLiteralExpression(node)) scanRelationWhere(node);
     if (
       (ts.isSatisfiesExpression(node) ||
         ts.isAsExpression(node) ||

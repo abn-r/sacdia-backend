@@ -32,17 +32,18 @@ describe('club assignment Prisma query scanner', () => {
     expect(findings).toEqual([]);
   });
 
-  it('finds computed relation aliases below a Prisma root where input', () => {
+  it('finds typed computed relation helpers outside a call site', () => {
     const findings = scanAssignmentQuerySource(
       'users.ts',
       `const assignmentPredicate = { status: 'ACTIVE' };
        const relation = { some: assignmentPredicate };
-       const where = { ['club_role_assignments']: relation };
-       prisma.users.findMany({ where });`,
+       const helper: Prisma.usersWhereInput = {
+         ['club_role_assignments']: relation,
+       };`,
     );
 
     expect(findings).toEqual([
-      expect.objectContaining({ kind: 'relation', line: 3 }),
+      expect.objectContaining({ kind: 'relation', line: 4 }),
     ]);
   });
 
@@ -54,7 +55,8 @@ describe('club assignment Prisma query scanner', () => {
        if (enabled) {
          const where = { AND: [{ end_date: { gte: now } }] };
          const filter: Prisma.club_role_assignmentsWhereInput = where;
-         prisma.club_role_assignments.findMany({ where: filter });
+         const client = options.client ?? this.prisma;
+         client.club_role_assignments.findMany({ where: filter });
        }
        const outside = { active: true };
        function parameterShadow(outside: unknown) {
@@ -64,7 +66,7 @@ describe('club assignment Prisma query scanner', () => {
 
     expect(findings).toEqual([
       expect.objectContaining({ kind: 'where-input', line: 5 }),
-      expect.objectContaining({ kind: 'prisma', line: 6 }),
+      expect.objectContaining({ kind: 'prisma', line: 7 }),
     ]);
   });
 });
