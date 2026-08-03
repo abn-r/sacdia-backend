@@ -9,6 +9,7 @@ import { EVIDENCE_URL_LIMITER } from './classes.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { ClassProgressAccessService } from './class-progress-access.service';
 import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
+import { ClassEnrollmentWriteService } from './class-enrollment-write.service';
 
 describe('ClassesService', () => {
   let service: ClassesService;
@@ -60,6 +61,9 @@ describe('ClassesService', () => {
   };
   const mockRequirementEligibilityService = {
     calculateForEnrollment: jest.fn(),
+  };
+  const mockEnrollmentWriter = {
+    execute: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -181,6 +185,10 @@ describe('ClassesService', () => {
           provide: ClassRequirementEligibilityService,
           useValue: mockRequirementEligibilityService,
         },
+        {
+          provide: ClassEnrollmentWriteService,
+          useValue: mockEnrollmentWriter,
+        },
       ],
     }).compile();
 
@@ -285,14 +293,16 @@ describe('ClassesService', () => {
           },
         },
       ]);
-      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValueOnce({
-        overall_progress: 100,
-        basic_progress: { total: 2, completed: 2, percentage: 100 },
-        advanced_progress: { total: 0, completed: 0, percentage: 0 },
-        extra_progress: { total: 0, completed: 0, percentage: 0 },
-        investiture_eligibility: { eligible: true },
-        advanced_eligibility: { enabled: false, eligible: false },
-      });
+      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValueOnce(
+        {
+          overall_progress: 100,
+          basic_progress: { total: 2, completed: 2, percentage: 100 },
+          advanced_progress: { total: 0, completed: 0, percentage: 0 },
+          extra_progress: { total: 0, completed: 0, percentage: 0 },
+          investiture_eligibility: { eligible: true },
+          advanced_eligibility: { enabled: false, eligible: false },
+        },
+      );
 
       const result = await service.getUserEnrollments('user-1');
 
@@ -559,7 +569,9 @@ describe('ClassesService', () => {
         901,
       );
 
-      expect(mockPrismaService.class_section_progress.create).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.class_section_progress.create,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             user_id: 'member-1',
@@ -608,7 +620,9 @@ describe('ClassesService', () => {
         901,
       );
 
-      expect(mockPrismaService.class_section_progress.update).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.class_section_progress.update,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             submitted_by_id: 'counselor-1',
@@ -708,8 +722,6 @@ describe('ClassesService', () => {
   });
 
   describe('enrollUser', () => {
-    // Reusable mock for prisma.$transaction
-    //
     // enrollments.findFirst is called up to 3 times in enrollUser:
     //   1. GM investiture pre-condition check (step 2, only if requires_invested_gm)
     //   2. Highest INVESTIDO class for display-order validation (step 3)
@@ -729,6 +741,7 @@ describe('ClassesService', () => {
       createResult?: any;
       updateResult?: any;
       ecclesiasticalYear?: any;
+      writerError?: ErrorCode;
     }) => {
       // Build a findFirst that returns successive values from the array
       const findFirstResults = mocks.findFirstResults ?? [null];
@@ -776,6 +789,24 @@ describe('ClassesService', () => {
       mockPrismaService.$transaction.mockImplementation(
         async (callback: (tx: any) => Promise<any>) => callback(txMock),
       );
+      mockEnrollmentWriter.execute.mockImplementation(
+        async (_params: unknown, write: (context: any) => Promise<unknown>) => {
+          if (mocks.writerError)
+            throw Object.assign(new Error(mocks.writerError), {
+              code: mocks.writerError,
+            });
+          return write({
+            tx: txMock,
+            plan: {
+              source_enrollment_id: null,
+              source_class_id: null,
+              target_class_id: classId,
+              transition_kind: null,
+            },
+            targetClass: mocks.targetClass ?? null,
+          });
+        },
+      );
 
       return txMock;
     };
@@ -784,8 +815,33 @@ describe('ClassesService', () => {
     const classId = 10;
     const yearId = 1;
 
+    it('delegates annual progression to the serialized writer instead of INVESTIDO ordering', async () => {
+      const txMock = setupTransactionMock({
+        targetClass: {
+          class_id: classId,
+          club_type_id: 1,
+          requires_invested_gm: false,
+        },
+        createResult: { enrollment_id: 1, class_id: classId },
+      });
+
+      await service.enrollUser(userId, classId, yearId);
+
+      expect(mockEnrollmentWriter.execute).toHaveBeenCalledWith(
+        {
+          userId,
+          targetClassId: classId,
+          ecclesiasticalYearId: yearId,
+          poolClubTypeIds: [1, 2],
+        },
+        expect.any(Function),
+      );
+      expect(txMock.enrollments.findFirst).not.toHaveBeenCalled();
+    });
+
     it('should block enrollment when the class is not available for the target ecclesiastical year', async () => {
       setupTransactionMock({
+        writerError: ErrorCode.CLASS_NOT_AVAILABLE_FOR_YEAR,
         targetClass: {
           class_id: 10,
           club_type_id: 1,
@@ -829,6 +885,7 @@ describe('ClassesService', () => {
       // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)
       // But enrollment limit check (step 4) fires first with activeCount: 1
       setupTransactionMock({
+        writerError: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
         targetClass: {
           class_id: 10,
           club_type_id: 2,
@@ -849,6 +906,7 @@ describe('ClassesService', () => {
 
     it('should block Aventureros enrollment when 1 active Conquistadores enrollment exists', async () => {
       setupTransactionMock({
+        writerError: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
         targetClass: {
           class_id: 10,
           club_type_id: 1,
@@ -938,6 +996,7 @@ describe('ClassesService', () => {
       // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)
       // But enrollment limit check (step 4) fires with activeCount: 2
       setupTransactionMock({
+        writerError: ErrorCode.CLASS_MAX_GM_ACTIVE,
         targetClass: {
           class_id: 10,
           club_type_id: 3,
@@ -956,6 +1015,7 @@ describe('ClassesService', () => {
 
     it('should block reactivation when enrollment limit is reached', async () => {
       setupTransactionMock({
+        writerError: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
         targetClass: {
           class_id: 10,
           club_type_id: 1,
@@ -1016,6 +1076,7 @@ describe('ClassesService', () => {
 
     it('should throw NotFoundException when target class does not exist', async () => {
       setupTransactionMock({
+        writerError: ErrorCode.CLASS_NOT_FOUND,
         targetClass: null,
       });
 
@@ -1026,6 +1087,7 @@ describe('ClassesService', () => {
 
     it('should throw NotFoundException when target class is inactive', async () => {
       setupTransactionMock({
+        writerError: ErrorCode.CLASS_NOT_FOUND,
         targetClass: {
           class_id: 10,
           active: false,
@@ -1064,7 +1126,7 @@ describe('ClassesService', () => {
     // ========================================
 
     describe('display-order progression restriction', () => {
-      it('should block enrollment when target display_order exceeds highest INVESTIDO + 1', async () => {
+      it('delegates historical INVESTIDO ordering to canonical progression planning', async () => {
         // User has INVESTIDO at display_order 2, tries to enroll in display_order 4
         setupTransactionMock({
           targetClass: {
@@ -1087,7 +1149,7 @@ describe('ClassesService', () => {
 
         await expect(
           service.enrollUser(userId, classId, yearId),
-        ).rejects.toMatchObject({ code: ErrorCode.CLASS_LEVEL_TOO_HIGH });
+        ).resolves.toBeDefined();
       });
 
       it('should allow enrollment when target display_order equals highest INVESTIDO + 1', async () => {
@@ -1141,7 +1203,7 @@ describe('ClassesService', () => {
         expect(result).toMatchObject({ enrollment_id: 11 });
       });
 
-      it('should block enrollment above base class when no INVESTIDO exists', async () => {
+      it('does not use the base enrollment as an annual progression gate', async () => {
         // No INVESTIDO, base class at display_order 1, tries display_order 2
         setupTransactionMock({
           targetClass: {
@@ -1161,7 +1223,7 @@ describe('ClassesService', () => {
 
         await expect(
           service.enrollUser(userId, classId, yearId),
-        ).rejects.toMatchObject({ code: ErrorCode.CLASS_LEVEL_TOO_HIGH });
+        ).resolves.toBeDefined();
       });
 
       it('should allow enrollment at base class level when no INVESTIDO exists', async () => {
@@ -1208,7 +1270,7 @@ describe('ClassesService', () => {
         expect(result).toMatchObject({ enrollment_id: 13 });
       });
 
-      it('should still block skipping classes even when year has ended', async () => {
+      it('does not infer annual progression from the historic year-end gate', async () => {
         // No INVESTIDO, base class at display_order 1, tries display_order 3
         // Year ended gives +1, so maxAllowed = 1 + 1 = 2, but target is 3
         setupTransactionMock({
@@ -1228,7 +1290,7 @@ describe('ClassesService', () => {
 
         await expect(
           service.enrollUser(userId, classId, yearId),
-        ).rejects.toMatchObject({ code: ErrorCode.CLASS_LEVEL_TOO_HIGH });
+        ).resolves.toBeDefined();
       });
 
       it('should allow first-ever enrollment regardless of display_order (post-registration)', async () => {

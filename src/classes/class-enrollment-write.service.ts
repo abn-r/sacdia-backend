@@ -20,6 +20,7 @@ type EnrollmentWriteContext = {
     class_id: number;
     club_type_id: number;
     active: boolean;
+    requires_invested_gm: boolean;
     available_from_year: { start_date: Date } | null;
     available_until_year: { start_date: Date } | null;
   };
@@ -72,6 +73,7 @@ export class ClassEnrollmentWriteService {
               class_id: true,
               club_type_id: true,
               active: true,
+              requires_invested_gm: true,
               available_from_year: { select: { start_date: true } },
               available_until_year: { select: { start_date: true } },
             },

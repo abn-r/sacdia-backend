@@ -26,6 +26,7 @@ import {
   resolveEvidenceFileExtension,
 } from '../common/utils/evidence-file-names';
 import { ClassProgressAccessService } from './class-progress-access.service';
+import { ClassEnrollmentWriteService } from './class-enrollment-write.service';
 import {
   ClassRequirementEligibilityService,
   type ClassRequirementEligibilityResult,
@@ -48,7 +49,6 @@ const ALLOWED_MIME_TYPES = new Set([
 @Injectable()
 export class ClassesService {
   private readonly logger = new Logger(ClassesService.name);
-  private siblingTypeIdsCache: Promise<number[]> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -58,23 +58,15 @@ export class ClassesService {
     private readonly translationService: TranslationService,
     private readonly classProgressAccess: ClassProgressAccessService,
     private readonly requirementEligibility: ClassRequirementEligibilityService,
+    private readonly enrollmentWriter: ClassEnrollmentWriteService,
   ) {}
 
-  private getSiblingClubTypeIds(): Promise<number[]> {
-    if (!this.siblingTypeIdsCache) {
-      this.siblingTypeIdsCache = this.prisma.club_types
-        .findMany({
-          where: {
-            OR: [
-              { name: { contains: 'venturer', mode: 'insensitive' } },
-              { name: { contains: 'conquistador', mode: 'insensitive' } },
-            ],
-          },
-          select: { club_type_id: true },
-        })
-        .then((rows) => rows.map((ct) => ct.club_type_id));
-    }
-    return this.siblingTypeIdsCache;
+  private async getEnrollmentLockPool(): Promise<number[]> {
+    const rows = await this.prisma.club_types.findMany({
+      select: { club_type_id: true },
+      orderBy: { club_type_id: 'asc' },
+    });
+    return rows.map((row) => row.club_type_id);
   }
 
   private async resolveProgressEnrollment(params: {
@@ -373,140 +365,72 @@ export class ClassesService {
     classId: number,
     ecclesiasticalYearId: number,
   ) {
-    const enrollment = await this.prisma.$transaction(async (tx) => {
-      // 1. Get target class with its club type name so we can classify the pool
-      //    without relying on hardcoded exact-match strings that break under
-      //    encoding/collation differences in the DB.
-      const targetClass = await tx.classes.findUnique({
-        where: { class_id: classId },
-        include: {
-          club_types: { select: { name: true } },
-          available_from_year: { select: { start_date: true } },
-          available_until_year: { select: { start_date: true } },
-        },
-      });
-      if (!targetClass) {
-        throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
-      }
-      if (targetClass.active === false) {
-        throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
-      }
-
-      const targetYear = await tx.ecclesiastical_years.findUnique({
-        where: { year_id: ecclesiasticalYearId },
-        select: { start_date: true, end_date: true },
-      });
-      if (!targetYear) {
-        throw new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND);
-      }
-
-      if (
-        !this.isClassAvailableForYear({
-          targetYearStartDate: targetYear.start_date,
-          available_from_year: targetClass.available_from_year,
-          available_until_year: targetClass.available_until_year,
-        })
-      ) {
-        throw new AppBadRequestException(
-          ErrorCode.CLASS_NOT_AVAILABLE_FOR_YEAR,
-        );
-      }
-
-      const clubTypeName = targetClass.club_types?.name?.toLowerCase() ?? '';
-
-      // Classify the pool using case-insensitive partial matching.
-      // "guía" / "guia" covers both accented and unaccented variants.
-      const isGm =
-        clubTypeName.includes('guia') || clubTypeName.includes('guía');
-      const isAventuConquis =
-        clubTypeName.includes('aventurer') ||
-        clubTypeName.includes('conquistador');
-
-      // 2. Check GM investiture pre-condition
-      if (targetClass.requires_invested_gm) {
-        const hasInvestiture = await tx.enrollments.findFirst({
-          where: {
-            user_id: userId,
-            investiture_status: 'INVESTIDO',
-            classes: {
-              club_types: {
-                name: { contains: 'uía', mode: 'insensitive' },
+    const poolClubTypeIds = await this.getEnrollmentLockPool();
+    const enrollment = await this.enrollmentWriter.execute(
+      {
+        userId,
+        targetClassId: classId,
+        ecclesiasticalYearId,
+        poolClubTypeIds,
+      },
+      async ({ tx, plan, targetClass }) => {
+        if (targetClass.requires_invested_gm) {
+          const hasInvestiture = await tx.enrollments.findFirst({
+            where: {
+              user_id: userId,
+              investiture_status: 'INVESTIDO',
+              classes: {
+                club_types: {
+                  name: { contains: 'uía', mode: 'insensitive' },
+                },
               },
             },
-          },
-        });
-        if (!hasInvestiture) {
-          throw new AppForbiddenException(
-            ErrorCode.CLASS_GM_INVESTITURE_REQUIRED,
-          );
+          });
+          if (!hasInvestiture) {
+            throw new AppForbiddenException(
+              ErrorCode.CLASS_GM_INVESTITURE_REQUIRED,
+            );
+          }
         }
-      }
 
-      // 3. Display-order progression restriction
-      // Users can only enroll up to one class above their highest INVESTIDO class
-      // within the same club type. If no INVESTIDO exists, they can only enroll
-      // in their base class (the one selected during post-registration).
-      // Exception: if the ecclesiastical year has ended, allow the next class.
-      await this.validateDisplayOrderProgression(tx, {
-        userId,
-        targetClass,
-        ecclesiasticalYearId,
-      });
-
-      // 4. Enrollment limit by club type
-      const { club_type_id } = targetClass;
-
-      if (isAventuConquis) {
-        const siblingIds = await this.getSiblingClubTypeIds();
-
-        const activeCount = await tx.enrollments.count({
+        const existing = await tx.enrollments.findUnique({
           where: {
-            user_id: userId,
-            ecclesiastical_year_id: ecclesiasticalYearId,
-            active: true,
-            classes: {
-              club_type_id: { in: siblingIds },
+            user_id_class_id_ecclesiastical_year_id: {
+              user_id: userId,
+              class_id: classId,
+              ecclesiastical_year_id: ecclesiasticalYearId,
             },
           },
         });
-        if (activeCount >= 1) {
-          throw new AppConflictException(
-            ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
-          );
-        }
-      } else if (isGm) {
-        const activeCount = await tx.enrollments.count({
-          where: {
-            user_id: userId,
-            ecclesiastical_year_id: ecclesiasticalYearId,
-            active: true,
-            classes: { club_type_id },
-          },
-        });
-        if (activeCount >= 2) {
-          throw new AppConflictException(ErrorCode.CLASS_MAX_GM_ACTIVE);
-        }
-      }
 
-      // 5. Duplicate check + create/reactivate
-      const existing = await tx.enrollments.findUnique({
-        where: {
-          user_id_class_id_ecclesiastical_year_id: {
+        if (existing) {
+          if (existing.active) {
+            throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
+          }
+
+          return tx.enrollments.update({
+            where: { enrollment_id: existing.enrollment_id },
+            data: {
+              active: true,
+              cross_type_enrollment: plan.transition_kind === 'CROSSOVER',
+            },
+            include: {
+              classes: { select: { name: true, club_type_id: true } },
+              ecclesiastical_year: {
+                select: { start_date: true, end_date: true },
+              },
+            },
+          });
+        }
+
+        return tx.enrollments.create({
+          data: {
             user_id: userId,
             class_id: classId,
             ecclesiastical_year_id: ecclesiasticalYearId,
+            enrollment_date: new Date(),
+            cross_type_enrollment: plan.transition_kind === 'CROSSOVER',
           },
-        },
-      });
-
-      if (existing) {
-        if (existing.active) {
-          throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
-        }
-
-        return tx.enrollments.update({
-          where: { enrollment_id: existing.enrollment_id },
-          data: { active: true },
           include: {
             classes: { select: { name: true, club_type_id: true } },
             ecclesiastical_year: {
@@ -514,21 +438,8 @@ export class ClassesService {
             },
           },
         });
-      }
-
-      return tx.enrollments.create({
-        data: {
-          user_id: userId,
-          class_id: classId,
-          ecclesiastical_year_id: ecclesiasticalYearId,
-          enrollment_date: new Date(),
-        },
-        include: {
-          classes: { select: { name: true, club_type_id: true } },
-          ecclesiastical_year: { select: { start_date: true, end_date: true } },
-        },
-      });
-    });
+      },
+    );
 
     try {
       await this.achievementsService.emitEvent({
@@ -1281,84 +1192,6 @@ export class ClassesService {
       uploaded_by_name: this.formatUserName(file.uploaded_by ?? null),
       uploaded_at: file.uploaded_at.toISOString(),
     };
-  }
-
-  /**
-   * Validates that the user can enroll in the target class based on
-   * display_order progression rules:
-   *
-   * 1. Find the user's highest INVESTIDO class within the same club type.
-   *    If found, maxAllowedOrder = highestInvested.display_order + 1.
-   *
-   * 2. If no INVESTIDO class exists, find the user's base class (earliest
-   *    enrollment for the same club type — set during post-registration).
-   *    maxAllowedOrder = baseClass.display_order (they can only re-enroll
-   *    in the same class they originally picked).
-   *
-   * 3. Exception: if the ecclesiastical year has ended (end_date < today),
-   *    maxAllowedOrder is incremented by 1 (they can advance to the next).
-   *
-   * 4. If target display_order > maxAllowedOrder → throw BadRequestException.
-   */
-  private async validateDisplayOrderProgression(
-    tx: Prisma.TransactionClient,
-    params: {
-      userId: string;
-      targetClass: {
-        class_id: number;
-        club_type_id: number;
-        display_order: number;
-      };
-      ecclesiasticalYearId: number;
-    },
-  ): Promise<void> {
-    const { userId, targetClass, ecclesiasticalYearId } = params;
-
-    const [highestInvested, year] = await Promise.all([
-      tx.enrollments.findFirst({
-        where: {
-          user_id: userId,
-          investiture_status: 'INVESTIDO',
-          active: true,
-          classes: { club_type_id: targetClass.club_type_id },
-        },
-        include: { classes: { select: { display_order: true } } },
-        orderBy: { classes: { display_order: 'desc' } },
-      }),
-      tx.ecclesiastical_years.findUnique({
-        where: { year_id: ecclesiasticalYearId },
-        select: { end_date: true },
-      }),
-    ]);
-
-    let maxAllowedOrder: number;
-
-    if (highestInvested) {
-      maxAllowedOrder = highestInvested.classes.display_order + 1;
-    } else {
-      const baseEnrollment = await tx.enrollments.findFirst({
-        where: {
-          user_id: userId,
-          classes: { club_type_id: targetClass.club_type_id },
-        },
-        include: { classes: { select: { display_order: true } } },
-        orderBy: { enrollment_date: 'asc' },
-      });
-
-      if (!baseEnrollment) {
-        return;
-      }
-
-      maxAllowedOrder = baseEnrollment.classes.display_order;
-    }
-
-    if (year && year.end_date < new Date()) {
-      maxAllowedOrder += 1;
-    }
-
-    if (targetClass.display_order > maxAllowedOrder) {
-      throw new AppBadRequestException(ErrorCode.CLASS_LEVEL_TOO_HIGH);
-    }
   }
 
   private formatUserName(
