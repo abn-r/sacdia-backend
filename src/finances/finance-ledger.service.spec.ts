@@ -161,6 +161,18 @@ describe('FinanceLedgerService', () => {
     ).rejects.toMatchObject({ code: 'FINANCE_LEDGER_DISABLED' });
   });
 
+  it('uses an explicit UTC date-only value for persisted business dates', async () => {
+    await service.registerEntry(input, actor, key);
+    await service.amendEntry(amendment(), actor, key.replace(/^a/, 'b'));
+
+    expect(
+      tx.finance_ledger_entries.create.mock.calls[0][0].data.finance_date,
+    ).toBe('2026-07-30');
+    expect(
+      tx.finance_ledger_entries.update.mock.calls[0][0].data.finance_date,
+    ).toBe('2026-08-01');
+  });
+
   it('rejects an Idempotency-Key reused with another payload', async () => {
     tx.finance_idempotency_receipts.findUnique.mockResolvedValue({
       request_hash: 'different',

@@ -4,15 +4,25 @@ import { join } from 'node:path';
 import { Client } from 'pg';
 import { FinanceLedgerService } from './finance-ledger.service';
 
-const databaseUrl =
-  process.env.FINANCE_LEDGER_INTEGRATION_DATABASE_URL ??
-  process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
-const dbIt =
-  (process.env.ALLOW_FINANCE_LEDGER_INTEGRATION_DB === '1' ||
-    process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1') &&
-  databaseUrl
-    ? it
-    : it.skip;
+const databaseUrl = (() => {
+  const value = process.env.FINANCE_LEDGER_INTEGRATION_DATABASE_URL;
+  if (process.env.ALLOW_FINANCE_LEDGER_INTEGRATION_DB !== '1' || !value)
+    return undefined;
+  try {
+    const url = new URL(value);
+    if (
+      !['postgres:', 'postgresql:'].includes(url.protocol) ||
+      !['localhost', '127.0.0.1', '::1'].includes(url.hostname) ||
+      url.searchParams.get('finance_ledger_scratch') !== '1'
+    )
+      return undefined;
+    url.searchParams.delete('finance_ledger_scratch');
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+})();
+const dbIt = databaseUrl ? it : it.skip;
 const actor = '00000000-0000-0000-0000-000000000001';
 const key = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const input = (overrides: Record<string, unknown> = {}) => ({
@@ -31,6 +41,7 @@ const row = (result: { rows: Record<string, unknown>[] }) => result.rows[0];
 
 class LedgerPrismaFixture {
   readonly sectionLocks: number[][] = [];
+  readonly sectionLockQueries: string[] = [];
   failAt?: 'event' | 'audit' | 'receipt';
 
   constructor(readonly client: Client) {}
@@ -53,6 +64,7 @@ class LedgerPrismaFixture {
   $queryRaw = async (sql: { text: string; values: unknown[] }) => {
     const result = await this.client.query(sql.text, sql.values);
     this.sectionLocks.push(sql.values as number[]);
+    this.sectionLockQueries.push(sql.text);
     return result.rows;
   };
 
@@ -148,27 +160,31 @@ class LedgerPrismaFixture {
           : entry)
       );
     },
-    update: async ({ where: { finance_ledger_entry_id }, data }: any) =>
-      row(
+    update: async ({ where: { finance_ledger_entry_id }, data }: any) => {
+      const columnsByField: Record<string, string> = {
+        club_section_id: 'club_section_id',
+        finance_category_id: 'finance_category_id',
+        kind: 'kind',
+        amount_centavos: 'amount_centavos',
+        currency: 'currency',
+        finance_date: 'finance_date',
+        status: 'status',
+        decided_by_id: 'decided_by_id',
+        decided_at: 'decided_at',
+        rejection_reason: 'rejection_reason',
+      };
+      const fields = Object.keys(data);
+      return row(
         await this.client.query(
-          `UPDATE finance_ledger_entries SET club_section_id=$1,finance_category_id=$2,kind=$3,amount_centavos=$4,currency=$5,finance_date=$6,
-       status=COALESCE($7,status),decided_by_id=COALESCE($8,decided_by_id),decided_at=COALESCE($9,decided_at),rejection_reason=$10
-       WHERE finance_ledger_entry_id=$11 RETURNING ${columns}`,
-          [
-            data.club_section_id ?? 7,
-            data.finance_category_id ?? 11,
-            data.kind ?? 'expense',
-            data.amount_centavos ?? 1200,
-            data.currency ?? 'MXN',
-            data.finance_date ?? new Date('2026-07-31'),
-            data.status,
-            data.decided_by_id,
-            data.decided_at,
-            data.rejection_reason ?? null,
-            finance_ledger_entry_id,
-          ],
+          `UPDATE finance_ledger_entries SET ${fields
+            .map((field, index) => `${columnsByField[field]}=$${index + 1}`)
+            .join(
+              ',',
+            )} WHERE finance_ledger_entry_id=$${fields.length + 1} RETURNING ${columns}`,
+          [...fields.map((field) => data[field]), finance_ledger_entry_id],
         ),
-      ),
+      );
+    },
   };
 
   finance_ledger_events = {
@@ -206,24 +222,36 @@ class LedgerPrismaFixture {
   };
 }
 
+const configure = async (client: Client, schema?: string) => {
+  await client.query("SET TIME ZONE 'UTC'");
+  if (schema) await client.query(`SET search_path TO "${schema}"`);
+};
+
 const setup = async () => {
   if (!databaseUrl)
     throw new Error('explicit finance integration URL required');
   const schema = `finance_wu2c1_${randomBytes(6).toString('hex')}`;
   const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  await client.query(`SET TIME ZONE 'UTC'`);
-  // prettier-ignore
-  await client.query(`CREATE SCHEMA ${schema}; SET search_path=${schema},public; CREATE TABLE users (user_id UUID PRIMARY KEY); INSERT INTO users VALUES ('${actor}'); CREATE TABLE club_sections (club_section_id INT PRIMARY KEY, main_club_id INT); INSERT INTO club_sections VALUES (7,1),(8,1); CREATE TABLE finances (finance_id INT PRIMARY KEY); CREATE TABLE finances_categories (finance_category_id INT PRIMARY KEY, type INT NOT NULL, active BOOLEAN NOT NULL); INSERT INTO finances_categories VALUES (11,1,true); CREATE TABLE system_config (config_key TEXT PRIMARY KEY, config_value TEXT NOT NULL); INSERT INTO system_config VALUES ('finance.ledger_v2_writes_enabled','true'); CREATE TABLE audit_logs (entity_type TEXT,entity_id UUID,action TEXT,club_id INT,actor_user_id UUID,changes JSONB,event_key TEXT UNIQUE,correlation_id TEXT,idempotency_key TEXT);`);
-  // prettier-ignore
-  await client.query(readFileSync(join(process.cwd(), 'prisma/migrations/20260730200000_finance_ledger_v2_foundation/migration.sql'), 'utf8'));
-  return { client, schema, db: new LedgerPrismaFixture(client) };
+  try {
+    await client.connect();
+    await configure(client);
+    // prettier-ignore
+    await client.query(`CREATE SCHEMA ${schema}; SET search_path TO "${schema}"; CREATE TABLE users (user_id UUID PRIMARY KEY); INSERT INTO users VALUES ('${actor}'); CREATE TABLE club_sections (club_section_id INT PRIMARY KEY, main_club_id INT); INSERT INTO club_sections VALUES (7,1),(8,1); CREATE TABLE finances (finance_id INT PRIMARY KEY); CREATE TABLE finances_categories (finance_category_id INT PRIMARY KEY, type INT NOT NULL, active BOOLEAN NOT NULL); INSERT INTO finances_categories VALUES (11,1,true); CREATE TABLE system_config (config_key TEXT PRIMARY KEY, config_value TEXT NOT NULL); INSERT INTO system_config VALUES ('finance.ledger_v2_writes_enabled','true'); CREATE TABLE audit_logs (entity_type TEXT,entity_id UUID,action TEXT,club_id INT,actor_user_id UUID,changes JSONB,event_key TEXT UNIQUE,correlation_id TEXT,idempotency_key TEXT);`);
+    // prettier-ignore
+    await client.query(readFileSync(join(process.cwd(), 'prisma/migrations/20260730200000_finance_ledger_v2_foundation/migration.sql'), 'utf8'));
+    return { client, schema, db: new LedgerPrismaFixture(client) };
+  } catch (error) {
+    await close(client, schema);
+    throw error;
+  }
 };
 
 const close = async (client: Client, schema: string) => {
   await client.query('ROLLBACK').catch(() => undefined);
-  await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-  await client.end();
+  await client
+    .query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+    .catch(() => undefined);
+  await client.end().catch(() => undefined);
 };
 // prettier-ignore
 const service = (db: LedgerPrismaFixture, register = async () => undefined, decide = async () => undefined) => new FinanceLedgerService(db as any, { assertCanRegister: register }, { assertCanDecide: decide });
@@ -257,7 +285,7 @@ describe('finance ledger service PostgreSQL safety', () => {
       const first = await setup();
       const secondClient = new Client({ connectionString: databaseUrl });
       await secondClient.connect();
-      await secondClient.query(`SET search_path=${first.schema},public`);
+      await configure(secondClient, first.schema);
       try {
         const second = new LedgerPrismaFixture(secondClient);
         let authorizations = 0;
@@ -285,6 +313,11 @@ describe('finance ledger service PostgreSQL safety', () => {
         await expect(counts(first.client)).resolves.toMatchObject({
           rows: [{ entries: 1, events: 1, audits: 1, receipts: 1 }],
         });
+        await expect(
+          first.client.query(
+            'SELECT finance_date::text AS finance_date FROM finance_ledger_entries',
+          ),
+        ).resolves.toMatchObject({ rows: [{ finance_date: '2026-07-31' }] });
       } finally {
         await secondClient.end();
         await close(first.client, first.schema);
@@ -298,7 +331,7 @@ describe('finance ledger service PostgreSQL safety', () => {
       const fixture = await setup();
       const writer = new Client({ connectionString: databaseUrl });
       await writer.connect();
-      await writer.query(`SET search_path=${fixture.schema},public`);
+      await configure(writer, fixture.schema);
       try {
         const registered = await service(fixture.db).registerEntry(
           input(),
@@ -352,10 +385,18 @@ describe('finance ledger service PostgreSQL safety', () => {
           ).rejects.toMatchObject({ code: '55P03' });
           await writer.query('ROLLBACK');
           hold.release();
-          await pending;
+          const result = await pending;
+          if (command === 'decision')
+            expect(result).toMatchObject({
+              club_section_id: 8,
+              amount_centavos: 1300,
+            });
           expect(command).toBeTruthy();
         }
         expect(fixture.db.sectionLocks.at(-1)).toEqual([7, 8]);
+        expect(fixture.db.sectionLockQueries.at(-1)).toMatch(
+          /ORDER BY "club_section_id" FOR UPDATE/,
+        );
         const untouched = await service(fixture.db).registerEntry(
           input(),
           actor,
@@ -378,20 +419,62 @@ describe('finance ledger service PostgreSQL safety', () => {
   );
 
   dbIt(
-    'rolls back entry, event, audit, and receipt atomically when each durable write fails',
+    'rolls back every durable write for registration, decision, and amendment',
     async () => {
-      for (const failAt of ['event', 'audit', 'receipt'] as const) {
-        const fixture = await setup();
-        try {
-          fixture.db.failAt = failAt;
-          await expect(
-            service(fixture.db).registerEntry(input(), actor, key),
-          ).rejects.toThrow(`${failAt} failure`);
-          await expect(counts(fixture.client)).resolves.toMatchObject({
-            rows: [{ entries: 0, events: 0, audits: 0, receipts: 0 }],
-          });
-        } finally {
-          await close(fixture.client, fixture.schema);
+      for (const operation of [
+        'registration',
+        'decision',
+        'amendment',
+      ] as const) {
+        for (const failAt of ['event', 'audit', 'receipt'] as const) {
+          const fixture = await setup();
+          try {
+            let before = await counts(fixture.client);
+            let pending: Promise<unknown>;
+            if (operation === 'registration') {
+              pending = service(fixture.db).registerEntry(input(), actor, key);
+            } else {
+              const entry = await service(fixture.db).registerEntry(
+                input(),
+                actor,
+                operation === 'decision'
+                  ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+                  : 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+              );
+              before = await counts(fixture.client);
+              pending =
+                operation === 'decision'
+                  ? service(fixture.db).decideEntry(
+                      {
+                        entryId: entry.finance_ledger_entry_id,
+                        decision: 'approve',
+                      },
+                      actor,
+                      key,
+                    )
+                  : service(fixture.db).amendEntry(
+                      {
+                        ...input({ amountCentavos: 1201 }),
+                        entryId: entry.finance_ledger_entry_id,
+                      },
+                      actor,
+                      key,
+                    );
+            }
+            fixture.db.failAt = failAt;
+            await expect(pending).rejects.toThrow(`${failAt} failure`);
+            await expect(counts(fixture.client)).resolves.toEqual(before);
+            if (operation !== 'registration')
+              await expect(
+                fixture.client.query(
+                  'SELECT status,amount_centavos FROM finance_ledger_entries',
+                ),
+              ).resolves.toMatchObject({
+                rows: [{ status: 'pending_approval', amount_centavos: 1200 }],
+              });
+          } finally {
+            await close(fixture.client, fixture.schema);
+          }
         }
       }
     },
