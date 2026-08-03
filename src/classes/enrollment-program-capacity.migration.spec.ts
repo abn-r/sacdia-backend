@@ -1,7 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { Client } from 'pg';
+import { ErrorCode } from '../common/errors/error-codes';
+import { ClassEnrollmentWriteService } from './class-enrollment-write.service';
 
 const migration = readFileSync(
   join(
@@ -26,9 +30,16 @@ const userB = 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22';
 const fixtures = (schema: string) => `
   CREATE SCHEMA ${schema}; SET search_path=${schema},public;
   CREATE TYPE formative_program_type_enum AS ENUM ('STANDARD', 'GUIDE_MAJOR');
+  CREATE TABLE ecclesiastical_years (
+    year_id integer PRIMARY KEY, start_date date NOT NULL, end_date date NOT NULL
+  );
   CREATE TABLE classes (
     class_id integer PRIMARY KEY, club_type_id integer NOT NULL,
-    formative_program_type formative_program_type_enum NOT NULL DEFAULT 'STANDARD'
+    formative_program_type formative_program_type_enum NOT NULL DEFAULT 'STANDARD',
+    active boolean NOT NULL DEFAULT true,
+    requires_invested_gm boolean NOT NULL DEFAULT false,
+    available_from_year_id integer REFERENCES ecclesiastical_years(year_id),
+    available_until_year_id integer REFERENCES ecclesiastical_years(year_id)
   );
   CREATE TABLE enrollments (
     enrollment_id integer PRIMARY KEY, user_id uuid NOT NULL,
@@ -38,7 +49,8 @@ const fixtures = (schema: string) => `
   );
   CREATE UNIQUE INDEX uniq_enrollments_active_user_year
     ON enrollments (user_id, ecclesiastical_year_id) WHERE active = true;
-  INSERT INTO classes VALUES
+  INSERT INTO ecclesiastical_years VALUES (2027, '2027-01-01', '2027-12-31');
+  INSERT INTO classes (class_id, club_type_id, formative_program_type) VALUES
     (1, 1, 'STANDARD'), (2, 2, 'STANDARD'),
     (3, 3, 'GUIDE_MAJOR'), (4, 3, 'GUIDE_MAJOR'), (5, 3, 'GUIDE_MAJOR');
 `;
@@ -139,4 +151,57 @@ describe('enrollment program capacity migration', () => {
       await updater.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await Promise.all([updater.end(), migrator.end(), observer.end()]);
     }
   });
+
+  dbIt(
+    'maps the marked trigger through Prisma Client and the enrollment writer',
+    async () => {
+      const schema = `enrollment_writer_${randomBytes(6).toString('hex')}`;
+      const client = new Client({ connectionString: databaseUrl });
+      const adapter = new PrismaPg(databaseUrl, { schema });
+      const prisma = new PrismaClient({ adapter });
+      const writer = new ClassEnrollmentWriteService(
+        prisma as never,
+        {
+          resolveSource: jest.fn().mockResolvedValue({
+            source_enrollment_id: null,
+            source_class_id: null,
+            target_class_id: 2,
+            transition_kind: null,
+          }),
+        } as never,
+      );
+      await client.connect();
+      try {
+        await client.query(fixtures(schema));
+        await client.query(migration);
+        await client.query(insert(1, userA, 1));
+        await expect(
+          writer.execute(
+            {
+              userId: userA,
+              targetClassId: 2,
+              ecclesiasticalYearId: 2027,
+              poolClubTypeIds: [1, 2, 3],
+            },
+            ({ tx }) =>
+              tx.$executeRawUnsafe(
+                insert(2, userA, 2).replace(
+                  'enrollments',
+                  `${schema}.enrollments`,
+                ),
+              ),
+          ),
+        ).rejects.toMatchObject({
+          response: {
+            code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
+            statusCode: 409,
+          },
+        });
+      } finally {
+        await prisma.$disconnect();
+        await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+        await client.end();
+      }
+    },
+  );
 });

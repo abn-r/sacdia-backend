@@ -815,6 +815,18 @@ describe('ClassesService', () => {
     const classId = 10;
     const yearId = 1;
 
+    it('reuses the canonical lock pool across enrollment attempts', async () => {
+      mockEnrollmentWriter.execute.mockResolvedValue({
+        enrollment_id: 1,
+        classes: { name: 'Amigo', club_type_id: 1 },
+      });
+
+      await service.enrollUser(userId, classId, yearId);
+      await service.enrollUser(userId, classId, yearId);
+
+      expect(mockPrismaService.club_types.findMany).toHaveBeenCalledTimes(1);
+    });
+
     it('delegates annual progression to the serialized writer instead of INVESTIDO ordering', async () => {
       const txMock = setupTransactionMock({
         targetClass: {

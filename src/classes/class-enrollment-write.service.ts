@@ -13,7 +13,7 @@ import {
   type ClassEnrollmentPlan,
 } from './class-enrollment-plan.service';
 
-type EnrollmentWriteContext = {
+export type EnrollmentWriteContext = {
   tx: Prisma.TransactionClient;
   plan: ClassEnrollmentPlan;
   targetClass: {

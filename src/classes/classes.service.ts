@@ -26,7 +26,10 @@ import {
   resolveEvidenceFileExtension,
 } from '../common/utils/evidence-file-names';
 import { ClassProgressAccessService } from './class-progress-access.service';
-import { ClassEnrollmentWriteService } from './class-enrollment-write.service';
+import {
+  ClassEnrollmentWriteService,
+  type EnrollmentWriteContext as WriteContext,
+} from './class-enrollment-write.service';
 import {
   ClassRequirementEligibilityService,
   type ClassRequirementEligibilityResult,
@@ -49,6 +52,7 @@ const ALLOWED_MIME_TYPES = new Set([
 @Injectable()
 export class ClassesService {
   private readonly logger = new Logger(ClassesService.name);
+  private enrollmentLockPoolCache: Promise<number[]> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -61,12 +65,15 @@ export class ClassesService {
     private readonly enrollmentWriter: ClassEnrollmentWriteService,
   ) {}
 
-  private async getEnrollmentLockPool(): Promise<number[]> {
-    const rows = await this.prisma.club_types.findMany({
-      select: { club_type_id: true },
-      orderBy: { club_type_id: 'asc' },
-    });
-    return rows.map((row) => row.club_type_id);
+  private getEnrollmentLockPool(): Promise<number[]> {
+    if (!this.enrollmentLockPoolCache) {
+      this.enrollmentLockPoolCache = this.prisma.club_types
+        .findMany({
+          select: { club_type_id: true },
+        })
+        .then((rows) => rows.map((row) => row.club_type_id));
+    }
+    return this.enrollmentLockPoolCache;
   }
 
   private async resolveProgressEnrollment(params: {
@@ -365,68 +372,43 @@ export class ClassesService {
     classId: number,
     ecclesiasticalYearId: number,
   ) {
-    const poolClubTypeIds = await this.getEnrollmentLockPool();
-    const enrollment = await this.enrollmentWriter.execute(
-      {
-        userId,
-        targetClassId: classId,
-        ecclesiasticalYearId,
-        poolClubTypeIds,
-      },
-      async ({ tx, plan, targetClass }) => {
-        if (targetClass.requires_invested_gm) {
-          const hasInvestiture = await tx.enrollments.findFirst({
-            where: {
-              user_id: userId,
-              investiture_status: 'INVESTIDO',
-              classes: {
-                formative_program_type: 'GUIDE_MAJOR',
-              },
-            },
-          });
-          if (!hasInvestiture) {
-            throw new AppForbiddenException(
-              ErrorCode.CLASS_GM_INVESTITURE_REQUIRED,
-            );
-          }
-        }
-
-        const existing = await tx.enrollments.findUnique({
+    const writeEnrollment = async ({ tx, plan, targetClass }: WriteContext) => {
+      if (targetClass.requires_invested_gm) {
+        const hasInvestiture = await tx.enrollments.findFirst({
           where: {
-            user_id_class_id_ecclesiastical_year_id: {
-              user_id: userId,
-              class_id: classId,
-              ecclesiastical_year_id: ecclesiasticalYearId,
+            user_id: userId,
+            investiture_status: 'INVESTIDO',
+            classes: {
+              formative_program_type: 'GUIDE_MAJOR',
             },
           },
         });
-
-        if (existing) {
-          if (existing.active) {
-            throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
-          }
-
-          return tx.enrollments.update({
-            where: { enrollment_id: existing.enrollment_id },
-            data: {
-              active: true,
-              cross_type_enrollment: plan.transition_kind === 'CROSSOVER',
-            },
-            include: {
-              classes: { select: { name: true, club_type_id: true } },
-              ecclesiastical_year: {
-                select: { start_date: true, end_date: true },
-              },
-            },
-          });
+        if (!hasInvestiture) {
+          throw new AppForbiddenException(
+            ErrorCode.CLASS_GM_INVESTITURE_REQUIRED,
+          );
         }
+      }
 
-        return tx.enrollments.create({
-          data: {
+      const existing = await tx.enrollments.findUnique({
+        where: {
+          user_id_class_id_ecclesiastical_year_id: {
             user_id: userId,
             class_id: classId,
             ecclesiastical_year_id: ecclesiasticalYearId,
-            enrollment_date: new Date(),
+          },
+        },
+      });
+
+      if (existing) {
+        if (existing.active) {
+          throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
+        }
+
+        return tx.enrollments.update({
+          where: { enrollment_id: existing.enrollment_id },
+          data: {
+            active: true,
             cross_type_enrollment: plan.transition_kind === 'CROSSOVER',
           },
           include: {
@@ -436,7 +418,32 @@ export class ClassesService {
             },
           },
         });
+      }
+
+      return tx.enrollments.create({
+        data: {
+          user_id: userId,
+          class_id: classId,
+          ecclesiastical_year_id: ecclesiasticalYearId,
+          enrollment_date: new Date(),
+          cross_type_enrollment: plan.transition_kind === 'CROSSOVER',
+        },
+        include: {
+          classes: { select: { name: true, club_type_id: true } },
+          ecclesiastical_year: {
+            select: { start_date: true, end_date: true },
+          },
+        },
+      });
+    };
+    const enrollment = await this.enrollmentWriter.execute(
+      {
+        userId,
+        targetClassId: classId,
+        ecclesiasticalYearId,
+        poolClubTypeIds: await this.getEnrollmentLockPool(),
       },
+      writeEnrollment,
     );
 
     try {
