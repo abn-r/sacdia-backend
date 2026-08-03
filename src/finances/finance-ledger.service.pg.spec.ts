@@ -286,6 +286,25 @@ const counts = (client: Client) =>
     `SELECT (SELECT count(*)::int FROM finance_ledger_entries) entries,(SELECT count(*)::int FROM finance_ledger_events) events,(SELECT count(*)::int FROM audit_logs) audits,(SELECT count(*)::int FROM finance_idempotency_receipts) receipts`,
   );
 
+const holdAuthorization = () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const enteredPromise = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  return {
+    entered: enteredPromise,
+    release,
+    authorize: async () => {
+      entered();
+      await waiting;
+    },
+  };
+};
+
 describe('finance ledger service PostgreSQL safety', () => {
   it('fails closed before connecting when an opted-in URL is invalid', () => {
     for (const value of [
@@ -357,6 +376,165 @@ describe('finance ledger service PostgreSQL safety', () => {
         }
       } finally {
         await close(first.client, first.schema);
+      }
+    },
+  );
+
+  dbIt(
+    'holds decision and amendment entry locks, locks source before target, and rejects no-op',
+    async () => {
+      const fixture = await setup();
+      let writer: Client | undefined;
+      try {
+        writer = new Client({ connectionString: databaseUrl });
+        try {
+          await writer.connect();
+          await configure(writer, fixture.schema);
+          const registered = await service(fixture.db).registerEntry(
+            input(),
+            actor,
+            key,
+          );
+          for (const [command, run] of [
+            [
+              'amendment',
+              (hold: ReturnType<typeof holdAuthorization>) => {
+                let calls = 0;
+                return service(fixture.db, async () => {
+                  calls += 1;
+                  if (calls === 1) await hold.authorize();
+                }).amendEntry(
+                  {
+                    ...input({ clubSectionId: 8, amountCentavos: 1300 }),
+                    entryId: registered.finance_ledger_entry_id,
+                  },
+                  actor,
+                  'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+                );
+              },
+            ],
+            [
+              'decision',
+              (hold: ReturnType<typeof holdAuthorization>) =>
+                service(
+                  fixture.db,
+                  async () => undefined,
+                  hold.authorize,
+                ).decideEntry(
+                  {
+                    entryId: registered.finance_ledger_entry_id,
+                    decision: 'approve',
+                  },
+                  actor,
+                  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                ),
+            ],
+          ] as const) {
+            const hold = holdAuthorization();
+            const pending = run(hold);
+            await hold.entered;
+            await writer.query(`BEGIN; SET LOCAL lock_timeout='100ms'`);
+            await expect(
+              writer.query(
+                'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+                [`finance-ledger-entry:${registered.finance_ledger_entry_id}`],
+              ),
+            ).rejects.toMatchObject({ code: '55P03' });
+            await writer.query('ROLLBACK');
+            hold.release();
+            const result = await pending;
+            if (command === 'decision')
+              expect(result).toMatchObject({
+                club_section_id: 8,
+                amount_centavos: 1300,
+              });
+            expect(command).toBeTruthy();
+          }
+          expect(fixture.db.sectionLocks.at(-1)).toEqual([7, 8]);
+          expect(fixture.db.sectionLockQueries.at(-1)).toMatch(
+            /ORDER BY "club_section_id" FOR UPDATE/,
+          );
+          const untouched = await service(fixture.db).registerEntry(
+            input(),
+            actor,
+            'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          );
+          const beforeNoop = await counts(fixture.client);
+          await expect(
+            service(fixture.db).amendEntry(
+              { ...input(), entryId: untouched.finance_ledger_entry_id },
+              actor,
+              'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+            ),
+          ).rejects.toMatchObject({ code: 'FINANCE_LEDGER_NO_CHANGES' });
+          await expect(counts(fixture.client)).resolves.toEqual(beforeNoop);
+        } finally {
+          if (writer) await close(writer);
+        }
+      } finally {
+        await close(fixture.client, fixture.schema);
+      }
+    },
+  );
+
+  dbIt(
+    'rolls back every durable write for registration, decision, and amendment',
+    async () => {
+      for (const operation of [
+        'registration',
+        'decision',
+        'amendment',
+      ] as const) {
+        for (const failAt of ['event', 'audit', 'receipt'] as const) {
+          const fixture = await setup();
+          try {
+            let before = await counts(fixture.client);
+            let pending: Promise<unknown>;
+            if (operation === 'registration') {
+              pending = service(fixture.db).registerEntry(input(), actor, key);
+            } else {
+              const entry = await service(fixture.db).registerEntry(
+                input(),
+                actor,
+                operation === 'decision'
+                  ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+                  : 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+              );
+              before = await counts(fixture.client);
+              pending =
+                operation === 'decision'
+                  ? service(fixture.db).decideEntry(
+                      {
+                        entryId: entry.finance_ledger_entry_id,
+                        decision: 'approve',
+                      },
+                      actor,
+                      key,
+                    )
+                  : service(fixture.db).amendEntry(
+                      {
+                        ...input({ amountCentavos: 1201 }),
+                        entryId: entry.finance_ledger_entry_id,
+                      },
+                      actor,
+                      key,
+                    );
+            }
+            fixture.db.failAt = failAt;
+            await expect(pending).rejects.toThrow(`${failAt} failure`);
+            await expect(counts(fixture.client)).resolves.toEqual(before);
+            if (operation !== 'registration')
+              await expect(
+                fixture.client.query(
+                  'SELECT status,amount_centavos FROM finance_ledger_entries',
+                ),
+              ).resolves.toMatchObject({
+                rows: [{ status: 'pending_approval', amount_centavos: 1200 }],
+              });
+          } finally {
+            await close(fixture.client, fixture.schema);
+          }
+        }
       }
     },
   );

@@ -93,7 +93,7 @@ export class FinanceLedgerService {
       kind: input.kind,
       amountCentavos: input.amountCentavos,
       currency: input.currency,
-      financeDate: input.financeDate.toISOString(),
+      financeDate: this.businessDate(input.financeDate),
     };
     return this.idempotent(
       'register-entry',
@@ -140,7 +140,7 @@ export class FinanceLedgerService {
             kind: input.kind,
             amount_centavos: input.amountCentavos,
             currency: input.currency,
-            finance_date: input.financeDate,
+            finance_date: this.businessDate(input.financeDate),
             registered_by_id: actorUserId,
           },
           select: this.receiptSelect(),
@@ -254,7 +254,7 @@ export class FinanceLedgerService {
       {
         entryId: input.entryId,
         ...data,
-        finance_date: input.financeDate.toISOString(),
+        finance_date: this.businessDate(input.financeDate),
       },
       async (tx) => {
         const db = tx as PrismaLike;
@@ -428,7 +428,7 @@ export class FinanceLedgerService {
       kind: input.kind,
       amount_centavos: input.amountCentavos,
       currency: input.currency,
-      finance_date: input.financeDate,
+      finance_date: this.businessDate(input.financeDate),
     };
   }
 
@@ -582,6 +582,10 @@ export class FinanceLedgerService {
       decided_at: entry.decided_at?.toISOString?.() ?? entry.decided_at,
       rejection_reason: entry.rejection_reason,
     };
+  }
+
+  private businessDate(value: Date) {
+    return value.toISOString().slice(0, 10);
   }
 
   private receiptSelect() {
