@@ -67,6 +67,44 @@ describe('club assignment Prisma query scanner', () => {
     expect(findings).toEqual([
       expect.objectContaining({ kind: 'where-input', line: 5 }),
       expect.objectContaining({ kind: 'prisma', line: 7 }),
+      expect.objectContaining({ kind: 'prisma', line: 11 }),
+    ]);
+  });
+
+  it('finds shorthand where binding on assignment findMany', () => {
+    const findings = scanAssignmentQuerySource(
+      'shorthand.ts',
+      `const where = { active: true, status: 'active' };
+       prisma.club_role_assignments.findMany({ where });`,
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'prisma', line: 2 }),
+    ]);
+  });
+
+  it('finds complete argument object aliases', () => {
+    const findings = scanAssignmentQuerySource(
+      'args-alias.ts',
+      `const args = { where: { active: true } };
+       prisma.club_role_assignments.findMany(args);`,
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'prisma', line: 2 }),
+    ]);
+  });
+
+  it('fails closed on uninspectable where helpers and argument parameters', () => {
+    const findings = scanAssignmentQuerySource(
+      'opaque.ts',
+      `function makeWhere() { return { active: true }; }
+       prisma.club_role_assignments.findMany({ where: makeWhere() });
+       function query(args: object) {
+         prisma.club_role_assignments.findMany(args);
+       }`,
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'prisma', line: 2 }),
+      expect.objectContaining({ kind: 'prisma', line: 4 }),
     ]);
   });
 });
