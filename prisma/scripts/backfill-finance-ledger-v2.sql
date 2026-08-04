@@ -2,6 +2,8 @@
 -- stay authoritative/readable; photos are attachments and never vouchers.
 BEGIN;
 
+LOCK TABLE finances IN SHARE ROW EXCLUSIVE MODE;
+
 DO $$
 BEGIN
   IF (SELECT config_value FROM system_config

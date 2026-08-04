@@ -167,4 +167,56 @@ describe('finance ledger v2 legacy backfill', () => {
       }
     },
   );
+
+  dbIt('blocks legacy writes until the parity backfill commits', async () => {
+    const { client, schema } = await openFixture(),
+      gate = new Client({ connectionString: databaseUrl }),
+      writer = new Client({ connectionString: databaseUrl }),
+      observer = new Client({ connectionString: databaseUrl });
+    try {
+      for (const peer of [gate, writer, observer]) {
+        await peer.connect();
+        await peer.query(`SET search_path=${schema},public`);
+      }
+      await client.query(`INSERT INTO finances VALUES (101,true,7,11,100,CURRENT_DATE,'00000000-0000-0000-0000-000000000001',now(),now());
+        CREATE FUNCTION hold_backfill() RETURNS trigger AS $$ BEGIN PERFORM pg_advisory_lock(241); RETURN NEW; END $$ LANGUAGE plpgsql;
+        CREATE TRIGGER hold_backfill AFTER INSERT ON finance_ledger_entries FOR EACH ROW EXECUTE FUNCTION hold_backfill()`);
+      await gate.query('SELECT pg_advisory_lock(241)');
+      const backfillRun = client.query(backfill),
+        writerPid = (await writer.query('SELECT pg_backend_pid() pid')).rows[0]
+          .pid;
+      let locked = false;
+      for (let attempt = 0; attempt < 100 && !locked; attempt++)
+        locked = (
+          await observer.query(
+            `SELECT EXISTS (SELECT 1 FROM pg_locks WHERE relation='finances'::regclass AND mode='ShareRowExclusiveLock' AND granted) locked`,
+          )
+        ).rows[0].locked;
+      expect(locked).toBe(true);
+      const legacyWrite = writer.query(
+        `INSERT INTO finances VALUES (102,true,7,11,200,CURRENT_DATE,'00000000-0000-0000-0000-000000000001',now(),now())`,
+      );
+      let blocked = false;
+      for (let attempt = 0; attempt < 100 && !blocked; attempt++)
+        blocked = (
+          await observer.query(
+            `SELECT wait_event_type='Lock' blocked FROM pg_stat_activity WHERE pid=$1`,
+            [writerPid],
+          )
+        ).rows[0]?.blocked;
+      expect(blocked).toBe(true);
+      await gate.query('SELECT pg_advisory_unlock(241)');
+      await backfillRun;
+      await legacyWrite;
+      await expect(
+        client.query(
+          `SELECT (SELECT count(*)::int FROM finances WHERE active) legacy, (SELECT count(*)::int FROM finance_ledger_entries) ledger`,
+        ),
+      ).resolves.toMatchObject({ rows: [{ legacy: 2, ledger: 1 }] });
+    } finally {
+      await gate.query('SELECT pg_advisory_unlock(241)').catch(() => undefined);
+      await Promise.all([gate.end(), writer.end(), observer.end()]);
+      await closeFixture(client, schema);
+    }
+  });
 });
