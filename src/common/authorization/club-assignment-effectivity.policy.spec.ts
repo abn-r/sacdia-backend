@@ -154,6 +154,23 @@ describe('ClubAssignmentEffectivityPolicy', () => {
       historicalWhere: { grantsAuthority: false },
     });
   });
+
+  it('qualifies assignment columns for join-safe SQL fragments', () => {
+    const fragment = policy.toSql(context('America/Cancun'), 'cra');
+    const rendered = fragment.strings.join('?');
+    expect(rendered).toMatch(/cra\.active\s*=\s*TRUE/);
+    expect(rendered).toMatch(/cra\.status\s*=\s*'active'/);
+    expect(rendered).toMatch(/cra\.start_date\s*<=/);
+    expect(rendered).toMatch(/cra\.end_date/);
+    expect(rendered).toMatch(/cra\.expires_at/);
+    expect(rendered).not.toMatch(/(^|[^.\w])active\s*=\s*TRUE/);
+  });
+
+  it('rejects unsafe SQL aliases', () => {
+    expect(() =>
+      policy.toSql(context('America/Cancun'), 'cra; DROP TABLE users'),
+    ).toThrow(/alias/i);
+  });
 });
 
 const databaseUrl = process.env.EFFECTIVITY_POLICY_TEST_DATABASE_URL;
@@ -164,7 +181,7 @@ pgIt('has SQL parity against PostgreSQL', async () => {
   try {
     for (const [_name, zone, patch, expected] of cases) {
       const row = { ...base, ...patch };
-      const fragment = policy.toSql(context(zone));
+      const fragment = policy.toSql(context(zone), 'assignment');
       const query = Prisma.sql`
         SELECT (${fragment}) AS effective
         FROM (VALUES (
@@ -179,6 +196,28 @@ pgIt('has SQL parity against PostgreSQL', async () => {
       );
       expect(result.rows[0].effective).toBe(expected);
     }
+  } finally {
+    await client.end();
+  }
+});
+
+pgIt('resolves ambiguous active columns when the fragment is qualified', async () => {
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const fragment = policy.toSql(context('America/Cancun'), 'cra');
+    const query = Prisma.sql`
+      SELECT (${fragment}) AS effective
+      FROM (VALUES (
+        TRUE::boolean, 'active'::text, '2025-01-01'::date,
+        NULL::date, NULL::timestamptz
+      )) AS cra(active, status, start_date, end_date, expires_at)
+      CROSS JOIN (VALUES (FALSE::boolean)) AS users(active)`;
+    const result = await client.query<{ effective: boolean }>(
+      query.text,
+      query.values,
+    );
+    expect(result.rows[0].effective).toBe(true);
   } finally {
     await client.end();
   }
