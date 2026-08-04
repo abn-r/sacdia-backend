@@ -267,13 +267,13 @@ export class CreateLocalFieldDto {
 /** OpenAPI: active omitted or true → timezone required. */
 export class CreateLocalFieldActiveOpenApiDto {
   @ApiProperty({ example: 'Campo Norte' })
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: 'CN' })
-  abbreviation: string;
+  declare abbreviation: string;
 
   @ApiProperty({ example: 1 })
-  union_id: number;
+  declare union_id: number;
 
   @ApiPropertyOptional({
     example: true,
@@ -286,7 +286,7 @@ export class CreateLocalFieldActiveOpenApiDto {
     example: 'America/Mexico_City',
     description: 'IANA timezone. Required when active is omitted or true.',
   })
-  timezone: string;
+  declare timezone: string;
 
   @ApiPropertyOptional({
     type: [CatalogTranslationDto],
@@ -298,20 +298,20 @@ export class CreateLocalFieldActiveOpenApiDto {
 /** OpenAPI: active=false → timezone may be omitted. */
 export class CreateLocalFieldInactiveOpenApiDto {
   @ApiProperty({ example: 'Campo Norte' })
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: 'CN' })
-  abbreviation: string;
+  declare abbreviation: string;
 
   @ApiProperty({ example: 1 })
-  union_id: number;
+  declare union_id: number;
 
   @ApiProperty({
     example: false,
     enum: [false],
     description: 'Must be false for timezone to be optional.',
   })
-  active: false;
+  declare active: false;
 
   @ApiPropertyOptional({
     example: 'America/Mexico_City',
