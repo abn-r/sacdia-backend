@@ -3,6 +3,7 @@ import { AppForbiddenException } from '../common/errors/app.exception';
 import { FinanceLedgerService } from './finance-ledger.service';
 
 const actor = '00000000-0000-0000-0000-000000000001';
+const registrar = '00000000-0000-0000-0000-000000000002';
 const key = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const entryId = '10000000-0000-0000-0000-000000000001';
 const input = {
@@ -75,12 +76,13 @@ describe('FinanceLedgerService', () => {
     tx.finance_currencies.findUnique.mockResolvedValue({ active: true });
     tx.finance_ledger_entries.create.mockResolvedValue(ledgerEntry());
     tx.finance_ledger_entries.findUnique.mockResolvedValue({
-      ...ledgerEntry(),
+      ...ledgerEntry({ registered_by_id: registrar }),
       club_section: { main_club_id: 1 },
     });
     tx.finance_ledger_entries.update.mockResolvedValue(
       ledgerEntry({
         status: 'approved',
+        registered_by_id: registrar,
         decided_by_id: actor,
         decided_at: new Date('2026-07-31T00:00:00.000Z'),
       }),
@@ -199,7 +201,7 @@ describe('FinanceLedgerService', () => {
         currency: 'MXN',
         finance_date: '2026-07-30',
         status: 'pending_approval',
-        registered_by_id: actor,
+        registered_by_id: registrar,
         decided_by_id: null,
         decided_at: null,
         rejection_reason: null,
@@ -213,7 +215,7 @@ describe('FinanceLedgerService', () => {
         currency: 'MXN',
         finance_date: '2026-07-30',
         status: 'approved',
-        registered_by_id: actor,
+        registered_by_id: registrar,
         decided_by_id: actor,
         decided_at: '2026-07-31T00:00:00.000Z',
         rejection_reason: null,
@@ -265,7 +267,7 @@ describe('FinanceLedgerService', () => {
 
   it('authorizes only the scope read after the entry lock', async () => {
     tx.finance_ledger_entries.findUnique.mockResolvedValueOnce({
-      ...ledgerEntry({ club_section_id: 8 }),
+      ...ledgerEntry({ club_section_id: 8, registered_by_id: registrar }),
       club_section: { main_club_id: 2 },
     });
     await service.decideEntry({ entryId, decision: 'approve' }, actor, key);
@@ -281,6 +283,7 @@ describe('FinanceLedgerService', () => {
     tx.finance_ledger_entries.update.mockResolvedValueOnce(
       ledgerEntry({
         status: 'rejected',
+        registered_by_id: registrar,
         decided_by_id: actor,
         decided_at: new Date('2026-07-31T00:00:00.000Z'),
         rejection_reason: 'Missing receipt',
@@ -297,7 +300,7 @@ describe('FinanceLedgerService', () => {
     ).toBe('Missing receipt');
     for (const status of ['approved', 'rejected']) {
       tx.finance_ledger_entries.findUnique.mockResolvedValueOnce({
-        ...ledgerEntry({ status }),
+        ...ledgerEntry({ status, registered_by_id: registrar }),
         club_section: { main_club_id: 1 },
       });
       await expect(
@@ -309,4 +312,36 @@ describe('FinanceLedgerService', () => {
       ).rejects.toMatchObject({ code: 'FINANCE_LEDGER_STATUS_INVALID' });
     }
   });
+
+  it.each([
+    ['approve', undefined],
+    ['reject', 'Maker cannot decide'],
+  ] as const)(
+    'rejects a same-user %s before receipt lookup or mutation',
+    async (decision, reason) => {
+      tx.finance_ledger_entries.findUnique.mockResolvedValueOnce({
+        ...ledgerEntry({ registered_by_id: actor }),
+        club_section: { main_club_id: 1 },
+      });
+
+      await expect(
+        service.decideEntry(
+          reason === undefined
+            ? { entryId, decision }
+            : { entryId, decision, reason },
+          actor,
+          key,
+        ),
+      ).rejects.toMatchObject({
+        code: 'FINANCE_LEDGER_SELF_DECISION_FORBIDDEN',
+        status: 403,
+      });
+
+      expect(decisionAuthorization.assertCanDecide).toHaveBeenCalledTimes(1);
+      expect(tx.finance_idempotency_receipts.findUnique).not.toHaveBeenCalled();
+      expect(tx.finance_ledger_entries.update).not.toHaveBeenCalled();
+      expect(tx.finance_ledger_events.create).not.toHaveBeenCalled();
+      expect(tx.audit_logs.create).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -501,6 +501,7 @@
   "FINANCE_LEDGER_ENTRY_NOT_FOUND": "No se encontró el movimiento del libro financiero",
   "FINANCE_LEDGER_REJECTION_REASON_REQUIRED": "Se requiere un motivo de rechazo",
   "FINANCE_LEDGER_STATUS_INVALID": "Este movimiento financiero ya no puede recibir una decisión",
+  "FINANCE_LEDGER_SELF_DECISION_FORBIDDEN": "No puedes decidir un movimiento financiero que registraste",
   "ANALYTICS_QUEUE_NOT_FOUND": "Cola no encontrada",
   "ANALYTICS_JOB_NOT_FOUND": "Job no encontrado",
   "ANALYTICS_JOB_ACTIVE": "El job está activo y no se puede reintentar",

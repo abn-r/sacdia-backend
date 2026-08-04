@@ -193,6 +193,11 @@ export class FinanceLedgerService {
           clubId,
           clubSectionId: entry.club_section_id,
         });
+        if (entry.registered_by_id === actorUserId) {
+          throw new AppForbiddenException(
+            ErrorCode.FINANCE_LEDGER_SELF_DECISION_FORBIDDEN,
+          );
+        }
         return { entry, clubId };
       },
       async (db, context) => {

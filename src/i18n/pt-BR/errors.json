@@ -496,6 +496,7 @@
   "FINANCE_LEDGER_ENTRY_NOT_FOUND": "Lançamento do livro financeiro não encontrado",
   "FINANCE_LEDGER_REJECTION_REASON_REQUIRED": "É necessário informar o motivo da rejeição",
   "FINANCE_LEDGER_STATUS_INVALID": "Este lançamento financeiro não pode mais receber decisão",
+  "FINANCE_LEDGER_SELF_DECISION_FORBIDDEN": "Você não pode decidir um lançamento financeiro que registrou",
   "ANALYTICS_QUEUE_NOT_FOUND": "Fila não encontrada",
   "ANALYTICS_JOB_NOT_FOUND": "Job não encontrado",
   "ANALYTICS_JOB_ACTIVE": "O job está ativo e não pode ser repetido",
