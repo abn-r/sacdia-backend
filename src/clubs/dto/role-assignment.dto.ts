@@ -1,4 +1,12 @@
-import { IsDate, IsInt, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsDate,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -106,6 +114,42 @@ export class DirectorSuccessionDto {
   @IsDate()
   @Type(() => Date)
   start_date?: Date;
+}
+
+/** Durable P0 schedule body — does not activate the successor. */
+export class ScheduleDirectorSuccessionDto {
+  @ApiProperty({ description: 'Asignación activa del director saliente' })
+  @IsUUID()
+  declare current_assignment_id: string;
+
+  @ApiProperty({ description: 'Usuario sucesor' })
+  @IsUUID()
+  declare successor_user_id: string;
+
+  @ApiProperty({ description: 'Año eclesiástico objetivo' })
+  @Type(() => Number)
+  @IsInt()
+  declare ecclesiastical_year_id: number;
+
+  @ApiProperty({ description: 'Clave de idempotencia del actor' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  declare idempotency_key: string;
+
+  @ApiProperty({ description: 'Campo local del actor programador' })
+  @Type(() => Number)
+  @IsInt()
+  declare scheduled_local_field_id: number;
+
+  @ApiProperty({
+    description: 'Rol exacto del actor (director-lf o assistant-lf)',
+    example: 'director-lf',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  declare scheduled_by_role: string;
 }
 
 export class DirectorInitialAssignmentDto {

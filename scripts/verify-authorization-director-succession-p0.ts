@@ -37,7 +37,7 @@ export const CONSUMER_INVENTORY = Object.freeze([
 ]);
 export const CANONICAL_CONTRACT_PHRASES = Object.freeze([
   'El baseline actual sigue ejecutando la sucesión inmediata',
-  'El contrato P0 de scheduling todavía no está implementado ni habilitado',
+  'Programar la sucesión no termina al director vigente',
   'no crea assignment ni grant',
 ]);
 const CONSUMER_PATTERN =

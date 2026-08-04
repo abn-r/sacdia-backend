@@ -1486,6 +1486,14 @@ export class ClubsService {
     return Math.floor(date.getTime() / 86400000);
   }
 
+  /** Shared gate for immediate succession and durable schedule surfaces. */
+  async assertCanScheduleDirectorSuccession(
+    actorUserId: string,
+    sectionId: number,
+  ): Promise<void> {
+    return this.assertCanSucceedSectionDirector(actorUserId, sectionId);
+  }
+
   private async assertCanSucceedSectionDirector(
     actorUserId: string,
     sectionId: number,

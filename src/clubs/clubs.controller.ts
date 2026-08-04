@@ -22,6 +22,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { ClubsService } from './clubs.service';
+import { DirectorSuccessionPlansService } from './director-succession-plans.service';
 import {
   CreateClubDto,
   UpdateClubDto,
@@ -30,6 +31,7 @@ import {
   AssignRoleDto,
   DirectorInitialAssignmentDto,
   DirectorSuccessionDto,
+  ScheduleDirectorSuccessionDto,
   UpdateRoleAssignmentDto,
 } from './dto';
 import { ClubHistoryResponseDto } from './dto/overview.dto';
@@ -51,7 +53,10 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class ClubsController {
-  constructor(private readonly clubsService: ClubsService) {}
+  constructor(
+    private readonly clubsService: ClubsService,
+    private readonly directorSuccessionPlans: DirectorSuccessionPlansService,
+  ) {}
 
   // ========================================
   // CLUBS - CRUD
@@ -381,6 +386,56 @@ export class ClubsController {
       user.sub,
       dto,
     );
+  }
+
+  @Get(':clubId/sections/:sectionId/director-succession')
+  @RequirePermissions('club_roles:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Leer plan durable de sucesión de director',
+    description:
+      'Lectura/preflight del plan en director_succession_plans. No crea assignment ni grant y no muta roles.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 200, description: 'Plan o null' })
+  async getDirectorSuccessionPlan(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+  ) {
+    return this.directorSuccessionPlans.getBySection(sectionId);
+  }
+
+  @Post(':clubId/sections/:sectionId/director-succession/plans')
+  @RequirePermissions('club_roles:assign', 'club_roles:revoke')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Programar sucesión durable de director',
+    description:
+      'Crea o reusa un plan scheduled en director_succession_plans. No termina al director vigente ni activa al sucesor. El POST baseline de sucesión inmediata permanece en /director-succession.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 201, description: 'Plan programado o reusado' })
+  @ApiResponse({ status: 409, description: 'Idempotency-Key reutilizada' })
+  async scheduleDirectorSuccession(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() user: { sub: string },
+    @Body() dto: ScheduleDirectorSuccessionDto,
+  ) {
+    await this.clubsService.assertCanScheduleDirectorSuccession(
+      user.sub,
+      sectionId,
+    );
+    return this.directorSuccessionPlans.schedule({
+      clubSectionId: sectionId,
+      outgoingAssignmentId: dto.current_assignment_id,
+      successorUserId: dto.successor_user_id,
+      targetEcclesiasticalYearId: dto.ecclesiastical_year_id,
+      scheduledById: user.sub,
+      scheduledByRole: dto.scheduled_by_role,
+      scheduledLocalFieldId: dto.scheduled_local_field_id,
+      idempotencyKey: dto.idempotency_key,
+    });
   }
 
   @Post(':clubId/sections/:sectionId/director-succession')
