@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
+import { PrismaService } from '../prisma/prisma.service';
 import { CriticalAuditWriterService } from './critical-audit-writer.service';
 import {
   SecurityDenialAuditEvent,
@@ -33,6 +35,26 @@ const setup = () => {
 
 describe('SecurityDenialAuditService', () => {
   afterEach(() => jest.restoreAllMocks());
+
+  it('resolves PrismaService through Nest DI at module bootstrap', async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        SecurityDenialAuditService,
+        {
+          provide: PrismaService,
+          useValue: { $transaction: jest.fn() },
+        },
+        {
+          provide: CriticalAuditWriterService,
+          useValue: { write: jest.fn() },
+        },
+      ],
+    }).compile();
+
+    expect(moduleRef.get(SecurityDenialAuditService)).toBeInstanceOf(
+      SecurityDenialAuditService,
+    );
+  });
 
   it('writes a denied event with the supplied actor, target, scope and stable code', async () => {
     const { prisma, writer, service } = setup();

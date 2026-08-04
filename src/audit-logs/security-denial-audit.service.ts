@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -35,7 +35,7 @@ export class SecurityDenialAuditService {
   private readonly logger = new Logger(SecurityDenialAuditService.name);
 
   constructor(
-    private readonly prisma: DenialAuditDatabase,
+    @Inject(PrismaService) private readonly prisma: DenialAuditDatabase,
     private readonly criticalAuditWriter: CriticalAuditWriterService,
   ) {}
 
