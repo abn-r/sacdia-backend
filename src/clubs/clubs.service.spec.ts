@@ -87,6 +87,8 @@ describe('ClubsService', () => {
 
   const mockAuthorizationContextVersionService = {
     bump: jest.fn().mockResolvedValue(1n),
+    bumpOrdered: jest.fn().mockResolvedValue(undefined),
+    bumpMany: jest.fn().mockResolvedValue(0),
   };
 
   beforeEach(async () => {
@@ -990,14 +992,9 @@ describe('ClubsService', () => {
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(successorUserId);
-      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledWith(
-        tx,
-        oldDirectorUserId,
-      );
-      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledWith(
-        tx,
-        successorUserId,
-      );
+      expect(
+        mockAuthorizationContextVersionService.bumpOrdered,
+      ).toHaveBeenCalledWith(tx, [oldDirectorUserId, successorUserId]);
       expect(
         mockAuthorizationContextService.hasAnyGlobalRole,
       ).toHaveBeenCalledWith(actorUserId, [

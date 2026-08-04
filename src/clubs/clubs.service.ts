@@ -832,8 +832,10 @@ export class ClubsService {
         },
       });
 
-      await this.authorizationContextVersion.bump(tx, ended.user_id);
-      await this.authorizationContextVersion.bump(tx, created.user_id);
+      await this.authorizationContextVersion.bumpOrdered(tx, [
+        ended.user_id,
+        created.user_id,
+      ]);
       return { ended, created };
     });
 
