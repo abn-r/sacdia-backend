@@ -198,6 +198,75 @@ describe('attestation evidence evaluator', () => {
       'READINESS_EVIDENCE_MISSING',
     );
   });
+  it('rejects evidence metadata crossed behind the same URI and hash', () => {
+    const crossed = evidence();
+    crossed[0].reference = {
+      ...crossed[0].reference,
+      observedAt: '2026-08-03T17:15:00Z',
+    };
+    expectCode(
+      () => verify(seal('hmac-sha256'), crossed),
+      'READINESS_EVIDENCE_MISSING',
+    );
+  });
+  it('rejects contradictory duplicate REQ-PR-012 gates', () => {
+    const input = unsigned();
+    input.gates.push({
+      ...input.gates[0],
+      status: 'FAIL',
+      remediation: 'remain-no-go',
+    });
+    expectCode(
+      () => verify(seal('hmac-sha256', input)),
+      'READINESS_EVIDENCE_MISSING',
+    );
+  });
+  it.each([
+    [
+      'schema v2',
+      (input: ReadinessAttestationV1) => {
+        (input as { schemaVersion: string }).schemaVersion = '2';
+      },
+    ],
+    [
+      'WRITE mode',
+      (input: ReadinessAttestationV1) => {
+        (input as { mode: string }).mode = 'WRITE';
+      },
+    ],
+    [
+      'malformed nested evidence',
+      (input: ReadinessAttestationV1) => {
+        input.gates[0].evidence[0] = {
+          ...input.gates[0].evidence[0],
+          issuer: 7,
+        } as unknown as EvidenceReference;
+      },
+    ],
+  ])('rejects %s before cryptographic evaluation', (_name, mutate) => {
+    const input = unsigned();
+    mutate(input);
+    expectCode(
+      () => verify(seal('hmac-sha256', input)),
+      'READINESS_ATTESTATION_INVALID',
+    );
+  });
+  it('turns malformed nested legal evidence into a stable contract error', () => {
+    const malformed = evidence();
+    malformed[0].artifact = null;
+    malformed[0].reference.sha256 = canonicalSha256(null);
+    expectCode(
+      () =>
+        verify(
+          seal(
+            'hmac-sha256',
+            unsigned(malformed.map((item) => item.reference)),
+          ),
+          malformed,
+        ),
+      'READINESS_EVIDENCE_MISSING',
+    );
+  });
   it('binds integrity metadata but excludes the recursive digest', () => {
     const payload = canonicalAttestationPayload(unsigned());
     expect(payload).toContain('"algorithm":"sha256"');
