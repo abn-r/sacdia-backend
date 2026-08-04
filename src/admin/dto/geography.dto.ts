@@ -228,48 +228,102 @@ export class UpdateUnionDto {
   translations?: CatalogTranslationDto[];
 }
 
+/**
+ * Runtime validation DTO for POST /admin/local-fields.
+ * OpenAPI request body is declared separately via oneOf models below —
+ * do not advertise timezone as unconditionally optional here.
+ */
 export class CreateLocalFieldDto {
-  @ApiProperty({ example: 'Campo Norte' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
   declare name: string;
 
-  @ApiProperty({ example: 'CN' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(8)
   declare abbreviation: string;
 
-  @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)
   declare union_id: number;
 
-  @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({
-    example: 'America/Mexico_City',
-    nullable: true,
-    description:
-      'IANA timezone. Required when active is omitted or true; may be omitted only when active is false.',
-  })
   @IsOptional()
   @IsString()
   @MaxLength(64)
+  timezone?: string | null;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
+}
+
+/** OpenAPI: active omitted or true → timezone required. */
+export class CreateLocalFieldActiveOpenApiDto {
+  @ApiProperty({ example: 'Campo Norte' })
+  name: string;
+
+  @ApiProperty({ example: 'CN' })
+  abbreviation: string;
+
+  @ApiProperty({ example: 1 })
+  union_id: number;
+
+  @ApiPropertyOptional({
+    example: true,
+    enum: [true],
+    description: 'When omitted or true, timezone is required.',
+  })
+  active?: true;
+
+  @ApiProperty({
+    example: 'America/Mexico_City',
+    description: 'IANA timezone. Required when active is omitted or true.',
+  })
+  timezone: string;
+
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
+  translations?: CatalogTranslationDto[];
+}
+
+/** OpenAPI: active=false → timezone may be omitted. */
+export class CreateLocalFieldInactiveOpenApiDto {
+  @ApiProperty({ example: 'Campo Norte' })
+  name: string;
+
+  @ApiProperty({ example: 'CN' })
+  abbreviation: string;
+
+  @ApiProperty({ example: 1 })
+  union_id: number;
+
+  @ApiProperty({
+    example: false,
+    enum: [false],
+    description: 'Must be false for timezone to be optional.',
+  })
+  active: false;
+
+  @ApiPropertyOptional({
+    example: 'America/Mexico_City',
+    nullable: true,
+    description: 'IANA timezone. Optional only when active is false.',
+  })
   timezone?: string | null;
 
   @ApiPropertyOptional({
     type: [CatalogTranslationDto],
     description: 'Non-es translations (pt-BR, en, fr).',
   })
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => CatalogTranslationDto)
-  @ArrayMaxSize(3)
   translations?: CatalogTranslationDto[];
 }
 
