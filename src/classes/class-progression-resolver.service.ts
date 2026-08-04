@@ -29,7 +29,25 @@ export class ClassProgressionResolver {
     const classes = await this.loadTrack(tx, target.club_type_id, yearStart);
     const index = classes.findIndex((item) => item.class_id === classId);
     this.assertClassAvailable(index);
-    return index === 0 ? null : classes[index - 1];
+    if (index > 0) return classes[index - 1];
+
+    const transitions = await tx.class_progression_track_transitions.findMany({
+      where: {
+        active: true,
+        to_track: { active: true, club_type_id: target.club_type_id },
+        from_track: { active: true },
+      },
+      select: { from_track: { select: { club_type_id: true } } },
+    });
+    if (transitions.length === 0) return null;
+    if (transitions.length !== 1) this.invalidConfig();
+
+    const predecessorTrack = await this.loadTrack(
+      tx,
+      transitions[0].from_track.club_type_id,
+      yearStart,
+    );
+    return predecessorTrack[predecessorTrack.length - 1];
   }
 
   async resolveNext(

@@ -91,6 +91,7 @@ const createTx = ({
             )
             .map((item) => ({
               to_track: { club_type_id: item.to_track.club_type_id },
+              from_track: { club_type_id: item.from_track.club_type_id },
             })),
         ),
       ),
@@ -170,6 +171,53 @@ describe('ClassProgressionResolver', () => {
         resolver.resolveTransition(tx, source, target, yearStart),
       ).resolves.toBe('CROSSOVER');
     }
+  });
+
+  it('resolves configured crossover predecessors when targets are first in their tracks', async () => {
+    const tx = createTx({
+      transitions: [
+        {
+          active: true,
+          from_track: defaultTracks[0],
+          to_track: defaultTracks[1],
+        },
+        {
+          active: true,
+          from_track: defaultTracks[1],
+          to_track: defaultTracks[2],
+        },
+      ],
+    });
+
+    await expect(
+      resolver.resolvePredecessor(tx, 3, yearStart),
+    ).resolves.toMatchObject({ class_id: 2, club_type_id: 10 });
+    await expect(
+      resolver.resolvePredecessor(tx, 5, yearStart),
+    ).resolves.toMatchObject({ class_id: 4, club_type_id: 20 });
+  });
+
+  it('fails closed when a first class has ambiguous incoming transitions', async () => {
+    const tx = createTx({
+      transitions: [
+        {
+          active: true,
+          from_track: defaultTracks[0],
+          to_track: defaultTracks[1],
+        },
+        {
+          active: true,
+          from_track: defaultTracks[2],
+          to_track: defaultTracks[1],
+        },
+      ],
+    });
+
+    await expect(
+      resolver.resolvePredecessor(tx, 3, yearStart),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CLASS_PROGRESSION_CONFIG_INVALID,
+    });
   });
 
   it('ignores inactive transition rows and targets', async () => {
