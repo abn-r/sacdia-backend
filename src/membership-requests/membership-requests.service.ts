@@ -325,9 +325,7 @@ export class MembershipRequestsService {
         select: { user_id: true },
       });
       const userIds = [...new Set(affected.map(({ user_id }) => user_id))];
-      for (const userId of userIds) {
-        await this.authorizationContextVersion.bump(tx, userId);
-      }
+      await this.authorizationContextVersion.bumpMany(tx, userIds);
       return { count: affected.length, userIds };
     });
 

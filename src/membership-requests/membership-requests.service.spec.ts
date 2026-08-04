@@ -54,6 +54,7 @@ describe('MembershipRequestsService', () => {
 
   const mockAuthorizationContextVersion = {
     bump: jest.fn().mockResolvedValue(1n),
+    bumpMany: jest.fn().mockResolvedValue(2),
   };
 
   const mockNotificationsService = {
@@ -281,17 +282,12 @@ describe('MembershipRequestsService', () => {
       await expect(service.expireStaleRequests()).resolves.toBe(3);
 
       const expectedUserIds = [userId, '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99'];
-      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledTimes(2);
-      expect(
-        mockAuthorizationContextVersion.bump.mock.calls.map(
-          ([tx, affectedUserId]) => [tx, affectedUserId],
-        ),
-      ).toEqual(
-        expectedUserIds.map((affectedUserId) => [
-          transactionMock,
-          affectedUserId,
-        ]),
+      expect(mockAuthorizationContextVersion.bumpMany).toHaveBeenCalledTimes(1);
+      expect(mockAuthorizationContextVersion.bumpMany).toHaveBeenCalledWith(
+        transactionMock,
+        expectedUserIds,
       );
+      expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledTimes(2);
@@ -301,9 +297,7 @@ describe('MembershipRequestsService', () => {
         ),
       ).toEqual(expectedUserIds);
       expect(
-        Math.max(
-          ...mockAuthorizationContextVersion.bump.mock.invocationCallOrder,
-        ),
+        mockAuthorizationContextVersion.bumpMany.mock.invocationCallOrder[0],
       ).toBeLessThan(
         Math.min(
           ...mockAuthorizationContext.invalidateUserAuthorizationCache.mock
@@ -323,7 +317,7 @@ describe('MembershipRequestsService', () => {
     it('does not bump or clean up when the bulk write returns no rows', async () => {
       await expect(service.expireStaleRequests()).resolves.toBe(0);
 
-      expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
+      expect(mockAuthorizationContextVersion.bumpMany).not.toHaveBeenCalled();
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();
@@ -333,7 +327,7 @@ describe('MembershipRequestsService', () => {
       transactionMock.club_role_assignments.updateManyAndReturn.mockResolvedValue(
         [{ user_id: userId }],
       );
-      mockAuthorizationContextVersion.bump.mockRejectedValueOnce(
+      mockAuthorizationContextVersion.bumpMany.mockRejectedValueOnce(
         new Error('version write failed'),
       );
 
