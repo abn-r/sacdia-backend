@@ -49,7 +49,7 @@ const baseline = {
     'effectiveWhere|T08|1|f0f7540f4594',
   'club-enrollments/club-enrollments.service.ts':
     'effectiveWhere|T08|1|1f2269db063f',
-  'clubs/clubs.service.ts': 'effectiveWhere|T08|8|8f37ea93b990',
+  'clubs/clubs.service.ts': 'effectiveWhere|T08|8|4d13659e19ec',
   'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|32d48d679749',
   'common/guards/permissions.guard.ts': 'effectiveWhere|T08|3|e8b370c41349',
   'common/services/authorization-context.service.ts':
@@ -76,7 +76,7 @@ const baseline = {
     'effectiveWhere|T09|3|3bf28a58f9e2',
   'notifications/notifications.service.ts': 'effectiveWhere|T09|2|12585f37569f',
   'post-registration/post-registration.service.ts':
-    'workflowWhere|allowlist|1|e0b0085b31d8',
+    'workflowWhere|allowlist|3|4dfdc41976e6',
   'qr/qr.service.ts': 'effectiveWhere|T08|3|a4cc54c2bd51',
   'quarterly-reports/quarterly-reports.service.ts':
     'effectiveWhere|T09|3|1c55ef0ad8fe',
@@ -102,9 +102,11 @@ export const ASSIGNMENT_QUERY_INVENTORY: readonly AssignmentQueryInventoryEntry[
     };
   });
 
-const SELF_REFERENTIAL_FILES = new Set([
+/** Exact infrastructure modules only — never a basename/prefix match. */
+export const ASSIGNMENT_QUERY_SCANNER_INFRASTRUCTURE_FILES = new Set([
   'common/authorization/club-assignment-effectivity.arch.ts',
   'common/authorization/club-assignment-effectivity.inventory.ts',
+  'common/authorization/club-assignment-effectivity.policy.ts',
   'common/authorization/club-assignment-effectivity.sql.ts',
 ]);
 
@@ -115,7 +117,7 @@ function sourceFiles(directory: string, sourceRoot = directory): string[] {
     const relativePath = relative(sourceRoot, path).split(sep).join('/');
     return entry.name.endsWith('.ts') &&
       !entry.name.endsWith('.spec.ts') &&
-      !SELF_REFERENTIAL_FILES.has(relativePath)
+      !ASSIGNMENT_QUERY_SCANNER_INFRASTRUCTURE_FILES.has(relativePath)
       ? [path]
       : [];
   });

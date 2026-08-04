@@ -5,11 +5,25 @@ import { join } from 'node:path';
 import { CLUB_ASSIGNMENT_NON_AUTHORITY_ALLOWLIST } from './club-assignment-effectivity.policy';
 import {
   ASSIGNMENT_QUERY_INVENTORY,
+  ASSIGNMENT_QUERY_SCANNER_INFRASTRUCTURE_FILES,
   assertAssignmentQueryInventory,
   scanAssignmentQueries,
 } from './club-assignment-effectivity.inventory';
 
 describe('club assignment effectivity inventory', () => {
+  it('excludes only known scanner infrastructure paths', () => {
+    expect([...ASSIGNMENT_QUERY_SCANNER_INFRASTRUCTURE_FILES].sort()).toEqual([
+      'common/authorization/club-assignment-effectivity.arch.ts',
+      'common/authorization/club-assignment-effectivity.inventory.ts',
+      'common/authorization/club-assignment-effectivity.policy.ts',
+      'common/authorization/club-assignment-effectivity.sql.ts',
+    ]);
+    for (const path of ASSIGNMENT_QUERY_SCANNER_INFRASTRUCTURE_FILES) {
+      expect(path.startsWith('common/authorization/')).toBe(true);
+      expect(path.includes('*')).toBe(false);
+    }
+  });
+
   it('scans a future production file sharing the scanner basename prefix', () => {
     const root = mkdtempSync(join(tmpdir(), 'assignment-query-'));
     const directory = join(root, 'common', 'authorization');
@@ -37,7 +51,7 @@ describe('club assignment effectivity inventory', () => {
     expect(() =>
       assertAssignmentQueryInventory(findings, ASSIGNMENT_QUERY_INVENTORY),
     ).not.toThrow();
-    expect(findings).toHaveLength(107);
+    expect(findings).toHaveLength(109);
     expect(ASSIGNMENT_QUERY_INVENTORY).toHaveLength(43);
     expect(
       Object.fromEntries(
@@ -48,7 +62,7 @@ describe('club assignment effectivity inventory', () => {
           ).reduce((total, entry) => total + entry.count, 0),
         ]),
       ),
-    ).toEqual({ T08: 53, T09: 45, allowlist: 9 });
+    ).toEqual({ T08: 53, T09: 45, allowlist: 11 });
   });
 
   it('classifies the five indirect query sites exposed by the hardened core', () => {
