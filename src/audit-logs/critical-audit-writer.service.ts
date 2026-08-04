@@ -90,8 +90,33 @@ export class CriticalAuditWriterService {
       return { auditLogId: existing.audit_log_id, replayed: true };
     }
 
-    const created = await this.persistence(tx.audit_logs.create({ data }));
-    return { auditLogId: created.audit_log_id, replayed: false };
+    try {
+      const created = await tx.audit_logs.create({ data });
+      return { auditLogId: created.audit_log_id, replayed: false };
+    } catch (error) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        error.code !== 'P2002'
+      ) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError ||
+          error instanceof Prisma.PrismaClientUnknownRequestError ||
+          error instanceof Prisma.PrismaClientInitializationError ||
+          error instanceof Prisma.PrismaClientRustPanicError
+        )
+          throw this.unavailable();
+        throw error;
+      }
+      const winner = await this.persistence(
+        tx.audit_logs.findUnique({
+          where: { event_key: event.eventKey },
+          select: storedAuditSelect,
+        }),
+      );
+      if (!winner || this.canonical(this.comparable(winner)) !== expected)
+        throw this.unavailable();
+      return { auditLogId: winner.audit_log_id, replayed: true };
+    }
   }
 
   private data(event: CriticalAuditEvent): Prisma.audit_logsCreateArgs['data'] {
@@ -149,6 +174,11 @@ export class CriticalAuditWriterService {
         if (!Object.hasOwn(value, index))
           throw new TypeError('Audit arrays cannot contain holes');
       return `[${value.map((item) => this.canonical(item)).join(',')}]`;
+    }
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime()))
+        throw new TypeError('Audit Date values must be valid');
+      return JSON.stringify(value.toISOString());
     }
     if (value !== null && typeof value === 'object') {
       if (Object.getPrototypeOf(value) !== Object.prototype)
