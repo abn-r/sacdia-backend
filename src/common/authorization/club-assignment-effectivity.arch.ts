@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
-export type AssignmentQueryKind = 'prisma' | 'relation' | 'where-input';
+export type AssignmentQueryKind =
+  | 'prisma'
+  | 'relation'
+  | 'where-input'
+  | 'raw-sql';
 export type AssignmentQueryFinding = {
   path: string;
   line: number;
