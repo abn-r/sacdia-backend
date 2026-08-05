@@ -138,7 +138,7 @@ async function inspectApplyPlan(
     });
   }
   const gm = await client.query(
-    `SELECT class_id FROM classes WHERE asset_code = 'GM-01'`,
+    `SELECT class_id FROM classes WHERE asset_code = 'GM-01' FOR UPDATE`,
   );
   if (gm.rowCount !== 1) {
     throw new TimezoneBackfillError('BACKFILL_GM_01_CARDINALITY_INVALID', {

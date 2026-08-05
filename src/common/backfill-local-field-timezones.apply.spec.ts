@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -163,6 +165,20 @@ function runCliAsync(schema: string, values: Record<string, string>) {
 }
 
 describe('local field timezone backfill apply primitive', () => {
+  it('locks the sole GM-01 row with FOR UPDATE during apply planning', () => {
+    const source = readFileSync(
+      join(__dirname, '../../scripts/backfill-local-field-timezones.ts'),
+      'utf8',
+    );
+    const applyPlan = source.slice(
+      source.indexOf('async function inspectApplyPlan'),
+      source.indexOf('export async function planLocalFieldTimezoneBackfill'),
+    );
+    expect(applyPlan).toMatch(
+      /SELECT class_id FROM classes WHERE asset_code = 'GM-01'\s+FOR UPDATE/s,
+    );
+  });
+
   dbIt('wires validated apply and reports replay and preflight outcomes', () =>
     withFixture(async (client, schema) => {
       const incomplete = runCli(schema, { '1': 'America/Tijuana' });
