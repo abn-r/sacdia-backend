@@ -621,5 +621,6 @@
   "CAMPOREE_CLUB_REGISTRATION_CLOSED": "La inscripción de clubes ya está cerrada para este campamento",
   "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Cerrá la inscripción de clubes antes de configurar o enviar puntuación del campamento",
   "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "No se puede cerrar la inscripción de clubes sin secciones de club inscritas activas",
-  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "No se puede reabrir la inscripción de clubes si existen resultados o asignaciones activas de jueces"
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "No se puede reabrir la inscripción de clubes si existen resultados o asignaciones activas de jueces",
+  "AUDIT_WRITE_FAILED": "No se pudo confirmar la auditoría de seguridad"
 }

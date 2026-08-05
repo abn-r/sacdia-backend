@@ -621,5 +621,6 @@
   "CAMPOREE_CLUB_REGISTRATION_CLOSED": "Club registration is already closed for this camporee",
   "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Close club registration before configuring or submitting camporee scoring",
   "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "Club registration cannot be closed without active enrolled club sections",
-  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Club registration cannot be reopened after active scoring results or judge assignments exist"
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Club registration cannot be reopened after active scoring results or judge assignments exist",
+  "AUDIT_WRITE_FAILED": "The security audit could not be confirmed"
 }
