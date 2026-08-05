@@ -193,7 +193,7 @@ describe('authorization/director succession P0 preflight', () => {
           CASE WHEN i<3 THEN 'active' ELSE 'mystery-'||i END,null,1
           FROM generate_series(1,5)i;
         INSERT INTO users_pr VALUES(md5('preferred')::uuid,md5('missing')::uuid);
-        INSERT INTO classes VALUES(2,'GM-01'); INSERT INTO audit_logs VALUES(1,'ACTION_NAME_LONGER_THAN_TWENTY');
+        INSERT INTO classes VALUES(2,'GM-01'); INSERT INTO audit_logs VALUES(1,'ACTION_NAME_LONGER_THAN_SIXTY_FOUR_CHARACTERS_FOR_AUDIT_PREFLIGHT');
         UPDATE local_fields SET timezone='EST';
         INSERT INTO director_succession_plans VALUES(1,1,'scheduled')`);
         const blocked = runCli(integrationDatabaseUrl, childEnv);
@@ -207,6 +207,20 @@ describe('authorization/director succession P0 preflight', () => {
         expect(check(blocked.report, 'overlapping_directors').total_count).toBe(
           1,
         );
+        expect(check(blocked.report, 'audit_action_length')).toEqual({
+          id: 'audit_action_length',
+          total_count: 1,
+          rows: [
+            {
+              audit_log_id: '1',
+              action:
+                'ACTION_NAME_LONGER_THAN_SIXTY_FOUR_CHARACTERS_FOR_AUDIT_PREFLIGHT',
+              action_length: 65,
+            },
+          ],
+          sample_count: 1,
+          truncated: false,
+        });
         expect(
           (check(blocked.report, 'local_field_timezones').rows as Json[])[0],
         ).toMatchObject({

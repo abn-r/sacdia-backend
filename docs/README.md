@@ -1,6 +1,6 @@
 # Documentación Local de `sacdia-backend`
 
-Última actualización: **2026-03-04**
+Última actualización: **2026-07-30**
 
 Este directorio contiene documentación técnica local del backend (implementaciones, migraciones y revisiones).  
 La documentación funcional oficial del producto está en el repositorio padre: `../../docs`.
@@ -29,6 +29,8 @@ La documentación funcional oficial del producto está en el repositorio padre: 
   - Excepción temporal para hallazgos `pnpm audit` de `next` transitivo vía Better Auth, con justificación runtime NestJS/no Next.
 - `docs/migrations/2026-02-21-emergency-contacts-relationship-type-uuid.md`
   - Migración de `emergency_contacts.relationship_type` (int legacy) a `relationship_type_id` (UUID) con FK a `relationship_types`.
+- `docs/migrations/2026-07-30-durable-audit-logs.md`
+  - Contrato persistido de la expansión durable de `audit_logs`: metadata actor/objetivo, correlación, idempotencia, defaults, unicidad e índices.
 
 ## Documentos históricos (referencia)
 
