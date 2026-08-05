@@ -426,6 +426,7 @@
   "CLUB_SECTION_ID_REQUIRED": "L'identifiant de la section du club est requis",
   "CLUB_ROLE_SLOT_LIMIT_REACHED": "Le nombre maximum d'attributions de rôle par section a été atteint",
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Impossible d'attribuer ce rôle en raison d'un conflit d'exclusivité avec un autre rôle dans cette section",
+  "CLUB_ROLE_DATE_RANGE_INVALID": "La date de fin du rôle ne peut pas précéder sa date de début",
   "CLUB_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role est requis pour cette opération",
   "CLUB_ROLE_NOT_FOUND": "Rôle introuvable dans la catégorie CLUB",

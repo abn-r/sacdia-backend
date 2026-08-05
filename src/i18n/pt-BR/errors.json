@@ -426,6 +426,7 @@
   "CLUB_SECTION_ID_REQUIRED": "O identificador da seção do clube é obrigatório",
   "CLUB_ROLE_SLOT_LIMIT_REACHED": "O máximo de atribuições permitidas para esta função na seção foi atingido",
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Não é possível atribuir esta função porque há um conflito de exclusividade com outra função nesta seção",
+  "CLUB_ROLE_DATE_RANGE_INVALID": "A data de término da função não pode ser anterior à data de início",
   "CLUB_NO_ACTIVE_YEAR": "Não há um ano eclesiástico ativo configurado",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role é obrigatório para esta operação",
   "CLUB_ROLE_NOT_FOUND": "Função não encontrada na categoria CLUB",

@@ -342,7 +342,7 @@ model classes {
   requires_invested_gm          Boolean                         @default(false)
   advanced_enabled              Boolean                         @default(false)
   display_order                 Int                             @default(0)
-  asset_code                    String?                         @db.VarChar(10)
+  asset_code                    String?                         @unique(map: "classes_asset_code_key") @db.VarChar(10)
   available_from_year_id        Int?
   available_until_year_id       Int?
   min_duration_years            Int                             @default(1)
