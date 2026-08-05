@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import {
   Controller,
   Get,
@@ -45,6 +45,7 @@ import { AssignRoleDto } from './dto/assign-role.dto';
 import { BootstrapAdminDto } from './dto/bootstrap-admin.dto';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { ExactSuperAdminWriteGuard } from './exact-super-admin-write.policy';
 
 @ApiTags('rbac')
 @ApiBearerAuth()
@@ -268,29 +269,62 @@ export class RbacController {
   }
 
   @Post('users/:userId/roles')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
-  @ApiOperation({ summary: 'Asignar un rol a un usuario' })
+  @UseGuards(JwtAuthGuard, ExactSuperAdminWriteGuard)
+  @ApiOperation({ summary: 'Asignar rol GLOBAL (exact super-admin + writer)' })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description: 'Opcional; si falta se genera UUID.',
+  })
+  @ApiHeader({ name: 'X-Correlation-Id', required: false })
   @ApiResponse({ status: 201, description: 'Rol asignado al usuario' })
+  @ApiResponse({ status: 403, description: 'SUPER_ADMIN_WRITE_REQUIRED' })
   async assignRoleToUser(
     @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: AssignRoleDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('x-correlation-id') correlationId?: string,
   ) {
-    return this.rbacService.assignRoleToUser(userId, dto.role_id, actor.userId);
+    return this.rbacService.assignRoleToUser(
+      userId,
+      dto.role_id,
+      actor.userId,
+      this.roleWriteMeta(idempotencyKey, correlationId),
+    );
   }
 
   @Delete('users/:userId/roles/:roleId')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
-  @ApiOperation({ summary: 'Remover un rol de un usuario' })
+  @UseGuards(JwtAuthGuard, ExactSuperAdminWriteGuard)
+  @ApiOperation({ summary: 'Remover rol GLOBAL (exact super-admin + writer)' })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description: 'Opcional; si falta se genera UUID.',
+  })
+  @ApiHeader({ name: 'X-Correlation-Id', required: false })
   @ApiResponse({ status: 200, description: 'Rol removido del usuario' })
+  @ApiResponse({ status: 403, description: 'SUPER_ADMIN_WRITE_REQUIRED' })
   async removeRoleFromUser(
     @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('roleId', ParseUUIDPipe) roleId: string,
+    @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('x-correlation-id') correlationId?: string,
   ) {
-    return this.rbacService.removeRoleFromUser(userId, roleId, actor.userId);
+    return this.rbacService.removeRoleFromUser(
+      userId,
+      roleId,
+      actor.userId,
+      this.roleWriteMeta(idempotencyKey, correlationId),
+    );
+  }
+
+  private roleWriteMeta(idempotencyKey?: string, correlationId?: string) {
+    return {
+      idempotencyKey: idempotencyKey?.trim() || randomUUID(),
+      correlationId: correlationId?.trim() || randomUUID(),
+    };
   }
 }
 

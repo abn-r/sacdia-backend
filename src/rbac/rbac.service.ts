@@ -13,9 +13,15 @@ import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { maskEmail } from '../common/utils/mask-email.util';
+import { GlobalUserRoleWriteService } from './global-user-role-write.service';
 
 type AssignRolePermissionOptions = {
   invalidateAffectedUsers?: boolean;
+};
+
+export type GlobalRoleWriteMeta = {
+  correlationId: string;
+  idempotencyKey: string;
 };
 
 @Injectable()
@@ -25,6 +31,7 @@ export class RbacService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly globalUserRoleWrite: GlobalUserRoleWriteService,
   ) {}
 
   // ─── Permisos ───────────────────────────────────────────────
@@ -574,117 +581,52 @@ export class RbacService {
     });
   }
 
-  async assignRoleToUser(userId: string, roleId: string, actorUserId: string) {
-    const [user, role] = await Promise.all([
-      this.prisma.users.findUnique({
-        where: { user_id: userId },
-        select: { user_id: true },
-      }),
-      this.prisma.roles.findUnique({
-        where: { role_id: roleId },
-        select: { role_id: true, role_name: true },
-      }),
-    ]);
-
-    if (!user) {
-      throw new AppNotFoundException(ErrorCode.RBAC_USER_NOT_FOUND, {
-        id: userId,
-      });
-    }
-
-    if (!role) {
-      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
-        id: roleId,
-      });
-    }
-
-    await this.assertCanMutateProtectedRole(role.role_name, actorUserId);
-
-    const existing = await this.prisma.users_roles.findFirst({
-      where: { user_id: userId, role_id: roleId },
+  async assignRoleToUser(
+    userId: string,
+    roleId: string,
+    actorUserId: string,
+    meta: GlobalRoleWriteMeta,
+  ) {
+    const result = await this.globalUserRoleWrite.assign({
+      actorUserId,
+      targetUserId: userId,
+      roleId,
+      correlationId: meta.correlationId,
+      idempotencyKey: meta.idempotencyKey,
     });
-
-    if (existing) {
-      if (!existing.active) {
-        await this.prisma.users_roles.update({
-          where: { user_role_id: existing.user_role_id },
-          data: { active: true, modified_at: new Date() },
-        });
-        this.logger.log(
-          `Rol ${role.role_name} reactivado para usuario ${userId}`,
-        );
-        await this.authorizationContext.invalidateUserAuthorizationCache(
-          userId,
-        );
-        return { success: true, message: 'Rol reactivado' };
-      }
-      throw new AppConflictException(
-        ErrorCode.RBAC_USER_ROLE_ALREADY_ASSIGNED,
-        { userId, roleId },
-      );
+    if (result.changed) {
+      await this.authorizationContext.invalidateUserAuthorizationCache(userId);
     }
-
-    await this.prisma.users_roles.create({
-      data: { user_id: userId, role_id: roleId },
-    });
-
-    this.logger.log(`Rol ${role.role_name} asignado a usuario ${userId}`);
-    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
-    return { success: true, message: 'Rol asignado' };
+    return {
+      success: true as const,
+      message: result.changed ? 'Rol asignado' : 'Asignación sin cambios',
+      ...result,
+    };
   }
 
   async removeRoleFromUser(
     userId: string,
     roleId: string,
     actorUserId: string,
+    meta: GlobalRoleWriteMeta,
   ) {
-    const assignment = await this.prisma.users_roles.findFirst({
-      where: { user_id: userId, role_id: roleId, active: true },
-      include: {
-        roles: {
-          select: {
-            role_name: true,
-          },
-        },
-      },
-    });
-
-    if (!assignment) {
-      throw new AppNotFoundException(ErrorCode.RBAC_USER_ROLE_NOT_FOUND, {
-        userId,
-        roleId,
-      });
-    }
-
-    await this.assertCanMutateProtectedRole(
-      assignment.roles.role_name,
+    const result = await this.globalUserRoleWrite.revoke({
       actorUserId,
-    );
-
-    await this.prisma.users_roles.update({
-      where: { user_role_id: assignment.user_role_id },
-      data: { active: false, modified_at: new Date() },
+      targetUserId: userId,
+      roleId,
+      correlationId: meta.correlationId,
+      idempotencyKey: meta.idempotencyKey,
     });
-
-    this.logger.log(`Rol ${roleId} removido del usuario ${userId}`);
-    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
-    return { success: true, message: 'Rol removido del usuario' };
-  }
-
-  private async assertCanMutateProtectedRole(
-    roleName: string,
-    actorUserId: string,
-  ): Promise<void> {
-    if (roleName !== 'super-admin') {
-      return;
+    if (result.changed) {
+      await this.authorizationContext.invalidateUserAuthorizationCache(userId);
     }
-
-    const actorIsSuperAdmin =
-      await this.authorizationContext.isSuperAdmin(actorUserId);
-
-    if (!actorIsSuperAdmin) {
-      throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
-    }
+    return {
+      success: true as const,
+      message: result.changed
+        ? 'Rol removido del usuario'
+        : 'Revocación sin cambios',
+      ...result,
+    };
   }
 
   async bootstrapAdmin(userId: string) {

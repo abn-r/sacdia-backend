@@ -7,6 +7,8 @@ import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { CreateRoleDto, RoleCategoryEnum } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { GlobalUserRoleWriteService } from './global-user-role-write.service';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -56,6 +58,10 @@ const superAdminRole = {
 const USER_ID = '11111111-1111-1111-1111-111111111111';
 const ACTOR_ADMIN_ID = '22222222-2222-2222-2222-222222222222';
 const ACTOR_SUPER_ADMIN_ID = '33333333-3333-3333-3333-333333333333';
+const WRITE_META = {
+  correlationId: '44444444-4444-4444-8444-444444444444',
+  idempotencyKey: 'rbac-role-write-1',
+};
 
 const baseRoleWithPermissions = {
   ...baseRole,
@@ -135,11 +141,35 @@ const mockPrismaService = {
 
 describe('RbacService', () => {
   let service: RbacService;
+  let globalUserRoleWrite: {
+    assign: jest.Mock;
+    revoke: jest.Mock;
+  };
+  let authorizationContext: {
+    invalidateUserAuthorizationCache: jest.Mock;
+    isSuperAdmin: jest.Mock;
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrismaService.users_roles.findMany.mockResolvedValue([]);
     mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+    globalUserRoleWrite = {
+      assign: jest.fn().mockResolvedValue({
+        active: true,
+        changed: true,
+        replayed: false,
+      }),
+      revoke: jest.fn().mockResolvedValue({
+        active: false,
+        changed: true,
+        replayed: false,
+      }),
+    };
+    authorizationContext = {
+      invalidateUserAuthorizationCache: jest.fn(),
+      isSuperAdmin: jest.fn().mockResolvedValue(false),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -147,10 +177,11 @@ describe('RbacService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         {
           provide: AuthorizationContextService,
-          useValue: {
-            invalidateUserAuthorizationCache: jest.fn(),
-            isSuperAdmin: jest.fn().mockResolvedValue(false),
-          },
+          useValue: authorizationContext,
+        },
+        {
+          provide: GlobalUserRoleWriteService,
+          useValue: globalUserRoleWrite,
         },
       ],
     }).compile();
@@ -158,98 +189,103 @@ describe('RbacService', () => {
     service = module.get<RbacService>(RbacService);
   });
 
-  describe('assignRoleToUser protected roles', () => {
-    it('allows admin to assign a normal role', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: USER_ID,
-      });
-      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
-      mockPrismaService.users_roles.create.mockResolvedValue({});
-
-      await expect(
-        service.assignRoleToUser(USER_ID, ROLE_ID, ACTOR_ADMIN_ID),
-      ).resolves.toEqual({ success: true, message: 'Rol asignado' });
-
-      expect(mockPrismaService.users_roles.create).toHaveBeenCalledWith({
-        data: { user_id: USER_ID, role_id: ROLE_ID },
-      });
-    });
-
-    it('blocks admin/assistant-admin from assigning super-admin', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: USER_ID,
-      });
-      mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
-
+  describe('assignRoleToUser canonical writer', () => {
+    it('routes assign through GlobalUserRoleWriteService and invalidates cache on change', async () => {
       await expect(
         service.assignRoleToUser(
           USER_ID,
-          superAdminRole.role_id,
-          ACTOR_ADMIN_ID,
+          ROLE_ID,
+          ACTOR_SUPER_ADMIN_ID,
+          WRITE_META,
         ),
-      ).rejects.toMatchObject({ code: ErrorCode.RBAC_ROLE_PROTECTED });
+      ).resolves.toEqual({
+        success: true,
+        message: 'Rol asignado',
+        active: true,
+        changed: true,
+        replayed: false,
+      });
+
+      expect(globalUserRoleWrite.assign).toHaveBeenCalledWith({
+        actorUserId: ACTOR_SUPER_ADMIN_ID,
+        targetUserId: USER_ID,
+        roleId: ROLE_ID,
+        correlationId: WRITE_META.correlationId,
+        idempotencyKey: WRITE_META.idempotencyKey,
+      });
+      expect(mockPrismaService.users_roles.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.users_roles.update).not.toHaveBeenCalled();
+      expect(
+        authorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(USER_ID);
+    });
+
+    it('fails closed when the canonical writer rejects unauthorized actors', async () => {
+      globalUserRoleWrite.assign.mockRejectedValue(
+        new AppForbiddenException(ErrorCode.SUPER_ADMIN_WRITE_REQUIRED),
+      );
+
+      await expect(
+        service.assignRoleToUser(USER_ID, ROLE_ID, ACTOR_ADMIN_ID, WRITE_META),
+      ).rejects.toMatchObject({ code: ErrorCode.SUPER_ADMIN_WRITE_REQUIRED });
 
       expect(mockPrismaService.users_roles.create).not.toHaveBeenCalled();
-    });
-
-    it('allows super-admin to assign super-admin', async () => {
-      const authorizationContext = (service as any).authorizationContext;
-      authorizationContext.isSuperAdmin.mockResolvedValue(true);
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: USER_ID,
-      });
-      mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
-      mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
-      mockPrismaService.users_roles.create.mockResolvedValue({});
-
-      await expect(
-        service.assignRoleToUser(
-          USER_ID,
-          superAdminRole.role_id,
-          ACTOR_SUPER_ADMIN_ID,
-        ),
-      ).resolves.toEqual({ success: true, message: 'Rol asignado' });
+      expect(mockPrismaService.users_roles.update).not.toHaveBeenCalled();
+      expect(
+        authorizationContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
     });
   });
 
-  describe('removeRoleFromUser protected roles', () => {
-    it('blocks admin/assistant-admin from removing super-admin', async () => {
-      mockPrismaService.users_roles.findFirst.mockResolvedValue({
-        user_role_id: 'user-role-id',
-        roles: superAdminRole,
-      });
-
+  describe('removeRoleFromUser canonical writer', () => {
+    it('routes revoke through GlobalUserRoleWriteService without legacy writes', async () => {
       await expect(
         service.removeRoleFromUser(
           USER_ID,
-          superAdminRole.role_id,
-          ACTOR_ADMIN_ID,
-        ),
-      ).rejects.toMatchObject({ code: ErrorCode.RBAC_ROLE_PROTECTED });
-
-      expect(mockPrismaService.users_roles.update).not.toHaveBeenCalled();
-    });
-
-    it('allows super-admin to remove super-admin', async () => {
-      const authorizationContext = (service as any).authorizationContext;
-      authorizationContext.isSuperAdmin.mockResolvedValue(true);
-      mockPrismaService.users_roles.findFirst.mockResolvedValue({
-        user_role_id: 'user-role-id',
-        roles: superAdminRole,
-      });
-      mockPrismaService.users_roles.update.mockResolvedValue({});
-
-      await expect(
-        service.removeRoleFromUser(
-          USER_ID,
-          superAdminRole.role_id,
+          ROLE_ID,
           ACTOR_SUPER_ADMIN_ID,
+          WRITE_META,
         ),
       ).resolves.toEqual({
         success: true,
         message: 'Rol removido del usuario',
+        active: false,
+        changed: true,
+        replayed: false,
       });
+
+      expect(globalUserRoleWrite.revoke).toHaveBeenCalledWith({
+        actorUserId: ACTOR_SUPER_ADMIN_ID,
+        targetUserId: USER_ID,
+        roleId: ROLE_ID,
+        correlationId: WRITE_META.correlationId,
+        idempotencyKey: WRITE_META.idempotencyKey,
+      });
+      expect(mockPrismaService.users_roles.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.users_roles.update).not.toHaveBeenCalled();
+      expect(
+        authorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(USER_ID);
+    });
+
+    it('fails closed when the canonical writer rejects unauthorized actors', async () => {
+      globalUserRoleWrite.revoke.mockRejectedValue(
+        new AppForbiddenException(ErrorCode.SUPER_ADMIN_WRITE_REQUIRED),
+      );
+
+      await expect(
+        service.removeRoleFromUser(
+          USER_ID,
+          ROLE_ID,
+          ACTOR_ADMIN_ID,
+          WRITE_META,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.SUPER_ADMIN_WRITE_REQUIRED });
+
+      expect(mockPrismaService.users_roles.update).not.toHaveBeenCalled();
+      expect(
+        authorizationContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
     });
   });
 
