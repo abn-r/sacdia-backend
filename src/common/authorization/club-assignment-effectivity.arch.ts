@@ -158,6 +158,39 @@ export function scanAssignmentQuerySource(
       .filter((property) => propertyName(property) === name)
       .map(initializer)
       .filter((entry): entry is ts.Expression => entry !== null);
+  const isInspectableObject = (
+    value: ts.Expression,
+    seen = new Set<ts.Expression>(),
+  ): boolean => {
+    const node = resolve(value);
+    if (seen.has(node)) return false;
+    seen.add(node);
+    if (ts.isArrayLiteralExpression(node)) {
+      return node.elements.every(
+        (entry) => !ts.isExpression(entry) || isInspectableObject(entry, seen),
+      );
+    }
+    if (!ts.isObjectLiteralExpression(node)) return false;
+    return properties(node).every((property) => {
+      const next = initializer(property);
+      if (!next) return ts.isShorthandPropertyAssignment(property);
+      const name = propertyName(property);
+      if (['AND', 'OR', 'NOT'].includes(name ?? '')) {
+        return isInspectableObject(next, seen);
+      }
+      if (TEMPORAL_FIELDS.has(name ?? '')) {
+        const resolved = resolve(next);
+        return (
+          ts.isObjectLiteralExpression(resolved) &&
+          properties(resolved).every((operator) => {
+            const operatorValue = initializer(operator);
+            return !operatorValue || !!resolve(operatorValue);
+          })
+        );
+      }
+      return true;
+    });
+  };
   const hasAssignmentPredicate = (
     value: ts.Expression,
     seen = new Set<ts.Expression>(),
@@ -287,12 +320,24 @@ export function scanAssignmentQuerySource(
     ) {
       const operation = node.expression;
       const argument = node.arguments[0];
-      if (argument && ts.isExpression(argument)) {
+      if (
+        argument &&
+        ts.isExpression(argument) &&
+        isAssignmentDelegate(operation.expression)
+      ) {
+        const resolvedArgument = resolve(argument);
         const where = values(argument, 'where');
-        if (isAssignmentDelegate(operation.expression)) {
-          if (where.some((filter) => hasAssignmentPredicate(filter))) {
-            add(node, 'prisma');
-          }
+        const uninspectableArgument =
+          !ts.isObjectLiteralExpression(resolvedArgument);
+        const uninspectableWhere = where.some(
+          (filter) => !isInspectableObject(filter),
+        );
+        if (
+          uninspectableArgument ||
+          uninspectableWhere ||
+          where.some((filter) => hasAssignmentPredicate(filter))
+        ) {
+          add(node, 'prisma');
         }
       }
     }
