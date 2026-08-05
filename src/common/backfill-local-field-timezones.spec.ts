@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { Client } from 'pg';
 import {
+  backfillDiagnostic,
   planLocalFieldTimezoneBackfill,
   parseBackfillOptions,
   parseTimezoneMapping,
@@ -24,9 +25,17 @@ describe('local field timezone backfill', () => {
     expect(() => parseTimezoneMapping('{"2":"US/Eastern"}', catalog)).toThrow(
       TimezoneBackfillError,
     );
-    expect(() =>
+    expect(
       parseBackfillOptions(['--mapping', 'mapping.json', '--apply']),
-    ).toThrow('BACKFILL_APPLY_REQUIRES_BE04A2');
+    ).toMatchObject({ apply: true });
+    expect(backfillDiagnostic({ code: '23505' })).toEqual({
+      diagnostic: 'BACKFILL_AUDIT_CONFLICT',
+      details: {},
+    });
+    expect(backfillDiagnostic({ code: '40P01', detail: 'secret' })).toEqual({
+      diagnostic: 'BACKFILL_DEADLOCK_CONFLICT',
+      details: {},
+    });
   });
 
   dbIt('validates the complete mapping and GM-01 without writing', async () => {

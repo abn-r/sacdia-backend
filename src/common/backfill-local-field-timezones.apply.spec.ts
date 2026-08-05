@@ -1,4 +1,8 @@
 import { randomBytes } from 'node:crypto';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Client } from 'pg';
 import {
   applyLocalFieldTimezoneBackfill,
@@ -88,7 +92,126 @@ async function expectOriginalState(client: Client) {
   });
 }
 
+function runCli(schema: string, values: Record<string, string>) {
+  const directory = mkdtempSync(join(tmpdir(), 'sacdia-be04a3-'));
+  const mappingPath = join(directory, 'mapping.json');
+  const connection = new URL(databaseUrl!);
+  connection.searchParams.set('options', `-csearch_path=${schema},public`);
+  writeFileSync(mappingPath, JSON.stringify(values));
+  try {
+    const result = spawnSync(
+      join(process.cwd(), 'node_modules/.bin/tsx'),
+      [
+        join(process.cwd(), 'scripts/backfill-local-field-timezones.ts'),
+        '--mapping',
+        mappingPath,
+        '--apply',
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          AUTHORIZATION_P0_BACKFILL_DATABASE_URL: connection.toString(),
+        },
+      },
+    );
+    return {
+      exitCode: result.status,
+      report: JSON.parse(result.stdout.trim()) as Record<string, unknown>,
+    };
+  } finally {
+    rmSync(directory, { recursive: true });
+  }
+}
+
+function runCliAsync(schema: string, values: Record<string, string>) {
+  const directory = mkdtempSync(join(tmpdir(), 'sacdia-be04a3-race-'));
+  const mappingPath = join(directory, 'mapping.json');
+  const connection = new URL(databaseUrl!);
+  connection.searchParams.set('options', `-csearch_path=${schema},public`);
+  writeFileSync(mappingPath, JSON.stringify(values));
+  const child = spawn(
+    join(process.cwd(), 'node_modules/.bin/tsx'),
+    [
+      join(process.cwd(), 'scripts/backfill-local-field-timezones.ts'),
+      '--mapping',
+      mappingPath,
+      '--apply',
+    ],
+    {
+      env: {
+        ...process.env,
+        AUTHORIZATION_P0_BACKFILL_DATABASE_URL: connection.toString(),
+      },
+    },
+  );
+  let stdout = '';
+  child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk));
+  return new Promise<{
+    exitCode: number | null;
+    report: Record<string, unknown>;
+  }>((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', (exitCode) => {
+      rmSync(directory, { recursive: true });
+      resolve({
+        exitCode,
+        report: JSON.parse(stdout.trim()) as Record<string, unknown>,
+      });
+    });
+  });
+}
+
 describe('local field timezone backfill apply primitive', () => {
+  dbIt('wires validated apply and reports replay and preflight outcomes', () =>
+    withFixture(async (client, schema) => {
+      const incomplete = runCli(schema, { '1': 'America/Tijuana' });
+      expect(incomplete).toMatchObject({
+        exitCode: 1,
+        report: {
+          status: 'error',
+          error: { diagnostic: 'BACKFILL_MAPPING_INCOMPLETE' },
+        },
+      });
+      await expectOriginalState(client);
+
+      const first = runCli(schema, {
+        '1': 'America/Tijuana',
+        '2': 'America/Cancun',
+      });
+      expect(first).toMatchObject({
+        exitCode: 0,
+        report: { status: 'applied', dry_run: false, changed_field_count: 1 },
+      });
+      const replay = runCli(schema, {
+        '1': 'America/Tijuana',
+        '2': 'America/Cancun',
+      });
+      expect(replay).toMatchObject({
+        exitCode: 0,
+        report: { status: 'applied', dry_run: false, changed_field_count: 0 },
+      });
+      await expect(
+        client.query(`SELECT count(*)::int count FROM audit_logs`),
+      ).resolves.toMatchObject({ rows: [{ count: 1 }] });
+
+      await client.query(
+        `INSERT INTO audit_logs (action) VALUES (repeat('x',65))`,
+      );
+      const blocked = runCli(schema, {
+        '1': 'America/Tijuana',
+        '2': 'America/Cancun',
+      });
+      expect(blocked).toMatchObject({
+        exitCode: 1,
+        report: {
+          status: 'error',
+          error: { diagnostic: 'BACKFILL_POST_PREFLIGHT_BLOCKED' },
+        },
+      });
+    }),
+  );
+
   dbIt('audits atomic effects and remains replay safe', () =>
     withFixture(async (client) => {
       await applyBackfill(client);
@@ -195,20 +318,70 @@ describe('local field timezone backfill apply primitive', () => {
 
   dbIt('fails with a stable diagnostic instead of waiting indefinitely', () =>
     withFixture(async (locker, schema) => {
-      const worker = new Client({ connectionString: databaseUrl });
-      await worker.connect();
       try {
-        await worker.query(`SET search_path=${schema},public`);
         await locker.query(`BEGIN; SELECT 1 FROM local_fields
           WHERE local_field_id=1 FOR UPDATE`);
-        await expect(applyBackfill(worker)).rejects.toMatchObject({
-          code: 'BACKFILL_LOCK_TIMEOUT',
+        expect(
+          runCli(schema, {
+            '1': 'America/Tijuana',
+            '2': 'America/Cancun',
+          }),
+        ).toMatchObject({
+          exitCode: 1,
+          report: {
+            status: 'error',
+            error: { diagnostic: 'BACKFILL_LOCK_TIMEOUT' },
+          },
         });
         await expectOriginalState(locker);
       } finally {
         await locker.query('ROLLBACK');
-        await worker.end();
       }
+    }),
+  );
+
+  dbIt('maps a concurrent serialization loser and converges on replay', () =>
+    withFixture(async (client, schema) => {
+      const values = {
+        '1': 'America/Tijuana',
+        '2': 'America/Cancun',
+      };
+      const results = await Promise.all([
+        runCliAsync(schema, values),
+        runCliAsync(schema, values),
+      ]);
+      expect(results).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            exitCode: 0,
+            report: expect.objectContaining({ status: 'applied' }),
+          }),
+          expect.objectContaining({
+            exitCode: 1,
+            report: {
+              status: 'error',
+              error: {
+                diagnostic: 'BACKFILL_SERIALIZATION_CONFLICT',
+                details: {},
+              },
+            },
+          }),
+        ]),
+      );
+      const state = await client.query(`SELECT
+        (SELECT timezone FROM local_fields WHERE local_field_id=1),
+        (SELECT version FROM authorization_context_versions
+          WHERE user_id='00000000-0000-0000-0000-000000000010'),
+        (SELECT count(*)::int FROM audit_logs) audit_count`);
+      expect(state.rows[0]).toMatchObject({
+        timezone: 'America/Tijuana',
+        version: '8',
+        audit_count: 1,
+      });
+      expect(runCli(schema, values)).toMatchObject({
+        exitCode: 0,
+        report: { status: 'applied', changed_field_count: 0 },
+      });
     }),
   );
 });
