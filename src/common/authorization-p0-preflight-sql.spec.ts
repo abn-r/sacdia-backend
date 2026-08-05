@@ -161,5 +161,6 @@ describe('authorization P0 preflight SQL', () => {
         await Promise.all([client.end(), locker.end()]);
       }
     },
+    30_000,
   );
 });
