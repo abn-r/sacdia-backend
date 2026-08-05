@@ -176,6 +176,8 @@
   "RBAC_USER_ROLE_NOT_FOUND": "Atribuição de papel ao usuário não encontrada",
   "RBAC_SUPER_ADMIN_ALREADY_EXISTS": "Já existe um super-admin. Este endpoint só funciona quando não há nenhum",
   "RBAC_SUPER_ADMIN_ROLE_NOT_FOUND": "Papel super-admin não encontrado no banco de dados. Execute o seed primeiro",
+  "RBAC_GLOBAL_ROLE_REQUIRED": "Somente funções globais ativas podem ser atribuídas por este mecanismo",
+  "SUPER_ADMIN_WRITE_REQUIRED": "Somente um super-admin ativo pode realizar esta operação",
   "AUTH_INVALID_CREDENTIALS": "Credenciais inválidas",
   "AUTH_USER_ROLE_NOT_FOUND": "Papel de usuário não encontrado no sistema",
   "AUTH_REFRESH_TOKEN_LEGACY_REMOVED": "O campo refresh_token foi removido. Use refreshToken no corpo da requisição",

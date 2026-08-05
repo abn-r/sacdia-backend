@@ -176,6 +176,8 @@
   "RBAC_USER_ROLE_NOT_FOUND": "Affectation de rôle à l'utilisateur introuvable",
   "RBAC_SUPER_ADMIN_ALREADY_EXISTS": "Un super-admin existe déjà. Ce point de terminaison ne fonctionne qu'en l'absence de super-admin",
   "RBAC_SUPER_ADMIN_ROLE_NOT_FOUND": "Le rôle super-admin est introuvable dans la base de données. Exécutez le seed en premier",
+  "RBAC_GLOBAL_ROLE_REQUIRED": "Seuls les rôles globaux actifs peuvent être attribués par ce mécanisme",
+  "SUPER_ADMIN_WRITE_REQUIRED": "Seul un super-admin actif peut effectuer cette opération",
   "AUTH_INVALID_CREDENTIALS": "Identifiants invalides",
   "AUTH_USER_ROLE_NOT_FOUND": "Rôle utilisateur introuvable dans le système",
   "AUTH_REFRESH_TOKEN_LEGACY_REMOVED": "Le champ refresh_token a été supprimé. Utilisez refreshToken dans le corps de la requête",
