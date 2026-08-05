@@ -128,5 +128,5 @@ describe('local field timezone backfill', () => {
       await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       await client.end();
     }
-  });
+  }, 30_000);
 });

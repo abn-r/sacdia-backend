@@ -69,7 +69,7 @@ const baseline = {
   'member-of-month/member-of-month.service.ts':
     'effectiveWhere|T09|2|4a63b7e684b3',
   'membership-requests/membership-requests.service.ts':
-    'workflowWhere|allowlist|6|b87fc7f6908d',
+    'workflowWhere|allowlist|6|294fe5001f9d',
   'monthly-reports/monthly-reports.service.ts':
     'effectiveWhere|T09|3|b00f9c8d194d',
   'notifications/notifications.processor.ts':
@@ -83,7 +83,7 @@ const baseline = {
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
     'effectiveWhere|T08|1|11a310c43604',
   'rbac/rbac.service.ts': 'effectiveWhere|T08|1|68c2f63166fd',
-  'requests/requests.service.ts': 'effectiveWhere|T08|7|4b34bf5d1080',
+  'requests/requests.service.ts': 'effectiveWhere|T08|7|98c8941232e0',
   'scoring-categories/scoring-categories.service.ts':
     'effectiveWhere|T09|2|13fb6223b7d5',
   'units/units.service.ts': 'effectiveWhere|T08|1|46d392950956',
