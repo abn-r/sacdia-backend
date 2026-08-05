@@ -3704,6 +3704,11 @@ model monthly_reports {
   submitted_at       DateTime? @db.Timestamptz(6)
   submitted_by       String?   @db.Uuid
   snapshot_data      Json?
+  pdf_r2_key         String?   @db.VarChar(512)
+  pdf_size_bytes     BigInt?
+  pdf_sha256         String?   @db.Char(64)
+  pdf_generated_at   DateTime? @db.Timestamptz(6)
+  pdf_template_version String? @db.VarChar(32)
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
   modified_at        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
@@ -3714,6 +3719,7 @@ model monthly_reports {
   @@unique([club_enrollment_id, month, year])
   @@index([club_enrollment_id], map: "idx_monthly_reports_enrollment")
   @@index([status], map: "idx_monthly_reports_status")
+  @@index([pdf_template_version], map: "idx_monthly_reports_pdf_template_version")
 }
 
 model monthly_report_manual_data {
