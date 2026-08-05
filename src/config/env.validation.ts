@@ -104,6 +104,11 @@ export const envValidationSchema = Joi.object({
     .integer()
     .positive()
     .default(5000),
+  // Authorization cache v4 rollout — default ON (R05 read-path). Set "false" to
+  // omit Redis cache and load only from the canonical source (operational rollback).
+  AUTH_CONTEXT_CACHE_V4_ENABLED: Joi.string()
+    .valid('true', 'false')
+    .default('true'),
 
   // Cloudflare R2
   R2_ACCOUNT_ID: Joi.string().optional(),

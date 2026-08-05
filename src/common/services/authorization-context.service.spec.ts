@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   AUTH_CONTEXT_CACHE_KEY,
@@ -14,6 +15,9 @@ describe('AuthorizationContextService', () => {
   let service: AuthorizationContextService;
   let cacheManager: { get: jest.Mock; set: jest.Mock; del: jest.Mock };
   let versionService: { current: jest.Mock };
+  let configValues: Record<string, string | undefined>;
+  let loggerDebugSpy: jest.SpyInstance;
+  let loggerWarnSpy: jest.SpyInstance;
 
   const mockPrismaService = {
     users: {
@@ -25,9 +29,43 @@ describe('AuthorizationContextService', () => {
     resolveCurrent: jest.fn(),
   };
 
+  const minimalUser = (userId: string, email = 'user@example.com') => ({
+    user_id: userId,
+    email,
+    name: 'User',
+    paternal_last_name: null,
+    maternal_last_name: null,
+    gender: null,
+    birthday: null,
+    baptism: false,
+    baptism_date: null,
+    blood: null,
+    user_image: null,
+    country_id: null,
+    union_id: null,
+    local_field_id: null,
+    created_at: new Date('2026-01-01'),
+    countries: null,
+    unions: null,
+    local_fields: null,
+    users_pr: { complete: true, active_club_assignment_id: null },
+    users_roles: [
+      {
+        roles: {
+          role_name: 'assistant-admin',
+          role_permissions: [
+            { permissions: { permission_name: 'clubs:read' } },
+          ],
+        },
+      },
+    ],
+    club_role_assignments: [],
+  });
+
   beforeEach(async () => {
     cacheManager = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
     versionService = { current: jest.fn().mockResolvedValue(3n) };
+    configValues = { AUTH_CONTEXT_CACHE_V4_ENABLED: 'true' };
 
     mockHierarchyService.resolveCurrent.mockResolvedValue({
       division_id: 1,
@@ -52,6 +90,12 @@ describe('AuthorizationContextService', () => {
           useValue: versionService,
         },
         {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) => configValues[key],
+          },
+        },
+        {
           provide: CACHE_MANAGER,
           useValue: cacheManager,
         },
@@ -61,9 +105,24 @@ describe('AuthorizationContextService', () => {
     service = module.get<AuthorizationContextService>(
       AuthorizationContextService,
     );
+    loggerDebugSpy = jest.spyOn(
+      (
+        service as unknown as {
+          logger: { debug: (...args: unknown[]) => void };
+        }
+      ).logger,
+      'debug',
+    );
+    loggerWarnSpy = jest.spyOn(
+      (service as unknown as { logger: { warn: (...args: unknown[]) => void } })
+        .logger,
+      'warn',
+    );
   });
 
   afterEach(() => {
+    loggerDebugSpy?.mockRestore();
+    loggerWarnSpy?.mockRestore();
     jest.clearAllMocks();
   });
 
@@ -107,6 +166,104 @@ describe('AuthorizationContextService', () => {
     expect(versionService.current).toHaveBeenCalledWith('user-123');
     expect(cacheManager.get).toHaveBeenCalledWith('auth:context:v4:user-123:3');
     expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('skips cache when AUTH_CONTEXT_CACHE_V4_ENABLED is false', async () => {
+    configValues.AUTH_CONTEXT_CACHE_V4_ENABLED = 'false';
+    cacheManager.get.mockResolvedValue({
+      value: {
+        profile: { user_id: 'user-123' },
+        authorization: {
+          effective: { permissions: ['admin:all'] },
+        },
+      },
+      valid_until: '2099-01-01T00:00:00.000Z',
+      territory_time_vector: [],
+    });
+    mockPrismaService.users.findUnique.mockResolvedValue(
+      minimalUser('user-123', 'secret.owner@example.com'),
+    );
+
+    const result = await service.resolveUserAuthorization('user-123');
+
+    expect(result.authorization.effective.permissions).toEqual(['clubs:read']);
+    expect(cacheManager.get).not.toHaveBeenCalled();
+    expect(cacheManager.set).not.toHaveBeenCalled();
+    expect(versionService.current).not.toHaveBeenCalled();
+    expect(service.getAuthorizationCacheMetrics().bypassed).toBe(1);
+  });
+
+  it('records cache metrics without PII when enabled', async () => {
+    const cachedProfile = {
+      profile: { user_id: 'user-metrics', email: 'pii@example.com' },
+      authorization: {
+        grants: { global_roles: [], club_assignments: [] },
+        active_assignment: { assignment_id: null },
+        effective: {
+          permissions: ['clubs:read'],
+          scope: { global: {}, club: null },
+        },
+      },
+    };
+    cacheManager.get.mockResolvedValue({
+      value: cachedProfile,
+      valid_until: '2099-01-01T00:00:00.000Z',
+      territory_time_vector: [],
+    });
+
+    await service.resolveUserAuthorization('user-metrics');
+
+    expect(service.getAuthorizationCacheMetrics()).toEqual(
+      expect.objectContaining({ hits: 1, misses: 0, errors: 0, bypassed: 0 }),
+    );
+    const metricLogs = [
+      ...loggerDebugSpy.mock.calls,
+      ...loggerWarnSpy.mock.calls,
+    ]
+      .map((args) => String(args[0]))
+      .filter((line) => line.includes('auth_context_cache'));
+    expect(metricLogs.length).toBeGreaterThan(0);
+    for (const line of metricLogs) {
+      expect(line).not.toMatch(/pii@example\.com|user-metrics|email=/i);
+      expect(line).toMatch(/outcome=hit/);
+    }
+  });
+
+  it('rollback leaves authorization decisions identical to the canonical source', async () => {
+    configValues.AUTH_CONTEXT_CACHE_V4_ENABLED = 'false';
+    cacheManager.get.mockResolvedValue({
+      value: {
+        profile: { user_id: 'user-rollback' },
+        authorization: {
+          grants: { global_roles: [], club_assignments: [] },
+          active_assignment: { assignment_id: null },
+          effective: {
+            permissions: ['admin:all', 'secrets:read'],
+            scope: { global: {}, club: null },
+          },
+        },
+      },
+      valid_until: '2099-01-01T00:00:00.000Z',
+      territory_time_vector: [],
+    });
+    mockPrismaService.users.findUnique.mockResolvedValue(
+      minimalUser('user-rollback'),
+    );
+
+    const rolledBack = await service.resolveUserAuthorization('user-rollback');
+
+    // Direct source load (same flag-off path) must match; cached admin:all must not win.
+    const sourceAgain = await service.resolveUserAuthorization('user-rollback');
+    expect(rolledBack.authorization.effective.permissions).toEqual([
+      'clubs:read',
+    ]);
+    expect(sourceAgain.authorization.effective.permissions).toEqual(
+      rolledBack.authorization.effective.permissions,
+    );
+    expect(rolledBack.authorization.effective.permissions).not.toContain(
+      'admin:all',
+    );
+    expect(cacheManager.get).not.toHaveBeenCalled();
   });
 
   it('reloads from the canonical source on cache miss', async () => {

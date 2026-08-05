@@ -1,4 +1,5 @@
 import { Injectable, Inject, Logger, HttpStatus } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   AppException,
   AppUnauthorizedException,
@@ -10,6 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   AuthorizationContextUnavailableError,
   authorizationContextV4Key,
+  readFreshAuthorizationContextEnvelope,
   resolveAuthorizationContextV4,
   type AuthorizationContextEnvelope,
 } from '../authorization/authorization-context-cache-v4';
@@ -18,6 +20,13 @@ import {
   InstitutionalHierarchyService,
   type HierarchyContext,
 } from './institutional-hierarchy.service';
+
+export type AuthorizationCacheMetrics = {
+  hits: number;
+  misses: number;
+  errors: number;
+  bypassed: number;
+};
 
 export const CANONICAL_CLUB_ASSIGNMENT_ORDER = [
   { start_date: 'desc' as const },
@@ -222,13 +231,46 @@ const CLUB_SCOPE_SELECT = {
 @Injectable()
 export class AuthorizationContextService {
   private readonly logger = new Logger(AuthorizationContextService.name);
+  private readonly metrics: AuthorizationCacheMetrics = {
+    hits: 0,
+    misses: 0,
+    errors: 0,
+    bypassed: 0,
+  };
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly hierarchy: InstitutionalHierarchyService,
     private readonly authorizationContextVersion: AuthorizationContextVersionService,
+    private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
+
+  /**
+   * In-process counters for cache v4 rollout observability.
+   * Counters never include user identifiers or other PII.
+   */
+  getAuthorizationCacheMetrics(): AuthorizationCacheMetrics {
+    return { ...this.metrics };
+  }
+
+  private isCacheV4Enabled(): boolean {
+    // Default ON (preserve R05 read-path). Explicit "false" is the operational rollback.
+    return (
+      this.configService.get<string>('AUTH_CONTEXT_CACHE_V4_ENABLED') !==
+      'false'
+    );
+  }
+
+  private recordCacheOutcome(
+    outcome: 'hit' | 'miss' | 'error' | 'bypass',
+  ): void {
+    if (outcome === 'hit') this.metrics.hits += 1;
+    else if (outcome === 'miss') this.metrics.misses += 1;
+    else if (outcome === 'error') this.metrics.errors += 1;
+    else this.metrics.bypassed += 1;
+    this.logger.debug(`auth_context_cache outcome=${outcome}`);
+  }
 
   /**
    * Invalidate the cached authorization context for a specific user.
@@ -272,16 +314,36 @@ export class AuthorizationContextService {
   async resolveUserAuthorization(
     userId: string,
   ): Promise<ResolvedAuthorizationProfile> {
+    if (!this.isCacheV4Enabled()) {
+      this.recordCacheOutcome('bypass');
+      return this.loadCanonicalAuthorizationProfile(userId);
+    }
+
+    const now = new Date();
+    let outcome: 'hit' | 'miss' | 'error' = 'miss';
     try {
-      return await resolveAuthorizationContextV4(userId, new Date(), {
+      const result = await resolveAuthorizationContextV4(userId, now, {
         versions: {
           current: (id) => this.authorizationContextVersion.current(id),
         },
         cache: {
-          get: async (key) =>
-            this.cacheManager.get<
-              AuthorizationContextEnvelope<ResolvedAuthorizationProfile>
-            >(key),
+          get: async (key) => {
+            try {
+              const envelope =
+                await this.cacheManager.get<
+                  AuthorizationContextEnvelope<ResolvedAuthorizationProfile>
+                >(key);
+              if (
+                readFreshAuthorizationContextEnvelope(envelope, now) !== null
+              ) {
+                outcome = 'hit';
+              }
+              return envelope;
+            } catch (err) {
+              outcome = 'error';
+              throw err;
+            }
+          },
           set: async (key, value, ttl) => {
             await this.cacheManager.set(key, value, ttl);
           },
@@ -294,6 +356,8 @@ export class AuthorizationContextService {
           }),
         },
       });
+      this.recordCacheOutcome(outcome);
+      return result;
     } catch (err) {
       if (err instanceof AppException) throw err;
       if (err instanceof AuthorizationContextUnavailableError) {
@@ -310,7 +374,7 @@ export class AuthorizationContextService {
   private async loadCanonicalAuthorizationProfile(
     userId: string,
   ): Promise<ResolvedAuthorizationProfile> {
-    this.logger.debug(`Auth context cache MISS — canonical source ${userId}`);
+    this.logger.debug('Auth context loading canonical source');
 
     // ── DB query (unchanged) ────────────────────────────────────────────────
     const user = await this.prisma.users.findUnique({

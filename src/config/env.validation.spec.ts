@@ -149,6 +149,20 @@ describe('infrastructure environment validation', () => {
     ).toBeDefined();
   });
 
+  it('defaults AUTH_CONTEXT_CACHE_V4_ENABLED to true and accepts false rollback', () => {
+    expect(
+      envValidationSchema
+        .extract('AUTH_CONTEXT_CACHE_V4_ENABLED')
+        .validate(undefined),
+    ).toMatchObject({ value: 'true' });
+    expect(
+      validate({ AUTH_CONTEXT_CACHE_V4_ENABLED: 'false' }).error,
+    ).toBeUndefined();
+    expect(
+      validate({ AUTH_CONTEXT_CACHE_V4_ENABLED: 'maybe' }).error,
+    ).toBeDefined();
+  });
+
   it('only accepts Redis-compatible URL schemes', () => {
     expect(
       validate({ REDIS_URL: 'rediss://default:secret@cache.example.com' })
