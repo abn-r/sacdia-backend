@@ -28,9 +28,10 @@ describe('DirectorSuccessionActivationService', () => {
       opts?.auditWrite ??
       jest.fn().mockResolvedValue({ auditLogId: 1n, replayed: false });
 
+    const queryRaw = jest.fn().mockResolvedValue([duePlan]);
     const tx = {
+      $queryRaw: queryRaw,
       director_succession_plans: {
-        findUnique: jest.fn().mockResolvedValue(duePlan),
         update: jest.fn(async (args: unknown) => {
           planUpdates.push(args);
           return { ...duePlan, status: 'activated' };
@@ -106,16 +107,19 @@ describe('DirectorSuccessionActivationService', () => {
       planUpdates,
       auditWrite,
       version,
+      queryRaw,
     };
   }
 
   it('activates a due scheduled succession once', async () => {
-    const { service, prisma, creates, planUpdates, auditWrite, version } =
+    const { service, prisma, creates, planUpdates, auditWrite, version, queryRaw } =
       build();
 
     const first = await service.activateDue(now);
     expect(first).toEqual({ activated: 1 });
     expect(creates).toHaveLength(1);
+    const lockSql = queryRaw.mock.calls[0]?.[0] as { strings?: string[] };
+    expect((lockSql?.strings ?? []).join('?')).toContain('FOR UPDATE');
     expect(planUpdates.some((u) => {
       const data = (u as { data?: { status?: string } }).data;
       return data?.status === 'activated';

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { CriticalAuditWriterService } from '../audit-logs/critical-audit-writer.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import {
@@ -9,19 +10,19 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 
-const planSelect = {
-  succession_id: true,
-  club_section_id: true,
-  outgoing_assignment_id: true,
-  successor_user_id: true,
-  target_ecclesiastical_year_id: true,
-  status: true,
-  effective_date: true,
-  scheduled_by_id: true,
-  scheduled_by_role: true,
-  scheduled_local_field_id: true,
-  version: true,
-} as const;
+type LockedPlan = {
+  succession_id: string;
+  club_section_id: number;
+  outgoing_assignment_id: string;
+  successor_user_id: string;
+  target_ecclesiastical_year_id: number;
+  status: string;
+  effective_date: Date;
+  scheduled_by_id: string;
+  scheduled_by_role: string;
+  scheduled_local_field_id: number;
+  version: number;
+};
 
 @Injectable()
 export class DirectorSuccessionActivationService {
@@ -55,15 +56,20 @@ export class DirectorSuccessionActivationService {
     now: Date,
   ): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
-      const plan = await tx.director_succession_plans.findUnique({
-        where: { succession_id: successionId },
-        select: planSelect,
-      });
+      const [plan] = await tx.$queryRaw<LockedPlan[]>(Prisma.sql`
+        SELECT succession_id, club_section_id, outgoing_assignment_id,
+               successor_user_id, target_ecclesiastical_year_id, status::text AS status,
+               effective_date, scheduled_by_id, scheduled_by_role,
+               scheduled_local_field_id, version
+        FROM director_succession_plans
+        WHERE succession_id = ${successionId}::uuid
+        FOR UPDATE
+      `);
 
       if (
         !plan ||
         plan.status !== 'scheduled' ||
-        plan.effective_date.getTime() > now.getTime()
+        new Date(plan.effective_date).getTime() > now.getTime()
       ) {
         return false;
       }
