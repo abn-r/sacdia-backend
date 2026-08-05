@@ -2,6 +2,21 @@ import {
   ValidatorConstraint,
   type ValidatorConstraintInterface,
 } from 'class-validator';
+import {
+  type TimezoneClassification,
+  loadCanonicalGeographicIanaTimezoneCatalog,
+} from '../timezone/canonical-geographic-iana-timezone';
+
+let localFieldTimezoneCatalog: ReturnType<
+  typeof loadCanonicalGeographicIanaTimezoneCatalog
+> | undefined;
+
+export function classifyLocalFieldTimezone(
+  value: unknown,
+): TimezoneClassification {
+  localFieldTimezoneCatalog ??= loadCanonicalGeographicIanaTimezoneCatalog();
+  return localFieldTimezoneCatalog.classify(value);
+}
 
 export function isIanaTimezone(value: unknown): value is string {
   if (typeof value !== 'string' || value.trim() === '') {

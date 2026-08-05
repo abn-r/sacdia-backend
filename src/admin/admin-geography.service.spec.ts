@@ -108,6 +108,7 @@ const baseLocalField = {
   abbreviation: 'CM',
   active: true,
   union_id: 1,
+  timezone: 'America/Mexico_City',
   created_at: new Date(),
   modified_at: new Date(),
 };
@@ -454,6 +455,7 @@ describe('AdminGeographyService', () => {
         name: 'Campo Metropolitano',
         abbreviation: 'CM',
         union_id: 1,
+        timezone: 'America/Mexico_City',
         translations: [enTranslation],
       };
 
@@ -470,9 +472,61 @@ describe('AdminGeographyService', () => {
       );
     });
 
-    it('TC10 - update local field without translations → upsertTranslations called with undefined', async () => {
-      prismaMock.local_fields.findUnique.mockResolvedValue(baseLocalField);
+    it.each([
+      { active: undefined, scenario: 'is omitted' },
+      { active: true, scenario: 'is true' },
+    ])('requires a timezone when active $scenario', async ({ active }) => {
+      prismaMock.unions.findUnique.mockResolvedValue(baseUnion);
+
+      const error = await service
+        .createLocalField(
+          {
+            name: 'Campo sin zona',
+            abbreviation: 'CSZ',
+            union_id: 1,
+            ...(active === undefined ? {} : { active }),
+          },
+          ACTOR_ID,
+        )
+        .catch((cause: unknown) => cause as AppBadRequestException);
+
+      expect(error).toMatchObject({
+        code: ErrorCode.LOCAL_FIELD_TIMEZONE_UNAVAILABLE,
+      });
+      expect(error.getResponse()).toMatchObject({
+        namedArgs: { reason: 'MISSING' },
+      });
+    });
+
+    it('allows an inactive local field without a timezone', async () => {
+      prismaMock.unions.findUnique.mockResolvedValue(baseUnion);
       prismaMock.local_fields.findFirst.mockResolvedValue(null);
+      prismaMock.local_fields.create.mockResolvedValue({
+        ...baseLocalField,
+        active: false,
+        timezone: null,
+      });
+
+      await service.createLocalField(
+        {
+          name: 'Campo inactivo',
+          abbreviation: 'CI',
+          union_id: 1,
+          active: false,
+        },
+        ACTOR_ID,
+      );
+
+      expect(prismaMock.local_fields.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ active: false, timezone: null }),
+        }),
+      );
+    });
+
+    it('TC10 - update local field without translations → upsertTranslations called with undefined', async () => {
+      prismaMock.local_fields.findFirst.mockResolvedValue(null);
+      prismaMock.$queryRaw.mockResolvedValueOnce([baseLocalField]);
       prismaMock.local_fields.update.mockResolvedValue(baseLocalField);
 
       await service.updateLocalField(1, { name: 'Campo Sur' }, ACTOR_ID);
@@ -486,6 +540,45 @@ describe('AdminGeographyService', () => {
         undefined,
         ['name'],
       );
+    });
+
+    it('versions affected assignment holders when timezone changes', async () => {
+      prismaMock.$queryRaw.mockResolvedValueOnce([baseLocalField]);
+      prismaMock.local_fields.update.mockResolvedValue({
+        ...baseLocalField,
+        timezone: 'America/Tijuana',
+      });
+
+      await service.updateLocalField(
+        1,
+        { timezone: 'America/Tijuana' },
+        ACTOR_ID,
+      );
+
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('locks and compares the current timezone inside the transaction', async () => {
+      prismaMock.$queryRaw.mockResolvedValueOnce([
+        { ...baseLocalField, timezone: 'America/Tijuana' },
+      ]);
+      prismaMock.local_fields.update.mockResolvedValue({
+        ...baseLocalField,
+        timezone: 'America/Tijuana',
+      });
+
+      await service.updateLocalField(
+        1,
+        { timezone: 'America/Tijuana' },
+        ACTOR_ID,
+      );
+
+      const lockQuery = txMock.$queryRaw.mock.calls[0][0] as {
+        strings: TemplateStringsArray;
+      };
+      expect(lockQuery.strings.join('?')).toContain('FOR UPDATE');
+      expect(prismaMock.local_fields.findUnique).not.toHaveBeenCalled();
+      expect(txMock.$executeRaw).not.toHaveBeenCalled();
     });
   });
 

@@ -13,9 +13,12 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiExtraModels,
   ApiOperation,
   ApiQuery,
   ApiTags,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import {
   AuthorizationResource,
@@ -33,7 +36,9 @@ import {
   CreateCountryDto,
   CreateDivisionDto,
   CreateDistrictDto,
+  CreateLocalFieldActiveOpenApiDto,
   CreateLocalFieldDto,
+  CreateLocalFieldInactiveOpenApiDto,
   CreateUnionDto,
   UpdateChurchDto,
   UpdateCountryDto,
@@ -45,6 +50,10 @@ import {
 
 @ApiTags('admin-geography')
 @ApiBearerAuth()
+@ApiExtraModels(
+  CreateLocalFieldActiveOpenApiDto,
+  CreateLocalFieldInactiveOpenApiDto,
+)
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @GlobalRoles('admin', 'super-admin')
 @AuthorizationResource({ type: 'global' })
@@ -213,7 +222,21 @@ export class AdminGeographyController {
 
   @Post('local-fields')
   @RequirePermissions('local_fields:create')
-  @ApiOperation({ summary: 'Create local field' })
+  @ApiOperation({
+    summary: 'Create local field',
+    description:
+      'timezone is required when active is omitted or true; it may be omitted only when active is false.',
+  })
+  @ApiBody({
+    description:
+      'OpenAPI oneOf: active/timezone conditional contract. Runtime still validates via CreateLocalFieldDto + service rules.',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(CreateLocalFieldActiveOpenApiDto) },
+        { $ref: getSchemaPath(CreateLocalFieldInactiveOpenApiDto) },
+      ],
+    },
+  })
   async createLocalField(@Body() dto: CreateLocalFieldDto, @Request() req) {
     const data = await this.geographyService.createLocalField(
       dto,

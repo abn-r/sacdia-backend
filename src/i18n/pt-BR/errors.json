@@ -536,6 +536,7 @@
   "R2_DELETE_FAILED": "Erro ao excluir os arquivos",
   "R2_SIGNED_URL_FAILED": "Erro ao gerar a URL assinada",
   "R2_VALIDATION_FAILED": "Erro ao validar o objeto no R2",
+  "LOCAL_FIELD_TIMEZONE_UNAVAILABLE": "O fuso horário do campo local não está disponível ou não é canônico",
   "AUTH_CONTEXT_USER_NOT_FOUND": "Usuário não encontrado",
   "RBAC_BOOTSTRAP_FORBIDDEN": "Bootstrap RBAC não disponível em produção",
   "RBAC_BOOTSTRAP_SECRET_INVALID": "Segredo de bootstrap inválido",
