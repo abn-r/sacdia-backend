@@ -656,6 +656,7 @@ model club_sections {
   club_inventory              club_inventory[]
   class_counselor_assignments class_counselor_assignments[]
   club_role_assignments       club_role_assignments[]
+  director_succession_plans   director_succession_plans[]
   club_types                  club_types                    @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   clubs                       clubs?                        @relation(fields: [main_club_id], references: [club_id], onDelete: Cascade, onUpdate: NoAction)
   finances                    finances[]
@@ -763,6 +764,8 @@ model club_role_assignments {
   club_section_id             Int?
   club_sections               club_sections?                @relation(fields: [club_section_id], references: [club_section_id], onDelete: Cascade, onUpdate: NoAction)
   class_counselor_assignments class_counselor_assignments[]
+  outgoing_director_succession_plans director_succession_plans[] @relation("director_succession_outgoing_assignment")
+  activated_director_succession_plans director_succession_plans[] @relation("director_succession_activated_assignment")
   ecclesiastical_year         ecclesiastical_years          @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: Cascade, onUpdate: NoAction)
   roles                       roles                         @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction)
   users                       users                         @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
@@ -774,6 +777,54 @@ model club_role_assignments {
   @@index([club_section_id], map: "idx_club_role_assignments_club_section_id")
   // auth/me hot path: resolveUserAuthorization filters WHERE user_id = ? AND active = true, ordered by start_date DESC
   @@index([user_id, active, start_date(sort: Desc)], map: "idx_club_role_assignments_user_active_start")
+}
+
+enum director_succession_status_enum {
+  scheduled
+  activated
+  blocked
+  cancelled
+}
+
+model director_succession_plans {
+  succession_id                 String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  club_section_id               Int
+  outgoing_assignment_id        String                           @db.Uuid
+  successor_user_id             String                           @db.Uuid
+  target_ecclesiastical_year_id Int
+  effective_date                DateTime                         @db.Date
+  status                        director_succession_status_enum @default(scheduled)
+  scheduled_by_id               String                           @db.Uuid
+  scheduled_by_role             String                           @db.VarChar(64)
+  scheduled_local_field_id      Int
+  scheduled_at                  DateTime                         @default(now()) @db.Timestamptz(6)
+  idempotency_key               String                           @db.VarChar(128)
+  request_hash                  String                           @db.Char(64)
+  activated_assignment_id       String?                          @unique @db.Uuid
+  activated_at                  DateTime?                        @db.Timestamptz(6)
+  blocked_at                    DateTime?                        @db.Timestamptz(6)
+  block_code                    String?                          @db.VarChar(96)
+  processing_token              String?                          @db.Uuid
+  processing_expires_at         DateTime?                        @db.Timestamptz(6)
+  attempt_count                 Int                              @default(0)
+  last_attempt_at               DateTime?                        @db.Timestamptz(6)
+  version                       Int                              @default(1)
+  created_at                    DateTime                         @default(now()) @db.Timestamptz(6)
+  modified_at                   DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+  club_section                  club_sections                    @relation(fields: [club_section_id], references: [club_section_id], onDelete: Restrict, onUpdate: NoAction)
+  outgoing_assignment           club_role_assignments            @relation("director_succession_outgoing_assignment", fields: [outgoing_assignment_id], references: [assignment_id], onDelete: Restrict, onUpdate: NoAction)
+  activated_assignment          club_role_assignments?           @relation("director_succession_activated_assignment", fields: [activated_assignment_id], references: [assignment_id], onDelete: Restrict, onUpdate: NoAction)
+  successor                     users                            @relation("director_succession_successor", fields: [successor_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  target_ecclesiastical_year    ecclesiastical_years              @relation(fields: [target_ecclesiastical_year_id], references: [year_id], onDelete: Restrict, onUpdate: NoAction)
+  scheduled_by                  users                            @relation("director_succession_scheduler", fields: [scheduled_by_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  scheduled_local_field         local_fields                     @relation(fields: [scheduled_local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([club_section_id, target_ecclesiastical_year_id])
+  @@unique([scheduled_by_id, idempotency_key])
+  @@index([status, effective_date, processing_expires_at])
+  @@index([successor_user_id])
+  @@index([outgoing_assignment_id])
+  @@index([scheduled_local_field_id])
 }
 
 model countries {
@@ -885,6 +936,7 @@ model ecclesiastical_years {
   created_at                  DateTime?                     @default(now()) @db.Timestamptz(6)
   modified_at                 DateTime?                     @default(now()) @db.Timestamptz(6)
   club_role_assignments       club_role_assignments[]
+  director_succession_plans   director_succession_plans[]
   class_counselor_assignments class_counselor_assignments[]
   classes_available_from      classes[]                     @relation("classes_available_from_year")
   classes_available_until     classes[]                     @relation("classes_available_until_year")
@@ -1496,6 +1548,7 @@ model local_fields {
   annual_ranking_configs          annual_ranking_configs[]
   union_camporee_local_fields     union_camporee_local_fields[]
   users                           users[]
+  director_succession_plans       director_succession_plans[]
   translations                    local_fields_translations[]
   material_products               MaterialProduct[]
   material_orders                 MaterialOrder[]
@@ -2176,6 +2229,8 @@ model users {
   certificate_bulk_import_events       certificate_bulk_import_item_events[] @relation("certificate_import_event_performer")
   certificate_bulk_import_reviews      certificate_bulk_import_items[]       @relation("certificate_import_item_reviewer")
   club_role_assignments                club_role_assignments[]
+  director_succession_plans_as_successor director_succession_plans[] @relation("director_succession_successor")
+  director_succession_plans_as_scheduler director_succession_plans[] @relation("director_succession_scheduler")
   authorization_context_versions       authorization_context_versions?
   emergency_contacts                   emergency_contacts[]                  @relation("internal_user_emergency_contact")
   emergency_contact                    emergency_contacts[]                  @relation("user_emergency_contact")
