@@ -71,6 +71,10 @@ export const envValidationSchema = Joi.object({
     .valid('development', 'production', 'test')
     .default('development'),
   PORT: Joi.number().port().default(3000),
+  DEV_LOCAL_FIELD_TIMEZONE_BOOTSTRAP: Joi.string()
+    .valid('true', 'false')
+    .when('NODE_ENV', { is: 'production', then: Joi.forbidden() })
+    .optional(),
   FRONTEND_URL: Joi.string().uri().optional(),
   ALLOWED_ORIGINS: Joi.string().optional(),
   AUTH_REJECT_SNAKE_CASE: Joi.boolean().default(false),

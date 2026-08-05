@@ -159,3 +159,26 @@ describe('infrastructure environment validation', () => {
     ).toBeDefined();
   });
 });
+
+describe('timezone bootstrap environment validation', () => {
+  it.each(['development', 'test'])(
+    'permits bootstrap only in %s',
+    (NODE_ENV) => {
+      expect(
+        validate({ NODE_ENV, DEV_LOCAL_FIELD_TIMEZONE_BOOTSTRAP: 'true' })
+          .error,
+      ).toBeUndefined();
+    },
+  );
+
+  it('rejects timezone bootstrap in production, including false-like values', () => {
+    for (const value of ['true', 'false']) {
+      expect(
+        validate({
+          NODE_ENV: 'production',
+          DEV_LOCAL_FIELD_TIMEZONE_BOOTSTRAP: value,
+        }).error?.message,
+      ).toContain('DEV_LOCAL_FIELD_TIMEZONE_BOOTSTRAP');
+    }
+  });
+});
