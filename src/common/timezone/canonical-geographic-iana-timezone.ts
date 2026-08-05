@@ -7,6 +7,10 @@ export type TimezoneReason =
   | 'UNKNOWN'
   | 'NON_CANONICAL'
   | 'DISALLOWED_NAMESPACE';
+declare const canonicalGeographicIanaTimezoneBrand: unique symbol;
+export type CanonicalGeographicIanaTimezone = string & {
+  readonly [canonicalGeographicIanaTimezoneBrand]: true;
+};
 export type TimezoneDiagnostic =
   | 'EMPTY'
   | 'POSIX_IDENTIFIER'
@@ -16,7 +20,7 @@ export type TimezoneDiagnostic =
   | 'RUNTIME_UNSUPPORTED'
   | 'NOT_IN_CATALOG';
 export type TimezoneClassification =
-  | { ok: true; value: string }
+  | { ok: true; value: CanonicalGeographicIanaTimezone }
   | { ok: false; reason: TimezoneReason; diagnostic: TimezoneDiagnostic };
 export interface CanonicalGeographicIanaTimezoneCatalog {
   metadata: typeof PINNED_IANA_METADATA;
@@ -225,7 +229,7 @@ function classify(
   }
   if (canonical.has(value)) {
     return supports(value)
-      ? { ok: true, value }
+      ? { ok: true, value: value as CanonicalGeographicIanaTimezone }
       : invalid('UNKNOWN', 'RUNTIME_UNSUPPORTED');
   }
   if (canonicalLower.has(lower)) return invalid('NON_CANONICAL', 'WRONG_CASE');

@@ -1,9 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AppUnprocessableEntityException } from '../errors/app.exception';
+import { AppException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { classifyLocalFieldTimezone } from '../validators/iana-timezone.validator';
-import type { TimezoneClassification } from '../timezone/canonical-geographic-iana-timezone';
+import type {
+  CanonicalGeographicIanaTimezone,
+  TimezoneClassification,
+} from '../timezone/canonical-geographic-iana-timezone';
 import type { TemporalLocalField } from '../clock/temporal-context.factory';
 
 export type ResolvedLocalFieldTimezone = TemporalLocalField & {
@@ -38,7 +41,7 @@ export class LocalFieldTimezoneResolver {
     };
   }
 
-  assertTimezone(value: unknown): string {
+  assertTimezone(value: unknown): CanonicalGeographicIanaTimezone {
     const classification = classifyLocalFieldTimezone(value);
     if (!classification.ok) this.unavailable(classification);
     return classification.value;
@@ -47,8 +50,9 @@ export class LocalFieldTimezoneResolver {
   private unavailable(
     classification: Exclude<TimezoneClassification, { ok: true }>,
   ): never {
-    throw new AppUnprocessableEntityException(
+    throw new AppException(
       ErrorCode.LOCAL_FIELD_TIMEZONE_UNAVAILABLE,
+      HttpStatus.SERVICE_UNAVAILABLE,
       { reason: classification.reason },
     );
   }
