@@ -135,6 +135,33 @@ const connect = async (schema: string) => {
   return client;
 };
 
+/** Probe until `backendPid` is waiting on an ungranted advisory lock. */
+export const waitUntilAdvisoryLockBlocked = async (
+  observer: Pick<Client, 'query'>,
+  backendPid: number,
+  timeoutMs = 5000,
+): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const waiting = await observer.query(
+      `SELECT 1
+       FROM pg_locks
+       WHERE locktype = 'advisory'
+         AND pid = $1
+         AND NOT granted
+       LIMIT 1`,
+      [backendPid],
+    );
+    if ((waiting.rowCount ?? waiting.rows.length) > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(
+    `backend ${backendPid} did not block on an advisory lock within ${timeoutMs}ms`,
+  );
+};
+
 const expectedSnapshot = (source = event()) => ({
   actor_user_id: source.actor.userId,
   target_user_id: source.target.userId,
@@ -155,6 +182,28 @@ const expectExactSnapshot = (actual: unknown) =>
   expect(actual).toEqual(expectedSnapshot());
 
 describe('CriticalAuditWriterService PostgreSQL fixture', () => {
+  it('waits until pg_locks shows an ungranted advisory lock for the backend', async () => {
+    let calls = 0;
+    const observer = {
+      query: jest.fn(async () => {
+        calls += 1;
+        if (calls < 3) {
+          return { rowCount: 0, rows: [] };
+        }
+        return { rowCount: 1, rows: [{ '?column?': 1 }] };
+      }),
+    };
+
+    await expect(
+      waitUntilAdvisoryLockBlocked(observer, 42, 1000),
+    ).resolves.toBeUndefined();
+    expect(observer.query).toHaveBeenCalledWith(
+      expect.stringContaining('pg_locks'),
+      [42],
+    );
+    expect(calls).toBe(3);
+  });
+
   it('mutation probe rejects swapped actor and target scopes', () => {
     const snapshot = expectedSnapshot();
     expect(() =>
@@ -266,8 +315,12 @@ describe('CriticalAuditWriterService PostgreSQL fixture', () => {
           ).resolves.toMatchObject({
             replayed: false,
           });
+          const secondPid = Number(
+            (await second.query('SELECT pg_backend_pid() AS pid')).rows[0].pid,
+          );
           await second.query('BEGIN');
           const concurrentReplay = writer.write(auditTx(second), event());
+          await waitUntilAdvisoryLockBlocked(admin, secondPid);
           await first.query('COMMIT');
           await expect(concurrentReplay).resolves.toMatchObject({
             replayed: true,
