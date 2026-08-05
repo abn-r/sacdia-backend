@@ -431,6 +431,7 @@
   "CLUB_ROLE_DATE_RANGE_INVALID": "La date de fin du rôle ne peut pas précéder sa date de début",
   "CLUB_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role est requis pour cette opération",
+  "CLUB_ROLE_GUIDE_MAJOR_REQUIRED": "Un Guide supérieur en cours ou investi est requis pour ce rôle de club",
   "CLUB_ROLE_NOT_FOUND": "Rôle introuvable dans la catégorie CLUB",
   "POST_REG_NOT_INITIATED": "Le post-enregistrement n'a pas été initié",
   "POST_REG_PHOTO_REQUIRED": "Vous devez télécharger une photo de profil avant de terminer cette étape",
