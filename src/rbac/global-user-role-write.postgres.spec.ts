@@ -223,6 +223,16 @@ const query = async (text: string, values: unknown[] = []) => {
 };
 const rows = async (text: string, values: unknown[] = []) =>
   (await query(text, values)).rows;
+export const withReleasedClient = async <T>(
+  client: { release: () => void },
+  body: () => Promise<T>,
+): Promise<T> => {
+  try {
+    return await body();
+  } finally {
+    client.release();
+  }
+};
 it.each([
   'postgresql://localhost/postgres?host=db.example.invalid',
   'postgresql://localhost/postgres?options=-csearch_path%3Dpublic',
@@ -231,6 +241,15 @@ it.each([
   'rejects unsafe effective destination or parameters without connecting',
   (url) => expect(() => assertLocalDatabaseUrl(url)).toThrow(),
 );
+it('releases the revoker client when the guarded body rejects', async () => {
+  const release = jest.fn();
+  await expect(
+    withReleasedClient({ release }, async () => {
+      throw new Error('boom');
+    }),
+  ).rejects.toThrow('boom');
+  expect(release).toHaveBeenCalledTimes(1);
+});
 pgDescribe('GlobalUserRoleWriteService PostgreSQL fixture', () => {
   beforeAll(async () => {
     await createSchema(schema);
@@ -319,29 +338,35 @@ pgDescribe('GlobalUserRoleWriteService PostgreSQL fixture', () => {
   });
   it('revalidates authority after a concurrent revocation commits', async () => {
     const revoker = await pool.connect();
-    await revoker.query('BEGIN');
-    await revoker.query(`SET LOCAL search_path=${schema},public`);
-    await revoker.query(
-      'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
-      [`rbac-user:${actor}`],
-    );
-    await revoker.query(
-      'UPDATE users_roles SET active=false WHERE user_id=$1 AND role_id=$2',
-      [actor, superRole],
-    );
-    const waiting = new Promise<void>(
-      (resolve) => (transactionStarted = resolve),
-    );
-    const blocked = service().service.assign(
-      input({ idempotencyKey: 'authority-race' }),
-    );
-    await waiting;
-    await revoker.query('COMMIT');
-    revoker.release();
-    await expect(blocked).rejects.toMatchObject({
-      code: ErrorCode.SUPER_ADMIN_WRITE_REQUIRED,
+    await withReleasedClient(revoker, async () => {
+      await revoker.query('BEGIN');
+      try {
+        await revoker.query(`SET LOCAL search_path=${schema},public`);
+        await revoker.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+          [`rbac-user:${actor}`],
+        );
+        await revoker.query(
+          'UPDATE users_roles SET active=false WHERE user_id=$1 AND role_id=$2',
+          [actor, superRole],
+        );
+        const waiting = new Promise<void>(
+          (resolve) => (transactionStarted = resolve),
+        );
+        const blocked = service().service.assign(
+          input({ idempotencyKey: 'authority-race' }),
+        );
+        await waiting;
+        await revoker.query('COMMIT');
+        await expect(blocked).rejects.toMatchObject({
+          code: ErrorCode.SUPER_ADMIN_WRITE_REQUIRED,
+        });
+        expect(await rows('SELECT * FROM audit_logs')).toEqual([]);
+      } catch (error) {
+        await revoker.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      }
     });
-    expect(await rows('SELECT * FROM audit_logs')).toEqual([]);
   });
   it('keeps missing revoke rowless and rolls back mutation when audit fails', async () => {
     await expect(
