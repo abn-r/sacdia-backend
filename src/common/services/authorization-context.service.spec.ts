@@ -5,12 +5,15 @@ import {
   AUTH_CONTEXT_CACHE_KEY,
   AuthorizationContextService,
 } from './authorization-context.service';
+import { authorizationContextV4Key } from '../authorization/authorization-context-cache-v4';
+import { AuthorizationContextVersionService } from '../authorization/authorization-context-version.service';
 import { ErrorCode } from '../errors/error-codes';
 import { InstitutionalHierarchyService } from './institutional-hierarchy.service';
 
 describe('AuthorizationContextService', () => {
   let service: AuthorizationContextService;
   let cacheManager: { get: jest.Mock; set: jest.Mock; del: jest.Mock };
+  let versionService: { current: jest.Mock };
 
   const mockPrismaService = {
     users: {
@@ -24,6 +27,7 @@ describe('AuthorizationContextService', () => {
 
   beforeEach(async () => {
     cacheManager = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
+    versionService = { current: jest.fn().mockResolvedValue(3n) };
 
     mockHierarchyService.resolveCurrent.mockResolvedValue({
       division_id: 1,
@@ -44,6 +48,10 @@ describe('AuthorizationContextService', () => {
           useValue: mockHierarchyService,
         },
         {
+          provide: AuthorizationContextVersionService,
+          useValue: versionService,
+        },
+        {
           provide: CACHE_MANAGER,
           useValue: cacheManager,
         },
@@ -61,14 +69,127 @@ describe('AuthorizationContextService', () => {
 
   it('uses versioned cache keys so stale legacy snapshots are bypassed', () => {
     expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v3:user-123');
+    expect(authorizationContextV4Key('user-123', 3n)).toBe(
+      'auth:context:v4:user-123:3',
+    );
   });
 
   it('invalidates both current and legacy authorization cache keys', async () => {
     await service.invalidateUserAuthorizationCache('user-123');
 
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v4:user-123:3');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v3:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v2:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:user-123');
+  });
+
+  it('serves a fresh v4 cache envelope without querying the canonical source', async () => {
+    const cachedProfile = {
+      profile: { user_id: 'user-123' },
+      authorization: {
+        grants: { global_roles: [], club_assignments: [] },
+        active_assignment: { assignment_id: null },
+        effective: {
+          permissions: ['clubs:read'],
+          scope: { global: {}, club: null },
+        },
+      },
+    };
+    cacheManager.get.mockResolvedValue({
+      value: cachedProfile,
+      valid_until: '2099-01-01T00:00:00.000Z',
+      territory_time_vector: [],
+    });
+
+    await expect(service.resolveUserAuthorization('user-123')).resolves.toBe(
+      cachedProfile,
+    );
+    expect(versionService.current).toHaveBeenCalledWith('user-123');
+    expect(cacheManager.get).toHaveBeenCalledWith('auth:context:v4:user-123:3');
+    expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('reloads from the canonical source on cache miss', async () => {
+    cacheManager.get.mockResolvedValue(null);
+    mockPrismaService.users.findUnique.mockResolvedValue({
+      user_id: 'user-miss',
+      email: 'miss@example.com',
+      name: 'Miss',
+      paternal_last_name: null,
+      maternal_last_name: null,
+      gender: null,
+      birthday: null,
+      baptism: false,
+      baptism_date: null,
+      blood: null,
+      user_image: null,
+      country_id: null,
+      union_id: null,
+      local_field_id: null,
+      created_at: new Date('2026-01-01'),
+      countries: null,
+      unions: null,
+      local_fields: null,
+      users_pr: { complete: true, active_club_assignment_id: null },
+      users_roles: [],
+      club_role_assignments: [],
+    });
+
+    const result = await service.resolveUserAuthorization('user-miss');
+
+    expect(result.profile.user_id).toBe('user-miss');
+    expect(mockPrismaService.users.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { user_id: 'user-miss' } }),
+    );
+    expect(cacheManager.set).toHaveBeenCalledWith(
+      'auth:context:v4:user-miss:3',
+      expect.objectContaining({
+        value: expect.objectContaining({
+          profile: expect.objectContaining({ user_id: 'user-miss' }),
+        }),
+        valid_until: expect.any(String),
+        territory_time_vector: [],
+      }),
+      expect.any(Number),
+    );
+  });
+
+  it('does not grant permissions from corrupt cache or version backend failure', async () => {
+    cacheManager.get.mockResolvedValue({
+      value: {
+        profile: { user_id: 'user-123' },
+        authorization: {
+          effective: { permissions: ['admin:all'] },
+        },
+      },
+      valid_until: 'not-a-date',
+      territory_time_vector: [
+        { local_field_id: 0, timezone: '', modified_at: 'invalid' },
+      ],
+    });
+    mockPrismaService.users.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.resolveUserAuthorization('user-123'),
+    ).rejects.toMatchObject({ code: ErrorCode.AUTH_CONTEXT_USER_NOT_FOUND });
+    expect(mockPrismaService.users.findUnique).toHaveBeenCalled();
+
+    versionService.current.mockRejectedValueOnce(new Error('version down'));
+    cacheManager.get.mockResolvedValue({
+      value: {
+        profile: { user_id: 'user-123' },
+        authorization: {
+          effective: { permissions: ['admin:all'] },
+        },
+      },
+      valid_until: '2099-01-01T00:00:00.000Z',
+      territory_time_vector: [],
+    });
+
+    await expect(
+      service.resolveUserAuthorization('user-123'),
+    ).rejects.toMatchObject({ code: ErrorCode.AUTH_CONTEXT_UNAVAILABLE });
+    expect(mockPrismaService.users.findUnique).toHaveBeenCalledTimes(1);
   });
 
   it('should throw UnauthorizedException when user is not found', async () => {

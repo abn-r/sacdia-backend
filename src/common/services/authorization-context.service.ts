@@ -1,9 +1,19 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
-import { AppUnauthorizedException } from '../errors/app.exception';
+import { Injectable, Inject, Logger, HttpStatus } from '@nestjs/common';
+import {
+  AppException,
+  AppUnauthorizedException,
+} from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  AuthorizationContextUnavailableError,
+  authorizationContextV4Key,
+  resolveAuthorizationContextV4,
+  type AuthorizationContextEnvelope,
+} from '../authorization/authorization-context-cache-v4';
+import { AuthorizationContextVersionService } from '../authorization/authorization-context-version.service';
 import {
   InstitutionalHierarchyService,
   type HierarchyContext,
@@ -186,13 +196,6 @@ const PREVIOUS_AUTH_CONTEXT_CACHE_KEYS = (userId: string): string[] => [
   LEGACY_AUTH_CONTEXT_CACHE_KEY(userId),
 ];
 
-/**
- * TTL for user authorization context — 5 minutes in milliseconds.
- * Auth context changes infrequently (role/assignment mutations are rare),
- * so a mid-range TTL balances freshness with DB load reduction.
- */
-const AUTH_CONTEXT_TTL_MS = 300_000; // 5 minutes
-
 const CLUB_SCOPE_SELECT = {
   club_id: true,
   name: true,
@@ -223,6 +226,7 @@ export class AuthorizationContextService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hierarchy: InstitutionalHierarchyService,
+    private readonly authorizationContextVersion: AuthorizationContextVersionService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
@@ -244,6 +248,14 @@ export class AuthorizationContextService {
       AUTH_CONTEXT_CACHE_KEY(userId),
       ...PREVIOUS_AUTH_CONTEXT_CACHE_KEYS(userId),
     ];
+    try {
+      const version = await this.authorizationContextVersion.current(userId);
+      keys.unshift(authorizationContextV4Key(userId, version));
+    } catch (err) {
+      this.logger.warn(
+        `Auth context version lookup fallido para invalidación "${userId}": ${this.extractMessage(err)}`,
+      );
+    }
 
     for (const key of keys) {
       try {
@@ -260,24 +272,45 @@ export class AuthorizationContextService {
   async resolveUserAuthorization(
     userId: string,
   ): Promise<ResolvedAuthorizationProfile> {
-    const cacheKey = AUTH_CONTEXT_CACHE_KEY(userId);
-
-    // ── Cache HIT path ──────────────────────────────────────────────────────
     try {
-      const cached =
-        await this.cacheManager.get<ResolvedAuthorizationProfile>(cacheKey);
-      if (cached !== null && cached !== undefined) {
-        this.logger.debug(`Auth context cache HIT  — ${cacheKey}`);
-        return cached;
-      }
+      return await resolveAuthorizationContextV4(userId, new Date(), {
+        versions: {
+          current: (id) => this.authorizationContextVersion.current(id),
+        },
+        cache: {
+          get: async (key) =>
+            this.cacheManager.get<
+              AuthorizationContextEnvelope<ResolvedAuthorizationProfile>
+            >(key),
+          set: async (key, value, ttl) => {
+            await this.cacheManager.set(key, value, ttl);
+          },
+        },
+        source: {
+          load: async (id) => ({
+            value: await this.loadCanonicalAuthorizationProfile(id),
+            boundaries: [],
+            territoryTimeVector: [],
+          }),
+        },
+      });
     } catch (err) {
-      // Redis down or deserialization error — degrade gracefully to DB
-      this.logger.warn(
-        `Auth context cache GET fallido para "${cacheKey}": ${this.extractMessage(err)}`,
-      );
+      if (err instanceof AppException) throw err;
+      if (err instanceof AuthorizationContextUnavailableError) {
+        throw new AppException(
+          ErrorCode.AUTH_CONTEXT_UNAVAILABLE,
+          HttpStatus.SERVICE_UNAVAILABLE,
+          { reason: err.reason },
+        );
+      }
+      throw err;
     }
+  }
 
-    this.logger.debug(`Auth context cache MISS — ${cacheKey}`);
+  private async loadCanonicalAuthorizationProfile(
+    userId: string,
+  ): Promise<ResolvedAuthorizationProfile> {
+    this.logger.debug(`Auth context cache MISS — canonical source ${userId}`);
 
     // ── DB query (unchanged) ────────────────────────────────────────────────
     const user = await this.prisma.users.findUnique({
@@ -491,19 +524,6 @@ export class AuthorizationContextService {
         },
       },
     };
-
-    // ── Cache SET path ──────────────────────────────────────────────────────
-    try {
-      await this.cacheManager.set(cacheKey, result, AUTH_CONTEXT_TTL_MS);
-      this.logger.debug(
-        `Auth context cache SET  — ${cacheKey} (TTL ${AUTH_CONTEXT_TTL_MS}ms)`,
-      );
-    } catch (err) {
-      // Redis down — return DB result without caching, degrade gracefully
-      this.logger.warn(
-        `Auth context cache SET fallido para "${cacheKey}": ${this.extractMessage(err)}`,
-      );
-    }
 
     return result;
   }

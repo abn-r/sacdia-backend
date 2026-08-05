@@ -136,7 +136,10 @@ export async function resolveAuthorizationContextV4<T>(
   let source: AuthorizationContextSourceSnapshot<T>;
   try {
     source = await ports.source.load(userId, now);
-  } catch {
+  } catch (err) {
+    if (err instanceof AuthorizationContextUnavailableError) throw err;
+    // Preserve structured domain denials (e.g. AUTH_CONTEXT_USER_NOT_FOUND).
+    if (isPropagatedDomainError(err)) throw err;
     throw new AuthorizationContextUnavailableError('SOURCE_UNAVAILABLE');
   }
   const { envelope, ttl } = createAuthorizationContextEnvelope(
@@ -150,6 +153,15 @@ export async function resolveAuthorizationContextV4<T>(
     // A failed write cannot weaken the result already verified by the source.
   }
   return source.value;
+}
+
+function isPropagatedDomainError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const candidate = err as { code?: unknown; getStatus?: unknown };
+  return (
+    typeof candidate.code === 'string' &&
+    typeof candidate.getStatus === 'function'
+  );
 }
 
 function normalizeTerritoryTimeVector(
