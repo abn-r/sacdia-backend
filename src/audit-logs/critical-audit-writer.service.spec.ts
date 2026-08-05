@@ -146,6 +146,54 @@ describe('CriticalAuditWriterService', () => {
     expect(tx.audit_logs.create).not.toHaveBeenCalled();
   });
 
+  it('serializes nested Date values before replay comparison', async () => {
+    const tx = auditTx();
+    const stamped = new Date('2026-10-01T05:00:00.000Z');
+    const base = {
+      ...event(),
+      actor: {
+        ...event().actor,
+        scope: { ...event().actor.scope, stamped_at: stamped },
+      },
+    };
+    tx.audit_logs.findUnique.mockResolvedValue(stored(base));
+
+    await expect(writer.write(tx, base)).resolves.toMatchObject({
+      replayed: true,
+    });
+    await expect(
+      writer.write(tx, {
+        ...base,
+        actor: {
+          ...base.actor,
+          scope: {
+            ...base.actor.scope,
+            stamped_at: new Date('2026-10-01T05:00:00.001Z'),
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.AUDIT_WRITE_FAILED });
+  });
+
+  it('treats exact first-write P2002 races as replayed', async () => {
+    const tx = auditTx();
+    const expected = event();
+    tx.audit_logs.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(stored(expected));
+    tx.audit_logs.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('unique', {
+        code: 'P2002',
+        clientVersion: '7.8.0',
+      }),
+    );
+
+    await expect(writer.write(tx, expected)).resolves.toEqual({
+      auditLogId: 8n,
+      replayed: true,
+    });
+  });
+
   it('serializes concurrent writers into exact replay or stable mismatch', async () => {
     const race = (second: CriticalAuditEvent) => {
       let durable: ReturnType<typeof stored> | null = null;
