@@ -58,13 +58,23 @@ export class ClubAssignmentEffectivityPolicy {
     };
   }
 
-  toSql(context: TemporalContext): Prisma.Sql {
+  toSql(
+    context: TemporalContext,
+    assignmentAlias = 'club_role_assignments',
+  ): Prisma.Sql {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(assignmentAlias)) {
+      throw new Error(
+        `Unsafe SQL assignment alias: ${JSON.stringify(assignmentAlias)}`,
+      );
+    }
+    const col = (name: string) =>
+      Prisma.raw(`${assignmentAlias}.${name}`);
     return Prisma.sql`
-      active = TRUE
-      AND status = 'active'
-      AND start_date <= ${context.businessDate}::date
-      AND (end_date IS NULL OR end_date >= ${context.businessDate}::date)
-      AND (expires_at IS NULL OR expires_at > ${context.now})`;
+      ${col('active')} = TRUE
+      AND ${col('status')} = 'active'
+      AND ${col('start_date')} <= ${context.businessDate}::date
+      AND (${col('end_date')} IS NULL OR ${col('end_date')} >= ${context.businessDate}::date)
+      AND (${col('expires_at')} IS NULL OR ${col('expires_at')} > ${context.now})`;
   }
 
   isEffective(
