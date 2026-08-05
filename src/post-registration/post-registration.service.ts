@@ -6,6 +6,7 @@ import { LegalRepresentativesService } from '../legal-representatives/legal-repr
 import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import {
   ClassAssignmentResolverService,
   ClassResolutionYear,
@@ -54,6 +55,7 @@ export class PostRegistrationService {
     private classAssignmentResolver: ClassAssignmentResolverService,
     private membershipRequestsService: MembershipRequestsService,
     private authorizationContext: AuthorizationContextService,
+    private authorizationContextVersion: AuthorizationContextVersionService,
   ) {}
 
   async getStatus(
@@ -255,13 +257,14 @@ export class PostRegistrationService {
             currentYear,
           });
 
-        await tx.users.update({
+        const authorityUser = await tx.users.update({
           where: { user_id: userId },
           data: {
             country_id: dto.country_id,
             union_id: dto.union_id,
             local_field_id: dto.local_field_id,
           },
+          select: { user_id: true },
         });
 
         const membershipRequest = await this.resolveMemberAssignment(tx, {
@@ -300,6 +303,8 @@ export class PostRegistrationService {
           },
         });
 
+        await this.authorizationContextVersion.bump(tx, authorityUser.user_id);
+
         this.logger.log(
           `Step 3 (club selection) completed for user ${userId} - Post-registration COMPLETE`,
         );
@@ -315,7 +320,11 @@ export class PostRegistrationService {
         };
 
         if (actor.isOwner) {
-          return { response, membershipRequest };
+          return {
+            response,
+            membershipRequest,
+            affectedAuthorizationUserId: authorityUser.user_id,
+          };
         }
 
         return {
@@ -324,10 +333,13 @@ export class PostRegistrationService {
             message: 'Paso 3 completado',
           },
           membershipRequest,
+          affectedAuthorizationUserId: authorityUser.user_id,
         };
       });
 
-      await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+      await this.authorizationContext.invalidateUserAuthorizationCache(
+        completion.affectedAuthorizationUserId,
+      );
 
       if (completion.membershipRequest.shouldNotifyReviewers) {
         await this.membershipRequestsService.notifyNewRequestCreated({
@@ -697,7 +709,7 @@ export class PostRegistrationService {
   private sanitizeAdministrativeValidationError(
     error: unknown,
     actor: PostRegistrationActorContext,
-    genericMessage: string,
+    _genericMessage: string,
   ): Error {
     // Owner always sees the real error (specific code or message)
     if (actor.isOwner) {
