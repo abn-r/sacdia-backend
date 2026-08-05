@@ -154,6 +154,11 @@ export const envValidationSchema = Joi.object({
   R2_PUBLIC_URL_DATA_EXPORTS: Joi.string().uri().required(),
   R2_KEY_PREFIX_DATA_EXPORTS: Joi.string().allow('').optional(),
 
+  // Cloudflare R2 — canonical monthly-report PDF artifacts (private)
+  R2_BUCKET_MONTHLY_REPORTS: Joi.string().required(),
+  R2_PUBLIC_URL_MONTHLY_REPORTS: Joi.string().uri().required(),
+  R2_KEY_PREFIX_MONTHLY_REPORTS: Joi.string().allow('').optional(),
+
   // Cloudflare R2 — resources bucket (private, presigned PUT for uploads,
   // signed GET for downloads). Usually mapped to the shared "secure-documents"
   // bucket with key prefix "resources" to mirror the rest of the private modules.

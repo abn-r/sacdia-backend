@@ -20,6 +20,13 @@ export enum StorageBucketAlias {
    */
   DATA_EXPORTS = 'DATA_EXPORTS',
   /**
+   * Private bucket for canonical monthly-report PDF artifacts.
+   * Objects are overwritten at a deterministic key and served through signed
+   * URLs only. Env vars: R2_BUCKET_MONTHLY_REPORTS,
+   * R2_PUBLIC_URL_MONTHLY_REPORTS and R2_KEY_PREFIX_MONTHLY_REPORTS.
+   */
+  MONTHLY_REPORTS = 'MONTHLY_REPORTS',
+  /**
    * Private bucket for materiales payment receipt files (comprobantes).
    * Objects are served via signed download URLs (TTL 15 min) — never public.
    * Key format: materiales/comprobantes/{folio}/{uuid}.{ext}

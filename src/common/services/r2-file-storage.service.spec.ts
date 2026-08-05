@@ -17,7 +17,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ErrorCode } from '../errors/error-codes';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { R2FileStorageService } from './r2-file-storage.service';
 import { StorageBucketAlias } from './file-storage.service';
 
@@ -87,6 +91,11 @@ function makeConfigService(
     R2_PUBLIC_URL_RESOURCES_FILES: 'https://priv.r2.dev',
     R2_BUCKET_DATA_EXPORTS: 'sacdia-exports',
     R2_PUBLIC_URL_DATA_EXPORTS: 'https://priv.r2.dev',
+
+    // MONTHLY_REPORTS — canonical private PDF artifacts
+    R2_BUCKET_MONTHLY_REPORTS: 'sacdia-monthly-reports',
+    R2_PUBLIC_URL_MONTHLY_REPORTS: 'https://priv.r2.dev',
+    R2_KEY_PREFIX_MONTHLY_REPORTS: 'monthly-reports',
   };
 
   const env = { ...defaults, ...overrides };
@@ -118,6 +127,51 @@ describe('R2FileStorageService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     service = await buildService();
+  });
+
+  describe('upload — monthly report PDF artifacts', () => {
+    it('stores the PDF under the private monthly-reports prefix', async () => {
+      mockS3Send.mockResolvedValueOnce({});
+
+      const result = await service.upload(
+        StorageBucketAlias.MONTHLY_REPORTS,
+        '2026/08/enrollment/report.pdf',
+        Buffer.from('%PDF'),
+        { contentType: 'application/pdf', overwrite: true },
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          key: 'monthly-reports/2026/08/enrollment/report.pdf',
+        }),
+      );
+      expect(mockS3Send).toHaveBeenCalledWith(expect.any(PutObjectCommand));
+
+      const command = mockS3Send.mock.calls[0][0] as PutObjectCommand;
+      expect(command.input).toEqual(
+        expect.objectContaining({
+          Bucket: 'sacdia-monthly-reports',
+          Key: 'monthly-reports/2026/08/enrollment/report.pdf',
+          ContentType: 'application/pdf',
+        }),
+      );
+    });
+
+    it('does not issue a pre-upload HEAD when overwrite is enabled', async () => {
+      mockS3Send.mockResolvedValueOnce({});
+
+      await service.upload(
+        StorageBucketAlias.MONTHLY_REPORTS,
+        '2026/08/enrollment/report.pdf',
+        Buffer.from('%PDF'),
+        { contentType: 'application/pdf', overwrite: true },
+      );
+
+      expect(mockS3Send).toHaveBeenCalledTimes(1);
+      expect(mockS3Send).not.toHaveBeenCalledWith(
+        expect.any(HeadObjectCommand),
+      );
+    });
   });
 
   // =========================================================================

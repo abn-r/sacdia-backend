@@ -538,6 +538,18 @@ export class R2FileStorageService implements FileStorageService {
           ),
           isPublic: false,
         };
+      case StorageBucketAlias.MONTHLY_REPORTS:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_MONTHLY_REPORTS'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_MONTHLY_REPORTS',
+          ),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_MONTHLY_REPORTS',
+            'monthly-reports',
+          ),
+          isPublic: false,
+        };
       case StorageBucketAlias.MATERIALES_COMPROBANTES:
         return {
           bucket: this.getRequiredEnv('R2_BUCKET_MATERIALES_COMPROBANTES'),
