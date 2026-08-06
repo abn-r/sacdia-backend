@@ -1,13 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
+  AppException,
   AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../common/authorization/local-field-timezone.resolver';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -32,6 +36,9 @@ export class RbacService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly globalUserRoleWrite: GlobalUserRoleWriteService,
+    private readonly temporalContextFactory: TemporalContextFactory,
+    private readonly localFieldTimezoneResolver: LocalFieldTimezoneResolver,
+    private readonly assignmentEffectivityPolicy: ClubAssignmentEffectivityPolicy,
   ) {}
 
   // ─── Permisos ───────────────────────────────────────────────
@@ -747,16 +754,40 @@ export class RbacService {
   private async invalidateAuthorizationCacheForRoleHolders(
     roleId: string,
   ): Promise<void> {
-    const [globalAssignments, clubAssignments] = await Promise.all([
+    const [globalAssignments, clubAssignmentCandidates] = await Promise.all([
       this.prisma.users_roles.findMany({
         where: { role_id: roleId, active: true },
         select: { user_id: true },
       }),
+      // Inventory preload only. Temporal authority uses
+      // ClubAssignmentEffectivityPolicy.isEffective (resource timezone).
       this.prisma.club_role_assignments.findMany({
         where: { role_id: roleId, active: true },
-        select: { user_id: true },
+        select: {
+          user_id: true,
+          active: true,
+          status: true,
+          start_date: true,
+          end_date: true,
+          expires_at: true,
+          club_sections: {
+            select: {
+              clubs: {
+                select: {
+                  local_fields: {
+                    select: { local_field_id: true, timezone: true },
+                  },
+                },
+              },
+            },
+          },
+        },
       }),
     ]);
+
+    const clubAssignments = clubAssignmentCandidates.filter((assignment) =>
+      this.isClubAssignmentCurrentlyEffective(assignment),
+    );
 
     const userIds = new Set<string>();
     for (const assignment of globalAssignments) {
@@ -777,5 +808,56 @@ export class RbacService {
         `Auth context cache invalidado para ${userIds.size} usuario(s) por cambio de permisos del rol ${roleId}`,
       );
     }
+  }
+
+  private isClubAssignmentCurrentlyEffective(assignment: {
+    active?: boolean | null;
+    status: string | null;
+    start_date: Date | null;
+    end_date: Date | null;
+    expires_at: Date | null;
+    club_sections: {
+      clubs: {
+        local_fields: {
+          local_field_id: number;
+          timezone: string | null;
+        } | null;
+      } | null;
+    } | null;
+  }): boolean {
+    if (assignment.active === false || assignment.status !== 'active') {
+      return false;
+    }
+    if (!assignment.start_date) {
+      return false;
+    }
+
+    const localField = assignment.club_sections?.clubs?.local_fields;
+    if (!localField) {
+      throw new AppException(
+        ErrorCode.LOCAL_FIELD_TIMEZONE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        { reason: 'MISSING' },
+      );
+    }
+
+    const timezone = this.localFieldTimezoneResolver.assertTimezone(
+      localField.timezone,
+    );
+    const temporalContext = this.temporalContextFactory.forLocalField({
+      local_field_id: localField.local_field_id,
+      timezone,
+    });
+
+    return this.assignmentEffectivityPolicy.isEffective(
+      {
+        active: assignment.active ?? true,
+        status: assignment.status,
+        start_date: assignment.start_date,
+        end_date: assignment.end_date,
+        expires_at: assignment.expires_at,
+      },
+      temporalContext,
+    );
   }
 }

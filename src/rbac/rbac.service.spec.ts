@@ -9,6 +9,11 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { GlobalUserRoleWriteService } from './global-user-role-write.service';
+import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../common/authorization/local-field-timezone.resolver';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { TestingClock } from '../common/clock/testing-clock';
+import { ZonedBusinessTimeService } from '../common/clock/zoned-business-time.service';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -149,6 +154,18 @@ describe('RbacService', () => {
     invalidateUserAuthorizationCache: jest.Mock;
     isSuperAdmin: jest.Mock;
   };
+  const testingClock = new TestingClock(new Date('2026-08-05T18:00:00.000Z'));
+  const zonedBusinessTime = new ZonedBusinessTimeService();
+  const temporalContextFactory = new TemporalContextFactory(
+    testingClock,
+    zonedBusinessTime,
+  );
+  const localFieldTimezoneResolver = new LocalFieldTimezoneResolver(
+    {} as never,
+  );
+  const assignmentEffectivityPolicy = new ClubAssignmentEffectivityPolicy(
+    zonedBusinessTime,
+  );
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -182,6 +199,15 @@ describe('RbacService', () => {
         {
           provide: GlobalUserRoleWriteService,
           useValue: globalUserRoleWrite,
+        },
+        { provide: TemporalContextFactory, useValue: temporalContextFactory },
+        {
+          provide: LocalFieldTimezoneResolver,
+          useValue: localFieldTimezoneResolver,
+        },
+        {
+          provide: ClubAssignmentEffectivityPolicy,
+          useValue: assignmentEffectivityPolicy,
         },
       ],
     }).compile();
@@ -1085,7 +1111,22 @@ describe('RbacService', () => {
         { user_id: USER_ID },
       ]);
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
-        { user_id: clubUserId },
+        {
+          user_id: clubUserId,
+          active: true,
+          status: 'active',
+          start_date: new Date('2026-01-01'),
+          end_date: null,
+          expires_at: null,
+          club_sections: {
+            clubs: {
+              local_fields: {
+                local_field_id: 30,
+                timezone: 'America/Mexico_City',
+              },
+            },
+          },
+        },
       ]);
 
       await service.syncRolePermissions(ROLE_ID, []);
@@ -1097,6 +1138,102 @@ describe('RbacService', () => {
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(clubUserId);
+    });
+
+    describe('T08 club assignment effectivity', () => {
+      const clubUserId = '44444444-4444-4444-4444-444444444444';
+
+      beforeEach(() => {
+        mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+        mockPrismaService.role_permissions.findMany.mockResolvedValue([
+          { ...baseRolePermissionRecord, permission_id: PERMISSION_ID },
+        ]);
+        mockPrismaService.role_permissions.updateMany.mockResolvedValue({
+          count: 1,
+        });
+        mockPrismaService.users_roles.findMany.mockResolvedValue([]);
+      });
+
+      it('does not invalidate cache for a future start_date club holder', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          {
+            user_id: clubUserId,
+            active: true,
+            status: 'active',
+            start_date: new Date('2027-01-01'),
+            end_date: null,
+            expires_at: null,
+            club_sections: {
+              clubs: {
+                local_fields: {
+                  local_field_id: 30,
+                  timezone: 'America/Mexico_City',
+                },
+              },
+            },
+          },
+        ]);
+
+        await service.syncRolePermissions(ROLE_ID, []);
+
+        expect(
+          authorizationContext.invalidateUserAuthorizationCache,
+        ).not.toHaveBeenCalledWith(clubUserId);
+      });
+
+      it('does not invalidate cache for an expired expires_at club holder', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          {
+            user_id: clubUserId,
+            active: true,
+            status: 'active',
+            start_date: new Date('2026-01-01'),
+            end_date: null,
+            expires_at: new Date('2026-08-05T18:00:00.000Z'),
+            club_sections: {
+              clubs: {
+                local_fields: {
+                  local_field_id: 30,
+                  timezone: 'America/Mexico_City',
+                },
+              },
+            },
+          },
+        ]);
+
+        await service.syncRolePermissions(ROLE_ID, []);
+
+        expect(
+          authorizationContext.invalidateUserAuthorizationCache,
+        ).not.toHaveBeenCalledWith(clubUserId);
+      });
+
+      it('does not invalidate cache for an ended end_date club holder', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          {
+            user_id: clubUserId,
+            active: true,
+            status: 'active',
+            start_date: new Date('2026-01-01'),
+            end_date: new Date('2026-08-04'),
+            expires_at: null,
+            club_sections: {
+              clubs: {
+                local_fields: {
+                  local_field_id: 30,
+                  timezone: 'America/Mexico_City',
+                },
+              },
+            },
+          },
+        ]);
+
+        await service.syncRolePermissions(ROLE_ID, []);
+
+        expect(
+          authorizationContext.invalidateUserAuthorizationCache,
+        ).not.toHaveBeenCalledWith(clubUserId);
+      });
     });
   });
 });
