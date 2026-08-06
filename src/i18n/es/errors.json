@@ -510,6 +510,7 @@
   "MOM_PERIOD_NOT_FOUND": "Período no encontrado",
   "REPORT_PDF_NOT_FOUND": "Informe mensual no encontrado",
   "REPORT_PDF_NOT_GENERATED": "No se puede generar el PDF para un informe con este estado. Solo informes generados o enviados pueden descargarse",
+  "MONTHLY_REPORT_GENERATION_LOCK_CONFLICT": "La generación del informe mensual ya está en curso. Reintentá en unos instantes",
   "REPORT_PDF_NO_SNAPSHOT": "El informe no tiene datos de instantánea. Genere el informe primero",
   "YEAR_END_YEAR_CLOSED": "El año eclesiástico ya está inactivo. Puede haber sido cerrado anteriormente",
   "YEAR_END_ECCLESIASTICAL_YEAR_NOT_FOUND": "Año eclesiástico no encontrado",

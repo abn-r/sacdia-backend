@@ -1,5 +1,6 @@
 import { MonthlyReportsService } from './monthly-reports.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AppInternalServerErrorException } from '../common/errors/app.exception';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { UpdateManualDataDto } from './dto/update-manual-data.dto';
@@ -1084,6 +1085,27 @@ describe('MonthlyReportsService auto-generation catch-up', () => {
     expect(loggerError).toHaveBeenCalledWith(
       expect.stringContaining('2026-05'),
     );
+  });
+
+  it('rethrows storage failures after logging so BullMQ can retry the batch', async () => {
+    mockPrisma.club_enrollments.findMany.mockResolvedValue([
+      enrollment('2026-06-01T00:00:00.000Z', '2026-06-30T00:00:00.000Z'),
+    ]);
+    jest.spyOn(service, 'getOrCreateDraft').mockResolvedValue({
+      monthly_report_id: 'june-report',
+      month: 6,
+      year: 2026,
+      status: 'draft',
+    } as any);
+    jest
+      .spyOn(service, 'generate')
+      .mockRejectedValue(
+        new AppInternalServerErrorException(ErrorCode.R2_UPLOAD_FAILED),
+      );
+
+    await expect(
+      service.runAutoGeneration(new Date('2026-07-10T12:00:00.000Z')),
+    ).rejects.toMatchObject({ code: ErrorCode.R2_UPLOAD_FAILED });
   });
 
   it('keeps the feature flag as a kill switch', async () => {

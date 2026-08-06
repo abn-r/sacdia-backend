@@ -505,6 +505,7 @@
   "MOM_PERIOD_NOT_FOUND": "Période introuvable",
   "REPORT_PDF_NOT_FOUND": "Rapport mensuel introuvable",
   "REPORT_PDF_NOT_GENERATED": "Impossible de générer le PDF pour un rapport avec ce statut. Seuls les rapports générés ou soumis peuvent être téléchargés",
+  "MONTHLY_REPORT_GENERATION_LOCK_CONFLICT": "La génération du rapport mensuel est déjà en cours. Réessayez dans un instant",
   "REPORT_PDF_NO_SNAPSHOT": "Le rapport n'a pas de données d'instantané. Générez d'abord le rapport",
   "YEAR_END_YEAR_CLOSED": "L'année ecclésiastique est déjà inactive. Elle a peut-être déjà été clôturée",
   "YEAR_END_ECCLESIASTICAL_YEAR_NOT_FOUND": "Année ecclésiastique introuvable",

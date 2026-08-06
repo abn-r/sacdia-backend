@@ -96,8 +96,24 @@ export class MonthlyReportArtifactsService {
   ): Promise<void> {
     await this.prisma.monthly_reports.update({
       where: { monthly_report_id: reportId },
-      data: this.buildMetadataUpdate(artifact),
+      data: this.getMetadataUpdate(artifact),
     });
+  }
+
+  getMetadataUpdate(artifact: MonthlyReportPdfArtifact) {
+    return {
+      pdf_r2_key: artifact.key,
+      pdf_size_bytes: BigInt(artifact.sizeBytes),
+      pdf_sha256: artifact.sha256,
+      pdf_generated_at: artifact.generatedAt,
+      pdf_template_version: artifact.templateVersion,
+    };
+  }
+
+  async deleteArtifact(artifact: MonthlyReportPdfArtifact): Promise<void> {
+    await this.fileStorage.deleteMany(StorageBucketAlias.MONTHLY_REPORTS, [
+      artifact.key,
+    ]);
   }
 
   async ensureCurrentArtifact(
@@ -221,16 +237,6 @@ export class MonthlyReportArtifactsService {
       sha256: report.pdf_sha256!,
       generatedAt: report.pdf_generated_at!,
       templateVersion: report.pdf_template_version!,
-    };
-  }
-
-  private buildMetadataUpdate(artifact: MonthlyReportPdfArtifact) {
-    return {
-      pdf_r2_key: artifact.key,
-      pdf_size_bytes: BigInt(artifact.sizeBytes),
-      pdf_sha256: artifact.sha256,
-      pdf_generated_at: artifact.generatedAt,
-      pdf_template_version: artifact.templateVersion,
     };
   }
 }

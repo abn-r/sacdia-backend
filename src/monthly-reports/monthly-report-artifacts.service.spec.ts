@@ -36,12 +36,14 @@ describe('MonthlyReportArtifactsService', () => {
   const findUnique = jest.fn();
   const update = jest.fn();
   const upload = jest.fn();
+  const deleteMany = jest.fn();
   const getObjectInfo = jest.fn();
   const getSignedDownloadUrl = jest.fn();
   const generatePdf = jest.fn();
   const fileStorage = {
     [FILE_STORAGE_SERVICE]: undefined,
     upload,
+    deleteMany,
     getObjectInfo,
     getSignedDownloadUrl,
   };
@@ -64,6 +66,7 @@ describe('MonthlyReportArtifactsService', () => {
       key: STORED_KEY,
       url: 'https://private.invalid',
     });
+    deleteMany.mockResolvedValue(undefined);
     update.mockImplementation(
       async ({ data }: { data: Record<string, unknown> }) => ({
         ...generatedReport(),
@@ -140,6 +143,22 @@ describe('MonthlyReportArtifactsService', () => {
 
     expect(upload).toHaveBeenCalledTimes(2);
     expect(upload.mock.calls[0][1]).toBe(upload.mock.calls[1][1]);
+  });
+
+  it('deletes a just-uploaded artifact through the private bucket alias', async () => {
+    await service.deleteArtifact({
+      reportId: REPORT_ID,
+      key: STORED_KEY,
+      sizeBytes: PDF.length,
+      sha256: 'a'.repeat(64),
+      generatedAt: new Date(),
+      templateVersion: MONTHLY_REPORT_PDF_TEMPLATE_VERSION,
+    });
+
+    expect(deleteMany).toHaveBeenCalledWith(
+      StorageBucketAlias.MONTHLY_REPORTS,
+      [STORED_KEY],
+    );
   });
 
   it('does not update metadata when the R2 upload fails', async () => {

@@ -505,6 +505,7 @@
   "MOM_PERIOD_NOT_FOUND": "Período não encontrado",
   "REPORT_PDF_NOT_FOUND": "Relatório mensal não encontrado",
   "REPORT_PDF_NOT_GENERATED": "Não é possível gerar o PDF para um relatório com este status. Apenas relatórios gerados ou enviados podem ser baixados",
+  "MONTHLY_REPORT_GENERATION_LOCK_CONFLICT": "A geração do relatório mensal já está em andamento. Tente novamente em instantes",
   "REPORT_PDF_NO_SNAPSHOT": "O relatório não possui dados de instantâneo. Gere o relatório primeiro",
   "YEAR_END_YEAR_CLOSED": "O ano eclesiástico já está inativo. Pode ter sido encerrado anteriormente",
   "YEAR_END_ECCLESIASTICAL_YEAR_NOT_FOUND": "Ano eclesiástico não encontrado",
