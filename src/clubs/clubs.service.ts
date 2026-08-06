@@ -837,14 +837,50 @@ export class ClubsService {
         },
       });
 
-      const existingActiveDirectorCount = await tx.club_role_assignments.count({
+      const sectionLocalField = await tx.club_sections.findUnique({
+        where: { club_section_id: sectionId },
+        select: {
+          clubs: {
+            select: {
+              local_fields: {
+                select: { local_field_id: true, timezone: true },
+              },
+            },
+          },
+        },
+      });
+      const temporalContext = this.temporalContextForLocalField(
+        sectionLocalField?.clubs?.local_fields,
+      );
+      // Inventory preload only. Temporal authority uses isEffective.
+      const existingActiveDirectors = await tx.club_role_assignments.findMany({
         where: {
           club_section_id: sectionId,
           role_id: directorRole.role_id,
           active: true,
           assignment_id: { not: dto.current_assignment_id },
         },
+        select: {
+          active: true,
+          status: true,
+          start_date: true,
+          end_date: true,
+          expires_at: true,
+        },
       });
+      const existingActiveDirectorCount = existingActiveDirectors.filter(
+        (assignment) =>
+          this.assignmentEffectivityPolicy.isEffective(
+            {
+              active: assignment.active ?? true,
+              status: assignment.status,
+              start_date: assignment.start_date,
+              end_date: assignment.end_date,
+              expires_at: assignment.expires_at,
+            },
+            temporalContext,
+          ),
+      ).length;
 
       if (existingActiveDirectorCount > 0) {
         throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);
@@ -925,13 +961,49 @@ export class ClubsService {
     const startDate = dto.start_date ?? new Date();
 
     const created = await this.prisma.$transaction(async (tx) => {
-      const existingActiveDirectorCount = await tx.club_role_assignments.count({
+      const sectionLocalField = await tx.club_sections.findUnique({
+        where: { club_section_id: sectionId },
+        select: {
+          clubs: {
+            select: {
+              local_fields: {
+                select: { local_field_id: true, timezone: true },
+              },
+            },
+          },
+        },
+      });
+      const temporalContext = this.temporalContextForLocalField(
+        sectionLocalField?.clubs?.local_fields,
+      );
+      // Inventory preload only. Temporal authority uses isEffective.
+      const existingActiveDirectors = await tx.club_role_assignments.findMany({
         where: {
           club_section_id: sectionId,
           role_id: directorRole.role_id,
           active: true,
         },
+        select: {
+          active: true,
+          status: true,
+          start_date: true,
+          end_date: true,
+          expires_at: true,
+        },
       });
+      const existingActiveDirectorCount = existingActiveDirectors.filter(
+        (assignment) =>
+          this.assignmentEffectivityPolicy.isEffective(
+            {
+              active: assignment.active ?? true,
+              status: assignment.status,
+              start_date: assignment.start_date,
+              end_date: assignment.end_date,
+              expires_at: assignment.expires_at,
+            },
+            temporalContext,
+          ),
+      ).length;
 
       if (existingActiveDirectorCount > 0) {
         throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);

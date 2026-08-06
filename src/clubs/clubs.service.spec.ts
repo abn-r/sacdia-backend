@@ -970,10 +970,22 @@ describe('ClubsService', () => {
     const assignmentId = '00000000-0000-0000-0000-000000000003';
     const directorRoleId = '00000000-0000-0000-0000-000000000004';
 
-    function mockInitialAssignmentTransaction(existingDirectorCount = 0) {
+    function mockInitialAssignmentTransaction(
+      existingDirectors: unknown[] = [],
+    ) {
       const tx = {
+        club_sections: {
+          findUnique: jest.fn().mockResolvedValue({
+            clubs: {
+              local_fields: {
+                local_field_id: 30,
+                timezone: 'America/Mexico_City',
+              },
+            },
+          }),
+        },
         club_role_assignments: {
-          count: jest.fn().mockResolvedValue(existingDirectorCount),
+          findMany: jest.fn().mockResolvedValue(existingDirectors),
           create: jest.fn().mockResolvedValue({
             assignment_id: assignmentId,
             user_id: directorUserId,
@@ -995,7 +1007,7 @@ describe('ClubsService', () => {
       mockPrismaService.roles.findFirst.mockResolvedValue({
         role_id: directorRoleId,
       });
-      const tx = mockInitialAssignmentTransaction(0);
+      const tx = mockInitialAssignmentTransaction([]);
 
       const result = await service.assignInitialSectionDirector(
         7,
@@ -1008,11 +1020,18 @@ describe('ClubsService', () => {
       );
 
       expect(result).toEqual({ assignment_id: assignmentId });
-      expect(tx.club_role_assignments.count).toHaveBeenCalledWith({
+      expect(tx.club_role_assignments.findMany).toHaveBeenCalledWith({
         where: {
           club_section_id: 7,
           role_id: directorRoleId,
           active: true,
+        },
+        select: {
+          active: true,
+          status: true,
+          start_date: true,
+          end_date: true,
+          expires_at: true,
         },
       });
       expect(tx.club_role_assignments.create).toHaveBeenCalledWith(
@@ -1053,7 +1072,15 @@ describe('ClubsService', () => {
       mockPrismaService.roles.findFirst.mockResolvedValue({
         role_id: directorRoleId,
       });
-      const tx = mockInitialAssignmentTransaction(1);
+      const tx = mockInitialAssignmentTransaction([
+        {
+          active: true,
+          status: 'active',
+          start_date: new Date('2026-01-01'),
+          end_date: null,
+          expires_at: null,
+        },
+      ]);
 
       await expect(
         service.assignInitialSectionDirector(7, actorUserId, {
@@ -1065,6 +1092,36 @@ describe('ClubsService', () => {
       });
 
       expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
+    });
+
+    describe('T08 club assignment effectivity', () => {
+      it('allows initial director when existing director is only future-dated', async () => {
+        mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+        mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+        mockPrismaService.club_sections.findUnique.mockResolvedValue({
+          main_club_id: 99,
+        });
+        mockPrismaService.roles.findFirst.mockResolvedValue({
+          role_id: directorRoleId,
+        });
+        const tx = mockInitialAssignmentTransaction([
+          {
+            active: true,
+            status: 'active',
+            start_date: new Date('2027-01-01'),
+            end_date: null,
+            expires_at: null,
+          },
+        ]);
+
+        await expect(
+          service.assignInitialSectionDirector(7, actorUserId, {
+            user_id: directorUserId,
+            ecclesiastical_year_id: 2026,
+          }),
+        ).resolves.toEqual({ assignment_id: assignmentId });
+        expect(tx.club_role_assignments.create).toHaveBeenCalled();
+      });
     });
   });
 
@@ -1078,6 +1135,16 @@ describe('ClubsService', () => {
 
     function mockSuccessionTransaction() {
       const tx = {
+        club_sections: {
+          findUnique: jest.fn().mockResolvedValue({
+            clubs: {
+              local_fields: {
+                local_field_id: 30,
+                timezone: 'America/Mexico_City',
+              },
+            },
+          }),
+        },
         club_role_assignments: {
           findUnique: jest.fn().mockResolvedValue({
             assignment_id: currentAssignmentId,
@@ -1087,7 +1154,7 @@ describe('ClubsService', () => {
             active: true,
             roles: { role_name: 'director' },
           }),
-          count: jest.fn().mockResolvedValue(0),
+          findMany: jest.fn().mockResolvedValue([]),
           update: jest.fn().mockResolvedValue({
             assignment_id: currentAssignmentId,
             user_id: oldDirectorUserId,
