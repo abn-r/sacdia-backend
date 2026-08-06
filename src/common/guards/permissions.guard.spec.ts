@@ -6,6 +6,11 @@ import { AUTHORIZATION_RESOURCE_KEY, PERMISSIONS_KEY } from '../decorators';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../errors/error-codes';
 import { InstitutionalHierarchyService } from '../services/institutional-hierarchy.service';
+import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../authorization/local-field-timezone.resolver';
+import { TemporalContextFactory } from '../clock/temporal-context.factory';
+import { TestingClock } from '../clock/testing-clock';
+import { ZonedBusinessTimeService } from '../clock/zoned-business-time.service';
 
 const SENSITIVE_USER_SUBRESOURCE_KEY = 'sensitive_user_subresource';
 
@@ -43,11 +48,51 @@ describe('PermissionsGuard', () => {
     club_sections: { findUnique: jest.fn() },
   };
 
+  const testingClock = new TestingClock(new Date('2026-08-05T18:00:00.000Z'));
+  const zonedBusinessTime = new ZonedBusinessTimeService();
+  const temporalContextFactory = new TemporalContextFactory(
+    testingClock,
+    zonedBusinessTime,
+  );
+  const localFieldTimezoneResolver = new LocalFieldTimezoneResolver(
+    {} as never,
+  );
+  const assignmentEffectivityPolicy = new ClubAssignmentEffectivityPolicy(
+    zonedBusinessTime,
+  );
+
+  const effectiveAssignment = (
+    section: {
+      club_section_id: number;
+      main_club_id: number;
+      club_type_id: number;
+    },
+    status: string | null = 'active',
+  ) => ({
+    active: true,
+    status,
+    start_date: new Date('2026-01-01'),
+    end_date: null,
+    expires_at: null,
+    club_sections: {
+      ...section,
+      clubs: {
+        local_fields: {
+          local_field_id: 30,
+          timezone: 'America/Mexico_City',
+        },
+      },
+    },
+  });
+
   const guard = new PermissionsGuard(
     mockReflector as unknown as Reflector,
     mockAuthorizationContext as unknown as AuthorizationContextService,
     mockPrisma as unknown as PrismaService,
     mockHierarchy as unknown as InstitutionalHierarchyService,
+    temporalContextFactory,
+    localFieldTimezoneResolver,
+    assignmentEffectivityPolicy,
   );
 
   const createContext = (
@@ -170,6 +215,7 @@ describe('PermissionsGuard', () => {
     jest.clearAllMocks();
     mockAuthorizationContext.canManageClub.mockResolvedValue(false);
     mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([]);
     mockAuthorizationContext.canAccessHierarchyScope.mockImplementation(
       (resolved, scope) => {
         const globalScope = resolved.authorization.effective.scope.global ?? {};
@@ -774,9 +820,15 @@ describe('PermissionsGuard', () => {
         instanceId: 22,
       }),
     );
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-      assignment_id: 'pending-assignment-1',
-    });
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      {
+        assignment_id: 'pending-assignment-1',
+        ...effectiveAssignment(
+          { club_section_id: 22, main_club_id: 10, club_type_id: 2 },
+          'pending',
+        ),
+      },
+    ]);
 
     await expect(
       guard.canActivate(
@@ -787,22 +839,15 @@ describe('PermissionsGuard', () => {
       ),
     ).resolves.toBe(true);
 
-    expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledWith({
-      where: {
-        user_id: 'pending-user-1',
-        club_section_id: 22,
-        active: true,
-        OR: [
-          { status: null },
-          {
-            status: {
-              in: ['active', 'pending'],
-            },
-          },
-        ],
-      },
-      select: { assignment_id: true },
-    });
+    expect(mockPrisma.club_role_assignments.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          user_id: 'pending-user-1',
+          club_section_id: 22,
+          active: true,
+        },
+      }),
+    );
   });
 
   it('allows section member readers to open an active member profile in their active section', async () => {
@@ -821,9 +866,16 @@ describe('PermissionsGuard', () => {
         instanceId: 22,
       }),
     );
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-      assignment_id: 'active-assignment-1',
-    });
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      {
+        assignment_id: 'active-assignment-1',
+        ...effectiveAssignment({
+          club_section_id: 22,
+          main_club_id: 10,
+          club_type_id: 2,
+        }),
+      },
+    ]);
 
     await expect(
       guard.canActivate(
@@ -851,7 +903,7 @@ describe('PermissionsGuard', () => {
         instanceId: 22,
       }),
     );
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([]);
 
     await expect(
       guard.canActivate(
@@ -948,13 +1000,13 @@ describe('PermissionsGuard', () => {
       ecclesiastical_year_id: 2026,
       classes: { club_type_id: 2 },
     });
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-      club_sections: {
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      effectiveAssignment({
         club_section_id: 44,
         main_club_id: 99,
         club_type_id: 2,
-      },
-    });
+      }),
+    ]);
 
     await expect(
       guard.canActivate(
@@ -1081,13 +1133,11 @@ describe('PermissionsGuard', () => {
     );
     mockPrisma.users.findUnique.mockResolvedValue({ user_id: 'member-b' });
     mockPrisma.club_role_assignments.findMany.mockResolvedValue([
-      {
-        club_sections: {
-          club_section_id: 44,
-          main_club_id: 99,
-          club_type_id: 2,
-        },
-      },
+      effectiveAssignment({
+        club_section_id: 44,
+        main_club_id: 99,
+        club_type_id: 2,
+      }),
     ]);
 
     await expect(
@@ -1121,13 +1171,11 @@ describe('PermissionsGuard', () => {
       user_id: 'member-b',
     });
     mockPrisma.club_role_assignments.findMany.mockResolvedValue([
-      {
-        club_sections: {
-          club_section_id: 44,
-          main_club_id: 99,
-          club_type_id: 2,
-        },
-      },
+      effectiveAssignment({
+        club_section_id: 44,
+        main_club_id: 99,
+        club_type_id: 2,
+      }),
     ]);
 
     await expect(
@@ -1138,6 +1186,112 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+  });
+
+  describe('T08 club assignment effectivity', () => {
+    it('rejects investiture when member assignment start_date is future', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY)
+          return { permissions: ['investiture:submit'], mode: 'all' };
+        if (key === AUTHORIZATION_RESOURCE_KEY)
+          return { type: 'investiture_enrollment', idParam: 'enrollmentId' };
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          activeClubPermissions: ['investiture:submit'],
+          instanceId: 22,
+        }),
+      );
+      mockPrisma.enrollments.findFirst.mockResolvedValue({
+        user_id: 'member-b',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
+      });
+      mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+        {
+          ...effectiveAssignment({
+            club_section_id: 22,
+            main_club_id: 10,
+            club_type_id: 2,
+          }),
+          start_date: new Date('2027-01-01'),
+        },
+      ]);
+      await expect(
+        guard.canActivate(
+          createContext({ user: { sub: 'a' }, params: { enrollmentId: '1' } }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+    });
+
+    it('rejects section profile read for future active assignment', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY)
+          return { permissions: ['users:read_detail'], mode: 'all' };
+        if (key === AUTHORIZATION_RESOURCE_KEY)
+          return { type: 'user', ownerParam: 'userId' };
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          activeClubPermissions: ['club_roles:read'],
+          instanceId: 22,
+        }),
+      );
+      mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+        {
+          ...effectiveAssignment({
+            club_section_id: 22,
+            main_club_id: 10,
+            club_type_id: 2,
+          }),
+          start_date: new Date('2027-01-01'),
+        },
+      ]);
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'director-1' },
+            params: { userId: 'member-1' },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+    });
+
+    it('fails closed without classifiable local-field timezone', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY)
+          return { permissions: ['insurance:read'], mode: 'all' };
+        if (key === AUTHORIZATION_RESOURCE_KEY)
+          return { type: 'insurance_member', idParam: 'memberId' };
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          activeClubPermissions: ['insurance:read'],
+          instanceId: 22,
+        }),
+      );
+      mockPrisma.users.findUnique.mockResolvedValue({ user_id: 'member-b' });
+      const row = effectiveAssignment({
+        club_section_id: 22,
+        main_club_id: 10,
+        club_type_id: 2,
+      });
+      row.club_sections.clubs.local_fields.timezone = null;
+      mockPrisma.club_role_assignments.findMany.mockResolvedValue([row]);
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'a' },
+            params: { memberId: 'member-b' },
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.LOCAL_FIELD_TIMEZONE_UNAVAILABLE,
+      });
+    });
   });
 
   // ── camporee_event RBAC (Phase 3 — Spec C7) ──────────────────────────────
