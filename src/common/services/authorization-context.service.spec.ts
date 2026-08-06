@@ -8,6 +8,12 @@ import {
 } from './authorization-context.service';
 import { authorizationContextV4Key } from '../authorization/authorization-context-cache-v4';
 import { AuthorizationContextVersionService } from '../authorization/authorization-context-version.service';
+import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../authorization/local-field-timezone.resolver';
+import { CLOCK } from '../clock/clock';
+import { TemporalContextFactory } from '../clock/temporal-context.factory';
+import { TestingClock } from '../clock/testing-clock';
+import { ZonedBusinessTimeService } from '../clock/zoned-business-time.service';
 import { ErrorCode } from '../errors/error-codes';
 import { InstitutionalHierarchyService } from './institutional-hierarchy.service';
 
@@ -18,6 +24,28 @@ describe('AuthorizationContextService', () => {
   let configValues: Record<string, string | undefined>;
   let loggerDebugSpy: jest.SpyInstance;
   let loggerWarnSpy: jest.SpyInstance;
+  let testingClock: TestingClock;
+  let effectivityPolicy: ClubAssignmentEffectivityPolicy;
+
+  const localFieldWithTimezone = (
+    patch: {
+      local_field_id?: number;
+      name?: string;
+      timezone?: string;
+    } = {},
+  ) => ({
+    local_field_id: patch.local_field_id ?? 30,
+    name: patch.name ?? 'Campo Centro',
+    timezone: patch.timezone ?? 'America/Mexico_City',
+    unions: {
+      union_id: 20,
+      name: 'Unión Norte',
+      countries: {
+        country_id: 10,
+        name: 'México',
+      },
+    },
+  });
 
   const mockPrismaService = {
     users: {
@@ -66,6 +94,7 @@ describe('AuthorizationContextService', () => {
     cacheManager = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
     versionService = { current: jest.fn().mockResolvedValue(3n) };
     configValues = { AUTH_CONTEXT_CACHE_V4_ENABLED: 'true' };
+    testingClock = new TestingClock(new Date('2026-08-05T18:00:00.000Z'));
 
     mockHierarchyService.resolveCurrent.mockResolvedValue({
       division_id: 1,
@@ -99,12 +128,18 @@ describe('AuthorizationContextService', () => {
           provide: CACHE_MANAGER,
           useValue: cacheManager,
         },
+        { provide: CLOCK, useValue: testingClock },
+        ZonedBusinessTimeService,
+        TemporalContextFactory,
+        LocalFieldTimezoneResolver,
+        ClubAssignmentEffectivityPolicy,
       ],
     }).compile();
 
     service = module.get<AuthorizationContextService>(
       AuthorizationContextService,
     );
+    effectivityPolicy = module.get(ClubAssignmentEffectivityPolicy);
     loggerDebugSpy = jest.spyOn(
       (
         service as unknown as {
@@ -411,18 +446,7 @@ describe('AuthorizationContextService', () => {
             clubs: {
               club_id: 10,
               name: 'Club Amanecer',
-              local_fields: {
-                local_field_id: 30,
-                name: 'Campo Centro',
-                unions: {
-                  union_id: 20,
-                  name: 'Unión Norte',
-                  countries: {
-                    country_id: 10,
-                    name: 'México',
-                  },
-                },
-              },
+              local_fields: localFieldWithTimezone(),
             },
           },
         },
@@ -445,18 +469,7 @@ describe('AuthorizationContextService', () => {
             clubs: {
               club_id: 10,
               name: 'Club Amanecer',
-              local_fields: {
-                local_field_id: 30,
-                name: 'Campo Centro',
-                unions: {
-                  union_id: 20,
-                  name: 'Unión Norte',
-                  countries: {
-                    country_id: 10,
-                    name: 'México',
-                  },
-                },
-              },
+              local_fields: localFieldWithTimezone(),
             },
           },
         },
@@ -652,7 +665,10 @@ describe('AuthorizationContextService', () => {
             clubs: {
               club_id: 44,
               name: 'Club Horizonte',
-              local_fields: null,
+              local_fields: localFieldWithTimezone({
+                local_field_id: 44,
+                name: 'Campo Horizonte',
+              }),
             },
           },
         },
@@ -698,7 +714,10 @@ describe('AuthorizationContextService', () => {
         clubs: {
           club_id: 12,
           name: 'Orión',
-          local_fields: null,
+          local_fields: localFieldWithTimezone({
+            local_field_id: 12,
+            name: 'Campo Orión',
+          }),
         },
       },
     });
@@ -745,5 +764,165 @@ describe('AuthorizationContextService', () => {
     expect(
       result.authorization.effective.scope.club?.section.club_section_id,
     ).toBe(44);
+  });
+
+  describe('T08 club assignment effectivity (canonical authority path)', () => {
+    const clubAssignment = (patch: {
+      assignment_id?: string;
+      status?: string;
+      start_date?: Date;
+      end_date?: Date | null;
+      expires_at?: Date | null;
+      permission?: string;
+      timezone?: string | null;
+      omitLocalField?: boolean;
+    }) => ({
+      assignment_id: patch.assignment_id ?? 'assignment-effectivity',
+      status: patch.status ?? 'active',
+      active: true,
+      start_date: patch.start_date ?? new Date('2026-01-01'),
+      end_date: patch.end_date === undefined ? null : patch.end_date,
+      expires_at: patch.expires_at === undefined ? null : patch.expires_at,
+      roles: {
+        role_name: 'director',
+        role_permissions: [
+          {
+            permissions: {
+              permission_name: patch.permission ?? 'clubs:update',
+            },
+          },
+        ],
+      },
+      club_sections: {
+        club_section_id: 11,
+        club_type_id: 1,
+        club_types: { name: 'Aventureros' },
+        clubs: {
+          club_id: 10,
+          name: 'Club Amanecer',
+          local_fields: patch.omitLocalField
+            ? null
+            : patch.timezone === null
+              ? {
+                  local_field_id: 30,
+                  name: 'Campo Centro',
+                  timezone: null,
+                  unions: {
+                    union_id: 20,
+                    name: 'Unión Norte',
+                    countries: { country_id: 10, name: 'México' },
+                  },
+                }
+              : localFieldWithTimezone({
+                  timezone: patch.timezone ?? 'America/Mexico_City',
+                }),
+        },
+      },
+    });
+
+    it('excludes future start_date assignments from effective club permissions', async () => {
+      const isEffectiveSpy = jest.spyOn(effectivityPolicy, 'isEffective');
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...minimalUser('user-future'),
+        users_roles: [],
+        club_role_assignments: [
+          clubAssignment({
+            start_date: new Date('2027-01-01'),
+            permission: 'clubs:update',
+          }),
+        ],
+      });
+
+      const result = await service.resolveUserAuthorization('user-future');
+
+      expect(isEffectiveSpy).toHaveBeenCalled();
+      expect(result.authorization.grants.club_assignments).toHaveLength(1);
+      expect(result.authorization.active_assignment.assignment_id).toBeNull();
+      expect(result.authorization.effective.permissions).toEqual([]);
+      expect(result.authorization.effective.scope.club).toBeNull();
+    });
+
+    it('excludes expired expires_at assignments from effective club permissions', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...minimalUser('user-expired'),
+        users_roles: [],
+        club_role_assignments: [
+          clubAssignment({
+            expires_at: new Date('2026-08-05T18:00:00.000Z'),
+            permission: 'finances:update',
+          }),
+        ],
+      });
+
+      const result = await service.resolveUserAuthorization('user-expired');
+
+      expect(result.authorization.grants.club_assignments).toHaveLength(1);
+      expect(result.authorization.effective.permissions).toEqual([]);
+      expect(result.authorization.active_assignment.assignment_id).toBeNull();
+    });
+
+    it('excludes ended end_date assignments from effective club permissions', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...minimalUser('user-ended'),
+        users_roles: [],
+        club_role_assignments: [
+          clubAssignment({
+            end_date: new Date('2026-08-04'),
+            permission: 'reports:read',
+          }),
+        ],
+      });
+
+      const result = await service.resolveUserAuthorization('user-ended');
+
+      expect(result.authorization.grants.club_assignments).toHaveLength(1);
+      expect(result.authorization.effective.permissions).toEqual([]);
+      expect(result.authorization.active_assignment.assignment_id).toBeNull();
+    });
+
+    it('keeps temporally effective assignments in effective permissions', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...minimalUser('user-effective'),
+        users_roles: [],
+        users_pr: {
+          complete: true,
+          active_club_assignment_id: 'assignment-effectivity',
+        },
+        club_role_assignments: [
+          clubAssignment({
+            start_date: new Date('2026-01-01'),
+            permission: 'clubs:update',
+          }),
+        ],
+      });
+
+      const result = await service.resolveUserAuthorization('user-effective');
+
+      expect(result.authorization.active_assignment.assignment_id).toBe(
+        'assignment-effectivity',
+      );
+      expect(result.authorization.effective.permissions).toEqual([
+        'clubs:update',
+      ]);
+    });
+
+    it('fails closed when an active assignment lacks a classifiable local-field timezone', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...minimalUser('user-tz'),
+        users_roles: [],
+        club_role_assignments: [
+          clubAssignment({
+            timezone: null,
+            permission: 'clubs:update',
+          }),
+        ],
+      });
+
+      await expect(
+        service.resolveUserAuthorization('user-tz'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.LOCAL_FIELD_TIMEZONE_UNAVAILABLE,
+      });
+    });
   });
 });

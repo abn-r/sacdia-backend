@@ -16,6 +16,9 @@ import {
   type AuthorizationContextEnvelope,
 } from '../authorization/authorization-context-cache-v4';
 import { AuthorizationContextVersionService } from '../authorization/authorization-context-version.service';
+import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../authorization/local-field-timezone.resolver';
+import { TemporalContextFactory } from '../clock/temporal-context.factory';
 import {
   InstitutionalHierarchyService,
   type HierarchyContext,
@@ -160,6 +163,7 @@ type ClubHierarchyRecord = {
   local_fields?: {
     local_field_id: number;
     name: string | null;
+    timezone?: string | null;
     unions?: {
       union_id: number;
       name: string | null;
@@ -173,6 +177,7 @@ type ClubHierarchyRecord = {
 
 type ClubAssignmentRecord = {
   assignment_id: string;
+  active?: boolean | null;
   status: string | null;
   start_date: Date | null;
   end_date: Date | null;
@@ -212,6 +217,7 @@ const CLUB_SCOPE_SELECT = {
     select: {
       local_field_id: true,
       name: true,
+      timezone: true,
       unions: {
         select: {
           union_id: true,
@@ -243,6 +249,9 @@ export class AuthorizationContextService {
     private readonly hierarchy: InstitutionalHierarchyService,
     private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly configService: ConfigService,
+    private readonly temporalContextFactory: TemporalContextFactory,
+    private readonly localFieldTimezoneResolver: LocalFieldTimezoneResolver,
+    private readonly assignmentEffectivityPolicy: ClubAssignmentEffectivityPolicy,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
@@ -446,10 +455,13 @@ export class AuthorizationContextService {
           },
         },
         club_role_assignments: {
+          // Inventory preload only. Temporal authority uses
+          // ClubAssignmentEffectivityPolicy.isEffective (resource timezone).
           where: { active: true },
           orderBy: CANONICAL_CLUB_ASSIGNMENT_ORDER,
           select: {
             assignment_id: true,
+            active: true,
             status: true,
             start_date: true,
             end_date: true,
@@ -493,17 +505,24 @@ export class AuthorizationContextService {
       scope: globalScope,
     }));
 
+    const assignmentRecords = user.club_role_assignments ?? [];
+
     // All grants (active + pending) — exposed in authorization.grants.club_assignments
-    const clubGrants = (user.club_role_assignments ?? [])
+    const clubGrants = assignmentRecords
       .map((assignment) => this.buildClubGrant(assignment))
       .filter((assignment): assignment is ClubAuthorizationGrant =>
         Boolean(assignment),
       );
 
-    // Only status:'active' grants are used for permission resolution and active context
-    const activeClubGrants = clubGrants.filter(
-      (grant) => grant.status === 'active',
-    );
+    // Authority path: canonical effectivity in the local-field timezone.
+    const activeClubGrants = assignmentRecords
+      .filter((assignment) =>
+        this.isClubAssignmentCurrentlyEffective(assignment),
+      )
+      .map((assignment) => this.buildClubGrant(assignment))
+      .filter((assignment): assignment is ClubAuthorizationGrant =>
+        Boolean(assignment),
+      );
 
     const persistedActiveAssignmentId =
       user.users_pr?.active_club_assignment_id ?? null;
@@ -787,6 +806,50 @@ export class AuthorizationContextService {
       );
       return null;
     }
+  }
+
+  /**
+   * Authority gate for club assignments. Uses ClubAssignmentEffectivityPolicy
+   * with TemporalContext from the assignment's local-field timezone.
+   * Fail-closed when timezone cannot be classified.
+   */
+  private isClubAssignmentCurrentlyEffective(
+    assignment: ClubAssignmentRecord,
+  ): boolean {
+    if (assignment.active === false || assignment.status !== 'active') {
+      return false;
+    }
+    if (!assignment.start_date) {
+      return false;
+    }
+
+    const localField = assignment.club_sections?.clubs?.local_fields;
+    if (!localField) {
+      throw new AppException(
+        ErrorCode.LOCAL_FIELD_TIMEZONE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        { reason: 'MISSING' },
+      );
+    }
+
+    const timezone = this.localFieldTimezoneResolver.assertTimezone(
+      localField.timezone,
+    );
+    const temporalContext = this.temporalContextFactory.forLocalField({
+      local_field_id: localField.local_field_id,
+      timezone,
+    });
+
+    return this.assignmentEffectivityPolicy.isEffective(
+      {
+        active: assignment.active ?? true,
+        status: assignment.status,
+        start_date: assignment.start_date,
+        end_date: assignment.end_date,
+        expires_at: assignment.expires_at,
+      },
+      temporalContext,
+    );
   }
 
   private buildClubGrant(

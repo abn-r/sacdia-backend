@@ -53,7 +53,7 @@ const baseline = {
   'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|32d48d679749',
   'common/guards/permissions.guard.ts': 'effectiveWhere|T08|3|e8b370c41349',
   'common/services/authorization-context.service.ts':
-    'effectiveWhere|T08|1|c5e3b3bd1aa7',
+    'effectiveWhere|T08|1|37a9518f5d2c',
   'coordination/coordination.service.ts': 'effectiveWhere|T08|1|9a134e551821',
   'dashboard/dashboard.service.ts': 'effectiveWhere|T08|2|ffdfddfae134',
   'evidence-review/evidence-review.service.ts':
