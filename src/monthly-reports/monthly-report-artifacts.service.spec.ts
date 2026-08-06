@@ -103,16 +103,7 @@ describe('MonthlyReportArtifactsService', () => {
       PDF,
       { contentType: 'application/pdf', overwrite: true },
     );
-    expect(update).toHaveBeenCalledWith({
-      where: { monthly_report_id: REPORT_ID },
-      data: expect.objectContaining({
-        pdf_r2_key: STORED_KEY,
-        pdf_size_bytes: BigInt(PDF.length),
-        pdf_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
-        pdf_generated_at: expect.any(Date),
-        pdf_template_version: MONTHLY_REPORT_PDF_TEMPLATE_VERSION,
-      }),
-    });
+    expect(update).not.toHaveBeenCalled();
     expect(result).toEqual(
       expect.objectContaining({
         reportId: REPORT_ID,
@@ -121,6 +112,24 @@ describe('MonthlyReportArtifactsService', () => {
         templateVersion: MONTHLY_REPORT_PDF_TEMPLATE_VERSION,
       }),
     );
+  });
+
+  it('persists artifact metadata only when the caller explicitly requests it', async () => {
+    findUnique.mockResolvedValueOnce(generatedReport());
+
+    const artifact = await service.renderAndUpload({ reportId: REPORT_ID });
+    await service.persistArtifactMetadata(REPORT_ID, artifact);
+
+    expect(update).toHaveBeenCalledWith({
+      where: { monthly_report_id: REPORT_ID },
+      data: {
+        pdf_r2_key: STORED_KEY,
+        pdf_size_bytes: BigInt(PDF.length),
+        pdf_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+        pdf_generated_at: expect.any(Date),
+        pdf_template_version: MONTHLY_REPORT_PDF_TEMPLATE_VERSION,
+      },
+    });
   });
 
   it('uses the same canonical key when a report is regenerated', async () => {

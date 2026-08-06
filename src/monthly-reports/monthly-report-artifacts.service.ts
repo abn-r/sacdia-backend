@@ -80,17 +80,6 @@ export class MonthlyReportArtifactsService {
     );
     const generatedAt = new Date();
 
-    await this.prisma.monthly_reports.update({
-      where: { monthly_report_id: input.reportId },
-      data: {
-        pdf_r2_key: uploaded.key,
-        pdf_size_bytes: BigInt(pdf.length),
-        pdf_sha256: sha256,
-        pdf_generated_at: generatedAt,
-        pdf_template_version: MONTHLY_REPORT_PDF_TEMPLATE_VERSION,
-      },
-    });
-
     return {
       reportId: input.reportId,
       key: uploaded.key,
@@ -99,6 +88,16 @@ export class MonthlyReportArtifactsService {
       generatedAt,
       templateVersion: MONTHLY_REPORT_PDF_TEMPLATE_VERSION,
     };
+  }
+
+  async persistArtifactMetadata(
+    reportId: string,
+    artifact: MonthlyReportPdfArtifact,
+  ): Promise<void> {
+    await this.prisma.monthly_reports.update({
+      where: { monthly_report_id: reportId },
+      data: this.buildMetadataUpdate(artifact),
+    });
   }
 
   async ensureCurrentArtifact(
@@ -121,10 +120,12 @@ export class MonthlyReportArtifactsService {
       throw new AppBadRequestException(ErrorCode.REPORT_PDF_NO_SNAPSHOT);
     }
 
-    return this.renderAndUpload({
+    const artifact = await this.renderAndUpload({
       reportId,
       snapshotOverride: report.snapshot_data,
     });
+    await this.persistArtifactMetadata(reportId, artifact);
+    return artifact;
   }
 
   async getStoredPdfBuffer(reportId: string): Promise<Buffer> {
@@ -220,6 +221,16 @@ export class MonthlyReportArtifactsService {
       sha256: report.pdf_sha256!,
       generatedAt: report.pdf_generated_at!,
       templateVersion: report.pdf_template_version!,
+    };
+  }
+
+  private buildMetadataUpdate(artifact: MonthlyReportPdfArtifact) {
+    return {
+      pdf_r2_key: artifact.key,
+      pdf_size_bytes: BigInt(artifact.sizeBytes),
+      pdf_sha256: artifact.sha256,
+      pdf_generated_at: artifact.generatedAt,
+      pdf_template_version: artifact.templateVersion,
     };
   }
 }
