@@ -756,6 +756,95 @@ describe('MonthlyReportsService draft creation and generation transitions', () =
   });
 });
 
+describe('MonthlyReportsService PDF regeneration', () => {
+  const findUnique = jest.fn();
+  const artifacts = {
+    renderAndUpload: jest.fn(),
+    persistArtifactMetadata: jest.fn(),
+  };
+  const lock = {
+    tryAcquire: jest.fn(),
+    release: jest.fn(),
+  };
+  const prisma = {
+    monthly_reports: { findUnique },
+  };
+  let service: MonthlyReportsService;
+
+  const report = {
+    monthly_report_id: 'report-1',
+    status: 'submitted',
+    snapshot_data: { member_count: 20 },
+    generated_at: new Date('2026-06-01T00:00:00.000Z'),
+    submitted_at: new Date('2026-06-02T00:00:00.000Z'),
+    submitted_by: 'user-1',
+  };
+  const artifact = {
+    reportId: 'report-1',
+    key: 'monthly-reports/2026/06/enrollment/report-1.pdf',
+    sizeBytes: 100,
+    sha256: 'a'.repeat(64),
+    generatedAt: new Date('2026-06-03T00:00:00.000Z'),
+    templateVersion: 'monthly-report-v2-three-page',
+  };
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    service = new MonthlyReportsService(
+      prisma as any,
+      {} as any,
+      undefined,
+      artifacts as any,
+      lock as any,
+    );
+    lock.tryAcquire.mockResolvedValue(true);
+    lock.release.mockResolvedValue(undefined);
+    artifacts.renderAndUpload.mockResolvedValue(artifact);
+    artifacts.persistArtifactMetadata.mockResolvedValue(undefined);
+    findUnique.mockResolvedValueOnce(report).mockResolvedValueOnce({
+      ...report,
+      manual_data: { planning_meetings: 2 },
+    });
+  });
+
+  it('rerenders the frozen snapshot and preserves workflow fields', async () => {
+    const result = await service.regenerate('report-1');
+
+    expect(artifacts.renderAndUpload).toHaveBeenCalledWith({
+      reportId: 'report-1',
+      snapshotOverride: report.snapshot_data,
+    });
+    expect(artifacts.persistArtifactMetadata).toHaveBeenCalledWith(
+      'report-1',
+      artifact,
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: 'submitted',
+        generated_at: report.generated_at,
+        submitted_at: report.submitted_at,
+        submitted_by: report.submitted_by,
+      }),
+    );
+    expect(lock.release).toHaveBeenCalledWith(
+      'monthly-report:generate:report-1',
+    );
+  });
+
+  it.each(['draft', 'approved'])(
+    'rejects regeneration for unsupported status %s',
+    async (status) => {
+      findUnique.mockReset();
+      findUnique.mockResolvedValue({ ...report, status });
+
+      await expect(service.regenerate('report-1')).rejects.toMatchObject({
+        code: ErrorCode.REPORT_PDF_NOT_GENERATED,
+      });
+      expect(artifacts.renderAndUpload).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe('MonthlyReportsService auto-generation catch-up', () => {
   const mockPrisma = {
     system_config: {

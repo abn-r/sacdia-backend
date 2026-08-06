@@ -25,7 +25,7 @@ import {
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { MonthlyReportsService } from './monthly-reports.service';
-import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
+import { MonthlyReportArtifactsService } from './monthly-report-artifacts.service';
 import { UpdateManualDataDto } from './dto';
 import {
   AuthorizationResource,
@@ -41,7 +41,7 @@ import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 export class MonthlyReportsController {
   constructor(
     private readonly monthlyReportsService: MonthlyReportsService,
-    private readonly monthlyReportsPdfService: MonthlyReportsPdfService,
+    private readonly monthlyReportArtifactsService: MonthlyReportArtifactsService,
   ) {}
 
   // ========================================
@@ -271,7 +271,7 @@ export class MonthlyReportsController {
   @ApiOperation({
     summary: 'Descargar informe mensual en PDF',
     description:
-      'Genera y descarga el informe mensual en formato PDF. Solo disponible para informes con estado "generated" o "submitted".',
+      'Descarga el artefacto PDF privado almacenado en R2. Si falta o está desactualizado, el backend lo repara desde el snapshot congelado. Solo disponible para informes con estado "generated" o "submitted".',
   })
   @ApiParam({
     name: 'reportId',
@@ -290,7 +290,8 @@ export class MonthlyReportsController {
     @Param('reportId', ParseUUIDPipe) reportId: string,
     @Res() res: Response,
   ) {
-    const pdfBuffer = await this.monthlyReportsPdfService.generatePdf(reportId);
+    const pdfBuffer =
+      await this.monthlyReportArtifactsService.getStoredPdfBuffer(reportId);
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -299,6 +300,40 @@ export class MonthlyReportsController {
     });
 
     res.end(pdfBuffer);
+  }
+
+  // ========================================
+  // REGENERATE STORED PDF ARTIFACT
+  // ========================================
+
+  @Post(':reportId/regenerate')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('reports:write')
+  @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
+  @ApiOperation({
+    summary: 'Regenerar el PDF almacenado del informe mensual',
+    description:
+      'Rerenderiza el PDF desde el snapshot congelado y actualiza únicamente el artefacto. Solo disponible para informes generados o enviados.',
+  })
+  @ApiParam({
+    name: 'reportId',
+    description: 'ID del informe mensual',
+    type: 'string',
+    format: 'uuid',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Informe con el artefacto PDF regenerado',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Solo se pueden regenerar informes generados o enviados con snapshot',
+  })
+  @ApiResponse({ status: 404, description: 'Informe no encontrado' })
+  async regenerate(@Param('reportId', ParseUUIDPipe) reportId: string) {
+    const data = await this.monthlyReportsService.regenerate(reportId);
+    return { status: 'success', data };
   }
 
   // ========================================

@@ -8,6 +8,7 @@ import {
   AppConflictException,
   AppException,
   AppBadRequestException,
+  AppInternalServerErrorException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -347,6 +348,72 @@ export class MonthlyReportsService {
       }
 
       return generated;
+    } finally {
+      if (this.lockService) {
+        await this.lockService.release(lockKey);
+      }
+    }
+  }
+
+  /**
+   * Regenerates only the canonical PDF artifact from the frozen snapshot.
+   * Workflow status, snapshot and submission fields remain unchanged.
+   */
+  async regenerate(reportId: string) {
+    const lockKey = `monthly-report:generate:${reportId}`;
+    if (this.lockService) {
+      const acquired = await this.lockService.tryAcquire(lockKey, 5 * 60_000);
+      if (!acquired) {
+        throw new AppConflictException(
+          ErrorCode.MONTHLY_REPORT_GENERATION_LOCK_CONFLICT,
+        );
+      }
+    }
+
+    try {
+      const report = await this.prisma.monthly_reports.findUnique({
+        where: { monthly_report_id: reportId },
+      });
+
+      if (!report) {
+        throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+      }
+
+      if (!['generated', 'submitted'].includes(report.status)) {
+        throw new AppBadRequestException(ErrorCode.REPORT_PDF_NOT_GENERATED);
+      }
+
+      if (!report.snapshot_data) {
+        throw new AppBadRequestException(ErrorCode.REPORT_PDF_NO_SNAPSHOT);
+      }
+
+      if (!this.monthlyReportArtifactsService) {
+        throw new AppInternalServerErrorException(
+          ErrorCode.R2_VALIDATION_FAILED,
+        );
+      }
+
+      const artifact = await this.monthlyReportArtifactsService.renderAndUpload(
+        {
+          reportId,
+          snapshotOverride: report.snapshot_data as MonthlyReportSnapshotData,
+        },
+      );
+      await this.monthlyReportArtifactsService.persistArtifactMetadata(
+        reportId,
+        artifact,
+      );
+
+      const regenerated = await this.prisma.monthly_reports.findUnique({
+        where: { monthly_report_id: reportId },
+        include: { manual_data: true },
+      });
+
+      if (!regenerated) {
+        throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+      }
+
+      return regenerated;
     } finally {
       if (this.lockService) {
         await this.lockService.release(lockKey);
