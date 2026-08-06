@@ -35,7 +35,7 @@ const baseline = {
     'effectiveWhere|T09|1|080dad106bfa',
   'annual-reports/annual-reports.service.ts':
     'effectiveWhere|T09|3|45560f10e5fd',
-  'auth/auth.service.ts': 'effectiveWhere|T08|1|f977d2dd17f2',
+  'auth/auth.service.ts': 'effectiveWhere|T08|1|37454dcf68e9',
   'camporee-scoring/camporee-scoring.service.ts':
     'effectiveWhere|T09|1|7e83a87c1703',
   'camporees/camporees.service.ts': 'workflowWhere|allowlist|1|1564632cc103',

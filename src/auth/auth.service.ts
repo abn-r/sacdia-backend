@@ -1,4 +1,5 @@
 import {
+  HttpStatus,
   Inject,
   Injectable,
   ServiceUnavailableException,
@@ -25,10 +26,14 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { EmailService } from '../common/email/email.service';
 import {
   AppBadRequestException,
+  AppException,
   AppNotFoundException,
   AppUnauthorizedException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../common/authorization/local-field-timezone.resolver';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -62,6 +67,9 @@ export class AuthService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly emailService: EmailService,
+    private readonly temporalContextFactory: TemporalContextFactory,
+    private readonly localFieldTimezoneResolver: LocalFieldTimezoneResolver,
+    private readonly assignmentEffectivityPolicy: ClubAssignmentEffectivityPolicy,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -561,6 +569,8 @@ export class AuthService {
   }
 
   async setActiveClubContext(userId: string, dto: SetActiveClubContextDto) {
+    // Inventory preload only. Temporal authority uses
+    // ClubAssignmentEffectivityPolicy.isEffective (resource timezone).
     const assignment = await this.prisma.club_role_assignments.findFirst({
       where: {
         assignment_id: dto.assignment_id,
@@ -570,18 +580,31 @@ export class AuthService {
       },
       select: {
         assignment_id: true,
+        active: true,
+        status: true,
+        start_date: true,
+        end_date: true,
+        expires_at: true,
         roles: { select: { role_name: true } },
         club_sections: {
           select: {
             club_section_id: true,
             club_types: { select: { name: true } },
-            clubs: { select: { club_id: true, name: true } },
+            clubs: {
+              select: {
+                club_id: true,
+                name: true,
+                local_fields: {
+                  select: { local_field_id: true, timezone: true },
+                },
+              },
+            },
           },
         },
       },
     });
 
-    if (!assignment) {
+    if (!assignment || !this.isClubAssignmentCurrentlyEffective(assignment)) {
       throw new AppBadRequestException(ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND, {
         assignmentId: dto.assignment_id,
       });
@@ -781,6 +804,62 @@ export class AuthService {
 
     this.logger.log(
       `Verification email enqueued for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
+    );
+  }
+
+  /**
+   * Authority gate for club assignments. Uses ClubAssignmentEffectivityPolicy
+   * with TemporalContext from the assignment's local-field timezone.
+   * Fail-closed when timezone cannot be classified.
+   */
+  private isClubAssignmentCurrentlyEffective(assignment: {
+    active?: boolean | null;
+    status: string | null;
+    start_date: Date | null;
+    end_date: Date | null;
+    expires_at: Date | null;
+    club_sections: {
+      clubs: {
+        local_fields: {
+          local_field_id: number;
+          timezone: string | null;
+        } | null;
+      } | null;
+    } | null;
+  }): boolean {
+    if (assignment.active === false || assignment.status !== 'active') {
+      return false;
+    }
+    if (!assignment.start_date) {
+      return false;
+    }
+
+    const localField = assignment.club_sections?.clubs?.local_fields;
+    if (!localField) {
+      throw new AppException(
+        ErrorCode.LOCAL_FIELD_TIMEZONE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        { reason: 'MISSING' },
+      );
+    }
+
+    const timezone = this.localFieldTimezoneResolver.assertTimezone(
+      localField.timezone,
+    );
+    const temporalContext = this.temporalContextFactory.forLocalField({
+      local_field_id: localField.local_field_id,
+      timezone,
+    });
+
+    return this.assignmentEffectivityPolicy.isEffective(
+      {
+        active: assignment.active ?? true,
+        status: assignment.status,
+        start_date: assignment.start_date,
+        end_date: assignment.end_date,
+        expires_at: assignment.expires_at,
+      },
+      temporalContext,
     );
   }
 

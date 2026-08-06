@@ -17,11 +17,28 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../common/authorization/local-field-timezone.resolver';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { TestingClock } from '../common/clock/testing-clock';
+import { ZonedBusinessTimeService } from '../common/clock/zoned-business-time.service';
 
 describe('AuthService', () => {
   let service: AuthService;
   const originalFrontendUrl = process.env.FRONTEND_URL;
   const originalRejectSnakeCase = process.env.AUTH_REJECT_SNAKE_CASE;
+  const testingClock = new TestingClock(new Date('2026-08-05T18:00:00.000Z'));
+  const zonedBusinessTime = new ZonedBusinessTimeService();
+  const temporalContextFactory = new TemporalContextFactory(
+    testingClock,
+    zonedBusinessTime,
+  );
+  const localFieldTimezoneResolver = new LocalFieldTimezoneResolver(
+    {} as never,
+  );
+  const assignmentEffectivityPolicy = new ClubAssignmentEffectivityPolicy(
+    zonedBusinessTime,
+  );
 
   // -------------------------------------------------------------------------
   // Prisma transaction mock — only users_pr and roles remain in the SACDIA
@@ -125,6 +142,15 @@ describe('AuthService', () => {
         {
           provide: EmailService,
           useValue: mockEmailService,
+        },
+        { provide: TemporalContextFactory, useValue: temporalContextFactory },
+        {
+          provide: LocalFieldTimezoneResolver,
+          useValue: localFieldTimezoneResolver,
+        },
+        {
+          provide: ClubAssignmentEffectivityPolicy,
+          useValue: assignmentEffectivityPolicy,
         },
       ],
     }).compile();
@@ -908,11 +934,23 @@ describe('AuthService', () => {
     it('should persist active assignment and return normalized context', async () => {
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'assignment-1',
+        active: true,
+        status: 'active',
+        start_date: new Date('2026-01-01'),
+        end_date: null,
+        expires_at: null,
         roles: { role_name: 'member' },
         club_sections: {
           club_section_id: 22,
           club_types: { name: 'Conquistadores' },
-          clubs: { club_id: 2, name: 'Club B' },
+          clubs: {
+            club_id: 2,
+            name: 'Club B',
+            local_fields: {
+              local_field_id: 30,
+              timezone: 'America/Mexico_City',
+            },
+          },
         },
       });
       mockPrismaService.users_pr.upsert.mockResolvedValue({
@@ -1082,6 +1120,72 @@ describe('AuthService', () => {
             club_type: 'Conquistadores',
           },
         },
+      });
+    });
+
+    describe('T08 club assignment effectivity', () => {
+      const baseAssignment = {
+        assignment_id: 'assignment-1',
+        active: true,
+        status: 'active',
+        start_date: new Date('2026-01-01'),
+        end_date: null as Date | null,
+        expires_at: null as Date | null,
+        roles: { role_name: 'member' },
+        club_sections: {
+          club_section_id: 22,
+          club_types: { name: 'Conquistadores' },
+          clubs: {
+            club_id: 2,
+            name: 'Club B',
+            local_fields: {
+              local_field_id: 30,
+              timezone: 'America/Mexico_City',
+            },
+          },
+        },
+      };
+
+      it('rejects a future start_date assignment', async () => {
+        mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+          ...baseAssignment,
+          start_date: new Date('2027-01-01'),
+        });
+
+        await expect(
+          service.setActiveClubContext('user-123', {
+            assignment_id: 'assignment-1',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND });
+        expect(mockPrismaService.users_pr.upsert).not.toHaveBeenCalled();
+      });
+
+      it('rejects an expired expires_at assignment', async () => {
+        mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+          ...baseAssignment,
+          expires_at: new Date('2026-08-05T18:00:00.000Z'),
+        });
+
+        await expect(
+          service.setActiveClubContext('user-123', {
+            assignment_id: 'assignment-1',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND });
+        expect(mockPrismaService.users_pr.upsert).not.toHaveBeenCalled();
+      });
+
+      it('rejects an ended end_date assignment', async () => {
+        mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+          ...baseAssignment,
+          end_date: new Date('2026-08-04'),
+        });
+
+        await expect(
+          service.setActiveClubContext('user-123', {
+            assignment_id: 'assignment-1',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND });
+        expect(mockPrismaService.users_pr.upsert).not.toHaveBeenCalled();
       });
     });
   });
