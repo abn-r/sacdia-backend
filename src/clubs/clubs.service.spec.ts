@@ -7,9 +7,26 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../common/authorization/local-field-timezone.resolver';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { TestingClock } from '../common/clock/testing-clock';
+import { ZonedBusinessTimeService } from '../common/clock/zoned-business-time.service';
 
 describe('ClubsService', () => {
   let service: ClubsService;
+  const testingClock = new TestingClock(new Date('2026-08-05T18:00:00.000Z'));
+  const zonedBusinessTime = new ZonedBusinessTimeService();
+  const temporalContextFactory = new TemporalContextFactory(
+    testingClock,
+    zonedBusinessTime,
+  );
+  const localFieldTimezoneResolver = new LocalFieldTimezoneResolver(
+    {} as never,
+  );
+  const assignmentEffectivityPolicy = new ClubAssignmentEffectivityPolicy(
+    zonedBusinessTime,
+  );
 
   const mockPrismaService = {
     clubs: {
@@ -114,6 +131,15 @@ describe('ClubsService', () => {
         {
           provide: AuditLogsService,
           useValue: mockAuditLogsService,
+        },
+        { provide: TemporalContextFactory, useValue: temporalContextFactory },
+        {
+          provide: LocalFieldTimezoneResolver,
+          useValue: localFieldTimezoneResolver,
+        },
+        {
+          provide: ClubAssignmentEffectivityPolicy,
+          useValue: assignmentEffectivityPolicy,
         },
       ],
     }).compile();
@@ -308,10 +334,20 @@ describe('ClubsService', () => {
   });
 
   describe('getMembers', () => {
+    const sectionWithLocalField = {
+      club_type_id: 2,
+      clubs: {
+        local_fields: {
+          local_field_id: 30,
+          timezone: 'America/Mexico_City',
+        },
+      },
+    };
+
     it('returns no current members when there is no current ecclesiastical year', async () => {
-      mockPrismaService.club_sections.findUnique.mockResolvedValue({
-        club_type_id: 2,
-      });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue(
+        sectionWithLocalField,
+      );
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
 
       await expect(service.getMembers(7)).resolves.toEqual([]);
@@ -321,9 +357,9 @@ describe('ClubsService', () => {
     });
 
     it('includes the active yearly class for the requested section type', async () => {
-      mockPrismaService.club_sections.findUnique.mockResolvedValue({
-        club_type_id: 2,
-      });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue(
+        sectionWithLocalField,
+      );
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
         year_id: 2026,
       });
@@ -333,7 +369,10 @@ describe('ClubsService', () => {
           user_id: 'user-1',
           club_section_id: 7,
           active: true,
+          status: 'active',
           start_date: new Date('2026-01-01'),
+          end_date: null,
+          expires_at: null,
           users: {
             user_id: 'user-1',
             name: 'Cley Rey',
@@ -429,6 +468,81 @@ describe('ClubsService', () => {
       });
       expect(result[0].users).not.toHaveProperty('enrollments');
     });
+
+    describe('T08 club assignment effectivity', () => {
+      const localFieldSection = {
+        club_type_id: 2,
+        clubs: {
+          local_fields: {
+            local_field_id: 30,
+            timezone: 'America/Mexico_City',
+          },
+        },
+      };
+
+      const memberRow = {
+        assignment_id: 'assignment-future',
+        user_id: 'user-1',
+        club_section_id: 7,
+        active: true,
+        status: 'active',
+        start_date: new Date('2027-01-01'),
+        end_date: null,
+        expires_at: null,
+        users: {
+          user_id: 'user-1',
+          name: 'Cley Rey',
+          paternal_last_name: 'Ramírez',
+          maternal_last_name: null,
+          user_image: null,
+          enrollments: [],
+        },
+        roles: {
+          role_id: 'role-member',
+          role_name: 'member',
+          role_category: 'CLUB',
+        },
+      };
+
+      beforeEach(() => {
+        mockPrismaService.club_sections.findUnique.mockResolvedValue(
+          localFieldSection,
+        );
+        mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+          year_id: 2026,
+        });
+        mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+      });
+
+      it('excludes future start_date members', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          memberRow,
+        ]);
+        await expect(service.getMembers(7)).resolves.toEqual([]);
+      });
+
+      it('excludes expired expires_at members', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          {
+            ...memberRow,
+            start_date: new Date('2026-01-01'),
+            expires_at: new Date('2026-08-05T18:00:00.000Z'),
+          },
+        ]);
+        await expect(service.getMembers(7)).resolves.toEqual([]);
+      });
+
+      it('excludes ended end_date members', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          {
+            ...memberRow,
+            start_date: new Date('2026-01-01'),
+            end_date: new Date('2026-08-04'),
+          },
+        ]);
+        await expect(service.getMembers(7)).resolves.toEqual([]);
+      });
+    });
   });
 
   // ========================================
@@ -442,7 +556,11 @@ describe('ClubsService', () => {
     ) => ({
       assignment_id: `assign-${roleName}`,
       user_id: 'user-uuid',
+      active: true,
+      status: 'active',
       start_date: new Date('2026-01-01'),
+      end_date: null as Date | null,
+      expires_at: null as Date | null,
       users: {
         user_id: 'user-uuid',
         name: 'Juan',
@@ -453,6 +571,15 @@ describe('ClubsService', () => {
       },
       roles: { role_name: roleName, role_category: 'CLUB' },
       club_sections: sectionName ? { name: sectionName } : null,
+    });
+
+    beforeEach(() => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({
+        local_fields: {
+          local_field_id: 30,
+          timezone: 'America/Mexico_City',
+        },
+      });
     });
 
     it('happy path — groups director, deputies, secretaries and others', async () => {
@@ -503,6 +630,42 @@ describe('ClubsService', () => {
       expect(result.data.director?.user_image).toBe(
         'https://cdn.example.com/signed',
       );
+    });
+
+    describe('T08 club assignment effectivity', () => {
+      it('excludes future start_date leadership', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          {
+            ...makeAssignment('director'),
+            start_date: new Date('2027-01-01'),
+          },
+        ]);
+        const result = await service.getClubLeadership(1);
+        expect(result.data.director).toBeNull();
+        expect(result.data.deputies).toHaveLength(0);
+      });
+
+      it('excludes expired expires_at leadership', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          {
+            ...makeAssignment('director'),
+            expires_at: new Date('2026-08-05T18:00:00.000Z'),
+          },
+        ]);
+        const result = await service.getClubLeadership(1);
+        expect(result.data.director).toBeNull();
+      });
+
+      it('excludes ended end_date leadership', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          {
+            ...makeAssignment('director'),
+            end_date: new Date('2026-08-04'),
+          },
+        ]);
+        const result = await service.getClubLeadership(1);
+        expect(result.data.director).toBeNull();
+      });
     });
   });
 

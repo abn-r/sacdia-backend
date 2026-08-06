@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -29,10 +29,14 @@ import type { ListByClubResult } from '../audit-logs/audit-logs.service';
 import {
   AppBadRequestException,
   AppConflictException,
+  AppException,
   AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../common/authorization/local-field-timezone.resolver';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
 
 const CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS = [
   { name: { contains: 'Guía Mayor', mode: 'insensitive' as const } },
@@ -70,6 +74,9 @@ export class ClubsService {
     private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly notificationsService: NotificationsService,
     private readonly auditLogs: AuditLogsService,
+    private readonly temporalContextFactory: TemporalContextFactory,
+    private readonly localFieldTimezoneResolver: LocalFieldTimezoneResolver,
+    private readonly assignmentEffectivityPolicy: ClubAssignmentEffectivityPolicy,
   ) {}
 
   // ========================================
@@ -332,7 +339,16 @@ export class ClubsService {
     const [section, activeYear] = await Promise.all([
       this.prisma.club_sections.findUnique({
         where: { club_section_id: sectionId },
-        select: { club_type_id: true },
+        select: {
+          club_type_id: true,
+          clubs: {
+            select: {
+              local_fields: {
+                select: { local_field_id: true, timezone: true },
+              },
+            },
+          },
+        },
       }),
       this.prisma.ecclesiastical_years.findFirst({
         where: {
@@ -347,6 +363,10 @@ export class ClubsService {
     if (!activeYear) {
       return [];
     }
+
+    const temporalContext = this.temporalContextForLocalField(
+      section?.clubs?.local_fields,
+    );
 
     const currentEnrollmentSelect = section?.club_type_id
       ? {
@@ -377,7 +397,9 @@ export class ClubsService {
         }
       : {};
 
-    const members = await this.prisma.club_role_assignments.findMany({
+    // Inventory preload only. Temporal authority uses
+    // ClubAssignmentEffectivityPolicy.isEffective (resource timezone).
+    const memberCandidates = await this.prisma.club_role_assignments.findMany({
       where: {
         club_section_id: sectionId,
         active: true,
@@ -405,6 +427,19 @@ export class ClubsService {
       },
       orderBy: { start_date: 'desc' },
     });
+
+    const members = memberCandidates.filter((member) =>
+      this.assignmentEffectivityPolicy.isEffective(
+        {
+          active: member.active ?? true,
+          status: member.status,
+          start_date: member.start_date,
+          end_date: member.end_date,
+          expires_at: member.expires_at,
+        },
+        temporalContext,
+      ),
+    );
 
     const memberUserIds = [
       ...new Set(
@@ -951,38 +986,66 @@ export class ClubsService {
    * Others: all remaining CLUB-category assignments
    */
   async getClubLeadership(clubId: number) {
-    const assignments = await this.prisma.club_role_assignments.findMany({
-      where: {
-        active: true,
-        club_sections: {
-          main_club_id: clubId,
+    const club = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+      select: {
+        local_fields: {
+          select: { local_field_id: true, timezone: true },
         },
       },
-      include: {
-        users: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-            user_image: true,
-            email: true,
-          },
-        },
-        roles: {
-          select: {
-            role_name: true,
-            role_category: true,
-          },
-        },
-        club_sections: {
-          select: {
-            name: true,
-          },
-        },
-      },
-      orderBy: { start_date: 'asc' },
     });
+    const temporalContext = this.temporalContextForLocalField(
+      club?.local_fields,
+    );
+
+    // Inventory preload only. Temporal authority uses
+    // ClubAssignmentEffectivityPolicy.isEffective (resource timezone).
+    const assignmentCandidates =
+      await this.prisma.club_role_assignments.findMany({
+        where: {
+          active: true,
+          club_sections: {
+            main_club_id: clubId,
+          },
+        },
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+              user_image: true,
+              email: true,
+            },
+          },
+          roles: {
+            select: {
+              role_name: true,
+              role_category: true,
+            },
+          },
+          club_sections: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: { start_date: 'asc' },
+      });
+
+    const assignments = assignmentCandidates.filter((assignment) =>
+      this.assignmentEffectivityPolicy.isEffective(
+        {
+          active: assignment.active ?? true,
+          status: assignment.status,
+          start_date: assignment.start_date,
+          end_date: assignment.end_date,
+          expires_at: assignment.expires_at,
+        },
+        temporalContext,
+      ),
+    );
 
     // Resolve profile image URLs in parallel
     const resolved = await Promise.all(
@@ -1600,6 +1663,31 @@ export class ClubsService {
       );
       return value;
     }
+  }
+
+  private temporalContextForLocalField(
+    localField:
+      | {
+          local_field_id: number;
+          timezone: string | null;
+        }
+      | null
+      | undefined,
+  ) {
+    if (!localField) {
+      throw new AppException(
+        ErrorCode.LOCAL_FIELD_TIMEZONE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        { reason: 'MISSING' },
+      );
+    }
+    const timezone = this.localFieldTimezoneResolver.assertTimezone(
+      localField.timezone,
+    );
+    return this.temporalContextFactory.forLocalField({
+      local_field_id: localField.local_field_id,
+      timezone,
+    });
   }
 
   private emitRealtimeInvalidation(
