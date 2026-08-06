@@ -1096,7 +1096,9 @@ describe('ClubsService', () => {
 
     describe('T08 club assignment effectivity', () => {
       it('allows initial director when existing director is only future-dated', async () => {
-        mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+        mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(
+          true,
+        );
         mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
         mockPrismaService.club_sections.findUnique.mockResolvedValue({
           main_club_id: 99,
