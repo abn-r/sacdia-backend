@@ -179,6 +179,8 @@
   "RBAC_USER_ROLE_NOT_FOUND": "User role assignment not found",
   "RBAC_SUPER_ADMIN_ALREADY_EXISTS": "A super-admin already exists. This endpoint only works when there is none",
   "RBAC_SUPER_ADMIN_ROLE_NOT_FOUND": "super-admin role not found in the database. Run the seed first",
+  "RBAC_GLOBAL_ROLE_REQUIRED": "Only active global roles can be assigned through this mechanism",
+  "SUPER_ADMIN_WRITE_REQUIRED": "Only an active super-admin can perform this operation",
   "AUTH_INVALID_CREDENTIALS": "Invalid credentials",
   "AUTH_USER_ROLE_NOT_FOUND": "User role not found in the system",
   "AUTH_REFRESH_TOKEN_LEGACY_REMOVED": "refresh_token was removed. Use refreshToken in request body",
@@ -434,6 +436,7 @@
   "CLUB_ROLE_DATE_RANGE_INVALID": "The role end date cannot be before its start date",
   "CLUB_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id or role is required for this operation",
+  "CLUB_ROLE_GUIDE_MAJOR_REQUIRED": "An active or invested Senior Guide is required for this club role",
   "CLUB_ROLE_NOT_FOUND": "Role not found in CLUB category",
   "POST_REG_NOT_INITIATED": "Post-registration has not been initiated",
   "POST_REG_PHOTO_REQUIRED": "You must upload a profile photo before completing this step",
@@ -620,5 +623,6 @@
   "CAMPOREE_CLUB_REGISTRATION_CLOSED": "Club registration is already closed for this camporee",
   "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Close club registration before configuring or submitting camporee scoring",
   "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "Club registration cannot be closed without active enrolled club sections",
-  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Club registration cannot be reopened after active scoring results or judge assignments exist"
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Club registration cannot be reopened after active scoring results or judge assignments exist",
+  "AUDIT_WRITE_FAILED": "The security audit could not be confirmed"
 }

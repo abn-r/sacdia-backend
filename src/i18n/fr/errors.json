@@ -176,6 +176,8 @@
   "RBAC_USER_ROLE_NOT_FOUND": "Affectation de rôle à l'utilisateur introuvable",
   "RBAC_SUPER_ADMIN_ALREADY_EXISTS": "Un super-admin existe déjà. Ce point de terminaison ne fonctionne qu'en l'absence de super-admin",
   "RBAC_SUPER_ADMIN_ROLE_NOT_FOUND": "Le rôle super-admin est introuvable dans la base de données. Exécutez le seed en premier",
+  "RBAC_GLOBAL_ROLE_REQUIRED": "Seuls les rôles globaux actifs peuvent être attribués par ce mécanisme",
+  "SUPER_ADMIN_WRITE_REQUIRED": "Seul un super-admin actif peut effectuer cette opération",
   "AUTH_INVALID_CREDENTIALS": "Identifiants invalides",
   "AUTH_USER_ROLE_NOT_FOUND": "Rôle utilisateur introuvable dans le système",
   "AUTH_REFRESH_TOKEN_LEGACY_REMOVED": "Le champ refresh_token a été supprimé. Utilisez refreshToken dans le corps de la requête",
@@ -429,6 +431,7 @@
   "CLUB_ROLE_DATE_RANGE_INVALID": "La date de fin du rôle ne peut pas précéder sa date de début",
   "CLUB_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role est requis pour cette opération",
+  "CLUB_ROLE_GUIDE_MAJOR_REQUIRED": "Un Guide supérieur en cours ou investi est requis pour ce rôle de club",
   "CLUB_ROLE_NOT_FOUND": "Rôle introuvable dans la catégorie CLUB",
   "POST_REG_NOT_INITIATED": "Le post-enregistrement n'a pas été initié",
   "POST_REG_PHOTO_REQUIRED": "Vous devez télécharger une photo de profil avant de terminer cette étape",
@@ -607,5 +610,6 @@
   "CAMPOREE_CLUB_REGISTRATION_CLOSED": "L’inscription des clubs est déjà fermée pour ce camporee",
   "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Fermez l’inscription des clubs avant de configurer ou soumettre la notation du camporee",
   "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "Impossible de fermer l’inscription des clubs sans sections de club inscrites et actives",
-  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Impossible de rouvrir l’inscription des clubs après des résultats ou assignations de juges actifs"
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Impossible de rouvrir l’inscription des clubs après des résultats ou assignations de juges actifs",
+  "AUDIT_WRITE_FAILED": "L’audit de sécurité n’a pas pu être confirmé"
 }

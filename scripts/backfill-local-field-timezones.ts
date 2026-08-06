@@ -1,7 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Client } from 'pg';
-import { executeAuthorizationP0Preflight } from '../src/common/authorization-p0-preflight';
+import {
+  executeAuthorizationP0Preflight,
+  executeAuthorizationP0PreflightInTransaction,
+} from '../src/common/authorization-p0-preflight';
 import {
   loadCanonicalGeographicIanaTimezoneCatalog,
   type CanonicalGeographicIanaTimezoneCatalog,
@@ -13,12 +17,12 @@ type ActiveLocalField = {
   name: string;
   timezone: string | null;
 };
-
-type BackfillOptions = { mappingPath: string };
+type BackfillOptions = { mappingPath: string; apply: boolean };
 type PlannedField = ActiveLocalField & {
   target_timezone: string;
   operation: 'update' | 'unchanged';
 };
+type Preflight = { schema: Record<string, unknown>; checks: unknown[] };
 
 export class TimezoneBackfillError extends Error {
   constructor(
@@ -29,7 +33,8 @@ export class TimezoneBackfillError extends Error {
       | 'BACKFILL_MAPPING_INCOMPLETE'
       | 'BACKFILL_MAPPING_UNKNOWN_LOCAL_FIELD'
       | 'BACKFILL_GM_01_CARDINALITY_INVALID'
-      | 'BACKFILL_APPLY_REQUIRES_BE04A2',
+      | 'BACKFILL_POST_PREFLIGHT_BLOCKED'
+      | 'BACKFILL_LOCK_TIMEOUT',
     readonly details: Record<string, unknown> = {},
   ) {
     super(code);
@@ -38,9 +43,12 @@ export class TimezoneBackfillError extends Error {
 
 export function parseBackfillOptions(args: string[]): BackfillOptions {
   let mappingPath: string | undefined;
+  let apply = false;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--apply') {
-      throw new TimezoneBackfillError('BACKFILL_APPLY_REQUIRES_BE04A2');
+      if (apply) throw new TimezoneBackfillError('BACKFILL_USAGE');
+      apply = true;
+      continue;
     }
     if (args[index] !== '--mapping' || mappingPath || !args[index + 1]) {
       throw new TimezoneBackfillError('BACKFILL_USAGE');
@@ -48,7 +56,7 @@ export function parseBackfillOptions(args: string[]): BackfillOptions {
     mappingPath = args[(index += 1)];
   }
   if (!mappingPath) throw new TimezoneBackfillError('BACKFILL_USAGE');
-  return { mappingPath: resolve(mappingPath) };
+  return { mappingPath: resolve(mappingPath), apply };
 }
 
 export function parseTimezoneMapping(
@@ -104,6 +112,49 @@ async function assertSchemaReady(client: Client): Promise<void> {
   }
 }
 
+async function inspectApplyPlan(
+  client: Client,
+  mapping: ReadonlyMap<number, string>,
+): Promise<PlannedField[]> {
+  await assertSchemaReady(client);
+  const fields =
+    await client.query<ActiveLocalField>(`SELECT local_field_id, name, timezone
+    FROM local_fields WHERE active = TRUE ORDER BY local_field_id FOR UPDATE`);
+  const activeIds = new Set(
+    fields.rows.map(({ local_field_id }) => local_field_id),
+  );
+  const unknown = [...mapping.keys()].filter((id) => !activeIds.has(id));
+  if (unknown.length) {
+    throw new TimezoneBackfillError('BACKFILL_MAPPING_UNKNOWN_LOCAL_FIELD', {
+      local_field_ids: unknown.sort((left, right) => left - right),
+    });
+  }
+  const missing = fields.rows
+    .filter(({ local_field_id }) => !mapping.has(local_field_id))
+    .map(({ local_field_id, name }) => ({ local_field_id, name }));
+  if (missing.length) {
+    throw new TimezoneBackfillError('BACKFILL_MAPPING_INCOMPLETE', {
+      local_fields: missing,
+    });
+  }
+  const gm = await client.query(
+    `SELECT class_id FROM classes WHERE asset_code = 'GM-01' FOR UPDATE`,
+  );
+  if (gm.rowCount !== 1) {
+    throw new TimezoneBackfillError('BACKFILL_GM_01_CARDINALITY_INVALID', {
+      count: gm.rowCount ?? 0,
+    });
+  }
+  return fields.rows.map((field) => ({
+    ...field,
+    target_timezone: mapping.get(field.local_field_id)!,
+    operation:
+      field.timezone === mapping.get(field.local_field_id)
+        ? ('unchanged' as const)
+        : ('update' as const),
+  }));
+}
+
 export async function planLocalFieldTimezoneBackfill(
   client: Client,
   mapping: ReadonlyMap<number, string>,
@@ -154,10 +205,21 @@ export async function planLocalFieldTimezoneBackfill(
   }
 }
 
+function finalizePreflight(
+  raw: Awaited<ReturnType<typeof executeAuthorizationP0Preflight>>,
+  catalog: CanonicalGeographicIanaTimezoneCatalog,
+): Preflight {
+  const checks = finalizeChecks(raw, catalog, 50);
+  return {
+    schema: raw.schema,
+    checks: checks.filter(({ total_count }) => total_count > 0),
+  };
+}
+
 export async function verifyBackfillPreflight(
   client: Client,
   catalog: CanonicalGeographicIanaTimezoneCatalog,
-): Promise<{ schema: Record<string, unknown>; checks: unknown[] }> {
+): Promise<Preflight> {
   const raw = await executeAuthorizationP0Preflight(client, {
     canonicalTimezones: [...catalog.canonical],
     sampleLimit: 50,
@@ -165,11 +227,90 @@ export async function verifyBackfillPreflight(
     statementTimeoutMs: 5_000,
     lockTimeoutMs: 1_000,
   });
-  const checks = finalizeChecks(raw, catalog, 50);
-  return {
-    schema: raw.schema,
-    checks: checks.filter(({ total_count }) => total_count > 0),
-  };
+  return finalizePreflight(raw, catalog);
+}
+
+export async function applyLocalFieldTimezoneBackfill(
+  client: Client,
+  mapping: ReadonlyMap<number, string>,
+  catalog: CanonicalGeographicIanaTimezoneCatalog,
+  correlationId: string,
+): Promise<{
+  fields: PlannedField[];
+  updated_plan_count: number;
+  preflight: Preflight;
+}> {
+  await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
+  try {
+    await client.query(
+      `SET LOCAL lock_timeout = '1s'; SET LOCAL statement_timeout = '5s'`,
+    );
+    const fields = await inspectApplyPlan(client, mapping);
+    const changed = fields.filter(({ operation }) => operation === 'update');
+    const ids = changed.map(({ local_field_id }) => local_field_id);
+    for (const { local_field_id, timezone, target_timezone } of changed) {
+      await client.query(
+        `UPDATE local_fields SET timezone = $1, modified_at = NOW()
+        WHERE local_field_id = $2 AND active = TRUE`,
+        [target_timezone, local_field_id],
+      );
+      await client.query(
+        `INSERT INTO audit_logs (entity_type, entity_id, action, event_key,
+          actor_kind, actor_scope, target_scope, changes, effective_at,
+          correlation_id, idempotency_key, result)
+        VALUES ('local_field', $1::text, 'LOCAL_FIELD_TIMEZONE_UPDATED',
+          'local-field-timezone.backfill:' || $4::text || ':' || $1::text,
+          'system', '{"source":"authorization_p0_timezone_backfill"}',
+          jsonb_build_object('local_field_id', $1::int),
+          jsonb_build_object('before', jsonb_build_object('timezone', $2::text),
+            'after', jsonb_build_object('timezone', $3::text)),
+          NOW(), $4::uuid, $4::text, 'succeeded')`,
+        [local_field_id, timezone, target_timezone, correlationId],
+      );
+    }
+    let updatedPlanCount = 0;
+    if (ids.length) {
+      await client.query(
+        `INSERT INTO authorization_context_versions (user_id, version, modified_at)
+        SELECT DISTINCT assignment.user_id, 1, NOW()
+        FROM club_role_assignments assignment JOIN club_sections section USING (club_section_id)
+        JOIN clubs club ON club.club_id = section.main_club_id
+        WHERE club.local_field_id = ANY($1::int[])
+        ON CONFLICT (user_id) DO UPDATE SET version = authorization_context_versions.version + 1,
+          modified_at = EXCLUDED.modified_at`,
+        [ids],
+      );
+      const plans = await client.query(
+        `UPDATE director_succession_plans
+        SET version = version + 1, processing_token = NULL, processing_expires_at = NULL,
+          modified_at = NOW()
+        WHERE status::text = 'scheduled' AND scheduled_local_field_id = ANY($1::int[])`,
+        [ids],
+      );
+      updatedPlanCount = plans.rowCount ?? 0;
+    }
+    const raw = await executeAuthorizationP0PreflightInTransaction(client, {
+      canonicalTimezones: [...catalog.canonical],
+      sampleLimit: 50,
+      now: new Date(),
+      statementTimeoutMs: 5_000,
+      lockTimeoutMs: 1_000,
+    });
+    const preflight = finalizePreflight(raw, catalog);
+    if (preflight.checks.length) {
+      throw new TimezoneBackfillError('BACKFILL_POST_PREFLIGHT_BLOCKED', {
+        preflight,
+      });
+    }
+    await client.query('COMMIT');
+    return { fields, updated_plan_count: updatedPlanCount, preflight };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    if ((error as { code?: string }).code === '55P03') {
+      throw new TimezoneBackfillError('BACKFILL_LOCK_TIMEOUT');
+    }
+    throw error;
+  }
 }
 
 async function run(options: BackfillOptions) {
@@ -180,6 +321,24 @@ async function run(options: BackfillOptions) {
   const client = new Client({ connectionString: databaseUrl });
   try {
     await client.connect();
+    if (options.apply) {
+      const backfill = await applyLocalFieldTimezoneBackfill(
+        client,
+        mapping,
+        catalog,
+        randomUUID(),
+      );
+      return {
+        report_version: 'authorization-director-succession-p0/backfill-v1',
+        dry_run: false,
+        status: 'applied',
+        changed_field_count: backfill.fields.filter(
+          ({ operation }) => operation === 'update',
+        ).length,
+        constraint_validation: 'pending_be-04b_human_mapping_gate',
+        backfill,
+      };
+    }
     const backfill = await planLocalFieldTimezoneBackfill(client, mapping);
     const preflight = await verifyBackfillPreflight(client, catalog);
     return {
@@ -195,15 +354,40 @@ async function run(options: BackfillOptions) {
   }
 }
 
+export function backfillDiagnostic(error: unknown): {
+  diagnostic: string;
+  details: Record<string, unknown>;
+} {
+  if (error instanceof TimezoneBackfillError) {
+    return { diagnostic: error.code, details: error.details };
+  }
+  const databaseCode = (error as { code?: string } | null)?.code;
+  if (databaseCode === '40001') {
+    return { diagnostic: 'BACKFILL_SERIALIZATION_CONFLICT', details: {} };
+  }
+  if (databaseCode === '40P01') {
+    return { diagnostic: 'BACKFILL_DEADLOCK_CONFLICT', details: {} };
+  }
+  if (databaseCode === '23505') {
+    return { diagnostic: 'BACKFILL_AUDIT_CONFLICT', details: {} };
+  }
+  if (error instanceof Error && error.message === 'MISSING_DATABASE_URL') {
+    return { diagnostic: error.message, details: {} };
+  }
+  return { diagnostic: 'BACKFILL_UNEXPECTED_ERROR', details: {} };
+}
+
 async function main(): Promise<void> {
   try {
     const report = await run(parseBackfillOptions(process.argv.slice(2)));
     process.stdout.write(`${JSON.stringify(report)}\n`);
     process.exitCode = 0;
   } catch (error) {
-    const known = error instanceof TimezoneBackfillError ? error : undefined;
     process.stdout.write(
-      `${JSON.stringify({ status: 'error', error: { diagnostic: known?.code ?? (error as Error).message, details: known?.details ?? {} } })}\n`,
+      `${JSON.stringify({
+        status: 'error',
+        error: backfillDiagnostic(error),
+      })}\n`,
     );
     process.exitCode = 1;
   }

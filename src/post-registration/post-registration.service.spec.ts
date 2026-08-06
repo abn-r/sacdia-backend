@@ -7,6 +7,7 @@ import { LegalRepresentativesService } from '../legal-representatives/legal-repr
 import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
 import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 
 describe('PostRegistrationService', () => {
   let service: PostRegistrationService;
@@ -16,7 +17,9 @@ describe('PostRegistrationService', () => {
       findUnique: jest.fn().mockResolvedValue({
         birthday: new Date('2016-01-01'),
       }),
-      update: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({
+        user_id: '20a9a762-a4fa-49dd-93a6-3851e27f8b69',
+      }),
     },
     ecclesiastical_years: {
       findFirst: jest.fn().mockResolvedValue({
@@ -119,6 +122,10 @@ describe('PostRegistrationService', () => {
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockAuthorizationContextVersionService = {
+    bump: jest.fn().mockResolvedValue(1n),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -146,6 +153,10 @@ describe('PostRegistrationService', () => {
         {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContextService,
+        },
+        {
+          provide: AuthorizationContextVersionService,
+          useValue: mockAuthorizationContextVersionService,
         },
       ],
     }).compile();
@@ -226,6 +237,9 @@ describe('PostRegistrationService', () => {
         status: 'success',
         message: 'Paso 1 completado',
       });
+      expect(
+        mockAuthorizationContextVersionService.bump,
+      ).not.toHaveBeenCalled();
     });
 
     it('should return a generic validation error for third-party completion', async () => {
@@ -283,6 +297,9 @@ describe('PostRegistrationService', () => {
         status: 'success',
         message: 'Paso 2 completado',
       });
+      expect(
+        mockAuthorizationContextVersionService.bump,
+      ).not.toHaveBeenCalled();
     });
   });
 
@@ -312,7 +329,7 @@ describe('PostRegistrationService', () => {
 
       const result = await service.completeStep3(
         userId,
-        dtoWithoutClass as any,
+        dtoWithoutClass,
         ownerActor,
       );
 
@@ -422,6 +439,13 @@ describe('PostRegistrationService', () => {
       ).not.toHaveBeenCalled();
       expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
       expect(transactionMock.enrollments.update).not.toHaveBeenCalled();
+      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledWith(
+        transactionMock,
+        userId,
+      );
     });
 
     it('should create enrollment-first operational truth on first completion', async () => {
@@ -485,9 +509,63 @@ describe('PostRegistrationService', () => {
     it('should invalidate authorization cache after completing membership request', async () => {
       await service.completeStep3(userId, dto, ownerActor);
 
+      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(
+        mockAuthorizationContextService.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledTimes(1);
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(userId);
+      expect(
+        Math.max(
+          ...mockAuthorizationContextVersionService.bump.mock
+            .invocationCallOrder,
+        ),
+      ).toBeLessThan(
+        Math.min(
+          ...mockAuthorizationContextService.invalidateUserAuthorizationCache
+            .mock.invocationCallOrder,
+        ),
+      );
+    });
+
+    it('derives versioning and cleanup identity from the persisted scope write', async () => {
+      const persistedUserId = '85b08cc9-01ee-4f8f-a7e4-14accdb6121d';
+      transactionMock.users.update.mockResolvedValue({
+        user_id: persistedUserId,
+      });
+
+      await service.completeStep3(userId, dto, ownerActor);
+
+      expect(transactionMock.users.update).toHaveBeenCalledWith(
+        expect.objectContaining({ select: { user_id: true } }),
+      );
+      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledWith(
+        transactionMock,
+        persistedUserId,
+      );
+      expect(
+        mockAuthorizationContextService.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(persistedUserId);
+    });
+
+    it('rolls back before cleanup and notification when the durable bump fails', async () => {
+      mockAuthorizationContextVersionService.bump.mockRejectedValueOnce(
+        new Error('version write failed'),
+      );
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toBeDefined();
+
+      expect(
+        mockAuthorizationContextService.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockMembershipRequestsService.notifyNewRequestCreated,
+      ).not.toHaveBeenCalled();
     });
 
     it('should reactivate existing inactive enrollment without resetting metadata', async () => {
@@ -635,6 +713,9 @@ describe('PostRegistrationService', () => {
         message:
           'Solicitud de membresía cancelada. Puedes elegir club y sección nuevamente.',
       });
+      expect(
+        mockAuthorizationContextVersionService.bump,
+      ).not.toHaveBeenCalled();
     });
   });
 });

@@ -179,6 +179,8 @@
   "RBAC_USER_ROLE_NOT_FOUND": "Asignación de rol a usuario no encontrada",
   "RBAC_SUPER_ADMIN_ALREADY_EXISTS": "Ya existe un super-admin. Este endpoint solo funciona cuando no hay ninguno",
   "RBAC_SUPER_ADMIN_ROLE_NOT_FOUND": "Rol super-admin no encontrado en la base de datos. Ejecutá el seed primero",
+  "RBAC_GLOBAL_ROLE_REQUIRED": "Solo los roles globales activos pueden asignarse mediante este mecanismo",
+  "SUPER_ADMIN_WRITE_REQUIRED": "Solo un super-admin activo puede realizar esta operación",
   "AUTH_INVALID_CREDENTIALS": "Credenciales inválidas",
   "AUTH_USER_ROLE_NOT_FOUND": "Rol de usuario no encontrado en el sistema",
   "AUTH_REFRESH_TOKEN_LEGACY_REMOVED": "El campo refresh_token fue eliminado. Usá refreshToken en el cuerpo de la solicitud",
@@ -434,6 +436,7 @@
   "CLUB_ROLE_DATE_RANGE_INVALID": "La fecha de fin no puede ser anterior a la fecha de inicio del rol",
   "CLUB_NO_ACTIVE_YEAR": "No hay un año eclesiástico activo configurado",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "Se requiere role_id o role para esta operación",
+  "CLUB_ROLE_GUIDE_MAJOR_REQUIRED": "Se requiere Guía Mayor cursando o investido para este cargo de club",
   "CLUB_ROLE_NOT_FOUND": "Rol no encontrado en la categoría CLUB",
   "POST_REG_NOT_INITIATED": "El post-registro no ha sido iniciado",
   "POST_REG_PHOTO_REQUIRED": "Debe subir una foto de perfil antes de completar este paso",
@@ -620,5 +623,6 @@
   "CAMPOREE_CLUB_REGISTRATION_CLOSED": "La inscripción de clubes ya está cerrada para este campamento",
   "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Cerrá la inscripción de clubes antes de configurar o enviar puntuación del campamento",
   "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "No se puede cerrar la inscripción de clubes sin secciones de club inscritas activas",
-  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "No se puede reabrir la inscripción de clubes si existen resultados o asignaciones activas de jueces"
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "No se puede reabrir la inscripción de clubes si existen resultados o asignaciones activas de jueces",
+  "AUDIT_WRITE_FAILED": "No se pudo confirmar la auditoría de seguridad"
 }

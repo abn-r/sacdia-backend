@@ -22,6 +22,7 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ListByClubResult } from '../audit-logs/audit-logs.service';
@@ -66,6 +67,7 @@ export class ClubsService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly notificationsService: NotificationsService,
     private readonly auditLogs: AuditLogsService,
   ) {}
@@ -556,12 +558,16 @@ export class ClubsService {
       club_section_id: dto.club_section_id,
     };
 
-    const created = await this.prisma.club_role_assignments.create({
-      data: assignment,
-      include: {
-        users: { select: { name: true, paternal_last_name: true } },
-        roles: { select: { role_name: true } },
-      },
+    const created = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.club_role_assignments.create({
+        data: assignment,
+        include: {
+          users: { select: { name: true, paternal_last_name: true } },
+          roles: { select: { role_name: true } },
+        },
+      });
+      await this.authorizationContextVersion.bump(tx, dto.user_id);
+      return created;
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
@@ -674,14 +680,18 @@ export class ClubsService {
       updateData.status = dto.status;
     }
 
-    const updated = await this.prisma.club_role_assignments.update({
-      where: { assignment_id: assignmentId },
-      data: updateData,
-      select: {
-        assignment_id: true,
-        user_id: true,
-        club_section_id: true,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.club_role_assignments.update({
+        where: { assignment_id: assignmentId },
+        data: updateData,
+        select: {
+          assignment_id: true,
+          user_id: true,
+          club_section_id: true,
+        },
+      });
+      await this.authorizationContextVersion.bump(tx, updated.user_id);
+      return updated;
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
@@ -698,19 +708,23 @@ export class ClubsService {
   }
 
   async removeRoleAssignment(assignmentId: string) {
-    const removed = await this.prisma.club_role_assignments.update({
-      where: { assignment_id: assignmentId },
-      data: {
-        active: false,
-        status: 'ended',
-        end_date: new Date(),
-        modified_at: new Date(),
-      },
-      select: {
-        assignment_id: true,
-        user_id: true,
-        club_section_id: true,
-      },
+    const removed = await this.prisma.$transaction(async (tx) => {
+      const removed = await tx.club_role_assignments.update({
+        where: { assignment_id: assignmentId },
+        data: {
+          active: false,
+          status: 'ended',
+          end_date: new Date(),
+          modified_at: new Date(),
+        },
+        select: {
+          assignment_id: true,
+          user_id: true,
+          club_section_id: true,
+        },
+      });
+      await this.authorizationContextVersion.bump(tx, removed.user_id);
+      return removed;
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
@@ -818,6 +832,10 @@ export class ClubsService {
         },
       });
 
+      await this.authorizationContextVersion.bumpOrdered(tx, [
+        ended.user_id,
+        created.user_id,
+      ]);
       return { ended, created };
     });
 
@@ -884,7 +902,7 @@ export class ClubsService {
         throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);
       }
 
-      return tx.club_role_assignments.create({
+      const created = await tx.club_role_assignments.create({
         data: {
           user_id: dto.user_id,
           role_id: directorRole.role_id,
@@ -900,6 +918,8 @@ export class ClubsService {
           club_section_id: true,
         },
       });
+      await this.authorizationContextVersion.bump(tx, created.user_id);
+      return created;
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
