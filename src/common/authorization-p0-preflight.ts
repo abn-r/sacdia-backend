@@ -144,3 +144,27 @@ export async function executeAuthorizationP0Preflight(
     throw error;
   }
 }
+
+export async function executeAuthorizationP0PreflightInTransaction(
+  client: Client,
+  options: AuthorizationP0PreflightOptions,
+): Promise<AuthorizationP0PreflightReport> {
+  validateOptions(options);
+  const contract = await client.query<{ isolation: string; read_only: string }>(
+    `SELECT current_setting('transaction_isolation') isolation,
+     current_setting('transaction_read_only') read_only,
+     set_config('statement_timeout', greatest(1, least($1::int, 60000))::text, true),
+     set_config('lock_timeout', greatest(1, least($2::int, 10000))::text, true)`,
+    [options.statementTimeoutMs, options.lockTimeoutMs],
+  );
+  if (
+    contract.rows[0]?.isolation !== 'serializable' ||
+    contract.rows[0]?.read_only !== 'off'
+  )
+    throw new Error('AUTHORIZATION_P0_PREFLIGHT_TRANSACTION_REJECTED');
+  const result = await client.query<{ report: AuthorizationP0PreflightReport }>(
+    loadAuthorizationP0PreflightSql(),
+    [options.canonicalTimezones, options.sampleLimit, options.now],
+  );
+  return result.rows[0].report;
+}

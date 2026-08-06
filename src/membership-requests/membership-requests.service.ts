@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
   AppNotFoundException,
@@ -28,6 +29,7 @@ export class MembershipRequestsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly notificationsService: NotificationsService,
   ) {}
 
@@ -80,20 +82,29 @@ export class MembershipRequestsService {
     assignmentId: string,
     approvedById: string,
   ) {
-    const [result, assignment] = await this.prisma.$transaction([
-      this.prisma.club_role_assignments.updateMany({
-        where: {
-          assignment_id: assignmentId,
-          club_section_id: clubSectionId,
-          status: 'pending',
-          active: true,
-        },
-        data: { status: 'active', expires_at: null, modified_at: new Date() },
-      }),
-      this.prisma.club_role_assignments.findUnique({
-        where: { assignment_id: assignmentId },
-      }),
-    ]);
+    const { result, assignment } = await this.prisma.$transaction(
+      async (tx) => {
+        const result = await tx.club_role_assignments.updateMany({
+          where: {
+            assignment_id: assignmentId,
+            club_section_id: clubSectionId,
+            status: 'pending',
+            active: true,
+          },
+          data: { status: 'active', expires_at: null, modified_at: new Date() },
+        });
+        const assignment = await tx.club_role_assignments.findUnique({
+          where: { assignment_id: assignmentId },
+        });
+        if (result.count > 0) {
+          if (!assignment) {
+            throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+          }
+          await this.authorizationContextVersion.bump(tx, assignment.user_id);
+        }
+        return { result, assignment };
+      },
+    );
 
     if (result.count === 0) {
       if (!assignment) {
@@ -137,25 +148,34 @@ export class MembershipRequestsService {
     rejectedById: string,
     reason?: string,
   ) {
-    const [result, assignment] = await this.prisma.$transaction([
-      this.prisma.club_role_assignments.updateMany({
-        where: {
-          assignment_id: assignmentId,
-          club_section_id: clubSectionId,
-          status: 'pending',
-          active: true,
-        },
-        data: {
-          status: 'rejected',
-          expires_at: null,
-          rejection_reason: reason ?? null,
-          modified_at: new Date(),
-        },
-      }),
-      this.prisma.club_role_assignments.findUnique({
-        where: { assignment_id: assignmentId },
-      }),
-    ]);
+    const { result, assignment } = await this.prisma.$transaction(
+      async (tx) => {
+        const result = await tx.club_role_assignments.updateMany({
+          where: {
+            assignment_id: assignmentId,
+            club_section_id: clubSectionId,
+            status: 'pending',
+            active: true,
+          },
+          data: {
+            status: 'rejected',
+            expires_at: null,
+            rejection_reason: reason ?? null,
+            modified_at: new Date(),
+          },
+        });
+        const assignment = await tx.club_role_assignments.findUnique({
+          where: { assignment_id: assignmentId },
+        });
+        if (result.count > 0) {
+          if (!assignment) {
+            throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+          }
+          await this.authorizationContextVersion.bump(tx, assignment.user_id);
+        }
+        return { result, assignment };
+      },
+    );
 
     if (result.count === 0) {
       if (!assignment) {
@@ -233,6 +253,8 @@ export class MembershipRequestsService {
         },
       });
 
+      await this.authorizationContextVersion.bump(tx, userId);
+
       return {
         ...pendingAssignment,
         status: 'cancelled',
@@ -288,19 +310,33 @@ export class MembershipRequestsService {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - timeoutDays);
 
-    const result = await this.prisma.club_role_assignments.updateMany({
-      where: {
+    const { count, userIds } = await this.prisma.$transaction(async (tx) => {
+      const where = {
         status: 'pending',
         active: true,
         created_at: { lt: cutoff },
-      },
-      data: {
-        status: 'expired',
-        modified_at: new Date(),
-      },
+      };
+      const affected = await tx.club_role_assignments.updateManyAndReturn({
+        where,
+        data: {
+          status: 'expired',
+          modified_at: new Date(),
+        },
+        select: { user_id: true },
+      });
+      const userIds = [...new Set(affected.map(({ user_id }) => user_id))];
+      if (userIds.length) {
+        await this.authorizationContextVersion.bumpMany(tx, userIds);
+      }
+      return { count: affected.length, userIds };
     });
 
-    return result.count;
+    await Promise.all(
+      userIds.map((userId) =>
+        this.authorizationContext.invalidateUserAuthorizationCache(userId),
+      ),
+    );
+    return count;
   }
 
   private emitRealtimeInvalidation(

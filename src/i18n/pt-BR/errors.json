@@ -176,6 +176,8 @@
   "RBAC_USER_ROLE_NOT_FOUND": "Atribuição de papel ao usuário não encontrada",
   "RBAC_SUPER_ADMIN_ALREADY_EXISTS": "Já existe um super-admin. Este endpoint só funciona quando não há nenhum",
   "RBAC_SUPER_ADMIN_ROLE_NOT_FOUND": "Papel super-admin não encontrado no banco de dados. Execute o seed primeiro",
+  "RBAC_GLOBAL_ROLE_REQUIRED": "Somente funções globais ativas podem ser atribuídas por este mecanismo",
+  "SUPER_ADMIN_WRITE_REQUIRED": "Somente um super-admin ativo pode realizar esta operação",
   "AUTH_INVALID_CREDENTIALS": "Credenciais inválidas",
   "AUTH_USER_ROLE_NOT_FOUND": "Papel de usuário não encontrado no sistema",
   "AUTH_REFRESH_TOKEN_LEGACY_REMOVED": "O campo refresh_token foi removido. Use refreshToken no corpo da requisição",
@@ -429,6 +431,7 @@
   "CLUB_ROLE_DATE_RANGE_INVALID": "A data de término da função não pode ser anterior à data de início",
   "CLUB_NO_ACTIVE_YEAR": "Não há um ano eclesiástico ativo configurado",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role é obrigatório para esta operação",
+  "CLUB_ROLE_GUIDE_MAJOR_REQUIRED": "É necessário ser Guia-Mestre em curso ou investido para esta função do clube",
   "CLUB_ROLE_NOT_FOUND": "Função não encontrada na categoria CLUB",
   "POST_REG_NOT_INITIATED": "O pós-registro não foi iniciado",
   "POST_REG_PHOTO_REQUIRED": "Você deve enviar uma foto de perfil antes de concluir esta etapa",
@@ -607,5 +610,6 @@
   "CAMPOREE_CLUB_REGISTRATION_CLOSED": "A inscrição de clubes já está encerrada para este camporee",
   "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Encerre a inscrição de clubes antes de configurar ou enviar pontuação do camporee",
   "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "Não é possível encerrar a inscrição de clubes sem seções de clube inscritas e ativas",
-  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Não é possível reabrir a inscrição de clubes após resultados ou atribuições ativas de juízes"
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Não é possível reabrir a inscrição de clubes após resultados ou atribuições ativas de juízes",
+  "AUDIT_WRITE_FAILED": "Não foi possível confirmar a auditoria de segurança"
 }

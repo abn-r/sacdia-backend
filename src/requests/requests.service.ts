@@ -10,6 +10,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 
 @Injectable()
 export class RequestsService {
@@ -29,6 +30,7 @@ export class RequestsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly authorizationContextVersion: AuthorizationContextVersionService,
   ) {}
 
   // ========================================
@@ -237,25 +239,34 @@ export class RequestsService {
     await this.assertCanReadTransferSection(reviewerId, request.to_section_id);
 
     let result;
+    let affectedAuthorizationUserIds: string[] = [];
 
     if (action === 'approved') {
       // Move the section context only. The user's current class/enrollment is
       // intentionally preserved; a club transfer must not recalculate the
       // progressive class by age.
-      result = await this.prisma.$transaction(async (tx) => {
+      const approved = await this.prisma.$transaction(async (tx) => {
         // Update all active role assignments from old section to new section
-        await tx.club_role_assignments.updateMany({
-          where: {
-            user_id: request.user_id,
-            club_section_id: request.from_section_id,
-            active: true,
-            status: 'active',
-          },
-          data: {
-            club_section_id: request.to_section_id,
-            modified_at: new Date(),
-          },
-        });
+        const affectedAssignments =
+          await tx.club_role_assignments.updateManyAndReturn({
+            where: {
+              user_id: request.user_id,
+              club_section_id: request.from_section_id,
+              active: true,
+              status: 'active',
+            },
+            data: {
+              club_section_id: request.to_section_id,
+              modified_at: new Date(),
+            },
+            select: { user_id: true },
+          });
+        const userIds = [
+          ...new Set(affectedAssignments.map(({ user_id }) => user_id)),
+        ];
+        for (const userId of userIds) {
+          await this.authorizationContextVersion.bump(tx, userId);
+        }
 
         // Update the transfer request status
         const updated = await tx.club_transfer_requests.update({
@@ -294,8 +305,10 @@ export class RequestsService {
           `Transfer approved: user ${request.user_id} moved from section ${request.from_section_id} to ${request.to_section_id}`,
         );
 
-        return updated;
+        return { updated, userIds };
       });
+      result = approved.updated;
+      affectedAuthorizationUserIds = approved.userIds;
     } else {
       // Rejected
       result = await this.prisma.club_transfer_requests.update({
@@ -331,16 +344,18 @@ export class RequestsService {
       });
     }
 
-    if (action === 'approved') {
-      await this.authorizationContext.invalidateUserAuthorizationCache(
-        request.user_id,
-      );
-    }
+    await Promise.all(
+      affectedAuthorizationUserIds.map((userId) =>
+        this.authorizationContext.invalidateUserAuthorizationCache(userId),
+      ),
+    );
 
     // Notify the member about the transfer decision
     try {
       const title =
-        action === 'approved' ? 'Tu traslado fue aprobado' : 'Tu traslado necesita revisión';
+        action === 'approved'
+          ? 'Tu traslado fue aprobado'
+          : 'Tu traslado necesita revisión';
       const body =
         action === 'approved'
           ? 'Ya puedes continuar tu camino en el nuevo club.'
@@ -643,9 +658,10 @@ export class RequestsService {
     }
 
     let result;
+    let affectedAuthorizationUserIds: string[] = [];
 
     if (action === 'approved') {
-      result = await this.prisma.$transaction(async (tx) => {
+      const approved = await this.prisma.$transaction(async (tx) => {
         // Re-validate role limits/exclusivity at approval time in case section
         // leadership changed after the request was created.
         await this.validateRoleSlotForRequest(
@@ -658,7 +674,7 @@ export class RequestsService {
           await this.getActiveEcclesiasticalYearId(tx);
 
         // Create the club_role_assignment
-        await tx.club_role_assignments.create({
+        const assignment = await tx.club_role_assignments.create({
           data: {
             user_id: request.user_id,
             role_id: request.role_id,
@@ -668,7 +684,9 @@ export class RequestsService {
             active: true,
             status: 'active',
           },
+          select: { user_id: true },
         });
+        await this.authorizationContextVersion.bump(tx, assignment.user_id);
 
         // Update the request status
         const updated = await tx.role_assignment_requests.update({
@@ -712,8 +730,10 @@ export class RequestsService {
           `Role assignment approved: user ${request.user_id} assigned role ${request.role_id} in section ${request.club_section_id}`,
         );
 
-        return updated;
+        return { updated, userId: assignment.user_id };
       });
+      result = approved.updated;
+      affectedAuthorizationUserIds = [approved.userId];
     } else {
       // Rejected
       result = await this.prisma.role_assignment_requests.update({
@@ -754,13 +774,16 @@ export class RequestsService {
       });
     }
 
+    await Promise.all(
+      affectedAuthorizationUserIds.map((userId) =>
+        this.authorizationContext.invalidateUserAuthorizationCache(userId),
+      ),
+    );
+
     // Notify the requester and the target user about the decision
     try {
       const roleName = request.role.role_name;
-      const title =
-        action === 'approved'
-          ? 'Rol aprobado'
-          : 'Rol en revisión';
+      const title = action === 'approved' ? 'Rol aprobado' : 'Rol en revisión';
       const body =
         action === 'approved'
           ? `La asignación del rol ${roleName} fue aprobada`

@@ -21,6 +21,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter';
 import { buildCacheOptions } from '../config/cache.config';
+import { CLOCK } from './clock/clock';
+import { SystemClockService } from './clock/system-clock.service';
+import { ZonedBusinessTimeService } from './clock/zoned-business-time.service';
+import { TemporalContextFactory } from './clock/temporal-context.factory';
+import { LocalFieldTimezoneResolver } from './authorization/local-field-timezone.resolver';
+import { ClubAssignmentEffectivityPolicy } from './authorization/club-assignment-effectivity.policy';
+import { AuthorizationContextVersionService } from './authorization/authorization-context-version.service';
 
 @Global()
 @Module({
@@ -75,6 +82,13 @@ import { buildCacheOptions } from '../config/cache.config';
     // ==========================================
     TranslationService,
     ClassAssignmentResolverService,
+    SystemClockService,
+    { provide: CLOCK, useExisting: SystemClockService },
+    ZonedBusinessTimeService,
+    TemporalContextFactory,
+    LocalFieldTimezoneResolver,
+    ClubAssignmentEffectivityPolicy,
+    AuthorizationContextVersionService,
     // ==========================================
     // EXCEPTION FILTERS — registered via DI so I18nService can be injected.
     // Order: AllExceptionsFilter registered FIRST (lower priority),
@@ -104,6 +118,12 @@ import { buildCacheOptions } from '../config/cache.config';
     CronRunLogger,
     TranslationService,
     ClassAssignmentResolverService,
+    CLOCK,
+    ZonedBusinessTimeService,
+    TemporalContextFactory,
+    LocalFieldTimezoneResolver,
+    ClubAssignmentEffectivityPolicy,
+    AuthorizationContextVersionService,
   ],
 })
 export class CommonModule {}
