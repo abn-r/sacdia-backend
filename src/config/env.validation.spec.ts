@@ -11,6 +11,8 @@ const validBaseEnv = {
   R2_PUBLIC_URL_INSURANCE_EVIDENCE: 'https://storage.example.com/insurance',
   R2_BUCKET_DATA_EXPORTS: 'data-exports',
   R2_PUBLIC_URL_DATA_EXPORTS: 'https://storage.example.com/exports',
+  R2_BUCKET_MONTHLY_REPORTS: 'monthly-reports',
+  R2_PUBLIC_URL_MONTHLY_REPORTS: 'https://storage.example.com/monthly-reports',
   R2_BUCKET_RESOURCES_FILES: 'resources',
   R2_PUBLIC_URL_RESOURCES_FILES: 'https://storage.example.com/resources',
 };
