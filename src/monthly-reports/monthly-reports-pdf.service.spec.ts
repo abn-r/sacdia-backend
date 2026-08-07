@@ -136,8 +136,10 @@ describe('MonthlyReportsPdfService', () => {
     fixture.snapshot_data.meeting_days = null as unknown as string;
     fixture.snapshot_data.honors.details = [];
     fixture.snapshot_data.activities.list = [];
-    fixture.manual_data.club_participation_description = null as unknown as string;
-    fixture.manual_data.community_service_description = null as unknown as string;
+    fixture.manual_data.club_participation_description =
+      null as unknown as string;
+    fixture.manual_data.community_service_description =
+      null as unknown as string;
     fixture.club_enrollment.club_section.clubs.churches = null as unknown as {
       name: string;
     };
@@ -210,8 +212,7 @@ describe('monthly report artifact constants', () => {
         year: 2026,
       }),
     ).toBe(
-      '2026/08/22222222-2222-4222-8222-222222222222/' +
-        `${REPORT_ID}.pdf`,
+      '2026/08/22222222-2222-4222-8222-222222222222/' + `${REPORT_ID}.pdf`,
     );
     expect(MONTHLY_REPORT_PDF_TEMPLATE_VERSION).toBe(
       'monthly-report-v2-three-page',

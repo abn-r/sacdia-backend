@@ -17,7 +17,7 @@ import {
   MonthlyReportArtifactsService,
   MonthlyReportPdfArtifact,
 } from './monthly-report-artifacts.service';
-import { MonthlyReportSnapshotData } from './monthly-reports-pdf.service';
+import type { MonthlyReportSnapshotData } from './monthly-reports-pdf.service';
 import {
   buildReportClubSectionWhere,
   resolveReportVisibilityScope,
@@ -301,7 +301,7 @@ export class MonthlyReportsService {
         report.year,
       );
       const snapshotData =
-        previewData.auto_calculated as MonthlyReportSnapshotData;
+        previewData.auto_calculated as unknown as MonthlyReportSnapshotData;
 
       if (this.monthlyReportArtifactsService) {
         artifact = await this.monthlyReportArtifactsService.renderAndUpload({
