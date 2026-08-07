@@ -7,19 +7,17 @@ import {
 } from '../common/errors/app.exception';
 import {
   FILE_STORAGE_SERVICE,
-  FileStorageService,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   MONTHLY_REPORT_PDF_TEMPLATE_VERSION,
   buildMonthlyReportPdfKey,
 } from './monthly-report-artifact.constants';
-import {
-  MonthlyReportSnapshotData,
-  MonthlyReportsPdfService,
-} from './monthly-reports-pdf.service';
+import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
+import type { MonthlyReportSnapshotData } from './monthly-reports-pdf.service';
 
 const SIGNED_DOWNLOAD_TTL_SECONDS = 300;
 
