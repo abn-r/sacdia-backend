@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { I18nService } from 'nestjs-i18n';
 import PDFDocument from 'pdfkit';
+import { Prisma } from '@prisma/client';
 import {
   AppBadRequestException,
   AppNotFoundException,
@@ -77,7 +78,7 @@ interface MonthlyReportPdfRecord {
   month: number;
   year: number;
   status: string;
-  snapshot_data: MonthlyReportSnapshotData | null;
+  snapshot_data: Prisma.JsonValue | null;
   manual_data?: MonthlyReportManualData | null;
   club_enrollment?: {
     club_section?: {
@@ -111,10 +112,7 @@ interface PdfModel {
   submitterEmail: string;
 }
 
-type Translate = (
-  key: string,
-  args?: Record<string, unknown>,
-) => string;
+type Translate = (key: string, args?: Record<string, unknown>) => string;
 
 const LETTER_WIDTH = 612;
 const LETTER_HEIGHT = 792;
@@ -202,10 +200,7 @@ export class MonthlyReportsPdfService {
           args,
         }),
       );
-    const model = this.toPdfModel(
-      report as unknown as MonthlyReportPdfRecord,
-      t,
-    );
+    const model = this.toPdfModel(report, t);
 
     return this.renderPdf(model, BCP47[locale] ?? 'es-MX', t);
   }
@@ -229,11 +224,25 @@ export class MonthlyReportsPdfService {
       clubType: this.blank(section?.club_types?.name),
       churchName: this.blank(club?.churches?.name),
       districtName: this.blank(club?.districts?.name),
-      snapshot: report.snapshot_data ?? {},
+      snapshot: this.normalizeSnapshotData(report.snapshot_data),
       manual: report.manual_data ?? {},
       submitterName,
       submitterEmail: this.blank(report.submitter?.email),
     };
+  }
+
+  private normalizeSnapshotData(
+    snapshot: Prisma.JsonValue | null,
+  ): MonthlyReportSnapshotData {
+    if (
+      snapshot === null ||
+      typeof snapshot !== 'object' ||
+      Array.isArray(snapshot)
+    ) {
+      return {};
+    }
+
+    return snapshot;
   }
 
   private async renderPdf(

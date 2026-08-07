@@ -152,6 +152,23 @@ describe('MonthlyReportsPdfService', () => {
     expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
     expect(countPdfPages(pdf)).toBe(3);
   });
+
+  it('normalizes a non-object snapshot to an empty snapshot', () => {
+    const fixture = buildReportFixture();
+    fixture.snapshot_data =
+      'legacy snapshot' as unknown as typeof fixture.snapshot_data;
+
+    const model = (
+      service as unknown as {
+        toPdfModel: (
+          report: unknown,
+          translate: (key: string, args?: Record<string, unknown>) => string,
+        ) => { snapshot: unknown };
+      }
+    ).toPdfModel(fixture, (key) => key);
+
+    expect(model.snapshot).toEqual({});
+  });
 });
 
 describe('monthly report artifact constants', () => {
