@@ -115,6 +115,7 @@ interface PdfModel {
 type Translate = (key: string, args?: Record<string, unknown>) => string;
 
 const LETTER_WIDTH = 612;
+const LETTER_HEIGHT = 792;
 const PAGE_X = 32;
 const CONTENT_WIDTH = LETTER_WIDTH - PAGE_X * 2;
 const FOOTER_Y = 750;
@@ -210,7 +211,7 @@ export class MonthlyReportsPdfService {
       {
         ...report,
         snapshot_data: snapshotData,
-      } as unknown as MonthlyReportPdfRecord,
+      },
       t,
     );
 
@@ -347,10 +348,12 @@ export class MonthlyReportsPdfService {
       .font('Helvetica')
       .fontSize(10)
       .fillColor(PDF_COLORS.muted)
-      .text(t('header.club_type', { type: model.clubType }), PAGE_X + 90, 54, {
-        width: CONTENT_WIDTH - 180,
-        align: 'center',
-      });
+      .text(
+        t('header.club_type', { type: model.clubType }),
+        PAGE_X + 90,
+        54,
+        { width: CONTENT_WIDTH - 180, align: 'center' },
+      );
 
     const fields = [
       [t('header.district'), model.districtName],
@@ -427,18 +430,13 @@ export class MonthlyReportsPdfService {
     y: number,
   ): void {
     const columnWidth = (CONTENT_WIDTH - 12) / 2;
-    this.drawPanel(
-      doc,
-      PAGE_X,
-      y,
-      columnWidth,
-      224,
-      t('administration.directiva'),
-    );
+    this.drawPanel(doc, PAGE_X, y, columnWidth, 224, t('administration.directiva'));
     const leaders = model.snapshot.directiva ?? [];
     for (let index = 0; index < 5; index += 1) {
       const leader = leaders[index];
-      const role = leader?.role ? t(`role_labels.${leader.role}`) : '';
+      const role = leader?.role
+        ? t(`role_labels.${leader.role}`)
+        : '';
       this.drawFieldLine(
         doc,
         role,
@@ -642,7 +640,10 @@ export class MonthlyReportsPdfService {
         t('missionary.baptized_this_month'),
         this.blank(model.manual.baptized_this_month),
       ],
-      [t('missionary.baptized_total'), this.blank(model.manual.total_baptized)],
+      [
+        t('missionary.baptized_total'),
+        this.blank(model.manual.total_baptized),
+      ],
     ];
     fields.forEach(([label, value], index) => {
       const x = PAGE_X + (index % 2) * (CONTENT_WIDTH / 2 + 4);
@@ -823,9 +824,7 @@ export class MonthlyReportsPdfService {
     let columnX = x;
     columns.forEach((column) => {
       const columnWidth = width * column.width;
-      doc
-        .rect(columnX, y, columnWidth, headerHeight)
-        .fill(PDF_COLORS.primarySoft);
+      doc.rect(columnX, y, columnWidth, headerHeight).fill(PDF_COLORS.primarySoft);
       doc
         .rect(columnX, y, columnWidth, headerHeight)
         .lineWidth(0.6)
