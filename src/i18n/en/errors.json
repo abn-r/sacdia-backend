@@ -510,6 +510,7 @@
   "MOM_PERIOD_NOT_FOUND": "Period not found",
   "REPORT_PDF_NOT_FOUND": "Monthly report not found",
   "REPORT_PDF_NOT_GENERATED": "Cannot generate PDF for a report with this status. Only generated or submitted reports can be downloaded",
+  "MONTHLY_REPORT_GENERATION_LOCK_CONFLICT": "Monthly report generation is already in progress. Retry shortly",
   "REPORT_PDF_NO_SNAPSHOT": "Report has no snapshot data. Generate the report first",
   "YEAR_END_YEAR_CLOSED": "Ecclesiastical year is already inactive. It may have been closed previously",
   "YEAR_END_ECCLESIASTICAL_YEAR_NOT_FOUND": "Ecclesiastical year not found",

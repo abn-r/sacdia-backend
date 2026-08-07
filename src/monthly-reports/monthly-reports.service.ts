@@ -5,10 +5,19 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { NotificationsService } from '../notifications/notifications.service';
 import { UpdateManualDataDto } from './dto';
 import {
+  AppConflictException,
+  AppException,
   AppBadRequestException,
+  AppInternalServerErrorException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { DistributedLockService } from '../common/services/distributed-lock.service';
+import {
+  MonthlyReportArtifactsService,
+  MonthlyReportPdfArtifact,
+} from './monthly-report-artifacts.service';
+import type { MonthlyReportSnapshotData } from './monthly-reports-pdf.service';
 import {
   buildReportClubSectionWhere,
   resolveReportVisibilityScope,
@@ -76,6 +85,10 @@ export class MonthlyReportsService {
     private readonly authorizationContext: AuthorizationContextService,
     @Optional()
     private readonly notificationsService?: NotificationsService,
+    @Optional()
+    private readonly monthlyReportArtifactsService?: MonthlyReportArtifactsService,
+    @Optional()
+    private readonly lockService?: DistributedLockService,
   ) {}
 
   // ========================================
@@ -256,51 +269,156 @@ export class MonthlyReportsService {
    * Freezes the auto-calculated data into snapshot_data and sets status to 'generated'.
    */
   async generate(reportId: string, _userId: string) {
-    const report = await this.prisma.monthly_reports.findUnique({
-      where: { monthly_report_id: reportId },
-    });
-
-    if (!report) {
-      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+    const lockKey = `monthly-report:generate:${reportId}`;
+    if (this.lockService) {
+      const acquired = await this.lockService.tryAcquire(lockKey, 5 * 60_000);
+      if (!acquired) {
+        throw new AppConflictException(
+          ErrorCode.MONTHLY_REPORT_GENERATION_LOCK_CONFLICT,
+        );
+      }
     }
 
-    if (report.status !== 'draft') {
-      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
-    }
+    let artifact: MonthlyReportPdfArtifact | undefined;
 
-    // Get live preview data to freeze
-    const previewData = await this.preview(
-      report.club_enrollment_id,
-      report.month,
-      report.year,
-    );
+    try {
+      const report = await this.prisma.monthly_reports.findUnique({
+        where: { monthly_report_id: reportId },
+      });
 
-    const transition = await this.prisma.monthly_reports.updateMany({
-      where: {
-        monthly_report_id: reportId,
-        status: 'draft',
-      },
-      data: {
+      if (!report) {
+        throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+      }
+
+      if (report.status !== 'draft') {
+        throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
+      }
+
+      // Get live preview data to freeze before rendering the canonical artifact.
+      const previewData = await this.preview(
+        report.club_enrollment_id,
+        report.month,
+        report.year,
+      );
+      const snapshotData =
+        previewData.auto_calculated as unknown as MonthlyReportSnapshotData;
+
+      if (this.monthlyReportArtifactsService) {
+        artifact = await this.monthlyReportArtifactsService.renderAndUpload({
+          reportId,
+          snapshotOverride: snapshotData,
+        });
+      }
+
+      const transitionData = {
         status: 'generated',
-        snapshot_data: previewData.auto_calculated as any,
+        snapshot_data: snapshotData as any,
         generated_at: new Date(),
-      },
-    });
+        ...(artifact && this.monthlyReportArtifactsService
+          ? this.monthlyReportArtifactsService.getMetadataUpdate(artifact)
+          : {}),
+      };
 
-    if (transition.count !== 1) {
-      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
+      let transition;
+      try {
+        transition = await this.prisma.monthly_reports.updateMany({
+          where: {
+            monthly_report_id: reportId,
+            status: 'draft',
+          },
+          data: transitionData,
+        });
+      } catch (error) {
+        await this.cleanupUploadedArtifact(artifact);
+        throw error;
+      }
+
+      if (transition.count !== 1) {
+        await this.cleanupUploadedArtifact(artifact);
+        throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
+      }
+
+      const generated = await this.prisma.monthly_reports.findUnique({
+        where: { monthly_report_id: reportId },
+        include: { manual_data: true },
+      });
+
+      if (!generated) {
+        throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+      }
+
+      return generated;
+    } finally {
+      if (this.lockService) {
+        await this.lockService.release(lockKey);
+      }
+    }
+  }
+
+  /**
+   * Regenerates only the canonical PDF artifact from the frozen snapshot.
+   * Workflow status, snapshot and submission fields remain unchanged.
+   */
+  async regenerate(reportId: string) {
+    const lockKey = `monthly-report:generate:${reportId}`;
+    if (this.lockService) {
+      const acquired = await this.lockService.tryAcquire(lockKey, 5 * 60_000);
+      if (!acquired) {
+        throw new AppConflictException(
+          ErrorCode.MONTHLY_REPORT_GENERATION_LOCK_CONFLICT,
+        );
+      }
     }
 
-    const generated = await this.prisma.monthly_reports.findUnique({
-      where: { monthly_report_id: reportId },
-      include: { manual_data: true },
-    });
+    try {
+      const report = await this.prisma.monthly_reports.findUnique({
+        where: { monthly_report_id: reportId },
+      });
 
-    if (!generated) {
-      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+      if (!report) {
+        throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+      }
+
+      if (!['generated', 'submitted'].includes(report.status)) {
+        throw new AppBadRequestException(ErrorCode.REPORT_PDF_NOT_GENERATED);
+      }
+
+      if (!report.snapshot_data) {
+        throw new AppBadRequestException(ErrorCode.REPORT_PDF_NO_SNAPSHOT);
+      }
+
+      if (!this.monthlyReportArtifactsService) {
+        throw new AppInternalServerErrorException(
+          ErrorCode.R2_VALIDATION_FAILED,
+        );
+      }
+
+      const artifact = await this.monthlyReportArtifactsService.renderAndUpload(
+        {
+          reportId,
+          snapshotOverride: report.snapshot_data as MonthlyReportSnapshotData,
+        },
+      );
+      await this.monthlyReportArtifactsService.persistArtifactMetadata(
+        reportId,
+        artifact,
+      );
+
+      const regenerated = await this.prisma.monthly_reports.findUnique({
+        where: { monthly_report_id: reportId },
+        include: { manual_data: true },
+      });
+
+      if (!regenerated) {
+        throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+      }
+
+      return regenerated;
+    } finally {
+      if (this.lockService) {
+        await this.lockService.release(lockKey);
+      }
     }
-
-    return generated;
   }
 
   // ========================================
@@ -748,6 +866,7 @@ export class MonthlyReportsService {
     let successCount = 0;
     let skipCount = 0;
     let errorCount = 0;
+    let storageError: AppException | undefined;
     const errors: {
       enrollmentId: string;
       clubName: string;
@@ -793,6 +912,9 @@ export class MonthlyReportsService {
           period: period.periodLabel,
           error: errorMessage,
         });
+        if (!storageError && this.isMonthlyReportStorageError(error)) {
+          storageError = error;
+        }
         this.logger.error(
           `Failed to generate report ${period.periodLabel} for ${period.clubName}: ${errorMessage}`,
         );
@@ -813,6 +935,10 @@ export class MonthlyReportsService {
           )
           .join('\n')}`,
       );
+    }
+
+    if (storageError) {
+      throw storageError;
     }
 
     return { itemsProcessed: successCount };
@@ -896,6 +1022,36 @@ export class MonthlyReportsService {
   // ========================================
   // PRIVATE HELPERS — auto-calculated queries
   // ========================================
+
+  private async cleanupUploadedArtifact(
+    artifact: MonthlyReportPdfArtifact | undefined,
+  ): Promise<void> {
+    if (!artifact || !this.monthlyReportArtifactsService) {
+      return;
+    }
+
+    try {
+      await this.monthlyReportArtifactsService.deleteArtifact(artifact);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to clean up monthly report artifact ${artifact.key}: ${errorMessage}`,
+      );
+    }
+  }
+
+  private isMonthlyReportStorageError(error: unknown): error is AppException {
+    return (
+      error instanceof AppException &&
+      [
+        ErrorCode.R2_UPLOAD_FAILED,
+        ErrorCode.R2_DELETE_FAILED,
+        ErrorCode.R2_SIGNED_URL_FAILED,
+        ErrorCode.R2_VALIDATION_FAILED,
+      ].includes(error.code)
+    );
+  }
 
   /**
    * Count active members in the club section for the given ecclesiastical year.

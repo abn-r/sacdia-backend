@@ -136,8 +136,10 @@ describe('MonthlyReportsPdfService', () => {
     fixture.snapshot_data.meeting_days = null as unknown as string;
     fixture.snapshot_data.honors.details = [];
     fixture.snapshot_data.activities.list = [];
-    fixture.manual_data.club_participation_description = null as unknown as string;
-    fixture.manual_data.community_service_description = null as unknown as string;
+    fixture.manual_data.club_participation_description =
+      null as unknown as string;
+    fixture.manual_data.community_service_description =
+      null as unknown as string;
     fixture.club_enrollment.club_section.clubs.churches = null as unknown as {
       name: string;
     };
@@ -148,6 +150,35 @@ describe('MonthlyReportsPdfService', () => {
     findUnique.mockResolvedValueOnce(fixture);
 
     const pdf = await service.generatePdf(REPORT_ID);
+
+    expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
+    expect(countPdfPages(pdf)).toBe(3);
+  });
+
+  it('normalizes a non-object snapshot to an empty snapshot', () => {
+    const fixture = buildReportFixture();
+    fixture.snapshot_data =
+      'legacy snapshot' as unknown as typeof fixture.snapshot_data;
+
+    const model = (
+      service as unknown as {
+        toPdfModel: (
+          report: unknown,
+          translate: (key: string, args?: Record<string, unknown>) => string,
+        ) => { snapshot: unknown };
+      }
+    ).toPdfModel(fixture, (key) => key);
+
+    expect(model.snapshot).toEqual({});
+  });
+
+  it('renders a draft candidate from an explicit snapshot override', async () => {
+    const fixture = buildReportFixture();
+    fixture.status = 'draft';
+    fixture.snapshot_data = null as unknown as typeof fixture.snapshot_data;
+    findUnique.mockResolvedValueOnce(fixture);
+
+    const pdf = await service.generatePdf(REPORT_ID, { member_count: 99 });
 
     expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
     expect(countPdfPages(pdf)).toBe(3);
@@ -181,8 +212,7 @@ describe('monthly report artifact constants', () => {
         year: 2026,
       }),
     ).toBe(
-      '2026/08/22222222-2222-4222-8222-222222222222/' +
-        `${REPORT_ID}.pdf`,
+      '2026/08/22222222-2222-4222-8222-222222222222/' + `${REPORT_ID}.pdf`,
     );
     expect(MONTHLY_REPORT_PDF_TEMPLATE_VERSION).toBe(
       'monthly-report-v2-three-page',

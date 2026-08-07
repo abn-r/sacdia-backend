@@ -78,7 +78,7 @@ interface MonthlyReportPdfRecord {
   month: number;
   year: number;
   status: string;
-  snapshot_data: Prisma.JsonValue | null;
+  snapshot_data: Prisma.JsonValue | MonthlyReportSnapshotData | null;
   manual_data?: MonthlyReportManualData | null;
   club_enrollment?: {
     club_section?: {
@@ -115,7 +115,6 @@ interface PdfModel {
 type Translate = (key: string, args?: Record<string, unknown>) => string;
 
 const LETTER_WIDTH = 612;
-const LETTER_HEIGHT = 792;
 const PAGE_X = 32;
 const CONTENT_WIDTH = LETTER_WIDTH - PAGE_X * 2;
 const FOOTER_Y = 750;
@@ -148,7 +147,10 @@ export class MonthlyReportsPdfService {
     private readonly translationService: TranslationService,
   ) {}
 
-  async generatePdf(reportId: string): Promise<Buffer> {
+  async generatePdf(
+    reportId: string,
+    snapshotOverride?: MonthlyReportSnapshotData,
+  ): Promise<Buffer> {
     const report = await this.prisma.monthly_reports.findUnique({
       where: { monthly_report_id: reportId },
       include: {
@@ -184,11 +186,15 @@ export class MonthlyReportsPdfService {
       throw new AppNotFoundException(ErrorCode.REPORT_PDF_NOT_FOUND);
     }
 
-    if (!['generated', 'submitted'].includes(report.status)) {
+    if (
+      !snapshotOverride &&
+      !['generated', 'submitted'].includes(report.status)
+    ) {
       throw new AppBadRequestException(ErrorCode.REPORT_PDF_NOT_GENERATED);
     }
 
-    if (!report.snapshot_data) {
+    const snapshotData = snapshotOverride ?? report.snapshot_data;
+    if (!snapshotData) {
       throw new AppBadRequestException(ErrorCode.REPORT_PDF_NO_SNAPSHOT);
     }
 
@@ -200,7 +206,13 @@ export class MonthlyReportsPdfService {
           args,
         }),
       );
-    const model = this.toPdfModel(report, t);
+    const model = this.toPdfModel(
+      {
+        ...report,
+        snapshot_data: snapshotData,
+      },
+      t,
+    );
 
     return this.renderPdf(model, BCP47[locale] ?? 'es-MX', t);
   }
@@ -232,7 +244,7 @@ export class MonthlyReportsPdfService {
   }
 
   private normalizeSnapshotData(
-    snapshot: Prisma.JsonValue | null,
+    snapshot: Prisma.JsonValue | MonthlyReportSnapshotData | null,
   ): MonthlyReportSnapshotData {
     if (
       snapshot === null ||
@@ -335,12 +347,10 @@ export class MonthlyReportsPdfService {
       .font('Helvetica')
       .fontSize(10)
       .fillColor(PDF_COLORS.muted)
-      .text(
-        t('header.club_type', { type: model.clubType }),
-        PAGE_X + 90,
-        54,
-        { width: CONTENT_WIDTH - 180, align: 'center' },
-      );
+      .text(t('header.club_type', { type: model.clubType }), PAGE_X + 90, 54, {
+        width: CONTENT_WIDTH - 180,
+        align: 'center',
+      });
 
     const fields = [
       [t('header.district'), model.districtName],
@@ -417,13 +427,18 @@ export class MonthlyReportsPdfService {
     y: number,
   ): void {
     const columnWidth = (CONTENT_WIDTH - 12) / 2;
-    this.drawPanel(doc, PAGE_X, y, columnWidth, 224, t('administration.directiva'));
+    this.drawPanel(
+      doc,
+      PAGE_X,
+      y,
+      columnWidth,
+      224,
+      t('administration.directiva'),
+    );
     const leaders = model.snapshot.directiva ?? [];
     for (let index = 0; index < 5; index += 1) {
       const leader = leaders[index];
-      const role = leader?.role
-        ? t(`role_labels.${leader.role}`)
-        : '';
+      const role = leader?.role ? t(`role_labels.${leader.role}`) : '';
       this.drawFieldLine(
         doc,
         role,
@@ -627,10 +642,7 @@ export class MonthlyReportsPdfService {
         t('missionary.baptized_this_month'),
         this.blank(model.manual.baptized_this_month),
       ],
-      [
-        t('missionary.baptized_total'),
-        this.blank(model.manual.total_baptized),
-      ],
+      [t('missionary.baptized_total'), this.blank(model.manual.total_baptized)],
     ];
     fields.forEach(([label, value], index) => {
       const x = PAGE_X + (index % 2) * (CONTENT_WIDTH / 2 + 4);
@@ -811,7 +823,9 @@ export class MonthlyReportsPdfService {
     let columnX = x;
     columns.forEach((column) => {
       const columnWidth = width * column.width;
-      doc.rect(columnX, y, columnWidth, headerHeight).fill(PDF_COLORS.primarySoft);
+      doc
+        .rect(columnX, y, columnWidth, headerHeight)
+        .fill(PDF_COLORS.primarySoft);
       doc
         .rect(columnX, y, columnWidth, headerHeight)
         .lineWidth(0.6)
