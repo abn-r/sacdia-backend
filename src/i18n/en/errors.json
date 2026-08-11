@@ -632,5 +632,15 @@
   "CLASS_PREREQUISITE_NOT_MET": "You must be invested in the required previous classes to enroll",
   "ADMIN_CLASS_PREREQUISITE_NOT_FOUND": "Class prerequisite not found",
   "ADMIN_CLASS_PREREQUISITE_DUPLICATE": "That prerequisite already exists for the class",
-  "ADMIN_CLASS_PREREQUISITE_CYCLE": "Would create a prerequisite cycle"
+  "ADMIN_CLASS_PREREQUISITE_CYCLE": "Would create a prerequisite cycle",
+  "CERT_VERSION_NOT_PUBLISHED": "Certification version is not published",
+  "CERT_VERSION_IMMUTABLE": "A published or retired version cannot be edited; clone to draft",
+  "CERT_REQUIREMENT_LOCKED": "Requirement is locked for editing in status '{status}'",
+  "CERT_REQUIREMENT_INCOMPLETE": "Requirement is missing required deliverables",
+  "CERT_INVALID_TRANSITION": "Invalid status transition from '{from}' to '{to}'",
+  "CERT_EVIDENCE_INVALID_TYPE": "File type not allowed for certification evidence",
+  "CERT_EVIDENCE_TOO_LARGE": "Evidence file exceeds the maximum allowed size",
+  "CERT_REVIEW_SCOPE_FORBIDDEN": "You lack institutional scope to review this case",
+  "CERT_CLOSEOUT_INCOMPLETE": "Required requirements or board evidence are incomplete",
+  "CERT_CONCURRENT_UPDATE": "A concurrent change updated this record; retry"
 }

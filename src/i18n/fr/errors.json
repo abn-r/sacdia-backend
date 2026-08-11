@@ -619,5 +619,15 @@
   "CLASS_PREREQUISITE_NOT_MET": "Vous devez être investi dans les classes préalables requises pour vous inscrire",
   "ADMIN_CLASS_PREREQUISITE_NOT_FOUND": "Prérequis de classe introuvable",
   "ADMIN_CLASS_PREREQUISITE_DUPLICATE": "Ce prérequis existe déjà pour la classe",
-  "ADMIN_CLASS_PREREQUISITE_CYCLE": "Créerait un cycle de prérequis"
+  "ADMIN_CLASS_PREREQUISITE_CYCLE": "Créerait un cycle de prérequis",
+  "CERT_VERSION_NOT_PUBLISHED": "La version de certification n'est pas publiée",
+  "CERT_VERSION_IMMUTABLE": "Une version publiée ou retirée ne peut pas être modifiée ; clonez en brouillon",
+  "CERT_REQUIREMENT_LOCKED": "L'exigence est verrouillée pour l'édition en état '{status}'",
+  "CERT_REQUIREMENT_INCOMPLETE": "L'exigence n'a pas tous les livrables requis",
+  "CERT_INVALID_TRANSITION": "Transition d'état invalide de '{from}' vers '{to}'",
+  "CERT_EVIDENCE_INVALID_TYPE": "Type de fichier non autorisé pour les preuves de certification",
+  "CERT_EVIDENCE_TOO_LARGE": "Le fichier de preuve dépasse la taille maximale autorisée",
+  "CERT_REVIEW_SCOPE_FORBIDDEN": "Vous n'avez pas la portée institutionnelle pour examiner ce dossier",
+  "CERT_CLOSEOUT_INCOMPLETE": "Exigences obligatoires ou preuve de conseil incomplètes",
+  "CERT_CONCURRENT_UPDATE": "Une modification concurrente a mis à jour cet enregistrement ; réessayez"
 }

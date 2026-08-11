@@ -619,5 +619,15 @@
   "CLASS_PREREQUISITE_NOT_MET": "Você deve estar investido nas classes prévias exigidas para se inscrever",
   "ADMIN_CLASS_PREREQUISITE_NOT_FOUND": "Pré-requisito de classe não encontrado",
   "ADMIN_CLASS_PREREQUISITE_DUPLICATE": "Esse pré-requisito já existe para a classe",
-  "ADMIN_CLASS_PREREQUISITE_CYCLE": "Criaria um ciclo de pré-requisitos"
+  "ADMIN_CLASS_PREREQUISITE_CYCLE": "Criaria um ciclo de pré-requisitos",
+  "CERT_VERSION_NOT_PUBLISHED": "A versão da certificação não está publicada",
+  "CERT_VERSION_IMMUTABLE": "Uma versão publicada ou retirada não pode ser editada; clone para rascunho",
+  "CERT_REQUIREMENT_LOCKED": "O requisito está bloqueado para edição no estado '{status}'",
+  "CERT_REQUIREMENT_INCOMPLETE": "O requisito não tem todos os entregáveis exigidos",
+  "CERT_INVALID_TRANSITION": "Transição de estado inválida de '{from}' para '{to}'",
+  "CERT_EVIDENCE_INVALID_TYPE": "Tipo de arquivo não permitido para evidências de certificação",
+  "CERT_EVIDENCE_TOO_LARGE": "O arquivo de evidência excede o tamanho máximo permitido",
+  "CERT_REVIEW_SCOPE_FORBIDDEN": "Você não tem escopo institucional para revisar este expediente",
+  "CERT_CLOSEOUT_INCOMPLETE": "Requisitos obrigatórios ou comprovante de junta incompletos",
+  "CERT_CONCURRENT_UPDATE": "Uma alteração concorrente atualizou este registro; tente novamente"
 }
