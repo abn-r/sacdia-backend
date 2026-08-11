@@ -16,11 +16,19 @@ import {
   master_honor_applicability_scope_enum,
   master_honor_requirement_group_type_enum,
 } from '@prisma/client';
+import { ErrorCode } from '../common/errors/error-codes';
 
 const ACTOR_ID = 'actor-uuid';
 
 const makePrismaMock = () => ({
   classes: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  class_honors: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
     findMany: jest.fn(),
@@ -602,6 +610,73 @@ describe('AdminPhaseECatalogsService', () => {
           ACTOR_ID,
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('class honors', () => {
+    it('creates a class-honor relation', async () => {
+      prismaMock.classes.findUnique.mockResolvedValue({ class_id: 7 });
+      prismaMock.honors.findUnique.mockResolvedValue({ honor_id: 50 });
+      prismaMock.class_honors.findFirst.mockResolvedValue(null);
+      prismaMock.class_honors.create.mockResolvedValue({
+        class_honor_id: 1,
+        class_id: 7,
+        honor_id: 50,
+        relation_type: 'RECOMMENDED',
+        active: true,
+        honor: { honor_id: 50, name: 'Nudos' },
+      });
+
+      const result = await service.createClassHonor(
+        7,
+        { honor_id: 50, relation_type: 'RECOMMENDED' as any },
+        ACTOR_ID,
+      );
+
+      expect(result.class_honor_id).toBe(1);
+      expect(prismaMock.class_honors.create).toHaveBeenCalled();
+    });
+
+    it('throws on duplicate active relation', async () => {
+      prismaMock.classes.findUnique.mockResolvedValue({ class_id: 7 });
+      prismaMock.honors.findUnique.mockResolvedValue({ honor_id: 50 });
+      prismaMock.class_honors.findFirst.mockResolvedValue({
+        class_honor_id: 1,
+      });
+
+      await expect(
+        service.createClassHonor(
+          7,
+          { honor_id: 50, relation_type: 'RECOMMENDED' as any },
+          ACTOR_ID,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_CLASS_HONOR_DUPLICATE,
+      });
+    });
+
+    it('soft-deletes a class-honor relation', async () => {
+      prismaMock.class_honors.findFirst.mockResolvedValue({
+        class_honor_id: 11,
+        class_id: 7,
+      });
+      prismaMock.class_honors.update.mockResolvedValue({
+        class_honor_id: 11,
+        active: false,
+      });
+
+      const result = await service.deleteClassHonor(7, 11, ACTOR_ID);
+      expect(result.active).toBe(false);
+    });
+
+    it('throws when deleting missing class-honor', async () => {
+      prismaMock.class_honors.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.deleteClassHonor(7, 999, ACTOR_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_CLASS_HONOR_NOT_FOUND,
+      });
     });
   });
 });

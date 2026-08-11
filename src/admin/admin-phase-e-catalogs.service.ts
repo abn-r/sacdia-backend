@@ -49,6 +49,7 @@ import {
   UpdateHonorCatalogDto,
   CreateMasterHonorDto,
   UpdateMasterHonorDto,
+  CreateClassHonorDto,
 } from './dto/phase-e-catalogs.dto';
 
 type ClassSectionRequirementConfig = {
@@ -277,6 +278,108 @@ export class AdminPhaseECatalogsService {
     if (existing) {
       throw new AppConflictException(ErrorCode.ADMIN_CLASS_NAME_CONFLICT);
     }
+  }
+
+  // ==========================================================================
+  // CLASS HONORS
+  // ==========================================================================
+
+  async findClassHonors(classId: number, active?: boolean) {
+    await this.ensureClassExists(classId);
+    return this.prisma.class_honors.findMany({
+      where: {
+        class_id: classId,
+        ...(active === undefined ? {} : { active }),
+      },
+      include: {
+        honor: {
+          select: {
+            honor_id: true,
+            name: true,
+            honor_image: true,
+            honors_category_id: true,
+            skill_level: true,
+          },
+        },
+      },
+      orderBy: [{ relation_type: 'asc' }, { honor: { name: 'asc' } }],
+    });
+  }
+
+  async createClassHonor(
+    classId: number,
+    dto: CreateClassHonorDto,
+    actorId: string,
+  ) {
+    await this.ensureClassExists(classId);
+
+    const honor = await this.prisma.honors.findUnique({
+      where: { honor_id: dto.honor_id },
+      select: { honor_id: true },
+    });
+    if (!honor) {
+      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_NOT_FOUND_CATALOG, {
+        id: dto.honor_id,
+      });
+    }
+
+    const duplicate = await this.prisma.class_honors.findFirst({
+      where: {
+        class_id: classId,
+        honor_id: dto.honor_id,
+        relation_type: dto.relation_type,
+        active: true,
+      },
+    });
+    if (duplicate) {
+      throw new AppConflictException(ErrorCode.ADMIN_CLASS_HONOR_DUPLICATE);
+    }
+
+    const record = await this.prisma.class_honors.create({
+      data: {
+        class_id: classId,
+        honor_id: dto.honor_id,
+        relation_type: dto.relation_type,
+        active: true,
+      },
+      include: {
+        honor: {
+          select: {
+            honor_id: true,
+            name: true,
+            honor_image: true,
+            honors_category_id: true,
+            skill_level: true,
+          },
+        },
+      },
+    });
+
+    this.logMutation('create', 'class_honors', record.class_honor_id, actorId);
+    return record;
+  }
+
+  async deleteClassHonor(
+    classId: number,
+    classHonorId: number,
+    actorId: string,
+  ) {
+    const existing = await this.prisma.class_honors.findFirst({
+      where: { class_honor_id: classHonorId, class_id: classId },
+    });
+    if (!existing) {
+      throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_HONOR_NOT_FOUND, {
+        id: classHonorId,
+      });
+    }
+
+    const record = await this.prisma.class_honors.update({
+      where: { class_honor_id: classHonorId },
+      data: { active: false, modified_at: new Date() },
+    });
+
+    this.logMutation('delete', 'class_honors', classHonorId, actorId);
+    return record;
   }
 
   // ==========================================================================

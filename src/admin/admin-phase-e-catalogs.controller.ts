@@ -87,6 +87,7 @@ import {
   UpdateHonorCatalogDto,
   CreateMasterHonorDto,
   UpdateMasterHonorDto,
+  CreateClassHonorDto,
 } from './dto/phase-e-catalogs.dto';
 
 @ApiTags('Admin - Phase E Catalogs (i18n)')
@@ -157,6 +158,72 @@ export class AdminPhaseECatalogsController {
   ) {
     const data = await this.catalogsService.deleteClass(
       id,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  // ==========================================================================
+  // CLASS HONORS  →  /admin/classes/:classId/honors
+  // ==========================================================================
+
+  @Get('classes/:classId/honors')
+  @RequirePermissions('catalogs:read')
+  @ApiOperation({
+    summary: 'List class-honor relations for a class (includes inactive)',
+  })
+  @ApiQuery({
+    name: 'active',
+    required: false,
+    type: Boolean,
+    description: 'Optional filter by active flag',
+  })
+  async findClassHonors(
+    @Param('classId', ParseIntPipe) classId: number,
+    @Query('active') active?: string,
+  ) {
+    const activeFilter =
+      active === undefined
+        ? undefined
+        : active === 'true'
+          ? true
+          : active === 'false'
+            ? false
+            : undefined;
+    const data = await this.catalogsService.findClassHonors(
+      classId,
+      activeFilter,
+    );
+    return { status: 'success', data };
+  }
+
+  @Post('classes/:classId/honors')
+  @RequirePermissions('catalogs:create')
+  @ApiOperation({ summary: 'Create a class-honor relation' })
+  async createClassHonor(
+    @Param('classId', ParseIntPipe) classId: number,
+    @Body() dto: CreateClassHonorDto,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.catalogsService.createClassHonor(
+      classId,
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('classes/:classId/honors/:classHonorId')
+  @RequirePermissions('catalogs:delete')
+  @ApiOperation({ summary: 'Soft-delete a class-honor relation' })
+  async deleteClassHonor(
+    @Param('classId', ParseIntPipe) classId: number,
+    @Param('classHonorId', ParseIntPipe) classHonorId: number,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.catalogsService.deleteClassHonor(
+      classId,
+      classHonorId,
       this.getActorId(req),
     );
     return { status: 'success', data };
