@@ -118,6 +118,22 @@ export class ClassesController {
   async getModules(@Param('classId', ParseIntPipe) classId: number) {
     return this.classesService.getModules(classId);
   }
+
+  @Get(':classId/honors')
+  @ApiOperation({
+    summary: 'Obtener especialidades relacionadas a una clase',
+    description:
+      'Lista relaciones activas class_honors (REQUIRED/RECOMMENDED/ELECTIVE). Informativas: no bloquean investidura. Con JWT opcional incluye user_status desde users_honors.',
+  })
+  @ApiParam({ name: 'classId', type: Number })
+  @ApiResponse({ status: 200, description: 'Especialidades de la clase' })
+  @ApiResponse({ status: 404, description: 'Clase no encontrada' })
+  async getClassHonors(
+    @Param('classId', ParseIntPipe) classId: number,
+    @CurrentUser() currentUser?: CurrentUserPayload,
+  ) {
+    return this.classesService.getClassHonors(classId, currentUser?.sub);
+  }
 }
 
 // ========================================

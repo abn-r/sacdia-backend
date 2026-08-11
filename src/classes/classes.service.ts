@@ -392,6 +392,100 @@ export class ClassesService {
     return classData.class_modules;
   }
 
+  async getClassHonors(classId: number, userId?: string) {
+    const classExists = await this.prisma.classes.findFirst({
+      where: { class_id: classId, active: true },
+      select: { class_id: true },
+    });
+    if (!classExists) {
+      throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
+    }
+
+    const relations = await this.prisma.class_honors.findMany({
+      where: { class_id: classId, active: true, honor: { active: true } },
+      include: {
+        honor: {
+          select: {
+            honor_id: true,
+            name: true,
+            honor_image: true,
+            honors_category_id: true,
+            skill_level: true,
+          },
+        },
+      },
+      orderBy: [{ relation_type: 'asc' }, { honor: { name: 'asc' } }],
+    });
+
+    let userHonorsByHonorId = new Map<number, string>();
+    if (userId && relations.length > 0) {
+      const userHonors = await this.prisma.users_honors.findMany({
+        where: {
+          user_id: userId,
+          honor_id: { in: relations.map((r) => r.honor_id) },
+        },
+        select: { honor_id: true, validation_status: true },
+      });
+      userHonorsByHonorId = new Map(
+        userHonors.map((uh) => [uh.honor_id, uh.validation_status]),
+      );
+    }
+
+    return relations.map((relation) => ({
+      class_honor_id: relation.class_honor_id,
+      relation_type: relation.relation_type,
+      honor: relation.honor,
+      user_status: userHonorsByHonorId.get(relation.honor_id) ?? null,
+    }));
+  }
+
+  async getClassHonors(classId: number, userId?: string) {
+    const classExists = await this.prisma.classes.findFirst({
+      where: { class_id: classId, active: true },
+      select: { class_id: true },
+    });
+    if (!classExists) {
+      throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
+    }
+
+    const relations = await this.prisma.class_honors.findMany({
+      where: { class_id: classId, active: true, honor: { active: true } },
+      include: {
+        honor: {
+          select: {
+            honor_id: true,
+            name: true,
+            honor_image: true,
+            honors_category_id: true,
+            skill_level: true,
+          },
+        },
+      },
+      orderBy: [{ relation_type: 'asc' }, { honor: { name: 'asc' } }],
+    });
+
+    let userHonorsByHonorId = new Map<number, string>();
+    if (userId && relations.length > 0) {
+      const userHonors = await this.prisma.users_honors.findMany({
+        where: {
+          user_id: userId,
+          honor_id: { in: relations.map((r) => r.honor_id) },
+        },
+        select: { honor_id: true, validation_status: true },
+      });
+      userHonorsByHonorId = new Map(
+        userHonors.map((uh) => [uh.honor_id, uh.validation_status]),
+      );
+    }
+
+    return relations.map((relation) => ({
+      class_honor_id: relation.class_honor_id,
+      relation_type: relation.relation_type,
+      honor: relation.honor,
+      user_status: userHonorsByHonorId.get(relation.honor_id) ?? null,
+    }));
+  }
+
   // ========================================
   // ENROLLMENTS
   // ========================================

@@ -31,11 +31,18 @@ describe('ClassesService', () => {
 
   const mockPrismaService = {
     $transaction: jest.fn(),
-    classes: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
+    classes: {
+      findMany: jest.fn(),
+      count: jest.fn(),
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+    },
     ecclesiastical_years: { findFirst: jest.fn(), findUnique: jest.fn() },
     enrollments: { findMany: jest.fn(), findUnique: jest.fn() },
     class_sections: { findFirst: jest.fn(), groupBy: jest.fn() },
     class_modules: { findMany: jest.fn() },
+    class_honors: { findMany: jest.fn() },
+    users_honors: { findMany: jest.fn() },
     class_section_progress: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -1175,6 +1182,100 @@ describe('ClassesService', () => {
         ).resolves.toBeDefined();
       },
     );
+  });
+
+  describe('getClassHonors', () => {
+    it('returns active class-honor relations for an existing class', async () => {
+      mockPrismaService.classes.findFirst.mockResolvedValue({ class_id: 7 });
+      mockPrismaService.class_honors.findMany.mockResolvedValue([
+        {
+          class_honor_id: 1,
+          honor_id: 50,
+          relation_type: 'RECOMMENDED',
+          honor: {
+            honor_id: 50,
+            name: 'Nudos',
+            honor_image: null,
+            honors_category_id: 2,
+            skill_level: 1,
+          },
+        },
+        {
+          class_honor_id: 2,
+          honor_id: 51,
+          relation_type: 'REQUIRED',
+          honor: {
+            honor_id: 51,
+            name: 'Primeros Auxilios',
+            honor_image: 'https://cdn/honor.png',
+            honors_category_id: 3,
+            skill_level: 2,
+          },
+        },
+      ]);
+
+      const result = await service.getClassHonors(7);
+
+      expect(result).toEqual([
+        {
+          class_honor_id: 1,
+          relation_type: 'RECOMMENDED',
+          honor: expect.objectContaining({ honor_id: 50, name: 'Nudos' }),
+          user_status: null,
+        },
+        {
+          class_honor_id: 2,
+          relation_type: 'REQUIRED',
+          honor: expect.objectContaining({
+            honor_id: 51,
+            name: 'Primeros Auxilios',
+          }),
+          user_status: null,
+        },
+      ]);
+      expect(mockPrismaService.users_honors.findMany).not.toHaveBeenCalled();
+    });
+
+    it('throws CLASS_NOT_FOUND when class does not exist', async () => {
+      mockPrismaService.classes.findFirst.mockResolvedValue(null);
+
+      await expect(service.getClassHonors(999)).rejects.toMatchObject({
+        code: ErrorCode.CLASS_NOT_FOUND,
+      });
+    });
+
+    it('includes user_status when userId is provided', async () => {
+      mockPrismaService.classes.findFirst.mockResolvedValue({ class_id: 7 });
+      mockPrismaService.class_honors.findMany.mockResolvedValue([
+        {
+          class_honor_id: 1,
+          honor_id: 50,
+          relation_type: 'RECOMMENDED',
+          honor: {
+            honor_id: 50,
+            name: 'Nudos',
+            honor_image: null,
+            honors_category_id: 2,
+            skill_level: 1,
+          },
+        },
+      ]);
+      mockPrismaService.users_honors.findMany.mockResolvedValue([
+        { honor_id: 50, validation_status: 'VALIDATED' },
+      ]);
+
+      const result = await service.getClassHonors(7, 'user-1');
+
+      expect(result[0].user_status).toBe('VALIDATED');
+      expect(mockPrismaService.users_honors.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: 'user-1',
+            honor_id: { in: [50] },
+          }),
+        }),
+      );
+    });
   });
 
   describe('enrollUser', () => {
