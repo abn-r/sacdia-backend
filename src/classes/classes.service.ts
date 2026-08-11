@@ -60,6 +60,29 @@ export class ClassesService {
     private readonly requirementEligibility: ClassRequirementEligibilityService,
   ) {}
 
+  private static readonly PROGRESS_MUTATION_BLOCKED_STATUSES = new Set([
+    'SUBMITTED',
+    'CLUB_APPROVED',
+    'COORDINATOR_APPROVED',
+    'FIELD_APPROVED',
+    'INVESTIDO',
+    'EXPIRED',
+  ]);
+
+  private assertProgressMutable(enrollment: {
+    investitureStatus: string;
+    lockedForValidation: boolean;
+  }) {
+    if (
+      enrollment.lockedForValidation ||
+      ClassesService.PROGRESS_MUTATION_BLOCKED_STATUSES.has(
+        enrollment.investitureStatus,
+      )
+    ) {
+      throw new AppConflictException(ErrorCode.CLASS_PROGRESS_LOCKED);
+    }
+  }
+
   private getSiblingClubTypeIds(): Promise<number[]> {
     if (!this.siblingTypeIdsCache) {
       this.siblingTypeIdsCache = this.prisma.club_types
@@ -85,6 +108,7 @@ export class ClassesService {
     enrollmentId: number;
     ecclesiasticalYearId: number;
     investitureStatus: string;
+    lockedForValidation: boolean;
   }> {
     if (params.enrollmentId !== undefined) {
       const enrollment = await this.prisma.enrollments.findUnique({
@@ -97,6 +121,7 @@ export class ClassesService {
           class_id: true,
           ecclesiastical_year_id: true,
           investiture_status: true,
+          locked_for_validation: true,
         },
       });
 
@@ -112,6 +137,7 @@ export class ClassesService {
         enrollmentId: enrollment.enrollment_id,
         ecclesiasticalYearId: enrollment.ecclesiastical_year_id,
         investitureStatus: enrollment.investiture_status,
+        lockedForValidation: enrollment.locked_for_validation,
       };
     }
 
@@ -140,6 +166,7 @@ export class ClassesService {
         enrollment_id: true,
         ecclesiastical_year_id: true,
         investiture_status: true,
+        locked_for_validation: true,
       },
     });
 
@@ -155,6 +182,7 @@ export class ClassesService {
       enrollmentId: enrollments[0].enrollment_id,
       ecclesiasticalYearId: enrollments[0].ecclesiastical_year_id,
       investitureStatus: enrollments[0].investiture_status,
+      lockedForValidation: enrollments[0].locked_for_validation,
     };
   }
 
@@ -877,6 +905,7 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolvedEnrollment.ecclesiasticalYearId,
     });
+    this.assertProgressMutable(resolvedEnrollment);
 
     return this.prisma.$transaction(async (tx) => {
       const existingSection = await tx.class_section_progress.findFirst({
@@ -1018,6 +1047,7 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
+    this.assertProgressMutable(resolved);
 
     // Find or create section progress using the annual enrollment owner.
     let sectionProgress = await this.prisma.class_section_progress.findFirst({
@@ -1187,6 +1217,7 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
+    this.assertProgressMutable(resolved);
 
     // Resolve the section progress from the annual enrollment owner.
     const sectionProgress = await this.prisma.class_section_progress.findFirst({

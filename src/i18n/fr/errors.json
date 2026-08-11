@@ -306,6 +306,7 @@
   "CLASS_MAX_AVENTU_CONQUIS_ACTIVE": "Vous avez déjà une inscription active en Aventuriers/Conquérants",
   "CLASS_MAX_GM_ACTIVE": "Vous avez déjà 2 inscriptions actives en Guides Supérieurs",
   "CLASS_ALREADY_ENROLLED": "L'utilisateur a déjà une inscription active pour cette classe dans l'année ecclésiastique indiquée",
+  "CLASS_PROGRESS_LOCKED": "L'inscription est verrouillée pour validation ou en état terminal ; le progrès ne peut pas être modifié",
   "CLASS_FILE_REQUIRED": "Un fichier est requis",
   "CLASS_FILE_INVALID_TYPE": "Type de fichier invalide. Autorisés : PDF, JPG, PNG, WEBP",
   "CLASS_SECTION_NOT_FOUND": "Section introuvable dans cette classe",

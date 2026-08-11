@@ -474,6 +474,8 @@ describe('ClassesService', () => {
         user_id: 'user-1',
         class_id: 7,
         ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
       });
       transactionMock.class_section_progress.findMany.mockResolvedValue([
         {
@@ -527,6 +529,87 @@ describe('ClassesService', () => {
         score: 80,
       });
     });
+
+    it('throws CLASS_PROGRESS_LOCKED when enrollment is locked_for_validation', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: true,
+      });
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 11, 101, 80, undefined, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_PROGRESS_LOCKED,
+      });
+    });
+
+    it.each([
+      'SUBMITTED',
+      'CLUB_APPROVED',
+      'COORDINATOR_APPROVED',
+      'FIELD_APPROVED',
+      'INVESTIDO',
+      'EXPIRED',
+    ])(
+      'throws CLASS_PROGRESS_LOCKED when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+
+        await expect(
+          service.updateSectionProgress(
+            'user-1',
+            7,
+            11,
+            101,
+            80,
+            undefined,
+            901,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CLASS_PROGRESS_LOCKED,
+        });
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED'])(
+      'allows updateSectionProgress when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+        transactionMock.class_section_progress.findMany.mockResolvedValue([
+          { score: 80 },
+        ]);
+
+        await expect(
+          service.updateSectionProgress(
+            'user-1',
+            7,
+            11,
+            101,
+            80,
+            undefined,
+            901,
+          ),
+        ).resolves.toBeDefined();
+      },
+    );
   });
 
   describe('class evidence files', () => {
@@ -683,6 +766,8 @@ describe('ClassesService', () => {
         user_id: 'user-1',
         class_id: 7,
         ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
       });
       mockPrismaService.class_section_progress.findFirst.mockResolvedValue({
         section_progress_id: 123,
@@ -705,6 +790,219 @@ describe('ClassesService', () => {
         }),
       );
     });
+
+    it('throws CLASS_PROGRESS_LOCKED on upload when enrollment is locked', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: true,
+      });
+
+      await expect(
+        (service as any).uploadSectionFile(
+          'user-1',
+          'user-1',
+          7,
+          101,
+          {
+            buffer: Buffer.from('pdf'),
+            mimetype: 'application/pdf',
+            originalname: 'evidence.pdf',
+          },
+          901,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_PROGRESS_LOCKED,
+      });
+    });
+
+    it.each([
+      'SUBMITTED',
+      'CLUB_APPROVED',
+      'COORDINATOR_APPROVED',
+      'FIELD_APPROVED',
+      'INVESTIDO',
+      'EXPIRED',
+    ])(
+      'throws CLASS_PROGRESS_LOCKED on upload when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+
+        await expect(
+          (service as any).uploadSectionFile(
+            'user-1',
+            'user-1',
+            7,
+            101,
+            {
+              buffer: Buffer.from('pdf'),
+              mimetype: 'application/pdf',
+              originalname: 'evidence.pdf',
+            },
+            901,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CLASS_PROGRESS_LOCKED,
+        });
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED'])(
+      'allows upload when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+        const fileStorage = (service as any).fileStorage;
+        fileStorage.upload.mockResolvedValue({
+          url: 'https://r2.example/class/123.pdf',
+        });
+        fileStorage.getSignedDownloadUrl.mockResolvedValue(
+          'https://signed.example/class/123.pdf',
+        );
+
+        await expect(
+          (service as any).uploadSectionFile(
+            'user-1',
+            'user-1',
+            7,
+            101,
+            {
+              buffer: Buffer.from('pdf'),
+              mimetype: 'application/pdf',
+              originalname: 'evidence.pdf',
+            },
+            901,
+          ),
+        ).resolves.toBeDefined();
+      },
+    );
+
+    it('throws CLASS_PROGRESS_LOCKED on delete when enrollment is locked', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: true,
+      });
+
+      await expect(
+        (service as any).deleteSectionFile(
+          'user-1',
+          'user-1',
+          7,
+          101,
+          55,
+          901,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_PROGRESS_LOCKED,
+      });
+    });
+
+    it.each([
+      'SUBMITTED',
+      'CLUB_APPROVED',
+      'COORDINATOR_APPROVED',
+      'FIELD_APPROVED',
+      'INVESTIDO',
+      'EXPIRED',
+    ])(
+      'throws CLASS_PROGRESS_LOCKED on delete when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+
+        await expect(
+          (service as any).deleteSectionFile(
+            'user-1',
+            'user-1',
+            7,
+            101,
+            55,
+            901,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CLASS_PROGRESS_LOCKED,
+        });
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED'])(
+      'allows delete when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+        mockPrismaService.class_section_progress.findFirst.mockResolvedValue({
+          section_progress_id: 123,
+        });
+        mockPrismaService.evidence_files.findFirst.mockResolvedValue({
+          evidence_file_id: 55,
+          file_url: 'https://r2.example/class/123.pdf',
+          uploaded_by: {
+            name: 'A',
+            paternal_last_name: 'B',
+            maternal_last_name: 'C',
+          },
+        });
+        mockPrismaService.evidence_files.update.mockResolvedValue({
+          evidence_file_id: 55,
+          active: false,
+          file_url: 'https://r2.example/class/123.pdf',
+          file_name: 'Evidencia 01.pdf',
+          file_type: 'document',
+          uploaded_at: new Date('2026-05-10T00:00:00.000Z'),
+          uploaded_by: {
+            name: 'A',
+            paternal_last_name: 'B',
+            maternal_last_name: 'C',
+          },
+        });
+        const fileStorage = (service as any).fileStorage;
+        fileStorage.extractKeyFromPublicUrl.mockReturnValue('class/123.pdf');
+        fileStorage.deleteMany.mockResolvedValue(undefined);
+
+        await expect(
+          (service as any).deleteSectionFile(
+            'user-1',
+            'user-1',
+            7,
+            101,
+            55,
+            901,
+          ),
+        ).resolves.toBeDefined();
+      },
+    );
   });
 
   describe('enrollUser', () => {
