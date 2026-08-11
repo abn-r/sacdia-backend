@@ -768,6 +768,7 @@ export class ClassesService {
     ) =>
       Boolean(
         progress &&
+          progress.status !== evidence_validation_enum.REJECTED &&
           (progress.status === evidence_validation_enum.VALIDATED ||
             progress.score >= 70),
       );

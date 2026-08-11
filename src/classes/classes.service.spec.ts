@@ -452,6 +452,92 @@ describe('ClassesService', () => {
       });
     });
 
+    it('never counts a REJECTED section as completed regardless of score', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: 'IN_PROGRESS',
+        },
+      ]);
+      mockPrismaService.class_section_progress.findMany.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          module_id: 11,
+          section_id: 101,
+          score: 100,
+          evidences: null,
+          status: 'REJECTED',
+          submitted_by: null,
+          validated_by_user: null,
+          evidence_files: [],
+        },
+        {
+          enrollment_id: 501,
+          module_id: 11,
+          section_id: 102,
+          score: 0,
+          evidences: null,
+          status: 'VALIDATED',
+          submitted_by: null,
+          validated_by_user: null,
+          evidence_files: [],
+        },
+      ]);
+
+      const result = await service.getUserProgress('user-1', 7);
+
+      expect(result.modules[0].sections[0]).toMatchObject({
+        completed: false,
+        status: 'REJECTED',
+      });
+      expect(result.modules[0].sections[1]).toMatchObject({
+        completed: true,
+        status: 'VALIDATED',
+      });
+      expect(result.completed_sections).toBe(1);
+    });
+
+    it('counts a PENDING section as completed when score is at least 70', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: 'IN_PROGRESS',
+        },
+      ]);
+      mockPrismaService.class_section_progress.findMany.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          module_id: 11,
+          section_id: 101,
+          score: 80,
+          evidences: null,
+          status: 'PENDING',
+          submitted_by: null,
+          validated_by_user: null,
+          evidence_files: [],
+        },
+      ]);
+
+      const result = await service.getUserProgress('user-1', 7);
+
+      expect(result.modules[0].sections[0]).toMatchObject({
+        completed: true,
+        status: 'PENDING',
+      });
+    });
+
     it('throws conflict when class-scoped resolution is ambiguous', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
         year_id: 2026,
