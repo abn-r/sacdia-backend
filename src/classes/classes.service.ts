@@ -564,6 +564,42 @@ export class ClassesService {
         }
       }
 
+      // 2b. Explicit class prerequisites: every active prerequisite must be
+      // INVESTIDO for this user, regardless of year.
+      const prerequisites = await tx.class_prerequisites.findMany({
+        where: { class_id: classId, active: true },
+        include: {
+          prerequisite: { select: { class_id: true, name: true } },
+        },
+      });
+
+      if (prerequisites.length > 0) {
+        const investedClassIds = new Set(
+          (
+            await tx.enrollments.findMany({
+              where: {
+                user_id: userId,
+                investiture_status: 'INVESTIDO',
+                class_id: {
+                  in: prerequisites.map((p) => p.prerequisite_class_id),
+                },
+              },
+              select: { class_id: true },
+            })
+          ).map((enrollment) => enrollment.class_id),
+        );
+
+        const missing = prerequisites.filter(
+          (p) => !investedClassIds.has(p.prerequisite_class_id),
+        );
+
+        if (missing.length > 0) {
+          throw new AppForbiddenException(
+            ErrorCode.CLASS_PREREQUISITE_NOT_MET,
+          );
+        }
+      }
+
       // 3. Display-order progression restriction
       // Users can only enroll up to one class above their highest INVESTIDO class
       // within the same club type. If no INVESTIDO exists, they can only enroll

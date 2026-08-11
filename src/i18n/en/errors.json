@@ -628,5 +628,6 @@
   "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Club registration cannot be reopened after active scoring results or judge assignments exist",
   "AUDIT_WRITE_FAILED": "The security audit could not be confirmed",
   "ADMIN_CLASS_HONOR_NOT_FOUND": "Class-honor relation not found",
-  "ADMIN_CLASS_HONOR_DUPLICATE": "That class-honor relation already exists"
+  "ADMIN_CLASS_HONOR_DUPLICATE": "That class-honor relation already exists",
+  "CLASS_PREREQUISITE_NOT_MET": "You must be invested in the required previous classes to enroll"
 }

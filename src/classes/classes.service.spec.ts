@@ -43,6 +43,7 @@ describe('ClassesService', () => {
     class_modules: { findMany: jest.fn() },
     class_honors: { findMany: jest.fn() },
     users_honors: { findMany: jest.fn() },
+    class_prerequisites: { findMany: jest.fn() },
     class_section_progress: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -1300,6 +1301,8 @@ describe('ClassesService', () => {
       createResult?: any;
       updateResult?: any;
       ecclesiasticalYear?: any;
+      prerequisites?: any[];
+      investedEnrollments?: any[];
     }) => {
       // Build a findFirst that returns successive values from the array
       const findFirstResults = mocks.findFirstResults ?? [null];
@@ -1321,8 +1324,16 @@ describe('ClassesService', () => {
         classes: {
           findUnique: jest.fn().mockResolvedValue(mocks.targetClass ?? null),
         },
+        class_prerequisites: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue(mocks.prerequisites ?? []),
+        },
         enrollments: {
           findFirst: findFirstFn,
+          findMany: jest
+            .fn()
+            .mockResolvedValue(mocks.investedEnrollments ?? []),
           count: jest.fn().mockResolvedValue(mocks.activeCount ?? 0),
           findUnique: jest
             .fn()
@@ -1503,6 +1514,87 @@ describe('ClassesService', () => {
 
       const result = await service.enrollUser(userId, classId, yearId);
       expect(result).toMatchObject({ enrollment_id: 3, class_id: 10 });
+    });
+
+    it('should block enrollment when an explicit prerequisite is not INVESTIDO', async () => {
+      setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 2,
+          club_types: { name: 'Aventureros' },
+        },
+        findFirstResults: [null, null],
+        prerequisites: [
+          {
+            prerequisite_class_id: 5,
+            prerequisite: { class_id: 5, name: 'Amigo' },
+          },
+        ],
+        investedEnrollments: [],
+      });
+
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_PREREQUISITE_NOT_MET,
+      });
+    });
+
+    it('should allow enrollment when prerequisite class is INVESTIDO', async () => {
+      setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 2,
+          club_types: { name: 'Aventureros' },
+        },
+        findFirstResults: [
+          {
+            enrollment_id: 1,
+            investiture_status: 'INVESTIDO',
+            classes: { display_order: 1 },
+          },
+        ],
+        prerequisites: [
+          {
+            prerequisite_class_id: 5,
+            prerequisite: { class_id: 5, name: 'Amigo' },
+          },
+        ],
+        investedEnrollments: [{ class_id: 5 }],
+        activeCount: 0,
+        createResult: { enrollment_id: 4, class_id: 10 },
+      });
+
+      const result = await service.enrollUser(userId, classId, yearId);
+      expect(result).toMatchObject({ enrollment_id: 4, class_id: 10 });
+    });
+
+    it('should ignore inactive prerequisites by querying only active ones', async () => {
+      const txMock = setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+          club_types: { name: 'Aventureros' },
+        },
+        findFirstResults: [null, null],
+        prerequisites: [],
+        activeCount: 0,
+        createResult: { enrollment_id: 5, class_id: 10 },
+      });
+
+      const result = await service.enrollUser(userId, classId, yearId);
+      expect(result).toMatchObject({ enrollment_id: 5, class_id: 10 });
+      expect(txMock.class_prerequisites.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { class_id: classId, active: true },
+        }),
+      );
     });
 
     it('should block GM enrollment when 1 active GM enrollment already exists', async () => {

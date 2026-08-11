@@ -615,5 +615,6 @@
   "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Não é possível reabrir a inscrição de clubes após resultados ou atribuições ativas de juízes",
   "AUDIT_WRITE_FAILED": "Não foi possível confirmar a auditoria de segurança",
   "ADMIN_CLASS_HONOR_NOT_FOUND": "Relação classe-especialidade não encontrada",
-  "ADMIN_CLASS_HONOR_DUPLICATE": "Essa relação classe-especialidade já existe"
+  "ADMIN_CLASS_HONOR_DUPLICATE": "Essa relação classe-especialidade já existe",
+  "CLASS_PREREQUISITE_NOT_MET": "Você deve estar investido nas classes prévias exigidas para se inscrever"
 }
