@@ -804,4 +804,21 @@ describe('EvidenceReviewService', () => {
       'Falta evidencia',
     );
   });
+
+  it('rejects class evidence only when status is SUBMITTED', async () => {
+    mockPrisma.class_section_progress.findUnique.mockResolvedValue({
+      section_progress_id: 42,
+      status: 'PENDING',
+      user_id: 'user-1',
+      submitted_by_id: 'user-1',
+    });
+
+    await expect(
+      service.reject('class', 42, 'reviewer-1', {
+        reason: 'Evidencia incompleta',
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.EVIDENCE_REVIEW_RECORD_NOT_PENDING,
+    });
+  });
 });
