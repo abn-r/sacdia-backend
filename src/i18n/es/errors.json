@@ -307,7 +307,7 @@
   "CLASS_NOT_FOUND": "Clase no encontrada",
   "CLASS_GM_INVESTITURE_REQUIRED": "Necesitás haber sido investido en al menos una clase de Guías Mayores",
   "CLASS_MAX_AVENTU_CONQUIS_ACTIVE": "Ya tenés una inscripción activa en Aventureros/Conquistadores",
-  "CLASS_MAX_GM_ACTIVE": "Ya tenés 2 inscripciones activas en Guías Mayores",
+  "CLASS_MAX_GM_ACTIVE": "Ya tenés 1 inscripción activa en Guías Mayores",
   "CLASS_ALREADY_ENROLLED": "El usuario ya tiene una inscripción activa para esta clase en el año eclesiástico indicado",
   "CLASS_PROGRESS_LOCKED": "La inscripción está bloqueada para validación o en estado terminal; el progreso no puede modificarse",
   "CLASS_FILE_REQUIRED": "Se requiere un archivo",

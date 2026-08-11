@@ -511,7 +511,11 @@ export class ClassesService {
             classes: { club_type_id },
           },
         });
-        if (activeCount >= 2) {
+        // DB enforces a single active enrollment per user/year via the partial
+        // unique index uniq_enrollments_active_user_year; keep the service rule
+        // aligned so violations surface as CLASS_MAX_GM_ACTIVE instead of a raw
+        // unique-constraint error.
+        if (activeCount >= 1) {
           throw new AppConflictException(ErrorCode.CLASS_MAX_GM_ACTIVE);
         }
       }

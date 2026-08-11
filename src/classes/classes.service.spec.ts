@@ -1404,9 +1404,9 @@ describe('ClassesService', () => {
       expect(result).toMatchObject({ enrollment_id: 3, class_id: 10 });
     });
 
-    it('should block GM enrollment when 2 active GM enrollments exist', async () => {
+    it('should block GM enrollment when 1 active GM enrollment already exists', async () => {
       // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)
-      // But enrollment limit check (step 4) fires with activeCount: 2
+      // But enrollment limit check (step 4) fires with activeCount: 1
       setupTransactionMock({
         targetClass: {
           class_id: 10,
@@ -1416,7 +1416,7 @@ describe('ClassesService', () => {
           club_types: { name: 'Guías Mayores' },
         },
         findFirstResults: [null, null],
-        activeCount: 2,
+        activeCount: 1,
       });
 
       await expect(

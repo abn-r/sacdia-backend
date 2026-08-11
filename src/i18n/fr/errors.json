@@ -304,7 +304,7 @@
   "CLASS_NOT_FOUND": "Classe introuvable",
   "CLASS_GM_INVESTITURE_REQUIRED": "Vous devez avoir été investi dans au moins une classe de Guides Supérieurs",
   "CLASS_MAX_AVENTU_CONQUIS_ACTIVE": "Vous avez déjà une inscription active en Aventuriers/Conquérants",
-  "CLASS_MAX_GM_ACTIVE": "Vous avez déjà 2 inscriptions actives en Guides Supérieurs",
+  "CLASS_MAX_GM_ACTIVE": "Vous avez déjà 1 inscription active en Guides Supérieurs",
   "CLASS_ALREADY_ENROLLED": "L'utilisateur a déjà une inscription active pour cette classe dans l'année ecclésiastique indiquée",
   "CLASS_PROGRESS_LOCKED": "L'inscription est verrouillée pour validation ou en état terminal ; le progrès ne peut pas être modifié",
   "CLASS_FILE_REQUIRED": "Un fichier est requis",
