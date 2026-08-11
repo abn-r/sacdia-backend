@@ -50,6 +50,9 @@ const mockPrisma = {
     findUnique: jest.fn(),
     count: jest.fn(),
   },
+  certification_versions: {
+    findFirst: jest.fn(),
+  },
   users_certifications: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
@@ -273,6 +276,8 @@ describe('CertificationsService', () => {
 
     const createdEnrollment = {
       ...baseEnrollment,
+      certification_version_id: 7,
+      status: 'ENROLLED',
       certifications: { name: 'Guía Mayor Pro' },
     };
 
@@ -283,6 +288,10 @@ describe('CertificationsService', () => {
         active: true,
       });
       mockPrisma.users_certifications.findFirst.mockResolvedValue(null);
+      mockPrisma.certification_versions.findFirst.mockResolvedValue({
+        certification_version_id: 7,
+        status: 'PUBLISHED',
+      });
       mockPrisma.users_certifications.create.mockResolvedValue(
         createdEnrollment,
       );
@@ -291,8 +300,17 @@ describe('CertificationsService', () => {
 
       expect(result.enrollment_id).toBe(ENROLLMENT_ID);
       expect(result.certification_id).toBe(CERT_ID);
+      expect(result.certification_version_id).toBe(7);
       expect(result.certification.name).toBe('Guía Mayor Pro');
       expect(result.active).toBe(true);
+      expect(mockPrisma.users_certifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            certification_version_id: 7,
+            status: 'ENROLLED',
+          }),
+        }),
+      );
     });
 
     it('TC09 - already enrolled → ConflictException', async () => {

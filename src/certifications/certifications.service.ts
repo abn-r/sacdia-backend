@@ -139,12 +139,29 @@ export class CertificationsService {
       throw new AppConflictException(ErrorCode.CERT_ALREADY_ENROLLED);
     }
 
+    // 3b. Bind the currently published version (engine expansion)
+    const publishedVersion =
+      await this.prisma.certification_versions.findFirst({
+        where: {
+          certification_id: dto.certification_id,
+          status: 'PUBLISHED',
+          active: true,
+        },
+        orderBy: { version_number: 'desc' },
+      });
+
+    if (!publishedVersion) {
+      throw new AppBadRequestException(ErrorCode.CERT_VERSION_NOT_PUBLISHED);
+    }
+
     // 4. Crear enrollment
     const enrollment = await this.prisma.users_certifications.create({
       data: {
         user_id: userId,
         certification_id: dto.certification_id,
+        certification_version_id: publishedVersion.certification_version_id,
         enrollment_date: new Date(),
+        status: 'ENROLLED',
         completion_status: false,
         active: true,
       },
@@ -161,9 +178,11 @@ export class CertificationsService {
       enrollment_id: enrollment.enrollment_id,
       user_id: enrollment.user_id,
       certification_id: enrollment.certification_id,
+      certification_version_id: enrollment.certification_version_id,
       enrollment_date: enrollment.enrollment_date,
       completion_status: enrollment.completion_status,
       completion_date: enrollment.completion_date,
+      status: enrollment.status,
       active: enrollment.active,
       certification: {
         name: enrollment.certifications.name,
