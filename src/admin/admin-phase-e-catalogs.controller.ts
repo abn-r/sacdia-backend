@@ -88,6 +88,7 @@ import {
   CreateMasterHonorDto,
   UpdateMasterHonorDto,
   CreateClassHonorDto,
+  CreateClassPrerequisiteDto,
 } from './dto/phase-e-catalogs.dto';
 
 @ApiTags('Admin - Phase E Catalogs (i18n)')
@@ -224,6 +225,72 @@ export class AdminPhaseECatalogsController {
     const data = await this.catalogsService.deleteClassHonor(
       classId,
       classHonorId,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  // ==========================================================================
+  // CLASS PREREQUISITES  →  /admin/classes/:classId/prerequisites
+  // ==========================================================================
+
+  @Get('classes/:classId/prerequisites')
+  @RequirePermissions('catalogs:read')
+  @ApiOperation({
+    summary: 'List class prerequisites (includes inactive)',
+  })
+  @ApiQuery({
+    name: 'active',
+    required: false,
+    type: Boolean,
+    description: 'Optional filter by active flag',
+  })
+  async findClassPrerequisites(
+    @Param('classId', ParseIntPipe) classId: number,
+    @Query('active') active?: string,
+  ) {
+    const activeFilter =
+      active === undefined
+        ? undefined
+        : active === 'true'
+          ? true
+          : active === 'false'
+            ? false
+            : undefined;
+    const data = await this.catalogsService.findClassPrerequisites(
+      classId,
+      activeFilter,
+    );
+    return { status: 'success', data };
+  }
+
+  @Post('classes/:classId/prerequisites')
+  @RequirePermissions('catalogs:create')
+  @ApiOperation({ summary: 'Create a class prerequisite with cycle validation' })
+  async createClassPrerequisite(
+    @Param('classId', ParseIntPipe) classId: number,
+    @Body() dto: CreateClassPrerequisiteDto,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.catalogsService.createClassPrerequisite(
+      classId,
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('classes/:classId/prerequisites/:prerequisiteId')
+  @RequirePermissions('catalogs:delete')
+  @ApiOperation({ summary: 'Soft-delete a class prerequisite' })
+  async deleteClassPrerequisite(
+    @Param('classId', ParseIntPipe) classId: number,
+    @Param('prerequisiteId', ParseIntPipe) prerequisiteId: number,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.catalogsService.deleteClassPrerequisite(
+      classId,
+      prerequisiteId,
       this.getActorId(req),
     );
     return { status: 'success', data };

@@ -616,5 +616,8 @@
   "AUDIT_WRITE_FAILED": "Não foi possível confirmar a auditoria de segurança",
   "ADMIN_CLASS_HONOR_NOT_FOUND": "Relação classe-especialidade não encontrada",
   "ADMIN_CLASS_HONOR_DUPLICATE": "Essa relação classe-especialidade já existe",
-  "CLASS_PREREQUISITE_NOT_MET": "Você deve estar investido nas classes prévias exigidas para se inscrever"
+  "CLASS_PREREQUISITE_NOT_MET": "Você deve estar investido nas classes prévias exigidas para se inscrever",
+  "ADMIN_CLASS_PREREQUISITE_NOT_FOUND": "Pré-requisito de classe não encontrado",
+  "ADMIN_CLASS_PREREQUISITE_DUPLICATE": "Esse pré-requisito já existe para a classe",
+  "ADMIN_CLASS_PREREQUISITE_CYCLE": "Criaria um ciclo de pré-requisitos"
 }

@@ -616,5 +616,8 @@
   "AUDIT_WRITE_FAILED": "L’audit de sécurité n’a pas pu être confirmé",
   "ADMIN_CLASS_HONOR_NOT_FOUND": "Relation classe-spécialité introuvable",
   "ADMIN_CLASS_HONOR_DUPLICATE": "Cette relation classe-spécialité existe déjà",
-  "CLASS_PREREQUISITE_NOT_MET": "Vous devez être investi dans les classes préalables requises pour vous inscrire"
+  "CLASS_PREREQUISITE_NOT_MET": "Vous devez être investi dans les classes préalables requises pour vous inscrire",
+  "ADMIN_CLASS_PREREQUISITE_NOT_FOUND": "Prérequis de classe introuvable",
+  "ADMIN_CLASS_PREREQUISITE_DUPLICATE": "Ce prérequis existe déjà pour la classe",
+  "ADMIN_CLASS_PREREQUISITE_CYCLE": "Créerait un cycle de prérequis"
 }

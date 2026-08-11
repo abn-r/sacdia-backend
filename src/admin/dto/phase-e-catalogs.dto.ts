@@ -641,3 +641,12 @@ export class CreateClassHonorDto {
   @IsEnum(ClassHonorRelationTypeDto)
   relation_type!: ClassHonorRelationTypeDto;
 }
+
+// ─── CLASS PREREQUISITES ──────────────────────────────────────────────────────
+
+export class CreateClassPrerequisiteDto {
+  @ApiProperty({ example: 5, description: 'prerequisite_class_id FK' })
+  @IsInt()
+  @Min(1)
+  prerequisite_class_id!: number;
+}

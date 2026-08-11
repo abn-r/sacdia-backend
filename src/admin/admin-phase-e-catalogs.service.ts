@@ -50,6 +50,7 @@ import {
   CreateMasterHonorDto,
   UpdateMasterHonorDto,
   CreateClassHonorDto,
+  CreateClassPrerequisiteDto,
 } from './dto/phase-e-catalogs.dto';
 
 type ClassSectionRequirementConfig = {
@@ -379,6 +380,133 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('delete', 'class_honors', classHonorId, actorId);
+    return record;
+  }
+
+  // ==========================================================================
+  // CLASS PREREQUISITES
+  // ==========================================================================
+
+  async findClassPrerequisites(classId: number, active?: boolean) {
+    await this.ensureClassExists(classId);
+    return this.prisma.class_prerequisites.findMany({
+      where: {
+        class_id: classId,
+        ...(active === undefined ? {} : { active }),
+      },
+      include: {
+        prerequisite: {
+          select: { class_id: true, name: true, active: true },
+        },
+      },
+      orderBy: { class_prerequisite_id: 'asc' },
+    });
+  }
+
+  private async assertNoPrerequisiteCycle(
+    classId: number,
+    prerequisiteClassId: number,
+  ) {
+    if (classId === prerequisiteClassId) {
+      throw new AppBadRequestException(
+        ErrorCode.ADMIN_CLASS_PREREQUISITE_CYCLE,
+      );
+    }
+    const visited = new Set<number>([prerequisiteClassId]);
+    let frontier = [prerequisiteClassId];
+    while (frontier.length > 0) {
+      const rows = await this.prisma.class_prerequisites.findMany({
+        where: { class_id: { in: frontier }, active: true },
+        select: { prerequisite_class_id: true },
+      });
+      frontier = [];
+      for (const row of rows) {
+        if (row.prerequisite_class_id === classId) {
+          throw new AppBadRequestException(
+            ErrorCode.ADMIN_CLASS_PREREQUISITE_CYCLE,
+          );
+        }
+        if (!visited.has(row.prerequisite_class_id)) {
+          visited.add(row.prerequisite_class_id);
+          frontier.push(row.prerequisite_class_id);
+        }
+      }
+    }
+  }
+
+  async createClassPrerequisite(
+    classId: number,
+    dto: CreateClassPrerequisiteDto,
+    actorId: string,
+  ) {
+    await this.ensureClassExists(classId);
+    await this.ensureClassExists(dto.prerequisite_class_id);
+    await this.assertNoPrerequisiteCycle(classId, dto.prerequisite_class_id);
+
+    const duplicate = await this.prisma.class_prerequisites.findFirst({
+      where: {
+        class_id: classId,
+        prerequisite_class_id: dto.prerequisite_class_id,
+        active: true,
+      },
+    });
+    if (duplicate) {
+      throw new AppConflictException(
+        ErrorCode.ADMIN_CLASS_PREREQUISITE_DUPLICATE,
+      );
+    }
+
+    const record = await this.prisma.class_prerequisites.create({
+      data: {
+        class_id: classId,
+        prerequisite_class_id: dto.prerequisite_class_id,
+        active: true,
+      },
+      include: {
+        prerequisite: {
+          select: { class_id: true, name: true, active: true },
+        },
+      },
+    });
+
+    this.logMutation(
+      'create',
+      'class_prerequisites',
+      record.class_prerequisite_id,
+      actorId,
+    );
+    return record;
+  }
+
+  async deleteClassPrerequisite(
+    classId: number,
+    prerequisiteId: number,
+    actorId: string,
+  ) {
+    const existing = await this.prisma.class_prerequisites.findFirst({
+      where: {
+        class_prerequisite_id: prerequisiteId,
+        class_id: classId,
+      },
+    });
+    if (!existing) {
+      throw new AppNotFoundException(
+        ErrorCode.ADMIN_CLASS_PREREQUISITE_NOT_FOUND,
+        { id: prerequisiteId },
+      );
+    }
+
+    const record = await this.prisma.class_prerequisites.update({
+      where: { class_prerequisite_id: prerequisiteId },
+      data: { active: false, modified_at: new Date() },
+    });
+
+    this.logMutation(
+      'delete',
+      'class_prerequisites',
+      prerequisiteId,
+      actorId,
+    );
     return record;
   }
 
