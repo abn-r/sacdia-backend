@@ -1185,6 +1185,46 @@ describe('ClassesService', () => {
     );
   });
 
+  describe('findOne', () => {
+    it('includes active prerequisites and excludes inactive ones via query filter', async () => {
+      mockPrismaService.classes.findUnique.mockResolvedValue({
+        class_id: 7,
+        name: 'Compañero',
+        description: null,
+        club_type_id: 1,
+        advanced_enabled: false,
+        available_from_year_id: null,
+        available_until_year_id: null,
+        min_duration_years: 1,
+        max_duration_years: 1,
+        club_types: { name: 'Aventureros' },
+        translations: [],
+        prerequisites: [
+          {
+            class_prerequisite_id: 1,
+            prerequisite: { class_id: 5, name: 'Amigo' },
+          },
+        ],
+        class_modules: [],
+      });
+
+      const result = await service.findOne(7);
+
+      expect(result.prerequisites).toEqual([
+        { class_id: 5, name: 'Amigo' },
+      ]);
+      expect(mockPrismaService.classes.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            prerequisites: expect.objectContaining({
+              where: { active: true },
+            }),
+          }),
+        }),
+      );
+    });
+  });
+
   describe('getClassHonors', () => {
     it('returns active class-honor relations for an existing class', async () => {
       mockPrismaService.classes.findFirst.mockResolvedValue({ class_id: 7 });

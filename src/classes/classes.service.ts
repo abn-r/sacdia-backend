@@ -326,6 +326,15 @@ export class ClassesService {
           where: { locale },
           select: { locale: true, name: true, description: true },
         },
+        prerequisites: {
+          where: { active: true },
+          include: {
+            prerequisite: {
+              select: { class_id: true, name: true },
+            },
+          },
+          orderBy: { class_prerequisite_id: 'asc' },
+        },
         class_modules: {
           where: { active: true },
           include: {
@@ -384,7 +393,24 @@ export class ClassesService {
       }
     }
 
-    return translatedClass;
+    const prerequisites = (
+      (translatedClass as any).prerequisites as
+        | Array<{ prerequisite: { class_id: number; name: string } }>
+        | undefined
+    )?.map((row) => ({
+      class_id: row.prerequisite.class_id,
+      name: row.prerequisite.name,
+    })) ?? [];
+
+    const { prerequisites: _rawPrerequisites, ...rest } =
+      translatedClass as typeof translatedClass & {
+        prerequisites?: unknown;
+      };
+
+    return {
+      ...rest,
+      prerequisites,
+    };
   }
 
   async getModules(classId: number) {
