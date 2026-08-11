@@ -610,6 +610,92 @@ describe('ClassesService', () => {
         ).resolves.toBeDefined();
       },
     );
+
+    it('throws CLASS_SECTION_NOT_FOUND when the section does not belong to the module', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      mockPrismaService.class_sections.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 11, 101, 80, undefined, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_SECTION_NOT_FOUND,
+      });
+    });
+
+    it('throws CLASS_SECTION_NOT_FOUND when the module does not belong to the class', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      mockPrismaService.class_sections.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 999, 101, 80, undefined, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_SECTION_NOT_FOUND,
+      });
+    });
+
+    it('throws CLASS_SECTION_NOT_FOUND when the section or module is inactive', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      mockPrismaService.class_sections.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 11, 101, 80, undefined, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_SECTION_NOT_FOUND,
+      });
+    });
+
+    it('writes progress when the section is valid for the module and class', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      transactionMock.class_section_progress.findMany.mockResolvedValue([
+        { score: 80 },
+      ]);
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 11, 101, 80, undefined, 901),
+      ).resolves.toBeDefined();
+      expect(mockPrismaService.class_sections.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            section_id: 101,
+            module_id: 11,
+            active: true,
+            class_modules: expect.objectContaining({
+              module_id: 11,
+              class_id: 7,
+              active: true,
+            }),
+          }),
+        }),
+      );
+    });
   });
 
   describe('class evidence files', () => {

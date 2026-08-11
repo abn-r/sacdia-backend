@@ -907,6 +907,23 @@ export class ClassesService {
     });
     this.assertProgressMutable(resolvedEnrollment);
 
+    const validSection = await this.prisma.class_sections.findFirst({
+      where: {
+        section_id: sectionId,
+        module_id: moduleId,
+        active: true,
+        class_modules: {
+          module_id: moduleId,
+          class_id: classId,
+          active: true,
+        },
+      },
+      select: { section_id: true },
+    });
+    if (!validSection) {
+      throw new AppNotFoundException(ErrorCode.CLASS_SECTION_NOT_FOUND);
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const existingSection = await tx.class_section_progress.findFirst({
         where: {
