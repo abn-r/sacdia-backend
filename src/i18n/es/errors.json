@@ -634,13 +634,13 @@
   "ADMIN_CLASS_PREREQUISITE_DUPLICATE": "Ese prerrequisito ya existe para la clase",
   "ADMIN_CLASS_PREREQUISITE_CYCLE": "Crearía un ciclo de prerrequisitos",
   "CERT_VERSION_NOT_PUBLISHED": "La versión de certificación no está publicada",
-  "CERT_VERSION_IMMUTABLE": "Una versión publicada o retirada no se puede editar; cloná a borrador",
+  "CERT_VERSION_IMMUTABLE": "Una versión publicada o retirada no se puede editar; clonar a borrador",
   "CERT_REQUIREMENT_LOCKED": "El requisito está bloqueado para edición en estado '{status}'",
   "CERT_REQUIREMENT_INCOMPLETE": "El requisito no tiene todos los entregables requeridos",
   "CERT_INVALID_TRANSITION": "Transición de estado inválida de '{from}' a '{to}'",
   "CERT_EVIDENCE_INVALID_TYPE": "Tipo de archivo no permitido para evidencias de certificación",
   "CERT_EVIDENCE_TOO_LARGE": "El archivo de evidencia supera el tamaño máximo permitido",
-  "CERT_REVIEW_SCOPE_FORBIDDEN": "No tenés alcance institucional para revisar este expediente",
+  "CERT_REVIEW_SCOPE_FORBIDDEN": "No tienes alcance institucional para revisar este expediente",
   "CERT_CLOSEOUT_INCOMPLETE": "Faltan requisitos obligatorios aprobados o el comprobante de junta",
-  "CERT_CONCURRENT_UPDATE": "Otro cambio concurrente actualizó este registro; reintentá"
+  "CERT_CONCURRENT_UPDATE": "Otro cambio concurrente actualizó este registro; reintenta"
 }
