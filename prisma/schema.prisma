@@ -5431,3 +5431,151 @@ model camporee_external_participants {
   @@index([local_camporee_id, active], map: "idx_camporee_external_participants_local_active")
   @@index([union_camporee_id, active], map: "idx_camporee_external_participants_union_active")
 }
+
+// ─── Field Payment Orders (kernel de órdenes de pago territoriales) ─────────
+// FKs a tablas existentes (users, clubs, club_sections, local_fields,
+// insurance_cycle_configs, local_camporees, insurance_assignments,
+// camporee_members) se declaran solo en SQL para mantener el kernel
+// autocontenido; las lecturas cruzadas se hacen con queries explícitas.
+
+enum field_payment_order_purpose_enum {
+  INSURANCE
+  CAMPOREE
+}
+
+enum field_payment_order_status_enum {
+  ISSUED
+  PROOF_SUBMITTED
+  APPROVED
+  PROOF_REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum field_payment_order_proof_status_enum {
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum insurance_reassignment_request_status_enum {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model field_payment_orders {
+  field_payment_order_id    String                           @id @default(uuid()) @db.Uuid
+  purpose                   field_payment_order_purpose_enum
+  local_field_id            Int
+  club_id                   Int
+  club_section_id           Int
+  folio                     Int
+  folio_reference           String                           @db.VarChar(16)
+  insurance_cycle_config_id Int?
+  local_camporee_id         Int?
+  currency                  String                           @default("MXN") @db.VarChar(3)
+  unit_cost_centavos        Int
+  total_centavos            Int
+  status                    field_payment_order_status_enum  @default(ISSUED)
+  expires_at                DateTime                         @db.Timestamptz(6)
+  issued_by_id              String                           @db.Uuid
+  approved_by_id            String?                          @db.Uuid
+  approved_at               DateTime?                        @db.Timestamptz(6)
+  cancelled_by_id           String?                          @db.Uuid
+  cancelled_at              DateTime?                        @db.Timestamptz(6)
+  expired_at                DateTime?                        @db.Timestamptz(6)
+  idempotency_key           String?                          @db.Uuid
+  created_at                DateTime                         @default(now()) @db.Timestamptz(6)
+  modified_at               DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  lines  field_payment_order_lines[]
+  proofs field_payment_order_proofs[]
+
+  @@unique([local_field_id, folio_reference], map: "uq_field_payment_orders_lf_folio")
+  @@unique([issued_by_id, idempotency_key], map: "uq_field_payment_orders_idempotency")
+  @@index([local_field_id, status], map: "idx_field_payment_orders_lf_status")
+  @@index([club_section_id, status], map: "idx_field_payment_orders_section_status")
+}
+
+model field_payment_order_lines {
+  field_payment_order_line_id String                           @id @default(uuid()) @db.Uuid
+  field_payment_order_id      String                           @db.Uuid
+  sequence                    Int
+  beneficiary_user_id         String                           @db.Uuid
+  unit_cost_centavos          Int
+  purpose                     field_payment_order_purpose_enum
+  purpose_ref_id              Int
+  active_guard                Boolean                          @default(true)
+  purpose_payload             Json?
+  insurance_assignment_id     Int?
+  camporee_member_id          Int?
+  created_at                  DateTime                         @default(now()) @db.Timestamptz(6)
+
+  order field_payment_orders @relation(fields: [field_payment_order_id], references: [field_payment_order_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([field_payment_order_id, sequence], map: "uq_field_payment_order_lines_sequence")
+  @@index([beneficiary_user_id], map: "idx_field_payment_order_lines_beneficiary")
+}
+
+model field_payment_order_proofs {
+  field_payment_order_proof_id String                                @id @default(uuid()) @db.Uuid
+  field_payment_order_id       String                                @db.Uuid
+  r2_key                       String                                @db.VarChar(500)
+  file_name                    String                                @db.VarChar(255)
+  mime_type                    String                                @db.VarChar(100)
+  size_bytes                   Int
+  status                       field_payment_order_proof_status_enum @default(SUBMITTED)
+  reject_reason                String?
+  uploaded_by_id               String                                @db.Uuid
+  reviewed_by_id               String?                               @db.Uuid
+  reviewed_at                  DateTime?                             @db.Timestamptz(6)
+  created_at                   DateTime                              @default(now()) @db.Timestamptz(6)
+
+  order field_payment_orders @relation(fields: [field_payment_order_id], references: [field_payment_order_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([field_payment_order_id, status], map: "idx_field_payment_order_proofs_order_status")
+}
+
+model field_payment_folio_counters {
+  local_field_id Int
+  year           Int
+  last_folio     Int      @default(0)
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@id([local_field_id, year])
+}
+
+model field_payment_order_configs {
+  field_payment_order_config_id Int      @id @default(autoincrement())
+  local_field_id                Int      @unique
+  bank_name                     String?  @db.VarChar(255)
+  bank_account                  String?  @db.VarChar(64)
+  bank_clabe                    String?  @db.VarChar(32)
+  bank_holder                   String?  @db.VarChar(255)
+  cash_instructions             String?
+  extra_notes                   String?
+  active                        Boolean  @default(true)
+  created_at                    DateTime @default(now()) @db.Timestamptz(6)
+  modified_at                   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by_id                 String?  @db.Uuid
+  modified_by_id                String?  @db.Uuid
+}
+
+model insurance_reassignment_requests {
+  insurance_reassignment_request_id Int                                        @id @default(autoincrement())
+  insurance_assignment_id           Int
+  from_user_id                      String                                     @db.Uuid
+  to_user_id                        String                                     @db.Uuid
+  reason                            String?
+  status                            insurance_reassignment_request_status_enum @default(PENDING)
+  requested_by_id                   String                                     @db.Uuid
+  reviewed_by_id                    String?                                    @db.Uuid
+  reviewed_at                       DateTime?                                  @db.Timestamptz(6)
+  review_comment                    String?
+  created_at                        DateTime                                   @default(now()) @db.Timestamptz(6)
+  modified_at                       DateTime                                   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([status, created_at], map: "idx_insurance_reassignment_requests_status")
+  @@index([insurance_assignment_id], map: "idx_insurance_reassignment_requests_assignment")
+}
