@@ -6,6 +6,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { classifyInsurancePurchase } from './domain/insurance-policy';
 import type {
@@ -27,6 +28,7 @@ export class InsurancePurchasesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly evidence: InsuranceEvidenceService,
+    private readonly fieldPaymentOrdersFlag: FieldPaymentOrdersFlagService,
   ) {}
 
   private get db(): any {
@@ -52,6 +54,18 @@ export class InsurancePurchasesService {
     if (!section)
       throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
     const club = section.clubs ?? section.club;
+    // Con órdenes de pago habilitadas en el LF, el submit manual de purchases
+    // por cantidad queda bloqueado: la compra nace del approve de la orden.
+    if (
+      typeof club?.local_field_id === 'number' &&
+      (await this.fieldPaymentOrdersFlag.isEnabledForLocalField(
+        club.local_field_id,
+      ))
+    ) {
+      throw new AppConflictException(
+        ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
+      );
+    }
     const cycle = await this.db.insurance_cycle_configs.findUnique({
       where: { insurance_cycle_config_id: dto.insurance_cycle_config_id },
       select: {
