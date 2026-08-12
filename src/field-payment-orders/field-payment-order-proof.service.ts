@@ -7,9 +7,9 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
-  FileStorageService,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertTransition, FieldPaymentOrderStatus } from './state-machine';
 import { extensionFromMime, ProofMime } from './proof-file-validation.pipe';

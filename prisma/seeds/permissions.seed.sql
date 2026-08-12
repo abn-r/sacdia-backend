@@ -735,6 +735,20 @@ ON CONFLICT (permission_name) DO UPDATE SET
   active = EXCLUDED.active,
   modified_at = now();
 
+-- ============================
+-- Field Payment Orders (órdenes de pago territoriales: seguros + camporees)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('field-payment-orders:read', 'Read field payment orders within own scope', true),
+  ('field-payment-orders:create', 'Issue group field payment orders for own club section', true),
+  ('field-payment-orders:upload-proof', 'Upload payment proof for own field payment orders', true),
+  ('field-payment-orders:cancel', 'Cancel own field payment orders before approval', true),
+  ('field-payment-orders:review', 'Approve or reject field payment order proofs in the effective Local Field', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================

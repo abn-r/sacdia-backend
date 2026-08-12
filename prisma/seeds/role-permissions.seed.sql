@@ -2145,3 +2145,97 @@ WHERE r.role_name IN (
   AND p.permission_name = 'camporee_events:read'
   AND p.active = true
 ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================================================================
+-- Field Payment Orders (órdenes de pago territoriales)
+-- ============================================================================
+-- read: mirrors insurance:read (club operational roles + territorial readers).
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'counselor', 'secretary', 'treasurer', 'secretary-treasurer',
+    'deputy-director', 'director'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'field-payment-orders:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('assistant-lf', 'director-lf')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'field-payment-orders:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- create / upload-proof / cancel: mirrors insurance:create (club directive
+-- roles that operate money) + LF leadership.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('secretary', 'treasurer', 'secretary-treasurer', 'director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'field-payment-orders:create',
+    'field-payment-orders:upload-proof',
+    'field-payment-orders:cancel'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('assistant-lf', 'director-lf')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'field-payment-orders:create',
+    'field-payment-orders:upload-proof',
+    'field-payment-orders:cancel'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- review: same Local Field + platform admin pattern as insurance:review.
+-- Maker-checker is enforced in the service (proof uploader cannot approve).
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'field-payment-orders:review'
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'field-payment-orders:review'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
