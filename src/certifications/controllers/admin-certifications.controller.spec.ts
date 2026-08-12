@@ -9,6 +9,8 @@ import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 const ACTOR_ID = 'actor-uuid';
 
 const makeServiceMock = () => ({
+  listCertificationsWithVersions: jest.fn(),
+  getVersionDetail: jest.fn(),
   createCertification: jest.fn(),
   createDraftVersion: jest.fn(),
   cloneVersion: jest.fn(),
@@ -67,6 +69,22 @@ describe('AdminCertificationsController', () => {
       });
     });
 
+    it('requires certifications:configure to list certifications', () => {
+      const metadata = reflector.get(
+        PERMISSIONS_KEY,
+        controller.listCertifications,
+      );
+      expect(metadata.permissions).toContain('certifications:configure');
+    });
+
+    it('requires certifications:configure to read a version detail', () => {
+      const metadata = reflector.get(
+        PERMISSIONS_KEY,
+        controller.getVersionDetail,
+      );
+      expect(metadata.permissions).toContain('certifications:configure');
+    });
+
     it('requires certifications:configure to create a draft version', () => {
       const metadata = reflector.get(
         PERMISSIONS_KEY,
@@ -116,6 +134,26 @@ describe('AdminCertificationsController', () => {
   });
 
   describe('handler delegation', () => {
+    it('listCertifications delegates to the service', async () => {
+      const rows = [{ certification_id: 1, certification_versions: [] }];
+      service.listCertificationsWithVersions.mockResolvedValue(rows);
+
+      const result = await controller.listCertifications();
+
+      expect(service.listCertificationsWithVersions).toHaveBeenCalledWith();
+      expect(result).toBe(rows);
+    });
+
+    it('getVersionDetail delegates to the service', async () => {
+      const detail = { certification_version_id: 2 };
+      service.getVersionDetail.mockResolvedValue(detail);
+
+      const result = await controller.getVersionDetail(1, 2);
+
+      expect(service.getVersionDetail).toHaveBeenCalledWith(1, 2);
+      expect(result).toBe(detail);
+    });
+
     it('createCertification delegates to the service', async () => {
       service.createCertification.mockResolvedValue({ certification_id: 1 });
 

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseIntPipe,
   Post,
@@ -38,6 +39,32 @@ type CurrentUserPayload = {
 @Controller('admin/certifications')
 export class AdminCertificationsController {
   constructor(private readonly service: CertificationDefinitionsService) {}
+
+  @Get()
+  @RequirePermissions('certifications:configure')
+  @ApiOperation({
+    summary: 'Listar certificaciones con el resumen de sus versiones',
+  })
+  @ApiResponse({ status: 200, description: 'Listado de certificaciones' })
+  async listCertifications() {
+    return this.service.listCertificationsWithVersions();
+  }
+
+  @Get(':certificationId/versions/:versionId')
+  @RequirePermissions('certifications:configure')
+  @ApiOperation({
+    summary:
+      'Obtener el árbol completo de una versión (metadatos, reglas, módulos, secciones y componentes)',
+  })
+  @ApiParam({ name: 'certificationId', type: Number })
+  @ApiParam({ name: 'versionId', type: Number })
+  @ApiResponse({ status: 200, description: 'Detalle de la versión' })
+  async getVersionDetail(
+    @Param('certificationId', ParseIntPipe) certificationId: number,
+    @Param('versionId', ParseIntPipe) versionId: number,
+  ) {
+    return this.service.getVersionDetail(certificationId, versionId);
+  }
 
   @Post()
   @RequirePermissions('certifications:configure')

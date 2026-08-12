@@ -15,6 +15,7 @@ const makePrismaMock = () => {
   const mock = {
     certifications: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
     },
     certification_versions: {
@@ -600,6 +601,150 @@ describe('CertificationDefinitionsService', () => {
       await service.publishVersion(1, 6, ACTOR_ID);
 
       expect(prisma.certification_versions.update).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ==========================================================================
+  // 7. admin read endpoints
+  // ==========================================================================
+  describe('listCertificationsWithVersions', () => {
+    it('lists certifications with a version summary ordered by version number', async () => {
+      const rows = [
+        {
+          certification_id: 1,
+          name: 'Guía Mayor',
+          description: null,
+          active: true,
+          certification_versions: [
+            {
+              certification_version_id: 11,
+              version_number: 2,
+              status: 'DRAFT',
+              title: null,
+              published_at: null,
+              retired_at: null,
+              created_at: new Date('2026-08-01T00:00:00Z'),
+              modified_at: new Date('2026-08-01T00:00:00Z'),
+            },
+            {
+              certification_version_id: 10,
+              version_number: 1,
+              status: 'PUBLISHED',
+              title: 'v1',
+              published_at: new Date('2026-07-01T00:00:00Z'),
+              retired_at: null,
+              created_at: new Date('2026-06-01T00:00:00Z'),
+              modified_at: new Date('2026-07-01T00:00:00Z'),
+            },
+          ],
+        },
+      ];
+      prisma.certifications.findMany.mockResolvedValue(rows);
+
+      const result = await service.listCertificationsWithVersions();
+
+      expect(prisma.certifications.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: { name: 'asc' },
+          include: expect.objectContaining({
+            certification_versions: expect.objectContaining({
+              orderBy: { version_number: 'desc' },
+            }),
+          }),
+        }),
+      );
+      expect(result).toBe(rows);
+    });
+  });
+
+  describe('getVersionDetail', () => {
+    it('returns the full version tree with ordered rules, modules, sections and components', async () => {
+      const version = {
+        certification_version_id: 10,
+        certification_id: 1,
+        version_number: 1,
+        status: 'PUBLISHED',
+        title: 'v1',
+        certification_eligibility_rules: [
+          { eligibility_rule_id: 1, rule_type: 'MIN_AGE', sort_order: 0 },
+        ],
+        certification_modules: [
+          {
+            module_id: 2,
+            name: 'Módulo 1',
+            sort_order: 0,
+            certification_sections: [
+              {
+                section_id: 3,
+                name: 'Sección 1',
+                sort_order: 0,
+                certification_requirement_components: [
+                  {
+                    component_id: 4,
+                    component_type: 'TEXT_RESPONSE',
+                    configuration: { min_length: 10 },
+                    sort_order: 0,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      prisma.certification_versions.findFirst.mockResolvedValue(version);
+
+      const result = await service.getVersionDetail(1, 10);
+
+      expect(prisma.certification_versions.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            certification_version_id: 10,
+            certification_id: 1,
+          },
+          include: expect.objectContaining({
+            certification_eligibility_rules: expect.objectContaining({
+              orderBy: { sort_order: 'asc' },
+            }),
+            certification_modules: expect.objectContaining({
+              orderBy: { sort_order: 'asc' },
+              include: expect.objectContaining({
+                certification_sections: expect.objectContaining({
+                  orderBy: { sort_order: 'asc' },
+                  include: expect.objectContaining({
+                    certification_requirement_components:
+                      expect.objectContaining({
+                        orderBy: { sort_order: 'asc' },
+                      }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      );
+      expect(result).toBe(version);
+    });
+
+    it('reads PUBLISHED and RETIRED versions without mutability checks', async () => {
+      prisma.certification_versions.findFirst.mockResolvedValue({
+        certification_version_id: 10,
+        certification_id: 1,
+        status: 'RETIRED',
+        certification_eligibility_rules: [],
+        certification_modules: [],
+      });
+
+      await expect(service.getVersionDetail(1, 10)).resolves.toMatchObject({
+        status: 'RETIRED',
+      });
+    });
+
+    it('throws AppNotFoundException when the version does not exist', async () => {
+      prisma.certification_versions.findFirst.mockResolvedValue(null);
+
+      await expect(service.getVersionDetail(1, 999)).rejects.toBeInstanceOf(
+        AppNotFoundException,
+      );
     });
   });
 

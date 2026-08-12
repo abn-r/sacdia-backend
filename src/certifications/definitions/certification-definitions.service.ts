@@ -44,6 +44,68 @@ export class CertificationDefinitionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ==========================================================================
+  // ADMIN READ
+  // ==========================================================================
+
+  async listCertificationsWithVersions() {
+    return this.prisma.certifications.findMany({
+      orderBy: { name: 'asc' },
+      include: {
+        certification_versions: {
+          orderBy: { version_number: 'desc' },
+          select: {
+            certification_version_id: true,
+            version_number: true,
+            status: true,
+            title: true,
+            published_at: true,
+            retired_at: true,
+            created_at: true,
+            modified_at: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Full version tree for the admin workbench. Any status is readable:
+   * DRAFT to resume editing, PUBLISHED/RETIRED as read-only.
+   */
+  async getVersionDetail(certificationId: number, versionId: number) {
+    const version = await this.prisma.certification_versions.findFirst({
+      where: {
+        certification_version_id: versionId,
+        certification_id: certificationId,
+      },
+      include: {
+        certification_eligibility_rules: {
+          orderBy: { sort_order: 'asc' },
+        },
+        certification_modules: {
+          orderBy: { sort_order: 'asc' },
+          include: {
+            certification_sections: {
+              orderBy: { sort_order: 'asc' },
+              include: {
+                certification_requirement_components: {
+                  orderBy: { sort_order: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!version) {
+      throw new AppNotFoundException(ErrorCode.CERT_NOT_FOUND);
+    }
+
+    return version;
+  }
+
+  // ==========================================================================
   // CERTIFICATION IDENTITY
   // ==========================================================================
 
