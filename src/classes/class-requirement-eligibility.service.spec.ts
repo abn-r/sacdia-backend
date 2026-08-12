@@ -104,6 +104,40 @@ describe('ClassRequirementEligibilityService', () => {
     });
   });
 
+  it('never counts a REJECTED section as completed regardless of score', async () => {
+    (mockPrisma.class_sections.findMany as jest.Mock).mockResolvedValue([
+      {
+        section_id: 101,
+        requirement_track: 'BASIC',
+        required_for_investiture: true,
+        owner_division_id: null,
+        owner_union_id: null,
+        owner_local_field_id: null,
+      },
+      {
+        section_id: 102,
+        requirement_track: 'BASIC',
+        required_for_investiture: true,
+        owner_division_id: null,
+        owner_union_id: null,
+        owner_local_field_id: null,
+      },
+    ]);
+    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue([
+      { section_id: 101, status: 'REJECTED', score: 100 },
+      { section_id: 102, status: 'PENDING', score: 80 },
+    ]);
+
+    const result = await service.calculateForEnrollment(10);
+
+    expect(result).toMatchObject({
+      applicable_section_ids: [101, 102],
+      required_investiture_section_ids: [101, 102],
+      overall_progress: 50,
+      investiture_eligibility: { eligible: false, missing_required_sections: 1 },
+    });
+  });
+
   it('blocks investiture eligibility when extra requirements exist but institutional context is missing', async () => {
     (mockPrisma.club_role_assignments.findMany as jest.Mock).mockResolvedValue(
       [],

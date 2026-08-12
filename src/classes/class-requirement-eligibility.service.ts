@@ -131,8 +131,9 @@ export class ClassRequirementEligibilityService {
       progressRows
         .filter(
           (progress) =>
-            progress.status === evidence_validation_enum.VALIDATED ||
-            progress.score >= 70,
+            progress.status !== evidence_validation_enum.REJECTED &&
+            (progress.status === evidence_validation_enum.VALIDATED ||
+              progress.score >= 70),
         )
         .map((progress) => progress.section_id),
     );

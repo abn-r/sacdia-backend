@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Inject, Injectable } from '@nestjs/common';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,7 +7,10 @@ type GlobalRoleAssignmentReader = Pick<PrismaService, 'users_roles'>;
 
 @Injectable()
 export class ExactSuperAdminWritePolicy {
-  constructor(private readonly prisma: GlobalRoleAssignmentReader) {}
+  constructor(
+    @Inject(PrismaService)
+    private readonly prisma: GlobalRoleAssignmentReader,
+  ) {}
 
   async assert(
     actorUserId: string,

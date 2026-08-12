@@ -62,11 +62,12 @@ model activities {
   activity_type_id   Int
   club_section_id    Int?
   is_joint           Boolean              @default(false)
-  activity_types     activity_types       @relation(fields: [activity_type_id], references: [activity_type_id], onDelete: NoAction, onUpdate: NoAction)
-  club_sections      club_sections?       @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
-  club_types         club_types           @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
-  users              users                @relation(fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-  activity_instances activity_instances[]
+  activity_types                    activity_types                         @relation(fields: [activity_type_id], references: [activity_type_id], onDelete: NoAction, onUpdate: NoAction)
+  club_sections                     club_sections?                         @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  club_types                        club_types                             @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  users                             users                                  @relation(fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  activity_instances                activity_instances[]
+  certification_component_responses certification_component_responses[]
 
   @@index([activity_type_id], map: "idx_activities_activity_type_id")
   @@index([club_section_id], map: "idx_activities_club_section_id")
@@ -81,8 +82,9 @@ model activity_types {
   active           Boolean                       @default(true)
   created_at       DateTime?                     @default(now()) @db.Timestamptz(6)
   modified_at      DateTime?                     @default(now()) @db.Timestamptz(6)
-  activities       activities[]
-  translations     activity_types_translations[]
+  activities                           activities[]
+  translations                         activity_types_translations[]
+  certification_requirement_components certification_requirement_components[]
 }
 
 model activity_instances {
@@ -372,9 +374,12 @@ model classes {
   club_types                    club_types                      @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   available_from_year           ecclesiastical_years?           @relation("classes_available_from_year", fields: [available_from_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   available_until_year          ecclesiastical_years?           @relation("classes_available_until_year", fields: [available_until_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
-  class_honors                  class_honors[]
-  enrollments                   enrollments[]
-  translations                  classes_translations[]
+  class_honors                     class_honors[]
+  prerequisites                    class_prerequisites[]              @relation("class_prerequisites_class")
+  prerequisite_of                  class_prerequisites[]              @relation("class_prerequisites_prerequisite")
+  enrollments                      enrollments[]
+  translations                     classes_translations[]
+  certification_eligibility_rules  certification_eligibility_rules[]
 
   @@index([available_from_year_id], map: "idx_classes_available_from_year")
   @@index([available_until_year_id], map: "idx_classes_available_until_year")
@@ -608,9 +613,10 @@ model club_types {
   ranking_weight_configs     ranking_weight_configs?
   enrollment_ranking_weights EnrollmentRankingWeight[]
   translations               club_types_translations[]
-  material_products          MaterialProduct[]
-  coordinator_assignments    coordinator_assignments[]
-  insurance_cycle_configs    insurance_cycle_configs[]
+  material_products               MaterialProduct[]
+  coordinator_assignments         coordinator_assignments[]
+  insurance_cycle_configs         insurance_cycle_configs[]
+  certification_eligibility_rules certification_eligibility_rules[]
 }
 
 model clubs {
@@ -1321,6 +1327,7 @@ model honors {
   class_honors                           class_honors[]
   master_honor_requirement_option_honors master_honor_requirement_option_honors[]
   translations                           honors_translations[]
+  certification_requirement_components   certification_requirement_components[]
 }
 
 model honor_club_types {
@@ -1352,6 +1359,21 @@ model class_honors {
 
   @@unique([class_id, honor_id, relation_type])
   @@index([honor_id])
+}
+
+model class_prerequisites {
+  class_prerequisite_id Int      @id @default(autoincrement())
+  class_id              Int
+  prerequisite_class_id Int
+  active                Boolean  @default(true)
+  created_at            DateTime @default(now()) @db.Timestamptz(6)
+  modified_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  class        classes @relation("class_prerequisites_class", fields: [class_id], references: [class_id], onDelete: Cascade, onUpdate: NoAction)
+  prerequisite classes @relation("class_prerequisites_prerequisite", fields: [prerequisite_class_id], references: [class_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([class_id, prerequisite_class_id])
+  @@index([prerequisite_class_id])
 }
 
 model honors_translations {
@@ -1775,8 +1797,9 @@ model roles {
   club_role_assignments    club_role_assignments[]
   role_permissions         role_permissions[]
   users_roles              users_roles[]
-  role_slot_limits         role_slot_limits?
-  role_assignment_requests role_assignment_requests[]
+  role_slot_limits                role_slot_limits?
+  role_assignment_requests        role_assignment_requests[]
+  certification_eligibility_rules certification_eligibility_rules[]
 }
 
 model union_camporee_local_fields {
@@ -2232,20 +2255,26 @@ model users {
   rejection_reason                     String?
   activities                           activities[]
   attending_members_camporees          camporee_members[]
-  certification_module_progress        certification_module_progress[]
-  certification_section_progress       certification_section_progress[]
-  class_module_progress                class_module_progress[]
-  class_section_progress               class_section_progress[]
-  class_counselor_assignments          class_counselor_assignments[]         @relation("class_counselor_assignee")
-  class_counselor_assignments_assigned class_counselor_assignments[]         @relation("class_counselor_assigned_by")
-  certificate_bulk_import_batches      certificate_bulk_import_batches[]     @relation("certificate_import_batch_user")
-  certificate_bulk_import_files        certificate_bulk_import_files[]       @relation("certificate_import_file_uploader")
-  certificate_bulk_import_events       certificate_bulk_import_item_events[] @relation("certificate_import_event_performer")
-  certificate_bulk_import_reviews      certificate_bulk_import_items[]       @relation("certificate_import_item_reviewer")
-  club_role_assignments                club_role_assignments[]
+  certification_module_progress          certification_module_progress[]
+  certification_section_progress         certification_section_progress[]
+  certification_section_progress_reviews certification_section_progress[]       @relation("certification_section_progress_reviewer")
+  certification_versions_published       certification_versions[]               @relation("certification_versions_published_by")
+  certification_evidences_uploaded       certification_evidences[]              @relation("certification_evidences_uploader")
+  certification_review_events_performed  certification_review_events[]          @relation("certification_review_events_performer")
+  certification_closeout_uploaded        certification_closeout_evidences[]     @relation("certification_closeout_uploader")
+  certification_closeout_reviewed        certification_closeout_evidences[]     @relation("certification_closeout_reviewer")
+  class_module_progress                  class_module_progress[]
+  class_section_progress                 class_section_progress[]
+  class_counselor_assignments            class_counselor_assignments[]         @relation("class_counselor_assignee")
+  class_counselor_assignments_assigned   class_counselor_assignments[]         @relation("class_counselor_assigned_by")
+  certificate_bulk_import_batches        certificate_bulk_import_batches[]     @relation("certificate_import_batch_user")
+  certificate_bulk_import_files          certificate_bulk_import_files[]       @relation("certificate_import_file_uploader")
+  certificate_bulk_import_events         certificate_bulk_import_item_events[] @relation("certificate_import_event_performer")
+  certificate_bulk_import_reviews        certificate_bulk_import_items[]       @relation("certificate_import_item_reviewer")
+  club_role_assignments                  club_role_assignments[]
   director_succession_plans_as_successor director_succession_plans[] @relation("director_succession_successor")
   director_succession_plans_as_scheduler director_succession_plans[] @relation("director_succession_scheduler")
-  authorization_context_versions       authorization_context_versions?
+  authorization_context_versions         authorization_context_versions?
   emergency_contacts                   emergency_contacts[]                  @relation("internal_user_emergency_contact")
   emergency_contact                    emergency_contacts[]                  @relation("user_emergency_contact")
   enrollments                          enrollments[]
@@ -2560,54 +2589,146 @@ model certifications {
   created_at                     DateTime                         @default(now()) @db.Timestamptz(6)
   modified_at                    DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
   duration_hours                 Int?
+  certification_versions         certification_versions[]
   certification_module_progress  certification_module_progress[]
   certification_modules          certification_modules[]
   certification_section_progress certification_section_progress[]
   users_certifications           users_certifications[]
 }
 
-model certification_modules {
-  module_id              Int                      @id @default(autoincrement())
-  name                   String                   @db.VarChar(255)
-  description            String?
-  certification_id       Int
-  active                 Boolean                  @default(true)
-  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
-  modified_at            DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
-  certifications         certifications           @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
-  certification_sections certification_sections[]
+model certification_versions {
+  certification_version_id         Int                                  @id @default(autoincrement())
+  certification_id                 Int
+  version_number                   Int
+  status                           certification_version_status_enum    @default(DRAFT)
+  title                            String?                              @db.VarChar(255)
+  description                      String?
+  min_duration_months              Int?
+  max_duration_months              Int?
+  published_at                     DateTime?                            @db.Timestamptz(6)
+  retired_at                       DateTime?                            @db.Timestamptz(6)
+  published_by_id                  String?                              @db.Uuid
+  active                           Boolean                              @default(true)
+  created_at                       DateTime                             @default(now()) @db.Timestamptz(6)
+  modified_at                      DateTime                             @default(now()) @updatedAt @db.Timestamptz(6)
+  certifications                   certifications                       @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
+  published_by                     users?                               @relation("certification_versions_published_by", fields: [published_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_eligibility_rules  certification_eligibility_rules[]
+  certification_modules            certification_modules[]
+  users_certifications             users_certifications[]
 
-  @@unique([name, certification_id])
+  @@unique([certification_id, version_number])
+  @@index([status], map: "idx_certification_versions_status")
+}
+
+model certification_eligibility_rules {
+  eligibility_rule_id      Int                                         @id @default(autoincrement())
+  certification_version_id Int
+  rule_type                certification_eligibility_rule_type_enum
+  configuration            Json                                        @default("{}")
+  class_id                 Int?
+  club_type_id             Int?
+  role_id                  String?                                     @db.Uuid
+  sort_order               Int                                         @default(0)
+  active                   Boolean                                     @default(true)
+  created_at               DateTime                                    @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime                                    @default(now()) @updatedAt @db.Timestamptz(6)
+  certification_versions   certification_versions                      @relation(fields: [certification_version_id], references: [certification_version_id], onDelete: Cascade, onUpdate: NoAction)
+  classes                  classes?                                    @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
+  club_types               club_types?                                 @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  roles                    roles?                                      @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([certification_version_id], map: "idx_cert_eligibility_rules_version")
+}
+
+model certification_modules {
+  module_id                Int                      @id @default(autoincrement())
+  name                     String                   @db.VarChar(255)
+  description              String?
+  certification_id         Int
+  certification_version_id Int
+  sort_order               Int                      @default(0)
+  active                   Boolean                  @default(true)
+  created_at               DateTime                 @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+  certifications           certifications           @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_versions   certification_versions   @relation(fields: [certification_version_id], references: [certification_version_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_sections   certification_sections[]
+
+  @@unique([name, certification_version_id])
+  @@index([certification_version_id, sort_order], map: "idx_cert_modules_version_sort")
 }
 
 model certification_sections {
-  section_id            Int                   @id @default(autoincrement())
-  name                  String                @db.VarChar(255)
-  description           String?
-  module_id             Int
-  active                Boolean               @default(true)
-  created_at            DateTime              @default(now()) @db.Timestamptz(6)
-  modified_at           DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
-  certification_modules certification_modules @relation(fields: [module_id], references: [module_id], onDelete: NoAction, onUpdate: NoAction)
+  section_id                           Int                                    @id @default(autoincrement())
+  name                                 String                                 @db.VarChar(255)
+  description                          String?
+  instructions                         String?
+  module_id                            Int
+  sort_order                           Int                                    @default(0)
+  required                             Boolean                                @default(true)
+  active                               Boolean                                @default(true)
+  created_at                           DateTime                               @default(now()) @db.Timestamptz(6)
+  modified_at                          DateTime                               @default(now()) @updatedAt @db.Timestamptz(6)
+  certification_modules                certification_modules                  @relation(fields: [module_id], references: [module_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_requirement_components certification_requirement_components[]
+  certification_section_progress       certification_section_progress[]
 
   @@unique([name, module_id])
+  @@index([module_id, sort_order], map: "idx_cert_sections_module_sort")
+}
+
+model certification_requirement_components {
+  component_id                       Int                               @id @default(autoincrement())
+  section_id                         Int
+  component_type                     certification_component_type_enum
+  label                              String                            @db.VarChar(255)
+  instructions                       String?
+  configuration                      Json                              @default("{}")
+  sort_order                         Int                               @default(0)
+  required                           Boolean                           @default(true)
+  honor_id                           Int?
+  activity_type_id                   Int?
+  active                             Boolean                           @default(true)
+  created_at                         DateTime                          @default(now()) @db.Timestamptz(6)
+  modified_at                        DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
+  certification_sections             certification_sections            @relation(fields: [section_id], references: [section_id], onDelete: Cascade, onUpdate: NoAction)
+  honors                             honors?                           @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction)
+  activity_types                     activity_types?                   @relation(fields: [activity_type_id], references: [activity_type_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_component_responses  certification_component_responses[]
+
+  @@index([section_id, sort_order], map: "idx_cert_requirement_components_section_sort")
 }
 
 model users_certifications {
-  enrollment_id     Int            @id @default(autoincrement())
-  user_id           String         @db.Uuid
-  certification_id  Int
-  enrollment_date   DateTime       @default(now()) @db.Timestamptz(6)
-  completion_status Boolean        @default(false)
-  completion_date   DateTime?      @db.Timestamptz(6)
-  certificate_url   String?        @db.VarChar
-  active            Boolean        @default(true)
-  created_at        DateTime       @default(now()) @db.Timestamptz(6)
-  modified_at       DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
-  certifications    certifications @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
-  users             users          @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  enrollment_id                    Int                                   @id @default(autoincrement())
+  user_id                          String                                @db.Uuid
+  certification_id                 Int
+  certification_version_id         Int
+  enrollment_date                  DateTime                              @default(now()) @db.Timestamptz(6)
+  status                           certification_enrollment_status_enum  @default(ENROLLED)
+  started_at                       DateTime?                             @db.Timestamptz(6)
+  submitted_at                     DateTime?                             @db.Timestamptz(6)
+  approved_at                      DateTime?                             @db.Timestamptz(6)
+  certified_at                     DateTime?                             @db.Timestamptz(6)
+  expires_at                       DateTime?                             @db.Timestamptz(6)
+  completion_status                Boolean                               @default(false)
+  completion_date                  DateTime?                             @db.Timestamptz(6)
+  certificate_url                  String?                               @db.VarChar
+  lock_version                     Int                                   @default(0)
+  active                           Boolean                               @default(true)
+  created_at                       DateTime                              @default(now()) @db.Timestamptz(6)
+  modified_at                      DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
+  certifications                   certifications                        @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_versions           certification_versions                @relation(fields: [certification_version_id], references: [certification_version_id], onDelete: NoAction, onUpdate: NoAction)
+  users                            users                                 @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_section_progress   certification_section_progress[]
+  certification_review_events      certification_review_events[]
+  certification_closeout_evidences certification_closeout_evidences[]
 
   @@index([user_id, completion_status], map: "idx_users_certifications_completion")
+  @@index([status], map: "idx_users_certifications_status")
+  @@index([certification_version_id], map: "idx_users_certifications_version")
 }
 
 model certification_module_progress {
@@ -2628,22 +2749,123 @@ model certification_module_progress {
 }
 
 model certification_section_progress {
-  progress_id      Int            @id @default(autoincrement())
-  user_id          String         @db.Uuid
-  certification_id Int
-  module_id        Int
-  section_id       Int
-  score            Float
-  evidences        Json?
-  active           Boolean        @default(true)
-  created_at       DateTime       @default(now()) @db.Timestamptz(6)
-  modified_at      DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
-  completed        Boolean        @default(false)
-  completion_date  DateTime?      @db.Timestamptz(6)
-  certifications   certifications @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
-  users            users          @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  progress_id                       Int                                   @id @default(autoincrement())
+  user_id                           String                                @db.Uuid
+  certification_id                  Int
+  module_id                         Int
+  section_id                        Int
+  enrollment_id                     Int?
+  score                             Float                                 @default(0)
+  evidences                         Json?
+  status                            certification_requirement_status_enum @default(DRAFT)
+  submitted_at                      DateTime?                             @db.Timestamptz(6)
+  reviewed_at                       DateTime?                             @db.Timestamptz(6)
+  last_review_comment               String?
+  reviewed_by_id                    String?                               @db.Uuid
+  active                            Boolean                               @default(true)
+  created_at                        DateTime                              @default(now()) @db.Timestamptz(6)
+  modified_at                       DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
+  completed                         Boolean                               @default(false)
+  completion_date                   DateTime?                             @db.Timestamptz(6)
+  certifications                    certifications                        @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
+  users                             users                                 @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  users_certifications              users_certifications?                 @relation(fields: [enrollment_id], references: [enrollment_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_sections            certification_sections                @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewed_by                       users?                                @relation("certification_section_progress_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_component_responses certification_component_responses[]
+  certification_review_events       certification_review_events[]
 
   @@unique([user_id, certification_id, module_id, section_id])
+  @@index([enrollment_id, section_id], map: "idx_cert_section_progress_enrollment_section")
+  @@index([status], map: "idx_cert_section_progress_status")
+  @@index([enrollment_id], map: "idx_cert_section_progress_enrollment")
+}
+
+model certification_component_responses {
+  response_id                           Int                                  @id @default(autoincrement())
+  progress_id                           Int
+  component_id                          Int
+  text_value                            String?
+  attestation_confirmed                 Boolean?
+  linked_user_honor_id                  Int?
+  linked_activity_id                    Int?
+  active                                Boolean                              @default(true)
+  created_at                            DateTime                             @default(now()) @db.Timestamptz(6)
+  modified_at                           DateTime                             @default(now()) @updatedAt @db.Timestamptz(6)
+  certification_section_progress        certification_section_progress       @relation(fields: [progress_id], references: [progress_id], onDelete: Cascade, onUpdate: NoAction)
+  certification_requirement_components  certification_requirement_components @relation(fields: [component_id], references: [component_id], onDelete: NoAction, onUpdate: NoAction)
+  users_honors                          users_honors?                        @relation(fields: [linked_user_honor_id], references: [user_honor_id], onDelete: NoAction, onUpdate: NoAction)
+  activities                            activities?                          @relation(fields: [linked_activity_id], references: [activity_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_evidences               certification_evidences[]
+
+  @@unique([progress_id, component_id])
+}
+
+model certification_evidences {
+  evidence_id                        Int                                       @id @default(autoincrement())
+  response_id                        Int
+  object_key                         String                                    @db.VarChar(512)
+  original_filename                  String                                    @db.VarChar(255)
+  mime_type                          String                                    @db.VarChar(100)
+  size_bytes                         BigInt
+  checksum_sha256                    String?                                   @db.Char(64)
+  upload_status                      certification_evidence_upload_status_enum @default(PENDING_UPLOAD)
+  uploaded_by_id                     String                                    @db.Uuid
+  confirmed_at                       DateTime?                                 @db.Timestamptz(6)
+  deleted_at                         DateTime?                                 @db.Timestamptz(6)
+  active                             Boolean                                   @default(true)
+  created_at                         DateTime                                  @default(now()) @db.Timestamptz(6)
+  modified_at                        DateTime                                  @default(now()) @updatedAt @db.Timestamptz(6)
+  certification_component_responses  certification_component_responses         @relation(fields: [response_id], references: [response_id], onDelete: NoAction, onUpdate: NoAction)
+  uploaded_by                        users                                     @relation("certification_evidences_uploader", fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([response_id], map: "idx_cert_evidences_response")
+  @@index([upload_status], map: "idx_cert_evidences_upload_status")
+}
+
+model certification_review_events {
+  review_event_id                Int                                   @id @default(autoincrement())
+  enrollment_id                  Int
+  progress_id                    Int?
+  event_type                     certification_review_event_type_enum
+  comment                        String?
+  performed_by_id                String                                @db.Uuid
+  from_status                    String?                               @db.VarChar(64)
+  to_status                      String?                               @db.VarChar(64)
+  created_at                     DateTime                              @default(now()) @db.Timestamptz(6)
+  users_certifications           users_certifications                  @relation(fields: [enrollment_id], references: [enrollment_id], onDelete: NoAction, onUpdate: NoAction)
+  certification_section_progress certification_section_progress?       @relation(fields: [progress_id], references: [progress_id], onDelete: NoAction, onUpdate: NoAction)
+  performed_by                   users                                 @relation("certification_review_events_performer", fields: [performed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([enrollment_id, created_at], map: "idx_cert_review_events_enrollment")
+  @@index([progress_id, created_at], map: "idx_cert_review_events_progress")
+}
+
+model certification_closeout_evidences {
+  closeout_evidence_id     Int                                       @id @default(autoincrement())
+  enrollment_id            Int
+  object_key               String                                    @db.VarChar(512)
+  original_filename        String                                    @db.VarChar(255)
+  mime_type                String                                    @db.VarChar(100)
+  size_bytes               BigInt
+  checksum_sha256          String?                                   @db.Char(64)
+  upload_status            certification_evidence_upload_status_enum @default(PENDING_UPLOAD)
+  review_status            certification_closeout_review_status_enum @default(PENDING)
+  uploaded_by_id           String                                    @db.Uuid
+  reviewed_by_id           String?                                   @db.Uuid
+  confirmed_at             DateTime?                                 @db.Timestamptz(6)
+  reviewed_at              DateTime?                                 @db.Timestamptz(6)
+  review_comment           String?
+  deleted_at               DateTime?                                 @db.Timestamptz(6)
+  active                   Boolean                                   @default(true)
+  created_at               DateTime                                  @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime                                  @default(now()) @updatedAt @db.Timestamptz(6)
+  users_certifications     users_certifications                      @relation(fields: [enrollment_id], references: [enrollment_id], onDelete: NoAction, onUpdate: NoAction)
+  uploaded_by              users                                     @relation("certification_closeout_uploader", fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewed_by              users?                                    @relation("certification_closeout_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([enrollment_id], map: "idx_cert_closeout_evidences_enrollment")
+  @@index([review_status], map: "idx_cert_closeout_evidences_review_status")
 }
 
 model member_insurances {
@@ -2903,8 +3125,9 @@ model users_honors {
   honors                          honors                            @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_honor_id_fkey")
   users                           users                             @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_user_id_fkey")
   validator                       users?                            @relation("honor_validator", fields: [validated_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-  evidence_files                  evidence_files[]
-  user_honor_requirement_progress user_honor_requirement_progress[]
+  evidence_files                    evidence_files[]
+  user_honor_requirement_progress   user_honor_requirement_progress[]
+  certification_component_responses certification_component_responses[]
 
   @@unique([user_id, honor_id])
   @@index([user_id], map: "idx_users_honors_user_id")
@@ -3197,6 +3420,72 @@ enum annual_folder_section_status_enum {
   PREAPPROVED_LF
   VALIDATED
   REJECTED
+}
+
+enum certification_version_status_enum {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum certification_enrollment_status_enum {
+  ENROLLED
+  IN_PROGRESS
+  READY_FOR_CLOSEOUT
+  SUBMITTED_FOR_FINAL_REVIEW
+  APPROVED
+  CERTIFIED
+  WITHDRAWN
+  EXPIRED
+  CHANGES_REQUESTED
+}
+
+enum certification_requirement_status_enum {
+  DRAFT
+  SUBMITTED
+  CHANGES_REQUESTED
+  APPROVED
+}
+
+enum certification_component_type_enum {
+  TEXT_RESPONSE
+  FILE_EVIDENCE
+  LINKED_HONOR
+  LINKED_ACTIVITY
+  ATTESTATION
+  AUTO_VALIDATION
+}
+
+enum certification_eligibility_rule_type_enum {
+  MIN_AGE
+  BAPTIZED
+  INVESTED_CLASS
+  ACTIVE_CLUB_TYPE
+  ACTIVE_ROLE
+}
+
+enum certification_evidence_upload_status_enum {
+  PENDING_UPLOAD
+  CONFIRMED
+}
+
+enum certification_review_event_type_enum {
+  REQUIREMENT_SUBMITTED
+  REQUIREMENT_CHANGES_REQUESTED
+  REQUIREMENT_APPROVED
+  REQUIREMENT_RESUBMITTED
+  CLOSEOUT_SUBMITTED
+  CLOSEOUT_CHANGES_REQUESTED
+  CLOSEOUT_APPROVED
+  CERTIFIED
+  WITHDRAWN
+}
+
+enum certification_closeout_review_status_enum {
+  PENDING
+  SUBMITTED
+  CHANGES_REQUESTED
+  APPROVED
 }
 
 enum honor_validation_status_enum {

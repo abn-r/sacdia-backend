@@ -31,11 +31,19 @@ describe('ClassesService', () => {
 
   const mockPrismaService = {
     $transaction: jest.fn(),
-    classes: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
+    classes: {
+      findMany: jest.fn(),
+      count: jest.fn(),
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+    },
     ecclesiastical_years: { findFirst: jest.fn(), findUnique: jest.fn() },
     enrollments: { findMany: jest.fn(), findUnique: jest.fn() },
     class_sections: { findFirst: jest.fn(), groupBy: jest.fn() },
     class_modules: { findMany: jest.fn() },
+    class_honors: { findMany: jest.fn() },
+    users_honors: { findMany: jest.fn() },
+    class_prerequisites: { findMany: jest.fn() },
     class_section_progress: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -452,6 +460,92 @@ describe('ClassesService', () => {
       });
     });
 
+    it('never counts a REJECTED section as completed regardless of score', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: 'IN_PROGRESS',
+        },
+      ]);
+      mockPrismaService.class_section_progress.findMany.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          module_id: 11,
+          section_id: 101,
+          score: 100,
+          evidences: null,
+          status: 'REJECTED',
+          submitted_by: null,
+          validated_by_user: null,
+          evidence_files: [],
+        },
+        {
+          enrollment_id: 501,
+          module_id: 11,
+          section_id: 102,
+          score: 0,
+          evidences: null,
+          status: 'VALIDATED',
+          submitted_by: null,
+          validated_by_user: null,
+          evidence_files: [],
+        },
+      ]);
+
+      const result = await service.getUserProgress('user-1', 7);
+
+      expect(result.modules[0].sections[0]).toMatchObject({
+        completed: false,
+        status: 'REJECTED',
+      });
+      expect(result.modules[0].sections[1]).toMatchObject({
+        completed: true,
+        status: 'VALIDATED',
+      });
+      expect(result.completed_sections).toBe(1);
+    });
+
+    it('counts a PENDING section as completed when score is at least 70', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: 'IN_PROGRESS',
+        },
+      ]);
+      mockPrismaService.class_section_progress.findMany.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          module_id: 11,
+          section_id: 101,
+          score: 80,
+          evidences: null,
+          status: 'PENDING',
+          submitted_by: null,
+          validated_by_user: null,
+          evidence_files: [],
+        },
+      ]);
+
+      const result = await service.getUserProgress('user-1', 7);
+
+      expect(result.modules[0].sections[0]).toMatchObject({
+        completed: true,
+        status: 'PENDING',
+      });
+    });
+
     it('throws conflict when class-scoped resolution is ambiguous', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
         year_id: 2026,
@@ -474,6 +568,8 @@ describe('ClassesService', () => {
         user_id: 'user-1',
         class_id: 7,
         ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
       });
       transactionMock.class_section_progress.findMany.mockResolvedValue([
         {
@@ -526,6 +622,173 @@ describe('ClassesService', () => {
         enrollment_id: 901,
         score: 80,
       });
+    });
+
+    it('throws CLASS_PROGRESS_LOCKED when enrollment is locked_for_validation', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: true,
+      });
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 11, 101, 80, undefined, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_PROGRESS_LOCKED,
+      });
+    });
+
+    it.each([
+      'SUBMITTED',
+      'CLUB_APPROVED',
+      'COORDINATOR_APPROVED',
+      'FIELD_APPROVED',
+      'INVESTIDO',
+      'EXPIRED',
+    ])(
+      'throws CLASS_PROGRESS_LOCKED when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+
+        await expect(
+          service.updateSectionProgress(
+            'user-1',
+            7,
+            11,
+            101,
+            80,
+            undefined,
+            901,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CLASS_PROGRESS_LOCKED,
+        });
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED'])(
+      'allows updateSectionProgress when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+        transactionMock.class_section_progress.findMany.mockResolvedValue([
+          { score: 80 },
+        ]);
+
+        await expect(
+          service.updateSectionProgress(
+            'user-1',
+            7,
+            11,
+            101,
+            80,
+            undefined,
+            901,
+          ),
+        ).resolves.toBeDefined();
+      },
+    );
+
+    it('throws CLASS_SECTION_NOT_FOUND when the section does not belong to the module', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      mockPrismaService.class_sections.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 11, 101, 80, undefined, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_SECTION_NOT_FOUND,
+      });
+    });
+
+    it('throws CLASS_SECTION_NOT_FOUND when the module does not belong to the class', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      mockPrismaService.class_sections.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 999, 101, 80, undefined, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_SECTION_NOT_FOUND,
+      });
+    });
+
+    it('throws CLASS_SECTION_NOT_FOUND when the section or module is inactive', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      mockPrismaService.class_sections.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 11, 101, 80, undefined, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_SECTION_NOT_FOUND,
+      });
+    });
+
+    it('writes progress when the section is valid for the module and class', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      transactionMock.class_section_progress.findMany.mockResolvedValue([
+        { score: 80 },
+      ]);
+
+      await expect(
+        service.updateSectionProgress('user-1', 7, 11, 101, 80, undefined, 901),
+      ).resolves.toBeDefined();
+      expect(mockPrismaService.class_sections.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            section_id: 101,
+            module_id: 11,
+            active: true,
+            class_modules: expect.objectContaining({
+              module_id: 11,
+              class_id: 7,
+              active: true,
+            }),
+          }),
+        }),
+      );
     });
   });
 
@@ -683,6 +946,8 @@ describe('ClassesService', () => {
         user_id: 'user-1',
         class_id: 7,
         ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
       });
       mockPrismaService.class_section_progress.findFirst.mockResolvedValue({
         section_progress_id: 123,
@@ -701,6 +966,353 @@ describe('ClassesService', () => {
             enrollment_id: 901,
             section_id: 101,
             active: true,
+          }),
+        }),
+      );
+    });
+
+    it('throws CLASS_PROGRESS_LOCKED on upload when enrollment is locked', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: true,
+      });
+
+      await expect(
+        (service as any).uploadSectionFile(
+          'user-1',
+          'user-1',
+          7,
+          101,
+          {
+            buffer: Buffer.from('pdf'),
+            mimetype: 'application/pdf',
+            originalname: 'evidence.pdf',
+          },
+          901,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_PROGRESS_LOCKED,
+      });
+    });
+
+    it.each([
+      'SUBMITTED',
+      'CLUB_APPROVED',
+      'COORDINATOR_APPROVED',
+      'FIELD_APPROVED',
+      'INVESTIDO',
+      'EXPIRED',
+    ])(
+      'throws CLASS_PROGRESS_LOCKED on upload when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+
+        await expect(
+          (service as any).uploadSectionFile(
+            'user-1',
+            'user-1',
+            7,
+            101,
+            {
+              buffer: Buffer.from('pdf'),
+              mimetype: 'application/pdf',
+              originalname: 'evidence.pdf',
+            },
+            901,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CLASS_PROGRESS_LOCKED,
+        });
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED'])(
+      'allows upload when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+        const fileStorage = (service as any).fileStorage;
+        fileStorage.upload.mockResolvedValue({
+          url: 'https://r2.example/class/123.pdf',
+        });
+        fileStorage.getSignedDownloadUrl.mockResolvedValue(
+          'https://signed.example/class/123.pdf',
+        );
+
+        await expect(
+          (service as any).uploadSectionFile(
+            'user-1',
+            'user-1',
+            7,
+            101,
+            {
+              buffer: Buffer.from('pdf'),
+              mimetype: 'application/pdf',
+              originalname: 'evidence.pdf',
+            },
+            901,
+          ),
+        ).resolves.toBeDefined();
+      },
+    );
+
+    it('throws CLASS_PROGRESS_LOCKED on delete when enrollment is locked', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: true,
+      });
+
+      await expect(
+        (service as any).deleteSectionFile(
+          'user-1',
+          'user-1',
+          7,
+          101,
+          55,
+          901,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_PROGRESS_LOCKED,
+      });
+    });
+
+    it.each([
+      'SUBMITTED',
+      'CLUB_APPROVED',
+      'COORDINATOR_APPROVED',
+      'FIELD_APPROVED',
+      'INVESTIDO',
+      'EXPIRED',
+    ])(
+      'throws CLASS_PROGRESS_LOCKED on delete when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+
+        await expect(
+          (service as any).deleteSectionFile(
+            'user-1',
+            'user-1',
+            7,
+            101,
+            55,
+            901,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CLASS_PROGRESS_LOCKED,
+        });
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED'])(
+      'allows delete when investiture_status is %s',
+      async (investitureStatus) => {
+        mockPrismaService.enrollments.findUnique.mockResolvedValue({
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: investitureStatus,
+          locked_for_validation: false,
+        });
+        mockPrismaService.class_section_progress.findFirst.mockResolvedValue({
+          section_progress_id: 123,
+        });
+        mockPrismaService.evidence_files.findFirst.mockResolvedValue({
+          evidence_file_id: 55,
+          file_url: 'https://r2.example/class/123.pdf',
+          uploaded_by: {
+            name: 'A',
+            paternal_last_name: 'B',
+            maternal_last_name: 'C',
+          },
+        });
+        mockPrismaService.evidence_files.update.mockResolvedValue({
+          evidence_file_id: 55,
+          active: false,
+          file_url: 'https://r2.example/class/123.pdf',
+          file_name: 'Evidencia 01.pdf',
+          file_type: 'document',
+          uploaded_at: new Date('2026-05-10T00:00:00.000Z'),
+          uploaded_by: {
+            name: 'A',
+            paternal_last_name: 'B',
+            maternal_last_name: 'C',
+          },
+        });
+        const fileStorage = (service as any).fileStorage;
+        fileStorage.extractKeyFromPublicUrl.mockReturnValue('class/123.pdf');
+        fileStorage.deleteMany.mockResolvedValue(undefined);
+
+        await expect(
+          (service as any).deleteSectionFile(
+            'user-1',
+            'user-1',
+            7,
+            101,
+            55,
+            901,
+          ),
+        ).resolves.toBeDefined();
+      },
+    );
+  });
+
+  describe('findOne', () => {
+    it('includes active prerequisites and excludes inactive ones via query filter', async () => {
+      mockPrismaService.classes.findUnique.mockResolvedValue({
+        class_id: 7,
+        name: 'Compañero',
+        description: null,
+        club_type_id: 1,
+        advanced_enabled: false,
+        available_from_year_id: null,
+        available_until_year_id: null,
+        min_duration_years: 1,
+        max_duration_years: 1,
+        club_types: { name: 'Aventureros' },
+        translations: [],
+        prerequisites: [
+          {
+            class_prerequisite_id: 1,
+            prerequisite: { class_id: 5, name: 'Amigo' },
+          },
+        ],
+        class_modules: [],
+      });
+
+      const result = await service.findOne(7);
+
+      expect(result.prerequisites).toEqual([
+        { class_id: 5, name: 'Amigo' },
+      ]);
+      expect(mockPrismaService.classes.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            prerequisites: expect.objectContaining({
+              where: { active: true },
+            }),
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('getClassHonors', () => {
+    it('returns active class-honor relations for an existing class', async () => {
+      mockPrismaService.classes.findFirst.mockResolvedValue({ class_id: 7 });
+      mockPrismaService.class_honors.findMany.mockResolvedValue([
+        {
+          class_honor_id: 1,
+          honor_id: 50,
+          relation_type: 'RECOMMENDED',
+          honor: {
+            honor_id: 50,
+            name: 'Nudos',
+            honor_image: null,
+            honors_category_id: 2,
+            skill_level: 1,
+          },
+        },
+        {
+          class_honor_id: 2,
+          honor_id: 51,
+          relation_type: 'REQUIRED',
+          honor: {
+            honor_id: 51,
+            name: 'Primeros Auxilios',
+            honor_image: 'https://cdn/honor.png',
+            honors_category_id: 3,
+            skill_level: 2,
+          },
+        },
+      ]);
+
+      const result = await service.getClassHonors(7);
+
+      expect(result).toEqual([
+        {
+          class_honor_id: 1,
+          relation_type: 'RECOMMENDED',
+          honor: expect.objectContaining({ honor_id: 50, name: 'Nudos' }),
+          user_status: null,
+        },
+        {
+          class_honor_id: 2,
+          relation_type: 'REQUIRED',
+          honor: expect.objectContaining({
+            honor_id: 51,
+            name: 'Primeros Auxilios',
+          }),
+          user_status: null,
+        },
+      ]);
+      expect(mockPrismaService.users_honors.findMany).not.toHaveBeenCalled();
+    });
+
+    it('throws CLASS_NOT_FOUND when class does not exist', async () => {
+      mockPrismaService.classes.findFirst.mockResolvedValue(null);
+
+      await expect(service.getClassHonors(999)).rejects.toMatchObject({
+        code: ErrorCode.CLASS_NOT_FOUND,
+      });
+    });
+
+    it('includes user_status when userId is provided', async () => {
+      mockPrismaService.classes.findFirst.mockResolvedValue({ class_id: 7 });
+      mockPrismaService.class_honors.findMany.mockResolvedValue([
+        {
+          class_honor_id: 1,
+          honor_id: 50,
+          relation_type: 'RECOMMENDED',
+          honor: {
+            honor_id: 50,
+            name: 'Nudos',
+            honor_image: null,
+            honors_category_id: 2,
+            skill_level: 1,
+          },
+        },
+      ]);
+      mockPrismaService.users_honors.findMany.mockResolvedValue([
+        { honor_id: 50, validation_status: 'VALIDATED' },
+      ]);
+
+      const result = await service.getClassHonors(7, 'user-1');
+
+      expect(result[0].user_status).toBe('VALIDATED');
+      expect(mockPrismaService.users_honors.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: 'user-1',
+            honor_id: { in: [50] },
           }),
         }),
       );
@@ -729,6 +1341,8 @@ describe('ClassesService', () => {
       createResult?: any;
       updateResult?: any;
       ecclesiasticalYear?: any;
+      prerequisites?: any[];
+      investedEnrollments?: any[];
     }) => {
       // Build a findFirst that returns successive values from the array
       const findFirstResults = mocks.findFirstResults ?? [null];
@@ -750,8 +1364,16 @@ describe('ClassesService', () => {
         classes: {
           findUnique: jest.fn().mockResolvedValue(mocks.targetClass ?? null),
         },
+        class_prerequisites: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue(mocks.prerequisites ?? []),
+        },
         enrollments: {
           findFirst: findFirstFn,
+          findMany: jest
+            .fn()
+            .mockResolvedValue(mocks.investedEnrollments ?? []),
           count: jest.fn().mockResolvedValue(mocks.activeCount ?? 0),
           findUnique: jest
             .fn()
@@ -934,9 +1556,90 @@ describe('ClassesService', () => {
       expect(result).toMatchObject({ enrollment_id: 3, class_id: 10 });
     });
 
-    it('should block GM enrollment when 2 active GM enrollments exist', async () => {
+    it('should block enrollment when an explicit prerequisite is not INVESTIDO', async () => {
+      setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 2,
+          club_types: { name: 'Aventureros' },
+        },
+        findFirstResults: [null, null],
+        prerequisites: [
+          {
+            prerequisite_class_id: 5,
+            prerequisite: { class_id: 5, name: 'Amigo' },
+          },
+        ],
+        investedEnrollments: [],
+      });
+
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_PREREQUISITE_NOT_MET,
+      });
+    });
+
+    it('should allow enrollment when prerequisite class is INVESTIDO', async () => {
+      setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 2,
+          club_types: { name: 'Aventureros' },
+        },
+        findFirstResults: [
+          {
+            enrollment_id: 1,
+            investiture_status: 'INVESTIDO',
+            classes: { display_order: 1 },
+          },
+        ],
+        prerequisites: [
+          {
+            prerequisite_class_id: 5,
+            prerequisite: { class_id: 5, name: 'Amigo' },
+          },
+        ],
+        investedEnrollments: [{ class_id: 5 }],
+        activeCount: 0,
+        createResult: { enrollment_id: 4, class_id: 10 },
+      });
+
+      const result = await service.enrollUser(userId, classId, yearId);
+      expect(result).toMatchObject({ enrollment_id: 4, class_id: 10 });
+    });
+
+    it('should ignore inactive prerequisites by querying only active ones', async () => {
+      const txMock = setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+          club_types: { name: 'Aventureros' },
+        },
+        findFirstResults: [null, null],
+        prerequisites: [],
+        activeCount: 0,
+        createResult: { enrollment_id: 5, class_id: 10 },
+      });
+
+      const result = await service.enrollUser(userId, classId, yearId);
+      expect(result).toMatchObject({ enrollment_id: 5, class_id: 10 });
+      expect(txMock.class_prerequisites.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { class_id: classId, active: true },
+        }),
+      );
+    });
+
+    it('should block GM enrollment when 1 active GM enrollment already exists', async () => {
       // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)
-      // But enrollment limit check (step 4) fires with activeCount: 2
+      // But enrollment limit check (step 4) fires with activeCount: 1
       setupTransactionMock({
         targetClass: {
           class_id: 10,
@@ -946,7 +1649,7 @@ describe('ClassesService', () => {
           club_types: { name: 'Guías Mayores' },
         },
         findFirstResults: [null, null],
-        activeCount: 2,
+        activeCount: 1,
       });
 
       await expect(

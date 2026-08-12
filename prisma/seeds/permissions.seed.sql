@@ -432,6 +432,19 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- Certifications (configurable engine — definition authoring and review)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('certifications:configure', 'Create/edit certification definitions, versions, eligibility rules and requirement trees (DRAFT only)', true),
+  ('certifications:publish', 'Publish or retire a certification version', true),
+  ('certifications:review', 'Review submitted certification requirements/closeouts', true),
+  ('certifications:certify', 'Approve final certification review and mark member as certified', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Folders legacy permissions
 -- ============================
 -- Legacy /folders runtime and user-folder progression were retired before

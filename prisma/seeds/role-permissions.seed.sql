@@ -2042,6 +2042,76 @@ ON CONFLICT (role_id, permission_id) DO UPDATE SET
   active = true,
   modified_at = now();
 
+-- Certification configuration/publish are restricted to Local Field
+-- leadership. Admin/super-admin already receive these via their broad
+-- wildcard grants, so this cleanup only needs to scope out other roles that
+-- might have inherited them through global grants.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN ('certifications:configure', 'certifications:publish')
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (
+  role_permission_id,
+  role_id,
+  permission_id,
+  active
+)
+SELECT
+  gen_random_uuid(),
+  r.role_id,
+  p.permission_id,
+  true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('certifications:configure', 'certifications:publish')
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- Certification review/certify follow the same Local Field + platform admin
+-- pattern as insurance:review.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN ('certifications:review', 'certifications:certify')
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (
+  role_permission_id,
+  role_id,
+  permission_id,
+  active
+)
+SELECT
+  gen_random_uuid(),
+  r.role_id,
+  p.permission_id,
+  true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('certifications:review', 'certifications:certify')
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================

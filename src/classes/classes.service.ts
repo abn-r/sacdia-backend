@@ -60,6 +60,29 @@ export class ClassesService {
     private readonly requirementEligibility: ClassRequirementEligibilityService,
   ) {}
 
+  private static readonly PROGRESS_MUTATION_BLOCKED_STATUSES = new Set([
+    'SUBMITTED',
+    'CLUB_APPROVED',
+    'COORDINATOR_APPROVED',
+    'FIELD_APPROVED',
+    'INVESTIDO',
+    'EXPIRED',
+  ]);
+
+  private assertProgressMutable(enrollment: {
+    investitureStatus: string;
+    lockedForValidation: boolean;
+  }) {
+    if (
+      enrollment.lockedForValidation ||
+      ClassesService.PROGRESS_MUTATION_BLOCKED_STATUSES.has(
+        enrollment.investitureStatus,
+      )
+    ) {
+      throw new AppConflictException(ErrorCode.CLASS_PROGRESS_LOCKED);
+    }
+  }
+
   private getSiblingClubTypeIds(): Promise<number[]> {
     if (!this.siblingTypeIdsCache) {
       this.siblingTypeIdsCache = this.prisma.club_types
@@ -85,6 +108,7 @@ export class ClassesService {
     enrollmentId: number;
     ecclesiasticalYearId: number;
     investitureStatus: string;
+    lockedForValidation: boolean;
   }> {
     if (params.enrollmentId !== undefined) {
       const enrollment = await this.prisma.enrollments.findUnique({
@@ -97,6 +121,7 @@ export class ClassesService {
           class_id: true,
           ecclesiastical_year_id: true,
           investiture_status: true,
+          locked_for_validation: true,
         },
       });
 
@@ -112,6 +137,7 @@ export class ClassesService {
         enrollmentId: enrollment.enrollment_id,
         ecclesiasticalYearId: enrollment.ecclesiastical_year_id,
         investitureStatus: enrollment.investiture_status,
+        lockedForValidation: enrollment.locked_for_validation,
       };
     }
 
@@ -140,6 +166,7 @@ export class ClassesService {
         enrollment_id: true,
         ecclesiastical_year_id: true,
         investiture_status: true,
+        locked_for_validation: true,
       },
     });
 
@@ -155,6 +182,7 @@ export class ClassesService {
       enrollmentId: enrollments[0].enrollment_id,
       ecclesiasticalYearId: enrollments[0].ecclesiastical_year_id,
       investitureStatus: enrollments[0].investiture_status,
+      lockedForValidation: enrollments[0].locked_for_validation,
     };
   }
 
@@ -298,6 +326,15 @@ export class ClassesService {
           where: { locale },
           select: { locale: true, name: true, description: true },
         },
+        prerequisites: {
+          where: { active: true },
+          include: {
+            prerequisite: {
+              select: { class_id: true, name: true },
+            },
+          },
+          orderBy: { class_prerequisite_id: 'asc' },
+        },
         class_modules: {
           where: { active: true },
           include: {
@@ -356,12 +393,76 @@ export class ClassesService {
       }
     }
 
-    return translatedClass;
+    const prerequisites = (
+      (translatedClass as any).prerequisites as
+        | Array<{ prerequisite: { class_id: number; name: string } }>
+        | undefined
+    )?.map((row) => ({
+      class_id: row.prerequisite.class_id,
+      name: row.prerequisite.name,
+    })) ?? [];
+
+    const { prerequisites: _rawPrerequisites, ...rest } =
+      translatedClass as typeof translatedClass & {
+        prerequisites?: unknown;
+      };
+
+    return {
+      ...rest,
+      prerequisites,
+    };
   }
 
   async getModules(classId: number) {
     const classData = await this.findOne(classId);
     return classData.class_modules;
+  }
+
+  async getClassHonors(classId: number, userId?: string) {
+    const classExists = await this.prisma.classes.findFirst({
+      where: { class_id: classId, active: true },
+      select: { class_id: true },
+    });
+    if (!classExists) {
+      throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
+    }
+
+    const relations = await this.prisma.class_honors.findMany({
+      where: { class_id: classId, active: true, honor: { active: true } },
+      include: {
+        honor: {
+          select: {
+            honor_id: true,
+            name: true,
+            honor_image: true,
+            honors_category_id: true,
+            skill_level: true,
+          },
+        },
+      },
+      orderBy: [{ relation_type: 'asc' }, { honor: { name: 'asc' } }],
+    });
+
+    let userHonorsByHonorId = new Map<number, string>();
+    if (userId && relations.length > 0) {
+      const userHonors = await this.prisma.users_honors.findMany({
+        where: {
+          user_id: userId,
+          honor_id: { in: relations.map((r) => r.honor_id) },
+        },
+        select: { honor_id: true, validation_status: true },
+      });
+      userHonorsByHonorId = new Map(
+        userHonors.map((uh) => [uh.honor_id, uh.validation_status]),
+      );
+    }
+
+    return relations.map((relation) => ({
+      class_honor_id: relation.class_honor_id,
+      relation_type: relation.relation_type,
+      honor: relation.honor,
+      user_status: userHonorsByHonorId.get(relation.honor_id) ?? null,
+    }));
   }
 
   // ========================================
@@ -442,6 +543,42 @@ export class ClassesService {
         }
       }
 
+      // 2b. Explicit class prerequisites: every active prerequisite must be
+      // INVESTIDO for this user, regardless of year.
+      const prerequisites = await tx.class_prerequisites.findMany({
+        where: { class_id: classId, active: true },
+        include: {
+          prerequisite: { select: { class_id: true, name: true } },
+        },
+      });
+
+      if (prerequisites.length > 0) {
+        const investedClassIds = new Set(
+          (
+            await tx.enrollments.findMany({
+              where: {
+                user_id: userId,
+                investiture_status: 'INVESTIDO',
+                class_id: {
+                  in: prerequisites.map((p) => p.prerequisite_class_id),
+                },
+              },
+              select: { class_id: true },
+            })
+          ).map((enrollment) => enrollment.class_id),
+        );
+
+        const missing = prerequisites.filter(
+          (p) => !investedClassIds.has(p.prerequisite_class_id),
+        );
+
+        if (missing.length > 0) {
+          throw new AppForbiddenException(
+            ErrorCode.CLASS_PREREQUISITE_NOT_MET,
+          );
+        }
+      }
+
       // 3. Display-order progression restriction
       // Users can only enroll up to one class above their highest INVESTIDO class
       // within the same club type. If no INVESTIDO exists, they can only enroll
@@ -483,7 +620,11 @@ export class ClassesService {
             classes: { club_type_id },
           },
         });
-        if (activeCount >= 2) {
+        // DB enforces a single active enrollment per user/year via the partial
+        // unique index uniq_enrollments_active_user_year; keep the service rule
+        // aligned so violations surface as CLASS_MAX_GM_ACTIVE instead of a raw
+        // unique-constraint error.
+        if (activeCount >= 1) {
           throw new AppConflictException(ErrorCode.CLASS_MAX_GM_ACTIVE);
         }
       }
@@ -740,6 +881,7 @@ export class ClassesService {
     ) =>
       Boolean(
         progress &&
+          progress.status !== evidence_validation_enum.REJECTED &&
           (progress.status === evidence_validation_enum.VALIDATED ||
             progress.score >= 70),
       );
@@ -877,6 +1019,24 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolvedEnrollment.ecclesiasticalYearId,
     });
+    this.assertProgressMutable(resolvedEnrollment);
+
+    const validSection = await this.prisma.class_sections.findFirst({
+      where: {
+        section_id: sectionId,
+        module_id: moduleId,
+        active: true,
+        class_modules: {
+          module_id: moduleId,
+          class_id: classId,
+          active: true,
+        },
+      },
+      select: { section_id: true },
+    });
+    if (!validSection) {
+      throw new AppNotFoundException(ErrorCode.CLASS_SECTION_NOT_FOUND);
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const existingSection = await tx.class_section_progress.findFirst({
@@ -1018,6 +1178,7 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
+    this.assertProgressMutable(resolved);
 
     // Find or create section progress using the annual enrollment owner.
     let sectionProgress = await this.prisma.class_section_progress.findFirst({
@@ -1187,6 +1348,7 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
+    this.assertProgressMutable(resolved);
 
     // Resolve the section progress from the annual enrollment owner.
     const sectionProgress = await this.prisma.class_section_progress.findFirst({

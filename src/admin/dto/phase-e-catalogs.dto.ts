@@ -619,3 +619,34 @@ export class CreateMasterHonorDto {
 }
 
 export class UpdateMasterHonorDto extends PartialType(CreateMasterHonorDto) {}
+
+// ─── CLASS HONORS ─────────────────────────────────────────────────────────────
+
+export enum ClassHonorRelationTypeDto {
+  REQUIRED = 'REQUIRED',
+  RECOMMENDED = 'RECOMMENDED',
+  ELECTIVE = 'ELECTIVE',
+}
+
+export class CreateClassHonorDto {
+  @ApiProperty({ example: 12, description: 'honor_id FK' })
+  @IsInt()
+  @Min(1)
+  honor_id!: number;
+
+  @ApiProperty({
+    enum: ClassHonorRelationTypeDto,
+    example: ClassHonorRelationTypeDto.RECOMMENDED,
+  })
+  @IsEnum(ClassHonorRelationTypeDto)
+  relation_type!: ClassHonorRelationTypeDto;
+}
+
+// ─── CLASS PREREQUISITES ──────────────────────────────────────────────────────
+
+export class CreateClassPrerequisiteDto {
+  @ApiProperty({ example: 5, description: 'prerequisite_class_id FK' })
+  @IsInt()
+  @Min(1)
+  prerequisite_class_id!: number;
+}

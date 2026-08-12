@@ -16,11 +16,26 @@ import {
   master_honor_applicability_scope_enum,
   master_honor_requirement_group_type_enum,
 } from '@prisma/client';
+import { ErrorCode } from '../common/errors/error-codes';
 
 const ACTOR_ID = 'actor-uuid';
 
 const makePrismaMock = () => ({
   classes: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  class_honors: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  class_prerequisites: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
     findMany: jest.fn(),
@@ -602,6 +617,178 @@ describe('AdminPhaseECatalogsService', () => {
           ACTOR_ID,
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('class honors', () => {
+    it('creates a class-honor relation', async () => {
+      prismaMock.classes.findUnique.mockResolvedValue({ class_id: 7 });
+      prismaMock.honors.findUnique.mockResolvedValue({ honor_id: 50 });
+      prismaMock.class_honors.findFirst.mockResolvedValue(null);
+      prismaMock.class_honors.create.mockResolvedValue({
+        class_honor_id: 1,
+        class_id: 7,
+        honor_id: 50,
+        relation_type: 'RECOMMENDED',
+        active: true,
+        honor: { honor_id: 50, name: 'Nudos' },
+      });
+
+      const result = await service.createClassHonor(
+        7,
+        { honor_id: 50, relation_type: 'RECOMMENDED' as any },
+        ACTOR_ID,
+      );
+
+      expect(result.class_honor_id).toBe(1);
+      expect(prismaMock.class_honors.create).toHaveBeenCalled();
+    });
+
+    it('throws on duplicate active relation', async () => {
+      prismaMock.classes.findUnique.mockResolvedValue({ class_id: 7 });
+      prismaMock.honors.findUnique.mockResolvedValue({ honor_id: 50 });
+      prismaMock.class_honors.findFirst.mockResolvedValue({
+        class_honor_id: 1,
+      });
+
+      await expect(
+        service.createClassHonor(
+          7,
+          { honor_id: 50, relation_type: 'RECOMMENDED' as any },
+          ACTOR_ID,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_CLASS_HONOR_DUPLICATE,
+      });
+    });
+
+    it('soft-deletes a class-honor relation', async () => {
+      prismaMock.class_honors.findFirst.mockResolvedValue({
+        class_honor_id: 11,
+        class_id: 7,
+      });
+      prismaMock.class_honors.update.mockResolvedValue({
+        class_honor_id: 11,
+        active: false,
+      });
+
+      const result = await service.deleteClassHonor(7, 11, ACTOR_ID);
+      expect(result.active).toBe(false);
+    });
+
+    it('throws when deleting missing class-honor', async () => {
+      prismaMock.class_honors.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.deleteClassHonor(7, 999, ACTOR_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_CLASS_HONOR_NOT_FOUND,
+      });
+    });
+  });
+
+  describe('class prerequisites', () => {
+    it('creates a class prerequisite', async () => {
+      prismaMock.classes.findUnique
+        .mockResolvedValueOnce({ class_id: 10 })
+        .mockResolvedValueOnce({ class_id: 5 });
+      prismaMock.class_prerequisites.findMany.mockResolvedValue([]);
+      prismaMock.class_prerequisites.findFirst.mockResolvedValue(null);
+      prismaMock.class_prerequisites.create.mockResolvedValue({
+        class_prerequisite_id: 1,
+        class_id: 10,
+        prerequisite_class_id: 5,
+        active: true,
+        prerequisite: { class_id: 5, name: 'Amigo', active: true },
+      });
+
+      const result = await service.createClassPrerequisite(
+        10,
+        { prerequisite_class_id: 5 },
+        ACTOR_ID,
+      );
+
+      expect(result.class_prerequisite_id).toBe(1);
+    });
+
+    it('throws on duplicate active prerequisite', async () => {
+      prismaMock.classes.findUnique
+        .mockResolvedValueOnce({ class_id: 10 })
+        .mockResolvedValueOnce({ class_id: 5 });
+      prismaMock.class_prerequisites.findMany.mockResolvedValue([]);
+      prismaMock.class_prerequisites.findFirst.mockResolvedValue({
+        class_prerequisite_id: 1,
+      });
+
+      await expect(
+        service.createClassPrerequisite(
+          10,
+          { prerequisite_class_id: 5 },
+          ACTOR_ID,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_CLASS_PREREQUISITE_DUPLICATE,
+      });
+    });
+
+    it('throws on self-reference cycle', async () => {
+      prismaMock.classes.findUnique
+        .mockResolvedValueOnce({ class_id: 10 })
+        .mockResolvedValueOnce({ class_id: 10 });
+
+      await expect(
+        service.createClassPrerequisite(
+          10,
+          { prerequisite_class_id: 10 },
+          ACTOR_ID,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_CLASS_PREREQUISITE_CYCLE,
+      });
+    });
+
+    it('throws on indirect cycle A→B then B→A', async () => {
+      prismaMock.classes.findUnique
+        .mockResolvedValueOnce({ class_id: 10 })
+        .mockResolvedValueOnce({ class_id: 5 });
+      // BFS from 5 finds that 5 already requires 10
+      prismaMock.class_prerequisites.findMany.mockResolvedValue([
+        { prerequisite_class_id: 10 },
+      ]);
+
+      await expect(
+        service.createClassPrerequisite(
+          10,
+          { prerequisite_class_id: 5 },
+          ACTOR_ID,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_CLASS_PREREQUISITE_CYCLE,
+      });
+    });
+
+    it('soft-deletes a class prerequisite', async () => {
+      prismaMock.class_prerequisites.findFirst.mockResolvedValue({
+        class_prerequisite_id: 3,
+        class_id: 10,
+      });
+      prismaMock.class_prerequisites.update.mockResolvedValue({
+        class_prerequisite_id: 3,
+        active: false,
+      });
+
+      const result = await service.deleteClassPrerequisite(10, 3, ACTOR_ID);
+      expect(result.active).toBe(false);
+    });
+
+    it('throws when deleting missing prerequisite', async () => {
+      prismaMock.class_prerequisites.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.deleteClassPrerequisite(10, 999, ACTOR_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_CLASS_PREREQUISITE_NOT_FOUND,
+      });
     });
   });
 });

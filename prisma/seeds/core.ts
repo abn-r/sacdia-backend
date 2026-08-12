@@ -23,6 +23,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import { seedBasicPathfinderStaffTraining } from './certifications/basic-pathfinder-staff-training.seed';
 
 const DEVELOPMENT_BRANCH_MARKER = 'ep-rough-hill-anztwk76';
 const ALLOW_ANY_DB_ENV = 'SACDIA_CORE_SEED_ALLOW_ANY_DB';
@@ -87,6 +88,9 @@ interface SeedSummary {
   unitsUpserted: number;
   unitMembershipsUpserted: number;
   classEnrollmentsUpserted: number;
+  certificationModulesUpserted: number;
+  certificationRequirementsUpserted: number;
+  certificationComponentsUpserted: number;
 }
 
 class DryRunRollback extends Error {
@@ -260,6 +264,9 @@ function emptySummary(): SeedSummary {
     unitsUpserted: 0,
     unitMembershipsUpserted: 0,
     classEnrollmentsUpserted: 0,
+    certificationModulesUpserted: 0,
+    certificationRequirementsUpserted: 0,
+    certificationComponentsUpserted: 0,
   };
 }
 
@@ -964,6 +971,19 @@ async function seedCore(prisma: PrismaClient, dryRun: boolean) {
           summary,
         });
       }
+
+      // Independent domain seed: the configurable certifications catalog
+      // ("Capacitación básica para el personal del Club de Conquistadores").
+      // Passing `tx` directly (instead of the outer `prisma`) makes this run
+      // inside the same transaction without opening a nested one.
+      const certificationSeedReport =
+        await seedBasicPathfinderStaffTraining(tx);
+      summary.certificationModulesUpserted =
+        certificationSeedReport.moduleCount;
+      summary.certificationRequirementsUpserted =
+        certificationSeedReport.requirementCount;
+      summary.certificationComponentsUpserted =
+        certificationSeedReport.componentCount;
 
       if (dryRun) {
         throw new DryRunRollback(summary);

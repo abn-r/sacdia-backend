@@ -95,7 +95,8 @@ import { UserAwareThrottlerGuard } from './config/user-aware-throttler.guard';
         // In dev (ts-node): __dirname = src/ → ../i18n = the project root … which is wrong.
         // Use process.cwd() as anchor since it's always the project root in both modes.
         path: path.join(process.cwd(), 'dist', 'i18n'),
-        watch: true,
+        // File watching hangs Nest bootstrap in sandboxed/CI test runners.
+        watch: process.env.NODE_ENV !== 'test',
       },
       resolvers: [
         { use: QueryResolver, options: ['lang'] },
@@ -141,8 +142,9 @@ import { UserAwareThrottlerGuard } from './config/user-aware-throttler.guard';
           ],
           remove: true,
         },
-        ...(process.env.NODE_ENV !== 'production' ||
-        process.env.LOG_PRETTY === 'true'
+        ...(process.env.NODE_ENV !== 'test' &&
+        (process.env.NODE_ENV !== 'production' ||
+          process.env.LOG_PRETTY === 'true')
           ? {
               transport: {
                 target: 'pino-pretty',

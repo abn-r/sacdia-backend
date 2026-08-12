@@ -42,6 +42,15 @@ export enum StorageBucketAlias {
    * Optional: R2_KEY_PREFIX_CAMPOREE_PAYMENT_VOUCHERS (default: 'camporee-payments').
    */
   CAMPOREE_PAYMENT_VOUCHERS = 'CAMPOREE_PAYMENT_VOUCHERS',
+  /**
+   * Private bucket for certification requirement and closeout evidence
+   * (image/PDF). Objects are served via presigned URLs only — never public.
+   * Key format: enrollment-{enrollmentId}/requirement-{sectionId}/component-{componentId}/{uuid}.{ext}
+   *             enrollment-{enrollmentId}/closeout/{uuid}.{ext}
+   * Env vars: R2_BUCKET_CERTIFICATION_EVIDENCE, R2_PUBLIC_URL_CERTIFICATION_EVIDENCE (required).
+   * Optional: R2_KEY_PREFIX_CERTIFICATION_EVIDENCE (default: 'certifications/evidence').
+   */
+  CERTIFICATION_EVIDENCE = 'CERTIFICATION_EVIDENCE',
 }
 
 export type UploadFileOptions = {

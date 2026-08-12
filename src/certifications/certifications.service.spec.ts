@@ -5,6 +5,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
 import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
+import { CertificationEligibilityService } from './eligibility/certification-eligibility.service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,6 +51,9 @@ const mockPrisma = {
     findUnique: jest.fn(),
     count: jest.fn(),
   },
+  certification_versions: {
+    findFirst: jest.fn(),
+  },
   users_certifications: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
@@ -66,6 +70,11 @@ const mockPrisma = {
   certification_section_progress: {
     findMany: jest.fn(),
   },
+};
+
+const mockEligibilityService = {
+  evaluateForVersion: jest.fn(),
+  evaluateForCertification: jest.fn(),
 };
 
 // ---------------------------------------------------------------------------
@@ -138,6 +147,10 @@ describe('CertificationsService', () => {
       providers: [
         CertificationsService,
         { provide: PrismaService, useValue: mockPrisma },
+        {
+          provide: CertificationEligibilityService,
+          useValue: mockEligibilityService,
+        },
       ],
     }).compile();
 
@@ -264,39 +277,62 @@ describe('CertificationsService', () => {
   describe('enrollUser', () => {
     const dto: EnrollCertificationDto = { certification_id: CERT_ID };
 
-    const eligibleEnrollment = {
-      enrollment_id: 1,
-      user_id: USER_ID,
-      investiture_status: 'INVESTIDO',
-      classes: { name: 'Guía Mayor' },
+    const publishedVersion = {
+      certification_version_id: 7,
+      status: 'PUBLISHED',
+    };
+
+    const eligibleResult = {
+      eligible: true,
+      rules: [{ type: 'MIN_AGE', satisfied: true, reason_code: null }],
+      reason_code: null,
     };
 
     const createdEnrollment = {
       ...baseEnrollment,
+      certification_version_id: 7,
+      status: 'ENROLLED',
       certifications: { name: 'Guía Mayor Pro' },
     };
 
-    it('TC08 - happy path: eligible user enrolled successfully', async () => {
-      mockPrisma.enrollments.findFirst.mockResolvedValue(eligibleEnrollment);
+    const wireHappyPath = () => {
       mockPrisma.certifications.findUnique.mockResolvedValue({
         certification_id: CERT_ID,
         active: true,
       });
       mockPrisma.users_certifications.findFirst.mockResolvedValue(null);
+      mockPrisma.certification_versions.findFirst.mockResolvedValue(
+        publishedVersion,
+      );
+      mockEligibilityService.evaluateForVersion.mockResolvedValue(
+        eligibleResult,
+      );
       mockPrisma.users_certifications.create.mockResolvedValue(
         createdEnrollment,
       );
+    };
+
+    it('TC08 - happy path: eligible user enrolled successfully', async () => {
+      wireHappyPath();
 
       const result = await service.enrollUser(USER_ID, dto);
 
       expect(result.enrollment_id).toBe(ENROLLMENT_ID);
       expect(result.certification_id).toBe(CERT_ID);
+      expect(result.certification_version_id).toBe(7);
       expect(result.certification.name).toBe('Guía Mayor Pro');
       expect(result.active).toBe(true);
+      expect(mockPrisma.users_certifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            certification_version_id: 7,
+            status: 'ENROLLED',
+          }),
+        }),
+      );
     });
 
     it('TC09 - already enrolled → ConflictException', async () => {
-      mockPrisma.enrollments.findFirst.mockResolvedValue(eligibleEnrollment);
       mockPrisma.certifications.findUnique.mockResolvedValue({
         certification_id: CERT_ID,
         active: true,
@@ -308,10 +344,44 @@ describe('CertificationsService', () => {
       await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
         code: ErrorCode.CERT_ALREADY_ENROLLED,
       });
+      expect(mockEligibilityService.evaluateForVersion).not.toHaveBeenCalled();
     });
 
-    it('TC10 - not eligible (no INVESTIDO enrollment) → ForbiddenException', async () => {
-      mockPrisma.enrollments.findFirst.mockResolvedValue(null);
+    it('TC10 - not eligible per configured rules → ForbiddenException', async () => {
+      mockPrisma.certifications.findUnique.mockResolvedValue({
+        certification_id: CERT_ID,
+        active: true,
+      });
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(null);
+      mockPrisma.certification_versions.findFirst.mockResolvedValue(
+        publishedVersion,
+      );
+      mockEligibilityService.evaluateForVersion.mockResolvedValue({
+        eligible: false,
+        rules: [{ type: 'MIN_AGE', satisfied: false, reason_code: 'AGE_TOO_LOW' }],
+        reason_code: null,
+      });
+
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+        code: ErrorCode.CERT_ELIGIBILITY_REQUIRED,
+      });
+      expect(mockPrisma.users_certifications.create).not.toHaveBeenCalled();
+    });
+
+    it('TC10b - zero configured rules → not eligible with NO_RULES_CONFIGURED', async () => {
+      mockPrisma.certifications.findUnique.mockResolvedValue({
+        certification_id: CERT_ID,
+        active: true,
+      });
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(null);
+      mockPrisma.certification_versions.findFirst.mockResolvedValue(
+        publishedVersion,
+      );
+      mockEligibilityService.evaluateForVersion.mockResolvedValue({
+        eligible: false,
+        rules: [],
+        reason_code: 'NO_RULES_CONFIGURED',
+      });
 
       await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
         code: ErrorCode.CERT_ELIGIBILITY_REQUIRED,
@@ -319,16 +389,15 @@ describe('CertificationsService', () => {
     });
 
     it('TC11 - certification not found → NotFoundException', async () => {
-      mockPrisma.enrollments.findFirst.mockResolvedValue(eligibleEnrollment);
       mockPrisma.certifications.findUnique.mockResolvedValue(null);
 
       await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
         code: ErrorCode.CERT_NOT_FOUND,
       });
+      expect(mockEligibilityService.evaluateForVersion).not.toHaveBeenCalled();
     });
 
     it('TC12 - certification inactive → NotFoundException', async () => {
-      mockPrisma.enrollments.findFirst.mockResolvedValue(eligibleEnrollment);
       mockPrisma.certifications.findUnique.mockResolvedValue({
         certification_id: CERT_ID,
         active: false,
@@ -339,21 +408,109 @@ describe('CertificationsService', () => {
       });
     });
 
-    it('TC13 - validateEligibility queries enrollments with correct filters', async () => {
-      mockPrisma.enrollments.findFirst.mockResolvedValue(null);
+    it('TC13 - no PUBLISHED version → BadRequestException, eligibility never evaluated', async () => {
+      mockPrisma.certifications.findUnique.mockResolvedValue({
+        certification_id: CERT_ID,
+        active: true,
+      });
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(null);
+      mockPrisma.certification_versions.findFirst.mockResolvedValue(null);
 
       await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
-        code: ErrorCode.CERT_ELIGIBILITY_REQUIRED,
+        code: ErrorCode.CERT_VERSION_NOT_PUBLISHED,
       });
+      expect(mockEligibilityService.evaluateForVersion).not.toHaveBeenCalled();
+    });
 
-      expect(mockPrisma.enrollments.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            user_id: USER_ID,
-            investiture_status: 'INVESTIDO',
-          }),
+    it('TC13b - evaluates eligibility against the bound published version id', async () => {
+      wireHappyPath();
+
+      await service.enrollUser(USER_ID, dto);
+
+      expect(mockEligibilityService.evaluateForVersion).toHaveBeenCalledWith(
+        USER_ID,
+        publishedVersion.certification_version_id,
+      );
+    });
+
+    it('TC13c - concurrent enroll race: unique constraint violation on create → ConflictException', async () => {
+      wireHappyPath();
+      mockPrisma.users_certifications.create.mockRejectedValue(
+        Object.assign(new Error('Unique constraint failed'), {
+          code: 'P2002',
         }),
       );
+
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+        code: ErrorCode.CERT_ALREADY_ENROLLED,
+      });
+    });
+
+    it('TC13d - non-unique-constraint create failure propagates unchanged', async () => {
+      wireHappyPath();
+      const dbError = new Error('connection lost');
+      mockPrisma.users_certifications.create.mockRejectedValue(dbError);
+
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toBe(dbError);
+    });
+  });
+
+  // ==========================================================================
+  // getEligibility
+  // ==========================================================================
+
+  describe('getEligibility', () => {
+    it('TC-EL01 - delegates to eligibilityService.evaluateForCertification', async () => {
+      mockPrisma.certifications.findUnique.mockResolvedValue({
+        certification_id: CERT_ID,
+        active: true,
+      });
+      const eligibilityResult = {
+        eligible: true,
+        rules: [],
+        reason_code: null,
+      };
+      mockEligibilityService.evaluateForCertification.mockResolvedValue(
+        eligibilityResult,
+      );
+
+      const result = await service.getEligibility(USER_ID, CERT_ID);
+
+      expect(result).toEqual(eligibilityResult);
+      expect(
+        mockEligibilityService.evaluateForCertification,
+      ).toHaveBeenCalledWith(USER_ID, CERT_ID);
+    });
+
+    it('TC-EL02 - certification not found → NotFoundException', async () => {
+      mockPrisma.certifications.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.getEligibility(USER_ID, CERT_ID),
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_NOT_FOUND });
+    });
+
+    it('TC-EL03 - certification inactive → NotFoundException', async () => {
+      mockPrisma.certifications.findUnique.mockResolvedValue({
+        certification_id: CERT_ID,
+        active: false,
+      });
+
+      await expect(
+        service.getEligibility(USER_ID, CERT_ID),
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_NOT_FOUND });
+    });
+
+    it('TC-EL04 - no PUBLISHED version → BadRequestException', async () => {
+      mockPrisma.certifications.findUnique.mockResolvedValue({
+        certification_id: CERT_ID,
+        active: true,
+      });
+      mockEligibilityService.evaluateForCertification.mockResolvedValue(null);
+
+      await expect(
+        service.getEligibility(USER_ID, CERT_ID),
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_VERSION_NOT_PUBLISHED });
     });
   });
 
@@ -547,6 +704,40 @@ describe('CertificationsService', () => {
 
       expect(result.progress_percentage).toBe(0);
     });
+
+    it('TC22b - versioned enrollment: completed is projected from status === APPROVED, not the legacy completed boolean', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue({
+        ...enrollmentWithDetails,
+        certification_version_id: 7,
+      });
+      mockPrisma.certification_module_progress.findMany.mockResolvedValue([]);
+      mockPrisma.certification_section_progress.findMany.mockResolvedValue([
+        {
+          section_id: SECTION_ID,
+          status: 'APPROVED',
+          completed: false, // legacy flag intentionally stale/false
+          completion_date: null,
+        },
+        {
+          section_id: SECTION_ID + 1,
+          status: 'SUBMITTED',
+          completed: true, // legacy flag intentionally stale/true
+          completion_date: null,
+        },
+      ]);
+
+      const result = await service.getCertificationProgress(USER_ID, CERT_ID);
+
+      const approvedSection = result.modules[0].sections.find(
+        (s: { section_id: number }) => s.section_id === SECTION_ID,
+      );
+      const submittedSection = result.modules[0].sections.find(
+        (s: { section_id: number }) => s.section_id === SECTION_ID + 1,
+      );
+
+      expect(approvedSection!.completed).toBe(true);
+      expect(submittedSection!.completed).toBe(false);
+    });
   });
 
   // ==========================================================================
@@ -719,6 +910,23 @@ describe('CertificationsService', () => {
       await expect(
         service.updateProgress(USER_ID, CERT_ID, dto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
+    });
+
+    it('TC28b - versioned enrollment → legacy endpoint deprecated (410 Gone)', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue({
+        ...baseEnrollment,
+        certification_version_id: 7,
+      });
+
+      await expect(
+        service.updateProgress(USER_ID, CERT_ID, dto),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CERT_LEGACY_ENDPOINT_DEPRECATED,
+        status: 410,
+      });
+      expect(
+        txMock.certification_sections.findFirst,
+      ).not.toHaveBeenCalled();
     });
 
     it('TC29 - section does not belong to module/certification → BadRequestException', async () => {

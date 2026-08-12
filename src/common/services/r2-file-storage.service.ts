@@ -572,6 +572,18 @@ export class R2FileStorageService implements FileStorageService {
           ),
           isPublic: false,
         };
+      case StorageBucketAlias.CERTIFICATION_EVIDENCE:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_CERTIFICATION_EVIDENCE'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_CERTIFICATION_EVIDENCE',
+          ),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_CERTIFICATION_EVIDENCE',
+            'certifications/evidence',
+          ),
+          isPublic: false,
+        };
       default:
         throw new AppInternalServerErrorException(
           ErrorCode.R2_VALIDATION_FAILED,

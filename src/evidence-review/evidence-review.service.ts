@@ -1175,6 +1175,13 @@ export class EvidenceReviewService {
       );
     }
 
+    if (record.status !== CLASS_STATUS_SUBMITTED) {
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_NOT_PENDING,
+        { status: record.status },
+      );
+    }
+
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.class_section_progress.update({
