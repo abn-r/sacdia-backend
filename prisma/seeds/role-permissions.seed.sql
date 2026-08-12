@@ -2239,3 +2239,28 @@ WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
 ON CONFLICT (role_id, permission_id) DO UPDATE SET
   active = true,
   modified_at = now();
+
+-- configure: Local Field payment instructions (bank/cashier), same grantees
+-- as review (LF leadership + platform admins).
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'field-payment-orders:configure'
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'field-payment-orders:configure'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();

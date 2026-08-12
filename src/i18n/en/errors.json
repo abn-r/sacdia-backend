@@ -655,6 +655,7 @@
   "FIELD_PAYMENT_ORDER_PROOF_NOT_FOUND": "Payment proof not found",
   "FIELD_PAYMENT_ORDER_PROOF_INVALID_FILE": "Invalid proof file",
   "FIELD_PAYMENT_ORDER_CONFIG_NOT_FOUND": "The Local Field has no payment instructions configured",
+  "FIELD_PAYMENT_ORDER_CONFIG_INVALID": "The configuration must include at least one payment method (bank details or cashier instructions)",
   "FIELD_PAYMENT_ORDER_COST_NOT_CONFIGURED": "Registration cost is not configured; contact the Local Field",
   "FIELD_PAYMENT_ORDER_CYCLE_INVALID": "The insurance cycle is not valid for your club",
   "FIELD_PAYMENT_ORDER_CAMPOREE_INVALID": "The camporee is not valid for this order",

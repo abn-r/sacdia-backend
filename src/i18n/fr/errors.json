@@ -642,6 +642,7 @@
   "FIELD_PAYMENT_ORDER_PROOF_NOT_FOUND": "Justificatif de paiement introuvable",
   "FIELD_PAYMENT_ORDER_PROOF_INVALID_FILE": "Fichier de justificatif invalide",
   "FIELD_PAYMENT_ORDER_CONFIG_NOT_FOUND": "Le Champ Local n'a pas d'instructions de paiement configurées",
+  "FIELD_PAYMENT_ORDER_CONFIG_INVALID": "La configuration doit inclure au moins un moyen de paiement (coordonnées bancaires ou instructions de caisse)",
   "FIELD_PAYMENT_ORDER_COST_NOT_CONFIGURED": "Le coût d'inscription n'est pas configuré ; contactez le Champ Local",
   "FIELD_PAYMENT_ORDER_CYCLE_INVALID": "Le cycle d'assurance n'est pas valide pour votre club",
   "FIELD_PAYMENT_ORDER_CAMPOREE_INVALID": "Le camporee n'est pas valide pour cet ordre",

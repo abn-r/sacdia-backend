@@ -655,6 +655,7 @@
   "FIELD_PAYMENT_ORDER_PROOF_NOT_FOUND": "Comprobante de pago no encontrado",
   "FIELD_PAYMENT_ORDER_PROOF_INVALID_FILE": "Archivo de comprobante inválido",
   "FIELD_PAYMENT_ORDER_CONFIG_NOT_FOUND": "El Campo Local no tiene configuradas instrucciones de pago",
+  "FIELD_PAYMENT_ORDER_CONFIG_INVALID": "La configuración debe incluir al menos una vía de pago (datos bancarios o instrucciones de caja)",
   "FIELD_PAYMENT_ORDER_COST_NOT_CONFIGURED": "El costo de inscripción no está configurado; contacta al Campo Local",
   "FIELD_PAYMENT_ORDER_CYCLE_INVALID": "El ciclo de seguro no es válido para tu club",
   "FIELD_PAYMENT_ORDER_CAMPOREE_INVALID": "El camporee no es válido para esta orden",

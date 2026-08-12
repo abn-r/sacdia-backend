@@ -743,7 +743,8 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('field-payment-orders:create', 'Issue group field payment orders for own club section', true),
   ('field-payment-orders:upload-proof', 'Upload payment proof for own field payment orders', true),
   ('field-payment-orders:cancel', 'Cancel own field payment orders before approval', true),
-  ('field-payment-orders:review', 'Approve or reject field payment order proofs in the effective Local Field', true)
+  ('field-payment-orders:review', 'Approve or reject field payment order proofs in the effective Local Field', true),
+  ('field-payment-orders:configure', 'Manage Local Field payment instructions (bank/cashier) for payment orders', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,

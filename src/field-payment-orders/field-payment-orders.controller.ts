@@ -38,6 +38,11 @@ import {
   ListPaymentOrdersQueryDto,
   RejectPaymentOrderDto,
 } from './dto/field-payment-orders.dto';
+import {
+  GetFieldPaymentOrderConfigQueryDto,
+  UpsertFieldPaymentOrderConfigDto,
+} from './dto/field-payment-order-configs.dto';
+import { FieldPaymentOrderConfigsService } from './field-payment-order-configs.service';
 import { FieldPaymentOrdersService } from './field-payment-orders.service';
 import { resolveOrderActor } from './order-actor';
 import type { RequestWithProfile } from './order-actor';
@@ -48,7 +53,10 @@ import { ProofFileValidationPipe } from './proof-file-validation.pipe';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller()
 export class FieldPaymentOrdersController {
-  constructor(private readonly service: FieldPaymentOrdersService) {}
+  constructor(
+    private readonly service: FieldPaymentOrdersService,
+    private readonly configs: FieldPaymentOrderConfigsService,
+  ) {}
 
   @Post('insurance/payment-orders')
   @RequirePermissions('field-payment-orders:create')
@@ -122,6 +130,41 @@ export class FieldPaymentOrdersController {
     return {
       status: 'success',
       data: await this.service.reviewQueue(query, resolveOrderActor(request)),
+    };
+  }
+
+  @Get('payment-orders/config')
+  @RequirePermissions('field-payment-orders:configure')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Instrucciones de pago del Campo Local (banco/caja)',
+  })
+  async getConfig(
+    @Query() query: GetFieldPaymentOrderConfigQueryDto,
+    @Req() request: RequestWithProfile,
+  ) {
+    return {
+      status: 'success',
+      data: await this.configs.get(
+        query.local_field_id,
+        resolveOrderActor(request),
+      ),
+    };
+  }
+
+  @Post('payment-orders/config')
+  @RequirePermissions('field-payment-orders:configure')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Crear o actualizar instrucciones de pago del Campo Local',
+  })
+  async upsertConfig(
+    @Body() dto: UpsertFieldPaymentOrderConfigDto,
+    @Req() request: RequestWithProfile,
+  ) {
+    return {
+      status: 'success',
+      data: await this.configs.upsert(dto, resolveOrderActor(request)),
     };
   }
 
