@@ -9,10 +9,12 @@ import {
 } from 'class-validator';
 
 export class UpsertFieldPaymentOrderConfigDto {
+  /** Optional for LF leadership (resolved from actor); required for global admins. */
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  local_field_id!: number;
+  local_field_id?: number;
 
   @IsOptional()
   @IsString()

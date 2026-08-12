@@ -133,6 +133,20 @@ export class FieldPaymentOrdersController {
     };
   }
 
+  @Get('payment-orders/context')
+  @RequirePermissions('field-payment-orders:read')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({
+    summary:
+      'Disponibilidad del flujo de órdenes y ciclos de seguro aplicables a la sección activa',
+  })
+  async getContext(@Req() request: RequestWithProfile) {
+    return {
+      status: 'success',
+      data: await this.service.getIssuerContext(resolveOrderActor(request)),
+    };
+  }
+
   @Get('payment-orders/config')
   @RequirePermissions('field-payment-orders:configure')
   @AuthorizationResource({ type: 'global' })

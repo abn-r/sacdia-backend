@@ -178,6 +178,53 @@ export class FieldPaymentOrdersService {
     }
   }
 
+  // ── Issuer context (app) ──────────────────────────────────────────────────
+
+  /**
+   * Feature availability + applicable insurance cycles for the actor's active
+   * section, so mobile clients can decide between the order flow and legacy
+   * paths without extra round-trips.
+   */
+  async getIssuerContext(actor: OrderActor) {
+    const section = actor.activeSection;
+    if (!section) {
+      throw new AppForbiddenException(ErrorCode.FIELD_PAYMENT_ORDER_FORBIDDEN);
+    }
+
+    const sectionRow = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: section.club_section_id },
+      select: {
+        club_type_id: true,
+        clubs: { select: { local_field_id: true } },
+      },
+    });
+    const localFieldId = sectionRow?.clubs?.local_field_id;
+    if (!sectionRow || typeof localFieldId !== 'number') {
+      throw new AppForbiddenException(ErrorCode.FIELD_PAYMENT_ORDER_FORBIDDEN);
+    }
+
+    const enabled = await this.flag.isEnabledForLocalField(localFieldId);
+    const insuranceCycles = enabled
+      ? await this.prisma.insurance_cycle_configs.findMany({
+          where: {
+            local_field_id: localFieldId,
+            club_type_id: sectionRow.club_type_id,
+            active: true,
+            product: { active: true },
+          },
+          include: { product: true, ecclesiastical_year: true },
+          orderBy: { ecclesiastical_year_id: 'desc' },
+        })
+      : [];
+
+    return {
+      enabled,
+      local_field_id: localFieldId,
+      club_section_id: section.club_section_id,
+      insurance_cycles: insuranceCycles,
+    };
+  }
+
   // ── Read ──────────────────────────────────────────────────────────────────
 
   async list(query: ListPaymentOrdersQueryDto, actor: OrderActor) {

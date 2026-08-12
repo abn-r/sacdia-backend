@@ -405,4 +405,56 @@ describe('FieldPaymentOrdersService', () => {
       expect(where.local_field_id).toBe(7);
     });
   });
+
+  describe('getIssuerContext', () => {
+    beforeEach(() => {
+      prisma.club_sections = {
+        findUnique: jest.fn().mockResolvedValue({
+          club_type_id: 1,
+          clubs: { local_field_id: 7 },
+        }),
+      };
+      prisma.insurance_cycle_configs = {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ insurance_cycle_config_id: 33 }]),
+      };
+    });
+
+    it('returns enabled flag and applicable cycles for the active section', async () => {
+      const context = await service.getIssuerContext(directorActor());
+
+      expect(context).toEqual({
+        enabled: true,
+        local_field_id: 7,
+        club_section_id: 11,
+        insurance_cycles: [{ insurance_cycle_config_id: 33 }],
+      });
+      const where =
+        prisma.insurance_cycle_configs.findMany.mock.calls.at(-1)[0].where;
+      expect(where).toMatchObject({
+        local_field_id: 7,
+        club_type_id: 1,
+        active: true,
+      });
+    });
+
+    it('skips the cycle query when the flag is disabled', async () => {
+      flag.isEnabledForLocalField.mockResolvedValue(false);
+
+      const context = await service.getIssuerContext(directorActor());
+
+      expect(context.enabled).toBe(false);
+      expect(context.insurance_cycles).toEqual([]);
+      expect(prisma.insurance_cycle_configs.findMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects actors without an active section', async () => {
+      await expect(
+        service.getIssuerContext(directorActor({ activeSection: undefined })),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FIELD_PAYMENT_ORDER_FORBIDDEN,
+      });
+    });
+  });
 });
