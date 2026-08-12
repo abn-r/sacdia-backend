@@ -31,6 +31,7 @@ import { RbacModule } from './rbac/rbac.module';
 import { HealthController } from './health/health.controller';
 import { AdminModule } from './admin/admin.module';
 import { InsuranceModule } from './insurance/insurance.module';
+import { FieldPaymentOrdersModule } from './field-payment-orders/field-payment-orders.module';
 import { InvestitureModule } from './investiture/investiture.module';
 import { UnitsModule } from './units/units.module';
 import { DashboardModule } from './dashboard/dashboard.module';
@@ -214,6 +215,7 @@ import { UserAwareThrottlerGuard } from './config/user-aware-throttler.guard';
     RbacModule,
     AdminModule,
     InsuranceModule,
+    FieldPaymentOrdersModule,
     InvestitureModule,
     UnitsModule,
     DashboardModule,
