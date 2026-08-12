@@ -24,6 +24,10 @@ export interface OrderForFulfillment {
   club_section_id: number;
   insurance_cycle_config_id: number | null;
   local_camporee_id: number | null;
+  folio_reference: string;
+  issued_by_id: string;
+  unit_cost_centavos: number;
+  total_centavos: number;
   lines: Array<{
     field_payment_order_line_id: string;
     beneficiary_user_id: string;
