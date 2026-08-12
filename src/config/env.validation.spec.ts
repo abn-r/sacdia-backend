@@ -128,7 +128,7 @@ describe('infrastructure environment validation', () => {
       envValidationSchema
         .extract('PRISMA_POOL_IDLE_TIMEOUT_MS')
         .validate(undefined),
-    ).toMatchObject({ value: 30_000 });
+    ).toMatchObject({ value: 300_000 });
     expect(
       envValidationSchema.extract('PRISMA_POOL_MAX').validate(0).error,
     ).toBeDefined();

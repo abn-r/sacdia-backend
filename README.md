@@ -140,7 +140,9 @@ Ver `docs/BENCHMARKING.md` para perfiles, escenarios y lectura de capacidad esta
 - `DATABASE_APPLICATION_NAME` (default: `sacdia-backend`) — etiqueta visible en
   `pg_stat_activity` y dashboards del proveedor.
 - `PRISMA_POOL_MAX` (default: `20`) — conexiones máximas **por réplica**.
-- `PRISMA_POOL_IDLE_TIMEOUT_MS` (default: `30000`) — cierre de clientes inactivos.
+- `PRISMA_POOL_IDLE_TIMEOUT_MS` (default: `300000`) — cierre de clientes inactivos
+  (5 min; valores menores fuerzan handshake TLS ~500ms contra Neon en cada request
+  tras una pausa).
 - `PRISMA_POOL_CONNECTION_TIMEOUT_MS` (default: `15000`) — espera por conexión
   o cold start de Neon.
 - `PRISMA_POOL_KEEP_ALIVE_INITIAL_DELAY_MS` (default: `10000`) — demora del

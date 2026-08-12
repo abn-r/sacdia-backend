@@ -4,6 +4,7 @@ import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import type { BusinessDate } from '../common/clock/zoned-business-time.service';
 import type { CanonicalGeographicIanaTimezone } from '../common/timezone/canonical-geographic-iana-timezone';
+import { markExplicitAuditRecorded } from './audit-request-context';
 
 type AuditTransaction = {
   $queryRaw: Prisma.TransactionClient['$queryRaw'];
@@ -71,6 +72,9 @@ export class CriticalAuditWriterService {
     tx: AuditTransaction,
     event: CriticalAuditEvent,
   ): Promise<CriticalAuditWrite> {
+    // Durable events are the richest possible audit record for the request;
+    // flag the context so HttpAuditInterceptor skips its generic HTTP row.
+    markExplicitAuditRecorded();
     const data = this.data(event);
     const expected = this.canonical(this.comparable(data));
     await this.persistence(

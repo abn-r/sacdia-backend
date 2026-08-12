@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuditLogsService } from './audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { getAuditContext, runWithAuditContext } from './audit-request-context';
 
 describe('AuditLogsService', () => {
   let service: AuditLogsService;
@@ -83,9 +84,80 @@ describe('AuditLogsService', () => {
             club_id: null,
             actor_user_id: null,
             summary: null,
+            correlation_id: null,
+            source: 'service',
+            result: 'succeeded',
+            actor_kind: 'user',
           }),
         }),
       );
+    });
+
+    it('persists http-source rows with result and request_context', async () => {
+      mockPrisma.audit_logs.create.mockResolvedValue({ audit_log_id: 3n });
+
+      await service.recordEvent({
+        entity_type: 'clubs',
+        entity_id: '42',
+        action: 'UPDATED',
+        source: 'http',
+        result: 'failed',
+        actor_kind: 'anonymous',
+        request_context: { method: 'PATCH', status_code: 403 },
+      });
+
+      expect(mockPrisma.audit_logs.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            source: 'http',
+            result: 'failed',
+            actor_kind: 'anonymous',
+            request_context: { method: 'PATCH', status_code: 403 },
+          }),
+        }),
+      );
+    });
+
+    it('fills correlation_id from the ambient audit context', async () => {
+      mockPrisma.audit_logs.create.mockResolvedValue({ audit_log_id: 4n });
+      const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+      await runWithAuditContext(
+        () =>
+          service.recordEvent({
+            entity_type: 'club',
+            entity_id: '1',
+            action: 'CREATED',
+          }),
+        id,
+      );
+
+      expect(mockPrisma.audit_logs.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ correlation_id: id }),
+        }),
+      );
+    });
+
+    it('marks the dedup flag for service events but not for http rows', async () => {
+      mockPrisma.audit_logs.create.mockResolvedValue({ audit_log_id: 5n });
+
+      await runWithAuditContext(async () => {
+        await service.recordEvent({
+          entity_type: 'clubs',
+          entity_id: '1',
+          action: 'CREATED',
+          source: 'http',
+        });
+        expect(getAuditContext()?.explicitAuditRecorded).toBe(false);
+
+        await service.recordEvent({
+          entity_type: 'club',
+          entity_id: '1',
+          action: 'CREATED',
+        });
+        expect(getAuditContext()?.explicitAuditRecorded).toBe(true);
+      });
     });
   });
 

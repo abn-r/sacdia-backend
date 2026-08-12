@@ -1,15 +1,26 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  getAuditCorrelationId,
+  markExplicitAuditRecorded,
+} from './audit-request-context';
 
 export interface RecordEventDto {
   entity_type: string;
   entity_id: string;
-  action: 'CREATED' | 'UPDATED' | 'DELETED';
+  action: 'CREATED' | 'UPDATED' | 'DELETED' | (string & {});
   club_id?: number;
   actor_user_id?: string;
   summary?: string;
   changes?: Record<string, unknown>;
+  result?: 'succeeded' | 'failed';
+  /** 'service' (default) for domain events, 'http' for interceptor rows. */
+  source?: 'http' | 'service';
+  request_context?: Record<string, unknown>;
+  /** Defaults to the ambient request correlation id when available. */
+  correlation_id?: string;
+  actor_kind?: 'user' | 'anonymous' | 'system';
 }
 
 export interface AuditLogItem {
@@ -42,6 +53,12 @@ export class AuditLogsService {
    * callers are never blocked by audit-log failures.
    */
   async recordEvent(dto: RecordEventDto): Promise<void> {
+    const source = dto.source ?? 'service';
+    // Domain events mark the request context up front (even if the insert
+    // fails) so the HTTP interceptor never emits a redundant generic row.
+    if (source === 'service') {
+      markExplicitAuditRecorded();
+    }
     try {
       await this.prisma.audit_logs.create({
         data: {
@@ -55,6 +72,14 @@ export class AuditLogsService {
             dto.changes !== undefined
               ? (dto.changes as Prisma.InputJsonValue)
               : Prisma.JsonNull,
+          result: dto.result ?? 'succeeded',
+          source,
+          request_context:
+            dto.request_context !== undefined
+              ? (dto.request_context as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
+          correlation_id: dto.correlation_id ?? getAuditCorrelationId() ?? null,
+          actor_kind: dto.actor_kind ?? 'user',
         },
       });
     } catch (err) {
