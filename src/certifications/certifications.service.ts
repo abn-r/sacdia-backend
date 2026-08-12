@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   PaginationDto,
@@ -10,14 +10,19 @@ import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import {
   AppBadRequestException,
   AppConflictException,
+  AppException,
   AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { CertificationEligibilityService } from './eligibility/certification-eligibility.service';
 
 @Injectable()
 export class CertificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eligibilityService: CertificationEligibilityService,
+  ) {}
 
   // ========================================
   // CERTIFICATIONS
@@ -108,14 +113,14 @@ export class CertificationsService {
   // ========================================
 
   /**
-   * Inscribir un usuario en una certificación
-   * Solo permite Guías Mayores investidos
+   * Inscribir un usuario en una certificación.
+   *
+   * Elegibilidad configurable: se evalúan las reglas de la versión PUBLISHED
+   * (certification_eligibility_rules) vía CertificationEligibilityService en
+   * lugar del check de texto legado ("Guía Mayor" por nombre).
    */
   async enrollUser(userId: string, dto: EnrollCertificationDto) {
-    // 1. Validar que el usuario es Guía Mayor investido
-    await this.validateEligibility(userId);
-
-    // 2. Verificar que la certificación existe y está activa
+    // 1. Verificar que la certificación existe y está activa
     const certification = await this.prisma.certifications.findUnique({
       where: { certification_id: dto.certification_id },
     });
@@ -124,7 +129,7 @@ export class CertificationsService {
       throw new AppNotFoundException(ErrorCode.CERT_NOT_FOUND);
     }
 
-    // 3. Verificar si ya está inscrito
+    // 2. Verificar si ya está inscrito
     const existingEnrollment = await this.prisma.users_certifications.findFirst(
       {
         where: {
@@ -139,7 +144,7 @@ export class CertificationsService {
       throw new AppConflictException(ErrorCode.CERT_ALREADY_ENROLLED);
     }
 
-    // 3b. Bind the currently published version (engine expansion)
+    // 3. Bind the currently published version (engine expansion)
     const publishedVersion =
       await this.prisma.certification_versions.findFirst({
         where: {
@@ -154,25 +159,46 @@ export class CertificationsService {
       throw new AppBadRequestException(ErrorCode.CERT_VERSION_NOT_PUBLISHED);
     }
 
-    // 4. Crear enrollment
-    const enrollment = await this.prisma.users_certifications.create({
-      data: {
-        user_id: userId,
-        certification_id: dto.certification_id,
-        certification_version_id: publishedVersion.certification_version_id,
-        enrollment_date: new Date(),
-        status: 'ENROLLED',
-        completion_status: false,
-        active: true,
-      },
-      include: {
-        certifications: {
-          select: {
-            name: true,
+    // 4. Evaluar elegibilidad configurable contra las reglas de esa versión
+    const eligibility = await this.eligibilityService.evaluateForVersion(
+      userId,
+      publishedVersion.certification_version_id,
+    );
+
+    if (!eligibility.eligible) {
+      throw new AppForbiddenException(ErrorCode.CERT_ELIGIBILITY_REQUIRED, {
+        rules: eligibility.rules,
+        reason_code: eligibility.reason_code,
+      });
+    }
+
+    // 5. Crear enrollment (con defensa ante race condition en creación concurrente)
+    let enrollment;
+    try {
+      enrollment = await this.prisma.users_certifications.create({
+        data: {
+          user_id: userId,
+          certification_id: dto.certification_id,
+          certification_version_id: publishedVersion.certification_version_id,
+          enrollment_date: new Date(),
+          status: 'ENROLLED',
+          completion_status: false,
+          active: true,
+        },
+        include: {
+          certifications: {
+            select: {
+              name: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new AppConflictException(ErrorCode.CERT_ALREADY_ENROLLED);
+      }
+      throw error;
+    }
 
     return {
       enrollment_id: enrollment.enrollment_id,
@@ -191,32 +217,37 @@ export class CertificationsService {
   }
 
   /**
-   * Validar que el usuario es Guía Mayor investido
+   * Evaluar la elegibilidad configurable de un usuario para una certificación,
+   * contra las reglas de la versión PUBLISHED vigente.
    */
-  private async validateEligibility(userId: string): Promise<boolean> {
-    // Verificar que el usuario es Guía Mayor investido
-    const enrollment = await this.prisma.enrollments.findFirst({
-      where: {
-        user_id: userId,
-        investiture_status: 'INVESTIDO',
-        classes: {
-          name: 'Guía Mayor',
-        },
-      },
-      include: {
-        classes: {
-          select: {
-            name: true,
-          },
-        },
-      },
+  async getEligibility(userId: string, certificationId: number) {
+    const certification = await this.prisma.certifications.findUnique({
+      where: { certification_id: certificationId },
     });
 
-    if (!enrollment) {
-      throw new AppForbiddenException(ErrorCode.CERT_ELIGIBILITY_REQUIRED);
+    if (!certification || !certification.active) {
+      throw new AppNotFoundException(ErrorCode.CERT_NOT_FOUND);
     }
 
-    return true;
+    const result = await this.eligibilityService.evaluateForCertification(
+      userId,
+      certificationId,
+    );
+
+    if (!result) {
+      throw new AppBadRequestException(ErrorCode.CERT_VERSION_NOT_PUBLISHED);
+    }
+
+    return result;
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: string }).code === 'P2002'
+    );
   }
 
   /**
@@ -341,6 +372,12 @@ export class CertificationsService {
         },
       });
 
+    // Las inscripciones con versión (motor configurable) ya no marcan
+    // secciones con el booleano legado `completed`; el estado real vive en
+    // `certification_section_progress.status` (DRAFT/SUBMITTED/
+    // CHANGES_REQUESTED/APPROVED), gestionado por el flujo de requisitos.
+    const isVersionedEnrollment = Boolean(enrollment.certification_version_id);
+
     // Construir respuesta detallada
     const modules = enrollment.certifications.certification_modules.map(
       (module) => {
@@ -356,7 +393,9 @@ export class CertificationsService {
           return {
             section_id: section.section_id,
             name: section.name,
-            completed: sectionProgressData?.completed ?? false,
+            completed: isVersionedEnrollment
+              ? sectionProgressData?.status === 'APPROVED'
+              : (sectionProgressData?.completed ?? false),
             completion_date: sectionProgressData?.completion_date ?? null,
           };
         });
@@ -407,6 +446,17 @@ export class CertificationsService {
 
       if (!enrollment) {
         throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
+      }
+
+      // 1b. Las inscripciones con versión (motor configurable) ya no usan este
+      // endpoint legado; deben usar el flujo de requisitos por sección
+      // (CertificationRequirementsService: draft/submit).
+      if (enrollment.certification_version_id) {
+        throw new AppException(
+          ErrorCode.CERT_LEGACY_ENDPOINT_DEPRECATED,
+          HttpStatus.GONE,
+          { certification_version_id: enrollment.certification_version_id },
+        );
       }
 
       // 2. Validar que la sección pertenece al módulo y certificación

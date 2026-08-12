@@ -113,7 +113,7 @@ export class UserCertificationsController {
   @ApiOperation({
     summary: 'Inscribirse en una certificación',
     description:
-      'Permite a un Guía Mayor investido inscribirse en una certificación. Valida automáticamente elegibilidad.',
+      'Inscribe al usuario en la versión publicada vigente. Valida automáticamente la elegibilidad configurable (reglas de la versión).',
   })
   @ApiParam({
     name: 'userId',
@@ -123,7 +123,7 @@ export class UserCertificationsController {
   @ApiResponse({ status: 201, description: 'Inscripción creada exitosamente' })
   @ApiResponse({
     status: 403,
-    description: 'Usuario no es Guía Mayor investido',
+    description: 'Usuario no cumple las reglas de elegibilidad configuradas',
   })
   @ApiResponse({ status: 404, description: 'Certificación no encontrada' })
   @ApiResponse({
@@ -160,6 +160,43 @@ export class UserCertificationsController {
   })
   async getUserCertifications(@Param('userId', ParseUUIDPipe) userId: string) {
     const data = await this.certificationsService.getUserCertifications(userId);
+    return {
+      status: 'success',
+      data,
+    };
+  }
+
+  @Get('users/:userId/certifications/:certificationId/eligibility')
+  @RequirePermissions('user_certifications:read')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @ApiOperation({
+    summary: 'Consultar elegibilidad configurable de un usuario',
+    description:
+      'Evalúa las reglas de elegibilidad de la versión publicada vigente contra el usuario indicado (JSON explicable por regla).',
+  })
+  @ApiParam({
+    name: 'userId',
+    description: 'UUID del usuario',
+    example: 'uuid-123',
+  })
+  @ApiParam({
+    name: 'certificationId',
+    description: 'ID de la certificación',
+    example: 1,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Resultado de elegibilidad explicable por regla',
+  })
+  @ApiResponse({ status: 404, description: 'Certificación no encontrada' })
+  async getEligibility(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('certificationId', ParseIntPipe) certificationId: number,
+  ) {
+    const data = await this.certificationsService.getEligibility(
+      userId,
+      certificationId,
+    );
     return {
       status: 'success',
       data,
