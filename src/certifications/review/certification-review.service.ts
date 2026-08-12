@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -8,6 +8,11 @@ import {
   AppNotFoundException,
 } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../../common/services/file-storage.service';
+import type { FileStorageService } from '../../common/services/file-storage.service';
 import {
   assertReadyForCloseout,
   canTransitionEnrollment,
@@ -21,6 +26,7 @@ import type {
   ProgressSummary,
   RequirementProgressSnapshot,
 } from '../domain/certification-definition.types';
+import { SIGNED_DOWNLOAD_TTL_SECONDS } from '../evidence/certification-evidence.constants';
 import type { ApproveCertificationRequirementDto } from '../dto/review-certification-requirement.dto';
 import type { RequestCertificationRequirementChangesDto } from '../dto/review-certification-requirement.dto';
 
@@ -109,9 +115,20 @@ type ProgressWithTrayInclude = Prisma.certification_section_progressGetPayload<{
   include: typeof TRAY_INCLUDE;
 }>;
 
+export type EvidenceDownloadResult = {
+  url: string;
+  expires_in: number;
+  original_filename: string;
+  mime_type: string;
+};
+
 @Injectable()
 export class CertificationReviewService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+  ) {}
 
   // ---------------------------------------------------------------------------
   // TRAY
@@ -339,6 +356,49 @@ export class CertificationReviewService {
 
       return { progress_id: progressId, status: nextStatus };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVIDENCE DOWNLOAD (reviewer)
+  // ---------------------------------------------------------------------------
+
+  async getEvidenceDownloadUrl(
+    actor: CertificationReviewActor,
+    progressId: number,
+    evidenceId: number,
+  ): Promise<EvidenceDownloadResult> {
+    await this.getProgressInScopeOrThrow(actor, progressId);
+
+    const evidence = await this.prisma.certification_evidences.findFirst({
+      where: {
+        evidence_id: evidenceId,
+        active: true,
+        certification_component_responses: { progress_id: progressId },
+      },
+    });
+
+    if (!evidence) {
+      throw new AppNotFoundException(ErrorCode.RECORD_NOT_FOUND);
+    }
+
+    if (evidence.upload_status !== 'CONFIRMED') {
+      throw new AppBadRequestException(ErrorCode.CERT_REQUIREMENT_INCOMPLETE, {
+        reason: 'evidence_not_confirmed',
+      });
+    }
+
+    const url = await this.fileStorage.getSignedDownloadUrl(
+      StorageBucketAlias.CERTIFICATION_EVIDENCE,
+      evidence.object_key,
+      { expiresInSeconds: SIGNED_DOWNLOAD_TTL_SECONDS },
+    );
+
+    return {
+      url,
+      expires_in: SIGNED_DOWNLOAD_TTL_SECONDS,
+      original_filename: evidence.original_filename,
+      mime_type: evidence.mime_type,
+    };
   }
 
   // ==========================================================================

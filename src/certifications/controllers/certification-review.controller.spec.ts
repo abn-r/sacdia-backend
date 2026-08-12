@@ -16,6 +16,7 @@ const makeServiceMock = () => ({
   getDetail: jest.fn(),
   approve: jest.fn(),
   requestChanges: jest.fn(),
+  getEvidenceDownloadUrl: jest.fn(),
 });
 
 const buildRequest = (overrides: Record<string, unknown> = {}) => ({
@@ -210,6 +211,37 @@ describe('CertificationReviewController', () => {
       expect(result).toEqual({
         status: 'success',
         data: { progress_id: PROGRESS_ID, status: 'CHANGES_REQUESTED' },
+      });
+    });
+
+    it('getEvidenceDownload delegates to the service', async () => {
+      const EVIDENCE_ID = 55;
+      service.getEvidenceDownloadUrl.mockResolvedValue({
+        url: 'https://signed.example/acta.pdf',
+        expires_in: 900,
+        original_filename: 'acta.pdf',
+        mime_type: 'application/pdf',
+      });
+
+      const result = await controller.getEvidenceDownload(
+        buildRequest() as any,
+        PROGRESS_ID,
+        EVIDENCE_ID,
+      );
+
+      expect(service.getEvidenceDownloadUrl).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: REVIEWER_ID }),
+        PROGRESS_ID,
+        EVIDENCE_ID,
+      );
+      expect(result).toEqual({
+        status: 'success',
+        data: {
+          url: 'https://signed.example/acta.pdf',
+          expires_in: 900,
+          original_filename: 'acta.pdf',
+          mime_type: 'application/pdf',
+        },
       });
     });
   });

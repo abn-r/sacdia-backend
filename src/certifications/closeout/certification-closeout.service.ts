@@ -27,6 +27,7 @@ import {
   assertAllowedEvidenceFile,
   assertConfirmedObjectMatches,
   extractSafeExtension,
+  SIGNED_DOWNLOAD_TTL_SECONDS,
   SIGNED_UPLOAD_TTL_SECONDS,
 } from '../evidence/certification-evidence.constants';
 import type { PresignCertificationCloseoutEvidenceDto } from '../dto/review-certification-closeout.dto';
@@ -239,7 +240,9 @@ export class CertificationCloseoutService {
 
     const rows = await this.prisma.users_certifications.findMany({
       where: {
-        status: 'SUBMITTED_FOR_FINAL_REVIEW',
+        // APPROVED included so Certify action is available after closeout
+        // approval without a separate tray (UI Task 4).
+        status: { in: ['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED'] },
         active: true,
         ...(actor.globalAccess
           ? {}
@@ -275,11 +278,49 @@ export class CertificationCloseoutService {
             closeout_evidence_id:
               row.certification_closeout_evidences[0].closeout_evidence_id,
             review_status: row.certification_closeout_evidences[0].review_status,
+            upload_status: row.certification_closeout_evidences[0].upload_status,
             original_filename:
               row.certification_closeout_evidences[0].original_filename,
+            mime_type: row.certification_closeout_evidences[0].mime_type,
           }
         : null,
     }));
+  }
+
+  async getCloseoutEvidenceDownloadUrl(
+    actor: CertificationCloseoutReviewActor,
+    enrollmentId: number,
+  ) {
+    await this.getEnrollmentInScopeOrThrow(actor, enrollmentId);
+
+    const evidence =
+      await this.prisma.certification_closeout_evidences.findFirst({
+        where: { enrollment_id: enrollmentId, active: true },
+        orderBy: { created_at: 'desc' },
+      });
+
+    if (!evidence) {
+      throw new AppNotFoundException(ErrorCode.RECORD_NOT_FOUND);
+    }
+
+    if (evidence.upload_status !== 'CONFIRMED') {
+      throw new AppBadRequestException(ErrorCode.CERT_CLOSEOUT_INCOMPLETE, {
+        reason: 'closeout_evidence_not_confirmed',
+      });
+    }
+
+    const url = await this.fileStorage.getSignedDownloadUrl(
+      StorageBucketAlias.CERTIFICATION_EVIDENCE,
+      evidence.object_key,
+      { expiresInSeconds: SIGNED_DOWNLOAD_TTL_SECONDS },
+    );
+
+    return {
+      url,
+      expires_in: SIGNED_DOWNLOAD_TTL_SECONDS,
+      original_filename: evidence.original_filename,
+      mime_type: evidence.mime_type,
+    };
   }
 
   async approveCloseoutEvidence(

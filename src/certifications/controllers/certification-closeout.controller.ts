@@ -141,6 +141,33 @@ export class CertificationCloseoutController {
     return { status: 'success', data };
   }
 
+  @Get('reviews/final/:enrollmentId/closeout-evidence/download')
+  @RequirePermissions('certifications:review')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Obtener URL firmada del comprobante de junta (revisor)',
+    description:
+      'Re-verifica el alcance institucional y exige comprobante activo CONFIRMED. No acepta object keys del cliente.',
+  })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
+  @ApiResponse({ status: 200, description: 'URL firmada de descarga' })
+  @ApiResponse({
+    status: 403,
+    description: 'Fuera del alcance institucional del revisor',
+  })
+  @ApiResponse({ status: 404, description: 'Comprobante no encontrado' })
+  async getCloseoutEvidenceDownload(
+    @Req() request: RequestWithProfile,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
+  ) {
+    const actor = this.resolveActor(request);
+    const data = await this.closeoutService.getCloseoutEvidenceDownloadUrl(
+      actor,
+      enrollmentId,
+    );
+    return { status: 'success', data };
+  }
+
   @Post('reviews/final/:enrollmentId/approve-closeout-evidence')
   @RequirePermissions('certifications:review')
   @AuthorizationResource({ type: 'global' })

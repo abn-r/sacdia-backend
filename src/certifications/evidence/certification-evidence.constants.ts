@@ -20,8 +20,8 @@ export const CERTIFICATION_EVIDENCE_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 /** TTL de URLs firmadas de subida: 15 minutos. */
 export const SIGNED_UPLOAD_TTL_SECONDS = 15 * 60;
 
-/** TTL de URLs firmadas de descarga (revisión): 1 hora. */
-export const SIGNED_DOWNLOAD_TTL_SECONDS = 60 * 60;
+/** TTL de URLs firmadas de descarga (revisión): 15 minutos. */
+export const SIGNED_DOWNLOAD_TTL_SECONDS = 15 * 60;
 
 /** Tolerancia entre tamaño anunciado y real en R2 antes de rechazar (1%). */
 export const FILE_SIZE_TOLERANCE_RATIO = 0.01;

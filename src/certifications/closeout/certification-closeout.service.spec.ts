@@ -87,12 +87,17 @@ const mockPrisma = {
   $transaction: jest.fn(),
   users_certifications: {
     findMany: jest.fn(),
+    findFirst: jest.fn(),
+  },
+  certification_closeout_evidences: {
+    findFirst: jest.fn(),
   },
 };
 
 const mockFileStorage = {
   getSignedUploadUrl: jest.fn(),
   getObjectInfo: jest.fn(),
+  getSignedDownloadUrl: jest.fn(),
 };
 
 const wireAllRequiredApproved = (tx: TxMock) => {
@@ -482,7 +487,7 @@ describe('CertificationCloseoutService', () => {
       expect(mockPrisma.users_certifications.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            status: 'SUBMITTED_FOR_FINAL_REVIEW',
+            status: { in: ['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED'] },
             users: { local_field_id: LOCAL_FIELD_ID },
           }),
         }),
@@ -496,6 +501,129 @@ describe('CertificationCloseoutService', () => {
 
       const callArg = mockPrisma.users_certifications.findMany.mock.calls[0][0];
       expect(callArg.where.users).toBeUndefined();
+    });
+
+    it('TC21b - tray includes SUBMITTED_FOR_FINAL_REVIEW and APPROVED with closeout metadata', async () => {
+      mockPrisma.users_certifications.findMany.mockResolvedValue([
+        {
+          enrollment_id: ENROLLMENT_ID,
+          status: 'SUBMITTED_FOR_FINAL_REVIEW',
+          submitted_at: new Date('2026-01-02'),
+          users: {
+            user_id: USER_ID,
+            name: 'Ana',
+            paternal_last_name: 'López',
+          },
+          certifications: { certification_id: CERT_ID, name: 'Capacitación' },
+          certification_closeout_evidences: [
+            {
+              closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
+              review_status: 'SUBMITTED',
+              upload_status: 'CONFIRMED',
+              original_filename: 'junta.pdf',
+              mime_type: 'application/pdf',
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getFinalTray(localReviewer);
+
+      expect(mockPrisma.users_certifications.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { in: ['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED'] },
+          }),
+        }),
+      );
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          enrollment_id: ENROLLMENT_ID,
+          closeout_evidence: {
+            closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
+            review_status: 'SUBMITTED',
+            upload_status: 'CONFIRMED',
+            original_filename: 'junta.pdf',
+            mime_type: 'application/pdf',
+          },
+        }),
+      );
+    });
+  });
+
+  // ==========================================================================
+  // getCloseoutEvidenceDownloadUrl
+  // ==========================================================================
+
+  describe('getCloseoutEvidenceDownloadUrl', () => {
+    const OBJECT_KEY = `enrollment-${ENROLLMENT_ID}/closeout/uuid.pdf`;
+    const confirmedCloseout = {
+      closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
+      object_key: OBJECT_KEY,
+      original_filename: 'junta.pdf',
+      mime_type: 'application/pdf',
+      upload_status: 'CONFIRMED',
+      active: true,
+    };
+
+    const enrollmentInScope = {
+      ...readyEnrollment,
+      status: 'SUBMITTED_FOR_FINAL_REVIEW',
+      users: { local_field_id: LOCAL_FIELD_ID },
+    };
+
+    it('TC34 - reviewer out of scope → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue({
+        ...enrollmentInScope,
+        users: { local_field_id: OTHER_LOCAL_FIELD_ID },
+      });
+
+      await expect(
+        service.getCloseoutEvidenceDownloadUrl(localReviewer, ENROLLMENT_ID),
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_REVIEW_SCOPE_FORBIDDEN });
+      expect(mockFileStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('TC35 - no confirmed closeout evidence → not found', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(
+        enrollmentInScope,
+      );
+      mockPrisma.certification_closeout_evidences.findFirst.mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        service.getCloseoutEvidenceDownloadUrl(localReviewer, ENROLLMENT_ID),
+      ).rejects.toMatchObject({ code: ErrorCode.RECORD_NOT_FOUND });
+    });
+
+    it('TC36 - happy path returns signed URL for confirmed closeout evidence', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue(
+        enrollmentInScope,
+      );
+      mockPrisma.certification_closeout_evidences.findFirst.mockResolvedValue(
+        confirmedCloseout,
+      );
+      mockFileStorage.getSignedDownloadUrl.mockResolvedValue(
+        'https://signed.example/junta.pdf',
+      );
+
+      const result = await service.getCloseoutEvidenceDownloadUrl(
+        localReviewer,
+        ENROLLMENT_ID,
+      );
+
+      expect(result).toEqual({
+        url: 'https://signed.example/junta.pdf',
+        expires_in: 15 * 60,
+        original_filename: 'junta.pdf',
+        mime_type: 'application/pdf',
+      });
+      expect(mockFileStorage.getSignedDownloadUrl).toHaveBeenCalledWith(
+        'CERTIFICATION_EVIDENCE',
+        OBJECT_KEY,
+        { expiresInSeconds: 15 * 60 },
+      );
     });
   });
 

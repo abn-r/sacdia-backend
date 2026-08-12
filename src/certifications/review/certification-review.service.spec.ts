@@ -4,6 +4,7 @@ import {
   type CertificationReviewActor,
 } from './certification-review.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import { ErrorCode } from '../../common/errors/error-codes';
 import type { ApproveCertificationRequirementDto } from '../dto/review-certification-requirement.dto';
 import type { RequestCertificationRequirementChangesDto } from '../dto/review-certification-requirement.dto';
@@ -112,6 +113,14 @@ const mockPrisma = {
   certification_sections: {
     findUnique: jest.fn(),
   },
+  certification_evidences: {
+    findFirst: jest.fn(),
+    update: jest.fn(),
+  },
+};
+
+const mockFileStorage = {
+  getSignedDownloadUrl: jest.fn(),
 };
 
 describe('CertificationReviewService', () => {
@@ -133,6 +142,7 @@ describe('CertificationReviewService', () => {
       providers: [
         CertificationReviewService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorage },
       ],
     }).compile();
 
@@ -568,6 +578,98 @@ describe('CertificationReviewService', () => {
         }),
       );
       expect(result.status).toBe('CHANGES_REQUESTED');
+    });
+  });
+
+  // ==========================================================================
+  // getEvidenceDownloadUrl
+  // ==========================================================================
+
+  describe('getEvidenceDownloadUrl', () => {
+    const EVIDENCE_ID = 55;
+    const OBJECT_KEY = 'enrollment-42/requirement-100/component-1/uuid.pdf';
+
+    const confirmedEvidence = {
+      evidence_id: EVIDENCE_ID,
+      object_key: OBJECT_KEY,
+      original_filename: 'acta.pdf',
+      mime_type: 'application/pdf',
+      upload_status: 'CONFIRMED',
+      active: true,
+      certification_component_responses: {
+        progress_id: PROGRESS_ID,
+      },
+    };
+
+    beforeEach(() => {
+      mockPrisma.certification_section_progress.findFirst.mockResolvedValue(
+        baseProgress,
+      );
+      mockPrisma.users.findUnique.mockResolvedValue({
+        local_field_id: LOCAL_FIELD_ID,
+      });
+    });
+
+    it('TC30 - reviewer out of scope → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
+      mockPrisma.users.findUnique.mockResolvedValue({
+        local_field_id: OTHER_LOCAL_FIELD_ID,
+      });
+
+      await expect(
+        service.getEvidenceDownloadUrl(localReviewer, PROGRESS_ID, EVIDENCE_ID),
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_REVIEW_SCOPE_FORBIDDEN });
+      expect(mockFileStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('TC31 - evidence belonging to another progress → not found', async () => {
+      mockPrisma.certification_evidences.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getEvidenceDownloadUrl(localReviewer, PROGRESS_ID, EVIDENCE_ID),
+      ).rejects.toMatchObject({ code: ErrorCode.RECORD_NOT_FOUND });
+      expect(mockFileStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('TC32 - evidence not CONFIRMED → bad request', async () => {
+      mockPrisma.certification_evidences.findFirst.mockResolvedValue({
+        ...confirmedEvidence,
+        upload_status: 'PENDING_UPLOAD',
+      });
+
+      await expect(
+        service.getEvidenceDownloadUrl(localReviewer, PROGRESS_ID, EVIDENCE_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE,
+      });
+      expect(mockFileStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('TC33 - happy path returns signed URL without persisting it', async () => {
+      mockPrisma.certification_evidences.findFirst.mockResolvedValue(
+        confirmedEvidence,
+      );
+      mockFileStorage.getSignedDownloadUrl.mockResolvedValue(
+        'https://signed.example/acta.pdf',
+      );
+
+      const result = await service.getEvidenceDownloadUrl(
+        localReviewer,
+        PROGRESS_ID,
+        EVIDENCE_ID,
+      );
+
+      expect(result).toEqual({
+        url: 'https://signed.example/acta.pdf',
+        expires_in: 15 * 60,
+        original_filename: 'acta.pdf',
+        mime_type: 'application/pdf',
+      });
+      expect(mockFileStorage.getSignedDownloadUrl).toHaveBeenCalledWith(
+        'CERTIFICATION_EVIDENCE',
+        OBJECT_KEY,
+        { expiresInSeconds: 15 * 60 },
+      );
+      expect(mockPrisma.certification_evidences.update).not.toHaveBeenCalled();
     });
   });
 });

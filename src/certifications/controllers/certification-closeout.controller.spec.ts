@@ -22,6 +22,7 @@ const makeServiceMock = () => ({
   confirmCloseoutEvidence: jest.fn(),
   submitFinal: jest.fn(),
   getFinalTray: jest.fn(),
+  getCloseoutEvidenceDownloadUrl: jest.fn(),
   approveCloseoutEvidence: jest.fn(),
   requestChanges: jest.fn(),
   certify: jest.fn(),
@@ -270,6 +271,34 @@ describe('CertificationCloseoutController', () => {
       expect(result).toEqual({
         status: 'success',
         data: [{ enrollment_id: ENROLLMENT_ID }],
+      });
+    });
+
+    it('getCloseoutEvidenceDownload delegates to the service', async () => {
+      service.getCloseoutEvidenceDownloadUrl.mockResolvedValue({
+        url: 'https://signed.example/junta.pdf',
+        expires_in: 900,
+        original_filename: 'junta.pdf',
+        mime_type: 'application/pdf',
+      });
+
+      const result = await controller.getCloseoutEvidenceDownload(
+        buildRequest() as any,
+        ENROLLMENT_ID,
+      );
+
+      expect(service.getCloseoutEvidenceDownloadUrl).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: REVIEWER_ID }),
+        ENROLLMENT_ID,
+      );
+      expect(result).toEqual({
+        status: 'success',
+        data: {
+          url: 'https://signed.example/junta.pdf',
+          expires_in: 900,
+          original_filename: 'junta.pdf',
+          mime_type: 'application/pdf',
+        },
       });
     });
 

@@ -131,6 +131,34 @@ export class CertificationReviewController {
     return { status: 'success', data };
   }
 
+  @Get('requirements/:progressId/evidences/:evidenceId/download')
+  @ApiOperation({
+    summary: 'Obtener URL firmada de descarga de evidencia (revisor)',
+    description:
+      'Re-verifica el alcance institucional, exige evidencia activa y CONFIRMED, y devuelve una URL efímera. No acepta object keys del cliente.',
+  })
+  @ApiParam({ name: 'progressId', description: 'ID del progreso de sección' })
+  @ApiParam({ name: 'evidenceId', description: 'ID de la evidencia' })
+  @ApiResponse({ status: 200, description: 'URL firmada de descarga' })
+  @ApiResponse({
+    status: 403,
+    description: 'Fuera del alcance institucional del revisor',
+  })
+  @ApiResponse({ status: 404, description: 'Evidencia no encontrada' })
+  async getEvidenceDownload(
+    @Req() request: RequestWithProfile,
+    @Param('progressId', ParseIntPipe) progressId: number,
+    @Param('evidenceId', ParseIntPipe) evidenceId: number,
+  ) {
+    const actor = this.resolveActor(request);
+    const data = await this.reviewService.getEvidenceDownloadUrl(
+      actor,
+      progressId,
+      evidenceId,
+    );
+    return { status: 'success', data };
+  }
+
   private resolveActor(request: RequestWithProfile): CertificationReviewActor {
     const userId =
       request.user?.sub ?? request.user?.user_id ?? request.user?.userId;
