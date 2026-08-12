@@ -642,5 +642,6 @@
   "CERT_EVIDENCE_TOO_LARGE": "Evidence file exceeds the maximum allowed size",
   "CERT_REVIEW_SCOPE_FORBIDDEN": "You lack institutional scope to review this case",
   "CERT_CLOSEOUT_INCOMPLETE": "Required requirements or board evidence are incomplete",
-  "CERT_CONCURRENT_UPDATE": "A concurrent change updated this record; retry"
+  "CERT_CONCURRENT_UPDATE": "A concurrent change updated this record; retry",
+  "CERT_LEGACY_ENDPOINT_DEPRECATED": "This legacy endpoint is deprecated for versioned enrollments; use the requirement flow"
 }

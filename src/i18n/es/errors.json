@@ -642,5 +642,6 @@
   "CERT_EVIDENCE_TOO_LARGE": "El archivo de evidencia supera el tamaño máximo permitido",
   "CERT_REVIEW_SCOPE_FORBIDDEN": "No tienes alcance institucional para revisar este expediente",
   "CERT_CLOSEOUT_INCOMPLETE": "Faltan requisitos obligatorios aprobados o el comprobante de junta",
-  "CERT_CONCURRENT_UPDATE": "Otro cambio concurrente actualizó este registro; reintenta"
+  "CERT_CONCURRENT_UPDATE": "Otro cambio concurrente actualizó este registro; reintenta",
+  "CERT_LEGACY_ENDPOINT_DEPRECATED": "Este endpoint legacy está deprecado para inscripciones versionadas; usa el flujo por requisito"
 }

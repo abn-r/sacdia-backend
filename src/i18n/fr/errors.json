@@ -629,5 +629,6 @@
   "CERT_EVIDENCE_TOO_LARGE": "Le fichier de preuve dépasse la taille maximale autorisée",
   "CERT_REVIEW_SCOPE_FORBIDDEN": "Vous n'avez pas la portée institutionnelle pour examiner ce dossier",
   "CERT_CLOSEOUT_INCOMPLETE": "Exigences obligatoires ou preuve de conseil incomplètes",
-  "CERT_CONCURRENT_UPDATE": "Une modification concurrente a mis à jour cet enregistrement ; réessayez"
+  "CERT_CONCURRENT_UPDATE": "Une modification concurrente a mis à jour cet enregistrement ; réessayez",
+  "CERT_LEGACY_ENDPOINT_DEPRECATED": "Cet endpoint legacy est déprécié pour les inscriptions versionnées ; utilisez le flux par exigence"
 }

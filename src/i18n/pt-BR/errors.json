@@ -629,5 +629,6 @@
   "CERT_EVIDENCE_TOO_LARGE": "O arquivo de evidência excede o tamanho máximo permitido",
   "CERT_REVIEW_SCOPE_FORBIDDEN": "Você não tem escopo institucional para revisar este expediente",
   "CERT_CLOSEOUT_INCOMPLETE": "Requisitos obrigatórios ou comprovante de junta incompletos",
-  "CERT_CONCURRENT_UPDATE": "Uma alteração concorrente atualizou este registro; tente novamente"
+  "CERT_CONCURRENT_UPDATE": "Uma alteração concorrente atualizou este registro; tente novamente",
+  "CERT_LEGACY_ENDPOINT_DEPRECATED": "Este endpoint legado está deprecado para inscrições versionadas; use o fluxo por requisito"
 }
