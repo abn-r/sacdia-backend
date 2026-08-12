@@ -282,6 +282,7 @@ describe('FieldPaymentOrdersService', () => {
         field_payment_order_proof_id: 'p1',
         uploaded_by_id: 'director-1',
         status: 'SUBMITTED',
+        created_at: new Date('2026-08-12T00:00:00Z'),
       });
       tx.field_payment_orders.update.mockResolvedValue({
         ...submittedOrder,

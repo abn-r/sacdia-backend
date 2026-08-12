@@ -62,6 +62,11 @@ export class FieldPaymentOrdersService {
       : this.camporeeFulfillment;
   }
 
+  /** Structured lifecycle events for dashboards/log-based counters. */
+  private logEvent(event: string, payload: Record<string, unknown>) {
+    this.logger.log(JSON.stringify({ event: `field_payment_order.${event}`, ...payload }));
+  }
+
   // ── Create ────────────────────────────────────────────────────────────────
 
   async createInsuranceOrder(
@@ -129,7 +134,7 @@ export class FieldPaymentOrdersService {
       prepared.unit_cost_centavos * prepared.beneficiary_user_ids.length;
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(async (tx) => {
         const { folio, folio_reference } = await this.folio.allocate(
           tx,
           prepared.local_field_id,
@@ -165,6 +170,14 @@ export class FieldPaymentOrdersService {
           include: { lines: true },
         });
       });
+      this.logEvent('issued', {
+        order_id: created.field_payment_order_id,
+        purpose,
+        local_field_id: created.local_field_id,
+        beneficiaries: prepared.beneficiary_user_ids.length,
+        total_centavos: totalCentavos,
+      });
+      return created;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -275,7 +288,7 @@ export class FieldPaymentOrdersService {
     if (order.status === 'EXPIRED') {
       throw new AppBadRequestException(ErrorCode.FIELD_PAYMENT_ORDER_EXPIRED);
     }
-    return this.proofs.upload(
+    const result = await this.proofs.upload(
       {
         field_payment_order_id: order.field_payment_order_id,
         local_field_id: order.local_field_id,
@@ -284,6 +297,11 @@ export class FieldPaymentOrdersService {
       file,
       { userId: actor.userId },
     );
+    this.logEvent('proof_submitted', {
+      order_id: order.field_payment_order_id,
+      local_field_id: order.local_field_id,
+    });
+    return result;
   }
 
   async cancel(orderId: string, actor: OrderActor) {
@@ -304,6 +322,12 @@ export class FieldPaymentOrdersService {
       await tx.field_payment_order_lines.updateMany({
         where: { field_payment_order_id: orderId },
         data: { active_guard: false },
+      });
+      return updated;
+    }).then((updated) => {
+      this.logEvent('cancelled', {
+        order_id: orderId,
+        local_field_id: updated.local_field_id,
       });
       return updated;
     });
@@ -351,6 +375,7 @@ export class FieldPaymentOrdersService {
 
     const port = this.portFor(order.purpose as OrderPurpose);
     const now = new Date();
+    let fulfillStarted = false;
 
     return this.prisma.$transaction(async (tx) => {
       // Re-read inside TX to serialize concurrent approvals on the same order.
@@ -367,6 +392,7 @@ export class FieldPaymentOrdersService {
         include: { lines: { orderBy: { sequence: 'asc' } } },
       });
 
+      fulfillStarted = true;
       await port.fulfill(tx, fresh as unknown as OrderForFulfillment, actor);
 
       await tx.field_payment_order_proofs.update({
@@ -380,7 +406,24 @@ export class FieldPaymentOrdersService {
         },
       });
       return fresh;
+    }).then((fresh) => {
+      this.logEvent('approved', {
+        order_id: orderId,
+        purpose: order.purpose,
+        local_field_id: order.local_field_id,
+        // Latencia de revisión: comprobante enviado → aprobación.
+        approve_latency_ms: now.getTime() - proof.created_at.getTime(),
+      });
+      return fresh;
     }).catch((error) => {
+      if (fulfillStarted) {
+        this.logEvent('fulfill_fail', {
+          order_id: orderId,
+          purpose: order.purpose,
+          local_field_id: order.local_field_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2025'
@@ -432,6 +475,12 @@ export class FieldPaymentOrdersService {
         where: { field_payment_order_id: orderId },
         data: { status: 'PROOF_REJECTED' },
       });
+    }).then((updated) => {
+      this.logEvent('rejected', {
+        order_id: orderId,
+        local_field_id: updated.local_field_id,
+      });
+      return updated;
     });
   }
 
@@ -541,9 +590,7 @@ export class FieldPaymentOrdersService {
         data: { active_guard: false },
       });
     });
-    this.logger.log(
-      `field_payment_order expired lazily: ${order.field_payment_order_id}`,
-    );
+    this.logEvent('expired', { order_id: order.field_payment_order_id });
     return { ...order, status: 'EXPIRED', expired_at: now } as T;
   }
 
@@ -568,7 +615,7 @@ export class FieldPaymentOrdersService {
         data: { active_guard: false },
       });
     });
-    this.logger.log(`field_payment_orders expired lazily: ${ids.length}`);
+    this.logEvent('expired', { count: ids.length, order_ids: ids });
   }
 
   private async buildPdfModel(order: {
