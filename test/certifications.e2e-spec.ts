@@ -283,7 +283,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
     it('rejects a disallowed MIME type at the DTO whitelist before touching the database', async () => {
       await request(app.getHttpServer())
         .post(
-          `/api/v1/certifications/users/${PARTICIPANT_ID}/certifications/${CERTIFICATION_ID}/requirements/${SECTION_ID}/evidences/presign`,
+          `/api/v1/certifications/users/${PARTICIPANT_ID}/certification-enrollments/${ENROLLMENT_ID}/requirements/${SECTION_ID}/evidences/presign`,
         )
         .set(authHeaders(PARTICIPANT_ID))
         .send({
@@ -302,7 +302,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
     it('rejects a declared size over the limit with a stable domain error code', async () => {
       const response = await request(app.getHttpServer())
         .post(
-          `/api/v1/certifications/users/${PARTICIPANT_ID}/certifications/${CERTIFICATION_ID}/requirements/${SECTION_ID}/evidences/presign`,
+          `/api/v1/certifications/users/${PARTICIPANT_ID}/certification-enrollments/${ENROLLMENT_ID}/requirements/${SECTION_ID}/evidences/presign`,
         )
         .set(authHeaders(PARTICIPANT_ID))
         .send({
@@ -343,7 +343,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
 
       const response = await request(app.getHttpServer())
         .post(
-          `/api/v1/certifications/users/${PARTICIPANT_ID}/certifications/${CERTIFICATION_ID}/requirements/${SECTION_ID}/evidences/presign`,
+          `/api/v1/certifications/users/${PARTICIPANT_ID}/certification-enrollments/${ENROLLMENT_ID}/requirements/${SECTION_ID}/evidences/presign`,
         )
         .set(authHeaders(PARTICIPANT_ID))
         .send({
@@ -407,7 +407,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
 
       const response = await request(app.getHttpServer())
         .post(
-          `/api/v1/certifications/users/${PARTICIPANT_ID}/certifications/${CERTIFICATION_ID}/requirements/${SECTION_ID}/evidences/confirm`,
+          `/api/v1/certifications/users/${PARTICIPANT_ID}/certification-enrollments/${ENROLLMENT_ID}/requirements/${SECTION_ID}/evidences/confirm`,
         )
         .set(authHeaders(PARTICIPANT_ID))
         .send({ evidence_id: EVIDENCE_ID })
@@ -422,7 +422,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
     it('blocks a participant from acting on another user (owner mismatch → 403)', async () => {
       await request(app.getHttpServer())
         .post(
-          `/api/v1/certifications/users/${REVIEWER_IN_SCOPE_ID}/certifications/${CERTIFICATION_ID}/requirements/${SECTION_ID}/evidences/presign`,
+          `/api/v1/certifications/users/${REVIEWER_IN_SCOPE_ID}/certification-enrollments/${ENROLLMENT_ID}/requirements/${SECTION_ID}/evidences/presign`,
         )
         .set(authHeaders(PARTICIPANT_ID))
         .send({
@@ -437,7 +437,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
     it('rejects requests without a bearer token', async () => {
       await request(app.getHttpServer())
         .post(
-          `/api/v1/certifications/users/${PARTICIPANT_ID}/certifications/${CERTIFICATION_ID}/requirements/${SECTION_ID}/evidences/presign`,
+          `/api/v1/certifications/users/${PARTICIPANT_ID}/certification-enrollments/${ENROLLMENT_ID}/requirements/${SECTION_ID}/evidences/presign`,
         )
         .send({
           component_id: COMPONENT_ID,
@@ -603,7 +603,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
 
       const response = await request(app.getHttpServer())
         .post(
-          `/api/v1/certifications/users/${PARTICIPANT_ID}/certifications/${CERTIFICATION_ID}/closeout-evidence/presign`,
+          `/api/v1/certifications/users/${PARTICIPANT_ID}/certification-enrollments/${ENROLLMENT_ID}/closeout-evidence/presign`,
         )
         .set(authHeaders(PARTICIPANT_ID))
         .send({
@@ -644,7 +644,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
 
       const response = await request(app.getHttpServer())
         .post(
-          `/api/v1/certifications/users/${PARTICIPANT_ID}/certifications/${CERTIFICATION_ID}/closeout-evidence/confirm`,
+          `/api/v1/certifications/users/${PARTICIPANT_ID}/certification-enrollments/${ENROLLMENT_ID}/closeout-evidence/confirm`,
         )
         .set(authHeaders(PARTICIPANT_ID))
         .send({ closeout_evidence_id: CLOSEOUT_EVIDENCE_ID })
@@ -674,7 +674,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
 
       const response = await request(app.getHttpServer())
         .post(
-          `/api/v1/certifications/users/${PARTICIPANT_ID}/certifications/${CERTIFICATION_ID}/submit-final`,
+          `/api/v1/certifications/users/${PARTICIPANT_ID}/certification-enrollments/${ENROLLMENT_ID}/submit-final`,
         )
         .set(authHeaders(PARTICIPANT_ID))
         .expect(201);

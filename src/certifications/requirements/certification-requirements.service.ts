@@ -98,12 +98,12 @@ export class CertificationRequirementsService {
 
   async getRequirement(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     sectionId: number,
   ): Promise<RequirementView> {
     const enrollment = await this.getOwnedEnrollmentOrThrow(
       userId,
-      certificationId,
+      enrollmentId,
     );
     const section = await this.getSectionForEnrollmentOrThrow(
       sectionId,
@@ -128,14 +128,14 @@ export class CertificationRequirementsService {
 
   async saveDraft(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     sectionId: number,
     dto: SaveRequirementDraftDto,
   ): Promise<RequirementView> {
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await this.getOwnedEnrollmentOrThrow(
         userId,
-        certificationId,
+        enrollmentId,
         tx,
       );
       const section = await this.getSectionForEnrollmentOrThrow(
@@ -159,7 +159,7 @@ export class CertificationRequirementsService {
         progress = await tx.certification_section_progress.create({
           data: {
             user_id: userId,
-            certification_id: certificationId,
+            certification_id: enrollment.certification_id,
             module_id: section.module_id,
             section_id: sectionId,
             enrollment_id: enrollment.enrollment_id,
@@ -224,14 +224,14 @@ export class CertificationRequirementsService {
 
   async submitRequirement(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     sectionId: number,
     dto: SubmitRequirementDto,
   ): Promise<{ requirement: RequirementView; progress_summary: ProgressSummary }> {
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await this.getOwnedEnrollmentOrThrow(
         userId,
-        certificationId,
+        enrollmentId,
         tx,
       );
       const section = await this.getSectionForEnrollmentOrThrow(
@@ -318,13 +318,13 @@ export class CertificationRequirementsService {
 
   private async getOwnedEnrollmentOrThrow(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     db: RequirementDbClient = this.prisma,
   ): Promise<EnrollmentRecord> {
     const enrollment = await db.users_certifications.findFirst({
       where: {
+        enrollment_id: enrollmentId,
         user_id: userId,
-        certification_id: certificationId,
         active: true,
       },
     });

@@ -143,12 +143,22 @@ describe('CertificationRequirementsService', () => {
   // ==========================================================================
 
   describe('getRequirement', () => {
-    it('TC01 - not enrolled → CERT_ENROLLMENT_NOT_FOUND', async () => {
+    it('TC01 - enrollment not found / not owned → CERT_ENROLLMENT_NOT_FOUND', async () => {
       mockPrisma.users_certifications.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.getRequirement(USER_ID, CERT_ID, SECTION_ID),
+        service.getRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
+
+      expect(mockPrisma.users_certifications.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            enrollment_id: ENROLLMENT_ID,
+            user_id: USER_ID,
+            active: true,
+          },
+        }),
+      );
     });
 
     it('TC02 - section not in the enrolled version → CERT_SECTION_INVALID', async () => {
@@ -158,7 +168,7 @@ describe('CertificationRequirementsService', () => {
       mockPrisma.certification_sections.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.getRequirement(USER_ID, CERT_ID, SECTION_ID),
+        service.getRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_SECTION_INVALID });
     });
 
@@ -173,7 +183,7 @@ describe('CertificationRequirementsService', () => {
         null,
       );
 
-      const result = await service.getRequirement(USER_ID, CERT_ID, SECTION_ID);
+      const result = await service.getRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID);
 
       expect(result.status).toBe('DRAFT');
       expect(result.components).toHaveLength(2);
@@ -204,7 +214,7 @@ describe('CertificationRequirementsService', () => {
         ],
       });
 
-      const result = await service.getRequirement(USER_ID, CERT_ID, SECTION_ID);
+      const result = await service.getRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID);
 
       const textComponent = result.components.find(
         (c) => c.component_id === TEXT_COMPONENT_ID,
@@ -249,7 +259,7 @@ describe('CertificationRequirementsService', () => {
       txMock.users_certifications.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.saveDraft(USER_ID, CERT_ID, SECTION_ID, dto),
+        service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, dto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
     });
 
@@ -258,7 +268,7 @@ describe('CertificationRequirementsService', () => {
 
       const result = await service.saveDraft(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
@@ -298,7 +308,7 @@ describe('CertificationRequirementsService', () => {
       txMock.certification_component_responses.upsert.mockResolvedValue({});
       txMock.certification_component_responses.findMany.mockResolvedValue([]);
 
-      await service.saveDraft(USER_ID, CERT_ID, SECTION_ID, dto);
+      await service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, dto);
 
       expect(txMock.users_certifications.update).not.toHaveBeenCalled();
     });
@@ -306,7 +316,7 @@ describe('CertificationRequirementsService', () => {
     it('TC08 - upserts responses using the progress_id/component_id compound key', async () => {
       wireCreateNewProgress();
 
-      await service.saveDraft(USER_ID, CERT_ID, SECTION_ID, dto);
+      await service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, dto);
 
       expect(
         txMock.certification_component_responses.upsert,
@@ -332,7 +342,7 @@ describe('CertificationRequirementsService', () => {
       });
 
       await expect(
-        service.saveDraft(USER_ID, CERT_ID, SECTION_ID, {
+        service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
           responses: [{ component_id: 9999, text_value: 'x' }],
         }),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_SECTION_INVALID });
@@ -347,7 +357,7 @@ describe('CertificationRequirementsService', () => {
       });
 
       await expect(
-        service.saveDraft(USER_ID, CERT_ID, SECTION_ID, dto),
+        service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, dto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
     });
 
@@ -360,7 +370,7 @@ describe('CertificationRequirementsService', () => {
       });
 
       await expect(
-        service.saveDraft(USER_ID, CERT_ID, SECTION_ID, dto),
+        service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, dto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
     });
 
@@ -376,7 +386,7 @@ describe('CertificationRequirementsService', () => {
 
       const result = await service.saveDraft(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
@@ -400,7 +410,7 @@ describe('CertificationRequirementsService', () => {
       txMock.users_honors.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.saveDraft(USER_ID, CERT_ID, SECTION_ID, {
+        service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
           responses: [
             { component_id: HONOR_COMPONENT_ID, linked_user_honor_id: HONOR_ID },
           ],
@@ -442,7 +452,7 @@ describe('CertificationRequirementsService', () => {
         },
       ]);
 
-      const result = await service.saveDraft(USER_ID, CERT_ID, SECTION_ID, {
+      const result = await service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
         responses: [
           { component_id: HONOR_COMPONENT_ID, linked_user_honor_id: HONOR_ID },
         ],
@@ -511,7 +521,7 @@ describe('CertificationRequirementsService', () => {
 
       const result = await service.submitRequirement(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         submitDto,
       );
@@ -536,7 +546,7 @@ describe('CertificationRequirementsService', () => {
 
       const result = await service.submitRequirement(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         submitDto,
       );
@@ -555,7 +565,7 @@ describe('CertificationRequirementsService', () => {
     it('TC17 - double submit: second call on an already-SUBMITTED requirement is rejected and does not duplicate the review event', async () => {
       wireHappyPath();
 
-      await service.submitRequirement(USER_ID, CERT_ID, SECTION_ID, submitDto);
+      await service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto);
       expect(txMock.certification_review_events.create).toHaveBeenCalledTimes(
         1,
       );
@@ -567,7 +577,7 @@ describe('CertificationRequirementsService', () => {
       });
 
       await expect(
-        service.submitRequirement(USER_ID, CERT_ID, SECTION_ID, submitDto),
+        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
       expect(txMock.certification_review_events.create).toHaveBeenCalledTimes(
         1,
@@ -583,7 +593,7 @@ describe('CertificationRequirementsService', () => {
       });
 
       await expect(
-        service.submitRequirement(USER_ID, CERT_ID, SECTION_ID, submitDto),
+        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
     });
 
@@ -597,7 +607,7 @@ describe('CertificationRequirementsService', () => {
       });
 
       await expect(
-        service.submitRequirement(USER_ID, CERT_ID, SECTION_ID, submitDto),
+        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE });
       expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
     });
@@ -608,7 +618,7 @@ describe('CertificationRequirementsService', () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.submitRequirement(USER_ID, CERT_ID, SECTION_ID, submitDto),
+        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE });
     });
 
@@ -617,7 +627,7 @@ describe('CertificationRequirementsService', () => {
       txMock.users_certifications.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(
-        service.submitRequirement(USER_ID, CERT_ID, SECTION_ID, {
+        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, {
           lock_version: 99,
         }),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_CONCURRENT_UPDATE });
@@ -633,7 +643,7 @@ describe('CertificationRequirementsService', () => {
 
       await service.submitRequirement(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         submitDto,
       );
@@ -649,7 +659,7 @@ describe('CertificationRequirementsService', () => {
 
       const result = await service.submitRequirement(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         submitDto,
       );
@@ -671,7 +681,7 @@ describe('CertificationRequirementsService', () => {
 
       await service.submitRequirement(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         submitDto,
       );
@@ -693,7 +703,7 @@ describe('CertificationRequirementsService', () => {
 
       const result = await service.submitRequirement(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         submitDto,
       );

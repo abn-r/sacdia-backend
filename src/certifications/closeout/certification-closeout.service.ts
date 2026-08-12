@@ -63,7 +63,7 @@ export class CertificationCloseoutService {
 
   async presignCloseoutEvidence(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     dto: PresignCertificationCloseoutEvidenceDto,
   ) {
     assertAllowedEvidenceFile(dto.mime_type, dto.file_size);
@@ -71,7 +71,7 @@ export class CertificationCloseoutService {
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await this.getOwnedEnrollmentOrThrow(
         userId,
-        certificationId,
+        enrollmentId,
         tx,
       );
       await this.ensureEnrollmentReadyForCloseout(tx, enrollment);
@@ -125,13 +125,13 @@ export class CertificationCloseoutService {
 
   async confirmCloseoutEvidence(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     dto: ConfirmCertificationCloseoutEvidenceDto,
   ) {
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await this.getOwnedEnrollmentOrThrow(
         userId,
-        certificationId,
+        enrollmentId,
         tx,
       );
 
@@ -171,11 +171,11 @@ export class CertificationCloseoutService {
     });
   }
 
-  async submitFinal(userId: string, certificationId: number) {
+  async submitFinal(userId: string, enrollmentId: number) {
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await this.getOwnedEnrollmentOrThrow(
         userId,
-        certificationId,
+        enrollmentId,
         tx,
       );
 
@@ -483,13 +483,13 @@ export class CertificationCloseoutService {
 
   private async getOwnedEnrollmentOrThrow(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     db: CloseoutDbClient = this.prisma,
   ): Promise<EnrollmentRecord> {
     const enrollment = await db.users_certifications.findFirst({
       where: {
+        enrollment_id: enrollmentId,
         user_id: userId,
-        certification_id: certificationId,
         active: true,
       },
     });

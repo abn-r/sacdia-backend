@@ -145,12 +145,22 @@ describe('CertificationEvidenceService', () => {
       });
     };
 
-    it('TC01 - not enrolled → CERT_ENROLLMENT_NOT_FOUND', async () => {
+    it('TC01 - enrollment not found / not owned → CERT_ENROLLMENT_NOT_FOUND', async () => {
       txMock.users_certifications.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.presign(USER_ID, CERT_ID, SECTION_ID, presignDto),
+        service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, presignDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
+
+      expect(txMock.users_certifications.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            enrollment_id: ENROLLMENT_ID,
+            user_id: USER_ID,
+            active: true,
+          },
+        }),
+      );
     });
 
     it('TC02 - section not in enrolled version → CERT_SECTION_INVALID', async () => {
@@ -158,7 +168,7 @@ describe('CertificationEvidenceService', () => {
       txMock.certification_sections.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.presign(USER_ID, CERT_ID, SECTION_ID, presignDto),
+        service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, presignDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_SECTION_INVALID });
     });
 
@@ -168,7 +178,7 @@ describe('CertificationEvidenceService', () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.presign(USER_ID, CERT_ID, SECTION_ID, {
+        service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, {
           ...presignDto,
           component_id: 9999,
         }),
@@ -181,7 +191,7 @@ describe('CertificationEvidenceService', () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.presign(USER_ID, CERT_ID, SECTION_ID, {
+        service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, {
           ...presignDto,
           component_id: TEXT_COMPONENT_ID,
         }),
@@ -190,7 +200,7 @@ describe('CertificationEvidenceService', () => {
 
     it('TC05 - disallowed MIME type → CERT_EVIDENCE_INVALID_TYPE (rejected before touching the DB)', async () => {
       await expect(
-        service.presign(USER_ID, CERT_ID, SECTION_ID, {
+        service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, {
           ...presignDto,
           mime_type: 'application/zip',
         }),
@@ -201,7 +211,7 @@ describe('CertificationEvidenceService', () => {
 
     it('TC06 - declared file_size over the limit → CERT_EVIDENCE_TOO_LARGE', async () => {
       await expect(
-        service.presign(USER_ID, CERT_ID, SECTION_ID, {
+        service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, {
           ...presignDto,
           file_size: 50 * 1024 * 1024,
         }),
@@ -217,14 +227,14 @@ describe('CertificationEvidenceService', () => {
       });
 
       await expect(
-        service.presign(USER_ID, CERT_ID, SECTION_ID, presignDto),
+        service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, presignDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
     });
 
     it('TC08 - creates a DRAFT progress row on first evidence when none exists', async () => {
       wireHappyPath({ progress: null });
 
-      await service.presign(USER_ID, CERT_ID, SECTION_ID, presignDto);
+      await service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, presignDto);
 
       expect(
         txMock.certification_section_progress.create,
@@ -243,7 +253,7 @@ describe('CertificationEvidenceService', () => {
     it('TC09 - generates a server-side object_key under the enrollment/section/component namespace', async () => {
       wireHappyPath();
 
-      await service.presign(USER_ID, CERT_ID, SECTION_ID, presignDto);
+      await service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, presignDto);
 
       expect(mockFileStorage.getSignedUploadUrl).toHaveBeenCalledWith(
         'CERTIFICATION_EVIDENCE',
@@ -265,7 +275,7 @@ describe('CertificationEvidenceService', () => {
         upload_url: 'https://evil.example.com/x',
       } as PresignCertificationEvidenceDto & Record<string, unknown>;
 
-      await service.presign(USER_ID, CERT_ID, SECTION_ID, maliciousDto);
+      await service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, maliciousDto);
 
       const [, generatedKey] = mockFileStorage.getSignedUploadUrl.mock.calls[0];
       expect(generatedKey).not.toContain('attacker');
@@ -274,7 +284,7 @@ describe('CertificationEvidenceService', () => {
     it('TC11 - creates the evidence row with PENDING_UPLOAD status', async () => {
       wireHappyPath();
 
-      await service.presign(USER_ID, CERT_ID, SECTION_ID, presignDto);
+      await service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, presignDto);
 
       expect(txMock.certification_evidences.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -293,7 +303,7 @@ describe('CertificationEvidenceService', () => {
 
       const result = await service.presign(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         presignDto,
       );
@@ -353,7 +363,7 @@ describe('CertificationEvidenceService', () => {
       txMock.certification_evidences.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.confirm(USER_ID, CERT_ID, SECTION_ID, confirmDto),
+        service.confirm(USER_ID, ENROLLMENT_ID, SECTION_ID, confirmDto),
       ).rejects.toMatchObject({ code: ErrorCode.RECORD_NOT_FOUND });
     });
 
@@ -369,7 +379,7 @@ describe('CertificationEvidenceService', () => {
       mockFileStorage.getObjectInfo.mockResolvedValue(null);
 
       await expect(
-        service.confirm(USER_ID, CERT_ID, SECTION_ID, confirmDto),
+        service.confirm(USER_ID, ENROLLMENT_ID, SECTION_ID, confirmDto),
       ).rejects.toMatchObject({
         code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE,
       });
@@ -383,7 +393,7 @@ describe('CertificationEvidenceService', () => {
       });
 
       await expect(
-        service.confirm(USER_ID, CERT_ID, SECTION_ID, confirmDto),
+        service.confirm(USER_ID, ENROLLMENT_ID, SECTION_ID, confirmDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_EVIDENCE_INVALID_TYPE });
     });
 
@@ -395,7 +405,7 @@ describe('CertificationEvidenceService', () => {
       });
 
       await expect(
-        service.confirm(USER_ID, CERT_ID, SECTION_ID, confirmDto),
+        service.confirm(USER_ID, ENROLLMENT_ID, SECTION_ID, confirmDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_EVIDENCE_TOO_LARGE });
     });
 
@@ -404,7 +414,7 @@ describe('CertificationEvidenceService', () => {
 
       const result = await service.confirm(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         confirmDto,
       );
@@ -427,7 +437,7 @@ describe('CertificationEvidenceService', () => {
       });
 
       await expect(
-        service.confirm(USER_ID, CERT_ID, SECTION_ID, confirmDto),
+        service.confirm(USER_ID, ENROLLMENT_ID, SECTION_ID, confirmDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
     });
   });
@@ -448,7 +458,7 @@ describe('CertificationEvidenceService', () => {
       txMock.users_certifications.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.delete(USER_ID, CERT_ID, EVIDENCE_ID),
+        service.delete(USER_ID, ENROLLMENT_ID, EVIDENCE_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
     });
 
@@ -457,7 +467,7 @@ describe('CertificationEvidenceService', () => {
       txMock.certification_evidences.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.delete(USER_ID, CERT_ID, EVIDENCE_ID),
+        service.delete(USER_ID, ENROLLMENT_ID, EVIDENCE_ID),
       ).rejects.toMatchObject({ code: ErrorCode.RECORD_NOT_FOUND });
     });
 
@@ -468,7 +478,7 @@ describe('CertificationEvidenceService', () => {
       );
 
       await expect(
-        service.delete(USER_ID, CERT_ID, EVIDENCE_ID),
+        service.delete(USER_ID, ENROLLMENT_ID, EVIDENCE_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
 
       expect(txMock.certification_evidences.update).not.toHaveBeenCalled();
@@ -481,7 +491,7 @@ describe('CertificationEvidenceService', () => {
       );
 
       await expect(
-        service.delete(USER_ID, CERT_ID, EVIDENCE_ID),
+        service.delete(USER_ID, ENROLLMENT_ID, EVIDENCE_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
     });
 
@@ -492,7 +502,7 @@ describe('CertificationEvidenceService', () => {
       );
       txMock.certification_evidences.update.mockResolvedValue({});
 
-      const result = await service.delete(USER_ID, CERT_ID, EVIDENCE_ID);
+      const result = await service.delete(USER_ID, ENROLLMENT_ID, EVIDENCE_ID);
 
       expect(txMock.certification_evidences.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -510,7 +520,7 @@ describe('CertificationEvidenceService', () => {
       );
       txMock.certification_evidences.update.mockResolvedValue({});
 
-      await service.delete(USER_ID, CERT_ID, EVIDENCE_ID);
+      await service.delete(USER_ID, ENROLLMENT_ID, EVIDENCE_ID);
 
       expect(txMock.certification_evidences.update).toHaveBeenCalled();
     });

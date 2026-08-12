@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
+import { RequestMethod } from '@nestjs/common';
+import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { UserCertificationRequirementsController } from './user-certification-requirements.controller';
 import { CertificationRequirementsService } from '../requirements/certification-requirements.service';
 import { CertificationEvidenceService } from '../evidence/certification-evidence.service';
@@ -8,9 +10,12 @@ import { AUTHORIZATION_RESOURCE_KEY } from '../../common/decorators/authorizatio
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 
 const USER_ID = 'user-uuid-001';
-const CERT_ID = 1;
+const ENROLLMENT_ID = 42;
 const SECTION_ID = 100;
 const EVIDENCE_ID = 5000;
+
+const ENROLLMENT_BASE =
+  'users/:userId/certification-enrollments/:enrollmentId';
 
 const makeServiceMock = () => ({
   getRequirement: jest.fn(),
@@ -53,6 +58,55 @@ describe('UserCertificationRequirementsController', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('route contract (plan base — enrollmentId paths)', () => {
+    const routeOf = (handler: unknown) =>
+      Reflect.getMetadata(PATH_METADATA, handler as object);
+    const methodOf = (handler: unknown) =>
+      Reflect.getMetadata(METHOD_METADATA, handler as object);
+
+    it('getRequirement is GET .../certification-enrollments/:enrollmentId/requirements/:requirementId', () => {
+      expect(routeOf(controller.getRequirement)).toBe(
+        `${ENROLLMENT_BASE}/requirements/:requirementId`,
+      );
+      expect(methodOf(controller.getRequirement)).toBe(RequestMethod.GET);
+    });
+
+    it('saveDraft is PATCH .../requirements/:requirementId/draft', () => {
+      expect(routeOf(controller.saveDraft)).toBe(
+        `${ENROLLMENT_BASE}/requirements/:requirementId/draft`,
+      );
+      expect(methodOf(controller.saveDraft)).toBe(RequestMethod.PATCH);
+    });
+
+    it('submitRequirement is POST .../requirements/:requirementId/submit', () => {
+      expect(routeOf(controller.submitRequirement)).toBe(
+        `${ENROLLMENT_BASE}/requirements/:requirementId/submit`,
+      );
+      expect(methodOf(controller.submitRequirement)).toBe(RequestMethod.POST);
+    });
+
+    it('presignEvidence is POST .../requirements/:requirementId/evidences/presign', () => {
+      expect(routeOf(controller.presignEvidence)).toBe(
+        `${ENROLLMENT_BASE}/requirements/:requirementId/evidences/presign`,
+      );
+      expect(methodOf(controller.presignEvidence)).toBe(RequestMethod.POST);
+    });
+
+    it('confirmEvidence is POST .../requirements/:requirementId/evidences/confirm', () => {
+      expect(routeOf(controller.confirmEvidence)).toBe(
+        `${ENROLLMENT_BASE}/requirements/:requirementId/evidences/confirm`,
+      );
+      expect(methodOf(controller.confirmEvidence)).toBe(RequestMethod.POST);
+    });
+
+    it('deleteEvidence is DELETE .../certification-enrollments/:enrollmentId/evidences/:evidenceId', () => {
+      expect(routeOf(controller.deleteEvidence)).toBe(
+        `${ENROLLMENT_BASE}/evidences/:evidenceId`,
+      );
+      expect(methodOf(controller.deleteEvidence)).toBe(RequestMethod.DELETE);
+    });
   });
 
   describe('authorization metadata', () => {
@@ -138,13 +192,13 @@ describe('UserCertificationRequirementsController', () => {
 
       const result = await controller.getRequirement(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
       );
 
       expect(service.getRequirement).toHaveBeenCalledWith(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
       );
       expect(result).toEqual({
@@ -159,14 +213,14 @@ describe('UserCertificationRequirementsController', () => {
 
       const result = await controller.saveDraft(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
 
       expect(service.saveDraft).toHaveBeenCalledWith(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
@@ -185,14 +239,14 @@ describe('UserCertificationRequirementsController', () => {
 
       const result = await controller.submitRequirement(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
 
       expect(service.submitRequirement).toHaveBeenCalledWith(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
@@ -216,14 +270,14 @@ describe('UserCertificationRequirementsController', () => {
 
       const result = await controller.presignEvidence(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
 
       expect(evidenceService.presign).toHaveBeenCalledWith(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
@@ -242,14 +296,14 @@ describe('UserCertificationRequirementsController', () => {
 
       const result = await controller.confirmEvidence(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
 
       expect(evidenceService.confirm).toHaveBeenCalledWith(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         SECTION_ID,
         dto,
       );
@@ -266,13 +320,13 @@ describe('UserCertificationRequirementsController', () => {
 
       const result = await controller.deleteEvidence(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         EVIDENCE_ID,
       );
 
       expect(evidenceService.delete).toHaveBeenCalledWith(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         EVIDENCE_ID,
       );
       expect(result).toEqual({

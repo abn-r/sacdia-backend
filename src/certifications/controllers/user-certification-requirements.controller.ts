@@ -6,8 +6,8 @@ import {
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
+  Patch,
   Post,
-  Put,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -39,48 +39,50 @@ export class UserCertificationRequirementsController {
     private readonly evidenceService: CertificationEvidenceService,
   ) {}
 
-  @Get('users/:userId/certifications/:certificationId/requirements/:sectionId')
+  @Get(
+    'users/:userId/certification-enrollments/:enrollmentId/requirements/:requirementId',
+  )
   @RequirePermissions('user_certifications:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
-    summary: 'Ver el estado de un requisito (sección) de la inscripción',
+    summary: 'Ver el estado de un requisito de la inscripción',
     description:
       'Devuelve el estado, respuestas guardadas y componentes de un requisito de la versión inscrita.',
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
-  @ApiParam({ name: 'certificationId', description: 'ID de la certificación' })
-  @ApiParam({ name: 'sectionId', description: 'ID de la sección/requisito' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
+  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
   @ApiResponse({ status: 200, description: 'Estado del requisito' })
   @ApiResponse({
     status: 404,
-    description: 'Inscripción no encontrada',
+    description: 'Inscripción no encontrada o no pertenece al usuario',
   })
   async getRequirement(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
+    @Param('requirementId', ParseIntPipe) requirementId: number,
   ) {
     const data = await this.requirementsService.getRequirement(
       userId,
-      certificationId,
-      sectionId,
+      enrollmentId,
+      requirementId,
     );
     return { status: 'success', data };
   }
 
-  @Put(
-    'users/:userId/certifications/:certificationId/requirements/:sectionId/draft',
+  @Patch(
+    'users/:userId/certification-enrollments/:enrollmentId/requirements/:requirementId/draft',
   )
   @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Guardar borrador de un requisito',
     description:
-      'Guarda o actualiza las respuestas de los componentes de una sección mientras está en DRAFT o CHANGES_REQUESTED.',
+      'Guarda o actualiza las respuestas de los componentes de un requisito mientras está en DRAFT o CHANGES_REQUESTED.',
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
-  @ApiParam({ name: 'certificationId', description: 'ID de la certificación' })
-  @ApiParam({ name: 'sectionId', description: 'ID de la sección/requisito' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
+  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
   @ApiResponse({ status: 200, description: 'Borrador guardado' })
   @ApiResponse({
     status: 409,
@@ -88,21 +90,21 @@ export class UserCertificationRequirementsController {
   })
   async saveDraft(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
+    @Param('requirementId', ParseIntPipe) requirementId: number,
     @Body() dto: SaveRequirementDraftDto,
   ) {
     const data = await this.requirementsService.saveDraft(
       userId,
-      certificationId,
-      sectionId,
+      enrollmentId,
+      requirementId,
       dto,
     );
     return { status: 'success', data };
   }
 
   @Post(
-    'users/:userId/certifications/:certificationId/requirements/:sectionId/submit',
+    'users/:userId/certification-enrollments/:enrollmentId/requirements/:requirementId/submit',
   )
   @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
@@ -112,8 +114,8 @@ export class UserCertificationRequirementsController {
       'Transiciona el requisito a SUBMITTED (o re-envía desde CHANGES_REQUESTED) validando que los componentes obligatorios estén completos.',
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
-  @ApiParam({ name: 'certificationId', description: 'ID de la certificación' })
-  @ApiParam({ name: 'sectionId', description: 'ID de la sección/requisito' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
+  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
   @ApiResponse({ status: 200, description: 'Requisito enviado a revisión' })
   @ApiResponse({
     status: 400,
@@ -126,21 +128,21 @@ export class UserCertificationRequirementsController {
   })
   async submitRequirement(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
+    @Param('requirementId', ParseIntPipe) requirementId: number,
     @Body() dto: SubmitRequirementDto,
   ) {
     const data = await this.requirementsService.submitRequirement(
       userId,
-      certificationId,
-      sectionId,
+      enrollmentId,
+      requirementId,
       dto,
     );
     return { status: 'success', data };
   }
 
   @Post(
-    'users/:userId/certifications/:certificationId/requirements/:sectionId/evidences/presign',
+    'users/:userId/certification-enrollments/:enrollmentId/requirements/:requirementId/evidences/presign',
   )
   @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
@@ -150,8 +152,8 @@ export class UserCertificationRequirementsController {
       'Genera una clave de objeto controlada por el servidor y una URL firmada de subida a R2. Crea la evidencia en estado PENDING_UPLOAD.',
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
-  @ApiParam({ name: 'certificationId', description: 'ID de la certificación' })
-  @ApiParam({ name: 'sectionId', description: 'ID de la sección/requisito' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
+  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
   @ApiResponse({ status: 201, description: 'URL de subida generada' })
   @ApiResponse({
     status: 400,
@@ -159,21 +161,21 @@ export class UserCertificationRequirementsController {
   })
   async presignEvidence(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
+    @Param('requirementId', ParseIntPipe) requirementId: number,
     @Body() dto: PresignCertificationEvidenceDto,
   ) {
     const data = await this.evidenceService.presign(
       userId,
-      certificationId,
-      sectionId,
+      enrollmentId,
+      requirementId,
       dto,
     );
     return { status: 'success', data };
   }
 
   @Post(
-    'users/:userId/certifications/:certificationId/requirements/:sectionId/evidences/confirm',
+    'users/:userId/certification-enrollments/:enrollmentId/requirements/:requirementId/evidences/confirm',
   )
   @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
@@ -183,8 +185,8 @@ export class UserCertificationRequirementsController {
       'Valida el objeto subido (tipo y tamaño reales) y transiciona la evidencia de PENDING_UPLOAD a CONFIRMED.',
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
-  @ApiParam({ name: 'certificationId', description: 'ID de la certificación' })
-  @ApiParam({ name: 'sectionId', description: 'ID de la sección/requisito' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
+  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
   @ApiResponse({ status: 201, description: 'Evidencia confirmada' })
   @ApiResponse({
     status: 400,
@@ -192,21 +194,21 @@ export class UserCertificationRequirementsController {
   })
   async confirmEvidence(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
+    @Param('requirementId', ParseIntPipe) requirementId: number,
     @Body() dto: ConfirmCertificationEvidenceDto,
   ) {
     const data = await this.evidenceService.confirm(
       userId,
-      certificationId,
-      sectionId,
+      enrollmentId,
+      requirementId,
       dto,
     );
     return { status: 'success', data };
   }
 
   @Delete(
-    'users/:userId/certifications/:certificationId/evidences/:evidenceId',
+    'users/:userId/certification-enrollments/:enrollmentId/evidences/:evidenceId',
   )
   @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
@@ -216,7 +218,7 @@ export class UserCertificationRequirementsController {
       'Elimina (soft-delete) una evidencia mientras el requisito que la contiene siga editable (DRAFT o CHANGES_REQUESTED).',
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
-  @ApiParam({ name: 'certificationId', description: 'ID de la certificación' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
   @ApiParam({ name: 'evidenceId', description: 'ID de la evidencia' })
   @ApiResponse({ status: 200, description: 'Evidencia eliminada' })
   @ApiResponse({
@@ -225,12 +227,12 @@ export class UserCertificationRequirementsController {
   })
   async deleteEvidence(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Param('evidenceId', ParseIntPipe) evidenceId: number,
   ) {
     const data = await this.evidenceService.delete(
       userId,
-      certificationId,
+      enrollmentId,
       evidenceId,
     );
     return { status: 'success', data };

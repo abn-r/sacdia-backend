@@ -67,7 +67,7 @@ export class CertificationEvidenceService {
 
   async presign(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     sectionId: number,
     dto: PresignCertificationEvidenceDto,
   ) {
@@ -76,7 +76,7 @@ export class CertificationEvidenceService {
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await this.getOwnedEnrollmentOrThrow(
         userId,
-        certificationId,
+        enrollmentId,
         tx,
       );
       const section = await this.getSectionForEnrollmentOrThrow(
@@ -104,7 +104,7 @@ export class CertificationEvidenceService {
         progress = await tx.certification_section_progress.create({
           data: {
             user_id: userId,
-            certification_id: certificationId,
+            certification_id: enrollment.certification_id,
             module_id: section.module_id,
             section_id: sectionId,
             enrollment_id: enrollment.enrollment_id,
@@ -168,14 +168,14 @@ export class CertificationEvidenceService {
 
   async confirm(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     sectionId: number,
     dto: ConfirmCertificationEvidenceDto,
   ): Promise<EvidenceView> {
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await this.getOwnedEnrollmentOrThrow(
         userId,
-        certificationId,
+        enrollmentId,
         tx,
       );
       await this.getSectionForEnrollmentOrThrow(sectionId, enrollment, tx);
@@ -232,11 +232,11 @@ export class CertificationEvidenceService {
   // DELETE (soft)
   // ---------------------------------------------------------------------------
 
-  async delete(userId: string, certificationId: number, evidenceId: number) {
+  async delete(userId: string, enrollmentId: number, evidenceId: number) {
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await this.getOwnedEnrollmentOrThrow(
         userId,
-        certificationId,
+        enrollmentId,
         tx,
       );
 
@@ -283,13 +283,13 @@ export class CertificationEvidenceService {
 
   private async getOwnedEnrollmentOrThrow(
     userId: string,
-    certificationId: number,
+    enrollmentId: number,
     db: EvidenceDbClient = this.prisma,
   ): Promise<EnrollmentRecord> {
     const enrollment = await db.users_certifications.findFirst({
       where: {
+        enrollment_id: enrollmentId,
         user_id: userId,
-        certification_id: certificationId,
         active: true,
       },
     });

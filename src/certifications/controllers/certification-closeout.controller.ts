@@ -51,7 +51,9 @@ export class CertificationCloseoutController {
   // Participant: closeout evidence + submit-final
   // ---------------------------------------------------------------------------
 
-  @Post('users/:userId/certifications/:certificationId/closeout-evidence/presign')
+  @Post(
+    'users/:userId/certification-enrollments/:enrollmentId/closeout-evidence/presign',
+  )
   @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
@@ -60,44 +62,46 @@ export class CertificationCloseoutController {
       'Genera una clave de objeto controlada por el servidor y una URL firmada de subida a R2. Reemplaza cualquier comprobante previo aún no aprobado.',
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
-  @ApiParam({ name: 'certificationId', description: 'ID de la certificación' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
   @ApiResponse({ status: 201, description: 'URL de subida generada' })
   async presignCloseoutEvidence(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Body() dto: PresignCertificationCloseoutEvidenceDto,
   ) {
     const data = await this.closeoutService.presignCloseoutEvidence(
       userId,
-      certificationId,
+      enrollmentId,
       dto,
     );
     return { status: 'success', data };
   }
 
-  @Post('users/:userId/certifications/:certificationId/closeout-evidence/confirm')
+  @Post(
+    'users/:userId/certification-enrollments/:enrollmentId/closeout-evidence/confirm',
+  )
   @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Confirmar que el comprobante de junta fue subido a R2',
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
-  @ApiParam({ name: 'certificationId', description: 'ID de la certificación' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
   @ApiResponse({ status: 201, description: 'Comprobante confirmado' })
   async confirmCloseoutEvidence(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Body() dto: ConfirmCertificationCloseoutEvidenceDto,
   ) {
     const data = await this.closeoutService.confirmCloseoutEvidence(
       userId,
-      certificationId,
+      enrollmentId,
       dto,
     );
     return { status: 'success', data };
   }
 
-  @Post('users/:userId/certifications/:certificationId/submit-final')
+  @Post('users/:userId/certification-enrollments/:enrollmentId/submit-final')
   @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
@@ -106,7 +110,7 @@ export class CertificationCloseoutController {
       'Requiere todos los requisitos obligatorios APPROVED y el comprobante de junta CONFIRMED.',
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
-  @ApiParam({ name: 'certificationId', description: 'ID de la certificación' })
+  @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
   @ApiResponse({ status: 201, description: 'Inscripción enviada a revisión final' })
   @ApiResponse({
     status: 400,
@@ -114,12 +118,9 @@ export class CertificationCloseoutController {
   })
   async submitFinal(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('certificationId', ParseIntPipe) certificationId: number,
+    @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
   ) {
-    const data = await this.closeoutService.submitFinal(
-      userId,
-      certificationId,
-    );
+    const data = await this.closeoutService.submitFinal(userId, enrollmentId);
     return { status: 'success', data };
   }
 

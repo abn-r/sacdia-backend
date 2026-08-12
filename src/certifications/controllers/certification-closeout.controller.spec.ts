@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
+import { RequestMethod } from '@nestjs/common';
+import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { CertificationCloseoutController } from './certification-closeout.controller';
 import { CertificationCloseoutService } from '../closeout/certification-closeout.service';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
@@ -10,8 +12,10 @@ import { ErrorCode } from '../../common/errors/error-codes';
 const USER_ID = 'user-uuid-001';
 const REVIEWER_ID = 'reviewer-uuid-001';
 const LOCAL_FIELD_ID = 10;
-const CERT_ID = 1;
 const ENROLLMENT_ID = 42;
+
+const ENROLLMENT_BASE =
+  'users/:userId/certification-enrollments/:enrollmentId';
 
 const makeServiceMock = () => ({
   presignCloseoutEvidence: jest.fn(),
@@ -70,6 +74,38 @@ describe('CertificationCloseoutController', () => {
     jest.clearAllMocks();
   });
 
+  describe('route contract (plan base — enrollmentId paths)', () => {
+    const routeOf = (handler: unknown) =>
+      Reflect.getMetadata(PATH_METADATA, handler as object);
+    const methodOf = (handler: unknown) =>
+      Reflect.getMetadata(METHOD_METADATA, handler as object);
+
+    it('presignCloseoutEvidence is POST .../certification-enrollments/:enrollmentId/closeout-evidence/presign', () => {
+      expect(routeOf(controller.presignCloseoutEvidence)).toBe(
+        `${ENROLLMENT_BASE}/closeout-evidence/presign`,
+      );
+      expect(methodOf(controller.presignCloseoutEvidence)).toBe(
+        RequestMethod.POST,
+      );
+    });
+
+    it('confirmCloseoutEvidence is POST .../certification-enrollments/:enrollmentId/closeout-evidence/confirm', () => {
+      expect(routeOf(controller.confirmCloseoutEvidence)).toBe(
+        `${ENROLLMENT_BASE}/closeout-evidence/confirm`,
+      );
+      expect(methodOf(controller.confirmCloseoutEvidence)).toBe(
+        RequestMethod.POST,
+      );
+    });
+
+    it('submitFinal is POST .../certification-enrollments/:enrollmentId/submit-final', () => {
+      expect(routeOf(controller.submitFinal)).toBe(
+        `${ENROLLMENT_BASE}/submit-final`,
+      );
+      expect(methodOf(controller.submitFinal)).toBe(RequestMethod.POST);
+    });
+  });
+
   describe('authorization metadata', () => {
     it('presignCloseoutEvidence requires user_certifications:manage on the owning user', () => {
       const permissions = reflector.get(
@@ -122,13 +158,13 @@ describe('CertificationCloseoutController', () => {
 
       const result = await controller.presignCloseoutEvidence(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         dto as any,
       );
 
       expect(service.presignCloseoutEvidence).toHaveBeenCalledWith(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         dto,
       );
       expect(result).toEqual({
@@ -149,13 +185,13 @@ describe('CertificationCloseoutController', () => {
 
       const result = await controller.confirmCloseoutEvidence(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         dto as any,
       );
 
       expect(service.confirmCloseoutEvidence).toHaveBeenCalledWith(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         dto,
       );
       expect(result.data.upload_status).toBe('CONFIRMED');
@@ -167,9 +203,9 @@ describe('CertificationCloseoutController', () => {
         status: 'SUBMITTED_FOR_FINAL_REVIEW',
       });
 
-      const result = await controller.submitFinal(USER_ID, CERT_ID);
+      const result = await controller.submitFinal(USER_ID, ENROLLMENT_ID);
 
-      expect(service.submitFinal).toHaveBeenCalledWith(USER_ID, CERT_ID);
+      expect(service.submitFinal).toHaveBeenCalledWith(USER_ID, ENROLLMENT_ID);
       expect(result).toEqual({
         status: 'success',
         data: {

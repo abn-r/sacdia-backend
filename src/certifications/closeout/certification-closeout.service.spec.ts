@@ -150,17 +150,27 @@ describe('CertificationCloseoutService', () => {
       });
     };
 
-    it('TC01 - not enrolled → CERT_ENROLLMENT_NOT_FOUND', async () => {
+    it('TC01 - enrollment not found / not owned → CERT_ENROLLMENT_NOT_FOUND', async () => {
       txMock.users_certifications.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.presignCloseoutEvidence(USER_ID, CERT_ID, presignDto),
+        service.presignCloseoutEvidence(USER_ID, ENROLLMENT_ID, presignDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
+
+      expect(txMock.users_certifications.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            enrollment_id: ENROLLMENT_ID,
+            user_id: USER_ID,
+            active: true,
+          },
+        }),
+      );
     });
 
     it('TC02 - disallowed MIME type → CERT_EVIDENCE_INVALID_TYPE', async () => {
       await expect(
-        service.presignCloseoutEvidence(USER_ID, CERT_ID, {
+        service.presignCloseoutEvidence(USER_ID, ENROLLMENT_ID, {
           ...presignDto,
           mime_type: 'application/zip',
         }),
@@ -169,7 +179,7 @@ describe('CertificationCloseoutService', () => {
 
     it('TC03 - declared size over the limit → CERT_EVIDENCE_TOO_LARGE', async () => {
       await expect(
-        service.presignCloseoutEvidence(USER_ID, CERT_ID, {
+        service.presignCloseoutEvidence(USER_ID, ENROLLMENT_ID, {
           ...presignDto,
           file_size: 50 * 1024 * 1024,
         }),
@@ -183,7 +193,7 @@ describe('CertificationCloseoutService', () => {
       });
 
       await expect(
-        service.presignCloseoutEvidence(USER_ID, CERT_ID, presignDto),
+        service.presignCloseoutEvidence(USER_ID, ENROLLMENT_ID, presignDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_CLOSEOUT_INCOMPLETE });
     });
 
@@ -192,7 +202,7 @@ describe('CertificationCloseoutService', () => {
 
       const result = await service.presignCloseoutEvidence(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         presignDto,
       );
 
@@ -209,7 +219,7 @@ describe('CertificationCloseoutService', () => {
     it('TC06 - valid image/jpeg is accepted', async () => {
       wireHappyPath();
 
-      await service.presignCloseoutEvidence(USER_ID, CERT_ID, {
+      await service.presignCloseoutEvidence(USER_ID, ENROLLMENT_ID, {
         ...presignDto,
         file_name: 'foto.jpg',
         mime_type: 'image/jpeg',
@@ -225,7 +235,7 @@ describe('CertificationCloseoutService', () => {
     it('TC07 - replace before send: deactivates any existing non-approved closeout evidence', async () => {
       wireHappyPath();
 
-      await service.presignCloseoutEvidence(USER_ID, CERT_ID, presignDto);
+      await service.presignCloseoutEvidence(USER_ID, ENROLLMENT_ID, presignDto);
 
       expect(
         txMock.certification_closeout_evidences.updateMany,
@@ -258,7 +268,7 @@ describe('CertificationCloseoutService', () => {
         closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
       });
 
-      await service.presignCloseoutEvidence(USER_ID, CERT_ID, presignDto);
+      await service.presignCloseoutEvidence(USER_ID, ENROLLMENT_ID, presignDto);
 
       expect(txMock.users_certifications.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: 'IN_PROGRESS' } }),
@@ -275,7 +285,7 @@ describe('CertificationCloseoutService', () => {
       });
 
       await expect(
-        service.presignCloseoutEvidence(USER_ID, CERT_ID, presignDto),
+        service.presignCloseoutEvidence(USER_ID, ENROLLMENT_ID, presignDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_CLOSEOUT_INCOMPLETE });
     });
   });
@@ -299,7 +309,7 @@ describe('CertificationCloseoutService', () => {
       txMock.users_certifications.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.confirmCloseoutEvidence(USER_ID, CERT_ID, confirmDto),
+        service.confirmCloseoutEvidence(USER_ID, ENROLLMENT_ID, confirmDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
     });
 
@@ -310,7 +320,7 @@ describe('CertificationCloseoutService', () => {
       );
 
       await expect(
-        service.confirmCloseoutEvidence(USER_ID, CERT_ID, confirmDto),
+        service.confirmCloseoutEvidence(USER_ID, ENROLLMENT_ID, confirmDto),
       ).rejects.toMatchObject({ code: ErrorCode.RECORD_NOT_FOUND });
     });
 
@@ -322,7 +332,7 @@ describe('CertificationCloseoutService', () => {
       mockFileStorage.getObjectInfo.mockResolvedValue(null);
 
       await expect(
-        service.confirmCloseoutEvidence(USER_ID, CERT_ID, confirmDto),
+        service.confirmCloseoutEvidence(USER_ID, ENROLLMENT_ID, confirmDto),
       ).rejects.toMatchObject({
         code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE,
       });
@@ -345,7 +355,7 @@ describe('CertificationCloseoutService', () => {
 
       const result = await service.confirmCloseoutEvidence(
         USER_ID,
-        CERT_ID,
+        ENROLLMENT_ID,
         confirmDto,
       );
 
@@ -381,7 +391,7 @@ describe('CertificationCloseoutService', () => {
       });
 
       await expect(
-        service.submitFinal(USER_ID, CERT_ID),
+        service.submitFinal(USER_ID, ENROLLMENT_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_CLOSEOUT_INCOMPLETE });
     });
 
@@ -395,7 +405,7 @@ describe('CertificationCloseoutService', () => {
       ]);
 
       await expect(
-        service.submitFinal(USER_ID, CERT_ID),
+        service.submitFinal(USER_ID, ENROLLMENT_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_CLOSEOUT_INCOMPLETE });
     });
 
@@ -407,7 +417,7 @@ describe('CertificationCloseoutService', () => {
       );
 
       await expect(
-        service.submitFinal(USER_ID, CERT_ID),
+        service.submitFinal(USER_ID, ENROLLMENT_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_CLOSEOUT_INCOMPLETE });
     });
 
@@ -420,14 +430,14 @@ describe('CertificationCloseoutService', () => {
       });
 
       await expect(
-        service.submitFinal(USER_ID, CERT_ID),
+        service.submitFinal(USER_ID, ENROLLMENT_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_CLOSEOUT_INCOMPLETE });
     });
 
     it('TC18 - happy path transitions READY_FOR_CLOSEOUT → SUBMITTED_FOR_FINAL_REVIEW', async () => {
       wireHappyPath();
 
-      const result = await service.submitFinal(USER_ID, CERT_ID);
+      const result = await service.submitFinal(USER_ID, ENROLLMENT_ID);
 
       expect(txMock.users_certifications.update).toHaveBeenCalledWith(
         expect.objectContaining({
