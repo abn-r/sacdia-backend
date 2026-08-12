@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { FieldPaymentOrdersController } from './field-payment-orders.controller';
 import { FieldPaymentOrdersService } from './field-payment-orders.service';
+import { InsuranceReassignmentsController } from './insurance-reassignments.controller';
+import { InsuranceReassignmentsService } from './insurance-reassignments.service';
 import { FieldPaymentOrdersFlagService } from './field-payment-orders-flag.service';
 import { FieldPaymentFolioService } from './folio.service';
 import { FieldPaymentOrderPdfService } from './field-payment-order-pdf.service';
@@ -13,9 +15,10 @@ import {
 } from './fulfillment/ports';
 
 @Module({
-  controllers: [FieldPaymentOrdersController],
+  controllers: [FieldPaymentOrdersController, InsuranceReassignmentsController],
   providers: [
     FieldPaymentOrdersService,
+    InsuranceReassignmentsService,
     FieldPaymentOrdersFlagService,
     FieldPaymentFolioService,
     FieldPaymentOrderPdfService,
