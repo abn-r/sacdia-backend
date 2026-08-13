@@ -971,7 +971,7 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    // Local-field-level actors (admin, coordinator, director-lf, assistant-lf)
+    // Local-field-level actors (admin, director-lf, assistant-lf)
     // and club-assignment actors with a local field are permitted through —
     // the service layer enforces that the local field participates in this
     // union camporee via union_camporee_local_fields.
@@ -982,7 +982,6 @@ export class PermissionsGuard implements CanActivate {
       typeof globalLocalFieldId === 'number' &&
       (this.hasGlobalRole(resolved, 'admin') ||
         this.hasGlobalRole(resolved, 'assistant-admin') ||
-        this.hasGlobalRole(resolved, 'coordinator') ||
         this.hasGlobalRole(resolved, 'director-lf') ||
         this.hasGlobalRole(resolved, 'assistant-lf'))
     ) {

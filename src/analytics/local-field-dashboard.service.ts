@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
   buildReportClubSectionWhere,
+  needsCoordinatorReportSections,
   resolveReportVisibilityScope,
 } from '../reports/report-visibility-scope';
 import type {
@@ -32,6 +34,7 @@ export class LocalFieldDashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly coordinationService: CoordinationService,
   ) {}
 
   async getDashboard(
@@ -64,6 +67,31 @@ export class LocalFieldDashboardService {
   ): Promise<number> {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
+
+    if (needsCoordinatorReportSections(resolved)) {
+      const coordinatorScope =
+        await this.coordinationService.resolveCoordinatorScope(userId);
+      const generalFieldIds = [
+        ...new Set(
+          coordinatorScope.assignments
+            .filter((assignment) => assignment.assignment_type === 'GENERAL')
+            .map((assignment) => assignment.local_field_id),
+        ),
+      ];
+
+      if (
+        requestedLocalFieldId !== undefined &&
+        generalFieldIds.includes(requestedLocalFieldId)
+      ) {
+        return requestedLocalFieldId;
+      }
+
+      if (requestedLocalFieldId === undefined && generalFieldIds.length === 1) {
+        return generalFieldIds[0];
+      }
+
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
 
     const scope = resolveReportVisibilityScope(resolved, {
       localFieldId: requestedLocalFieldId,

@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
 import { role_category, user_approval_status } from '@prisma/client';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -49,6 +50,10 @@ describe('AdminUsersService', () => {
     resolveUserAuthorization: jest.fn(),
   };
 
+  const mockCoordinationService = {
+    getEffectiveCoordinatorSectionIds: jest.fn(),
+  };
+
   const mockBetterAuthService = {
     createUser: jest.fn(),
     resetPasswordForEmail: jest.fn(),
@@ -74,6 +79,10 @@ describe('AdminUsersService', () => {
           provide: BetterAuthService,
           useValue: mockBetterAuthService,
         },
+        {
+          provide: CoordinationService,
+          useValue: mockCoordinationService,
+        },
       ],
     }).compile();
 
@@ -81,6 +90,9 @@ describe('AdminUsersService', () => {
 
     mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
     mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [],
+    );
   });
 
   afterEach(() => {
@@ -486,7 +498,7 @@ describe('AdminUsersService', () => {
       );
     });
 
-    it('should enforce LOCAL_FIELD scope for coordinator', async () => {
+    it('should enforce SECTIONS scope for coordinator assignments', async () => {
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization({
           roles: ['coordinator'],
@@ -494,16 +506,51 @@ describe('AdminUsersService', () => {
           localFieldId: 11,
         }),
       );
+      mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+        [20, 21],
+      );
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
 
-      await service.listUsers('actor-coordinator', buildListQuery());
+      const result = await service.listUsers(
+        'actor-coordinator',
+        buildListQuery({ unionId: 99, localFieldId: 11 }),
+      );
 
+      expect(result.meta.scope).toEqual({
+        type: 'SECTIONS',
+        roles: ['coordinator'],
+        division_id: null,
+        union_id: null,
+        local_field_id: null,
+        club_section_ids: [20, 21],
+      });
       expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { local_field_id: 11 },
+          where: {
+            club_role_assignments: {
+              some: {
+                club_section_id: { in: [20, 21] },
+                active: true,
+              },
+            },
+          },
         }),
       );
+    });
+
+    it('should reject coordinator without assignments even if local_field_id exists', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['coordinator'],
+          unionId: 5,
+          localFieldId: 11,
+        }),
+      );
+
+      await expect(
+        service.listUsers('actor-coordinator', buildListQuery()),
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
 
     it('should reject admin without union_id/local_field_id', async () => {
@@ -518,7 +565,7 @@ describe('AdminUsersService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
 
-    it('should reject coordinator without local_field_id', async () => {
+    it('should reject coordinator without assignments', async () => {
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization({
           roles: ['coordinator'],

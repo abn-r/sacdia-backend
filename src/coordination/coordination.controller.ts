@@ -29,6 +29,7 @@ import {
 } from '../common/guards';
 import { CoordinationService } from './coordination.service';
 import {
+  BackfillCoordinatorAssignmentsDto,
   CreateCoordinationZoneDto,
   CreateCoordinatorAssignmentDto,
   UpdateCoordinationZoneDto,
@@ -181,6 +182,25 @@ export class AdminCoordinationController {
       req.user.sub,
       assignmentId,
       dto,
+    );
+    return { status: 'success', data };
+  }
+
+  @Post('local-fields/:localFieldId/backfill')
+  @ApiOperation({
+    summary:
+      'Migrar coordinadores legacy (rol + local_field_id) a asignación GENERAL',
+  })
+  @ApiParam({ name: 'localFieldId', type: Number })
+  async backfillLegacyAssignments(
+    @Req() req: AuthenticatedRequest,
+    @Param('localFieldId', ParseIntPipe) localFieldId: number,
+    @Body() dto: BackfillCoordinatorAssignmentsDto = {},
+  ) {
+    const data = await this.coordinationService.backfillLegacyAssignments(
+      req.user.sub,
+      localFieldId,
+      dto.dry_run ?? true,
     );
     return { status: 'success', data };
   }

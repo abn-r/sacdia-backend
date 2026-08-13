@@ -1,6 +1,7 @@
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassProgressAccessService } from './class-progress-access.service';
 
@@ -20,6 +21,9 @@ describe('ClassProgressAccessService', () => {
   };
   const mockAuthorizationContext = {
     hasAnyGlobalRole: jest.fn(),
+  };
+  const mockCoordinationService = {
+    getEffectiveCoordinatorSectionIds: jest.fn(),
   };
 
   const baseParams = {
@@ -44,6 +48,9 @@ describe('ClassProgressAccessService', () => {
     });
     mockPrisma.class_counselor_assignments.findFirst.mockResolvedValue(null);
     mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValue(false);
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [],
+    );
     mockPrisma.club_role_assignments.findMany.mockImplementation(
       ({ where }: { where: { user_id?: string } }) => {
         if (where.user_id === baseParams.targetUserId) {
@@ -63,6 +70,7 @@ describe('ClassProgressAccessService', () => {
     service = new ClassProgressAccessService(
       mockPrisma as unknown as PrismaService,
       mockAuthorizationContext as unknown as AuthorizationContextService,
+      mockCoordinationService as unknown as CoordinationService,
     );
   });
 
@@ -80,8 +88,11 @@ describe('ClassProgressAccessService', () => {
     expect(mockAuthorizationContext.hasAnyGlobalRole).not.toHaveBeenCalled();
   });
 
-  it('preserves global admin/coordinator access allowed by the existing guards', async () => {
-    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValue(true);
+  it('preserves global admin access allowed by the existing guards', async () => {
+    mockAuthorizationContext.hasAnyGlobalRole.mockImplementation(
+      (_userId: string, roles: string[]) =>
+        Promise.resolve(roles.includes('admin')),
+    );
 
     await expect(
       service.assertCanAccessClassProgress(baseParams),
@@ -89,16 +100,45 @@ describe('ClassProgressAccessService', () => {
 
     expect(mockAuthorizationContext.hasAnyGlobalRole).toHaveBeenCalledWith(
       baseParams.actorUserId,
-      [
-        'super-admin',
-        'admin',
-        'assistant-admin',
-        'coordinator',
-        'zone-coordinator',
-        'general-coordinator',
-      ],
+      ['super-admin', 'admin', 'assistant-admin'],
     );
     expect(mockPrisma.enrollments.findFirst).not.toHaveBeenCalled();
+    expect(
+      mockCoordinationService.getEffectiveCoordinatorSectionIds,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('allows a coordinator only inside assigned club section scope', async () => {
+    mockAuthorizationContext.hasAnyGlobalRole.mockImplementation(
+      (_userId: string, roles: string[]) =>
+        Promise.resolve(roles.includes('coordinator')),
+    );
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [20],
+    );
+
+    await expect(service.canAccessClassProgress(baseParams)).resolves.toBe(
+      true,
+    );
+
+    expect(
+      mockCoordinationService.getEffectiveCoordinatorSectionIds,
+    ).toHaveBeenCalledWith(baseParams.actorUserId);
+    expect(mockPrisma.class_counselor_assignments.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('rejects a coordinator outside assigned club section scope', async () => {
+    mockAuthorizationContext.hasAnyGlobalRole.mockImplementation(
+      (_userId: string, roles: string[]) =>
+        Promise.resolve(roles.includes('coordinator')),
+    );
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [99],
+    );
+
+    await expect(service.canAccessClassProgress(baseParams)).resolves.toBe(
+      false,
+    );
   });
 
   it('allows an assigned counselor when the target has an active enrollment in the same class and year', async () => {

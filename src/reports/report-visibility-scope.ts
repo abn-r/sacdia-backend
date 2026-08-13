@@ -14,9 +14,14 @@ const UNION_REPORTS_ROLES = new Set(['director-union', 'assistant-union']);
 
 const LOCAL_FIELD_REPORTS_ROLES = new Set([
   'assistant-admin',
-  'coordinator',
   'director-lf',
   'assistant-lf',
+]);
+
+const COORDINATOR_REPORT_ROLES = new Set([
+  'coordinator',
+  'zone-coordinator',
+  'general-coordinator',
 ]);
 
 export type ReportVisibilityFilters = {
@@ -44,17 +49,45 @@ export type ReportVisibilityScope =
   | {
       access: 'club_section';
       clubSectionId: number;
+    }
+  | {
+      access: 'club_sections';
+      clubSectionIds: number[];
     };
+
+export function needsCoordinatorReportSections(
+  resolved: ResolvedAuthorizationProfile,
+): boolean {
+  const roleNames = globalRoleNameSet(resolved);
+  if (
+    hasAnyRole(roleNames, ALL_REPORTS_ROLES) ||
+    hasAnyRole(roleNames, UNION_REPORTS_ROLES) ||
+    hasAnyRole(roleNames, LOCAL_FIELD_REPORTS_ROLES)
+  ) {
+    return false;
+  }
+
+  return hasAnyRole(roleNames, COORDINATOR_REPORT_ROLES);
+}
+
+export async function resolveReportVisibilityScopeForActor(
+  resolved: ResolvedAuthorizationProfile,
+  filters: ReportVisibilityFilters,
+  loadCoordinatorSectionIds: () => Promise<number[]>,
+): Promise<ReportVisibilityScope> {
+  const coordinatorSectionIds = needsCoordinatorReportSections(resolved)
+    ? await loadCoordinatorSectionIds()
+    : undefined;
+
+  return resolveReportVisibilityScope(resolved, filters, coordinatorSectionIds);
+}
 
 export function resolveReportVisibilityScope(
   resolved: ResolvedAuthorizationProfile,
   filters: ReportVisibilityFilters,
+  coordinatorSectionIds?: number[],
 ): ReportVisibilityScope {
-  const roleNames = new Set(
-    resolved.authorization.grants.global_roles.map((grant) =>
-      grant.role_name.toLowerCase(),
-    ),
-  );
+  const roleNames = globalRoleNameSet(resolved);
 
   if (hasAnyRole(roleNames, ALL_REPORTS_ROLES)) {
     return {
@@ -96,6 +129,14 @@ export function resolveReportVisibilityScope(
     return { access: 'local_field', localFieldId };
   }
 
+  if (hasAnyRole(roleNames, COORDINATOR_REPORT_ROLES)) {
+    if (!coordinatorSectionIds || coordinatorSectionIds.length === 0) {
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+
+    return { access: 'club_sections', clubSectionIds: coordinatorSectionIds };
+  }
+
   const activeAssignmentId =
     resolved.authorization.active_assignment.assignment_id;
   const activeGrant = resolved.authorization.grants.club_assignments.find(
@@ -117,6 +158,14 @@ export function buildReportClubWhere(
     return {
       club_sections: {
         some: { club_section_id: scope.clubSectionId },
+      },
+    };
+  }
+
+  if (scope.access === 'club_sections') {
+    return {
+      club_sections: {
+        some: { club_section_id: { in: scope.clubSectionIds } },
       },
     };
   }
@@ -148,6 +197,13 @@ export function buildReportClubSectionWhere(
   scope: ReportVisibilityScope,
   extra?: Prisma.club_sectionsWhereInput,
 ): Prisma.club_sectionsWhereInput {
+  if (scope.access === 'club_sections') {
+    return {
+      ...(extra ?? {}),
+      club_section_id: { in: scope.clubSectionIds },
+    };
+  }
+
   const clubWhere =
     scope.access === 'club_section' ? {} : buildReportClubWhere(scope);
 
@@ -158,6 +214,16 @@ export function buildReportClubSectionWhere(
     }),
     ...(Object.keys(clubWhere).length > 0 && { clubs: clubWhere }),
   };
+}
+
+function globalRoleNameSet(
+  resolved: ResolvedAuthorizationProfile,
+): Set<string> {
+  return new Set(
+    resolved.authorization.grants.global_roles.map((grant) =>
+      grant.role_name.toLowerCase(),
+    ),
+  );
 }
 
 function hasAnyRole(

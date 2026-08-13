@@ -8,6 +8,7 @@ import {
   AppConflictException,
   AppException,
   AppBadRequestException,
+  AppForbiddenException,
   AppInternalServerErrorException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
@@ -20,8 +21,9 @@ import {
 import type { MonthlyReportSnapshotData } from './monthly-reports-pdf.service';
 import {
   buildReportClubSectionWhere,
-  resolveReportVisibilityScope,
+  resolveReportVisibilityScopeForActor,
 } from '../reports/report-visibility-scope';
+import { CoordinationService } from '../coordination/coordination.service';
 
 const MONTHLY_REPORT_REMINDER_SOURCE = 'monthly_reports:reminder';
 const AUTO_GENERATION_STATUS_BATCH_SIZE = 500;
@@ -89,6 +91,8 @@ export class MonthlyReportsService {
     private readonly monthlyReportArtifactsService?: MonthlyReportArtifactsService,
     @Optional()
     private readonly lockService?: DistributedLockService,
+    @Optional()
+    private readonly coordinationService?: CoordinationService,
   ) {}
 
   // ========================================
@@ -550,11 +554,15 @@ export class MonthlyReportsService {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
 
-    const reportScope = resolveReportVisibilityScope(resolved, {
-      divisionId: filters.divisionId,
-      unionId: filters.unionId,
-      localFieldId: filters.localFieldId,
-    });
+    const reportScope = await resolveReportVisibilityScopeForActor(
+      resolved,
+      {
+        divisionId: filters.divisionId,
+        unionId: filters.unionId,
+        localFieldId: filters.localFieldId,
+      },
+      () => this.loadCoordinatorSectionIds(userId),
+    );
 
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? 25, 100);
@@ -636,6 +644,14 @@ export class MonthlyReportsService {
     });
 
     return { total, page, limit, items };
+  }
+
+  private async loadCoordinatorSectionIds(userId: string): Promise<number[]> {
+    if (!this.coordinationService) {
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+
+    return this.coordinationService.getEffectiveCoordinatorSectionIds(userId);
   }
 
   // ========================================

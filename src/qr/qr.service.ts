@@ -15,6 +15,7 @@ import {
   AuthorizationContextService,
   type ResolvedAuthorizationProfile,
 } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -30,7 +31,12 @@ const QR_PRIVATE_ASSET_TTL_SECONDS = 300;
 const QR_CARD_TITLE = 'SACDIA';
 const QR_CARD_SUBTITLE = 'Credencial virtual';
 
-const ADMIN_SCOPE_ROLES = new Set(['admin', 'super-admin', 'coordinator']);
+const ADMIN_SCOPE_ROLES = new Set(['admin', 'super-admin', 'assistant-admin']);
+const COORDINATOR_SCOPE_ROLES = [
+  'coordinator',
+  'zone-coordinator',
+  'general-coordinator',
+];
 
 type QrMemberPayload = {
   sub: string;
@@ -92,6 +98,7 @@ export class QrService {
     private readonly prisma: PrismaService,
     private readonly achievementsService: AchievementsService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly coordinationService: CoordinationService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
@@ -255,9 +262,10 @@ export class QrService {
    * Validates a scanned QR token and optionally registers attendance on an
    * activity. Signature, audience, version and expiry are enforced before
    * any DB write. When `activityId` is supplied, the caller must also be
-   * assigned to the activity's section (or an admin/coordinator) — this
+   * assigned to the activity's section (or an admin) — this
    * replicates the activity-scope check done by the regular attendance
-   * endpoint via `@AuthorizationResource`.
+   * endpoint via `@AuthorizationResource`. Coordinators may scan only
+   * inside `coordinator_assignments`.
    */
   async scanMemberToken(
     token: string,
@@ -448,9 +456,9 @@ export class QrService {
   /**
    * Enforces the same activity-scope rule as `@AuthorizationResource(activity)`
    * used by `/activities/:id/attendance`: the caller must either (a) hold a
-   * global role that owns every activity (`admin`/`super-admin`/`coordinator`)
-   * or (b) have an active assignment in the activity's section (or any of the
-   * participating sections, for joint activities).
+   * global admin role, (b) coordinate one of the activity's sections, or
+   * (c) have an active club assignment in the activity's section (or any of
+   * the participating sections, for joint activities).
    */
   private async assertCallerCanManageActivity(
     callerUserId: string,
@@ -461,19 +469,14 @@ export class QrService {
       activity_instances: { club_section_id: number | null }[];
     },
   ): Promise<void> {
-    const assignments = await this.prisma.club_role_assignments.findMany({
-      where: { user_id: callerUserId, active: true },
-      select: {
-        club_section_id: true,
-        roles: { select: { role_name: true } },
-      },
-    });
-
-    const hasAdminRole = assignments.some(
-      (a) =>
-        a.roles?.role_name != null && ADMIN_SCOPE_ROLES.has(a.roles.role_name),
-    );
-    if (hasAdminRole) return;
+    if (
+      await this.authorizationContext.hasAnyGlobalRole(
+        callerUserId,
+        [...ADMIN_SCOPE_ROLES],
+      )
+    ) {
+      return;
+    }
 
     const allowedSections = new Set<number>();
     if (activity.is_joint) {
@@ -491,6 +494,29 @@ export class QrService {
     if (allowedSections.size === 0) {
       throw new AppForbiddenException(ErrorCode.QR_ACTIVITY_SCOPE_INVALID);
     }
+
+    if (
+      await this.authorizationContext.hasAnyGlobalRole(
+        callerUserId,
+        COORDINATOR_SCOPE_ROLES,
+      )
+    ) {
+      const coordinatorSectionIds =
+        await this.coordinationService.getEffectiveCoordinatorSectionIds(
+          callerUserId,
+        );
+      if (coordinatorSectionIds.some((id) => allowedSections.has(id))) {
+        return;
+      }
+      throw new AppForbiddenException(ErrorCode.QR_ACCESS_DENIED);
+    }
+
+    const assignments = await this.prisma.club_role_assignments.findMany({
+      where: { user_id: callerUserId, active: true },
+      select: {
+        club_section_id: true,
+      },
+    });
 
     const callerSections = new Set(
       assignments

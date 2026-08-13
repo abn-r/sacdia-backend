@@ -9,9 +9,10 @@ import { ClassProgressScopeService } from './class-progress-scope.service';
 import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AchievementsModule } from '../achievements/achievements.module';
+import { CoordinationModule } from '../coordination/coordination.module';
 
 @Module({
-  imports: [PrismaModule, AchievementsModule],
+  imports: [PrismaModule, AchievementsModule, CoordinationModule],
   controllers: [
     ClassesController,
     UserClassesController,

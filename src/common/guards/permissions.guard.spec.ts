@@ -1186,7 +1186,7 @@ describe('PermissionsGuard', () => {
           grants: {
             global_roles: [
               {
-                role_name: 'coordinator',
+                role_name: 'director-lf',
                 permissions: ['camporee_events:update'],
                 scope: {},
               },
@@ -1392,7 +1392,7 @@ describe('PermissionsGuard', () => {
           grants: {
             global_roles: [
               {
-                role_name: 'coordinator',
+                role_name: 'director-lf',
                 permissions: ['camporee_events:update'],
                 scope: {},
               },

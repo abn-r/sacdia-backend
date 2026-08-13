@@ -8,8 +8,15 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import { ACHIEVEMENT_EVENTS } from '../achievements/events/achievement-events';
+
+const COORDINATOR_ROLES = new Set([
+  'coordinator',
+  'zone-coordinator',
+  'general-coordinator',
+]);
 
 export interface MemberResult {
   user_id: string;
@@ -25,6 +32,7 @@ export class MemberOfMonthService {
     private readonly notificationsService: NotificationsService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly achievementsService: AchievementsService,
+    private readonly coordinationService: CoordinationService,
   ) {}
 
   // ============================================================
@@ -183,17 +191,61 @@ export class MemberOfMonthService {
       ),
     );
     const isAdmin = globalRoles.has('admin') || globalRoles.has('super-admin');
+    const isCoordinator =
+      !isAdmin &&
+      [...COORDINATOR_ROLES].some((role) => globalRoles.has(role));
+
+    let coordinatorSectionIds: number[] | undefined;
+    if (isCoordinator) {
+      coordinatorSectionIds =
+        await this.coordinationService.getEffectiveCoordinatorSectionIds(
+          userId,
+        );
+      if (coordinatorSectionIds.length === 0) {
+        throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+      }
+    }
 
     const userLocalFieldId = resolved.authorization.effective.scope.global
       .local_field?.id as number | undefined;
 
-    const scopedLocalFieldId: number | undefined = isAdmin
-      ? filters.localFieldId
-      : userLocalFieldId;
+    const scopedLocalFieldId: number | undefined = isCoordinator
+      ? undefined
+      : isAdmin
+        ? filters.localFieldId
+        : userLocalFieldId;
 
     const page = Math.max(1, filters.page ?? 1);
     const limit = Math.min(Math.max(1, filters.limit ?? 20), 100);
     const skip = (page - 1) * limit;
+
+    if (coordinatorSectionIds) {
+      const allowedSectionIds =
+        filters.sectionId !== undefined
+          ? coordinatorSectionIds.filter((id) => id === filters.sectionId)
+          : coordinatorSectionIds;
+
+      if (allowedSectionIds.length === 0) {
+        return { total: 0, page, limit, items: [] };
+      }
+
+      const where: Prisma.member_of_monthWhereInput = {
+        ...(filters.year !== undefined && { year: filters.year }),
+        ...(filters.month !== undefined && { month: filters.month }),
+        ...(filters.notified !== undefined && { notified: filters.notified }),
+        club_section: {
+          club_section_id: { in: allowedSectionIds },
+          ...(filters.clubTypeId !== undefined && {
+            club_type_id: filters.clubTypeId,
+          }),
+          clubs: {
+            ...(filters.clubId !== undefined && { club_id: filters.clubId }),
+          },
+        },
+      };
+
+      return this.findAdminList(where, page, limit, skip);
+    }
 
     const where: Prisma.member_of_monthWhereInput = {
       ...(filters.year !== undefined && { year: filters.year }),
@@ -215,6 +267,15 @@ export class MemberOfMonthService {
       },
     };
 
+    return this.findAdminList(where, page, limit, skip);
+  }
+
+  private async findAdminList(
+    where: Prisma.member_of_monthWhereInput,
+    page: number,
+    limit: number,
+    skip: number,
+  ) {
     const [total, rows] = await Promise.all([
       this.prisma.member_of_month.count({ where }),
       this.prisma.member_of_month.findMany({

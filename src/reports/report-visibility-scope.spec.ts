@@ -99,9 +99,9 @@ describe('report visibility scope', () => {
     });
   });
 
-  it('forces field-tier actors and coordinators to their own local field', () => {
+  it('forces field-tier actors to their own local field', () => {
     const scope = resolveReportVisibilityScope(
-      resolvedAuth({ globalRoles: ['coordinator'], localFieldId: 7 }),
+      resolvedAuth({ globalRoles: ['director-lf'], localFieldId: 7 }),
       { localFieldId: 99 },
     );
 
@@ -112,6 +112,35 @@ describe('report visibility scope', () => {
     expect(buildReportClubWhere(scope)).toEqual({
       local_field_id: 7,
     });
+  });
+
+  it('scopes coordinators to assigned club sections and ignores local-field filters', () => {
+    const scope = resolveReportVisibilityScope(
+      resolvedAuth({ globalRoles: ['coordinator'], localFieldId: 7 }),
+      { localFieldId: 99 },
+      [20, 21],
+    );
+
+    expect(scope).toEqual({
+      access: 'club_sections',
+      clubSectionIds: [20, 21],
+    });
+    expect(buildReportClubWhere(scope)).toEqual({
+      club_sections: {
+        some: { club_section_id: { in: [20, 21] } },
+      },
+    });
+  });
+
+  it('rejects coordinators without assigned club sections', () => {
+    expect(() =>
+      resolveReportVisibilityScope(
+        resolvedAuth({ globalRoles: ['coordinator'], localFieldId: 7 }),
+        {},
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING }),
+    );
   });
 
   it('falls back to the active club section for club-scoped report readers', () => {

@@ -84,8 +84,9 @@ getUserHonors(@Param('userId') userId: string) { ... }
 
 **Logic**:
 1. ✅ Allow if `user.sub === params.userId` (owner)
-2. ✅ Allow if user has admin/coordinator/super-admin role
-3. ❌ Otherwise deny
+2. ✅ Allow if user has `admin` / `assistant-admin` / `super-admin`
+3. ❌ Coordinator is **not** an admin shortcut — deny unless they are the owner
+4. ❌ Otherwise deny
 
 **Use Cases**:
 - User profile endpoints

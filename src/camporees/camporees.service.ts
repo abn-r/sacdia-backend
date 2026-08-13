@@ -3167,6 +3167,10 @@ export class CamporeesService {
     authorization?: AuthorizationSnapshot,
   ) {
     const scope = this.resolveCamporeeAccessScope(authorization);
+    this.rejectDeniedCamporeeScope(
+      scope,
+      ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+    );
     if (!scope) {
       return;
     }
@@ -3771,6 +3775,10 @@ export class CamporeesService {
     authorization?: AuthorizationSnapshot,
   ) {
     const scope = this.resolveCamporeeAccessScope(authorization);
+    this.rejectDeniedCamporeeScope(
+      scope,
+      ErrorCode.CAMPOREE_UNION_ACCESS_DENIED,
+    );
     if (!scope) {
       return;
     }
@@ -3796,6 +3804,10 @@ export class CamporeesService {
     authorization?: AuthorizationSnapshot,
   ) {
     const scope = this.resolveCamporeeAccessScope(authorization);
+    this.rejectDeniedCamporeeScope(
+      scope,
+      ErrorCode.CAMPOREE_UNION_ACCESS_DENIED,
+    );
     if (!scope) {
       return;
     }
@@ -3812,6 +3824,10 @@ export class CamporeesService {
     authorization?: AuthorizationSnapshot,
   ) {
     const scope = this.resolveCamporeeAccessScope(authorization);
+    this.rejectDeniedCamporeeScope(
+      scope,
+      ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+    );
     if (!scope) {
       return;
     }
@@ -3845,6 +3861,7 @@ export class CamporeesService {
   ):
     | { type: 'local_field'; id: number }
     | { type: 'union'; id: number }
+    | { type: 'denied' }
     | null {
     if (!authorization) {
       return null;
@@ -3855,24 +3872,24 @@ export class CamporeesService {
       return null;
     }
 
+    const isAdministrative = this.hasGlobalRole(globalRoles, [
+      'admin',
+      'assistant-admin',
+    ]);
+    const isCoordinator = this.hasGlobalRole(globalRoles, [
+      'coordinator',
+      'zone-coordinator',
+      'general-coordinator',
+    ]);
+
     const globalScope = authorization.effective.scope.global;
     const globalLocalFieldId = globalScope.local_field?.id;
-    if (
-      typeof globalLocalFieldId === 'number' &&
-      this.hasGlobalRole(globalRoles, [
-        'admin',
-        'assistant-admin',
-        'coordinator',
-      ])
-    ) {
+    if (isAdministrative && typeof globalLocalFieldId === 'number') {
       return { type: 'local_field', id: globalLocalFieldId };
     }
 
     const globalUnionId = globalScope.union?.id;
-    if (
-      typeof globalUnionId === 'number' &&
-      this.hasGlobalRole(globalRoles, ['admin', 'assistant-admin'])
-    ) {
+    if (isAdministrative && typeof globalUnionId === 'number') {
       return { type: 'union', id: globalUnionId };
     }
 
@@ -3886,7 +3903,29 @@ export class CamporeesService {
       return { type: 'local_field', id: activeLocalFieldId };
     }
 
+    // Camporee stays outside coordinator surface. Do not treat the role as
+    // local-field admin, and do not fall through to unrestricted (null).
+    if (isCoordinator && !isAdministrative) {
+      return { type: 'denied' };
+    }
+
     return null;
+  }
+
+  private rejectDeniedCamporeeScope(
+    scope:
+      | { type: 'local_field'; id: number }
+      | { type: 'union'; id: number }
+      | { type: 'denied' }
+      | null,
+    deniedCode: ErrorCode,
+  ): asserts scope is
+    | { type: 'local_field'; id: number }
+    | { type: 'union'; id: number }
+    | null {
+    if (scope?.type === 'denied') {
+      throw new AppForbiddenException(deniedCode);
+    }
   }
 
   private hasGlobalRole(

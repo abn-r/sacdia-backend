@@ -1873,6 +1873,21 @@ WHERE r.role_name = 'coordinator'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ============================
+-- mom:supervise for coordinator roles
+-- Scoped at runtime to coordinator_assignments (club_section_ids), not local_field.
+-- ============================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('coordinator', 'zone-coordinator', 'general-coordinator')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'mom:supervise'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
 -- annual_folders:submit — club direction/secretariat only
 -- ============================
 -- Folder-level submit is granted in the director/secretary role blocks above.

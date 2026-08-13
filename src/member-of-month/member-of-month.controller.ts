@@ -38,7 +38,7 @@ export class MemberOfMonthController {
   @RequirePermissions('mom:supervise')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
-    summary: 'Listar miembro del mes multi-sección (admin/coordinator)',
+    summary: 'Listar miembro del mes multi-sección (admin/coordinator por asignaciones)',
   })
   @ApiQuery({ name: 'club_type_id', required: false, type: Number })
   @ApiQuery({ name: 'local_field_id', required: false, type: Number })

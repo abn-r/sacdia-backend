@@ -42,6 +42,7 @@ describe('AnnualReportsService admin visibility', () => {
     const service = new AnnualReportsService(
       mockPrisma as any,
       mockAuthorizationContext as any,
+      { getEffectiveCoordinatorSectionIds: jest.fn() } as any,
     );
 
     await service.listForAdmin('director-lf-user', { localFieldId: 99 });

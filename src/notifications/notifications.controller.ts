@@ -372,7 +372,9 @@ export class FcmTokensController {
   // Backwards compatible endpoint for admin/owner access
   @Get('user/:userId')
   @UseGuards(OwnerOrAdminGuard)
-  @ApiOperation({ summary: 'Get FCM tokens by user ID (owner/admin only)' })
+  @ApiOperation({
+    summary: 'Get FCM tokens by user ID (owner or admin/assistant-admin/super-admin)',
+  })
   @ApiResponse({ status: 200, description: 'List of FCM tokens for user' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({

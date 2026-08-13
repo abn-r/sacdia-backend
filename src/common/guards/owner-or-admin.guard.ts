@@ -3,10 +3,19 @@ import { AuthorizationContextService } from '../services/authorization-context.s
 import { AppForbiddenException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 
+const OWNER_OR_ADMIN_ROLES = [
+  'admin',
+  'assistant-admin',
+  'super-admin',
+] as const;
+
 /**
  * Guard que permite acceso si:
  * 1. El usuario es el propietario del recurso (userId en params coincide con el usuario autenticado)
- * 2. El usuario tiene un rol global administrativo (admin, assistant-admin, coordinator, super-admin)
+ * 2. El usuario tiene un rol global administrativo (admin, assistant-admin, super-admin)
+ *
+ * El rol `coordinator` no es atajo administrativo: su autoridad vive en
+ * `coordinator_assignments` (`club_section_ids`), no en este bypass.
  */
 @Injectable()
 export class OwnerOrAdminGuard implements CanActivate {
@@ -35,12 +44,10 @@ export class OwnerOrAdminGuard implements CanActivate {
     }
 
     // Caso 2: El usuario tiene rol administrativo global
-    const isAdmin = await this.authorizationContext.hasAnyGlobalRole(user.sub, [
-      'admin',
-      'assistant-admin',
-      'coordinator',
-      'super-admin',
-    ]);
+    const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
+      user.sub,
+      [...OWNER_OR_ADMIN_ROLES],
+    );
 
     if (isAdmin) {
       return true;

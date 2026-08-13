@@ -4,6 +4,7 @@ import { QrService } from './qr.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { StorageBucketAlias } from '../common/services/file-storage.service';
 
@@ -17,6 +18,10 @@ describe('QrService', () => {
 
   const mockAuthorizationContextService = {
     resolveUserAuthorization: jest.fn(),
+    hasAnyGlobalRole: jest.fn(),
+  };
+  const mockCoordinationService = {
+    getEffectiveCoordinatorSectionIds: jest.fn(),
   };
 
   const mockFileStorageService = {
@@ -49,6 +54,10 @@ describe('QrService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [],
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -59,6 +68,10 @@ describe('QrService', () => {
         {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContextService,
+        },
+        {
+          provide: CoordinationService,
+          useValue: mockCoordinationService,
         },
         {
           provide: FILE_STORAGE_SERVICE,
