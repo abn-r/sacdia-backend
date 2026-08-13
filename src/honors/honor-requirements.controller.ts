@@ -38,6 +38,7 @@ import {
 } from '../common/pipes/file-validation.pipe';
 import {
   AuthorizationResource,
+  Public,
   RequirePermissions,
 } from '../common/decorators';
 
@@ -47,6 +48,10 @@ import {
 
 @ApiTags('honors')
 @Controller('honors')
+// @Public exime del guard JWT global; OptionalJwtAuthGuard puebla req.user
+// cuando llega token. Las rutas con @UseGuards(JwtAuthGuard) locales siguen
+// exigiendo auth (el guard local ignora @Public).
+@Public()
 @UseGuards(OptionalJwtAuthGuard)
 export class HonorRequirementsController {
   constructor(

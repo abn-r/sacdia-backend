@@ -32,6 +32,7 @@ import { DeleteAccountDto } from './dto/delete-account.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { namedThrottle } from '../config/throttler.helpers';
 
 @ApiTags('auth')
@@ -42,6 +43,7 @@ export class AuthController {
     private readonly accountDeletionService: AccountDeletionService,
   ) {}
 
+  @Public()
   @Post('register')
   // Strict rate limit: 5 attempts per minute on registration
   @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
@@ -58,6 +60,7 @@ export class AuthController {
     return this.authService.register(registerDto);
   }
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   // Strict rate limit: 5 attempts per minute on login (brute-force protection)
@@ -97,6 +100,7 @@ export class AuthController {
     return this.authService.login(loginDto);
   }
 
+  @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   // Strict rate limit: 5 attempts per minute — matches login (replay/token-stuffing protection)
@@ -141,6 +145,9 @@ export class AuthController {
     return this.authService.refreshSession(dto, { userAgent });
   }
 
+  // Public on purpose: logout must work fail-safe with an expired access
+  // token (blacklists whatever tokens arrive, best effort).
+  @Public()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cerrar sesión' })
@@ -174,6 +181,7 @@ export class AuthController {
     });
   }
 
+  @Public()
   @Post('password/reset-request')
   @HttpCode(HttpStatus.OK)
   // Strict rate limit: 3 requests per minute to prevent email enumeration
@@ -211,6 +219,7 @@ export class AuthController {
     return this.authService.sendVerificationEmail(user.userId);
   }
 
+  @Public()
   @Throttle(namedThrottle({ ttl: 60000, limit: 10 }))
   @Post('verify-email/confirm')
   @HttpCode(HttpStatus.OK)
