@@ -42,6 +42,7 @@ describe('QuarterlyReportsService admin visibility', () => {
     const service = new QuarterlyReportsService(
       mockPrisma as any,
       mockAuthorizationContext as any,
+      { getEffectiveCoordinatorSectionIds: jest.fn() } as any,
     );
 
     await service.listForAdmin('director-union-user', {

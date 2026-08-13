@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { InsuranceService } from './insurance.service';
 
@@ -42,6 +44,18 @@ describe('InsuranceService', () => {
         {
           provide: FILE_STORAGE_SERVICE,
           useValue: mockFileStorageService,
+        },
+        {
+          provide: AuthorizationContextService,
+          useValue: {
+            resolveUserAuthorization: jest.fn(),
+          },
+        },
+        {
+          provide: CoordinationService,
+          useValue: {
+            getEffectiveCoordinatorSectionIds: jest.fn(),
+          },
         },
       ],
     }).compile();

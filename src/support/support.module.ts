@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
+import { CoordinationModule } from '../coordination/coordination.module';
 import { SupportController } from './support.controller';
 import { SupportAdminController } from './support-admin.controller';
 import { SupportService } from './support.service';
@@ -14,7 +15,7 @@ import { SupportService } from './support.service';
  * y url_launcher).
  */
 @Module({
-  imports: [PrismaModule, CommonModule],
+  imports: [PrismaModule, CommonModule, CoordinationModule],
   controllers: [SupportController, SupportAdminController],
   providers: [SupportService],
   exports: [SupportService],

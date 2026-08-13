@@ -247,7 +247,7 @@ export class InsuranceController {
     summary: 'Listar seguros próximos a vencer',
     description:
       'Devuelve seguros activos cuyo end_date cae dentro de los próximos `days_ahead` días. ' +
-      'Requiere rol global admin o coordinator.',
+      'Requiere rol global admin o coordinator. Los coordinadores ignoran `local_field_id` y solo ven miembros de sus secciones asignadas.',
   })
   @ApiQuery({
     name: 'days_ahead',
@@ -271,13 +271,20 @@ export class InsuranceController {
     description: 'Forbidden — requiere rol admin o coordinator',
   })
   async getExpiringInsurances(
+    @CurrentUser() user: CurrentUserPayload,
     @Query('days_ahead') daysAhead?: string,
     @Query('local_field_id') localFieldId?: string,
   ) {
+    const actorUserId = this.extractCurrentUserId(user);
+    if (!actorUserId) {
+      throw new AppForbiddenException(ErrorCode.GUARD_USER_NOT_AUTHENTICATED);
+    }
+
     const daysAheadNum = daysAhead !== undefined ? parseInt(daysAhead, 10) : 30;
     const localFieldIdNum =
       localFieldId !== undefined ? parseInt(localFieldId, 10) : undefined;
     const data = await this.service.getExpiringInsurances(
+      actorUserId,
       isNaN(daysAheadNum) ? 30 : daysAheadNum,
       localFieldIdNum !== undefined && isNaN(localFieldIdNum)
         ? undefined

@@ -5,9 +5,10 @@ import { QuarterlyReportsPdfService } from './quarterly-reports-pdf.service';
 import { QuarterlyReportsCronService } from './quarterly-reports-cron.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
+import { CoordinationModule } from '../coordination/coordination.module';
 
 @Module({
-  imports: [PrismaModule, CommonModule],
+  imports: [PrismaModule, CommonModule, CoordinationModule],
   controllers: [QuarterlyReportsController],
   providers: [
     QuarterlyReportsService,

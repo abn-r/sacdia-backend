@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassProgressScopeService } from './class-progress-scope.service';
 
@@ -38,6 +39,9 @@ describe('ClassProgressScopeService', () => {
   const mockAuthorizationContext = {
     hasAnyGlobalRole: jest.fn(),
   };
+  const mockCoordinationService = {
+    getEffectiveCoordinatorSectionIds: jest.fn(),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -51,6 +55,9 @@ describe('ClassProgressScopeService', () => {
       year_id: 2026,
     });
     mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValue(false);
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [],
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -60,6 +67,10 @@ describe('ClassProgressScopeService', () => {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContext,
         },
+        {
+          provide: CoordinationService,
+          useValue: mockCoordinationService,
+        },
       ],
     }).compile();
 
@@ -67,7 +78,10 @@ describe('ClassProgressScopeService', () => {
   });
 
   it('returns section-wide classes for global or section-wide actors', async () => {
-    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValue(true);
+    mockAuthorizationContext.hasAnyGlobalRole.mockImplementation(
+      (_userId: string, roles: string[]) =>
+        Promise.resolve(roles.includes('admin')),
+    );
     mockPrisma.classes.findMany.mockResolvedValue([
       { class_id: 1, name: 'Lección 1', club_type_id: 2, active: true },
       { class_id: 2, name: 'Lección 2', club_type_id: 2, active: true },
@@ -112,6 +126,35 @@ describe('ClassProgressScopeService', () => {
       },
       orderBy: [{ display_order: 'asc' }, { class_id: 'asc' }],
     });
+    expect(mockPrisma.class_counselor_assignments.findMany).not.toHaveBeenCalled();
+  });
+
+  it('returns section-wide classes when the coordinator owns that section', async () => {
+    mockAuthorizationContext.hasAnyGlobalRole.mockImplementation(
+      (_userId: string, roles: string[]) =>
+        Promise.resolve(roles.includes('coordinator')),
+    );
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [10],
+    );
+    mockPrisma.classes.findMany.mockResolvedValue([
+      { class_id: 1, name: 'Lección 1', club_type_id: 2, active: true },
+    ]);
+
+    await expect(
+      service.getProgressScope({
+        actorUserId: 'coordinator-1',
+        clubId: 99,
+        sectionId: 10,
+      }),
+    ).resolves.toMatchObject({
+      access_level: 'section',
+      club_section_id: 10,
+    });
+
+    expect(
+      mockCoordinationService.getEffectiveCoordinatorSectionIds,
+    ).toHaveBeenCalledWith('coordinator-1');
     expect(mockPrisma.class_counselor_assignments.findMany).not.toHaveBeenCalled();
   });
 

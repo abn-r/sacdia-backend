@@ -25,6 +25,46 @@ const COORDINATOR_ROLE_NAMES = [
 
 const DIRECTOR_ROLE_NAME = 'director';
 
+const COORDINATOR_ROLE_RANK: Record<string, number> = {
+  'general-coordinator': 0,
+  coordinator: 1,
+  'zone-coordinator': 2,
+};
+
+export type CoordinatorBackfillSkipReason =
+  | 'already_has_general'
+  | 'already_assigned'
+  | 'director_conflict'
+  | 'general_slot_taken';
+
+export type CoordinatorBackfillCandidate = {
+  user_id: string;
+  email: string | null;
+  name: string | null;
+  paternal_last_name: string | null;
+  maternal_last_name: string | null;
+  role_name: string;
+};
+
+export type CoordinatorBackfillResult = {
+  dry_run: boolean;
+  local_field_id: number;
+  existing_general: {
+    assignment_id: string;
+    user_id: string;
+  } | null;
+  created: Array<
+    CoordinatorBackfillCandidate & {
+      assignment_id: string | null;
+    }
+  >;
+  skipped: Array<
+    CoordinatorBackfillCandidate & {
+      reason: CoordinatorBackfillSkipReason;
+    }
+  >;
+};
+
 type SectionScopeRow = {
   club_section_id: number;
   name: string | null;
@@ -406,6 +446,175 @@ export class CoordinationService {
     return scope.club_section_ids;
   }
 
+  async backfillLegacyAssignments(
+    actorUserId: string,
+    localFieldId: number,
+    dryRun = true,
+  ): Promise<CoordinatorBackfillResult> {
+    await this.ensureActorCanManageLocalField(actorUserId, localFieldId);
+    await this.assertLocalFieldExists(localFieldId);
+
+    const existingGeneral =
+      await this.prisma.coordinator_assignments.findFirst({
+        where: {
+          local_field_id: localFieldId,
+          assignment_type: coordinator_assignment_type.GENERAL,
+          ...this.activeAssignmentWindowWhere(),
+        },
+        select: { assignment_id: true, user_id: true },
+      });
+
+    const candidates = await this.prisma.users.findMany({
+      where: {
+        local_field_id: localFieldId,
+        active: true,
+        users_roles: {
+          some: {
+            active: true,
+            roles: {
+              active: true,
+              role_name: { in: COORDINATOR_ROLE_NAMES },
+            },
+          },
+        },
+      },
+      select: {
+        user_id: true,
+        email: true,
+        name: true,
+        paternal_last_name: true,
+        maternal_last_name: true,
+        created_at: true,
+        users_roles: {
+          where: {
+            active: true,
+            roles: {
+              active: true,
+              role_name: { in: COORDINATOR_ROLE_NAMES },
+            },
+          },
+          select: { roles: { select: { role_name: true } } },
+        },
+      },
+    });
+
+    const ranked = [...candidates].sort((left, right) => {
+      const rankDelta =
+        this.bestCoordinatorRoleRank(left.users_roles) -
+        this.bestCoordinatorRoleRank(right.users_roles);
+      if (rankDelta !== 0) return rankDelta;
+      return left.created_at.getTime() - right.created_at.getTime();
+    });
+
+    const created: CoordinatorBackfillResult['created'] = [];
+    const skipped: CoordinatorBackfillResult['skipped'] = [];
+    let generalTaken = Boolean(existingGeneral);
+
+    const sectionIds = await this.resolveSectionIdsForAssignmentInput(
+      localFieldId,
+      coordinator_assignment_type.GENERAL,
+    );
+
+    for (const candidate of ranked) {
+      const summary = this.toBackfillCandidate(candidate);
+
+      if (existingGeneral?.user_id === candidate.user_id) {
+        skipped.push({ ...summary, reason: 'already_has_general' });
+        continue;
+      }
+
+      const existingAssignment =
+        await this.prisma.coordinator_assignments.findFirst({
+          where: {
+            user_id: candidate.user_id,
+            local_field_id: localFieldId,
+            ...this.activeAssignmentWindowWhere(),
+          },
+          select: { assignment_id: true },
+        });
+
+      if (existingAssignment) {
+        skipped.push({ ...summary, reason: 'already_assigned' });
+        continue;
+      }
+
+      const conflictSectionId = await this.findDirectorConflictSectionId(
+        candidate.user_id,
+        sectionIds,
+      );
+      if (conflictSectionId) {
+        skipped.push({ ...summary, reason: 'director_conflict' });
+        continue;
+      }
+
+      if (generalTaken) {
+        skipped.push({ ...summary, reason: 'general_slot_taken' });
+        continue;
+      }
+
+      if (dryRun) {
+        created.push({ ...summary, assignment_id: null });
+        generalTaken = true;
+        continue;
+      }
+
+      const assignment = await this.createAssignment(
+        actorUserId,
+        localFieldId,
+        {
+          user_id: candidate.user_id,
+          assignment_type: coordinator_assignment_type.GENERAL,
+        },
+      );
+      created.push({ ...summary, assignment_id: assignment.assignment_id });
+      generalTaken = true;
+    }
+
+    return {
+      dry_run: dryRun,
+      local_field_id: localFieldId,
+      existing_general: existingGeneral,
+      created,
+      skipped,
+    };
+  }
+
+  private bestCoordinatorRoleRank(
+    roles: Array<{ roles: { role_name: string } | null }>,
+  ): number {
+    const ranks = roles.map(
+      (entry) => COORDINATOR_ROLE_RANK[entry.roles?.role_name ?? ''] ?? 99,
+    );
+    return ranks.length > 0 ? Math.min(...ranks) : 99;
+  }
+
+  private toBackfillCandidate(user: {
+    user_id: string;
+    email: string | null;
+    name: string | null;
+    paternal_last_name: string | null;
+    maternal_last_name: string | null;
+    users_roles: Array<{ roles: { role_name: string } | null }>;
+  }): CoordinatorBackfillCandidate {
+    const rankedNames = [...user.users_roles]
+      .map((entry) => entry.roles?.role_name)
+      .filter((name): name is string => Boolean(name))
+      .sort(
+        (left, right) =>
+          (COORDINATOR_ROLE_RANK[left] ?? 99) -
+          (COORDINATOR_ROLE_RANK[right] ?? 99),
+      );
+
+    return {
+      user_id: user.user_id,
+      email: user.email,
+      name: user.name,
+      paternal_last_name: user.paternal_last_name,
+      maternal_last_name: user.maternal_last_name,
+      role_name: rankedNames[0] ?? 'coordinator',
+    };
+  }
+
   private async ensureActorCanManageLocalField(
     actorUserId: string,
     localFieldId: number,
@@ -645,11 +854,11 @@ export class CoordinationService {
     return sections.map((section) => section.club_section_id);
   }
 
-  private async assertNoDirectorConflict(
+  private async findDirectorConflictSectionId(
     userId: string,
     clubSectionIds: number[],
-  ): Promise<void> {
-    if (clubSectionIds.length === 0) return;
+  ): Promise<number | null> {
+    if (clubSectionIds.length === 0) return null;
 
     const activeDirectorAssignment =
       await this.prisma.club_role_assignments.findFirst({
@@ -668,10 +877,22 @@ export class CoordinationService {
         select: { club_section_id: true },
       });
 
-    if (activeDirectorAssignment) {
+    return activeDirectorAssignment?.club_section_id ?? null;
+  }
+
+  private async assertNoDirectorConflict(
+    userId: string,
+    clubSectionIds: number[],
+  ): Promise<void> {
+    const clubSectionId = await this.findDirectorConflictSectionId(
+      userId,
+      clubSectionIds,
+    );
+
+    if (clubSectionId) {
       throw new AppConflictException(ErrorCode.RECORD_CONFLICT, {
         reason: 'director_coordinator_same_section_conflict',
-        club_section_id: activeDirectorAssignment.club_section_id,
+        club_section_id: clubSectionId,
       });
     }
   }

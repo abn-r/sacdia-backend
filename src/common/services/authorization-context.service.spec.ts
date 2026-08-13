@@ -468,4 +468,58 @@ describe('AuthorizationContextService', () => {
       result.authorization.effective.scope.club?.section.club_section_id,
     ).toBe(44);
   });
+
+  it('does not treat coordinators as local-field hierarchy actors', () => {
+    const resolved = {
+      authorization: {
+        grants: {
+          global_roles: [
+            { role_name: 'coordinator', permissions: [], scope: {} },
+          ],
+        },
+        effective: {
+          scope: {
+            global: {
+              local_field: { id: 7, name: 'Campo' },
+            },
+          },
+        },
+      },
+    } as any;
+
+    expect(
+      service.canAccessHierarchyScope(
+        resolved,
+        { local_field_id: 7 },
+        'current-write',
+      ),
+    ).toBe(false);
+  });
+
+  it('still allows director-lf on a matching local field', () => {
+    const resolved = {
+      authorization: {
+        grants: {
+          global_roles: [
+            { role_name: 'director-lf', permissions: [], scope: {} },
+          ],
+        },
+        effective: {
+          scope: {
+            global: {
+              local_field: { id: 7, name: 'Campo' },
+            },
+          },
+        },
+      },
+    } as any;
+
+    expect(
+      service.canAccessHierarchyScope(
+        resolved,
+        { local_field_id: 7 },
+        'current-write',
+      ),
+    ).toBe(true);
+  });
 });

@@ -1889,6 +1889,107 @@ describe('CamporeesService', () => {
         }),
       );
     });
+
+    const coordinatorAuth = (
+      roleName: string,
+      options: {
+        localFieldId?: number;
+        assignmentLocalFieldId?: number;
+      } = {},
+    ): AuthorizationSnapshot => ({
+      grants: {
+        global_roles: [
+          {
+            role_name: roleName,
+            permissions: ['camporees:read'],
+            scope: {
+              ...(options.localFieldId === undefined
+                ? {}
+                : { local_field: { id: options.localFieldId } }),
+            },
+          },
+        ],
+        club_assignments:
+          options.assignmentLocalFieldId === undefined
+            ? []
+            : [
+                {
+                  assignment_id: 'assignment-1',
+                  role_name: 'director',
+                  permissions: ['camporees:read'],
+                  club: { club_id: 12, club_name: 'Orión' },
+                  section: { club_section_id: 44, club_type_id: 2 },
+                  scope: {
+                    local_field: { id: options.assignmentLocalFieldId },
+                  },
+                  status: 'active',
+                },
+              ],
+      },
+      active_assignment: {
+        assignment_id:
+          options.assignmentLocalFieldId === undefined ? null : 'assignment-1',
+      },
+      effective: {
+        permissions: ['camporees:read'],
+        scope: {
+          global: {
+            ...(options.localFieldId === undefined
+              ? {}
+              : { local_field: { id: options.localFieldId, name: 'Campo' } }),
+          },
+          club: null,
+        },
+      },
+    });
+
+    it('rejects coordinator listing scoped only by users.local_field_id', async () => {
+      await expect(
+        service.findAll({}, undefined, coordinatorAuth('coordinator', {
+          localFieldId: 7,
+        })),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+      });
+      expect(mockPrismaService.local_camporees.findMany).not.toHaveBeenCalled();
+    });
+
+    it('lets dual-role coordinator+director keep club-assignment local field', async () => {
+      mockPrismaService.local_camporees.findMany.mockResolvedValue([]);
+      mockPrismaService.local_camporees.count.mockResolvedValue(0);
+
+      await service.findAll(
+        {},
+        undefined,
+        coordinatorAuth('zone-coordinator', {
+          localFieldId: 7,
+          assignmentLocalFieldId: 5,
+        }),
+      );
+
+      expect(mockPrismaService.local_camporees.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { local_field_id: 5 },
+        }),
+      );
+    });
+
+    it('still scopes admin listing to their local field', async () => {
+      mockPrismaService.local_camporees.findMany.mockResolvedValue([]);
+      mockPrismaService.local_camporees.count.mockResolvedValue(0);
+
+      await service.findAll(
+        {},
+        undefined,
+        coordinatorAuth('admin', { localFieldId: 9 }),
+      );
+
+      expect(mockPrismaService.local_camporees.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { local_field_id: 9 },
+        }),
+      );
+    });
   });
 
   describe('findOne', () => {
@@ -2110,6 +2211,47 @@ describe('CamporeesService', () => {
           'actor-id',
         ),
       ).rejects.toThrow('Expected an IANA timezone');
+    });
+
+    it('rejects coordinator create that used local_field_id as an admin shortcut', async () => {
+      await expect(
+        service.create(
+          {
+            name: 'Coordinator leak',
+            start_date: '2026-07-10',
+            end_date: '2026-07-12',
+            local_field_id: 7,
+            includes_adventurers: true,
+            includes_pathfinders: true,
+            includes_master_guides: false,
+            local_camporee_place: 'Test Location',
+          },
+          'coordinator-1',
+          {
+            grants: {
+              global_roles: [
+                {
+                  role_name: 'coordinator',
+                  permissions: ['camporees:create'],
+                  scope: { local_field: { id: 7 } },
+                },
+              ],
+              club_assignments: [],
+            },
+            active_assignment: { assignment_id: null },
+            effective: {
+              permissions: ['camporees:create'],
+              scope: {
+                global: { local_field: { id: 7, name: 'Campo' } },
+                club: null,
+              },
+            },
+          },
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+      });
+      expect(mockPrismaService.local_camporees.create).not.toHaveBeenCalled();
     });
   });
 

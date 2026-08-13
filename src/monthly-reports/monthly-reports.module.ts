@@ -8,9 +8,15 @@ import { MonthlyReportsReminderCronService } from './monthly-reports-reminder-cr
 import { PrismaModule } from '../prisma/prisma.module';
 import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { CoordinationModule } from '../coordination/coordination.module';
 
 @Module({
-  imports: [PrismaModule, BackgroundJobsQueueModule, NotificationsModule],
+  imports: [
+    PrismaModule,
+    BackgroundJobsQueueModule,
+    NotificationsModule,
+    CoordinationModule,
+  ],
   controllers: [MonthlyReportsController],
   providers: [
     MonthlyReportsService,

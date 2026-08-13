@@ -6,6 +6,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const SECTION_WIDE_ROLE_NAMES = new Set([
@@ -19,6 +20,9 @@ const GLOBAL_PROGRESS_SCOPE_ROLES = [
   'super-admin',
   'admin',
   'assistant-admin',
+];
+
+const COORDINATOR_PROGRESS_SCOPE_ROLES = [
   'coordinator',
   'zone-coordinator',
   'general-coordinator',
@@ -78,6 +82,7 @@ export class ClassProgressScopeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly coordinationService: CoordinationService,
   ) {}
 
   async getProgressScope(
@@ -92,8 +97,19 @@ export class ClassProgressScopeService {
       params.actorUserId,
       GLOBAL_PROGRESS_SCOPE_ROLES,
     );
+    const hasCoordinatorSectionAccess =
+      (await this.authorizationContext.hasAnyGlobalRole(
+        params.actorUserId,
+        COORDINATOR_PROGRESS_SCOPE_ROLES,
+      )) &&
+      (
+        await this.coordinationService.getEffectiveCoordinatorSectionIds(
+          params.actorUserId,
+        )
+      ).includes(params.sectionId);
     const hasSectionWideAccess =
       hasGlobalAccess ||
+      hasCoordinatorSectionAccess ||
       (await this.hasSectionWideAccess({
         actorUserId: params.actorUserId,
         sectionId: params.sectionId,

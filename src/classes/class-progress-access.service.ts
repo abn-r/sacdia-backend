@@ -4,6 +4,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const SECTION_WIDE_ROLE_NAMES = new Set([
@@ -17,6 +18,9 @@ const GLOBAL_PROGRESS_ACCESS_ROLES = [
   'super-admin',
   'admin',
   'assistant-admin',
+];
+
+const COORDINATOR_PROGRESS_ACCESS_ROLES = [
   'coordinator',
   'zone-coordinator',
   'general-coordinator',
@@ -35,6 +39,7 @@ export class ClassProgressAccessService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly coordinationService: CoordinationService,
   ) {}
 
   async canAccessClassProgress(
@@ -109,6 +114,25 @@ export class ClassProgressAccessService {
 
     if (targetSectionIds.length === 0) {
       return false;
+    }
+
+    if (
+      await this.authorizationContext.hasAnyGlobalRole(
+        params.actorUserId,
+        COORDINATOR_PROGRESS_ACCESS_ROLES,
+      )
+    ) {
+      const coordinatorSectionIds =
+        await this.coordinationService.getEffectiveCoordinatorSectionIds(
+          params.actorUserId,
+        );
+      if (
+        targetSectionIds.some((sectionId) =>
+          coordinatorSectionIds.includes(sectionId),
+        )
+      ) {
+        return true;
+      }
     }
 
     const counselorAssignment = await this.prisma.class_counselor_assignments.findFirst(

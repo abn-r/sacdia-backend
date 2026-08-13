@@ -36,6 +36,7 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import {
   AdminListUsersQueryDto,
   CreateAdminUserDto,
@@ -69,7 +70,7 @@ export type BulkUsersResult = {
 };
 
 // ── Scope types ───────────────────────────────────────────────────────────────
-type ScopeType = 'ALL' | 'DIVISION' | 'UNION' | 'LOCAL_FIELD';
+type ScopeType = 'ALL' | 'DIVISION' | 'UNION' | 'LOCAL_FIELD' | 'SECTIONS';
 
 interface ActorScope {
   type: ScopeType;
@@ -77,6 +78,7 @@ interface ActorScope {
   divisionId?: number;
   unionId?: number;
   localFieldId?: number;
+  clubSectionIds?: number[];
 }
 
 interface ScopeMeta {
@@ -85,6 +87,7 @@ interface ScopeMeta {
   division_id: number | null;
   union_id: number | null;
   local_field_id: number | null;
+  club_section_ids: number[] | null;
 }
 
 interface AdminUsersListResult<T> {
@@ -489,6 +492,7 @@ export class AdminUsersService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly betterAuthService: BetterAuthService,
+    private readonly coordinationService: CoordinationService,
   ) {}
 
   async listUsers(
@@ -717,6 +721,8 @@ export class AdminUsersService {
     'coordinator',
     'zone-coordinator',
     'general-coordinator',
+  ];
+  private static readonly PASTOR_SCOPE_ROLES: ReadonlyArray<string> = [
     'pastor',
   ];
 
@@ -1139,6 +1145,19 @@ export class AdminUsersService {
     }
 
     if (this.hasAnyRole(roles, AdminUsersService.COORDINATOR_SCOPE_ROLES)) {
+      const clubSectionIds =
+        await this.coordinationService.getEffectiveCoordinatorSectionIds(
+          actorUserId,
+        );
+
+      if (clubSectionIds.length > 0) {
+        return { type: 'SECTIONS', roles, clubSectionIds };
+      }
+
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+
+    if (this.hasAnyRole(roles, AdminUsersService.PASTOR_SCOPE_ROLES)) {
       const localFieldId = globalScope.local_field?.id;
 
       if (typeof localFieldId === 'number') {
@@ -1222,12 +1241,14 @@ export class AdminUsersService {
       });
     }
 
-    if (query.unionId) {
-      filters.push({ union_id: query.unionId });
-    }
+    if (scope.type !== 'SECTIONS') {
+      if (query.unionId) {
+        filters.push({ union_id: query.unionId });
+      }
 
-    if (query.localFieldId) {
-      filters.push({ local_field_id: query.localFieldId });
+      if (query.localFieldId) {
+        filters.push({ local_field_id: query.localFieldId });
+      }
     }
 
     if (filters.length === 0) {
@@ -1254,6 +1275,17 @@ export class AdminUsersService {
       return { union_id: scope.unionId! };
     }
 
+    if (scope.type === 'SECTIONS') {
+      return {
+        club_role_assignments: {
+          some: {
+            club_section_id: { in: scope.clubSectionIds ?? [] },
+            active: true,
+          },
+        },
+      };
+    }
+
     return { local_field_id: scope.localFieldId! };
   }
 
@@ -1264,6 +1296,7 @@ export class AdminUsersService {
       division_id: scope.divisionId ?? null,
       union_id: scope.unionId ?? null,
       local_field_id: scope.localFieldId ?? null,
+      club_section_ids: scope.clubSectionIds ?? null,
     };
   }
 

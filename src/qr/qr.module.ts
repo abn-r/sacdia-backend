@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { CoordinationModule } from '../coordination/coordination.module';
 import { QrController } from './qr.controller';
 import { QrService } from './qr.service';
 
@@ -10,6 +11,7 @@ import { QrService } from './qr.service';
   imports: [
     PrismaModule,
     AchievementsModule,
+    CoordinationModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {

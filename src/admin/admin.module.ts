@@ -20,6 +20,7 @@ import { AdminPhaseECatalogsService } from './admin-phase-e-catalogs.service';
 import { AdminCronAlertsService } from './admin-cron-alerts.service';
 import { MasterHonorsQueueModule } from '../honors/master-honors-queue.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { CoordinationModule } from '../coordination/coordination.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     // — no explicit import needed here.
     MasterHonorsQueueModule,
     NotificationsModule,
+    CoordinationModule,
   ],
   controllers: [
     AdminAuthController,

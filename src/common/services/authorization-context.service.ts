@@ -558,7 +558,7 @@ export class AuthorizationContextService {
       union_id?: number | null;
       local_field_id?: number | null;
     },
-    policy: 'current-write' | 'historical-read',
+    _policy: 'current-write' | 'historical-read',
   ): boolean {
     const roleNames = this.getGlobalRoleNameSet(resolved);
 
@@ -571,22 +571,12 @@ export class AuthorizationContextService {
     const globalUnionId = globalScope.union?.id;
     const globalDivisionId = globalScope.division?.id;
 
-    const localFieldAllowedRoles =
-      policy === 'historical-read'
-        ? [
-            'admin',
-            'assistant-admin',
-            'coordinator',
-            'director-lf',
-            'assistant-lf',
-          ]
-        : [
-            'admin',
-            'assistant-admin',
-            'coordinator',
-            'director-lf',
-            'assistant-lf',
-          ];
+    const localFieldAllowedRoles = [
+      'admin',
+      'assistant-admin',
+      'director-lf',
+      'assistant-lf',
+    ];
 
     if (
       typeof scope.local_field_id === 'number' &&

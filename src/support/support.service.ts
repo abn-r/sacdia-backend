@@ -1,6 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
+import {
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { CreateSupportReportDto } from './dto/create-support-report.dto';
 import { SupportReportResponseDto } from './dto/support-report-response.dto';
 import * as Sentry from '@sentry/node';
@@ -32,7 +39,11 @@ type SupportReportWithUser = Prisma.support_reportsGetPayload<{
 export class SupportService {
   private readonly logger = new Logger(SupportService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+    private readonly coordinationService: CoordinationService,
+  ) {}
 
   /**
    * Crea un nuevo reporte de soporte.
@@ -99,11 +110,17 @@ export class SupportService {
   }
 
   async listReports(
+    actorUserId: string,
     query: QuerySupportReportsDto,
   ): Promise<AdminSupportReportsPageDto> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const where = this.buildReportWhere(query);
+    const where = {
+      AND: [
+        this.buildReportWhere(query),
+        await this.buildCoordinatorReporterWhere(actorUserId),
+      ],
+    };
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.support_reports.findMany({
@@ -124,19 +141,34 @@ export class SupportService {
     };
   }
 
-  async getReport(reportId: string): Promise<AdminSupportReportDto> {
-    const report = await this.prisma.support_reports.findUniqueOrThrow({
-      where: { id: reportId },
+  async getReport(
+    actorUserId: string,
+    reportId: string,
+  ): Promise<AdminSupportReportDto> {
+    const report = await this.prisma.support_reports.findFirst({
+      where: {
+        AND: [
+          { id: reportId },
+          await this.buildCoordinatorReporterWhere(actorUserId),
+        ],
+      },
       include: this.adminReportInclude(),
     });
+
+    if (!report) {
+      throw new AppNotFoundException(ErrorCode.RECORD_NOT_FOUND);
+    }
 
     return this.toAdminReport(report);
   }
 
   async updateReportStatus(
+    actorUserId: string,
     reportId: string,
     status: SupportReportStatus,
   ): Promise<AdminSupportReportDto> {
+    await this.getReport(actorUserId, reportId);
+
     const updated = await this.prisma.support_reports.update({
       where: { id: reportId },
       data: { status },
@@ -146,6 +178,53 @@ export class SupportService {
     this.logger.log(`Support report ${reportId} status updated to ${status}`);
 
     return this.toAdminReport(updated);
+  }
+
+  private async buildCoordinatorReporterWhere(
+    actorUserId: string,
+  ): Promise<Prisma.support_reportsWhereInput> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorUserId);
+    const roleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    if (
+      roleNames.has('admin') ||
+      roleNames.has('assistant-admin') ||
+      roleNames.has('super-admin')
+    ) {
+      return {};
+    }
+
+    if (
+      roleNames.has('coordinator') ||
+      roleNames.has('zone-coordinator') ||
+      roleNames.has('general-coordinator')
+    ) {
+      const sectionIds =
+        await this.coordinationService.getEffectiveCoordinatorSectionIds(
+          actorUserId,
+        );
+      if (sectionIds.length === 0) {
+        throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+      }
+
+      return {
+        user: {
+          club_role_assignments: {
+            some: {
+              club_section_id: { in: sectionIds },
+              active: true,
+            },
+          },
+        },
+      };
+    }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
 
   private buildReportWhere(

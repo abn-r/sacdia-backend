@@ -5,8 +5,11 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import {
   AppBadRequestException,
+  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -64,6 +67,8 @@ export class InsuranceService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly authorizationContext: AuthorizationContextService,
+    private readonly coordinationService: CoordinationService,
   ) {}
 
   private get db(): any {
@@ -154,7 +159,11 @@ export class InsuranceService {
     return this.mapMemberInsuranceDetail(member, insurance, true);
   }
 
-  async getExpiringInsurances(daysAhead: number, localFieldId?: number) {
+  async getExpiringInsurances(
+    actorUserId: string,
+    daysAhead: number,
+    localFieldId?: number,
+  ) {
     const now = new Date();
     const cutoff = new Date(now);
     cutoff.setDate(cutoff.getDate() + daysAhead);
@@ -165,13 +174,8 @@ export class InsuranceService {
         gte: now,
         lte: cutoff,
       },
+      ...(await this.buildExpiringScopeWhere(actorUserId, localFieldId)),
     };
-
-    if (localFieldId !== undefined) {
-      whereClause.users = {
-        local_field_id: localFieldId,
-      };
-    }
 
     const insurances = await this.db.member_insurances.findMany({
       where: whereClause,
@@ -255,6 +259,58 @@ export class InsuranceService {
         is_expiring_soon: daysRemaining <= 30,
       };
     });
+  }
+
+  private async buildExpiringScopeWhere(
+    actorUserId: string,
+    localFieldId?: number,
+  ): Promise<Record<string, unknown>> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorUserId);
+    const roleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    if (
+      roleNames.has('admin') ||
+      roleNames.has('assistant-admin') ||
+      roleNames.has('super-admin')
+    ) {
+      if (localFieldId === undefined) {
+        return {};
+      }
+
+      return { users: { local_field_id: localFieldId } };
+    }
+
+    if (
+      roleNames.has('coordinator') ||
+      roleNames.has('zone-coordinator') ||
+      roleNames.has('general-coordinator')
+    ) {
+      const sectionIds =
+        await this.coordinationService.getEffectiveCoordinatorSectionIds(
+          actorUserId,
+        );
+      if (sectionIds.length === 0) {
+        throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+      }
+
+      return {
+        users: {
+          club_role_assignments: {
+            some: {
+              club_section_id: { in: sectionIds },
+              active: true,
+            },
+          },
+        },
+      };
+    }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
 
   async createInsurance(

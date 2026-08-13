@@ -15,7 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { GlobalRoles } from '../common/decorators';
+import { GlobalRoles, CurrentUser } from '../common/decorators';
 import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
 import {
   AdminSupportReportDto,
@@ -41,9 +41,10 @@ export class SupportAdminController {
   })
   @ApiOkResponse({ type: AdminSupportReportsPageDto })
   async listReports(
+    @CurrentUser() user: { sub: string },
     @Query() query: QuerySupportReportsDto,
   ): Promise<{ status: string; data: AdminSupportReportsPageDto }> {
-    const data = await this.supportService.listReports(query);
+    const data = await this.supportService.listReports(user.sub, query);
     return { status: 'ok', data };
   }
 
@@ -53,9 +54,10 @@ export class SupportAdminController {
   @ApiParam({ name: 'reportId', description: 'UUID del reporte' })
   @ApiOkResponse({ type: AdminSupportReportDto })
   async getReport(
+    @CurrentUser() user: { sub: string },
     @Param('reportId') reportId: string,
   ): Promise<{ status: string; data: AdminSupportReportDto }> {
-    const data = await this.supportService.getReport(reportId);
+    const data = await this.supportService.getReport(user.sub, reportId);
     return { status: 'ok', data };
   }
 
@@ -65,10 +67,12 @@ export class SupportAdminController {
   @ApiParam({ name: 'reportId', description: 'UUID del reporte' })
   @ApiOkResponse({ type: AdminSupportReportDto })
   async updateReportStatus(
+    @CurrentUser() user: { sub: string },
     @Param('reportId') reportId: string,
     @Body() dto: UpdateSupportReportStatusDto,
   ): Promise<{ status: string; data: AdminSupportReportDto }> {
     const data = await this.supportService.updateReportStatus(
+      user.sub,
       reportId,
       dto.status,
     );

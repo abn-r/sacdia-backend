@@ -7,9 +7,10 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { UpdateQuarterlyManualDataDto } from './dto';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import {
   buildReportClubWhere,
-  resolveReportVisibilityScope,
+  resolveReportVisibilityScopeForActor,
 } from '../reports/report-visibility-scope';
 
 // ============================================================
@@ -48,6 +49,7 @@ export class QuarterlyReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly coordinationService: CoordinationService,
   ) {}
 
   // ========================================
@@ -401,11 +403,15 @@ export class QuarterlyReportsService {
   ) {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
-    const reportScope = resolveReportVisibilityScope(resolved, {
-      divisionId: filters.divisionId,
-      unionId: filters.unionId,
-      localFieldId: filters.localFieldId,
-    });
+    const reportScope = await resolveReportVisibilityScopeForActor(
+      resolved,
+      {
+        divisionId: filters.divisionId,
+        unionId: filters.unionId,
+        localFieldId: filters.localFieldId,
+      },
+      () => this.coordinationService.getEffectiveCoordinatorSectionIds(userId),
+    );
     const clubWhere = buildReportClubWhere(reportScope);
 
     const page = filters.page ?? 1;

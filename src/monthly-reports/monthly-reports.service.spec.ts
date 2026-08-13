@@ -34,6 +34,9 @@ describe('MonthlyReportsService admin list authorization', () => {
   const mockAuthorizationContext = {
     resolveUserAuthorization: jest.fn(),
   };
+  const mockCoordinationService = {
+    getEffectiveCoordinatorSectionIds: jest.fn(),
+  };
 
   let service: MonthlyReportsService;
 
@@ -91,6 +94,10 @@ describe('MonthlyReportsService admin list authorization', () => {
     service = new MonthlyReportsService(
       mockPrisma as any,
       mockAuthorizationContext as any,
+      undefined,
+      undefined,
+      undefined,
+      mockCoordinationService as any,
     );
     mockPrisma.monthly_reports.count.mockResolvedValue(0);
     mockPrisma.monthly_reports.findMany.mockResolvedValue([]);
@@ -155,31 +162,37 @@ describe('MonthlyReportsService admin list authorization', () => {
     });
   });
 
-  it('rejects coordinator without a real local field scope', async () => {
+  it('rejects coordinator without assigned club sections', async () => {
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
       resolvedAuth({ roles: ['coordinator'] }),
     );
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [],
+    );
 
     await expect(
-      service.listForAdmin('coordinator-without-lf', { localFieldId: 99 }),
+      service.listForAdmin('coordinator-without-scope', { localFieldId: 99 }),
     ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
 
     expect(mockPrisma.monthly_reports.count).not.toHaveBeenCalled();
     expect(mockPrisma.monthly_reports.findMany).not.toHaveBeenCalled();
   });
 
-  it('forces coordinator scope to the actor local field and ignores arbitrary local_field_id filters', async () => {
+  it('scopes coordinator list to assigned club sections and ignores local_field_id filters', async () => {
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
       resolvedAuth({ roles: ['coordinator'], localFieldId: 7 }),
     );
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [20, 21],
+    );
 
-    await service.listForAdmin('coordinator-with-lf', { localFieldId: 99 });
+    await service.listForAdmin('coordinator-with-scope', { localFieldId: 99 });
 
     expect(mockPrisma.monthly_reports.count).toHaveBeenCalledWith({
       where: {
         club_enrollment: {
           club_section: {
-            clubs: { local_field_id: 7 },
+            club_section_id: { in: [20, 21] },
           },
         },
       },
