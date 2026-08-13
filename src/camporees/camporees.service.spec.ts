@@ -80,6 +80,7 @@ describe('CamporeesService', () => {
     },
     club_role_assignments: {
       findFirst: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     camporee_event_section_results: {
       count: jest.fn(),
@@ -2505,6 +2506,29 @@ describe('CamporeesService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
       });
+      expect(mockPrismaService.camporee_members.create).not.toHaveBeenCalled();
+    });
+
+    it('blocks direct union registration when the member club LF has payment orders enabled', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValueOnce([
+        { club_sections: { clubs: { local_field_id: 4 } } },
+      ]);
+      mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValueOnce(
+        true,
+      );
+
+      await expect(
+        service.registerMemberToUnion(1, {
+          user_id: 'user-1',
+          club_name: 'Club',
+          insurance_id: 1,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
+      });
+      expect(
+        mockFieldPaymentOrdersFlag.isEnabledForLocalField,
+      ).toHaveBeenCalledWith(4);
       expect(mockPrismaService.camporee_members.create).not.toHaveBeenCalled();
     });
 

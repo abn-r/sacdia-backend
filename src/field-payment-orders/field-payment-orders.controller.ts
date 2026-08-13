@@ -104,6 +104,33 @@ export class FieldPaymentOrdersController {
     };
   }
 
+  @Post('union-camporees/:camporeeId/payment-orders')
+  @RequirePermissions('field-payment-orders:create')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({
+    summary:
+      'Emitir orden de pago grupal de camporee de unión (cobra el Campo Local)',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  @ApiResponse({ status: 201, description: 'Orden emitida' })
+  async createUnionCamporeeOrder(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Body() dto: CreateCamporeePaymentOrderDto,
+    @Req() request: RequestWithProfile,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.service.createUnionCamporeeOrder(
+        camporeeId,
+        dto,
+        resolveOrderActor(request),
+        idempotencyKey,
+      ),
+    };
+  }
+
   @Get('payment-orders')
   @RequirePermissions('field-payment-orders:read')
   @AuthorizationResource({ type: 'active_assignment' })

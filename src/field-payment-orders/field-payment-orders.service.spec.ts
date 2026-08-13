@@ -137,6 +137,50 @@ describe('FieldPaymentOrdersService', () => {
       expect(deltaDays).toBeLessThanOrEqual(15);
     });
 
+    it('maps local camporee orders to local_camporee_id', async () => {
+      camporeePort.prepareOrder.mockResolvedValue(
+        preparedOrder({ purpose_ref_id: 40, camporee_scope: 'local' }),
+      );
+      tx.field_payment_orders.create.mockResolvedValue({ id: 'o1' });
+
+      await service.createCamporeeOrder(
+        40,
+        { beneficiary_user_ids: ['ben-1'] },
+        directorActor(),
+      );
+
+      expect(camporeePort.prepareOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ camporee_id: 40, camporee_type: 'local' }),
+        expect.anything(),
+      );
+      const data = tx.field_payment_orders.create.mock.calls[0][0].data;
+      expect(data.local_camporee_id).toBe(40);
+      expect(data.union_camporee_id).toBeNull();
+      expect(data.insurance_cycle_config_id).toBeNull();
+    });
+
+    it('maps union camporee orders to union_camporee_id (v1.1)', async () => {
+      camporeePort.prepareOrder.mockResolvedValue(
+        preparedOrder({ purpose_ref_id: 90, camporee_scope: 'union' }),
+      );
+      tx.field_payment_orders.create.mockResolvedValue({ id: 'o1' });
+
+      await service.createUnionCamporeeOrder(
+        90,
+        { beneficiary_user_ids: ['ben-1'] },
+        directorActor(),
+      );
+
+      expect(camporeePort.prepareOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ camporee_id: 90, camporee_type: 'union' }),
+        expect.anything(),
+      );
+      const data = tx.field_payment_orders.create.mock.calls[0][0].data;
+      expect(data.local_camporee_id).toBeNull();
+      expect(data.union_camporee_id).toBe(90);
+      expect(data.insurance_cycle_config_id).toBeNull();
+    });
+
     it('rejects creation when the LF flag is off', async () => {
       flag.isEnabledForLocalField.mockResolvedValue(false);
       await expect(

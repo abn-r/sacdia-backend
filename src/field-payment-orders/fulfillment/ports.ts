@@ -10,6 +10,11 @@ export interface PreparedOrder {
   club_id: number;
   club_section_id: number;
   purpose_ref_id: number;
+  /**
+   * CAMPOREE only: whether purpose_ref_id points to local_camporees or
+   * union_camporees. Defaults to 'local' when absent.
+   */
+  camporee_scope?: 'local' | 'union';
   unit_cost_centavos: number;
   currency: string;
   concept: string;
@@ -24,6 +29,7 @@ export interface OrderForFulfillment {
   club_section_id: number;
   insurance_cycle_config_id: number | null;
   local_camporee_id: number | null;
+  union_camporee_id: number | null;
   folio_reference: string;
   issued_by_id: string;
   unit_cost_centavos: number;
