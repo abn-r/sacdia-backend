@@ -25,6 +25,7 @@ import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import {
   AuthorizationResource,
+  Public,
   RequirePermissions,
 } from '../common/decorators';
 import {
@@ -39,6 +40,10 @@ import {
 
 @ApiTags('certifications')
 @Controller('certifications')
+// @Public exime del guard JWT global; OptionalJwtAuthGuard puebla req.user
+// cuando llega token. Las rutas con @UseGuards(JwtAuthGuard) locales siguen
+// exigiendo auth (el guard local ignora @Public).
+@Public()
 @UseGuards(OptionalJwtAuthGuard)
 export class CertificationsController {
   constructor(private readonly certificationsService: CertificationsService) {}

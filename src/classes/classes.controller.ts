@@ -34,6 +34,7 @@ import { EnrollClassDto, UpdateProgressDto } from './dto';
 import {
   AuthorizationResource,
   CurrentUser,
+  Public,
   RequirePermissions,
 } from '../common/decorators';
 import {
@@ -49,6 +50,10 @@ type CurrentUserPayload = {
 
 @ApiTags('classes')
 @Controller('classes')
+// @Public exime del guard JWT global; OptionalJwtAuthGuard puebla req.user
+// cuando llega token. Las rutas con @UseGuards(JwtAuthGuard) locales siguen
+// exigiendo auth (el guard local ignora @Public).
+@Public()
 @UseGuards(OptionalJwtAuthGuard)
 export class ClassesController {
   constructor(private readonly classesService: ClassesService) {}

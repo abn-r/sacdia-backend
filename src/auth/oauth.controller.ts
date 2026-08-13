@@ -19,6 +19,7 @@ import { OAuthService } from './oauth.service';
 import { OAuthInitiateDto } from './dto/oauth-initiate.dto';
 import { OAuthCallbackDto } from './dto/oauth-callback.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { Public } from '../common/decorators/public.decorator';
 
 /**
  * OAuthController — Better Auth edition (W3-008 Part 3)
@@ -51,6 +52,7 @@ export class OAuthController {
   // OAuth initiation
   // ---------------------------------------------------------------------------
 
+  @Public()
   @Post('google')
   @ApiResponse({ status: 400, description: 'Redirect URL inválida o faltante' })
   @ApiOperation({
@@ -74,6 +76,7 @@ export class OAuthController {
     return this.oauthService.initiateGoogleSignIn(dto.redirectUrl);
   }
 
+  @Public()
   @Post('apple')
   @ApiResponse({ status: 400, description: 'Redirect URL inválida o faltante' })
   @ApiOperation({
@@ -101,6 +104,7 @@ export class OAuthController {
   // OAuth callback finalisation
   // ---------------------------------------------------------------------------
 
+  @Public()
   @Post('callback')
   @ApiOperation({
     summary: 'Finalizar callback de OAuth',

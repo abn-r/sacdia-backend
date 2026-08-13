@@ -70,6 +70,7 @@ import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
 import { buildThrottlerOptions } from './config/throttler.config';
 import { UserAwareThrottlerGuard } from './config/user-aware-throttler.guard';
+import { GlobalJwtAuthGuard } from './common/guards/global-jwt-auth.guard';
 
 @Module({
   imports: [
@@ -260,6 +261,16 @@ import { UserAwareThrottlerGuard } from './config/user-aware-throttler.guard';
     {
       provide: APP_GUARD,
       useClass: UserAwareThrottlerGuard,
+    },
+    // ==========================================
+    // GUARD GLOBAL - Autenticación JWT
+    // ==========================================
+    // Deny-by-default: todo endpoint requiere JWT salvo que esté marcado
+    // con @Public() (login, health ping, catálogos con OptionalJwtAuthGuard,
+    // bootstrap RBAC). Un @UseGuards olvidado ya no expone el endpoint.
+    {
+      provide: APP_GUARD,
+      useClass: GlobalJwtAuthGuard,
     },
   ],
 })

@@ -10,7 +10,7 @@ import type { Cache } from 'cache-manager';
 import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
-import { GlobalRoles } from '../common/decorators';
+import { GlobalRoles, Public } from '../common/decorators';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 
 @ApiTags('health')
@@ -22,6 +22,7 @@ export class HealthController {
     private readonly catalogCache: CatalogCacheService,
   ) {}
 
+  @Public()
   @Get()
   @ApiOperation({
     summary: 'Public ping — returns ok if API is reachable',
