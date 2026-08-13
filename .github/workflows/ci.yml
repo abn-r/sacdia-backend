@@ -227,6 +227,12 @@ jobs:
           pnpm prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script > /tmp/e2e-schema.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f /tmp/e2e-schema.sql
 
+      # I18nModule loads translations from dist/i18n (process.cwd() anchor in
+      # src/app.module.ts). The e2e job never runs `nest build`, so copy the
+      # source assets to the path the loader expects.
+      - name: Stage i18n assets
+        run: mkdir -p dist && cp -R src/i18n dist/i18n
+
       # Blocking subset: suites verified green against an ephemeral database.
       # The remaining suites drifted while e2e was not in CI (stale specs) and
       # are tracked for re-alignment in docs/api/TESTING-GUIDE.md — add each
