@@ -16,6 +16,7 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import type { Request as ExpressRequest, Response } from 'express';
 import {
   ApiBearerAuth,
@@ -290,7 +291,7 @@ export class AdminUsersController {
     'assistant-dia',
   )
   @RequirePermissions('users:bulk_create')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiOperation({
     summary: 'Carga masiva de usuarios desde archivo .xlsx o .csv',
   })

@@ -11,6 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../../common/constants/upload-limits.constants';
 import 'multer';
 import {
   ApiBearerAuth,
@@ -59,7 +60,7 @@ export class ReceiptsController {
 
   @Post(':folio')
   @RequirePermissions(MATERIALS_UPLOAD_RECEIPT)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Upload payment receipt for an approved order',
