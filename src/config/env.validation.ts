@@ -76,9 +76,32 @@ export const envValidationSchema = Joi.object({
     .when('NODE_ENV', { is: 'production', then: Joi.forbidden() })
     .optional(),
   FRONTEND_URL: Joi.string().uri().optional(),
-  ALLOWED_ORIGINS: Joi.string().optional(),
+  // CORS allowlist. Mandatory in production: without it the API would either
+  // reject the real admin/app origins or silently run with a localhost list.
+  ALLOWED_ORIGINS: Joi.string()
+    .trim()
+    .min(1)
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    })
+    .messages({
+      'any.required':
+        'ALLOWED_ORIGINS is required in production (comma-separated list of admin/app origins)',
+    }),
   AUTH_REJECT_SNAKE_CASE: Joi.boolean().default(false),
-  SWAGGER_ENABLED: Joi.string().valid('true', 'false').optional(),
+  // Swagger UI is opt-in and must never be enabled in production: it exposes
+  // the full OpenAPI surface at /api.
+  SWAGGER_ENABLED: Joi.string()
+    .valid('true', 'false')
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string().invalid('true').messages({
+        'any.invalid': 'SWAGGER_ENABLED must be false in production',
+      }),
+    })
+    .optional(),
   // Email feature flag — defaults to false (fail-safe: emails OFF unless explicitly enabled).
   // Checked as process.env.EMAIL_ENABLED === 'true' in auth.service.ts and better-auth.service.ts.
   EMAIL_ENABLED: Joi.string().valid('true', 'false').default('false'),
