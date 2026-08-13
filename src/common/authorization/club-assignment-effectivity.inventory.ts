@@ -25,7 +25,7 @@ const baseline = {
   'admin/admin-geography.service.ts':
     'historicalWhere|allowlist|1|d56c9a4907fd',
   'admin/admin-reference.service.ts': 'effectiveWhere|T09|1|f9e0a7b798f8',
-  'admin/admin-users.service.ts': 'effectiveWhere|T09|3|8efadfaf99fa',
+  'admin/admin-users.service.ts': 'effectiveWhere|T09|4|ddf8a92e7a05',
   'analytics/analytics.service.ts': 'effectiveWhere|T09|9|cd865fa6eeb2',
   'analytics/operations-dashboard.repository.ts':
     'effectiveWhere|T09|5|b1e4bbcd3060',
@@ -72,7 +72,7 @@ const baseline = {
   'honors/master-honors-evaluator.service.ts':
     'effectiveWhere|T08|2|637369e238ef',
   'honors/master-honors.service.ts': 'effectiveWhere|T08|2|2741ba22d4d7',
-  'insurance/insurance.service.ts': 'effectiveWhere|T09|2|2fc49adf6156',
+  'insurance/insurance.service.ts': 'effectiveWhere|T09|3|7740d25c2af3',
   'investiture/investiture.service.ts': 'effectiveWhere|T08|7|d70d00723588',
   'member-of-month/member-of-month.service.ts':
     'effectiveWhere|T09|2|4a63b7e684b3',
@@ -85,7 +85,7 @@ const baseline = {
   'notifications/notifications.service.ts': 'effectiveWhere|T09|2|12585f37569f',
   'post-registration/post-registration.service.ts':
     'workflowWhere|allowlist|3|4dfdc41976e6',
-  'qr/qr.service.ts': 'effectiveWhere|T08|3|a4cc54c2bd51',
+  'qr/qr.service.ts': 'effectiveWhere|T08|3|6c3e2cb5d46a',
   'quarterly-reports/quarterly-reports.service.ts':
     'effectiveWhere|T09|3|1c55ef0ad8fe',
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
@@ -94,6 +94,7 @@ const baseline = {
   'requests/requests.service.ts': 'effectiveWhere|T08|7|98c8941232e0',
   'scoring-categories/scoring-categories.service.ts':
     'effectiveWhere|T09|2|13fb6223b7d5',
+  'support/support.service.ts': 'effectiveWhere|T09|1|1048e37fdce1',
   'units/units.service.ts': 'effectiveWhere|T08|1|46d392950956',
   'validation/validation.service.ts': 'effectiveWhere|T09|3|af6362f7dd6f',
 } as const;
