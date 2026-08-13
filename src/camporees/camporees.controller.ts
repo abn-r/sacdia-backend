@@ -15,6 +15,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import {
   ApiTags,
   ApiOperation,
@@ -1130,7 +1131,7 @@ export class CamporeesController {
   @Post(':camporeeId/payments/:paymentId/voucher')
   @RequirePermissions('attendance:manage')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiOperation({
     summary: 'Adjuntar comprobante a un pago',
     description:

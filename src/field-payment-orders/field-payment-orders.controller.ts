@@ -15,6 +15,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import type { Response } from 'express';
 import 'multer';
 import {
@@ -242,9 +243,11 @@ export class FieldPaymentOrdersController {
   @Post('payment-orders/:orderId/proof')
   @RequirePermissions('field-payment-orders:upload-proof')
   @AuthorizationResource({ type: 'active_assignment' })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Subir comprobante de pago (multipart, campo file)' })
+  @ApiOperation({
+    summary: 'Subir comprobante de pago (multipart, campo file)',
+  })
   @ApiParam({ name: 'orderId', type: String })
   @ApiBody({
     schema: {

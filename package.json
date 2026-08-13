@@ -95,7 +95,7 @@
     "resend": "^6.18.1",
     "rxjs": "^7.8.1",
     "sanitize-html": "^2.17.6",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
@@ -168,6 +168,21 @@
       "^better-auth$": "<rootDir>/../test/mocks/better-auth.mock.ts",
       "^better-auth/(.*)$": "<rootDir>/../test/mocks/better-auth.mock.ts",
       "^#async_hooks$": "<rootDir>/../test/mocks/async-hooks.mock.ts"
+    }
+  },
+  "pnpm": {
+    "overrides": {
+      "next": ">=15.2.3 <16",
+      "nanoid@3": ">=3.3.17",
+      "postcss@8": ">=8.5.12",
+      "sharp": ">=0.35.0",
+      "js-yaml@3": ">=3.15.1 <4",
+      "js-yaml@4": ">=5.2.2",
+      "js-yaml@5": ">=5.2.2",
+      "brace-expansion@1": ">=1.1.17 <2",
+      "brace-expansion@2": ">=2.0.2",
+      "fast-uri@3": ">=3.1.5",
+      "form-data@4": ">=4.0.6"
     }
   }
 }

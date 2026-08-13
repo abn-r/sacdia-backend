@@ -14,6 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import 'multer';
 import {
   ApiBearerAuth,
@@ -229,9 +230,7 @@ export class AnnualFolderTemplatesController {
   @ApiResponse({ status: 400, description: 'Template is not a draft' })
   @ApiResponse({ status: 404, description: 'Template not found' })
   @ApiResponse({ status: 409, description: 'Template has generated folders' })
-  async removeTemplate(
-    @Param('templateId', ParseUUIDPipe) templateId: string,
-  ) {
+  async removeTemplate(@Param('templateId', ParseUUIDPipe) templateId: string) {
     const data = await this.service.removeTemplate(templateId);
     return { status: 'success', ...data };
   }
@@ -457,7 +456,7 @@ export class AnnualFoldersController {
 
   @Post(':folderId/sections/:sectionId/evidences')
   @RequirePermissions('evidence_folders:update')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload evidence to a folder section' })
   @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })

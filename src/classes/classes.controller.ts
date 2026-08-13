@@ -14,6 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import 'multer';
 import {
   FileValidationPipe,
@@ -324,7 +325,7 @@ export class UserClassesController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Upload evidence file for a class section',

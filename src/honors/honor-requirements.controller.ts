@@ -13,6 +13,7 @@ import {
   UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import {
   ApiTags,
   ApiOperation,
@@ -189,7 +190,7 @@ export class UserHonorRequirementsController {
   @Post(':honorId/requirements/:requirementId/evidence/upload')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiOperation({
     summary: 'Subir evidencia (imagen o archivo) para un requisito',
   })
