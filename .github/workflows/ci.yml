@@ -233,6 +233,14 @@ jobs:
       - name: Stage i18n assets
         run: mkdir -p dist && cp -R src/i18n dist/i18n
 
+      # classes-progress-migration.e2e-spec.ts validates the FS-03 backfill SQL
+      # that lives in the monorepo canonical docs (../../docs relative to test/,
+      # i.e. one level above this repo checkout in the monorepo layout).
+      - name: Stage canonical docs
+        run: |
+          git clone --depth=1 https://github.com/abn-r/sacdia.git /tmp/sacdia-canonical
+          cp -R /tmp/sacdia-canonical/docs "$GITHUB_WORKSPACE/../docs"
+
       # Blocking subset: suites verified green against an ephemeral database.
       # The remaining suites drifted while e2e was not in CI (stale specs) and
       # are tracked for re-alignment in docs/api/TESTING-GUIDE.md — add each
@@ -325,8 +333,7 @@ jobs:
   required_unit_tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    needs:
-      [backend_unit_tests, cross_repo_contract, redis_contract, backend_e2e_tests]
+    needs: [backend_unit_tests, cross_repo_contract, redis_contract, backend_e2e_tests]
     if: ${{ always() }}
     steps:
       - name: Require all test gates
