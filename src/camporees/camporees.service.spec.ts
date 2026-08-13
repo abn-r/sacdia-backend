@@ -18,10 +18,15 @@ import {
 } from './dto';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { AppConflictException } from '../common/errors/app.exception';
+import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
   let _prisma: PrismaService;
+
+  const mockFieldPaymentOrdersFlag = {
+    isEnabledForLocalField: jest.fn().mockResolvedValue(false),
+  };
 
   const mockLifecyclePolicy = {
     assertDateOrder: jest.fn(),
@@ -279,6 +284,10 @@ describe('CamporeesService', () => {
         {
           provide: CamporeeLifecyclePolicy,
           useValue: mockLifecyclePolicy,
+        },
+        {
+          provide: FieldPaymentOrdersFlagService,
+          useValue: mockFieldPaymentOrdersFlag,
         },
       ],
     }).compile();
@@ -2472,6 +2481,31 @@ describe('CamporeesService', () => {
       expect(mockLifecyclePolicy.isAfterDeadline).toHaveBeenCalledWith(
         memberDeadline,
       );
+    });
+
+    it('blocks direct member registration when field payment orders are enabled', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue({
+        active: true,
+        local_field_id: 1,
+        name: 'Local',
+        end_date: new Date('2026-07-12'),
+        member_registration_deadline: memberDeadline,
+      });
+      mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValueOnce(
+        true,
+      );
+
+      await expect(
+        service.registerMember(
+          1,
+          { user_id: 'user-1', club_name: 'Club', insurance_id: 1 },
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
+      });
+      expect(mockPrismaService.camporee_members.create).not.toHaveBeenCalled();
     });
 
     it('uses the policy for a local payment deadline', async () => {

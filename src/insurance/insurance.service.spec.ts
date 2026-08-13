@@ -3,6 +3,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
+import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { InsuranceService } from './insurance.service';
 
@@ -25,6 +26,13 @@ describe('InsuranceService', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
+    insurance_assignments: {
+      findFirst: jest.fn(),
+    },
+  };
+
+  const mockFieldPaymentOrdersFlag = {
+    isEnabledForLocalField: jest.fn().mockResolvedValue(false),
   };
 
   const mockFileStorageService = {
@@ -57,10 +65,15 @@ describe('InsuranceService', () => {
             getEffectiveCoordinatorSectionIds: jest.fn(),
           },
         },
+        {
+          provide: FieldPaymentOrdersFlagService,
+          useValue: mockFieldPaymentOrdersFlag,
+        },
       ],
     }).compile();
 
     service = module.get(InsuranceService);
+    mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValue(false);
 
     jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
     mockFileStorageService.getSignedDownloadUrl.mockImplementation(
@@ -246,7 +259,54 @@ describe('InsuranceService', () => {
       },
       current_class: { name: 'Explorador' },
       insurance: null,
+      coverage_source: 'legacy',
+      active_assignment: null,
     });
+  });
+
+  it('marks coverage as capacity_model when an active assignment exists', async () => {
+    mockPrismaService.users.findUnique.mockResolvedValue({
+      user_id: 'member-2',
+      name: 'Ana',
+      paternal_last_name: 'Pérez',
+      maternal_last_name: null,
+      user_image: null,
+      enrollments: [],
+    });
+    mockPrismaService.member_insurances.findFirst.mockResolvedValue(null);
+    mockPrismaService.insurance_assignments.findFirst.mockResolvedValue({
+      insurance_assignment_id: 55,
+      valid_from: new Date('2026-01-01'),
+      valid_until: new Date('2027-01-01'),
+    });
+
+    const result = await service.getMemberInsurance('member-2');
+
+    expect(result.coverage_source).toBe('capacity_model');
+    expect(result.active_assignment).toMatchObject({
+      insurance_assignment_id: 55,
+    });
+  });
+
+  it('blocks legacy insurance creation when the member LF has payment orders enabled', async () => {
+    mockPrismaService.users.findUnique.mockResolvedValue({
+      user_id: 'member-9',
+      local_field_id: 7,
+      enrollments: [],
+    });
+    mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValue(true);
+
+    await expect(
+      service.createInsurance(
+        'member-9',
+        { insurance_type: 'GENERAL_ACTIVITIES' },
+        undefined,
+        'admin-1',
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
+    });
+    expect(mockPrismaService.member_insurances.create).not.toHaveBeenCalled();
   });
 
   it('creates insurance with evidence upload and stores audit fields', async () => {

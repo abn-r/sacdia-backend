@@ -14,6 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import {
   FileValidationPipe,
   ALLOWED_MIME_TYPES,
@@ -316,7 +317,7 @@ export class InsuranceController {
   @Post('users/:memberId/insurance')
   @RequirePermissions('insurance:create')
   @AuthorizationResource({ type: 'insurance_member', idParam: 'memberId' })
-  @UseInterceptors(FileInterceptor('evidence'))
+  @UseInterceptors(FileInterceptor('evidence', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Crear seguro para un miembro' })
   @ApiParam({ name: 'memberId', type: String })
@@ -365,7 +366,7 @@ export class InsuranceController {
   @Patch('insurance/:insuranceId')
   @RequirePermissions('insurance:update')
   @AuthorizationResource({ type: 'insurance_record', idParam: 'insuranceId' })
-  @UseInterceptors(FileInterceptor('evidence'))
+  @UseInterceptors(FileInterceptor('evidence', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Actualizar seguro' })
   @ApiParam({ name: 'insuranceId', type: Number })

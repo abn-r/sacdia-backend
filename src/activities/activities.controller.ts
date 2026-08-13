@@ -14,6 +14,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import 'multer';
 import {
   FileValidationPipe,
@@ -93,8 +94,7 @@ export class ActivitiesController {
     // in that case we pass null so the service falls back to the broad club filter.
     const userSectionId: number | null =
       (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
-        | number
-        | undefined) ?? null;
+        number | undefined) ?? null;
 
     return this.activitiesService.findByClub(
       clubId,
@@ -179,7 +179,7 @@ export class ActivitiesController {
   @Post('activities/:activityId/image')
   @RequirePermissions('activities:update')
   @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Subir imagen de actividad' })
   @ApiParam({ name: 'activityId', type: Number })

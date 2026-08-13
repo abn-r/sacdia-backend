@@ -11,6 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -57,7 +58,7 @@ export class InsurancePurchasesController {
   @Post('club-sections/:sectionId/insurance/purchases')
   @RequirePermissions('insurance:create')
   @AuthorizationResource({ type: 'club_section', idParam: 'sectionId' })
-  @UseInterceptors(FileInterceptor('purchase_proof'))
+  @UseInterceptors(FileInterceptor('purchase_proof', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Submit a section insurance purchase with private proof',

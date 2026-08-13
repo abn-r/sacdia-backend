@@ -8,9 +8,13 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { CatalogsService } from './catalogs.service';
 import { OptionalJwtAuthGuard } from '../common/guards';
+import { Public } from '../common/decorators';
 
 @ApiTags('catalogs')
 @Controller('catalogs')
+// @Public exime del guard JWT global; OptionalJwtAuthGuard puebla req.user
+// cuando llega token.
+@Public()
 @UseGuards(OptionalJwtAuthGuard)
 export class CatalogsController {
   constructor(private readonly catalogsService: CatalogsService) {}

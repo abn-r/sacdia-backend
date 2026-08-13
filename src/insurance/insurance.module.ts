@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FieldPaymentOrdersModule } from '../field-payment-orders/field-payment-orders.module';
 import { InsuranceService } from './insurance.service';
 import { InsuranceController } from './insurance.controller';
 import { InsuranceConfigService } from './insurance-config.service';
@@ -9,7 +10,7 @@ import { InsurancePurchasesController } from './insurance-purchases.controller';
 import { CoordinationModule } from '../coordination/coordination.module';
 
 @Module({
-  imports: [CoordinationModule],
+  imports: [CoordinationModule, FieldPaymentOrdersModule],
   controllers: [InsuranceController, InsurancePurchasesController],
   providers: [
     InsuranceService,

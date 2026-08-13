@@ -10,6 +10,7 @@ import {
   AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -94,6 +95,7 @@ export class CamporeesService {
     private readonly notificationsService: NotificationsService,
     private readonly achievementsService: AchievementsService,
     private readonly camporeeLifecyclePolicy: CamporeeLifecyclePolicy,
+    private readonly fieldPaymentOrdersFlag: FieldPaymentOrdersFlagService,
   ) {}
 
   // Task 3 implements the contextual GET contract.
@@ -999,6 +1001,24 @@ export class CamporeesService {
     if (activeGrant.role_name !== 'director') {
       throw new AppForbiddenException(
         ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+      );
+    }
+
+    // Con órdenes de pago habilitadas en el LF del camporee, el register
+    // directo queda bloqueado: los miembros nacen del approve de la orden
+    // (decisión 8: ningún camporee gratis, sin free path).
+    const camporeeForFlag = await this.prisma.local_camporees.findUnique({
+      where: { local_camporee_id: camporeeId },
+      select: { local_field_id: true },
+    });
+    if (
+      typeof camporeeForFlag?.local_field_id === 'number' &&
+      (await this.fieldPaymentOrdersFlag.isEnabledForLocalField(
+        camporeeForFlag.local_field_id,
+      ))
+    ) {
+      throw new AppConflictException(
+        ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
       );
     }
 

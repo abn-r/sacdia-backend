@@ -13,10 +13,13 @@ import { SKIP_MFA_CHECK_KEY } from './mfa.guard';
 export class JwtAuthGuard extends AuthGuard('jwt') {
   private readonly logger = new Logger(JwtAuthGuard.name);
 
-  constructor(private readonly reflector: Reflector) {
+  constructor(protected readonly reflector: Reflector) {
     super();
   }
 
+  // NOTE: deliberately ignores @Public(). A route-level
+  // @UseGuards(JwtAuthGuard) must enforce auth even inside a controller
+  // marked @Public() at class level (see GlobalJwtAuthGuard).
   canActivate(context: ExecutionContext) {
     return super.canActivate(context);
   }

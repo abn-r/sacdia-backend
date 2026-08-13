@@ -199,18 +199,31 @@ async function bootstrap() {
   // ==========================================
   // CORS
   // ==========================================
+  const isProduction = process.env.NODE_ENV === 'production';
   const envOrigins = process.env.ALLOWED_ORIGINS?.split(',')
     .map((o) => o.trim())
     .filter(Boolean);
-  const defaultOrigins = ['http://localhost:5173', 'http://localhost:3000'];
+  // Localhost fallbacks exist only outside production. In production the Joi
+  // env schema already requires ALLOWED_ORIGINS; the guard below covers
+  // degenerate values (e.g. ",") that survive the schema.
+  if (isProduction && (!envOrigins || envOrigins.length === 0)) {
+    throw new Error(
+      'ALLOWED_ORIGINS must contain at least one origin in production',
+    );
+  }
+  const defaultOrigins = isProduction
+    ? []
+    : ['http://localhost:5173', 'http://localhost:3000'];
   // In non-production, always allow common local admin dev ports so worktree
   // setups (3001 main, 3002 worktree) work without touching .env.
-  const localDevOrigins =
-    process.env.NODE_ENV !== 'production'
-      ? ['http://localhost:3001', 'http://localhost:3002']
-      : [];
+  const localDevOrigins = isProduction
+    ? []
+    : ['http://localhost:3001', 'http://localhost:3002'];
   const allowedOrigins = Array.from(
-    new Set([...(envOrigins ?? defaultOrigins), ...localDevOrigins]),
+    new Set([
+      ...(envOrigins && envOrigins.length > 0 ? envOrigins : defaultOrigins),
+      ...localDevOrigins,
+    ]),
   );
 
   app.enableCors({

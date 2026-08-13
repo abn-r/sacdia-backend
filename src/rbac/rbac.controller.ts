@@ -31,6 +31,7 @@ import {
   RequirePermissions,
   GlobalRoles,
   CurrentUser,
+  Public,
 } from '../common/decorators';
 import {
   JwtAuthGuard,
@@ -306,6 +307,9 @@ export class RbacBootstrapController {
     private readonly configService: ConfigService,
   ) {}
 
+  // Público a propósito: protegido por x-bootstrap-secret y solo funciona
+  // mientras no exista ningún super-admin.
+  @Public()
   @Post('bootstrap-admin')
   // Rate limit estricto: 1 request por minuto (protección contra race condition en deploy)
   @Throttle(namedThrottle({ ttl: 60000, limit: 1 }))

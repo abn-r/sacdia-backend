@@ -60,6 +60,12 @@ const baseline = {
   'dashboard/dashboard.service.ts': 'effectiveWhere|T08|2|ffdfddfae134',
   'evidence-review/evidence-review.service.ts':
     'effectiveWhere|T09|2|02f5cfc40df4',
+  'field-payment-orders/fulfillment/camporee-fulfillment.service.ts':
+    'effectiveWhere|T09|1|937b312a4f96',
+  'field-payment-orders/fulfillment/insurance-fulfillment.service.ts':
+    'effectiveWhere|T09|1|937b312a4f96',
+  'field-payment-orders/insurance-reassignments.service.ts':
+    'effectiveWhere|T09|1|257d0ba772be',
   'honors/honor-validation-workflow.service.ts':
     'effectiveWhere|T08|1|73e3474e6bd8',
   'honors/honors.service.ts': 'effectiveWhere|T08|2|61643760d639',

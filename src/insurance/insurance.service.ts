@@ -9,10 +9,12 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { CoordinationService } from '../coordination/coordination.service';
 import {
   AppBadRequestException,
+  AppConflictException,
   AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 
 type InsuranceMutationInput = {
   insurance_type?: string;
@@ -69,6 +71,7 @@ export class InsuranceService {
     private readonly fileStorage: FileStorageService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
+    private readonly fieldPaymentOrdersFlag: FieldPaymentOrdersFlagService,
   ) {}
 
   private get db(): any {
@@ -156,7 +159,27 @@ export class InsuranceService {
     }
 
     const insurance = await this.loadLatestActiveInsurance(memberId);
-    return this.mapMemberInsuranceDetail(member, insurance, true);
+    const detail = await this.mapMemberInsuranceDetail(member, insurance, true);
+    // Dual-read: si el miembro tiene una assignment ACTIVA del capacity model,
+    // la vigencia proviene de ahí (el bridge member_insurances la refleja).
+    const activeAssignment = await this.db.insurance_assignments.findFirst({
+      where: {
+        user_id: memberId,
+        status: 'ACTIVE',
+        valid_until: { gte: new Date() },
+      },
+      orderBy: { valid_until: 'desc' },
+      select: {
+        insurance_assignment_id: true,
+        valid_from: true,
+        valid_until: true,
+      },
+    });
+    return {
+      ...detail,
+      coverage_source: activeAssignment ? 'capacity_model' : 'legacy',
+      active_assignment: activeAssignment ?? null,
+    };
   }
 
   async getExpiringInsurances(
@@ -328,6 +351,23 @@ export class InsuranceService {
     const member = await this.loadMemberSnapshot(memberId);
     if (!member) {
       throw new AppNotFoundException(ErrorCode.INSURANCE_MEMBER_NOT_FOUND);
+    }
+
+    // Con órdenes de pago habilitadas en el LF del miembro, el alta manual
+    // legacy queda bloqueada: la cobertura nace del approve de la orden.
+    const memberUser = await this.db.users.findUnique({
+      where: { user_id: memberId },
+      select: { local_field_id: true },
+    });
+    if (
+      typeof memberUser?.local_field_id === 'number' &&
+      (await this.fieldPaymentOrdersFlag.isEnabledForLocalField(
+        memberUser.local_field_id,
+      ))
+    ) {
+      throw new AppConflictException(
+        ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
+      );
     }
 
     const fileData = await this.uploadEvidenceFile(memberId, file);

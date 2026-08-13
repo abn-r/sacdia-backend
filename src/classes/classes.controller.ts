@@ -14,6 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import 'multer';
 import {
   FileValidationPipe,
@@ -34,6 +35,7 @@ import { EnrollClassDto, UpdateProgressDto } from './dto';
 import {
   AuthorizationResource,
   CurrentUser,
+  Public,
   RequirePermissions,
 } from '../common/decorators';
 import {
@@ -49,6 +51,10 @@ type CurrentUserPayload = {
 
 @ApiTags('classes')
 @Controller('classes')
+// @Public exime del guard JWT global; OptionalJwtAuthGuard puebla req.user
+// cuando llega token. Las rutas con @UseGuards(JwtAuthGuard) locales siguen
+// exigiendo auth (el guard local ignora @Public).
+@Public()
 @UseGuards(OptionalJwtAuthGuard)
 export class ClassesController {
   constructor(private readonly classesService: ClassesService) {}
@@ -319,7 +325,7 @@ export class UserClassesController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Upload evidence file for a class section',
