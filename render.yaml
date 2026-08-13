@@ -1,0 +1,35 @@
+# Render Blueprint — canonical deployment config for sacdia-backend.
+# https://render.com/docs/blueprint-spec
+#
+# preDeployCommand guarantees the Prisma schema is applied BEFORE the new
+# code starts serving traffic. Never replace it with `prisma db push`.
+#
+# Secrets (DATABASE_URL, BETTER_AUTH_SECRET, REDIS_URL, R2_*, etc.) are
+# managed in the Render dashboard — sync: false keeps them out of this file.
+# See .env.example for the full catalog.
+
+services:
+  - type: web
+    name: sacdia-backend
+    runtime: node
+    region: oregon
+    plan: starter
+    buildCommand: pnpm install --frozen-lockfile && pnpm prisma generate && pnpm build
+    preDeployCommand: pnpm prisma migrate deploy
+    startCommand: pnpm start:prod
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SWAGGER_ENABLED
+        value: "false"
+      - key: AUTH_REJECT_SNAKE_CASE
+        value: "true"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false

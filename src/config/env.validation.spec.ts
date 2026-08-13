@@ -162,6 +162,55 @@ describe('infrastructure environment validation', () => {
   });
 });
 
+describe('production hardening validation', () => {
+  const productionEnv = {
+    NODE_ENV: 'production',
+    ALLOWED_ORIGINS: 'https://app.sacdia.app,https://admin.sacdia.app',
+  };
+
+  it('requires ALLOWED_ORIGINS in production', () => {
+    const { error } = validate({ NODE_ENV: 'production' });
+
+    expect(error?.message).toContain('ALLOWED_ORIGINS');
+  });
+
+  it('accepts a production config with explicit origins', () => {
+    const { error } = validate(productionEnv);
+
+    expect(error).toBeUndefined();
+  });
+
+  it('does not require ALLOWED_ORIGINS outside production', () => {
+    const { error } = validate({ NODE_ENV: 'development' });
+
+    expect(error).toBeUndefined();
+  });
+
+  it('rejects SWAGGER_ENABLED=true in production', () => {
+    const { error } = validate({
+      ...productionEnv,
+      SWAGGER_ENABLED: 'true',
+    });
+
+    expect(error?.message).toContain('SWAGGER_ENABLED');
+  });
+
+  it('allows SWAGGER_ENABLED=false in production', () => {
+    const { error } = validate({
+      ...productionEnv,
+      SWAGGER_ENABLED: 'false',
+    });
+
+    expect(error).toBeUndefined();
+  });
+
+  it('allows SWAGGER_ENABLED=true outside production', () => {
+    const { error } = validate({ SWAGGER_ENABLED: 'true' });
+
+    expect(error).toBeUndefined();
+  });
+});
+
 describe('timezone bootstrap environment validation', () => {
   it.each(['development', 'test'])(
     'permits bootstrap only in %s',
