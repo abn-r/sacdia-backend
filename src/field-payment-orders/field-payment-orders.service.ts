@@ -85,7 +85,26 @@ export class FieldPaymentOrdersService {
   ) {
     return this.create(
       'CAMPOREE',
-      { ...dto, camporee_id: camporeeId },
+      { ...dto, camporee_id: camporeeId, camporee_type: 'local' },
+      actor,
+      idempotencyKey,
+    );
+  }
+
+  /**
+   * v1.1 opción A: el Campo Local sigue cobrando; la orden referencia un
+   * camporee de unión y el traslado del dinero LF → Unión es físico, fuera
+   * del sistema.
+   */
+  async createUnionCamporeeOrder(
+    unionCamporeeId: number,
+    dto: CreateCamporeePaymentOrderDto,
+    actor: OrderActor,
+    idempotencyKey?: string,
+  ) {
+    return this.create(
+      'CAMPOREE',
+      { ...dto, camporee_id: unionCamporeeId, camporee_type: 'union' },
       actor,
       idempotencyKey,
     );
@@ -150,7 +169,13 @@ export class FieldPaymentOrdersService {
             insurance_cycle_config_id:
               purpose === 'INSURANCE' ? prepared.purpose_ref_id : null,
             local_camporee_id:
-              purpose === 'CAMPOREE' ? prepared.purpose_ref_id : null,
+              purpose === 'CAMPOREE' && prepared.camporee_scope !== 'union'
+                ? prepared.purpose_ref_id
+                : null,
+            union_camporee_id:
+              purpose === 'CAMPOREE' && prepared.camporee_scope === 'union'
+                ? prepared.purpose_ref_id
+                : null,
             currency: prepared.currency,
             unit_cost_centavos: prepared.unit_cost_centavos,
             total_centavos: totalCentavos,
@@ -250,6 +275,9 @@ export class FieldPaymentOrdersService {
         ...(query.purpose ? { purpose: query.purpose } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.camporee_id ? { local_camporee_id: query.camporee_id } : {}),
+        ...(query.union_camporee_id
+          ? { union_camporee_id: query.union_camporee_id }
+          : {}),
       },
       include: { lines: true },
       orderBy: { created_at: 'desc' },
@@ -346,6 +374,9 @@ export class FieldPaymentOrdersService {
         status: 'PROOF_SUBMITTED',
         ...(query.purpose ? { purpose: query.purpose } : {}),
         ...(query.camporee_id ? { local_camporee_id: query.camporee_id } : {}),
+        ...(query.union_camporee_id
+          ? { union_camporee_id: query.union_camporee_id }
+          : {}),
       },
       include: { lines: true, proofs: { orderBy: { created_at: 'desc' } } },
       orderBy: { created_at: 'asc' },
@@ -633,6 +664,7 @@ export class FieldPaymentOrdersService {
     issued_by_id: string;
     insurance_cycle_config_id: number | null;
     local_camporee_id: number | null;
+    union_camporee_id: number | null;
     lines?: Array<{ sequence: number; beneficiary_user_id: string }>;
   }): Promise<FieldPaymentOrderPdfModel> {
     const config = await this.prisma.field_payment_order_configs.findUnique({
@@ -698,6 +730,12 @@ export class FieldPaymentOrdersService {
         select: { name: true },
       });
       concept = camporee?.name ?? 'Camporee';
+    } else if (order.purpose === 'CAMPOREE' && order.union_camporee_id) {
+      const camporee = await this.prisma.union_camporees.findUnique({
+        where: { union_camporee_id: order.union_camporee_id },
+        select: { name: true },
+      });
+      concept = camporee?.name ?? 'Camporee de unión';
     }
 
     return {

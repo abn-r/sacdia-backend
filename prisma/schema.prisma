@@ -5474,6 +5474,7 @@ model field_payment_orders {
   folio_reference           String                           @db.VarChar(16)
   insurance_cycle_config_id Int?
   local_camporee_id         Int?
+  union_camporee_id         Int?
   currency                  String                           @default("MXN") @db.VarChar(3)
   unit_cost_centavos        Int
   total_centavos            Int
@@ -5496,6 +5497,7 @@ model field_payment_orders {
   @@unique([issued_by_id, idempotency_key], map: "uq_field_payment_orders_idempotency")
   @@index([local_field_id, status], map: "idx_field_payment_orders_lf_status")
   @@index([club_section_id, status], map: "idx_field_payment_orders_section_status")
+  @@index([union_camporee_id], map: "idx_field_payment_orders_union_camporee")
 }
 
 model field_payment_order_lines {

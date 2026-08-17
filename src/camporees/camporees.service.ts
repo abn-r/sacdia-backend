@@ -2541,6 +2541,34 @@ export class CamporeesService {
    * @param dto - Register member DTO
    */
   async registerMemberToUnion(unionCamporeeId: number, dto: RegisterMemberDto) {
+    // v1.1 opción A: si el LF del club del miembro tiene órdenes de pago
+    // activas, el register directo queda bloqueado — los miembros nacen del
+    // approve de la orden (mismo criterio que camporees locales).
+    const memberAssignments = await this.prisma.club_role_assignments.findMany({
+      where: { user_id: dto.user_id, active: true, status: 'active' },
+      select: {
+        club_sections: {
+          select: { clubs: { select: { local_field_id: true } } },
+        },
+      },
+    });
+    const memberLocalFieldIds = [
+      ...new Set(
+        memberAssignments
+          .map((row) => row.club_sections?.clubs?.local_field_id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    ];
+    for (const localFieldId of memberLocalFieldIds) {
+      if (
+        await this.fieldPaymentOrdersFlag.isEnabledForLocalField(localFieldId)
+      ) {
+        throw new AppConflictException(
+          ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
+        );
+      }
+    }
+
     let isLate = false;
     let camporeeUnionId: number | null = null;
     let camporeeName: string | null = null;

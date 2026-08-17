@@ -34,9 +34,20 @@ const CAMPOREE = {
   end_date: new Date('2026-11-23'),
 };
 
+const UNION_CAMPOREE = {
+  name: 'Camporee de Unión 2026',
+  active: true,
+  registration_cost: 400,
+  member_registration_deadline: FUTURE,
+  union_camporee_local_fields: [{ local_field_id: 7 }],
+};
+
 function buildDb() {
   return {
     local_camporees: { findUnique: jest.fn().mockResolvedValue(CAMPOREE) },
+    union_camporees: {
+      findUnique: jest.fn().mockResolvedValue(UNION_CAMPOREE),
+    },
     club_sections: {
       findUnique: jest.fn().mockResolvedValue({
         club_type_id: 1,
@@ -83,6 +94,7 @@ describe('CamporeeFulfillmentService.prepareOrder', () => {
       club_id: 5,
       club_section_id: 11,
       purpose_ref_id: 40,
+      camporee_scope: 'local',
       unit_cost_centavos: 25000,
       currency: 'MXN',
       concept: 'Camporee de Conquistadores 2026',
@@ -179,6 +191,80 @@ describe('CamporeeFulfillmentService.prepareOrder', () => {
   });
 });
 
+describe('CamporeeFulfillmentService.prepareOrder (union camporees, v1.1)', () => {
+  const dto = {
+    camporee_id: 90,
+    camporee_type: 'union' as const,
+    beneficiary_user_ids: ['ben-1', 'ben-2'],
+  };
+  let db: any;
+  let service: CamporeeFulfillmentService;
+
+  beforeEach(() => {
+    db = buildDb();
+    service = new CamporeeFulfillmentService(db);
+  });
+
+  it('prepares a union order scoped to the issuing local field', async () => {
+    const prepared = await service.prepareOrder(dto, actorWithSection());
+    expect(prepared).toEqual({
+      local_field_id: 7,
+      club_id: 5,
+      club_section_id: 11,
+      purpose_ref_id: 90,
+      camporee_scope: 'union',
+      unit_cost_centavos: 40000,
+      currency: 'MXN',
+      concept: 'Camporee de Unión 2026',
+      beneficiary_user_ids: ['ben-1', 'ben-2'],
+    });
+    expect(db.union_camporees.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { union_camporee_id: 90 } }),
+    );
+    expect(db.camporee_clubs.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ union_camporee_id: 90 }),
+      }),
+    );
+  });
+
+  it('rejects when the local field does not participate in the union camporee', async () => {
+    db.union_camporees.findUnique.mockResolvedValue({
+      ...UNION_CAMPOREE,
+      union_camporee_local_fields: [],
+    });
+    await expect(
+      service.prepareOrder(dto, actorWithSection()),
+    ).rejects.toMatchObject({
+      code: ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
+    });
+  });
+
+  it('rejects inactive union camporees', async () => {
+    db.union_camporees.findUnique.mockResolvedValue({
+      ...UNION_CAMPOREE,
+      active: false,
+    });
+    await expect(
+      service.prepareOrder(dto, actorWithSection()),
+    ).rejects.toMatchObject({
+      code: ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
+    });
+  });
+
+  it('blocks union camporees without configured cost', async () => {
+    db.union_camporees.findUnique.mockResolvedValue({
+      ...UNION_CAMPOREE,
+      registration_cost: null,
+    });
+    await expect(
+      service.prepareOrder(dto, actorWithSection()),
+    ).rejects.toMatchObject({
+      code: ErrorCode.FIELD_PAYMENT_ORDER_COST_NOT_CONFIGURED,
+    });
+  });
+});
+
 describe('CamporeeFulfillmentService.fulfill', () => {
   const order = {
     field_payment_order_id: 'o1',
@@ -188,6 +274,7 @@ describe('CamporeeFulfillmentService.fulfill', () => {
     club_section_id: 11,
     insurance_cycle_config_id: null,
     local_camporee_id: 40,
+    union_camporee_id: null,
     folio_reference: 'ORD20260009',
     issued_by_id: 'director-1',
     unit_cost_centavos: 25000,
@@ -267,5 +354,33 @@ describe('CamporeeFulfillmentService.fulfill', () => {
       code: ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
     });
     expect(tx.camporee_members.create).not.toHaveBeenCalled();
+  });
+
+  it('creates union members linked to the union camporee (v1.1)', async () => {
+    const unionOrder = {
+      ...order,
+      local_camporee_id: null,
+      union_camporee_id: 90,
+    };
+    await service.fulfill(tx, unionOrder, reviewer);
+
+    expect(tx.union_camporees.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { union_camporee_id: 90 } }),
+    );
+    expect(tx.camporee_members.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        camporee_id: null,
+        union_camporee_id: 90,
+        camporee_type: 'union',
+        local_field_id: 7,
+        status: 'approved',
+        approved_by: 'lf-1',
+      }),
+    });
+    expect(tx.camporee_members.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ union_camporee_id: 90 }),
+      }),
+    );
   });
 });
