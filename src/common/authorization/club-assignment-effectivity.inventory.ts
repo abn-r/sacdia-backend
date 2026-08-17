@@ -51,7 +51,7 @@ const baseline = {
     'effectiveWhere|T08|1|1f2269db063f',
   'certifications/eligibility/eligibility-rule-handlers.ts':
     'effectiveWhere|T08|2|9841f0b29dc2',
-  'clubs/clubs.service.ts': 'effectiveWhere|T08|8|4d13659e19ec',
+  'clubs/clubs.service.ts': 'effectiveWhere|T08|8|78fd1b9f6e11',
   'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|32d48d679749',
   'common/guards/permissions.guard.ts': 'effectiveWhere|T08|3|e8b370c41349',
   'common/services/authorization-context.service.ts':
@@ -72,8 +72,8 @@ const baseline = {
   'honors/master-honors-evaluator.service.ts':
     'effectiveWhere|T08|2|637369e238ef',
   'honors/master-honors.service.ts': 'effectiveWhere|T08|2|2741ba22d4d7',
-  'insurance/insurance.service.ts': 'effectiveWhere|T09|3|7740d25c2af3',
-  'investiture/investiture.service.ts': 'effectiveWhere|T08|7|d70d00723588',
+  'insurance/insurance.service.ts': 'effectiveWhere|T09|3|3a39020396c0',
+  'investiture/investiture.service.ts': 'effectiveWhere|T08|7|659426390804',
   'member-of-month/member-of-month.service.ts':
     'effectiveWhere|T09|2|4a63b7e684b3',
   'membership-requests/membership-requests.service.ts':
@@ -85,7 +85,7 @@ const baseline = {
   'notifications/notifications.service.ts': 'effectiveWhere|T09|2|12585f37569f',
   'post-registration/post-registration.service.ts':
     'workflowWhere|allowlist|3|4dfdc41976e6',
-  'qr/qr.service.ts': 'effectiveWhere|T08|3|6c3e2cb5d46a',
+  'qr/qr.service.ts': 'effectiveWhere|T08|3|e493ed73e98f',
   'quarterly-reports/quarterly-reports.service.ts':
     'effectiveWhere|T09|3|1c55ef0ad8fe',
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
