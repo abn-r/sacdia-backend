@@ -146,11 +146,9 @@ describe('Auth E2E Tests', () => {
         .send({ refresh_token: 'legacy-refresh' })
         .expect(400)
         .expect((res) => {
-          const code =
-            res.body.details?.code ??
-            res.body.code ??
-            res.body.details?.message?.code;
-          expect(code).toBe('LEGACY_SNAKE_CASE_REMOVED');
+          // Canonical contract: HttpExceptionFilter exposes the ErrorCode as
+          // body.code (the legacy marker travels in namedArgs, never exposed).
+          expect(res.body.code).toBe('AUTH_REFRESH_TOKEN_LEGACY_REMOVED');
         });
     });
 

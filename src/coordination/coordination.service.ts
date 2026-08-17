@@ -270,7 +270,6 @@ export class CoordinationService {
         club_sections: {
           select: {
             club_section_id: true,
-            name: true,
             active: true,
             club_type_id: true,
             clubs: { select: { club_id: true, name: true } },
@@ -907,7 +906,6 @@ export class CoordinationService {
       orderBy: [{ main_club_id: 'asc' }, { club_type_id: 'asc' }],
       select: {
         club_section_id: true,
-        name: true,
         club_type_id: true,
         club_types: { select: { name: true } },
         clubs: {
@@ -925,7 +923,7 @@ export class CoordinationService {
 
     return sections.map((section) => ({
       club_section_id: section.club_section_id,
-      name: section.name,
+      name: section.club_types?.name ?? null,
       club_type_id: section.club_type_id,
       club_type_name: section.club_types?.name ?? null,
       club_id: section.clubs?.club_id ?? null,

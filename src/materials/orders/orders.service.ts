@@ -25,6 +25,7 @@ import type {
   PaginatedOrdersDto,
 } from './dto/order-summary.dto';
 import type { UpdateOrderLineDto } from './dto/update-order-line.dto';
+import { clubSectionDisplayLabel } from '../../clubs/section-display';
 
 // Shared include shape so every read returns the same enriched order shape
 // (lines + product/variant + creator + club_section + local_field + counts).
@@ -46,7 +47,7 @@ const ORDER_INCLUDE = {
   club_section: {
     select: {
       club_section_id: true,
-      name: true,
+      club_types: { select: { name: true } },
       clubs: { select: { club_id: true, name: true } },
     },
   },
@@ -462,7 +463,8 @@ export class OrdersService {
           },
           club_section: {
             select: {
-              name: true,
+              club_types: { select: { name: true } },
+              clubs: { select: { name: true } },
             },
           },
         },
@@ -479,7 +481,10 @@ export class OrdersService {
         nombre: [r.creator.name, r.creator.paternal_last_name]
           .filter(Boolean)
           .join(' '),
-        club: r.club_section.name ?? '',
+        club: clubSectionDisplayLabel(
+          r.club_section.clubs?.name,
+          r.club_section.club_types?.name,
+        ),
       },
       subtotal_centavos: r.subtotal_centavos,
       total_centavos: r.total_centavos,
@@ -833,7 +838,7 @@ export class OrdersService {
     };
     club_section: {
       club_section_id: number;
-      name: string | null;
+      club_types: { name: string | null } | null;
       clubs: { club_id: number; name: string | null } | null;
     } | null;
     local_field: {
@@ -896,7 +901,10 @@ export class OrdersService {
             .join(' ')
             .trim() || null,
         club:
-          order.club_section?.clubs?.name ?? order.club_section?.name ?? null,
+          clubSectionDisplayLabel(
+            order.club_section?.clubs?.name,
+            order.club_section?.club_types?.name,
+          ) || null,
         user_id: order.creator.user_id,
       },
       local_field: {

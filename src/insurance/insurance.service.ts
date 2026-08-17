@@ -229,7 +229,7 @@ export class InsuranceService {
                 club_sections: {
                   select: {
                     club_section_id: true,
-                    name: true,
+                    club_types: { select: { name: true } },
                     clubs: {
                       select: {
                         club_id: true,
@@ -270,7 +270,10 @@ export class InsuranceService {
         local_field_id: user?.local_field_id ?? null,
         club: club ? { club_id: club.club_id, name: club.name } : null,
         club_section: section
-          ? { club_section_id: section.club_section_id, name: section.name }
+          ? {
+              club_section_id: section.club_section_id,
+              name: section.club_types?.name ?? null,
+            }
           : null,
         insurance_type: ins.insurance_type ?? null,
         policy_number: ins.policy_number ?? null,

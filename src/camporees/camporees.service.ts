@@ -2541,6 +2541,34 @@ export class CamporeesService {
    * @param dto - Register member DTO
    */
   async registerMemberToUnion(unionCamporeeId: number, dto: RegisterMemberDto) {
+    // v1.1 opción A: si el LF del club del miembro tiene órdenes de pago
+    // activas, el register directo queda bloqueado — los miembros nacen del
+    // approve de la orden (mismo criterio que camporees locales).
+    const memberAssignments = await this.prisma.club_role_assignments.findMany({
+      where: { user_id: dto.user_id, active: true, status: 'active' },
+      select: {
+        club_sections: {
+          select: { clubs: { select: { local_field_id: true } } },
+        },
+      },
+    });
+    const memberLocalFieldIds = [
+      ...new Set(
+        memberAssignments
+          .map((row) => row.club_sections?.clubs?.local_field_id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    ];
+    for (const localFieldId of memberLocalFieldIds) {
+      if (
+        await this.fieldPaymentOrdersFlag.isEnabledForLocalField(localFieldId)
+      ) {
+        throw new AppConflictException(
+          ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
+        );
+      }
+    }
+
     let isLate = false;
     let camporeeUnionId: number | null = null;
     let camporeeName: string | null = null;
@@ -3256,7 +3284,6 @@ export class CamporeesService {
       where: { club_section_id: activeGrant.section.club_section_id },
       select: {
         club_section_id: true,
-        name: true,
         active: true,
         club_type_id: true,
         main_club_id: true,
@@ -3616,7 +3643,6 @@ export class CamporeesService {
     activeGrant: ClubAuthorizationGrant;
     section: {
       club_section_id: number;
-      name: string | null;
       active: boolean;
       club_type_id: number;
       main_club_id: number | null;
@@ -3678,7 +3704,7 @@ export class CamporeesService {
       clubId: input.section.clubs.club_id,
       clubName: input.section.clubs.name,
       clubSectionId: input.section.club_section_id,
-      sectionName: input.section.name?.trim() || input.section.club_types.name,
+      sectionName: input.section.club_types.name,
       clubTypeId: input.section.club_type_id,
       clubTypeName: input.section.club_types.name,
       status: enrollment

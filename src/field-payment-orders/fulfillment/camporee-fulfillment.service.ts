@@ -16,10 +16,16 @@ import type {
 
 export interface CamporeeOrderRequest {
   camporee_id: number;
+  camporee_type?: 'local' | 'union';
   beneficiary_user_ids: string[];
 }
 
 const VALID_SECTION_STATUSES = ['registered', 'approved'];
+
+/** Discriminador local/unión para las queries de enrolamiento y registro. */
+type CamporeeRef =
+  | { scope: 'local'; camporee_id: number }
+  | { scope: 'union'; union_camporee_id: number };
 
 type EligibilityDb = Pick<
   PrismaService,
@@ -44,29 +50,10 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
     actor: OrderActor,
   ): Promise<PreparedOrder> {
     const dto = rawDto as CamporeeOrderRequest;
+    const scope = dto.camporee_type === 'union' ? 'union' : 'local';
     const section = actor.activeSection;
     if (!section) {
       throw new AppForbiddenException(ErrorCode.FIELD_PAYMENT_ORDER_FORBIDDEN);
-    }
-
-    const camporee = await this.prisma.local_camporees.findUnique({
-      where: { local_camporee_id: dto.camporee_id },
-      select: {
-        local_camporee_id: true,
-        name: true,
-        local_field_id: true,
-        active: true,
-        registration_cost: true,
-        member_registration_deadline: true,
-        start_date: true,
-        end_date: true,
-      },
-    });
-    if (!camporee?.active) {
-      throw new AppBadRequestException(
-        ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
-        { reason: 'camporee_not_found_or_inactive' },
-      );
     }
 
     const sectionRow = await this.prisma.club_sections.findUnique({
@@ -80,12 +67,13 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
     if (!sectionRow || typeof localFieldId !== 'number') {
       throw new AppForbiddenException(ErrorCode.FIELD_PAYMENT_ORDER_FORBIDDEN);
     }
-    if (camporee.local_field_id !== localFieldId) {
-      throw new AppBadRequestException(
-        ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
-        { reason: 'camporee_outside_local_field' },
-      );
-    }
+
+    const camporee = await this.loadCamporeeForIssue(
+      scope,
+      dto.camporee_id,
+      localFieldId,
+    );
+
     if (
       camporee.member_registration_deadline &&
       camporee.member_registration_deadline < new Date()
@@ -108,7 +96,7 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
 
     await this.assertEligibility(
       this.prisma,
-      camporee.local_camporee_id,
+      this.refFor(scope, dto.camporee_id),
       section.club_section_id,
       dto.beneficiary_user_ids,
     );
@@ -117,12 +105,87 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
       local_field_id: localFieldId,
       club_id: sectionRow.clubs?.club_id ?? section.club_id,
       club_section_id: section.club_section_id,
-      purpose_ref_id: camporee.local_camporee_id,
+      purpose_ref_id: dto.camporee_id,
+      camporee_scope: scope,
       unit_cost_centavos: unitCostCentavos,
       currency: 'MXN',
       concept: camporee.name,
       beneficiary_user_ids: dto.beneficiary_user_ids,
     };
+  }
+
+  private refFor(scope: 'local' | 'union', camporeeId: number): CamporeeRef {
+    return scope === 'union'
+      ? { scope: 'union', union_camporee_id: camporeeId }
+      : { scope: 'local', camporee_id: camporeeId };
+  }
+
+  /**
+   * Camporee local: debe pertenecer al LF de la sección emisora.
+   * Camporee de unión (v1.1 opción A): el LF emisor debe estar entre los
+   * campos participantes; el cobro sigue siendo del Campo Local.
+   */
+  private async loadCamporeeForIssue(
+    scope: 'local' | 'union',
+    camporeeId: number,
+    localFieldId: number,
+  ): Promise<{
+    name: string;
+    registration_cost: Prisma.Decimal | null;
+    member_registration_deadline: Date | null;
+  }> {
+    if (scope === 'local') {
+      const camporee = await this.prisma.local_camporees.findUnique({
+        where: { local_camporee_id: camporeeId },
+        select: {
+          name: true,
+          local_field_id: true,
+          active: true,
+          registration_cost: true,
+          member_registration_deadline: true,
+        },
+      });
+      if (!camporee?.active) {
+        throw new AppBadRequestException(
+          ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
+          { reason: 'camporee_not_found_or_inactive' },
+        );
+      }
+      if (camporee.local_field_id !== localFieldId) {
+        throw new AppBadRequestException(
+          ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
+          { reason: 'camporee_outside_local_field' },
+        );
+      }
+      return camporee;
+    }
+
+    const camporee = await this.prisma.union_camporees.findUnique({
+      where: { union_camporee_id: camporeeId },
+      select: {
+        name: true,
+        active: true,
+        registration_cost: true,
+        member_registration_deadline: true,
+        union_camporee_local_fields: {
+          where: { local_field_id: localFieldId, active: true },
+          select: { local_field_id: true },
+        },
+      },
+    });
+    if (!camporee?.active) {
+      throw new AppBadRequestException(
+        ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
+        { reason: 'camporee_not_found_or_inactive' },
+      );
+    }
+    if (camporee.union_camporee_local_fields.length === 0) {
+      throw new AppBadRequestException(
+        ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
+        { reason: 'camporee_outside_local_field' },
+      );
+    }
+    return camporee;
   }
 
   /**
@@ -135,7 +198,9 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
     order: OrderForFulfillment,
     actor: OrderActor,
   ): Promise<void> {
-    if (!order.local_camporee_id) {
+    const scope = order.union_camporee_id ? 'union' : 'local';
+    const camporeeId = order.union_camporee_id ?? order.local_camporee_id;
+    if (!camporeeId) {
       throw new AppConflictException(
         ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
         { reason: 'missing_camporee_reference' },
@@ -143,27 +208,20 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
     }
 
     const db = tx as unknown as EligibilityDb &
-      Pick<PrismaService, 'local_camporees' | 'clubs' | 'field_payment_order_lines'>;
+      Pick<
+        PrismaService,
+        | 'local_camporees'
+        | 'union_camporees'
+        | 'clubs'
+        | 'field_payment_order_lines'
+      >;
 
-    const camporee = await db.local_camporees.findUnique({
-      where: { local_camporee_id: order.local_camporee_id },
-      select: {
-        local_camporee_id: true,
-        local_field_id: true,
-        active: true,
-      },
-    });
-    if (!camporee?.active) {
-      throw new AppConflictException(
-        ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
-        { reason: 'camporee_not_found_or_inactive' },
-      );
-    }
+    await this.assertCamporeeStillActive(db, scope, camporeeId);
 
     const userIds = order.lines.map((line) => line.beneficiary_user_id);
     const enrollment = await this.assertEligibility(
       db,
-      order.local_camporee_id,
+      this.refFor(scope, camporeeId),
       order.club_section_id,
       userIds,
     );
@@ -179,11 +237,13 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
       const member = await db.camporee_members.create({
         data: {
           camporee_club_id: enrollment.camporee_club_id,
-          camporee_id: order.local_camporee_id,
-          camporee_type: 'local',
+          camporee_id: scope === 'local' ? camporeeId : null,
+          union_camporee_id: scope === 'union' ? camporeeId : null,
+          camporee_type: scope,
           user_id: line.beneficiary_user_id,
           club_name: club?.name ?? null,
-          local_field_id: camporee.local_field_id,
+          // Opción A: el LF emisor cobra; para unión el miembro conserva su LF.
+          local_field_id: order.local_field_id,
           insurance_verified: true,
           insurance_id: bridgeByUser.get(line.beneficiary_user_id) ?? null,
           status: 'approved',
@@ -201,6 +261,29 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
     }
   }
 
+  private async assertCamporeeStillActive(
+    db: Pick<PrismaService, 'local_camporees' | 'union_camporees'>,
+    scope: 'local' | 'union',
+    camporeeId: number,
+  ): Promise<void> {
+    const camporee =
+      scope === 'local'
+        ? await db.local_camporees.findUnique({
+            where: { local_camporee_id: camporeeId },
+            select: { active: true },
+          })
+        : await db.union_camporees.findUnique({
+            where: { union_camporee_id: camporeeId },
+            select: { active: true },
+          });
+    if (!camporee?.active) {
+      throw new AppConflictException(
+        ErrorCode.FIELD_PAYMENT_ORDER_CAMPOREE_INVALID,
+        { reason: 'camporee_not_found_or_inactive' },
+      );
+    }
+  }
+
   /**
    * Prechecks compartidos create/approve: sección inscrita al camporee,
    * beneficiarios miembros activos de la sección, seguro vigente (assignment
@@ -209,13 +292,17 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
    */
   private async assertEligibility(
     db: EligibilityDb,
-    camporeeId: number,
+    ref: CamporeeRef,
     clubSectionId: number,
     userIds: string[],
   ): Promise<{ camporee_club_id: number }> {
+    const refWhere =
+      ref.scope === 'union'
+        ? { union_camporee_id: ref.union_camporee_id }
+        : { camporee_id: ref.camporee_id };
     const enrollment = await db.camporee_clubs.findFirst({
       where: {
-        camporee_id: camporeeId,
+        ...refWhere,
         club_section_id: clubSectionId,
         active: true,
         status: { in: VALID_SECTION_STATUSES },
@@ -249,7 +336,7 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
 
     const alreadyRegistered = await db.camporee_members.findMany({
       where: {
-        camporee_id: camporeeId,
+        ...refWhere,
         user_id: { in: userIds },
         active: true,
       },

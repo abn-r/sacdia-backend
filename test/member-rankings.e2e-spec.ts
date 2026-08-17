@@ -111,7 +111,7 @@ const mockEnrollmentRankingRow = {
   composite_calculated_at: null,
   awarded_category_id: null,
   user: { name: 'Test Member' },
-  club_section: { name: 'Section A' },
+  club_section: { club_types: { name: 'Section A' } },
   awarded_category: null,
 };
 

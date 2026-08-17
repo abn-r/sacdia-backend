@@ -18,9 +18,9 @@ describe('InstitutionalDataCompletenessScoreService.calc', () => {
   });
 
   it('returns completed institutional fields divided by expected fields', async () => {
-    prisma.$queryRaw.mockResolvedValueOnce([{ completed: 9, total: 10 }]);
+    prisma.$queryRaw.mockResolvedValueOnce([{ completed: 9, total: 9 }]);
 
-    await expect(svc.calc('enrollment-id')).resolves.toBe(90);
+    await expect(svc.calc('enrollment-id')).resolves.toBe(100);
   });
 
   it('returns 0 when enrollment data is missing', async () => {

@@ -121,7 +121,11 @@ export class ClubsController {
   @RequirePermissions('clubs:create')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Crear nuevo club' })
-  @ApiResponse({ status: 201, description: 'Club creado' })
+  @ApiResponse({
+    status: 201,
+    description:
+      'Club creado con una sección por cada club_type activo. enabled_club_type_ids marca cuáles quedan active=true.',
+  })
   async create(@Body() dto: CreateClubDto) {
     return this.clubsService.create(dto);
   }
@@ -165,15 +169,21 @@ export class ClubsController {
   @ApiOperation({
     summary: 'Obtener secciones del club',
     description:
-      'Lista las secciones del club (Aventureros, Conquistadores, GM). No requiere permiso club_sections:read — diseñado para permitir la selección de sección durante el post-registro. La respuesta es intencionalmente limitada a campos de identificación (id, nombre, tipo); los detalles operacionales (cuota, cupo, horarios, contacto) se omiten para reducir la superficie de exposición.',
+      'Lista las secciones del club (Aventureros, Conquistadores, GM). Por defecto solo activas (post-registro). Pasar includeInactive=true para gestión. La respuesta es intencionalmente limitada a campos de identificación (id, tipo, estado activo); los detalles operacionales (cuota, cupo, horarios, contacto) se omiten para reducir la superficie de exposición.',
   })
   @ApiParam({ name: 'clubId', type: Number })
+  @ApiQuery({ name: 'includeInactive', required: false, type: Boolean })
   @ApiResponse({
     status: 200,
     description: 'Secciones del club (campos de identificación)',
   })
-  async getSections(@Param('clubId', ParseIntPipe) clubId: number) {
-    return this.clubsService.getSections(clubId);
+  async getSections(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.clubsService.getSections(clubId, {
+      includeInactive: includeInactive === 'true',
+    });
   }
 
   @Get(':clubId/sections/:sectionId')
@@ -195,7 +205,7 @@ export class ClubsController {
   @ApiOperation({
     summary: 'Crear sección de club (requiere director o deputy director)',
     description:
-      'Crea una nueva sección (Aventureros, Conquistadores, Guías Mayores)',
+      'Crea la fila del tipo indicado si el club aún no la tiene (backfill). Si el tipo ya existe, responde 409. El alta normal ocurre en POST /clubs.',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 201, description: 'Sección creada' })

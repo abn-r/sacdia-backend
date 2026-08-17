@@ -469,7 +469,6 @@ export class CamporeeEventsService {
             club_section: {
               select: {
                 club_section_id: true,
-                name: true,
                 club_type_id: true,
                 main_club_id: true,
                 clubs: { select: { club_id: true, name: true } },

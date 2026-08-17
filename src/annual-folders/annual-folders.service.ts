@@ -2804,7 +2804,6 @@ export class AnnualFoldersService {
       club_section: {
         select: {
           club_section_id: true,
-          name: true,
           club_types: { select: { name: true } },
           clubs: {
             select: {
@@ -3064,13 +3063,6 @@ export class AnnualFoldersService {
         {
           folder_template: {
             club_type: { name: { contains: search, mode: 'insensitive' } },
-          },
-        },
-        {
-          club_enrollment: {
-            club_section: {
-              name: { contains: search, mode: 'insensitive' },
-            },
           },
         },
         {

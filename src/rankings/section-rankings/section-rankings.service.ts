@@ -51,7 +51,7 @@ export class SectionRankingsService {
         take: safeLimit,
         orderBy: [{ rank_position: { sort: 'asc', nulls: 'last' } }],
         include: {
-          club_section: { select: { name: true } },
+          club_section: { select: { club_types: { select: { name: true } } } },
         },
       }),
       this.prisma.sectionRanking.count({ where }),
@@ -114,7 +114,7 @@ export class SectionRankingsService {
       orderBy: [{ rank_position: { sort: 'asc', nulls: 'last' } }],
       include: {
         user: { select: { name: true } },
-        club_section: { select: { name: true } },
+        club_section: { select: { club_types: { select: { name: true } } } },
         awarded_category: true,
       },
     });

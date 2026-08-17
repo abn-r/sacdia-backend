@@ -69,4 +69,10 @@ export class ListPaymentOrdersQueryDto {
   @IsInt()
   @Min(1)
   camporee_id?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  union_camporee_id?: number;
 }

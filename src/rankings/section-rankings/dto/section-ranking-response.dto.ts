@@ -46,7 +46,7 @@ export class SectionRankingResponseDto {
   static fromSectionRanking(row: any): SectionRankingResponseDto {
     const dto = new SectionRankingResponseDto();
     dto.club_section_id = row.club_section_id;
-    dto.section_name = row.club_section?.name ?? 'Unknown';
+    dto.section_name = row.club_section?.club_types?.name ?? 'Unknown';
     dto.composite_score_pct =
       row.composite_score_pct !== null && row.composite_score_pct !== undefined
         ? Number(row.composite_score_pct)

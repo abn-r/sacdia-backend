@@ -129,9 +129,8 @@ type PendingMemberAssignment = {
   user_id: string;
   ecclesiastical_year_id: number;
   club_section_id: number | null;
-  club_sections: {
+    club_sections: {
     club_section_id: number;
-    name: string | null;
     main_club_id: number | null;
     club_type_id: number;
     club_types: { name: string } | null;
@@ -797,7 +796,6 @@ export class InvestitureService {
               club_sections: {
                 select: {
                   club_section_id: true,
-                  name: true,
                   main_club_id: true,
                   club_type_id: true,
                   club_types: {
@@ -933,8 +931,7 @@ export class InvestitureService {
         section: memberSection
           ? {
               section_id: memberSection.club_section_id,
-              name:
-                memberSection.name ?? memberSection.club_types?.name ?? null,
+              name: memberSection.club_types?.name ?? null,
             }
           : null,
         ecclesiastical_year: row.ecclesiastical_year

@@ -76,9 +76,22 @@ describe('Clubs E2E Tests', () => {
         active: true,
       };
 
-      jest.spyOn(prisma.clubs, 'create').mockResolvedValue(mockClub as any);
-      // Spy on nested instance creation if necessary for service logic
-      // Assuming service simple create:
+      jest.spyOn(prisma.club_types, 'findMany').mockResolvedValue([
+        { club_type_id: 1 },
+        { club_type_id: 2 },
+        { club_type_id: 3 },
+      ] as never);
+      jest.spyOn(prisma, '$transaction').mockImplementation(async (fn) => {
+        const tx = {
+          clubs: {
+            create: jest.fn().mockResolvedValue(mockClub),
+          },
+          club_sections: {
+            createMany: jest.fn().mockResolvedValue({ count: 3 }),
+          },
+        };
+        return (fn as (client: typeof tx) => Promise<typeof mockClub>)(tx);
+      });
 
       return request(app.getHttpServer())
         .post('/api/v1/clubs')
@@ -88,6 +101,7 @@ describe('Clubs E2E Tests', () => {
           local_field_id: 1,
           districlub_type_id: 1,
           church_id: 1,
+          enabled_club_type_ids: [1, 2],
         })
         .expect(201);
     });

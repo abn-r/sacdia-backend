@@ -196,7 +196,6 @@ describe('NotificationsService', () => {
         {
           club_section_id: 42,
           club_type_id: 2,
-          name: 'Conquistadores Centro',
           clubs: { club_id: 7, name: 'Club Sur' },
           club_types: { name: 'Conquistadores' },
         },
@@ -210,10 +209,10 @@ describe('NotificationsService', () => {
             clubId: 7,
             clubName: 'Club Sur',
             sectionId: 42,
-            sectionName: 'Conquistadores Centro',
+            sectionName: 'Conquistadores',
             instanceType: 'pathfinders',
             instanceId: 42,
-            label: 'Club Sur — Conquistadores Centro',
+            label: 'Club Sur · Conquistadores',
           },
         ],
       });
@@ -227,7 +226,6 @@ describe('NotificationsService', () => {
         select: {
           club_section_id: true,
           club_type_id: true,
-          name: true,
           clubs: {
             select: {
               club_id: true,
