@@ -2,7 +2,7 @@ import { Module, RequestMethod } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
-import * as path from 'path';
+import { resolveI18nDir } from './i18n/resolve-i18n-dir';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { MulterModule } from '@nestjs/platform-express';
@@ -94,10 +94,9 @@ import { GlobalJwtAuthGuard } from './common/guards/global-jwt-auth.guard';
     I18nModule.forRoot({
       fallbackLanguage: 'es',
       loaderOptions: {
-        // Assets are copied to dist/i18n/ (one level above dist/src/ where __dirname resolves).
-        // In dev (ts-node): __dirname = src/ → ../i18n = the project root … which is wrong.
-        // Use process.cwd() as anchor since it's always the project root in both modes.
-        path: path.join(process.cwd(), 'dist', 'i18n'),
+        // Prefer src/i18n when present: nest --watch can truncate dist/i18n JSON
+        // mid-copy (empty errors.json → I18nError). Production uses dist/.
+        path: resolveI18nDir(),
         // File watching hangs Nest bootstrap in sandboxed/CI test runners.
         watch: process.env.NODE_ENV !== 'test',
       },

@@ -7,7 +7,7 @@
     "assets": [
       {
         "include": "i18n/**/*.json",
-        "watchAssets": true
+        "watchAssets": false
       },
       {
         "include": "common/timezone/iana-tzdb-2026b/*.gz",
