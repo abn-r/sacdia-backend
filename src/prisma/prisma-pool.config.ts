@@ -2,7 +2,11 @@ import { ConfigService } from '@nestjs/config';
 import type { PoolConfig } from 'pg';
 
 const DEFAULT_POOL_MAX = 20;
-const DEFAULT_POOL_IDLE_TIMEOUT_MS = 30_000;
+// 5 minutes: admin-panel traffic has 1-2 minute gaps between interactions, and
+// closing idle clients earlier forces a fresh TLS handshake (~500ms on Neon)
+// on nearly every request. Server-side pooling (Neon "-pooler" endpoint) keeps
+// holding these slots cheap.
+const DEFAULT_POOL_IDLE_TIMEOUT_MS = 300_000;
 const DEFAULT_POOL_CONNECTION_TIMEOUT_MS = 15_000;
 const DEFAULT_POOL_KEEP_ALIVE_INITIAL_DELAY_MS = 10_000;
 const DEFAULT_DATABASE_APPLICATION_NAME = 'sacdia-backend';

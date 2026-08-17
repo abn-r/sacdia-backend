@@ -20,7 +20,7 @@ describe('buildPrismaPoolConfig', () => {
     expect(buildPrismaPoolConfig(config)).toEqual({
       connectionString: 'postgresql://user:pass@localhost:5432/sacdia',
       max: 20,
-      idleTimeoutMillis: 30_000,
+      idleTimeoutMillis: 300_000,
       connectionTimeoutMillis: 15_000,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10_000,

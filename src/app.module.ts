@@ -12,6 +12,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
+import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts.module';
@@ -198,6 +199,8 @@ import { GlobalJwtAuthGuard } from './common/guards/global-jwt-auth.guard';
     // ==========================================
     PrismaModule,
     CommonModule,
+    // Registers HttpAuditInterceptor globally via APP_INTERCEPTOR.
+    AuditLogsModule,
     AuthModule,
     UsersModule,
     EmergencyContactsModule,

@@ -26,6 +26,8 @@ model audit_logs {
   correlation_id     String?   @db.Uuid
   idempotency_key    String?   @db.VarChar(128)
   result             String    @default("succeeded") @db.VarChar(32)
+  source             String    @default("service") @db.VarChar(24)
+  request_context    Json?
 
   clubs clubs? @relation(fields: [club_id], references: [club_id], onDelete: SetNull, onUpdate: NoAction)
 
@@ -35,6 +37,7 @@ model audit_logs {
   @@index([target_user_id, created_at(sort: Desc)], map: "idx_audit_logs_target_created")
   @@index([action, created_at(sort: Desc)], map: "idx_audit_logs_action_created")
   @@index([correlation_id], map: "idx_audit_logs_correlation_id")
+  @@index([created_at], map: "idx_audit_logs_created")
 }
 
 model activities {

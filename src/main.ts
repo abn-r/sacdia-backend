@@ -16,7 +16,7 @@ import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { timeoutMiddleware } from './common/middleware/timeout.middleware';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
-import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+import { auditContextMiddleware } from './audit-logs/audit-request-context';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 // NOTE: HttpExceptionFilter and AllExceptionsFilter are registered via APP_FILTER
 // in CommonModule so they receive I18nService via DI. Do NOT use useGlobalFilters()
@@ -188,6 +188,15 @@ async function bootstrap() {
   app.use(timeoutMiddleware);
 
   // ==========================================
+  // AUDITORÍA - Request Context (AsyncLocalStorage)
+  // ==========================================
+  // Opens the per-request audit context (correlation_id + dedup flag) that
+  // HttpAuditInterceptor, AuditLogsService and CriticalAuditWriterService
+  // share. Must wrap the whole request, hence middleware — an interceptor's
+  // ALS scope would not cover the controller handler execution.
+  app.use(auditContextMiddleware);
+
+  // ==========================================
   // SEGURIDAD - Request Size Limits
   // ==========================================
   app.useBodyParser('json', { limit: '10mb' });
@@ -280,12 +289,13 @@ async function bootstrap() {
   // DO NOT call app.useGlobalFilters() here — it bypasses DI and breaks i18n injection.
 
   // ==========================================
-  // AUDITORÍA - Global Interceptors
+  // AUDITORÍA / OBSERVABILIDAD - Global Interceptors
   // ==========================================
-  app.useGlobalInterceptors(
-    new AuditInterceptor(),
-    ...(sentryEnabled ? [new SentryInterceptor()] : []),
-  );
+  // HttpAuditInterceptor is registered via APP_INTERCEPTOR in AuditLogsModule
+  // (needs AuditLogsService through DI). Only Sentry is registered here.
+  if (sentryEnabled) {
+    app.useGlobalInterceptors(new SentryInterceptor());
+  }
 
   // ==========================================
   // API Prefix + Versioning (URI-based)
