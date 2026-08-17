@@ -522,7 +522,9 @@ describe('ClubsService', () => {
         email: 'juan@test.com',
       },
       roles: { role_name: roleName, role_category: 'CLUB' },
-      club_sections: sectionName ? { name: sectionName } : null,
+      club_sections: sectionName
+        ? { club_types: { name: sectionName } }
+        : null,
     });
 
     it('happy path — groups director, deputies, secretaries and others', async () => {
@@ -607,7 +609,7 @@ describe('ClubsService', () => {
           name: 'Campamento',
           activity_date: new Date('2026-06-15'),
           activity_types: { code: 'CAMP' },
-          club_sections: { name: 'Conquistadores' },
+          club_sections: { club_types: { name: 'Conquistadores' } },
         },
       ]);
 

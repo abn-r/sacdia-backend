@@ -463,7 +463,8 @@ export class OrdersService {
           },
           club_section: {
             select: {
-              name: true,
+              club_types: { select: { name: true } },
+              clubs: { select: { name: true } },
             },
           },
         },
@@ -837,7 +838,7 @@ export class OrdersService {
     };
     club_section: {
       club_section_id: number;
-      name: string | null;
+      club_types: { name: string | null } | null;
       clubs: { club_id: number; name: string | null } | null;
     } | null;
     local_field: {
@@ -900,7 +901,10 @@ export class OrdersService {
             .join(' ')
             .trim() || null,
         club:
-          order.club_section?.clubs?.name ?? order.club_section?.name ?? null,
+          clubSectionDisplayLabel(
+            order.club_section?.clubs?.name,
+            order.club_section?.club_types?.name,
+          ) || null,
         user_id: order.creator.user_id,
       },
       local_field: {

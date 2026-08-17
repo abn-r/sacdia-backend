@@ -3643,7 +3643,6 @@ export class CamporeesService {
     activeGrant: ClubAuthorizationGrant;
     section: {
       club_section_id: number;
-      name: string | null;
       active: boolean;
       club_type_id: number;
       main_club_id: number | null;

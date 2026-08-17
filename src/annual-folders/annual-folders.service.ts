@@ -3068,13 +3068,6 @@ export class AnnualFoldersService {
         {
           club_enrollment: {
             club_section: {
-              name: { contains: search, mode: 'insensitive' },
-            },
-          },
-        },
-        {
-          club_enrollment: {
-            club_section: {
               club_types: {
                 name: { contains: search, mode: 'insensitive' },
               },
