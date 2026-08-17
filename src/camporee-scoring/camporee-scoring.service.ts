@@ -1704,7 +1704,7 @@ export class CamporeeScoringService {
         status: { in: ['registered', 'approved'] },
         club_section_id: { not: null },
       },
-      include: { club_sections: { include: { clubs: true } } },
+            include: { club_sections: { include: { clubs: true, club_types: true } } },
       orderBy: { camporee_club_id: 'asc' },
     });
 
@@ -1712,7 +1712,7 @@ export class CamporeeScoringService {
       camporee_club_id: row.camporee_club_id,
       club_section_id: row.club_section_id,
       club_name: row.club_sections?.clubs?.name ?? null,
-      section_name: row.club_sections?.name ?? null,
+      section_name: row.club_sections?.club_types?.name ?? null,
       status: row.status,
     }));
   }
@@ -1729,7 +1729,7 @@ export class CamporeeScoringService {
               r.camporee_club_id,
               r.club_section_id,
               c.name AS club_name,
-              cs.name AS section_name,
+              ct.name AS section_name,
               SUM(r.total_awarded_points)::numeric(10,2) AS total_awarded_points,
               SUM(r.total_max_points)::numeric(10,2) AS total_max_points,
               CASE WHEN SUM(r.total_max_points) = 0 THEN 0
@@ -1739,12 +1739,13 @@ export class CamporeeScoringService {
             JOIN camporee_events e ON e.camporee_event_id = r.camporee_event_id
             LEFT JOIN camporee_clubs cc ON cc.camporee_club_id = r.camporee_club_id
             LEFT JOIN club_sections cs ON cs.club_section_id = r.club_section_id
+            LEFT JOIN club_types ct ON ct.club_type_id = cs.club_type_id
             LEFT JOIN clubs c ON c.club_id = cs.main_club_id
             WHERE r.active = TRUE
               AND e.active = TRUE
               AND e.scoring_enabled = TRUE
               AND e.local_camporee_id = ${scope.camporeeId}
-            GROUP BY r.camporee_club_id, r.club_section_id, c.name, cs.name
+            GROUP BY r.camporee_club_id, r.club_section_id, c.name, ct.name
             ORDER BY percentage DESC, total_awarded_points DESC, section_name ASC
           `
         : await this.prisma.$queryRaw<any[]>`
@@ -1752,7 +1753,7 @@ export class CamporeeScoringService {
               r.camporee_club_id,
               r.club_section_id,
               c.name AS club_name,
-              cs.name AS section_name,
+              ct.name AS section_name,
               SUM(r.total_awarded_points)::numeric(10,2) AS total_awarded_points,
               SUM(r.total_max_points)::numeric(10,2) AS total_max_points,
               CASE WHEN SUM(r.total_max_points) = 0 THEN 0
@@ -1762,12 +1763,13 @@ export class CamporeeScoringService {
             JOIN camporee_events e ON e.camporee_event_id = r.camporee_event_id
             LEFT JOIN camporee_clubs cc ON cc.camporee_club_id = r.camporee_club_id
             LEFT JOIN club_sections cs ON cs.club_section_id = r.club_section_id
+            LEFT JOIN club_types ct ON ct.club_type_id = cs.club_type_id
             LEFT JOIN clubs c ON c.club_id = cs.main_club_id
             WHERE r.active = TRUE
               AND e.active = TRUE
               AND e.scoring_enabled = TRUE
               AND e.union_camporee_id = ${scope.camporeeId}
-            GROUP BY r.camporee_club_id, r.club_section_id, c.name, cs.name
+            GROUP BY r.camporee_club_id, r.club_section_id, c.name, ct.name
             ORDER BY percentage DESC, total_awarded_points DESC, section_name ASC
           `;
 

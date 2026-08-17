@@ -22,12 +22,14 @@ describe('ClubsService', () => {
     club_types: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn(),
     },
     club_sections: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
     },
     club_role_assignments: {
@@ -182,21 +184,63 @@ describe('ClubsService', () => {
   });
 
   describe('create', () => {
-    it('should create a new club', async () => {
+    it('should create a new club with catalog sections', async () => {
       const createDto = {
         name: 'Nuevo Club',
         local_field_id: 1,
         districlub_type_id: 1,
         church_id: 1,
+        enabled_club_type_ids: [1, 2],
       };
 
-      const mockCreatedClub = { club_id: 1, ...createDto };
+      const mockCreatedClub = { club_id: 1, name: 'Nuevo Club' };
+      mockPrismaService.club_types.findMany.mockResolvedValue([
+        { club_type_id: 1 },
+        { club_type_id: 2 },
+        { club_type_id: 3 },
+      ]);
       mockPrismaService.clubs.create.mockResolvedValue(mockCreatedClub);
+      mockPrismaService.club_sections.createMany.mockResolvedValue({ count: 3 });
+      mockPrismaService.$transaction.mockImplementation(async (fn: any) =>
+        fn(mockPrismaService),
+      );
 
       const result = await service.create(createDto);
 
       expect(result).toEqual(mockCreatedClub);
-      expect(mockPrismaService.clubs.create).toHaveBeenCalled();
+      expect(mockPrismaService.club_sections.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            main_club_id: 1,
+            club_type_id: 1,
+            active: true,
+          }),
+          expect.objectContaining({
+            main_club_id: 1,
+            club_type_id: 2,
+            active: true,
+          }),
+          expect.objectContaining({
+            main_club_id: 1,
+            club_type_id: 3,
+            active: false,
+          }),
+        ],
+      });
+    });
+
+    it('rejects create without enabled club types', async () => {
+      await expect(
+        service.create({
+          name: 'Nuevo Club',
+          local_field_id: 1,
+          districlub_type_id: 1,
+          church_id: 1,
+          enabled_club_type_ids: [],
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_SECTION_TYPES_REQUIRED,
+      });
     });
   });
 
@@ -252,6 +296,12 @@ describe('ClubsService', () => {
 
       const result = await service.getSections(10);
 
+      expect(mockPrismaService.club_sections.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { main_club_id: 10, active: true },
+        }),
+      );
+
       expect(result).toEqual([
         expect.objectContaining({
           club_section_id: 1,
@@ -266,7 +316,7 @@ describe('ClubsService', () => {
   });
 
   describe('createSection', () => {
-    it('persists the optional section name when creating a club section', async () => {
+    it('creates a section without a custom name', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue({
         club_id: 10,
         name: 'Club Norte',
@@ -276,17 +326,16 @@ describe('ClubsService', () => {
         name: 'Aventureros',
         active: true,
       });
+      mockPrismaService.club_sections.findFirst.mockResolvedValue(null);
       mockPrismaService.club_sections.create.mockResolvedValue({
         club_section_id: 7,
         main_club_id: 10,
         club_type_id: 1,
-        name: 'Aventureros Central',
         club_types: { name: 'Aventureros' },
       });
 
       await service.createSection(10, {
         club_type_id: 1,
-        name: 'Aventureros Central',
         souls_target: 0,
         fee: 0,
         meeting_day: [{ day: 'Sunday' }],
@@ -298,12 +347,33 @@ describe('ClubsService', () => {
           data: expect.objectContaining({
             main_club_id: 10,
             club_type_id: 1,
-            name: 'Aventureros Central',
             souls_target: 0,
             fee: 0,
           }),
         }),
       );
+      expect(mockPrismaService.club_sections.create.mock.calls[0][0].data.name).toBeUndefined();
+    });
+
+    it('rejects creating a duplicate type for the same club', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({
+        club_id: 10,
+        name: 'Club Norte',
+      });
+      mockPrismaService.club_types.findUnique.mockResolvedValue({
+        club_type_id: 1,
+        name: 'Aventureros',
+        active: true,
+      });
+      mockPrismaService.club_sections.findFirst.mockResolvedValue({
+        club_section_id: 7,
+      });
+
+      await expect(
+        service.createSection(10, { club_type_id: 1 }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_SECTION_TYPE_EXISTS,
+      });
     });
   });
 
@@ -1029,13 +1099,21 @@ describe('ClubsService', () => {
   describe('audit hooks', () => {
     it('create — calls recordEvent with CREATED action', async () => {
       const newClub = { club_id: 5, name: 'Club Nuevo' };
+      mockPrismaService.club_types.findMany.mockResolvedValue([
+        { club_type_id: 1 },
+      ]);
       mockPrismaService.clubs.create.mockResolvedValue(newClub);
+      mockPrismaService.club_sections.createMany.mockResolvedValue({ count: 1 });
+      mockPrismaService.$transaction.mockImplementation(async (fn: any) =>
+        fn(mockPrismaService),
+      );
 
       await service.create({
         name: 'Club Nuevo',
         local_field_id: 1,
         districlub_type_id: 1,
         church_id: 1,
+        enabled_club_type_ids: [1],
       });
 
       // fire-and-forget: give the microtask queue a tick

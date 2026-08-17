@@ -130,7 +130,7 @@ describe('QrService', () => {
     mockJwtService.sign.mockReturnValue('jwt-qr-token');
     mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
       club_sections: {
-        name: 'Pathfinders',
+        club_types: { name: 'Pathfinders' },
         clubs: { name: 'Club Test' },
       },
     });
@@ -483,7 +483,7 @@ describe('QrService', () => {
       club_role_assignments: [
         {
           club_sections: {
-            name: 'Pathfinders',
+            club_types: { name: 'Pathfinders' },
             clubs: { name: 'Club Norte' },
           },
         },

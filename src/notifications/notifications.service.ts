@@ -17,6 +17,7 @@
 // =============================================================================
 
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { clubSectionDisplayLabel } from '../clubs/section-display';
 import {
   AppBadRequestException,
   AppNotFoundException,
@@ -631,7 +632,6 @@ export class NotificationsService {
       select: {
         club_section_id: true,
         club_type_id: true,
-        name: true,
         clubs: {
           select: {
             club_id: true,
@@ -661,7 +661,6 @@ export class NotificationsService {
           `Club ${section.clubs?.club_id ?? section.club_section_id}`;
 
         const sectionName =
-          section.name ??
           section.club_types?.name ??
           activeGrant?.section.club_type_name ??
           `Sección ${section.club_section_id}`;
@@ -677,7 +676,7 @@ export class NotificationsService {
           sectionName,
           instanceType,
           instanceId: section.club_section_id,
-          label: `${clubName} — ${sectionName}`,
+          label: clubSectionDisplayLabel(clubName, sectionName),
         } satisfies NotificationClubTarget;
       })
       .filter((target) => target.clubId > 0)

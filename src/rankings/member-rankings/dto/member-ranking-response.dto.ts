@@ -64,7 +64,7 @@ export class MemberRankingResponseDto {
       user_id: row.user_id,
       member_name: row.user?.name ?? '',
       club_section_id: row.club_section_id ?? null,
-      section_name: row.club_section?.name ?? null,
+      section_name: row.club_section?.club_types?.name ?? null,
       class_score_pct:
         row.class_score_pct !== null && row.class_score_pct !== undefined
           ? Number(row.class_score_pct)

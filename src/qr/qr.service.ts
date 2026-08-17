@@ -16,6 +16,7 @@ import {
   type ResolvedAuthorizationProfile,
 } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
+import { clubTypeSectionName } from '../clubs/section-display';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -306,7 +307,7 @@ export class QrService {
           select: {
             club_sections: {
               select: {
-                name: true,
+                club_types: { select: { name: true } },
                 clubs: { select: { name: true } },
               },
             },
@@ -616,7 +617,7 @@ export class QrService {
           select: {
             club_sections: {
               select: {
-                name: true,
+                club_types: { select: { name: true } },
                 clubs: { select: { name: true } },
               },
             },
@@ -651,7 +652,7 @@ export class QrService {
     user_image: string | null;
     club_role_assignments: Array<{
       club_sections?: {
-        name: string | null;
+        club_types?: { name: string | null } | null;
         clubs?: { name: string | null } | null;
       } | null;
     }>;
@@ -672,7 +673,9 @@ export class QrService {
       .trim();
 
     const assignment = input.club_role_assignments[0];
-    const sectionName = assignment?.club_sections?.name ?? null;
+    const sectionName = clubTypeSectionName(
+      assignment?.club_sections?.club_types?.name,
+    );
     const clubName = assignment?.club_sections?.clubs?.name ?? null;
 
     return {

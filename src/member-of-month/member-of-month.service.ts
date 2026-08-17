@@ -318,8 +318,7 @@ export class MemberOfMonthService {
         user_name: fullName || null,
         user_image: r.users.user_image ?? null,
         club_section_id: r.club_section_id,
-        section_name:
-          r.club_section.name ?? r.club_section.club_types?.name ?? null,
+        section_name: r.club_section.club_types?.name ?? null,
         club_type: r.club_section.club_types?.name ?? null,
         club_id: r.club_section.clubs?.club_id ?? null,
         club_name: r.club_section.clubs?.name ?? null,
@@ -494,7 +493,7 @@ export class MemberOfMonthService {
 
     if (!section) return;
 
-    const sectionName = section.name ?? section.club_types?.name ?? 'Sección';
+    const sectionName = section.club_types?.name ?? 'Sección';
     const clubName = section.clubs?.name ?? 'Club';
     const clubId = section.clubs?.club_id;
 

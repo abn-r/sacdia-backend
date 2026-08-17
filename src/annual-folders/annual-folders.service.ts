@@ -2804,7 +2804,6 @@ export class AnnualFoldersService {
       club_section: {
         select: {
           club_section_id: true,
-          name: true,
           club_types: { select: { name: true } },
           clubs: {
             select: {

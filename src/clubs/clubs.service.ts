@@ -33,6 +33,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { clubTypeSectionName } from './section-display';
 
 const CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS = [
   { name: { contains: 'Guía Mayor', mode: 'insensitive' as const } },
@@ -105,7 +106,8 @@ export class ClubsService {
             select: {
               club_section_id: true,
               active: true,
-              club_types: { select: { name: true } },
+              club_type_id: true,
+              club_types: { select: { club_type_id: true, name: true } },
             },
           },
         },
@@ -131,7 +133,7 @@ export class ClubsService {
         districts: true,
         local_fields: true,
         club_sections: {
-          include: { club_types: { select: { name: true } } },
+          include: { club_types: { select: { club_type_id: true, name: true } } },
         },
       },
     });
@@ -144,17 +146,60 @@ export class ClubsService {
   }
 
   async create(dto: CreateClubDto) {
-    const club = await this.prisma.clubs.create({
-      data: {
-        name: dto.name,
-        description: dto.description,
-        local_field_id: dto.local_field_id,
-        districlub_type_id: dto.districlub_type_id,
-        church_id: dto.church_id,
-        address: dto.address,
-        coordinates: dto.coordinates || { lat: 0, lng: 0 },
-        active: true,
-      },
+    const enabledIds = [
+      ...new Set(
+        (dto.enabled_club_type_ids ?? []).filter(
+          (id) => Number.isInteger(id) && id > 0,
+        ),
+      ),
+    ];
+
+    if (enabledIds.length === 0) {
+      throw new AppBadRequestException(ErrorCode.CLUB_SECTION_TYPES_REQUIRED);
+    }
+
+    const catalogTypes = await this.prisma.club_types.findMany({
+      where: { active: true },
+      select: { club_type_id: true },
+      orderBy: { club_type_id: 'asc' },
+    });
+
+    if (catalogTypes.length === 0) {
+      throw new AppBadRequestException(ErrorCode.CLUB_TYPE_NOT_FOUND);
+    }
+
+    const catalogIds = new Set(catalogTypes.map((type) => type.club_type_id));
+    for (const id of enabledIds) {
+      if (!catalogIds.has(id)) {
+        throw new AppBadRequestException(ErrorCode.CLUB_TYPE_NOT_FOUND);
+      }
+    }
+
+    const club = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.clubs.create({
+        data: {
+          name: dto.name,
+          description: dto.description,
+          local_field_id: dto.local_field_id,
+          districlub_type_id: dto.districlub_type_id,
+          church_id: dto.church_id,
+          address: dto.address,
+          coordinates: dto.coordinates || { lat: 0, lng: 0 },
+          active: true,
+        },
+      });
+
+      await tx.club_sections.createMany({
+        data: catalogTypes.map((type) => ({
+          main_club_id: created.club_id,
+          club_type_id: type.club_type_id,
+          active: enabledIds.includes(type.club_type_id),
+          souls_target: 1,
+          fee: 0,
+        })),
+      });
+
+      return created;
     });
 
     void this.auditLogs
@@ -238,18 +283,24 @@ export class ClubsService {
   // SECTIONS (unified club_sections)
   // ========================================
 
-  async getSections(clubId: number) {
+  async getSections(
+    clubId: number,
+    options?: { includeInactive?: boolean },
+  ) {
     await this.findOne(clubId);
     // Intentionally limited select: this endpoint is called without
     // club_sections:read permission to support the post-registration flow.
     // Only expose fields needed to identify and select a section — operational
     // details (fee, souls_target, meeting_day/time, contact info) are omitted.
     return this.prisma.club_sections.findMany({
-      where: { main_club_id: clubId },
+      where: {
+        main_club_id: clubId,
+        ...(options?.includeInactive ? {} : { active: true }),
+      },
       select: {
         club_section_id: true,
         active: true,
-        name: true,
+        club_type_id: true,
         club_types: { select: { club_type_id: true, name: true } },
       },
       orderBy: { club_section_id: 'asc' },
@@ -274,11 +325,16 @@ export class ClubsService {
     if (!clubType || !clubType.active) {
       throw new AppBadRequestException(ErrorCode.CLUB_TYPE_NOT_FOUND);
     }
+    const existing = await this.prisma.club_sections.findFirst({
+      where: { main_club_id: clubId, club_type_id: dto.club_type_id },
+    });
+    if (existing) {
+      throw new AppConflictException(ErrorCode.CLUB_SECTION_TYPE_EXISTS);
+    }
     const section = await this.prisma.club_sections.create({
       data: {
         main_club_id: clubId,
         club_type_id: dto.club_type_id,
-        name: dto.name,
         souls_target: dto.souls_target ?? 1,
         fee: dto.fee ?? 0,
         meeting_day: (dto.meeting_day || []) as Prisma.InputJsonValue[],
@@ -977,7 +1033,7 @@ export class ClubsService {
         },
         club_sections: {
           select: {
-            name: true,
+            club_types: { select: { name: true } },
           },
         },
       },
@@ -995,7 +1051,7 @@ export class ClubsService {
         user_image: await this.resolvePrivateProfileUrl(a.users?.user_image),
         email: a.users?.email ?? null,
         role_name: a.roles.role_name,
-        section_name: a.club_sections?.name ?? null,
+        section_name: clubTypeSectionName(a.club_sections?.club_types?.name),
         start_date: a.start_date,
       })),
     );
@@ -1084,7 +1140,9 @@ export class ClubsService {
                 active: true,
               },
               include: {
-                club_sections: { select: { name: true } },
+                club_sections: {
+                  select: { club_types: { select: { name: true } } },
+                },
                 activity_types: { select: { code: true } },
               },
               orderBy: { activity_date: 'asc' },
@@ -1237,7 +1295,7 @@ export class ClubsService {
       name: a.name,
       kind: a.activity_types?.code ?? null,
       activity_date: a.activity_date?.toISOString().split('T')[0] ?? null,
-      section_name: a.club_sections?.name ?? null,
+      section_name: clubTypeSectionName(a.club_sections?.club_types?.name),
     }));
 
     // 6. Count members with investiture_status=APPROVED in the active

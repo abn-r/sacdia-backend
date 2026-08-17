@@ -3284,7 +3284,6 @@ export class CamporeesService {
       where: { club_section_id: activeGrant.section.club_section_id },
       select: {
         club_section_id: true,
-        name: true,
         active: true,
         club_type_id: true,
         main_club_id: true,
@@ -3706,7 +3705,7 @@ export class CamporeesService {
       clubId: input.section.clubs.club_id,
       clubName: input.section.clubs.name,
       clubSectionId: input.section.club_section_id,
-      sectionName: input.section.name?.trim() || input.section.club_types.name,
+      sectionName: input.section.club_types.name,
       clubTypeId: input.section.club_type_id,
       clubTypeName: input.section.club_types.name,
       status: enrollment
