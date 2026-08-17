@@ -40,6 +40,9 @@ const PURPOSE_LABELS: Record<OrderPurpose, string> = {
   CAMPOREE: 'Camporee',
 };
 
+/** Fulfill writes many rows per beneficiary; Neon RTT blows Prisma's 5s default. */
+const APPROVE_TX_TIMEOUT_MS = 15_000;
+
 @Injectable()
 export class FieldPaymentOrdersService {
   private readonly logger = new Logger(FieldPaymentOrdersService.name);
@@ -408,64 +411,70 @@ export class FieldPaymentOrdersService {
     const now = new Date();
     let fulfillStarted = false;
 
-    return this.prisma.$transaction(async (tx) => {
-      // Re-read inside TX to serialize concurrent approvals on the same order.
-      const fresh = await tx.field_payment_orders.update({
-        where: {
-          field_payment_order_id: orderId,
-          status: 'PROOF_SUBMITTED',
-        },
-        data: {
-          status: 'APPROVED',
-          approved_by_id: actor.userId,
-          approved_at: now,
-        },
-        include: { lines: { orderBy: { sequence: 'asc' } } },
-      });
+    return this.prisma
+      .$transaction(
+        async (tx) => {
+          // Re-read inside TX to serialize concurrent approvals on the same order.
+          const fresh = await tx.field_payment_orders.update({
+            where: {
+              field_payment_order_id: orderId,
+              status: 'PROOF_SUBMITTED',
+            },
+            data: {
+              status: 'APPROVED',
+              approved_by_id: actor.userId,
+              approved_at: now,
+            },
+            include: { lines: { orderBy: { sequence: 'asc' } } },
+          });
 
-      fulfillStarted = true;
-      await port.fulfill(tx, fresh as unknown as OrderForFulfillment, actor);
+          fulfillStarted = true;
+          await port.fulfill(tx, fresh as unknown as OrderForFulfillment, actor);
 
-      await tx.field_payment_order_proofs.update({
-        where: {
-          field_payment_order_proof_id: proof.field_payment_order_proof_id,
+          await tx.field_payment_order_proofs.update({
+            where: {
+              field_payment_order_proof_id: proof.field_payment_order_proof_id,
+            },
+            data: {
+              status: 'APPROVED',
+              reviewed_by_id: actor.userId,
+              reviewed_at: now,
+            },
+          });
+          return fresh;
         },
-        data: {
-          status: 'APPROVED',
-          reviewed_by_id: actor.userId,
-          reviewed_at: now,
-        },
-      });
-      return fresh;
-    }).then((fresh) => {
-      this.logEvent('approved', {
-        order_id: orderId,
-        purpose: order.purpose,
-        local_field_id: order.local_field_id,
-        // Latencia de revisión: comprobante enviado → aprobación.
-        approve_latency_ms: now.getTime() - proof.created_at.getTime(),
-      });
-      return fresh;
-    }).catch((error) => {
-      if (fulfillStarted) {
-        this.logEvent('fulfill_fail', {
+        { timeout: APPROVE_TX_TIMEOUT_MS },
+      )
+      .then((fresh) => {
+        this.logEvent('approved', {
           order_id: orderId,
           purpose: order.purpose,
           local_field_id: order.local_field_id,
-          error: error instanceof Error ? error.message : String(error),
+          // Latencia de revisión: comprobante enviado → aprobación.
+          approve_latency_ms: now.getTime() - proof.created_at.getTime(),
         });
-      }
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2025'
-      ) {
-        // Lost the race: someone else transitioned the order first.
-        throw new AppConflictException(
-          ErrorCode.FIELD_PAYMENT_ORDER_INVALID_TRANSITION,
-        );
-      }
-      throw error;
-    });
+        return fresh;
+      })
+      .catch((error) => {
+        if (fulfillStarted) {
+          this.logEvent('fulfill_fail', {
+            order_id: orderId,
+            purpose: order.purpose,
+            local_field_id: order.local_field_id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2025'
+        ) {
+          // Lost the race: someone else transitioned the order first.
+          throw new AppConflictException(
+            ErrorCode.FIELD_PAYMENT_ORDER_INVALID_TRANSITION,
+          );
+        }
+        throw error;
+      });
   }
 
   async reject(orderId: string, reason: string, actor: OrderActor) {
