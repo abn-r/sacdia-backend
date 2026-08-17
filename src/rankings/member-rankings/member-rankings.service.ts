@@ -85,7 +85,7 @@ export class MemberRankingsService {
         orderBy: { rank_position: 'asc' },
         include: {
           user: { select: { name: true } },
-          club_section: { select: { name: true } },
+          club_section: { select: { club_types: { select: { name: true } } } },
           awarded_category: true,
         },
       }),
@@ -123,7 +123,7 @@ export class MemberRankingsService {
       orderBy: { rank_position: 'asc' },
       include: {
         user: { select: { name: true } },
-        club_section: { select: { name: true } },
+        club_section: { select: { club_types: { select: { name: true } } } },
         awarded_category: true,
       },
     });
@@ -193,7 +193,12 @@ export class MemberRankingsService {
       },
       include: {
         user: { select: { name: true } },
-        club_section: { select: { club_section_id: true, name: true } },
+        club_section: {
+          select: {
+            club_section_id: true,
+            club_types: { select: { name: true } },
+          },
+        },
         club: { select: { club_id: true, local_field_id: true } },
         awarded_category: true,
       },

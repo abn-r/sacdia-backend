@@ -440,7 +440,7 @@ describe('CamporeesService', () => {
         clubId: 12,
         clubName: 'Orión',
         clubSectionId: 44,
-        sectionName: 'Conquistadores Orión',
+        sectionName: 'Conquistadores',
         clubTypeId: 2,
         clubTypeName: 'Conquistadores',
         status: 'not_enrolled',

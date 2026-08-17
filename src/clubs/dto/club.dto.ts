@@ -5,8 +5,11 @@ import {
   IsBoolean,
   MaxLength,
   IsObject,
+  IsArray,
+  ArrayMinSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class CreateClubDto {
   @ApiProperty({ example: 'Club Central', description: 'Nombre del club' })
@@ -43,6 +46,18 @@ export class CreateClubDto {
   @IsOptional()
   @IsObject()
   coordinates?: { lat: number; lng: number };
+
+  @ApiProperty({
+    type: [Number],
+    example: [1, 2],
+    description:
+      'IDs de club_types a habilitar. El backend crea una sección por cada tipo activo del catálogo; estos IDs marcan active=true. Mínimo uno.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @Type(() => Number)
+  @IsInt({ each: true })
+  declare enabled_club_type_ids: number[];
 }
 
 export class UpdateClubDto {

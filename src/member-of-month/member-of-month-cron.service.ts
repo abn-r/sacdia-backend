@@ -43,7 +43,10 @@ export class MemberOfMonthCronService {
       // Get all active club sections
       const activeSections = await this.prisma.club_sections.findMany({
         where: { active: true },
-        select: { club_section_id: true, name: true },
+        select: {
+          club_section_id: true,
+          club_types: { select: { name: true } },
+        },
       });
 
       if (activeSections.length === 0) {
@@ -89,12 +92,12 @@ export class MemberOfMonthCronService {
             if (outcome.value.winners.length === 0) {
               skipCount++;
               this.logger.debug(
-                `Section ${section.club_section_id} (${section.name ?? 'unnamed'}): no winners found`,
+                `Section ${section.club_section_id} (${section.club_types?.name ?? 'unnamed'}): no winners found`,
               );
             } else {
               successCount++;
               this.logger.log(
-                `Section ${section.club_section_id} (${section.name ?? 'unnamed'}): ${outcome.value.winners.length} winner(s) selected`,
+                `Section ${section.club_section_id} (${section.club_types?.name ?? 'unnamed'}): ${outcome.value.winners.length} winner(s) selected`,
               );
             }
           } else {

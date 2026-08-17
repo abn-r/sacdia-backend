@@ -476,7 +476,6 @@ export class ClubEnrollmentsService {
     return {
       OR: [
         { club_section: { clubs: { name: { contains: value } } } },
-        { club_section: { name: { contains: value } } },
         { club_section: { club_types: { name: { contains: value } } } },
         { creator: { name: { contains: value } } },
         { creator: { paternal_last_name: { contains: value } } },

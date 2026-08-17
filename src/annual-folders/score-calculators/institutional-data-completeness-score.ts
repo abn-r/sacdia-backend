@@ -19,14 +19,13 @@ export class InstitutionalDataCompletenessScoreService {
           CASE WHEN ce.director_id IS NOT NULL THEN 1 ELSE 0 END +
           CASE WHEN ce.secretary_id IS NOT NULL OR ce.secretary_treasurer_id IS NOT NULL THEN 1 ELSE 0 END +
           CASE WHEN ce.treasurer_id IS NOT NULL OR ce.secretary_treasurer_id IS NOT NULL THEN 1 ELSE 0 END +
-          CASE WHEN NULLIF(BTRIM(cs.name), '') IS NOT NULL THEN 1 ELSE 0 END +
           CASE WHEN NULLIF(BTRIM(cs.phone), '') IS NOT NULL THEN 1 ELSE 0 END +
           CASE WHEN NULLIF(BTRIM(cs.email), '') IS NOT NULL THEN 1 ELSE 0 END +
           CASE WHEN (ce.latitude IS NOT NULL AND ce.longitude IS NOT NULL)
                   OR (cs.lat IS NOT NULL AND cs.long IS NOT NULL) THEN 1 ELSE 0 END +
           CASE WHEN COALESCE(ce.souls_target, cs.souls_target, 0) > 0 THEN 1 ELSE 0 END
         )::int AS completed,
-        10::int AS total
+        9::int AS total
       FROM club_enrollments ce
       JOIN club_sections cs ON cs.club_section_id = ce.club_section_id
       WHERE ce.club_enrollment_id = ${clubEnrollmentId}::uuid

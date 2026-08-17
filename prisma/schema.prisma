@@ -660,7 +660,6 @@ model club_sections {
   meeting_time                Json[]                        @default([])
   club_type_id                Int
   main_club_id                Int?
-  name                        String?
   phone                       String?
   email                       String?
   website                     String?
