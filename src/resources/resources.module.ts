@@ -4,6 +4,7 @@ import { ResourcesController } from './resources.controller';
 import { ResourceCategoriesController } from './resource-categories.controller';
 import { ResourcesService } from './resources.service';
 import { ResourceCategoriesService } from './resource-categories.service';
+import { CatalogsModule } from '../catalogs/catalogs.module';
 
 /**
  * Módulo de recursos digitales (documentos, audios, imágenes, links de video, texto).
@@ -16,6 +17,7 @@ import { ResourceCategoriesService } from './resource-categories.service';
  * para que las rutas `/resources/me` no sean capturadas por el param `:id`.
  */
 @Module({
+  imports: [CatalogsModule],
   controllers: [
     ResourcesAppController,
     ResourcesController,

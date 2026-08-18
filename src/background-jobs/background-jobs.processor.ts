@@ -7,12 +7,27 @@ import { FinancePeriodService } from '../finances/finance-period.service';
 import { RankingsService } from '../annual-folders/rankings.service';
 import { DataExportService } from '../data-export/data-export.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import { AppException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   BACKGROUND_JOBS_QUEUE,
   BackgroundJobName,
   BackgroundJobPayloadMap,
   MAP_JOB_TO_CRON_KEY,
 } from './background-jobs.types';
+
+const SKIPPABLE_MONTHLY_PDF_CODES: ReadonlySet<ErrorCode> = new Set([
+  ErrorCode.MONTHLY_REPORT_NOT_DRAFT,
+  ErrorCode.MONTHLY_REPORT_NOT_FOUND,
+  ErrorCode.REPORT_PDF_NOT_GENERATED,
+  ErrorCode.REPORT_PDF_NO_SNAPSHOT,
+]);
+
+function isSkippableMonthlyPdfError(error: unknown): boolean {
+  return (
+    error instanceof AppException && SKIPPABLE_MONTHLY_PDF_CODES.has(error.code)
+  );
+}
 
 @Processor(BACKGROUND_JOBS_QUEUE)
 export class BackgroundJobsProcessor
@@ -64,6 +79,36 @@ export class BackgroundJobsProcessor
         );
       }
 
+      case BackgroundJobName.MONTHLY_REPORT_PDF: {
+        const data =
+          job.data as BackgroundJobPayloadMap[typeof BackgroundJobName.MONTHLY_REPORT_PDF];
+        try {
+          if (data.action === 'regenerate') {
+            await this.monthlyReportsService.regenerate(data.reportId);
+          } else {
+            await this.monthlyReportsService.generate(
+              data.reportId,
+              data.requestedBy ?? 'system',
+            );
+          }
+          return { reportId: data.reportId, action: data.action };
+        } catch (error) {
+          if (isSkippableMonthlyPdfError(error)) {
+            this.logger.warn(
+              `Skipping monthly PDF job ${data.action} for ${data.reportId}: ${
+                error instanceof AppException ? error.code : 'unknown'
+              }`,
+            );
+            return {
+              skipped: true,
+              reportId: data.reportId,
+              action: data.action,
+            };
+          }
+          throw error;
+        }
+      }
+
       case BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH: {
         const data =
           job.data as BackgroundJobPayloadMap[typeof BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH];
@@ -79,7 +124,19 @@ export class BackgroundJobsProcessor
         return this.cronLogger.track(
           MAP_JOB_TO_CRON_KEY[BackgroundJobName.RANKINGS_RECALCULATE]!,
           async () => {
-            const result = await this.rankingsService.recalculateRankings();
+            if (data.includeMemberRankings) {
+              await this.rankingsService.recalculateAll(
+                data.yearId,
+                data.mode ?? 'full',
+              );
+              this.logger.log(
+                `Club + member rankings recalculated for year=${data.yearId ?? 'active'} mode=${data.mode ?? 'full'}`,
+              );
+              return { itemsProcessed: 0, includeMemberRankings: true };
+            }
+            const result = await this.rankingsService.recalculateRankings(
+              data.yearId,
+            );
             this.logger.log(`Rankings recalculated: ${result.updated} records`);
             return { itemsProcessed: result.updated };
           },
@@ -113,7 +170,7 @@ export class BackgroundJobsProcessor
     );
 
     // After max attempts are exhausted, record a final failure in cron_run_log
-    // — only for cron-backed jobs (data-export does not have a cron key).
+    // — only for cron-backed jobs (data-export / monthly PDF have no cron key).
     // Best-effort: do NOT await to avoid blocking the BullMQ event loop.
     if (job && attempts >= maxAttempts) {
       const cronKey = MAP_JOB_TO_CRON_KEY[job.name as BackgroundJobName];

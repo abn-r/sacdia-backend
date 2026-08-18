@@ -15,6 +15,7 @@ export const BACKGROUND_JOBS_QUEUE = 'background-jobs';
  */
 export const BackgroundJobName = {
   MONTHLY_REPORTS_AUTO_GENERATE: 'monthly-reports.auto-generate',
+  MONTHLY_REPORT_PDF: 'monthly-reports.pdf',
   FINANCE_PERIOD_CLOSE_MONTH: 'finance-period.close-month',
   RANKINGS_RECALCULATE: 'rankings.recalculate',
   DATA_EXPORT_GENERATE: 'data-export.generate',
@@ -31,6 +32,13 @@ export interface MonthlyReportsAutoGeneratePayload {
   triggeredAt: string; // ISO 8601
 }
 
+export interface MonthlyReportPdfPayload {
+  reportId: string;
+  action: 'generate' | 'regenerate';
+  requestedBy?: string;
+  triggeredAt: string; // ISO 8601
+}
+
 export interface FinancePeriodCloseMonthPayload {
   triggeredAt: string; // ISO 8601
   year: number;
@@ -39,6 +47,9 @@ export interface FinancePeriodCloseMonthPayload {
 
 export interface RankingsRecalculatePayload {
   triggeredAt: string; // ISO 8601
+  yearId?: number;
+  mode?: 'full' | 'delta';
+  includeMemberRankings?: boolean;
 }
 
 export interface DataExportGeneratePayload {
@@ -52,6 +63,7 @@ export interface DataExportGeneratePayload {
 
 export type BackgroundJobPayloadMap = {
   [BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE]: MonthlyReportsAutoGeneratePayload;
+  [BackgroundJobName.MONTHLY_REPORT_PDF]: MonthlyReportPdfPayload;
   [BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH]: FinancePeriodCloseMonthPayload;
   [BackgroundJobName.RANKINGS_RECALCULATE]: RankingsRecalculatePayload;
   [BackgroundJobName.DATA_EXPORT_GENERATE]: DataExportGeneratePayload;
@@ -59,7 +71,7 @@ export type BackgroundJobPayloadMap = {
 
 // ---------------------------------------------------------------------------
 // CronRunLogger key mapping
-// data-export is NOT a cron job, so it has no cron key.
+// data-export and monthly-reports.pdf are NOT cron jobs, so they have no cron key.
 // ---------------------------------------------------------------------------
 
 export const MAP_JOB_TO_CRON_KEY: Partial<Record<BackgroundJobName, string>> = {

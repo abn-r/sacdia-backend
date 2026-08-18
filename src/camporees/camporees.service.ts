@@ -2001,16 +2001,40 @@ export class CamporeesService {
    * @param status - Optional status filter. Defaults to excluding pending_approval
    */
   async getCamporeePayments(camporeeId: number, status?: string) {
-    // Validate camporee exists
     await this.findOne(camporeeId);
+    return this.listCamporeePaymentsByMembers(
+      await this.listCamporeeMemberIds({ camporeeId }),
+      status,
+    );
+  }
 
-    // Safety cap: a camporee payment list grows proportionally to member count.
-    // 5 000 covers 1 000 members × 5 payment installments each.
+  private async listCamporeeMemberIds(where: {
+    camporeeId?: number;
+    unionCamporeeId?: number;
+  }): Promise<number[]> {
+    const members = await this.prisma.camporee_members.findMany({
+      where: {
+        ...(where.camporeeId !== undefined
+          ? { camporee_id: where.camporeeId }
+          : { union_camporee_id: where.unionCamporeeId }),
+      },
+      select: { camporee_member_id: true },
+    });
+    return members.map((member) => member.camporee_member_id);
+  }
+
+  private async listCamporeePaymentsByMembers(
+    memberIds: number[],
+    status?: string,
+  ) {
+    if (memberIds.length === 0) {
+      return [];
+    }
+
+    // Safety cap: 5 000 covers ~1 000 members × 5 installments.
     return this.prisma.camporee_payments.findMany({
       where: {
-        camporee_member: {
-          camporee_id: camporeeId,
-        },
+        camporee_member_id: { in: memberIds },
         ...(status ? { status } : { status: { not: 'pending_approval' } }),
       },
       include: {
@@ -2958,45 +2982,11 @@ export class CamporeesService {
    * @param status - Optional status filter. Defaults to excluding pending_approval
    */
   async getUnionCamporeePayments(unionCamporeeId: number, status?: string) {
-    // Validate union camporee exists
     await this.findOneUnion(unionCamporeeId);
-
-    // Safety cap: union camporee aggregates many local fields; 5 000 payments
-    // covers 1 000 members × 5 installments.
-    return this.prisma.camporee_payments.findMany({
-      where: {
-        camporee_member: {
-          union_camporee_id: unionCamporeeId,
-        },
-        ...(status ? { status } : { status: { not: 'pending_approval' } }),
-      },
-      include: {
-        camporee_member: {
-          select: {
-            camporee_member_id: true,
-            user_id: true,
-            club_name: true,
-            users: {
-              select: {
-                name: true,
-                paternal_last_name: true,
-                maternal_last_name: true,
-              },
-            },
-          },
-        },
-        registrar: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-          },
-        },
-      },
-      orderBy: { paid_at: 'desc' },
-      take: 5000,
-    });
+    return this.listCamporeePaymentsByMembers(
+      await this.listCamporeeMemberIds({ unionCamporeeId }),
+      status,
+    );
   }
 
   /**

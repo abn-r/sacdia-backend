@@ -5,6 +5,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { ErrorCode } from '../common/errors/error-codes';
 import { FinancePeriodService } from './finance-period.service';
 import { TranslationService } from '../common/services/translation.service';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -66,6 +67,15 @@ describe('FinancesService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FinancePeriodService, useValue: mockFinancePeriodService },
         { provide: TranslationService, useValue: mockTranslationService },
+        {
+          provide: CatalogCacheService,
+          useValue: {
+            getEpoch: jest.fn().mockResolvedValue(0),
+            getOrSet: jest.fn(
+              (_key: string, loader: () => Promise<unknown>) => loader(),
+            ),
+          },
+        },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
       ],
     }).compile();

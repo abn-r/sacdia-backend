@@ -15,6 +15,10 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+} from '../catalogs/catalog-cache.service';
 
 type InventoryEvidenceRow = {
   inventory_evidence_file_id: number;
@@ -50,6 +54,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly translationService: TranslationService,
+    private readonly catalogCache: CatalogCacheService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
@@ -723,11 +728,13 @@ export class InventoryService {
    * Nota: Este endpoint debería estar en CatalogsService pero lo incluyo aquí por completitud
    */
   async findAllCategories() {
-    const categories = await this.prisma.inventory_categories.findMany({
-      where: { active: true },
-      orderBy: { name: 'asc' },
-    });
-
-    return categories;
+    return this.catalogCache.getOrSet(
+      CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES,
+      () =>
+        this.prisma.inventory_categories.findMany({
+          where: { active: true },
+          orderBy: { name: 'asc' },
+        }),
+    );
   }
 }

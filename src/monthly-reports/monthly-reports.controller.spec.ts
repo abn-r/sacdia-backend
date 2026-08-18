@@ -9,7 +9,7 @@ const PDF = Buffer.from('%PDF-monthly-report');
 describe('MonthlyReportsController stored PDF contract', () => {
   let controller: MonthlyReportsController;
   let reportsService: {
-    regenerate: jest.Mock;
+    enqueueRegenerate: jest.Mock;
   };
   let artifactsService: {
     getStoredPdfBuffer: jest.Mock;
@@ -17,7 +17,7 @@ describe('MonthlyReportsController stored PDF contract', () => {
 
   beforeEach(() => {
     reportsService = {
-      regenerate: jest.fn().mockResolvedValue({
+      enqueueRegenerate: jest.fn().mockResolvedValue({
         monthly_report_id: REPORT_ID,
         status: 'submitted',
       }),
@@ -57,7 +57,24 @@ describe('MonthlyReportsController stored PDF contract', () => {
       },
     });
 
-    expect(reportsService.regenerate).toHaveBeenCalledWith(REPORT_ID);
+    expect(reportsService.enqueueRegenerate).toHaveBeenCalledWith(REPORT_ID);
+  });
+
+  it('returns accepted when regeneration is queued', async () => {
+    reportsService.enqueueRegenerate.mockResolvedValueOnce({
+      queued: true,
+      monthly_report_id: REPORT_ID,
+      status: 'submitted',
+    });
+
+    await expect(controller.regenerate(REPORT_ID)).resolves.toEqual({
+      status: 'accepted',
+      data: {
+        queued: true,
+        monthly_report_id: REPORT_ID,
+        status: 'submitted',
+      },
+    });
   });
 
   it('protects regeneration with reports:write and monthly-report resource scope', () => {

@@ -75,6 +75,9 @@ model activities {
   @@index([activity_type_id], map: "idx_activities_activity_type_id")
   @@index([club_section_id], map: "idx_activities_club_section_id")
   @@index([active, activity_type_id], map: "idx_activities_active_type")
+  @@index([created_by], map: "idx_activities_created_by")
+  @@index([created_at(sort: Desc)], map: "idx_activities_created_at")
+  @@index([created_by, activity_date], map: "idx_activities_created_by_date")
 }
 
 model activity_types {
@@ -124,6 +127,8 @@ model folder_assignments {
   folders              folders?       @relation(fields: [folder_id], references: [folder_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([club_section_id], map: "idx_folder_assignments_club_section_id")
+  @@index([user_id], map: "idx_folder_assignments_user_id")
+  @@index([folder_id], map: "idx_folder_assignments_folder_id")
 }
 
 model camporee_clubs {
@@ -158,6 +163,9 @@ model camporee_clubs {
   // Prisma cannot model partial unique indexes.
   @@index([club_section_id], map: "idx_camporee_clubs_club_section_id")
   @@index([union_camporee_id], map: "idx_camporee_clubs_union_camporee_id")
+  @@index([camporee_id], map: "idx_camporee_clubs_camporee_id")
+  @@index([club_id], map: "idx_camporee_clubs_club_id")
+  @@index([status, active], map: "idx_camporee_clubs_status_active")
 
 }
 
@@ -210,6 +218,9 @@ model churches {
   institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_church")
   institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_church")
   translations                            churches_translations[]
+
+  @@index([districlub_type_id, active], map: "idx_churches_district_active")
+  @@index([districlub_type_id, name], map: "idx_churches_district_name")
 }
 
 model churches_translations {
@@ -241,6 +252,7 @@ model class_module_progress {
   users              users        @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([user_id, class_id, module_id])
+  @@index([enrollment_id], map: "idx_class_module_progress_enrollment_id")
 }
 
 model class_modules {
@@ -300,6 +312,7 @@ model class_section_progress {
 
   @@unique([user_id, class_id, module_id, section_id])
   @@index([enrollment_id], map: "idx_class_section_progress_enrollment_id")
+  @@index([user_id, created_at], map: "idx_class_section_progress_user_created")
 }
 
 model class_sections {
@@ -386,6 +399,7 @@ model classes {
 
   @@index([available_from_year_id], map: "idx_classes_available_from_year")
   @@index([available_until_year_id], map: "idx_classes_available_until_year")
+  @@index([club_type_id, active], map: "idx_classes_club_type_active")
 }
 
 model certificate_bulk_import_batches {
@@ -652,6 +666,10 @@ model clubs {
   insurance_coverage_slots_owned insurance_coverage_slots[] @relation("insurance_slot_owner_club")
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
+  @@index([church_id], map: "idx_clubs_church_id")
+  @@index([districlub_type_id, active], map: "idx_clubs_district_active")
+  @@index([active, name], map: "idx_clubs_active_name")
+  // GIN trigram on name: migration 20260818190000 (Prisma cannot express gin_trgm_ops).
 }
 
 model club_sections {
@@ -705,6 +723,8 @@ model club_sections {
   insurance_slot_movements_from        insurance_slot_movements[]  @relation("insurance_slot_movement_from_section")
   insurance_slot_movements_to          insurance_slot_movements[]  @relation("insurance_slot_movement_to_section")
   @@unique([main_club_id, club_type_id])
+  @@index([club_type_id, active], map: "idx_club_sections_club_type_active")
+  @@index([main_club_id, active], map: "idx_club_sections_club_active")
 
 }
 
@@ -797,6 +817,7 @@ model club_role_assignments {
   @@index([user_id], map: "idx_club_role_assignments_user")
   @@index([ecclesiastical_year_id], map: "idx_club_role_assignments_year")
   @@index([club_section_id], map: "idx_club_role_assignments_club_section_id")
+  @@index([ecclesiastical_year_id, active, status], map: "idx_club_role_assignments_year_active_status")
   // auth/me hot path: resolveUserAuthorization filters WHERE user_id = ? AND active = true, ordered by start_date DESC
   @@index([user_id, active, start_date(sort: Desc)], map: "idx_club_role_assignments_user_active_start")
 }
@@ -934,6 +955,8 @@ model districts {
   institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_district")
   coordination_zone_districts             coordination_zone_districts[]
   translations                            districts_translations[]
+
+  @@index([local_field_id, active], map: "idx_districts_local_field_active")
 }
 
 model districts_translations {
@@ -1024,6 +1047,9 @@ model enrollments {
   @@index([user_id, investiture_status, active], map: "idx_enrollments_user_investiture_active")
   @@index([user_id, ecclesiastical_year_id, active], map: "idx_enrollments_user_year_active")
   @@index([last_progress_change], map: "idx_enrollments_last_progress")
+  @@index([ecclesiastical_year_id, investiture_status, active], map: "idx_enrollments_year_status_active")
+  // Partial (investiture_status, submitted_at) WHERE active AND submitted_at IS NOT NULL:
+  // migration 20260818190000.
 }
 
 model error_logs {
@@ -1062,6 +1088,8 @@ model finances {
   @@index([created_by], map: "idx_finances_created_by")
   @@index([finance_category_id], map: "idx_finances_finance_category_id")
   @@index([modified_by_id], map: "idx_finances_modified_by_id")
+  @@index([finance_date], map: "idx_finances_finance_date")
+  // GIN trigram on description: migration 20260818190000 (Prisma cannot express gin_trgm_ops).
 }
 
 model finance_evidence_files {
@@ -1151,6 +1179,8 @@ model folders {
   folders_modules_records folders_modules_records[]
   folders_section_records folders_section_records[]
   translations            folders_translations[]
+
+  @@index([ecclesiastical_year_id], map: "idx_folders_ecclesiastical_year")
 }
 
 model folders_translations {
@@ -1330,6 +1360,10 @@ model honors {
   master_honor_requirement_option_honors master_honor_requirement_option_honors[]
   translations                           honors_translations[]
   certification_requirement_components   certification_requirement_components[]
+
+  @@index([active, honors_category_id, name], map: "idx_honors_active_category_name")
+  @@index([club_type_id, active], map: "idx_honors_club_type_active")
+  @@index([name], map: "idx_honors_name")
 }
 
 model honor_club_types {
@@ -1556,6 +1590,7 @@ model local_camporees {
   insurance_external_participants camporee_external_participants[]
 
   @@index([timezone_verified_by], map: "idx_local_camporees_timezone_verified_by")
+  @@index([local_field_id, active], map: "idx_local_camporees_local_field_active")
 }
 
 model local_fields {
@@ -1598,6 +1633,8 @@ model local_fields {
   coordinator_assignments         coordinator_assignments[]
   insurance_products               insurance_products[]
   insurance_cycle_configs          insurance_cycle_configs[]
+
+  @@index([union_id, active], map: "idx_local_fields_union_active")
 }
 
 model local_fields_translations {
@@ -1814,6 +1851,7 @@ model union_camporee_local_fields {
   union_camporees      union_camporees @relation(fields: [union_camporee_lf_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([union_camporee_lf_id, local_field_id])
+  @@index([local_field_id, active], map: "idx_union_camporee_lfs_field_active")
 }
 
 model union_camporees {
@@ -1857,6 +1895,7 @@ model union_camporees {
   insurance_external_participants camporee_external_participants[]
 
   @@index([timezone_verified_by], map: "idx_union_camporees_timezone_verified_by")
+  @@index([union_id, active], map: "idx_union_camporees_union_active")
 }
 
 model unions {
@@ -2233,6 +2272,8 @@ model units {
 }
 
 model users {
+  // Admin list btree + pg_trgm GIN indexes live in migration 20260630090000.
+  // Prisma cannot express GIN/partial indexes in @@index.
   user_id                              String                                @id @default(dbgenerated("auth.uid()")) @db.Uuid
   name                                 String?                               @db.VarChar(50)
   paternal_last_name                   String?                               @db.VarChar(50)
@@ -2565,6 +2606,7 @@ model support_reports {
 
   @@index([user_id], map: "idx_support_reports_user_id")
   @@index([status, created_at], map: "idx_support_reports_status_created")
+  // GIN trigram on title/description: migration 20260818190000.
   @@map("support_reports")
 }
 
@@ -2907,6 +2949,9 @@ model investiture_validation_history {
   users         users                   @relation(fields: [performed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([enrollment_id], map: "idx_investiture_history_enrollment")
+  @@index([enrollment_id, created_at], map: "idx_investiture_history_enrollment_created")
+  @@index([action, created_at], map: "idx_investiture_history_action_created")
+  // Partial index WHERE action = 'INVESTIDO': migration 20260818190000.
 }
 
 model investiture_config {
@@ -2962,6 +3007,7 @@ model emergency_contacts {
   relationship_types   relationship_types @relation(fields: [relationship_type_id], references: [relationship_type_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([relationship_type_id], map: "idx_emergency_contacts_relationship_type_id")
+  @@index([owner_id, active], map: "idx_emergency_contacts_owner_active")
 }
 
 model weekly_records {
@@ -2984,6 +3030,8 @@ model weekly_records {
 
   @@unique([unit_id, user_id, week, year], map: "weekly_records_unit_id_user_id_week_year_key")
   @@index([unit_id], map: "idx_weekly_records_unit_id")
+  @@index([user_id, year, week], map: "idx_weekly_records_user_year_week")
+  // Partial twin WHERE active = true: migration 20260818190000.
 }
 
 // ========================================
@@ -3134,6 +3182,7 @@ model users_honors {
   @@unique([user_id, honor_id])
   @@index([user_id], map: "idx_users_honors_user_id")
   @@index([validation_status], map: "idx_users_honors_validation_status")
+  @@index([honor_id, active], map: "idx_users_honors_honor_active")
 }
 
 model users_permissions {
@@ -3542,6 +3591,7 @@ model account {
   user                  users     @relation(fields: [userId], references: [user_id], onDelete: Cascade)
 
   @@unique([providerId, accountId])
+  @@index([userId], map: "idx_accounts_user_id")
   @@map("accounts")
 }
 
@@ -3594,6 +3644,7 @@ model club_enrollments {
   @@unique([club_section_id, ecclesiastical_year_id])
   @@index([club_section_id], map: "idx_club_enrollments_club_section")
   @@index([ecclesiastical_year_id], map: "idx_club_enrollments_year")
+  @@index([ecclesiastical_year_id, status], map: "idx_club_enrollments_year_status")
 }
 
 model role_slot_limits {
@@ -3641,6 +3692,7 @@ model camporee_payments {
   @@index([registered_by], map: "idx_camporee_payments_registered_by")
   @@index([approved_by], map: "idx_camporee_payments_approved_by")
   @@index([rejected_by], map: "idx_camporee_payments_rejected_by")
+  @@index([status, paid_at], map: "idx_camporee_payments_status_paid_at")
 }
 
 // ========================================
@@ -3675,6 +3727,7 @@ model folder_templates {
   @@index([owner_union_id], map: "idx_folder_templates_owner_union")
   @@index([owner_local_field_id], map: "idx_folder_templates_owner_local_field")
   @@index([status], map: "idx_folder_templates_status")
+  // GIN trigram on name: migration 20260818190000.
 }
 
 model folder_template_sections {
@@ -3730,6 +3783,8 @@ model annual_folders {
   @@index([hierarchy_context_id], map: "idx_annual_folders_hierarchy_context")
   @@index([local_camporee_id], map: "idx_annual_folders_local_camporee")
   @@index([union_camporee_id], map: "idx_annual_folders_union_camporee")
+  @@index([status], map: "idx_annual_folders_status")
+  @@index([status, modified_at(sort: Desc)], map: "idx_annual_folders_status_modified")
 }
 
 model annual_folder_evidences {
@@ -4011,6 +4066,7 @@ model monthly_reports {
   @@index([club_enrollment_id], map: "idx_monthly_reports_enrollment")
   @@index([status], map: "idx_monthly_reports_status")
   @@index([pdf_template_version], map: "idx_monthly_reports_pdf_template_version")
+  @@index([submitted_by, submitted_at], map: "idx_monthly_reports_submitter_submitted")
 }
 
 model monthly_report_manual_data {
@@ -4160,6 +4216,8 @@ model resources {
   @@index([club_type_id], map: "idx_resources_club_type")
   @@index([resource_category_id], map: "idx_resources_category")
   @@index([resource_type], map: "idx_resources_type")
+  @@index([created_at(sort: Desc)], map: "idx_resources_created_at")
+  // GIN trigram on title: migration 20260818190000 (Prisma cannot express gin_trgm_ops).
 }
 
 // ─── Achievement System ────────────────────────────────────────────
@@ -4715,7 +4773,9 @@ model camporee_events {
   @@index([display_category, active], map: "camporee_events_category_idx")
   @@index([venue_id], map: "camporee_events_venue_idx")
   @@index([leader_user_id], map: "camporee_events_leader_idx")
-
+  @@index([local_camporee_id, day_number, starts_at, display_order], map: "idx_camporee_events_local_day_start")
+  @@index([union_camporee_id, day_number, starts_at, display_order], map: "idx_camporee_events_union_day_start")
+  // GIN trigram on title: migration 20260818190000.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5409,6 +5469,10 @@ model insurance_evidence_files {
   uploader    users                  @relation("insurance_evidence_uploader", fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   creator     users?                 @relation("insurance_evidence_creator", fields: [created_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
   modifier    users?                 @relation("insurance_evidence_modifier", fields: [modified_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([insurance_purchase_id], map: "idx_insurance_evidence_files_purchase")
+  @@index([insurance_assignment_id], map: "idx_insurance_evidence_files_assignment")
+  @@index([uploaded_by_id], map: "idx_insurance_evidence_files_uploaded_by")
 }
 
 model camporee_external_participants {

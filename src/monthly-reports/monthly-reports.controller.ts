@@ -158,13 +158,14 @@ export class MonthlyReportsController {
   // ========================================
 
   @Post(':reportId/generate')
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @RequirePermissions('reports:read')
   @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Generar informe (congelar datos)',
     description:
-      'Congela los datos auto-calculados en snapshot_data y cambia el estado a "generated". Solo informes en borrador.',
+      'Encola el congelamiento de snapshot_data, el PDF en R2 y el cambio a "generated". ' +
+      'La respuesta vuelve al encolar. Poll GET :reportId hasta status generated. Solo informes en borrador.',
   })
   @ApiParam({
     name: 'reportId',
@@ -172,7 +173,10 @@ export class MonthlyReportsController {
     type: 'string',
     format: 'uuid',
   })
-  @ApiResponse({ status: 200, description: 'Informe generado con snapshot' })
+  @ApiResponse({
+    status: 202,
+    description: 'Generación encolada (o corrida inline si Redis no está)',
+  })
   @ApiResponse({
     status: 400,
     description: 'Solo se pueden generar informes en borrador',
@@ -182,11 +186,14 @@ export class MonthlyReportsController {
     @Param('reportId', ParseUUIDPipe) reportId: string,
     @Req() req: any,
   ) {
-    const data = await this.monthlyReportsService.generate(
+    const data = await this.monthlyReportsService.enqueueGenerate(
       reportId,
       req.user.sub,
     );
-    return { status: 'success', data };
+    return {
+      status: 'queued' in data && data.queued ? 'accepted' : 'success',
+      data,
+    };
   }
 
   // ========================================
@@ -307,13 +314,15 @@ export class MonthlyReportsController {
   // ========================================
 
   @Post(':reportId/regenerate')
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @RequirePermissions('reports:write')
   @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Regenerar el PDF almacenado del informe mensual',
     description:
-      'Rerenderiza el PDF desde el snapshot congelado y actualiza únicamente el artefacto. Solo disponible para informes generados o enviados.',
+      'Encola el rerender del PDF desde el snapshot congelado. La respuesta vuelve al encolar. ' +
+      'GET :reportId/pdf repara el artefacto si el worker aún no terminó. ' +
+      'Solo disponible para informes generados o enviados.',
   })
   @ApiParam({
     name: 'reportId',
@@ -322,8 +331,8 @@ export class MonthlyReportsController {
     format: 'uuid',
   })
   @ApiResponse({
-    status: 200,
-    description: 'Informe con el artefacto PDF regenerado',
+    status: 202,
+    description: 'Regeneración encolada (o corrida inline si Redis no está)',
   })
   @ApiResponse({
     status: 400,
@@ -332,8 +341,11 @@ export class MonthlyReportsController {
   })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async regenerate(@Param('reportId', ParseUUIDPipe) reportId: string) {
-    const data = await this.monthlyReportsService.regenerate(reportId);
-    return { status: 'success', data };
+    const data = await this.monthlyReportsService.enqueueRegenerate(reportId);
+    return {
+      status: 'queued' in data && data.queued ? 'accepted' : 'success',
+      data,
+    };
   }
 
   // ========================================

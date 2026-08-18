@@ -1,6 +1,8 @@
 import {
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -304,15 +306,17 @@ export class RankingsController {
   // ========================================
 
   @Post('recalculate')
+  @HttpCode(HttpStatus.ACCEPTED)
   @RequirePermissions('rankings:recalculate')
-  // Rate limit: 1 call per 5 minutes — this endpoint runs a full system-wide
+  // Rate limit: 1 call per 5 minutes — this endpoint enqueues a full system-wide
   // DB transaction; even a single extra concurrent run can DoS the DB.
   @Throttle(namedThrottle({ ttl: 300_000, limit: 1 }))
   @ApiOperation({
     summary: 'Manually trigger a rankings recalculation',
     description:
-      'Recalculates rankings for the specified year (or the current active year if omitted). ' +
+      'Enqueues club rankings recalculation for the specified year (or the current active year if omitted). ' +
       'This is the same logic that runs automatically at 2:00 AM each night. ' +
+      'The HTTP response returns as soon as the job is queued. Poll GET rankings for results. ' +
       'The operation is idempotent.',
   })
   @ApiQuery({
@@ -323,12 +327,17 @@ export class RankingsController {
     example: 5,
   })
   @ApiResponse({
-    status: 201,
-    description: 'Rankings recalculated successfully',
+    status: 202,
+    description:
+      'Rankings recalculation queued (or ran inline if Redis is down)',
     schema: {
       example: {
-        status: 'success',
-        data: { message: 'Rankings recalculated', rankings_updated: 42 },
+        status: 'accepted',
+        data: {
+          message: 'Rankings recalculation queued',
+          queued: true,
+          ecclesiastical_year_id: 5,
+        },
       },
     },
   })
@@ -340,7 +349,8 @@ export class RankingsController {
   @ApiResponse({ status: 404, description: 'Year not found or no active year' })
   @ApiResponse({
     status: 409,
-    description: 'Recalculation already in progress for this year (lock held)',
+    description:
+      'Recalculation already in progress for this year (lock held; only on inline fallback)',
   })
   @ApiResponse({
     status: 429,
@@ -350,13 +360,29 @@ export class RankingsController {
     const yearId =
       yearIdRaw !== undefined ? parseInt(yearIdRaw, 10) : undefined;
 
-    const result = await this.rankingsService.recalculateRankings(yearId);
+    const result = await this.rankingsService.enqueueRecalculation({ yearId });
+
+    if (result.queued) {
+      return {
+        status: 'accepted',
+        data: {
+          message: 'Rankings recalculation queued',
+          queued: true,
+          ecclesiastical_year_id: result.ecclesiastical_year_id,
+        },
+      };
+    }
 
     return {
-      status: 'success',
+      status: 'accepted',
       data: {
-        message: 'Rankings recalculated',
-        rankings_updated: result.updated,
+        message: result.skipped
+          ? 'Rankings recalculation skipped'
+          : 'Rankings recalculated',
+        queued: false,
+        rankings_updated: result.rankings_updated ?? 0,
+        ecclesiastical_year_id: result.ecclesiastical_year_id,
+        ...(result.skipped ? { skipped: true, reason: result.reason } : {}),
       },
     };
   }

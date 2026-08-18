@@ -1,4 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -24,6 +26,11 @@ import {
   resolveReportVisibilityScopeForActor,
 } from '../reports/report-visibility-scope';
 import { CoordinationService } from '../coordination/coordination.service';
+import {
+  BACKGROUND_JOBS_QUEUE,
+  BackgroundJobName,
+  MonthlyReportPdfPayload,
+} from '../background-jobs/background-jobs.types';
 
 const MONTHLY_REPORT_REMINDER_SOURCE = 'monthly_reports:reminder';
 const AUTO_GENERATION_STATUS_BATCH_SIZE = 500;
@@ -78,6 +85,38 @@ const MANUAL_DATA_FIELDS: readonly (keyof UpdateManualDataDto)[] = [
   ...NULLABLE_MANUAL_DATA_TEXT_FIELDS,
 ];
 
+const MONTHLY_PDF_JOB_OPTIONS = {
+  attempts: 3,
+  backoff: { type: 'exponential' as const, delay: 5_000 },
+  removeOnComplete: { age: 86_400 },
+  removeOnFail: { age: 7 * 86_400 },
+};
+
+/**
+ * Prisma BigInt cannot JSON.stringify. PDF sizes fit in a JS number.
+ */
+function serializeMonthlyReport<T>(report: T): T {
+  if (!report || typeof report !== 'object') {
+    return report;
+  }
+
+  const record = report as T & { pdf_size_bytes?: unknown };
+  if (typeof record.pdf_size_bytes !== 'bigint') {
+    return report;
+  }
+
+  return {
+    ...record,
+    pdf_size_bytes: Number(record.pdf_size_bytes),
+  };
+}
+
+export type MonthlyReportQueuedResult = {
+  queued: true;
+  monthly_report_id: string;
+  status: string;
+};
+
 @Injectable()
 export class MonthlyReportsService {
   private readonly logger = new Logger(MonthlyReportsService.name);
@@ -93,6 +132,9 @@ export class MonthlyReportsService {
     private readonly lockService?: DistributedLockService,
     @Optional()
     private readonly coordinationService?: CoordinationService,
+    @Optional()
+    @InjectQueue(BACKGROUND_JOBS_QUEUE)
+    private readonly jobsQueue?: Queue,
   ) {}
 
   // ========================================
@@ -107,23 +149,25 @@ export class MonthlyReportsService {
 
     await this.validateEnrollmentExists(enrollmentId);
 
-    return this.prisma.monthly_reports.upsert({
-      where: {
-        club_enrollment_id_month_year: {
+    return serializeMonthlyReport(
+      await this.prisma.monthly_reports.upsert({
+        where: {
+          club_enrollment_id_month_year: {
+            club_enrollment_id: enrollmentId,
+            month,
+            year,
+          },
+        },
+        create: {
           club_enrollment_id: enrollmentId,
           month,
           year,
+          status: 'draft',
         },
-      },
-      create: {
-        club_enrollment_id: enrollmentId,
-        month,
-        year,
-        status: 'draft',
-      },
-      update: {},
-      include: { manual_data: true },
-    });
+        update: {},
+        include: { manual_data: true },
+      }),
+    );
   }
 
   // ========================================
@@ -270,6 +314,100 @@ export class MonthlyReportsService {
   // ========================================
 
   /**
+   * HTTP entry: enqueue snapshot+PDF work so the request returns immediately.
+   * Without Redis, generate() still runs inline (local DX).
+   */
+  async enqueueGenerate(reportId: string, userId: string) {
+    const report = await this.prisma.monthly_reports.findUnique({
+      where: { monthly_report_id: reportId },
+      select: { monthly_report_id: true, status: true },
+    });
+
+    if (!report) {
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+    }
+
+    if (report.status !== 'draft') {
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
+    }
+
+    if (this.jobsQueue) {
+      await this.addMonthlyPdfJob({
+        reportId,
+        action: 'generate',
+        requestedBy: userId,
+        triggeredAt: new Date().toISOString(),
+      });
+      return {
+        queued: true,
+        monthly_report_id: reportId,
+        status: report.status,
+      };
+    }
+
+    this.logger.warn(
+      'BullMQ queue unavailable — generating monthly report inline',
+    );
+    return this.generate(reportId, userId);
+  }
+
+  /**
+   * HTTP entry: enqueue PDF rerender. Without Redis, regenerate() runs inline.
+   */
+  async enqueueRegenerate(reportId: string) {
+    const report = await this.prisma.monthly_reports.findUnique({
+      where: { monthly_report_id: reportId },
+      select: {
+        monthly_report_id: true,
+        status: true,
+        snapshot_data: true,
+      },
+    });
+
+    if (!report) {
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+    }
+
+    if (!['generated', 'submitted'].includes(report.status)) {
+      throw new AppBadRequestException(ErrorCode.REPORT_PDF_NOT_GENERATED);
+    }
+
+    if (!report.snapshot_data) {
+      throw new AppBadRequestException(ErrorCode.REPORT_PDF_NO_SNAPSHOT);
+    }
+
+    if (this.jobsQueue) {
+      await this.addMonthlyPdfJob({
+        reportId,
+        action: 'regenerate',
+        triggeredAt: new Date().toISOString(),
+      });
+      return {
+        queued: true,
+        monthly_report_id: reportId,
+        status: report.status,
+      };
+    }
+
+    this.logger.warn(
+      'BullMQ queue unavailable — regenerating monthly report PDF inline',
+    );
+    return this.regenerate(reportId);
+  }
+
+  private async addMonthlyPdfJob(payload: MonthlyReportPdfPayload) {
+    if (!this.jobsQueue) {
+      throw new Error('Background jobs queue is not available');
+    }
+
+    await this.jobsQueue.add(
+      BackgroundJobName.MONTHLY_REPORT_PDF,
+      payload,
+      MONTHLY_PDF_JOB_OPTIONS,
+    );
+  }
+
+  /**
    * Freezes the auto-calculated data into snapshot_data and sets status to 'generated'.
    */
   async generate(reportId: string, _userId: string) {
@@ -351,7 +489,7 @@ export class MonthlyReportsService {
         throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
       }
 
-      return generated;
+      return serializeMonthlyReport(generated);
     } finally {
       if (this.lockService) {
         await this.lockService.release(lockKey);
@@ -417,7 +555,7 @@ export class MonthlyReportsService {
         throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
       }
 
-      return regenerated;
+      return serializeMonthlyReport(regenerated);
     } finally {
       if (this.lockService) {
         await this.lockService.release(lockKey);
@@ -445,15 +583,17 @@ export class MonthlyReportsService {
       throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_GENERATED);
     }
 
-    return this.prisma.monthly_reports.update({
-      where: { monthly_report_id: reportId },
-      data: {
-        status: 'submitted',
-        submitted_at: new Date(),
-        submitted_by: userId,
-      },
-      include: { manual_data: true },
-    });
+    return serializeMonthlyReport(
+      await this.prisma.monthly_reports.update({
+        where: { monthly_report_id: reportId },
+        data: {
+          status: 'submitted',
+          submitted_at: new Date(),
+          submitted_by: userId,
+        },
+        include: { manual_data: true },
+      }),
+    );
   }
 
   // ========================================
@@ -492,7 +632,7 @@ export class MonthlyReportsService {
       throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
     }
 
-    return report;
+    return serializeMonthlyReport(report);
   }
 
   // ========================================
@@ -505,7 +645,7 @@ export class MonthlyReportsService {
   async listReports(enrollmentId: string, status?: string) {
     await this.validateEnrollmentExists(enrollmentId);
 
-    return this.prisma.monthly_reports.findMany({
+    const rows = await this.prisma.monthly_reports.findMany({
       where: {
         club_enrollment_id: enrollmentId,
         ...(status && { status }),
@@ -522,6 +662,8 @@ export class MonthlyReportsService {
       },
       orderBy: [{ year: 'desc' }, { month: 'desc' }],
     });
+
+    return rows.map(serializeMonthlyReport);
   }
 
   // ========================================

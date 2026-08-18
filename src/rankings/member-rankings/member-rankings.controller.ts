@@ -83,8 +83,8 @@ export class MemberRankingsController {
     description:
       'Requires the system config key `member_ranking.recalculation_enabled` to be truthy. ' +
       'When the kill-switch is set to "false", responds with 400 RECALCULATION_DISABLED. ' +
-      'This calls RankingsService.recalculateAll which covers both enrollment rankings ' +
-      'and section aggregates in the correct order.',
+      'Enqueues RankingsService.recalculateAll (club + enrollment + section) and returns ' +
+      'immediately. Poll GET member-rankings for results.',
   })
   @ApiQuery({ name: 'year_id', required: true, type: Number })
   @ApiQuery({
@@ -106,7 +106,7 @@ export class MemberRankingsController {
   })
   @ApiResponse({
     status: 201,
-    description: 'Recalculation triggered successfully',
+    description: 'Recalculation queued (or ran inline if Redis is down)',
     schema: {
       example: {
         triggered: true,

@@ -66,7 +66,38 @@ export const CATALOG_CACHE_KEYS = {
   DISEASES: 'cache:catalogs:diseases',
   MEDICINES: 'cache:catalogs:medicines',
   CAMPOREE_EVENT_TYPES: 'cache:catalogs:camporee_event_types',
+  RESOURCE_CATEGORIES: 'cache:catalogs:resource_categories',
+  INVENTORY_CATEGORIES: 'cache:catalogs:inventory_categories',
+  SCORING_DEFAULT_DIVISION: 'cache:catalogs:scoring_default_division',
+  HONORS_EPOCH: 'cache:catalogs:honors:epoch',
+  FINANCE_CATEGORIES: (params: {
+    epoch: number;
+    locale: string;
+    type?: number;
+  }) =>
+    `cache:catalogs:finance_categories:e${params.epoch}:${params.locale}:type:${params.type ?? 'all'}`,
+  HONORS_CATEGORIES: (epoch: number, locale: string) =>
+    `cache:catalogs:honors:categories:e${epoch}:${locale}`,
+  HONORS_GROUPED: (params: {
+    epoch: number;
+    locale: string;
+    categoryId?: number;
+    clubTypeId?: number;
+    skillLevel?: number;
+  }) =>
+    `cache:catalogs:honors:grouped:e${params.epoch}:${params.locale}:cat:${params.categoryId ?? 'all'}:type:${params.clubTypeId ?? 'all'}:skill:${params.skillLevel ?? 'all'}`,
 } as const;
+
+/** Namespace used by honors catalog keys + epoch invalidation. */
+export const HONORS_CACHE_NAMESPACE = 'honors';
+
+/** Namespace used by finance category keys + epoch invalidation. */
+export const FINANCE_CACHE_NAMESPACE = 'finance_categories';
+
+const EPOCH_NAMESPACES = [
+  HONORS_CACHE_NAMESPACE,
+  FINANCE_CACHE_NAMESPACE,
+] as const;
 
 /**
  * Prefix used to identify all catalog cache entries.
@@ -79,6 +110,13 @@ const CATALOG_PREFIX = 'cache:catalogs:';
  * Catalogs rarely change, so a long TTL is appropriate.
  */
 const DEFAULT_CATALOG_TTL_MS = 3_600_000; // 1 hour
+
+/**
+ * Epoch keys must outlive catalog payloads. If the epoch expires while old
+ * grouped keys still exist, readers would fall back to epoch 0 and serve
+ * stale e0 entries until those TTLs lapse.
+ */
+const NAMESPACE_EPOCH_TTL_MS = 2_592_000_000; // 30 days
 
 export interface CatalogCacheMetrics {
   hits: number;
@@ -191,6 +229,58 @@ export class CatalogCacheService {
   }
 
   /**
+   * Read the invalidation epoch for a parameterized catalog namespace.
+   * Callers embed the epoch in cache keys so a bump orphans every variant
+   * (locale + filters) without SCAN.
+   */
+  async getEpoch(namespace: string): Promise<number> {
+    try {
+      const raw = await this.cacheManager.get<number | string>(
+        this.epochKey(namespace),
+      );
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return raw;
+      }
+      if (typeof raw === 'string') {
+        const parsed = Number.parseInt(raw, 10);
+        return Number.isFinite(parsed) ? parsed : 0;
+      }
+      return 0;
+    } catch (err) {
+      this.metrics.errors += 1;
+      this.logger.warn(
+        `Cache GET epoch fallido para "${namespace}": ${this.extractMessage(err)}`,
+      );
+      return 0;
+    }
+  }
+
+  /**
+   * Bump the namespace epoch so existing parameterized keys miss on the
+   * next read. Old payloads expire via their own TTL.
+   */
+  async bumpEpoch(namespace: string): Promise<void> {
+    const next = (await this.getEpoch(namespace)) + 1;
+    try {
+      await this.cacheManager.set(
+        this.epochKey(namespace),
+        next,
+        NAMESPACE_EPOCH_TTL_MS,
+      );
+      this.metrics.invalidations += 1;
+      this.logger.log(`Cache EPOCH BUMP — ${namespace} → ${next}`);
+    } catch (err) {
+      this.metrics.errors += 1;
+      this.logger.warn(
+        `Cache SET epoch fallido para "${namespace}": ${this.extractMessage(err)}`,
+      );
+    }
+
+    // Drop payload keys so a lost bump race cannot revive stale eN entries.
+    await this.deleteNamespacePayloads(namespace);
+  }
+
+  /**
    * Invalidate ALL catalog cache entries.
    *
    * Strategy: enumerate keys through CacheManager's public Keyv store iterator
@@ -201,10 +291,16 @@ export class CatalogCacheService {
    * touched, so token-blacklist and session entries are never affected.
    *
    * Limitation: parameterised keys with arbitrary IDs are only guaranteed to
-   * be removed when the configured store supports iteration.
+   * be removed when the configured store supports iteration. Honors catalog
+   * keys are additionally orphaned via epoch bump so they miss even without SCAN.
    */
   async invalidateAll(): Promise<void> {
     this.logger.log('Cache INVALIDATE ALL — purgando todos los catálogos');
+
+    // Orphan parameterized catalog keys even if SCAN is unavailable.
+    await Promise.all(
+      EPOCH_NAMESPACES.map((namespace) => this.bumpEpoch(namespace)),
+    );
 
     const iteratedKeys = await this.findCatalogKeys();
     if (iteratedKeys !== null) {
@@ -249,6 +345,9 @@ export class CatalogCacheService {
       CATALOG_CACHE_KEYS.DISEASES,
       CATALOG_CACHE_KEYS.MEDICINES,
       CATALOG_CACHE_KEYS.CAMPOREE_EVENT_TYPES,
+      CATALOG_CACHE_KEYS.RESOURCE_CATEGORIES,
+      CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES,
+      CATALOG_CACHE_KEYS.SCORING_DEFAULT_DIVISION,
     ];
 
     await Promise.allSettled(staticKeys.map((k) => this.invalidate(k)));
@@ -314,6 +413,39 @@ export class CatalogCacheService {
     }
 
     return supportsIteration ? [...keys] : null;
+  }
+
+  private async deleteNamespacePayloads(namespace: string): Promise<void> {
+    const iteratedKeys = await this.findCatalogKeys();
+    if (iteratedKeys === null) {
+      return;
+    }
+
+    const prefix = `${CATALOG_PREFIX}${namespace}:`;
+    const epochKey = this.epochKey(namespace);
+    const toDelete = iteratedKeys.filter(
+      (key) => key.startsWith(prefix) && key !== epochKey,
+    );
+    if (toDelete.length === 0) {
+      return;
+    }
+
+    try {
+      await this.cacheManager.mdel(toDelete);
+      this.metrics.invalidations += toDelete.length;
+      this.logger.log(
+        `Cache NAMESPACE PURGE — ${namespace} (${toDelete.length} payloads)`,
+      );
+    } catch (err) {
+      this.metrics.errors += 1;
+      this.logger.warn(
+        `Cache NAMESPACE PURGE fallido para "${namespace}": ${this.extractMessage(err)}`,
+      );
+    }
+  }
+
+  private epochKey(namespace: string): string {
+    return `${CATALOG_PREFIX}${namespace}:epoch`;
   }
 
   private extractMessage(err: unknown): string {

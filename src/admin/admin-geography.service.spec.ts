@@ -225,9 +225,10 @@ describe('AdminGeographyService', () => {
         [enTranslation],
         ['name'],
       );
-      expect(cacheMock.invalidate).toHaveBeenCalledWith(
+      expect(cacheMock.invalidateMany).toHaveBeenCalledWith([
         CATALOG_CACHE_KEYS.DIVISIONS,
-      );
+        CATALOG_CACHE_KEYS.SCORING_DEFAULT_DIVISION,
+      ]);
     });
 
     it('rejects deactivating a division that still has active unions', async () => {

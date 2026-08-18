@@ -10,6 +10,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 
 describe('HonorsService', () => {
   let service: HonorsService;
@@ -104,6 +105,15 @@ describe('HonorsService', () => {
             getCurrentLocale: jest.fn().mockReturnValue('es'),
             translate: jest.fn((record: any) => record),
             translateMany: jest.fn((records: any[]) => records),
+          },
+        },
+        {
+          provide: CatalogCacheService,
+          useValue: {
+            getEpoch: jest.fn().mockResolvedValue(0),
+            getOrSet: jest.fn(
+              (_key: string, loader: () => Promise<unknown>) => loader(),
+            ),
           },
         },
       ],
@@ -284,6 +294,24 @@ describe('HonorsService', () => {
         expect.objectContaining({
           where: { active: true },
         }),
+      );
+    });
+
+    it('reads grouped honors through the catalog cache key for locale and filters', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+      const catalogCache = (service as any).catalogCache as {
+        getOrSet: jest.Mock;
+      };
+
+      await service.getGroupedByCategory({
+        categoryId: 2,
+        clubTypeId: 3,
+        skillLevel: 1,
+      });
+
+      expect(catalogCache.getOrSet).toHaveBeenCalledWith(
+        'cache:catalogs:honors:grouped:e0:es:cat:2:type:3:skill:1',
+        expect.any(Function),
       );
     });
 

@@ -25,6 +25,11 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+  FINANCE_CACHE_NAMESPACE,
+} from '../catalogs/catalog-cache.service';
 
 type FinanceSectionFilter =
   | { club_section_id: { in: number[] } }
@@ -76,6 +81,7 @@ export class FinancesService {
     private readonly prisma: PrismaService,
     private readonly financePeriodService: FinancePeriodService,
     private readonly translationService: TranslationService,
+    private readonly catalogCache: CatalogCacheService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
@@ -86,6 +92,18 @@ export class FinancesService {
 
   async getCategories(type?: number) {
     const locale = this.translationService.getCurrentLocale();
+    const epoch = await this.catalogCache.getEpoch(FINANCE_CACHE_NAMESPACE);
+    const key = CATALOG_CACHE_KEYS.FINANCE_CATEGORIES({
+      epoch,
+      locale,
+      type,
+    });
+    return this.catalogCache.getOrSet(key, () =>
+      this.loadCategories(locale, type),
+    );
+  }
+
+  private async loadCategories(locale: string, type?: number) {
     const records = await this.prisma.finances_categories.findMany({
       where: {
         active: true,

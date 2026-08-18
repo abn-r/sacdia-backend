@@ -316,20 +316,25 @@ export class AnalyticsService {
         const scopedSectionSql = Prisma.join(scopedClubSectionIds);
         const [stageRows, totalRows] = await Promise.all([
           this.prisma.$queryRaw<StageRow[]>`
-            WITH enrollment_actions AS (
+            WITH scoped_users AS (
+              SELECT DISTINCT cra.user_id
+              FROM club_role_assignments cra
+              WHERE cra.club_section_id IN (${scopedSectionSql})
+                AND cra.active = true
+            ),
+            enrollment_actions AS (
               SELECT
                 h.enrollment_id,
                 h.action,
                 h.created_at,
-                LAG(h.created_at) OVER (PARTITION BY h.enrollment_id ORDER BY h.created_at) AS prev_at
-              FROM investiture_validation_history h
-              JOIN enrollments e ON e.enrollment_id = h.enrollment_id
+                LAG(h.created_at) OVER (
+                  PARTITION BY h.enrollment_id ORDER BY h.created_at
+                ) AS prev_at
+              FROM enrollments e
+              JOIN scoped_users su ON su.user_id = e.user_id
+              JOIN investiture_validation_history h
+                ON h.enrollment_id = e.enrollment_id
               WHERE e.active = true
-                AND e.user_id IN (
-                  SELECT DISTINCT cra.user_id FROM club_role_assignments cra
-                  WHERE cra.club_section_id IN (${scopedSectionSql})
-                    AND cra.active = true
-                )
             )
             SELECT
               AVG(CASE WHEN action = 'SUBMITTED'
@@ -344,23 +349,28 @@ export class AnalyticsService {
             WHERE prev_at IS NOT NULL
           `,
           this.prisma.$queryRaw<TotalRow[]>`
-            WITH enrollment_total AS (
+            WITH scoped_users AS (
+              SELECT DISTINCT cra.user_id
+              FROM club_role_assignments cra
+              WHERE cra.club_section_id IN (${scopedSectionSql})
+                AND cra.active = true
+            ),
+            invested AS (
+              SELECT DISTINCT h.enrollment_id
+              FROM investiture_validation_history h
+              WHERE h.action = 'INVESTIDO'
+            ),
+            enrollment_total AS (
               SELECT
                 h.enrollment_id,
                 EXTRACT(EPOCH FROM (MAX(h.created_at) - MIN(h.created_at))) / 86400.0 AS total_days
-              FROM investiture_validation_history h
-              JOIN enrollments e ON e.enrollment_id = h.enrollment_id
-              WHERE h.enrollment_id IN (
-                SELECT DISTINCT ivh.enrollment_id
-                FROM investiture_validation_history ivh
-                WHERE ivh.action = 'INVESTIDO'
-              )
-                AND e.active = true
-                AND e.user_id IN (
-                  SELECT DISTINCT cra.user_id FROM club_role_assignments cra
-                  WHERE cra.club_section_id IN (${scopedSectionSql})
-                    AND cra.active = true
-                )
+              FROM invested i
+              JOIN enrollments e
+                ON e.enrollment_id = i.enrollment_id
+               AND e.active = true
+              JOIN scoped_users su ON su.user_id = e.user_id
+              JOIN investiture_validation_history h
+                ON h.enrollment_id = i.enrollment_id
               GROUP BY h.enrollment_id
             )
             SELECT AVG(total_days) AS avg_days_total FROM enrollment_total
@@ -383,7 +393,7 @@ export class AnalyticsService {
         };
       }
 
-      // Global path — no field filter
+      // Global path — drive from enrollments (active) / INVESTIDO, not full history scan
       const [stageRows, totalRows] = await Promise.all([
         this.prisma.$queryRaw<StageRow[]>`
           WITH enrollment_actions AS (
@@ -391,9 +401,12 @@ export class AnalyticsService {
               h.enrollment_id,
               h.action,
               h.created_at,
-              LAG(h.created_at) OVER (PARTITION BY h.enrollment_id ORDER BY h.created_at) AS prev_at
-            FROM investiture_validation_history h
-            JOIN enrollments e ON e.enrollment_id = h.enrollment_id
+              LAG(h.created_at) OVER (
+                PARTITION BY h.enrollment_id ORDER BY h.created_at
+              ) AS prev_at
+            FROM enrollments e
+            JOIN investiture_validation_history h
+              ON h.enrollment_id = e.enrollment_id
             WHERE e.active = true
           )
           SELECT
@@ -409,18 +422,21 @@ export class AnalyticsService {
           WHERE prev_at IS NOT NULL
         `,
         this.prisma.$queryRaw<TotalRow[]>`
-          WITH enrollment_total AS (
+          WITH invested AS (
+            SELECT DISTINCT h.enrollment_id
+            FROM investiture_validation_history h
+            WHERE h.action = 'INVESTIDO'
+          ),
+          enrollment_total AS (
             SELECT
               h.enrollment_id,
               EXTRACT(EPOCH FROM (MAX(h.created_at) - MIN(h.created_at))) / 86400.0 AS total_days
-            FROM investiture_validation_history h
-            JOIN enrollments e ON e.enrollment_id = h.enrollment_id
-            WHERE h.enrollment_id IN (
-              SELECT DISTINCT ivh.enrollment_id
-              FROM investiture_validation_history ivh
-              WHERE ivh.action = 'INVESTIDO'
-            )
-              AND e.active = true
+            FROM invested i
+            JOIN enrollments e
+              ON e.enrollment_id = i.enrollment_id
+             AND e.active = true
+            JOIN investiture_validation_history h
+              ON h.enrollment_id = i.enrollment_id
             GROUP BY h.enrollment_id
           )
           SELECT AVG(total_days) AS avg_days_total FROM enrollment_total
@@ -476,32 +492,41 @@ export class AnalyticsService {
         const scopedSectionSql = Prisma.join(scopedClubSectionIds);
         rows = await this.prisma.$queryRaw<ThroughputRow[]>`
           SELECT
-            TO_CHAR(DATE_TRUNC('week', h.created_at), 'IYYY-"W"IW') AS week,
-            COUNT(*) FILTER (WHERE h.action = 'FIELD_APPROVED') AS approved,
-            COUNT(*) FILTER (WHERE h.action = 'REJECTED') AS rejected
-          FROM investiture_validation_history h
-          WHERE h.created_at >= ${since}
-            AND h.action IN ('FIELD_APPROVED', 'REJECTED')
-            AND h.enrollment_id IN (
-              SELECT e.enrollment_id FROM enrollments e
-              JOIN club_role_assignments cra ON cra.user_id = e.user_id
-              WHERE cra.club_section_id IN (${scopedSectionSql})
-                AND cra.active = true
-            )
-          GROUP BY DATE_TRUNC('week', h.created_at)
-          ORDER BY DATE_TRUNC('week', h.created_at) ASC
+            TO_CHAR(DATE_TRUNC('week', filtered.created_at), 'IYYY-"W"IW') AS week,
+            COUNT(*) FILTER (WHERE filtered.action = 'FIELD_APPROVED') AS approved,
+            COUNT(*) FILTER (WHERE filtered.action = 'REJECTED') AS rejected
+          FROM (
+            SELECT h.created_at, h.action
+            FROM investiture_validation_history h
+            WHERE h.action IN ('FIELD_APPROVED', 'REJECTED')
+              AND h.created_at >= ${since}
+              AND EXISTS (
+                SELECT 1
+                FROM enrollments e
+                JOIN club_role_assignments cra ON cra.user_id = e.user_id
+                WHERE e.enrollment_id = h.enrollment_id
+                  AND e.active = true
+                  AND cra.club_section_id IN (${scopedSectionSql})
+                  AND cra.active = true
+              )
+          ) filtered
+          GROUP BY DATE_TRUNC('week', filtered.created_at)
+          ORDER BY DATE_TRUNC('week', filtered.created_at) ASC
         `;
       } else {
         rows = await this.prisma.$queryRaw<ThroughputRow[]>`
           SELECT
-            TO_CHAR(DATE_TRUNC('week', h.created_at), 'IYYY-"W"IW') AS week,
-            COUNT(*) FILTER (WHERE h.action = 'FIELD_APPROVED') AS approved,
-            COUNT(*) FILTER (WHERE h.action = 'REJECTED') AS rejected
-          FROM investiture_validation_history h
-          WHERE h.created_at >= ${since}
-            AND h.action IN ('FIELD_APPROVED', 'REJECTED')
-          GROUP BY DATE_TRUNC('week', h.created_at)
-          ORDER BY DATE_TRUNC('week', h.created_at) ASC
+            TO_CHAR(DATE_TRUNC('week', filtered.created_at), 'IYYY-"W"IW') AS week,
+            COUNT(*) FILTER (WHERE filtered.action = 'FIELD_APPROVED') AS approved,
+            COUNT(*) FILTER (WHERE filtered.action = 'REJECTED') AS rejected
+          FROM (
+            SELECT h.created_at, h.action
+            FROM investiture_validation_history h
+            WHERE h.action IN ('FIELD_APPROVED', 'REJECTED')
+              AND h.created_at >= ${since}
+          ) filtered
+          GROUP BY DATE_TRUNC('week', filtered.created_at)
+          ORDER BY DATE_TRUNC('week', filtered.created_at) ASC
         `;
       }
 

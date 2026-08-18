@@ -97,8 +97,9 @@ import { GlobalJwtAuthGuard } from './common/guards/global-jwt-auth.guard';
         // Prefer src/i18n when present: nest --watch can truncate dist/i18n JSON
         // mid-copy (empty errors.json → I18nError). Production uses dist/.
         path: resolveI18nDir(),
-        // File watching hangs Nest bootstrap in sandboxed/CI test runners.
-        watch: process.env.NODE_ENV !== 'test',
+        // nestjs-i18n file watch re-parses on FS events and throws I18nError if
+        // a copy is mid-truncate. Translations are not hot-reloaded in this app.
+        watch: false,
       },
       resolvers: [
         { use: QueryResolver, options: ['lang'] },

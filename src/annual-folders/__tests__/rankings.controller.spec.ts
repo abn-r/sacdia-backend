@@ -23,7 +23,7 @@ describe('RankingsController', () => {
       | 'getRankings'
       | 'getRankingForClub'
       | 'getBreakdown'
-      | 'recalculateRankings'
+      | 'enqueueRecalculation'
     >
   >;
   let authorizationContext: jest.Mocked<
@@ -38,7 +38,7 @@ describe('RankingsController', () => {
       getRankings: jest.fn(),
       getRankingForClub: jest.fn(),
       getBreakdown: jest.fn(),
-      recalculateRankings: jest.fn(),
+      enqueueRecalculation: jest.fn(),
     };
     authorizationContext = {
       canAccessHierarchyScope: jest.fn(),

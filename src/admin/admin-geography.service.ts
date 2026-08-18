@@ -142,7 +142,10 @@ export class AdminGeographyService {
 
     this.logMutation('create', 'divisions', result.division_id, actorId);
 
-    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DIVISIONS);
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.DIVISIONS,
+      CATALOG_CACHE_KEYS.SCORING_DEFAULT_DIVISION,
+    ]);
 
     return result;
   }
@@ -203,7 +206,10 @@ export class AdminGeographyService {
 
     this.logMutation('update', 'divisions', divisionId, actorId);
 
-    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DIVISIONS);
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.DIVISIONS,
+      CATALOG_CACHE_KEYS.SCORING_DEFAULT_DIVISION,
+    ]);
 
     return result;
   }
@@ -234,7 +240,10 @@ export class AdminGeographyService {
 
     this.logMutation('delete', 'divisions', divisionId, actorId);
 
-    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DIVISIONS);
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.DIVISIONS,
+      CATALOG_CACHE_KEYS.SCORING_DEFAULT_DIVISION,
+    ]);
 
     return division;
   }

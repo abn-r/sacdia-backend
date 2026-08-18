@@ -280,19 +280,27 @@ export class MembershipRequestsService {
   async notifyNewRequestCreated(
     input: PendingMembershipRequestNotificationInput,
   ): Promise<void> {
-    await this.notificationsService.sendToSectionRole(
-      input.clubSectionId,
-      [...MEMBERSHIP_REQUEST_REVIEWER_ROLES],
-      'Nueva persona esperando aprobación',
-      'Hay una solicitud de membresía lista para revisar en tu sección.',
-      {
-        type: 'membership_request_created',
-        userId: input.userId,
-        assignmentId: input.assignmentId,
-        clubSectionId: String(input.clubSectionId),
-      },
-      'membership_requests:new_request',
-    );
+    void this.notificationsService
+      .sendToSectionRole(
+        input.clubSectionId,
+        [...MEMBERSHIP_REQUEST_REVIEWER_ROLES],
+        'Nueva persona esperando aprobación',
+        'Hay una solicitud de membresía lista para revisar en tu sección.',
+        {
+          type: 'membership_request_created',
+          userId: input.userId,
+          assignmentId: input.assignmentId,
+          clubSectionId: String(input.clubSectionId),
+        },
+        'membership_requests:new_request',
+      )
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Membership request notification failed for assignment ${input.assignmentId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
   }
 
   /**

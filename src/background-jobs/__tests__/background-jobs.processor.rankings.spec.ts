@@ -16,7 +16,10 @@ describe('BackgroundJobsProcessor — rankings', () => {
 
   const mockMonthlyReportsService = { runAutoGeneration: jest.fn() };
   const mockFinancePeriodService = { runMonthlyClosing: jest.fn() };
-  const mockRankingsService = { recalculateRankings: jest.fn() };
+  const mockRankingsService = {
+    recalculateRankings: jest.fn(),
+    recalculateAll: jest.fn(),
+  };
   const mockDataExportService = { runExport: jest.fn() };
   const mockCronLogger = {
     track: jest.fn(),
@@ -87,6 +90,46 @@ describe('BackgroundJobsProcessor — rankings', () => {
         expect.objectContaining({ bull_job_id: 'test-job-rk' }),
       );
       expect(mockRankingsService.recalculateRankings).toHaveBeenCalledTimes(1);
+    });
+
+    it('forwards yearId to recalculateRankings()', async () => {
+      mockCronLogger.track.mockImplementation(
+        async (_name: string, fn: () => Promise<unknown>) => fn(),
+      );
+      mockRankingsService.recalculateRankings.mockResolvedValue({
+        updated: 3,
+      });
+
+      await processor.process(
+        makeJob({ triggeredAt: new Date().toISOString(), yearId: 2026 }),
+      );
+
+      expect(mockRankingsService.recalculateRankings).toHaveBeenCalledWith(
+        2026,
+      );
+      expect(mockRankingsService.recalculateAll).not.toHaveBeenCalled();
+    });
+
+    it('delegates to recalculateAll() when includeMemberRankings is true', async () => {
+      mockCronLogger.track.mockImplementation(
+        async (_name: string, fn: () => Promise<unknown>) => fn(),
+      );
+      mockRankingsService.recalculateAll.mockResolvedValue(undefined);
+
+      await processor.process(
+        makeJob({
+          triggeredAt: new Date().toISOString(),
+          yearId: 2026,
+          mode: 'delta',
+          includeMemberRankings: true,
+        }),
+      );
+
+      expect(mockRankingsService.recalculateAll).toHaveBeenCalledWith(
+        2026,
+        'delta',
+      );
+      expect(mockRankingsService.recalculateRankings).not.toHaveBeenCalled();
     });
 
     it('propagates errors so BullMQ can retry', async () => {

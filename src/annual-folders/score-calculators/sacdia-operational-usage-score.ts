@@ -54,11 +54,11 @@ export class SacdiaOperationalUsageScoreService {
       useful_operational_users AS (
         SELECT DISTINCT wr.user_id
         FROM active_section_users au
+        CROSS JOIN year_scope ys
         JOIN weekly_records wr
           ON wr.user_id = au.user_id
          AND wr.active = true
-        JOIN year_scope ys ON TRUE
-        WHERE wr.year BETWEEN ys.start_year AND ys.end_year
+         AND wr.year BETWEEN ys.start_year AND ys.end_year
         UNION
         SELECT DISTINCT e.user_id
         FROM active_section_users au
