@@ -223,15 +223,15 @@ describe('EvidenceReviewService', () => {
         id: 8,
         item_type: 'class',
         submitted_at: new Date('2026-06-01T08:00:00.000Z'),
-        total_count: 4,
       },
       {
         id: 9,
         item_type: 'honor',
         submitted_at: new Date('2026-06-01T08:00:00.000Z'),
-        total_count: 4,
       },
     ]);
+    mockPrisma.class_section_progress.count.mockResolvedValue(2);
+    mockPrisma.users_honors.count.mockResolvedValue(2);
 
     mockPrisma.class_section_progress.findMany.mockResolvedValue([
       {
@@ -278,6 +278,11 @@ describe('EvidenceReviewService', () => {
     const result = await service.getPending('admin-user', undefined, 1, 2);
 
     expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
+    expect(String(mockPrisma.$queryRawUnsafe.mock.calls[0][0])).not.toContain(
+      'COUNT(*) OVER',
+    );
+    expect(mockPrisma.class_section_progress.count).toHaveBeenCalled();
+    expect(mockPrisma.users_honors.count).toHaveBeenCalled();
     expect(mockPrisma.class_section_progress.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

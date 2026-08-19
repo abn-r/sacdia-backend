@@ -5,6 +5,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { TranslationService } from '../common/services/translation.service';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import { AdminPhaseECatalogsService } from './admin-phase-e-catalogs.service';
 import { MasterHonorRequirementGroupDto } from './dto/phase-e-catalogs.dto';
 import { CreateMasterHonorDto } from './dto/phase-e-catalogs.dto';
@@ -173,6 +174,13 @@ describe('AdminPhaseECatalogsService', () => {
       AdminPhaseECatalogsService,
       { provide: PrismaService, useValue: prismaMock },
       { provide: TranslationService, useValue: translationMock },
+      {
+        provide: CatalogCacheService,
+        useValue: {
+          bumpEpoch: jest.fn().mockResolvedValue(undefined),
+          invalidate: jest.fn().mockResolvedValue(undefined),
+        },
+      },
     ];
 
     if (hasQueue) {

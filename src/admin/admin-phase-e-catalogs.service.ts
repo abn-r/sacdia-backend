@@ -25,6 +25,12 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { TranslationService } from '../common/services/translation.service';
 import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+  FINANCE_CACHE_NAMESPACE,
+  HONORS_CACHE_NAMESPACE,
+} from '../catalogs/catalog-cache.service';
+import {
   MASTER_HONOR_RECALCULATION_JOB_OPTIONS,
   MASTER_HONORS_QUEUE,
   MasterHonorJobMasterHonorData,
@@ -71,6 +77,7 @@ export class AdminPhaseECatalogsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly translationService: TranslationService,
+    private readonly catalogCache: CatalogCacheService,
     @Optional()
     @InjectQueue(MASTER_HONORS_QUEUE)
     private readonly masterHonorsQueue: Queue | undefined,
@@ -964,6 +971,7 @@ export class AdminPhaseECatalogsService {
       record.finance_category_id,
       actorId,
     );
+    await this.catalogCache.bumpEpoch(FINANCE_CACHE_NAMESPACE);
     return record;
   }
 
@@ -1017,6 +1025,7 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('update', 'finances_categories', id, actorId);
+    await this.catalogCache.bumpEpoch(FINANCE_CACHE_NAMESPACE);
     return record;
   }
 
@@ -1029,6 +1038,7 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('delete', 'finances_categories', id, actorId);
+    await this.catalogCache.bumpEpoch(FINANCE_CACHE_NAMESPACE);
     return record;
   }
 
@@ -1121,6 +1131,9 @@ export class AdminPhaseECatalogsService {
       record.inventory_category_id,
       actorId,
     );
+    await this.catalogCache.invalidate(
+      CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES,
+    );
     return record;
   }
 
@@ -1166,6 +1179,9 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('update', 'inventory_categories', id, actorId);
+    await this.catalogCache.invalidate(
+      CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES,
+    );
     return record;
   }
 
@@ -1178,6 +1194,9 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('delete', 'inventory_categories', id, actorId);
+    await this.catalogCache.invalidate(
+      CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES,
+    );
     return record;
   }
 
@@ -1227,6 +1246,7 @@ export class AdminPhaseECatalogsService {
         },
       },
       orderBy: { name: 'asc' },
+      take: 2000,
     });
   }
 
@@ -1268,6 +1288,7 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('create', 'honors', record.honor_id, actorId);
+    await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
     return record;
   }
 
@@ -1331,6 +1352,7 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('update', 'honors', id, actorId);
+    await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
     return record;
   }
 
@@ -1343,6 +1365,7 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('delete', 'honors', id, actorId);
+    await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
     return record;
   }
 

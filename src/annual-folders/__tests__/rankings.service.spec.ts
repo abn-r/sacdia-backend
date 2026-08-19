@@ -1547,4 +1547,54 @@ describe('RankingsService', () => {
       expect(callArgs[1]).toBe(2026);
     });
   });
+
+  describe('enqueueRecalculation', () => {
+    it('enqueues a club-only job when Redis is available', async () => {
+      const add = jest.fn().mockResolvedValue({ id: 'job-1' });
+      (service as any).rankingsQueue = { add };
+      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(
+        mockActiveYear,
+      );
+
+      await expect(
+        service.enqueueRecalculation({ yearId: 2026 }),
+      ).resolves.toEqual({
+        queued: true,
+        ecclesiastical_year_id: 2026,
+      });
+
+      expect(add).toHaveBeenCalledWith(
+        'rankings.recalculate',
+        expect.objectContaining({
+          yearId: 2026,
+        }),
+        expect.objectContaining({ attempts: 5 }),
+      );
+      expect(add.mock.calls[0][1].includeMemberRankings).toBeUndefined();
+    });
+
+    it('enqueues includeMemberRankings for the member HTTP path', async () => {
+      const add = jest.fn().mockResolvedValue({ id: 'job-1' });
+      (service as any).rankingsQueue = { add };
+      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(
+        mockActiveYear,
+      );
+
+      await service.enqueueRecalculation({
+        yearId: 2026,
+        mode: 'delta',
+        includeMemberRankings: true,
+      });
+
+      expect(add).toHaveBeenCalledWith(
+        'rankings.recalculate',
+        expect.objectContaining({
+          yearId: 2026,
+          mode: 'delta',
+          includeMemberRankings: true,
+        }),
+        expect.any(Object),
+      );
+    });
+  });
 });

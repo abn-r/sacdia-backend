@@ -11,9 +11,16 @@ import { CronRunLogger } from '../../common/services/cron-run-logger.service';
 describe('BackgroundJobsProcessor — dispatch', () => {
   let processor: BackgroundJobsProcessor;
 
-  const mockMonthlyReportsService = { runAutoGeneration: jest.fn() };
+  const mockMonthlyReportsService = {
+    runAutoGeneration: jest.fn(),
+    generate: jest.fn(),
+    regenerate: jest.fn(),
+  };
   const mockFinancePeriodService = { runMonthlyClosing: jest.fn() };
-  const mockRankingsService = { recalculateRankings: jest.fn() };
+  const mockRankingsService = {
+    recalculateRankings: jest.fn(),
+    recalculateAll: jest.fn(),
+  };
   const mockDataExportService = { runExport: jest.fn() };
   const mockCronLogger = {
     track: jest.fn(),
@@ -80,6 +87,37 @@ describe('BackgroundJobsProcessor — dispatch', () => {
           expect(
             mockMonthlyReportsService.runAutoGeneration,
           ).toHaveBeenCalledTimes(1);
+          expect(
+            mockFinancePeriodService.runMonthlyClosing,
+          ).not.toHaveBeenCalled();
+          expect(
+            mockRankingsService.recalculateRankings,
+          ).not.toHaveBeenCalled();
+          expect(mockDataExportService.runExport).not.toHaveBeenCalled();
+        },
+      },
+      {
+        name: BackgroundJobName.MONTHLY_REPORT_PDF,
+        data: {
+          reportId: 'report-1',
+          action: 'generate',
+          triggeredAt: new Date().toISOString(),
+        },
+        expectService: 'monthly-reports-pdf',
+        setup: () => {
+          mockMonthlyReportsService.generate.mockResolvedValue({
+            monthly_report_id: 'report-1',
+          });
+        },
+        verify: () => {
+          expect(mockMonthlyReportsService.generate).toHaveBeenCalledWith(
+            'report-1',
+            'system',
+          );
+          expect(
+            mockMonthlyReportsService.runAutoGeneration,
+          ).not.toHaveBeenCalled();
+          expect(mockMonthlyReportsService.regenerate).not.toHaveBeenCalled();
           expect(
             mockFinancePeriodService.runMonthlyClosing,
           ).not.toHaveBeenCalled();
@@ -243,6 +281,21 @@ describe('BackgroundJobsProcessor — dispatch', () => {
     (job as any).opts = { attempts: 1 };
 
     processor.onFailed(job, new Error('Export failed'));
+    expect(mockCronLogger.trackSkipped).not.toHaveBeenCalled();
+  });
+
+  it('onFailed for monthly PDF at max attempts does NOT call trackSkipped', () => {
+    mockCronLogger.trackSkipped.mockResolvedValue(undefined);
+
+    const job = makeJob(BackgroundJobName.MONTHLY_REPORT_PDF, {
+      reportId: 'report-x',
+      action: 'generate',
+      triggeredAt: '2026-01-01T00:00:00Z',
+    });
+    (job as any).attemptsMade = 3;
+    (job as any).opts = { attempts: 3 };
+
+    processor.onFailed(job, new Error('R2 unavailable'));
     expect(mockCronLogger.trackSkipped).not.toHaveBeenCalled();
   });
 });

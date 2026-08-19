@@ -37,11 +37,11 @@ export class AttendanceParticipationScoreService {
       )
       SELECT AVG(wr.attendance)::float AS score_pct
       FROM active_members am
+      CROSS JOIN year_scope ys
       JOIN weekly_records wr
         ON wr.user_id = am.user_id
        AND wr.active = true
-      JOIN year_scope ys ON TRUE
-      WHERE wr.year BETWEEN ys.start_year AND ys.end_year
+       AND wr.year BETWEEN ys.start_year AND ys.end_year
     `;
 
     return this.normalizePercentage(Number(rows[0]?.score_pct ?? 0));

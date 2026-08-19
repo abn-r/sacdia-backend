@@ -51,7 +51,16 @@ src/
 - NestJS 11 + TypeScript
 - Prisma 7.8 + PostgreSQL (Neon)
 - JWT via HS256 usando `BETTER_AUTH_SECRET` (Option C: BA handles auth, SACDIA signs JWT)
-- Redis — cache-aside para 14 catálogos (TTL 1h; año eclesiástico 24h). Auto-invalidación en mutaciones admin. Endpoint manual: `POST /api/v1/admin/catalogs/cache/invalidate` (`catalogs:update`). Graceful fallback a DB si Redis no disponible. Reconexión: retry 1x en dev, backoff exponencial en prod.
+- Redis (`CACHE_MANAGER`, fail-fast en prod; fallback in-memory solo en dev/test):
+  - catálogos geográficos/referencia (`cache:catalogs:*`, TTL 1h; año eclesiástico actual 24h);
+  - catálogo público de honores agrupado + categorías (`cache:catalogs:honors:*`, TTL 1h; invalidación por epoch al mutar honores, categorías o tipos de club);
+  - categorías de recursos, inventario y finanzas (`cache:catalogs:resource_categories|inventory_categories|finance_categories:*`, TTL 1h);
+  - división default de scoring (`cache:catalogs:scoring_default_division`, TTL 1h);
+  - contexto de autorización (`auth:context:v3:{userId}`, TTL 5 min);
+  - blacklist JWT y lista de sesiones concurrentes.
+  Invalidación en mutaciones admin. Endpoint manual: `POST /api/v1/admin/catalogs/cache/invalidate` (`catalogs:update`). Si Redis cae en runtime, lecturas de catálogo caen a DB.
+- BullMQ: colas `emails`, `notifications`, `achievements`, `background-jobs`. HTTP encola recálculo de rankings y generate/regenerate de informe mensual (202; poll GET). Cron nightly de rankings sigue club-only. Sin Redis, esos HTTP corren inline; data export responde 503.
+- Memoria del proceso (`Map` en el servicio, **no** Redis — canon SLA): dashboards SLA / operaciones / campo local, TTL 60s. Cada instancia tiene su copia. `CatalogCacheService.inFlightLoads` solo coalese misses concurrentes.
 - Firebase FCM
 - Sentry
 

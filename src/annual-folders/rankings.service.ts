@@ -95,6 +95,27 @@ export interface RecalculateResult {
   reason?: string;
 }
 
+export interface EnqueueRecalculationOptions {
+  yearId?: number;
+  mode?: 'full' | 'delta';
+  includeMemberRankings?: boolean;
+}
+
+export interface EnqueueRecalculationResult {
+  queued: boolean;
+  ecclesiastical_year_id: number;
+  skipped?: boolean;
+  reason?: string;
+  rankings_updated?: number;
+}
+
+const RANKINGS_RECALCULATE_JOB_OPTIONS = {
+  attempts: 5,
+  backoff: { type: 'exponential' as const, delay: 60_000 },
+  removeOnComplete: { age: 7 * 86_400 },
+  removeOnFail: { age: 30 * 86_400 },
+};
+
 @Injectable()
 export class RankingsService {
   private readonly logger = new Logger(RankingsService.name);
@@ -131,19 +152,9 @@ export class RankingsService {
     this.logger.log('Rankings cron triggered — enqueuing BullMQ job...');
 
     if (this.rankingsQueue) {
-      const jobData: RankingsRecalculatePayload = {
+      await this.addRankingsRecalculateJob({
         triggeredAt: new Date().toISOString(),
-      };
-      await this.rankingsQueue.add(
-        BackgroundJobName.RANKINGS_RECALCULATE,
-        jobData,
-        {
-          attempts: 5,
-          backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
-          removeOnComplete: { age: 7 * 86_400 },
-          removeOnFail: { age: 30 * 86_400 },
-        },
-      );
+      });
       this.logger.log(
         'annual-folders-rankings-recalc job enqueued with 5 attempts + exponential backoff',
       );
@@ -158,6 +169,58 @@ export class RankingsService {
         return { itemsProcessed: result.updated };
       });
     }
+  }
+
+  /**
+   * Queue a rankings recalculation (HTTP path) or run it inline when Redis is down.
+   * Nightly cron stays club-only; pass `includeMemberRankings` for the member HTTP trigger.
+   */
+  async enqueueRecalculation(
+    options: EnqueueRecalculationOptions = {},
+  ): Promise<EnqueueRecalculationResult> {
+    const year = await this.resolveYear(options.yearId);
+
+    if (this.rankingsQueue) {
+      await this.addRankingsRecalculateJob({
+        triggeredAt: new Date().toISOString(),
+        yearId: year.year_id,
+        ...(options.mode ? { mode: options.mode } : {}),
+        ...(options.includeMemberRankings
+          ? { includeMemberRankings: true }
+          : {}),
+      });
+      return { queued: true, ecclesiastical_year_id: year.year_id };
+    }
+
+    this.logger.warn(
+      'BullMQ queue unavailable — running rankings recalculation directly (no retry)',
+    );
+
+    if (options.includeMemberRankings) {
+      await this.recalculateAll(year.year_id, options.mode ?? 'full');
+      return { queued: false, ecclesiastical_year_id: year.year_id };
+    }
+
+    const result = await this.recalculateRankings(year.year_id);
+    return {
+      queued: false,
+      ecclesiastical_year_id: year.year_id,
+      skipped: result.skipped,
+      reason: result.reason,
+      rankings_updated: result.updated,
+    };
+  }
+
+  private async addRankingsRecalculateJob(payload: RankingsRecalculatePayload) {
+    if (!this.rankingsQueue) {
+      throw new Error('Rankings queue is not available');
+    }
+
+    await this.rankingsQueue.add(
+      BackgroundJobName.RANKINGS_RECALCULATE,
+      payload,
+      RANKINGS_RECALCULATE_JOB_OPTIONS,
+    );
   }
 
   // ========================================

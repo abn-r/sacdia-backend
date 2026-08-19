@@ -337,6 +337,10 @@ describe('FieldPaymentOrdersService', () => {
     it('approves, fulfills atomically and marks the proof', async () => {
       await service.approve('o1', reviewerActor());
 
+      expect(prisma.$transaction).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.objectContaining({ timeout: 15_000 }),
+      );
       expect(insurancePort.fulfill).toHaveBeenCalled();
       expect(tx.field_payment_orders.update).toHaveBeenCalledWith(
         expect.objectContaining({

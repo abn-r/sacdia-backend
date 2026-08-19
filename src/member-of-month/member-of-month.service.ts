@@ -370,41 +370,37 @@ export class MemberOfMonthService {
     const weekRange = this.getWeekRangeForMonth(year, month);
 
     // 2. Aggregate points per user for that section and week range.
-    // H9: With the `year` column on weekly_records, we filter by exact year
-    // to correctly handle the December cross-year edge case where startWeek > endWeek.
-    // Path: weekly_record_scores -> weekly_records (week in range, year = target year)
-    //       -> unit_members (user_id) -> units (club_section_id = sectionId)
+    // Prefer unit-specific weekly_records over unit_id NULL via DISTINCT ON
+    // (avoids correlated NOT EXISTS). Filter uses idx_weekly_records_user_year_week.
     const scores = await this.prisma.$queryRaw<MemberResult[]>`
+      WITH scoped_members AS (
+        SELECT um.user_id, u.unit_id
+        FROM unit_members um
+        JOIN units u ON um.unit_id = u.unit_id
+          AND u.club_section_id = ${sectionId}
+          AND u.active = true
+        WHERE um.active = true
+      ),
+      preferred_records AS (
+        SELECT DISTINCT ON (sm.user_id, sm.unit_id, wr.week)
+          sm.user_id,
+          wr.record_id
+        FROM scoped_members sm
+        JOIN weekly_records wr
+          ON wr.user_id = sm.user_id
+         AND wr.year = ${year}
+         AND wr.week >= ${weekRange.startWeek}
+         AND wr.week <= ${weekRange.endWeek}
+         AND wr.active = true
+         AND (wr.unit_id = sm.unit_id OR wr.unit_id IS NULL)
+        ORDER BY sm.user_id, sm.unit_id, wr.week, (wr.unit_id IS NOT NULL) DESC, wr.record_id
+      )
       SELECT
-        um.user_id,
+        pr.user_id,
         COALESCE(SUM(wrs.points), 0)::int AS total_points
-      FROM unit_members um
-      JOIN units u ON um.unit_id = u.unit_id
-        AND u.club_section_id = ${sectionId}
-        AND u.active = true
-      JOIN weekly_records wr ON wr.user_id = um.user_id
-        AND wr.year = ${year}
-        AND wr.week >= ${weekRange.startWeek}
-        AND wr.week <= ${weekRange.endWeek}
-        AND wr.active = true
-        AND (
-          wr.unit_id = u.unit_id
-          OR (
-            wr.unit_id IS NULL
-            AND NOT EXISTS (
-              SELECT 1
-              FROM weekly_records wr_specific
-              WHERE wr_specific.user_id = wr.user_id
-                AND wr_specific.unit_id = u.unit_id
-                AND wr_specific.year = wr.year
-                AND wr_specific.week = wr.week
-                AND wr_specific.active = true
-            )
-          )
-        )
-      LEFT JOIN weekly_record_scores wrs ON wrs.record_id = wr.record_id
-      WHERE um.active = true
-      GROUP BY um.user_id
+      FROM preferred_records pr
+      LEFT JOIN weekly_record_scores wrs ON wrs.record_id = pr.record_id
+      GROUP BY pr.user_id
       HAVING COALESCE(SUM(wrs.points), 0) > 0
     `;
 

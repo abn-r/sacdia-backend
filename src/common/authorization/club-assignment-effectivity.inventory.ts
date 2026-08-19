@@ -26,13 +26,13 @@ const baseline = {
     'historicalWhere|allowlist|1|d56c9a4907fd',
   'admin/admin-reference.service.ts': 'effectiveWhere|T09|1|f9e0a7b798f8',
   'admin/admin-users.service.ts': 'effectiveWhere|T09|4|ddf8a92e7a05',
-  'analytics/analytics.service.ts': 'effectiveWhere|T09|9|cd865fa6eeb2',
+  'analytics/analytics.service.ts': 'effectiveWhere|T09|9|1b4524a7aaa5',
   'analytics/operations-dashboard.repository.ts':
     'effectiveWhere|T09|5|b1e4bbcd3060',
   'annual-folders/annual-folders.service.ts':
     'effectiveWhere|T08|2|c7726a03d3c1',
   'annual-folders/score-calculators/sacdia-operational-usage-score.ts':
-    'effectiveWhere|T09|1|080dad106bfa',
+    'effectiveWhere|T09|1|bbabd16a2b24',
   'annual-reports/annual-reports.service.ts':
     'effectiveWhere|T09|3|45560f10e5fd',
   'auth/auth.service.ts': 'effectiveWhere|T08|1|f977d2dd17f2',

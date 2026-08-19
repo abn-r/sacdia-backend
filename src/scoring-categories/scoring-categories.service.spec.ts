@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { TranslationService } from '../common/services/translation.service';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 
 describe('ScoringCategoriesService', () => {
   const mockTx = {
@@ -51,11 +52,18 @@ describe('ScoringCategoriesService', () => {
     resolveCurrent: jest.fn(),
   };
 
+  const mockCatalogCache = {
+    getOrSet: jest.fn(
+      (_key: string, loader: () => Promise<unknown>) => loader(),
+    ),
+  };
+
   const service = new ScoringCategoriesService(
     mockPrisma as unknown as PrismaService,
     mockAuthContext as unknown as AuthorizationContextService,
     mockTranslationService as unknown as TranslationService,
     mockHierarchy as unknown as InstitutionalHierarchyService,
+    mockCatalogCache as unknown as CatalogCacheService,
   );
 
   beforeEach(() => {

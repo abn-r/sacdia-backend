@@ -31,6 +31,11 @@ import { AchievementsService } from '../achievements/achievements.service';
 import pLimit from 'p-limit';
 import { randomUUID } from 'crypto';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
+import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+  HONORS_CACHE_NAMESPACE,
+} from '../catalogs/catalog-cache.service';
 
 // Cap concurrent presign calls for USERS_HONORS bucket images. A single honor
 // detail request resolves certificate + document + N image URLs. Without the
@@ -61,6 +66,7 @@ export class HonorsService {
     private readonly achievementsService: AchievementsService,
     private readonly translationService: TranslationService,
     private readonly masterHonorsEvaluator: MasterHonorsEvaluatorService,
+    private readonly catalogCache: CatalogCacheService,
   ) {}
 
   // ========================================
@@ -133,6 +139,23 @@ export class HonorsService {
 
   async getGroupedByCategory(filters?: HonorFiltersDto) {
     const locale = this.translationService.getCurrentLocale();
+    const epoch = await this.catalogCache.getEpoch(HONORS_CACHE_NAMESPACE);
+    const key = CATALOG_CACHE_KEYS.HONORS_GROUPED({
+      epoch,
+      locale,
+      categoryId: filters?.categoryId,
+      clubTypeId: filters?.clubTypeId,
+      skillLevel: filters?.skillLevel,
+    });
+    return this.catalogCache.getOrSet(key, () =>
+      this.loadGroupedByCategory(locale, filters),
+    );
+  }
+
+  private async loadGroupedByCategory(
+    locale: string,
+    filters?: HonorFiltersDto,
+  ) {
     const where = this.buildHonorCatalogWhere(filters);
 
     // Safety cap: the honors catalog is expected to stay in the low thousands.
@@ -303,14 +326,19 @@ export class HonorsService {
   }
 
   async getCategories() {
+    const locale = this.translationService.getCurrentLocale();
+    const epoch = await this.catalogCache.getEpoch(HONORS_CACHE_NAMESPACE);
+    const key = CATALOG_CACHE_KEYS.HONORS_CATEGORIES(epoch, locale);
+    return this.catalogCache.getOrSet(key, () => this.loadCategories(locale));
+  }
+
+  private async loadCategories(locale: string) {
     // Small catalog table: expected to remain under ~100 rows.
     // No pagination needed; a safety cap is applied as a precaution.
     //
     // Approach X i18n: Spanish (es) lives in main table columns.
     // For non-es locales, JOIN honors_categories_translations and overlay fields.
     // If no translation row exists for the requested locale, fall back to Spanish.
-    const locale = this.translationService.getCurrentLocale();
-
     const records = await this.prisma.honors_categories.findMany({
       where: { active: true },
       select: {

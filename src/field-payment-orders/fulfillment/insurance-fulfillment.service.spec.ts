@@ -200,23 +200,33 @@ describe('InsuranceFulfillmentService.fulfill', () => {
       },
       insurance_assignments: {
         findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockImplementation(() =>
-          Promise.resolve({ insurance_assignment_id: ++assignmentSeq }),
+        createManyAndReturn: jest.fn().mockImplementation(({ data }: { data: Array<{ insurance_coverage_slot_id: number }> }) =>
+          Promise.resolve(
+            data.map((row) => ({
+              insurance_assignment_id: ++assignmentSeq,
+              insurance_coverage_slot_id: row.insurance_coverage_slot_id,
+            })),
+          ),
         ),
       },
       insurance_purchases: {
         create: jest.fn().mockResolvedValue({ insurance_purchase_id: 900 }),
       },
       insurance_coverage_slots: {
-        create: jest.fn().mockImplementation(() =>
-          Promise.resolve({ insurance_coverage_slot_id: ++slotSeq }),
+        createManyAndReturn: jest.fn().mockImplementation(({ data }: { data: Array<{ sequence_number: number }> }) =>
+          Promise.resolve(
+            data.map((row) => ({
+              insurance_coverage_slot_id: ++slotSeq,
+              sequence_number: row.sequence_number,
+            })),
+          ),
         ),
       },
       insurance_slot_movements: { createMany: jest.fn() },
       member_insurances: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn(),
-        update: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        createMany: jest.fn(),
+        updateMany: jest.fn(),
       },
       field_payment_order_lines: { update: jest.fn() },
     };
@@ -236,19 +246,31 @@ describe('InsuranceFulfillmentService.fulfill', () => {
         reviewed_by_id: 'lf-reviewer-1',
       }),
     });
-    expect(tx.insurance_coverage_slots.create).toHaveBeenCalledTimes(2);
-    expect(tx.insurance_coverage_slots.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ status: 'ASSIGNED', sequence_number: 1 }),
+    expect(tx.insurance_coverage_slots.createManyAndReturn).toHaveBeenCalledTimes(1);
+    expect(tx.insurance_coverage_slots.createManyAndReturn).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ status: 'ASSIGNED', sequence_number: 1 }),
+        expect.objectContaining({ status: 'ASSIGNED', sequence_number: 2 }),
+      ]),
     });
-    expect(tx.insurance_assignments.create).toHaveBeenCalledTimes(2);
-    expect(tx.insurance_assignments.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        subject_type: 'MEMBER',
-        user_id: 'ben-1',
-        status: 'ACTIVE',
-      }),
+    expect(tx.insurance_assignments.createManyAndReturn).toHaveBeenCalledTimes(1);
+    expect(tx.insurance_assignments.createManyAndReturn).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          subject_type: 'MEMBER',
+          user_id: 'ben-1',
+          status: 'ACTIVE',
+        }),
+      ]),
     });
-    expect(tx.member_insurances.create).toHaveBeenCalledTimes(2);
+    expect(tx.member_insurances.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.member_insurances.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.member_insurances.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ user_id: 'ben-1' }),
+        expect.objectContaining({ user_id: 'ben-2' }),
+      ]),
+    });
     expect(tx.field_payment_order_lines.update).toHaveBeenCalledWith({
       where: { field_payment_order_line_id: 'l1' },
       data: { insurance_assignment_id: 1 },
@@ -256,16 +278,28 @@ describe('InsuranceFulfillmentService.fulfill', () => {
   });
 
   it('extends the bridge instead of duplicating when an active policy covers the start', async () => {
-    tx.member_insurances.findFirst.mockResolvedValue({
-      insurance_id: 77,
-      end_date: new Date('2026-01-01'),
-    });
+    tx.member_insurances.findMany.mockResolvedValue([
+      {
+        insurance_id: 77,
+        user_id: 'ben-1',
+        end_date: new Date('2026-01-01'),
+      },
+      {
+        insurance_id: 78,
+        user_id: 'ben-2',
+        end_date: new Date('2026-01-01'),
+      },
+    ]);
     await service.fulfill(tx, order, reviewer);
 
-    expect(tx.member_insurances.create).not.toHaveBeenCalled();
-    expect(tx.member_insurances.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { insurance_id: 77 } }),
-    );
+    expect(tx.member_insurances.createMany).not.toHaveBeenCalled();
+    expect(tx.member_insurances.updateMany).toHaveBeenCalledWith({
+      where: { insurance_id: { in: [77, 78] } },
+      data: expect.objectContaining({
+        end_date: expect.any(Date),
+        modified_by_id: 'lf-reviewer-1',
+      }),
+    });
   });
 
   it('fails with 409 and no side effects when membership broke before approve', async () => {
@@ -289,7 +323,7 @@ describe('InsuranceFulfillmentService.fulfill', () => {
   });
 
   it('propagates bridge failures so the whole approve rolls back', async () => {
-    tx.member_insurances.create.mockRejectedValue(new Error('bridge down'));
+    tx.member_insurances.createMany.mockRejectedValue(new Error('bridge down'));
     await expect(service.fulfill(tx, order, reviewer)).rejects.toThrow(
       'bridge down',
     );

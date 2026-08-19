@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
+  HONORS_CACHE_NAMESPACE,
 } from '../catalogs/catalog-cache.service';
 import {
   CreateActivityTypeDto,
@@ -806,6 +807,7 @@ export class AdminReferenceService {
 
     this.logMutation('create', 'club_types', clubType.club_type_id, actorId);
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
+    await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
 
     return clubType;
   }
@@ -849,6 +851,7 @@ export class AdminReferenceService {
 
     this.logMutation('update', 'club_types', clubTypeId, actorId);
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
+    await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
 
     return clubType;
   }
@@ -876,6 +879,7 @@ export class AdminReferenceService {
 
     this.logMutation('delete', 'club_types', clubTypeId, actorId);
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
+    await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
 
     return clubType;
   }
@@ -1239,6 +1243,7 @@ export class AdminReferenceService {
       category.honor_category_id,
       actorId,
     );
+    await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
     return category;
   }
 
@@ -1291,6 +1296,7 @@ export class AdminReferenceService {
     });
 
     this.logMutation('update', 'honors_categories', id, actorId);
+    await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
     return category;
   }
 
@@ -1327,6 +1333,7 @@ export class AdminReferenceService {
     });
 
     this.logMutation('delete', 'honors_categories', id, actorId);
+    await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
     return category;
   }
 

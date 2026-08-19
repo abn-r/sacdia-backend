@@ -646,6 +646,7 @@ describe('MonthlyReportsService draft creation and generation transitions', () =
     },
     monthly_reports: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       upsert: jest.fn(),
       update: jest.fn(),
@@ -700,6 +701,35 @@ describe('MonthlyReportsService draft creation and generation transitions', () =
     });
     expect(mockPrisma.monthly_reports.findUnique).not.toHaveBeenCalled();
     expect(mockPrisma.monthly_reports.create).not.toHaveBeenCalled();
+  });
+
+  it('serializes pdf_size_bytes BigInt so HTTP JSON can stringify reports', async () => {
+    mockPrisma.monthly_reports.upsert.mockResolvedValue({
+      ...draft,
+      pdf_size_bytes: BigInt(42),
+    });
+    mockPrisma.monthly_reports.findMany.mockResolvedValue([
+      {
+        ...draft,
+        pdf_size_bytes: BigInt(2048),
+      },
+    ]);
+
+    const created = await service.getOrCreateDraft('enrollment-1', 6, 2026);
+    expect(created.pdf_size_bytes).toBe(42);
+    expect(() => JSON.stringify(created)).not.toThrow();
+
+    const listed = await service.listReports('enrollment-1');
+    expect(listed[0].pdf_size_bytes).toBe(2048);
+    expect(() => JSON.stringify(listed)).not.toThrow();
+
+    mockPrisma.monthly_reports.findUnique.mockResolvedValue({
+      ...draft,
+      pdf_size_bytes: BigInt(99),
+    });
+    const fetched = await service.getReport('report-1');
+    expect(fetched.pdf_size_bytes).toBe(99);
+    expect(() => JSON.stringify(fetched)).not.toThrow();
   });
 
   it('rejects a stale generation when the atomic draft transition loses the race', async () => {

@@ -14,6 +14,10 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { TranslationService } from '../common/services/translation.service';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+} from '../catalogs/catalog-cache.service';
 
 export interface CategoryWithReadonly {
   scoring_category_id: number;
@@ -51,6 +55,7 @@ export class ScoringCategoriesService {
     private readonly authorizationContext: AuthorizationContextService,
     private readonly translationService: TranslationService,
     private readonly hierarchy: InstitutionalHierarchyService,
+    private readonly catalogCache: CatalogCacheService,
   ) {}
 
   // ============================================================
@@ -58,19 +63,24 @@ export class ScoringCategoriesService {
   // ============================================================
 
   private async getDefaultDivisionId(): Promise<number> {
-    const rows = await this.prisma.$queryRaw<DivisionIdRow[]>`
-      SELECT division_id
-      FROM divisions
-      WHERE code = ${ScoringCategoriesService.DEFAULT_DIVISION_CODE}
-        AND active = TRUE
-      LIMIT 1
-    `;
+    return this.catalogCache.getOrSet(
+      CATALOG_CACHE_KEYS.SCORING_DEFAULT_DIVISION,
+      async () => {
+        const rows = await this.prisma.$queryRaw<DivisionIdRow[]>`
+          SELECT division_id
+          FROM divisions
+          WHERE code = ${ScoringCategoriesService.DEFAULT_DIVISION_CODE}
+            AND active = TRUE
+          LIMIT 1
+        `;
 
-    if (rows.length === 0) {
-      throw new AppNotFoundException(ErrorCode.SCORING_DIVISION_NOT_FOUND);
-    }
+        if (rows.length === 0) {
+          throw new AppNotFoundException(ErrorCode.SCORING_DIVISION_NOT_FOUND);
+        }
 
-    return Number(rows[0].division_id);
+        return Number(rows[0].division_id);
+      },
+    );
   }
 
   private async getDivisionIdForUnion(unionId: number): Promise<number> {

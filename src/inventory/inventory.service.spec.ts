@@ -3,6 +3,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TranslationService } from '../common/services/translation.service';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import {
@@ -91,6 +92,14 @@ describe('InventoryService', () => {
         InventoryService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: TranslationService, useValue: mockTranslationService },
+        {
+          provide: CatalogCacheService,
+          useValue: {
+            getOrSet: jest.fn(
+              (_key: string, loader: () => Promise<unknown>) => loader(),
+            ),
+          },
+        },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
       ],
     }).compile();

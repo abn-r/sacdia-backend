@@ -245,7 +245,7 @@ describe('CatalogCacheService', () => {
         'cache:catalogs:districts:lf:456',
       ]);
       expect(cacheManager.del).not.toHaveBeenCalled();
-      expect(service.getMetrics().invalidations).toBe(2);
+      expect(service.getMetrics().invalidations).toBe(4);
     });
 
     it('deletes all known static catalog keys', async () => {
@@ -275,6 +275,53 @@ describe('CatalogCacheService', () => {
       expect(cacheManager.del).toHaveBeenCalledWith(
         CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
       );
+    });
+  });
+
+  describe('namespace epoch', () => {
+    it('defaults getEpoch to 0 when the key is missing', async () => {
+      cacheManager.get.mockResolvedValue(undefined);
+
+      await expect(service.getEpoch('honors')).resolves.toBe(0);
+    });
+
+    it('bumps the epoch and stores it with a 30-day TTL', async () => {
+      cacheManager.get.mockResolvedValue(4);
+      cacheManager.set.mockResolvedValue(undefined);
+
+      await service.bumpEpoch('honors');
+
+      expect(cacheManager.set).toHaveBeenCalledWith(
+        CATALOG_CACHE_KEYS.HONORS_EPOCH,
+        5,
+        2_592_000_000,
+      );
+    });
+
+    it('purges namespace payloads without deleting the epoch key', async () => {
+      async function* entries(): AsyncGenerator<
+        [string, unknown],
+        void,
+        unknown
+      > {
+        yield ['cache:catalogs:honors:epoch', { value: 4 }];
+        yield [
+          'cache:catalogs:honors:grouped:e4:es:cat:all:type:all:skill:all',
+          { value: [] },
+        ];
+        yield ['cache:catalogs:club_types', { value: [] }];
+      }
+
+      cacheManager.stores = [{ iterator: entries }];
+      cacheManager.get.mockResolvedValue(4);
+      cacheManager.set.mockResolvedValue(undefined);
+      cacheManager.mdel.mockResolvedValue(true);
+
+      await service.bumpEpoch('honors');
+
+      expect(cacheManager.mdel).toHaveBeenCalledWith([
+        'cache:catalogs:honors:grouped:e4:es:cat:all:type:all:skill:all',
+      ]);
     });
   });
 
@@ -323,6 +370,19 @@ describe('CatalogCacheService', () => {
     it('local fields key with unionId', () => {
       expect(CATALOG_CACHE_KEYS.LOCAL_FIELDS(7)).toBe(
         'cache:catalogs:local_fields:union:7',
+      );
+    });
+
+    it('builds honors grouped keys with epoch, locale and filters', () => {
+      expect(
+        CATALOG_CACHE_KEYS.HONORS_GROUPED({
+          epoch: 3,
+          locale: 'en',
+          categoryId: 2,
+          clubTypeId: 1,
+        }),
+      ).toBe(
+        'cache:catalogs:honors:grouped:e3:en:cat:2:type:1:skill:all',
       );
     });
   });

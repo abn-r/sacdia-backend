@@ -123,7 +123,6 @@ type PendingIdentifierRow = {
   id: number;
   item_type: 'class' | 'honor';
   submitted_at: Date;
-  total_count: string | number | bigint;
 };
 
 export type BulkOperationResult = {
@@ -214,14 +213,16 @@ export class EvidenceReviewService {
       return { data: [], total: 0, page, limit };
     }
 
-    const identifiers = await this.getCombinedPendingIdentifiers(
-      scopedClubSectionIds,
-      skip,
-      limit,
-    );
+    const [identifiers, total] = await Promise.all([
+      this.getCombinedPendingIdentifiers(
+        scopedClubSectionIds,
+        skip,
+        limit,
+      ),
+      this.getCombinedPendingCount(scopedClubSectionIds),
+    ]);
 
     if (identifiers.length === 0) {
-      const total = await this.getCombinedPendingCount(scopedClubSectionIds);
       return { data: [], total, page, limit };
     }
 
@@ -256,7 +257,7 @@ export class EvidenceReviewService {
 
     return {
       data,
-      total: Number(identifiers[0].total_count),
+      total,
       page,
       limit,
     };
@@ -475,8 +476,7 @@ export class EvidenceReviewService {
       SELECT
         ids.id,
         ids.item_type,
-        ids.submitted_at,
-        COUNT(*) OVER () AS total_count
+        ids.submitted_at
       FROM (
         SELECT
           csp.section_progress_id AS id,

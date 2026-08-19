@@ -149,6 +149,7 @@ const makeCacheMock = () => ({
   invalidate: jest.fn().mockResolvedValue(undefined),
   invalidateMany: jest.fn().mockResolvedValue(undefined),
   invalidateAll: jest.fn().mockResolvedValue(undefined),
+  bumpEpoch: jest.fn().mockResolvedValue(undefined),
 });
 
 const makeTranslationMock = () => ({
@@ -220,6 +221,7 @@ describe('AdminReferenceService', () => {
     );
     cacheMock.invalidate.mockResolvedValue(undefined);
     cacheMock.invalidateMany.mockResolvedValue(undefined);
+    cacheMock.bumpEpoch.mockResolvedValue(undefined);
     translationMock.upsertTranslations.mockResolvedValue(undefined);
   });
 
@@ -344,6 +346,7 @@ describe('AdminReferenceService', () => {
       );
 
       expect(result).toEqual(created);
+      expect(cacheMock.bumpEpoch).toHaveBeenCalledWith('honors');
       expect(prismaMock.honors_categories.findFirst).toHaveBeenCalledWith({
         where: {
           name: { equals: 'Naturaleza', mode: 'insensitive' },
@@ -406,6 +409,7 @@ describe('AdminReferenceService', () => {
       );
 
       expect(result).toEqual(updated);
+      expect(cacheMock.bumpEpoch).toHaveBeenCalledWith('honors');
       expect(prismaMock.honors_categories.findUnique).toHaveBeenCalledWith({
         where: { honor_category_id: 5 },
       });
@@ -455,6 +459,7 @@ describe('AdminReferenceService', () => {
       const result = await service.deleteHonorCategory(11, 'actor-3');
 
       expect(result).toEqual(deleted);
+      expect(cacheMock.bumpEpoch).toHaveBeenCalledWith('honors');
       expect(prismaMock.honors.count).toHaveBeenCalledWith({
         where: {
           honors_category_id: 11,

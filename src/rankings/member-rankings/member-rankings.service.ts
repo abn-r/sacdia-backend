@@ -300,11 +300,14 @@ export class MemberRankingsService {
       mode,
     });
 
-    // Delegate to RankingsService.recalculateAll which covers both
-    // enrollment rankings and section aggregates in the correct order.
+    // Enqueue RankingsService.recalculateAll (club + enrollment + section).
     // mode is threaded through to recalculateEnrollmentRankings only —
     // club rankings (step 1) and section aggregates (step 3) always run full.
-    await this.rankingsService.recalculateAll(yearId, mode);
+    await this.rankingsService.enqueueRecalculation({
+      yearId,
+      mode,
+      includeMemberRankings: true,
+    });
 
     return {
       triggered: true,

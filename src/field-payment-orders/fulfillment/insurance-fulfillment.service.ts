@@ -184,39 +184,69 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
       },
     });
 
-    for (const line of order.lines) {
-      const slot = await tx.insurance_coverage_slots.create({
-        data: {
-          insurance_purchase_id: purchase.insurance_purchase_id,
-          sequence_number: line.sequence,
-          owner_club_id: order.club_id,
-          purchasing_section_id: order.club_section_id,
-          current_section_id: order.club_section_id,
-          status: 'ASSIGNED',
-          created_by_id: actor.userId,
-          modified_by_id: actor.userId,
-        },
-      });
-      const assignment = await tx.insurance_assignments.create({
-        data: {
+    const slots = await tx.insurance_coverage_slots.createManyAndReturn({
+      data: order.lines.map((line) => ({
+        insurance_purchase_id: purchase.insurance_purchase_id,
+        sequence_number: line.sequence,
+        owner_club_id: order.club_id,
+        purchasing_section_id: order.club_section_id,
+        current_section_id: order.club_section_id,
+        status: 'ASSIGNED' as const,
+        created_by_id: actor.userId,
+        modified_by_id: actor.userId,
+      })),
+    });
+    const slotBySequence = new Map(
+      slots.map((slot) => [slot.sequence_number, slot]),
+    );
+
+    const assignments = await tx.insurance_assignments.createManyAndReturn({
+      data: order.lines.map((line) => {
+        const slot = slotBySequence.get(line.sequence);
+        if (!slot) {
+          throw new AppConflictException(
+            ErrorCode.FIELD_PAYMENT_ORDER_CYCLE_INVALID,
+            { reason: 'missing_slot_for_line', sequence: line.sequence },
+          );
+        }
+        return {
           insurance_coverage_slot_id: slot.insurance_coverage_slot_id,
-          subject_type: 'MEMBER',
+          subject_type: 'MEMBER' as const,
           user_id: line.beneficiary_user_id,
           valid_from: validity.startsAt,
           valid_until: validity.endsAt,
-          status: 'ACTIVE',
+          status: 'ACTIVE' as const,
           assigned_by_id: actor.userId,
           confirmed_by_id: actor.userId,
           confirmed_at: now,
           created_by_id: actor.userId,
           modified_by_id: actor.userId,
-        },
-      });
-      await tx.insurance_slot_movements.createMany({
-        data: [
+        };
+      }),
+    });
+    const assignmentBySlotId = new Map(
+      assignments.map((assignment) => [
+        assignment.insurance_coverage_slot_id,
+        assignment,
+      ]),
+    );
+
+    await tx.insurance_slot_movements.createMany({
+      data: order.lines.flatMap((line) => {
+        const slot = slotBySequence.get(line.sequence);
+        const assignment = slot
+          ? assignmentBySlotId.get(slot.insurance_coverage_slot_id)
+          : undefined;
+        if (!slot || !assignment) {
+          throw new AppConflictException(
+            ErrorCode.FIELD_PAYMENT_ORDER_CYCLE_INVALID,
+            { reason: 'missing_slot_or_assignment', sequence: line.sequence },
+          );
+        }
+        return [
           {
             insurance_coverage_slot_id: slot.insurance_coverage_slot_id,
-            movement_type: 'PURCHASE_CONFIRMED',
+            movement_type: 'PURCHASE_CONFIRMED' as const,
             from_section_id: null,
             to_section_id: order.club_section_id,
             reason: `Field payment order ${order.folio_reference} approved`,
@@ -224,25 +254,37 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
           },
           {
             insurance_coverage_slot_id: slot.insurance_coverage_slot_id,
-            movement_type: 'ASSIGNED',
+            movement_type: 'ASSIGNED' as const,
             from_section_id: null,
             to_section_id: order.club_section_id,
             insurance_assignment_id: assignment.insurance_assignment_id,
             reason: `Assigned via order ${order.folio_reference}`,
             performed_by_id: actor.userId,
           },
-        ],
-      });
+        ];
+      }),
+    });
 
-      await this.upsertBridge(tx, {
-        userId: line.beneficiary_user_id,
-        providerName: cycle.product.name,
-        folioReference: order.folio_reference,
-        validFrom: validity.startsAt,
-        validUntil: validity.endsAt,
-        actorId: actor.userId,
-      });
+    await this.upsertBridges(tx, {
+      userIds,
+      providerName: cycle.product.name,
+      folioReference: order.folio_reference,
+      validFrom: validity.startsAt,
+      validUntil: validity.endsAt,
+      actorId: actor.userId,
+    });
 
+    for (const line of order.lines) {
+      const slot = slotBySequence.get(line.sequence);
+      const assignment = slot
+        ? assignmentBySlotId.get(slot.insurance_coverage_slot_id)
+        : undefined;
+      if (!assignment) {
+        throw new AppConflictException(
+          ErrorCode.FIELD_PAYMENT_ORDER_CYCLE_INVALID,
+          { reason: 'missing_assignment_for_line', sequence: line.sequence },
+        );
+      }
       await tx.field_payment_order_lines.update({
         where: {
           field_payment_order_line_id: line.field_payment_order_line_id,
@@ -255,12 +297,13 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
   /**
    * Legacy bridge: camporees (y otras lecturas) siguen consultando
    * `member_insurances`; extendemos la vigencia si ya existe una póliza
-   * activa del mismo tipo, o creamos el registro puente.
+   * activa del mismo tipo, o creamos el registro puente. Un roundtrip
+   * findMany + createMany/updateMany en vez de N findFirst.
    */
-  private async upsertBridge(
+  private async upsertBridges(
     tx: Prisma.TransactionClient,
     input: {
-      userId: string;
+      userIds: string[];
       providerName: string;
       folioReference: string;
       validFrom: Date;
@@ -268,40 +311,59 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
       actorId: string;
     },
   ): Promise<void> {
-    const existing = await tx.member_insurances.findFirst({
+    const existing = await tx.member_insurances.findMany({
       where: {
-        user_id: input.userId,
+        user_id: { in: input.userIds },
         insurance_type: 'GENERAL_ACTIVITIES',
         active: true,
         end_date: { gte: input.validFrom },
       },
       orderBy: { end_date: 'desc' },
     });
-    if (existing) {
-      if (existing.end_date < input.validUntil) {
-        await tx.member_insurances.update({
-          where: { insurance_id: existing.insurance_id },
-          data: {
-            end_date: input.validUntil,
-            modified_by_id: input.actorId,
-          },
-        });
+    const latestByUser = new Map<string, (typeof existing)[number]>();
+    for (const row of existing) {
+      if (!latestByUser.has(row.user_id)) {
+        latestByUser.set(row.user_id, row);
       }
-      return;
     }
-    await tx.member_insurances.create({
-      data: {
-        user_id: input.userId,
-        insurance_type: 'GENERAL_ACTIVITIES',
-        provider: input.providerName,
-        policy_number: input.folioReference,
-        start_date: input.validFrom,
-        end_date: input.validUntil,
-        active: true,
-        created_by_id: input.actorId,
-        modified_by_id: input.actorId,
-      },
-    });
+
+    const toExtendIds: number[] = [];
+    const toCreate: string[] = [];
+    for (const userId of input.userIds) {
+      const row = latestByUser.get(userId);
+      if (!row) {
+        toCreate.push(userId);
+        continue;
+      }
+      if (row.end_date < input.validUntil) {
+        toExtendIds.push(row.insurance_id);
+      }
+    }
+
+    if (toExtendIds.length > 0) {
+      await tx.member_insurances.updateMany({
+        where: { insurance_id: { in: toExtendIds } },
+        data: {
+          end_date: input.validUntil,
+          modified_by_id: input.actorId,
+        },
+      });
+    }
+    if (toCreate.length > 0) {
+      await tx.member_insurances.createMany({
+        data: toCreate.map((userId) => ({
+          user_id: userId,
+          insurance_type: 'GENERAL_ACTIVITIES',
+          provider: input.providerName,
+          policy_number: input.folioReference,
+          start_date: input.validFrom,
+          end_date: input.validUntil,
+          active: true,
+          created_by_id: input.actorId,
+          modified_by_id: input.actorId,
+        })),
+      });
+    }
   }
 
   private async assertSectionMembership(

@@ -4,18 +4,23 @@ import { BackgroundJobsProcessor } from '../background-jobs.processor';
 import {
   BackgroundJobName,
   MonthlyReportsAutoGeneratePayload,
+  MonthlyReportPdfPayload,
 } from '../background-jobs.types';
 import { MonthlyReportsService } from '../../monthly-reports/monthly-reports.service';
 import { FinancePeriodService } from '../../finances/finance-period.service';
 import { RankingsService } from '../../annual-folders/rankings.service';
 import { DataExportService } from '../../data-export/data-export.service';
 import { CronRunLogger } from '../../common/services/cron-run-logger.service';
+import { AppBadRequestException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 
 describe('BackgroundJobsProcessor — monthly-reports', () => {
   let processor: BackgroundJobsProcessor;
 
   const mockMonthlyReportsService = {
     runAutoGeneration: jest.fn(),
+    generate: jest.fn(),
+    regenerate: jest.fn(),
   };
   const mockFinancePeriodService = {
     runMonthlyClosing: jest.fn(),
@@ -159,6 +164,94 @@ describe('BackgroundJobsProcessor — monthly-reports', () => {
       expect(() =>
         processor.onFailed(undefined, new Error('Unknown error')),
       ).not.toThrow();
+    });
+  });
+
+  describe('process() — MONTHLY_REPORT_PDF', () => {
+    function makePdfJob(data: MonthlyReportPdfPayload): Job<unknown> {
+      return {
+        id: 'test-job-pdf',
+        name: BackgroundJobName.MONTHLY_REPORT_PDF,
+        data,
+        attemptsMade: 0,
+        opts: { attempts: 3 },
+      } as unknown as Job<unknown>;
+    }
+
+    it('calls generate() for action generate', async () => {
+      mockMonthlyReportsService.generate.mockResolvedValue({
+        monthly_report_id: 'report-1',
+      });
+
+      await processor.process(
+        makePdfJob({
+          reportId: 'report-1',
+          action: 'generate',
+          requestedBy: 'user-1',
+          triggeredAt: new Date().toISOString(),
+        }),
+      );
+
+      expect(mockMonthlyReportsService.generate).toHaveBeenCalledWith(
+        'report-1',
+        'user-1',
+      );
+      expect(mockMonthlyReportsService.regenerate).not.toHaveBeenCalled();
+    });
+
+    it('calls regenerate() for action regenerate', async () => {
+      mockMonthlyReportsService.regenerate.mockResolvedValue({
+        monthly_report_id: 'report-1',
+      });
+
+      await processor.process(
+        makePdfJob({
+          reportId: 'report-1',
+          action: 'regenerate',
+          triggeredAt: new Date().toISOString(),
+        }),
+      );
+
+      expect(mockMonthlyReportsService.regenerate).toHaveBeenCalledWith(
+        'report-1',
+      );
+      expect(mockMonthlyReportsService.generate).not.toHaveBeenCalled();
+    });
+
+    it('skips already-generated reports instead of retrying', async () => {
+      mockMonthlyReportsService.generate.mockRejectedValue(
+        new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT),
+      );
+
+      await expect(
+        processor.process(
+          makePdfJob({
+            reportId: 'report-1',
+            action: 'generate',
+            triggeredAt: new Date().toISOString(),
+          }),
+        ),
+      ).resolves.toEqual({
+        skipped: true,
+        reportId: 'report-1',
+        action: 'generate',
+      });
+    });
+
+    it('propagates storage failures so BullMQ can retry', async () => {
+      mockMonthlyReportsService.generate.mockRejectedValue(
+        new Error('R2 unavailable'),
+      );
+
+      await expect(
+        processor.process(
+          makePdfJob({
+            reportId: 'report-1',
+            action: 'generate',
+            triggeredAt: new Date().toISOString(),
+          }),
+        ),
+      ).rejects.toThrow('R2 unavailable');
     });
   });
 });
