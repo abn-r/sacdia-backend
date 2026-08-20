@@ -14,6 +14,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { useE2ePermissionsPassthrough } from './helpers/rbac-test-helpers';
 import {
   JwtAuthGuard,
   PermissionsGuard,
@@ -71,6 +72,7 @@ class MockThrottlerGuard implements CanActivate {
 }
 
 describe('Investiture E2E', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let jwtService: JwtService;
 

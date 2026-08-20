@@ -32,6 +32,27 @@ export function createTestJwtService() {
   });
 }
 
+/**
+ * Nest TestingModule cannot rebind APP_GUARD via overrideGuard(PermissionsGuard).
+ * Suites that already mock that guard set this flag for the real APP_GUARD instance.
+ * Restore after the suite so later e2e files still exercise the real guard.
+ */
+export function useE2ePermissionsPassthrough() {
+  const previous = process.env.E2E_PASSTHROUGH_PERMISSIONS;
+
+  beforeAll(() => {
+    process.env.E2E_PASSTHROUGH_PERMISSIONS = 'true';
+  });
+
+  afterAll(() => {
+    if (previous === undefined) {
+      delete process.env.E2E_PASSTHROUGH_PERMISSIONS;
+    } else {
+      process.env.E2E_PASSTHROUGH_PERMISSIONS = previous;
+    }
+  });
+}
+
 export function createBearerToken(
   jwtService: JwtService,
   sub: string,

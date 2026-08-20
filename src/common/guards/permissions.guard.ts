@@ -68,6 +68,16 @@ const SECTION_MEMBER_PROFILE_GATE_PERMISSIONS = new Set([
   'users:read_detail',
 ]);
 
+/** E2E-only. Nest cannot rebind APP_GUARD via overrideGuard(PermissionsGuard). */
+export const E2E_PASSTHROUGH_PERMISSIONS_ENV = 'E2E_PASSTHROUGH_PERMISSIONS';
+
+function isE2ePermissionsPassthrough(): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' &&
+    process.env[E2E_PASSTHROUGH_PERMISSIONS_ENV] === 'true'
+  );
+}
+
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -91,6 +101,10 @@ export class PermissionsGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
     if (skipPermissions) {
+      return true;
+    }
+
+    if (isE2ePermissionsPassthrough()) {
       return true;
     }
 

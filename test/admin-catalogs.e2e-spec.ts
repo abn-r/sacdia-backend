@@ -6,9 +6,13 @@ import { AppModule } from '../src/app.module';
 import { AdminGeographyService } from '../src/admin/admin-geography.service';
 import { AdminReferenceService } from '../src/admin/admin-reference.service';
 import { PermissionsGuard } from '../src/common/guards';
-import { createTestJwtService } from './helpers/rbac-test-helpers';
+import {
+  createTestJwtService,
+  useE2ePermissionsPassthrough,
+} from './helpers/rbac-test-helpers';
 
 describe('Admin Catalogs E2E', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let jwtService: JwtService;
 

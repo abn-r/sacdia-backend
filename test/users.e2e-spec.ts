@@ -9,10 +9,12 @@ import { PermissionsGuard } from '../src/common/guards';
 import {
   createBearerToken,
   createTestJwtService,
+  useE2ePermissionsPassthrough,
 } from './helpers/rbac-test-helpers';
 import { SeverityLevel } from '../src/users/dto/update-user-medical.dto';
 
 describe('Users E2E Tests', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let prisma: PrismaService;
   let jwtService: JwtService;

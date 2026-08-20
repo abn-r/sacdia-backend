@@ -7,9 +7,13 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PermissionsGuard } from '../src/common/guards';
-import { createTestJwtService } from './helpers/rbac-test-helpers';
+import {
+  createTestJwtService,
+  useE2ePermissionsPassthrough,
+} from './helpers/rbac-test-helpers';
 
 describe('Admin Users Scope E2E', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let prisma: PrismaService;
   let jwtService: JwtService;

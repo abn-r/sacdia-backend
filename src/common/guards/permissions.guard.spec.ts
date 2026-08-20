@@ -338,6 +338,43 @@ describe('PermissionsGuard', () => {
     ).resolves.toBe(true);
   });
 
+  it('allows e2e passthrough without a permission catalog entry', async () => {
+    const previous = process.env.E2E_PASSTHROUGH_PERMISSIONS;
+    process.env.E2E_PASSTHROUGH_PERMISSIONS = 'true';
+
+    try {
+      await expect(
+        guard.canActivate(createContext({ user: { sub: 'user-123' } })),
+      ).resolves.toBe(true);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.E2E_PASSTHROUGH_PERMISSIONS;
+      } else {
+        process.env.E2E_PASSTHROUGH_PERMISSIONS = previous;
+      }
+    }
+  });
+
+  it('ignores e2e passthrough when NODE_ENV is production', async () => {
+    const previousFlag = process.env.E2E_PASSTHROUGH_PERMISSIONS;
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.E2E_PASSTHROUGH_PERMISSIONS = 'true';
+    process.env.NODE_ENV = 'production';
+
+    try {
+      await expect(
+        guard.canActivate(createContext({ user: { sub: 'user-123' } })),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_RBAC_MISCONFIGURATION });
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.E2E_PASSTHROUGH_PERMISSIONS;
+      } else {
+        process.env.E2E_PASSTHROUGH_PERMISSIONS = previousFlag;
+      }
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  });
+
   it('allows a global resource when the user has the global permission', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {

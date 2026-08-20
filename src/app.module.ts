@@ -278,11 +278,11 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     },
     // Deny-by-default permissions: JWT-only is not enough unless the route
     // declares @RequirePermissions, @SkipPermissions or @Public().
-    // useExisting so e2e `.overrideGuard(PermissionsGuard)` replaces this
-    // APP_GUARD instead of leaving a second useClass instance.
+    // Nest TestingModule cannot rebind this APP_GUARD via overrideGuard;
+    // e2e uses E2E_PASSTHROUGH_PERMISSIONS instead (see test/setup.ts).
     {
       provide: APP_GUARD,
-      useExisting: PermissionsGuard,
+      useClass: PermissionsGuard,
     },
   ],
 })

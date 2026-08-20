@@ -10,9 +10,11 @@ import {
   buildAuthorizationSnapshot,
   createBearerToken,
   createTestJwtService,
+  useE2ePermissionsPassthrough,
 } from './helpers/rbac-test-helpers';
 
 describe('Camporees E2E Tests', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let prisma: PrismaService;
   let jwtService: JwtService;
