@@ -148,6 +148,7 @@ describe('CamporeeScoringService', () => {
       },
       camporee_clubs: {
         findFirst: jest.fn().mockResolvedValue(enrollment),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       camporee_event_judge_assignments: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -178,6 +179,7 @@ describe('CamporeeScoringService', () => {
       },
       camporee_event_section_results: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         create: jest.fn(async ({ data }) => ({
           camporee_event_section_result_id:
@@ -1633,6 +1635,86 @@ describe('CamporeeScoringService', () => {
     expect(result.rows).toEqual([
       expect.objectContaining({ rank: 1, club_section_id: 7, percentage: 90 }),
       expect.objectContaining({ rank: 2, club_section_id: 8, percentage: 75 }),
+    ]);
+  });
+
+  it('exposes the active result id on scoring targets for manual override', async () => {
+    auth.resolveUserAuthorization.mockResolvedValue(manualLfProfile);
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+    prisma.camporee_clubs.findMany.mockResolvedValue([
+      {
+        camporee_club_id: 99,
+        club_section_id: 7,
+        status: 'approved',
+        club_sections: {
+          clubs: { name: 'ACV' },
+          club_types: { name: 'Conquistadores' },
+        },
+      },
+      {
+        camporee_club_id: 100,
+        club_section_id: 165,
+        status: 'approved',
+        club_sections: {
+          clubs: { name: 'Estella' },
+          club_types: { name: 'Conquistadores' },
+        },
+      },
+    ]);
+    prisma.camporee_event_section_results.findMany.mockResolvedValue([
+      {
+        club_section_id: 7,
+        camporee_event_section_result_id:
+          '33333333-3333-4333-8333-333333333333',
+      },
+    ]);
+
+    const targets = await service.getScoringTargets(1, actorUserId);
+
+    expect(targets).toEqual([
+      expect.objectContaining({
+        club_section_id: 7,
+        club_name: 'ACV',
+        active_result_id: '33333333-3333-4333-8333-333333333333',
+      }),
+      expect.objectContaining({
+        club_section_id: 165,
+        club_name: 'Estella',
+        active_result_id: null,
+      }),
+    ]);
+  });
+
+  it('includes club and section names on my judge assignments', async () => {
+    prisma.camporee_event_judge_assignments.findMany.mockResolvedValue([
+      {
+        camporee_event_judge_assignment_id:
+          '44444444-4444-4444-8444-444444444444',
+        camporee_event_id: 1,
+        camporee_judge_id: '55555555-5555-4555-8555-555555555555',
+        camporee_club_id: 100,
+        club_section_id: 165,
+        judge_role: 'primary',
+        active: true,
+        camporee_event: { title: 'Orden cerrado' },
+        camporee_judge: { user_id: actorUserId },
+        club_section: {
+          clubs: { name: 'Estella' },
+          club_types: { name: 'Conquistadores' },
+        },
+      },
+    ]);
+
+    const assignments = await service.getMyJudgeAssignments(actorUserId);
+
+    expect(assignments).toEqual([
+      expect.objectContaining({
+        club_section_id: 165,
+        event_title: 'Orden cerrado',
+        club_name: 'Estella',
+        section_name: 'Conquistadores',
+        can_submit_score: true,
+      }),
     ]);
   });
 });

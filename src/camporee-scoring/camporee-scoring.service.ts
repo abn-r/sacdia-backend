@@ -1704,9 +1704,39 @@ export class CamporeeScoringService {
         status: { in: ['registered', 'approved'] },
         club_section_id: { not: null },
       },
-            include: { club_sections: { include: { clubs: true, club_types: true } } },
+      include: {
+        club_sections: { include: { clubs: true, club_types: true } },
+      },
       orderBy: { camporee_club_id: 'asc' },
     });
+
+    const sectionIds = rows
+      .map((row: { club_section_id: number | null }) => row.club_section_id)
+      .filter((id: number | null): id is number => typeof id === 'number');
+
+    const activeResults =
+      sectionIds.length === 0
+        ? []
+        : await this.db().camporee_event_section_results.findMany({
+            where: {
+              camporee_event_id: eventId,
+              active: true,
+              club_section_id: { in: sectionIds },
+            },
+            select: {
+              club_section_id: true,
+              camporee_event_section_result_id: true,
+            },
+          });
+
+    const activeResultBySection = new Map(
+      activeResults.map(
+        (row: {
+          club_section_id: number;
+          camporee_event_section_result_id: string;
+        }) => [row.club_section_id, row.camporee_event_section_result_id],
+      ),
+    );
 
     return rows.map((row: any) => ({
       camporee_club_id: row.camporee_club_id,
@@ -1714,6 +1744,8 @@ export class CamporeeScoringService {
       club_name: row.club_sections?.clubs?.name ?? null,
       section_name: row.club_sections?.club_types?.name ?? null,
       status: row.status,
+      active_result_id:
+        activeResultBySection.get(row.club_section_id) ?? null,
     }));
   }
 
@@ -1802,6 +1834,7 @@ export class CamporeeScoringService {
       include: {
         camporee_event: true,
         camporee_judge: true,
+        club_section: { include: { clubs: true, club_types: true } },
       },
       orderBy: [{ created_at: 'desc' }],
     });
@@ -1809,6 +1842,8 @@ export class CamporeeScoringService {
     return rows.map((row: any) => ({
       ...this.mapAssignment(row),
       event_title: row.camporee_event?.title ?? null,
+      club_name: row.club_section?.clubs?.name ?? null,
+      section_name: row.club_section?.club_types?.name ?? null,
       can_submit_score: row.judge_role === 'primary',
     }));
   }

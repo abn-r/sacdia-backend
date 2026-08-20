@@ -87,6 +87,30 @@ export class CamporeeEventsService {
     }
   }
 
+  private async assertMaxPointsMatchesActiveRubrics(
+    eventId: number,
+    maxPoints: number,
+  ) {
+    const rubrics = await this.prisma.camporee_event_rubrics.findMany({
+      where: { camporee_event_id: eventId, active: true },
+      select: { max_points: true },
+    });
+    if (rubrics.length === 0) {
+      return;
+    }
+
+    const rubricSum = rubrics.reduce(
+      (total, rubric) => total + Number(rubric.max_points),
+      0,
+    );
+    if (Math.abs(rubricSum - maxPoints) > 0.001) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_SCORING_RUBRIC_SUM_MISMATCH,
+        { sum: rubricSum, maxPoints },
+      );
+    }
+  }
+
   private validateParticipants(
     mode: string,
     count?: number | null,
@@ -949,6 +973,10 @@ export class CamporeeEventsService {
         local_camporee_id: existing.local_camporee_id,
         union_camporee_id: existing.union_camporee_id,
       });
+    }
+
+    if (existing.scoring_enabled) {
+      await this.assertMaxPointsMatchesActiveRubrics(eventId, maxPoints);
     }
 
     if (dto.status && dto.status !== existing.status) {
