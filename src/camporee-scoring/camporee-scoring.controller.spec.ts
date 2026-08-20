@@ -1,5 +1,6 @@
 import { AUTHORIZATION_RESOURCE_KEY } from '../common/decorators/authorization-resource.decorator';
 import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
+import { SKIP_PERMISSIONS_KEY } from '../common/decorators/skip-permissions.decorator';
 import { CamporeeScoringController } from './camporee-scoring.controller';
 
 describe('CamporeeScoringController', () => {
@@ -57,6 +58,17 @@ describe('CamporeeScoringController', () => {
       data: [{ camporee_event_rubric_id: 1 }],
     });
     expect(service.getEventRubrics).toHaveBeenCalledWith(1, req.user.sub);
+  });
+
+  it('lets assigned judges reach rubric, target and score handlers without catalog perms', () => {
+    for (const handler of [
+      CamporeeScoringController.prototype.getEventRubrics,
+      CamporeeScoringController.prototype.getScoringTargets,
+      CamporeeScoringController.prototype.submitScore,
+    ]) {
+      expect(Reflect.getMetadata(SKIP_PERMISSIONS_KEY, handler)).toBe(true);
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toBeUndefined();
+    }
   });
 
   it('replaces rubrics for an event', async () => {

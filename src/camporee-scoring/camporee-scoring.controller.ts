@@ -46,8 +46,7 @@ export class CamporeeScoringController {
   constructor(private readonly service: CamporeeScoringService) {}
 
   @Get('camporee-events/:eventId/rubrics')
-  @RequirePermissions('camporee_events:read')
-  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @SkipPermissions()
   @ApiOperation({ summary: 'List active rubrics for a camporee event' })
   @ApiParam({ name: 'eventId', type: Number })
   async getEventRubrics(
@@ -247,8 +246,7 @@ export class CamporeeScoringController {
   }
 
   @Get('camporee-events/:eventId/scoring-targets')
-  @RequirePermissions('camporee_events:read')
-  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @SkipPermissions()
   @ApiOperation({ summary: 'List enrolled sections that can receive scores' })
   async getScoringTargets(
     @Param('eventId', ParseIntPipe) eventId: number,
@@ -259,8 +257,7 @@ export class CamporeeScoringController {
   }
 
   @Post('camporee-events/:eventId/sections/:clubSectionId/scores')
-  @RequirePermissions('camporee_events:update')
-  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @SkipPermissions()
   @ApiOperation({ summary: 'Submit official camporee score by rubric' })
   @ApiHeader({
     name: 'Idempotency-Key',
