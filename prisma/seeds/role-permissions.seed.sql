@@ -758,7 +758,8 @@ WHERE r.role_name = 'secretary-treasurer'
     'insurance:read',
 
     -- ===== From SECRETARY (16) =====
-    -- Club section management
+    -- Club ficha + section management
+    'clubs:update',
     'club_sections:update',
     -- Insurance management
     'insurance:create',
@@ -907,7 +908,9 @@ WHERE r.role_name = 'deputy-director'
     'user_certifications:read',
     'user_certifications:manage',
 
-    -- ===== Additional DEPUTY-DIRECTOR permissions (9) =====
+    -- ===== Additional DEPUTY-DIRECTOR permissions =====
+    -- Club ficha (PATCH /clubs/:clubId)
+    'clubs:update',
     -- Read-only access to secretary domains
     'inventory:read',
     'reports:read',
@@ -1037,7 +1040,8 @@ WHERE r.role_name = 'director'
     'insurance:read',
 
     -- ===== From SECRETARY (16) =====
-    -- Club section management
+    -- Club ficha + section management
+    'clubs:update',
     'club_sections:update',
     -- Insurance management
     'insurance:create',
@@ -1776,6 +1780,90 @@ WHERE r.role_name = 'super-admin'
   AND r.role_category = 'GLOBAL'
   AND r.active = true
   AND p.active = true
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- clubs:update — ficha del club (dirección y secretaría)
+-- ============================
+-- PATCH /clubs/:clubId exige este permiso + ClubRoles. El grant también
+-- vive en los IN lists de secretary / secretary-treasurer / deputy / director.
+-- Este INSERT lo reafirma después de los DELETE+INSERT por rol.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('secretary', 'secretary-treasurer', 'deputy-director', 'director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'clubs:update'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- units:create / units:delete — create is club management; delete is direction
+-- ============================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('secretary', 'secretary-treasurer', 'deputy-director', 'director', 'treasurer')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'units:create'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('deputy-director', 'director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'units:delete'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- materiales:* — club leadership orders + territorial review
+-- ============================
+-- Must live here: role blocks DELETE+INSERT wipe grants from the 20260513
+-- migration if they are not re-asserted after every seed run.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director', 'deputy-director', 'secretary', 'secretary-treasurer')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'materiales:read',
+    'materiales:create',
+    'materiales:upload-receipt'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'assistant-lf', 'director-lf',
+    'assistant-union', 'director-union',
+    'assistant-dia', 'director-dia'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'materiales:read',
+    'materiales:approve',
+    'materiales:validate-receipt',
+    'materiales:deliver',
+    'materiales:manage-inventory',
+    'materiales:configure'
+  )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ============================

@@ -25,14 +25,20 @@ import {
   BulkRejectEvidenceDto,
 } from './dto';
 import type { EvidenceType } from './dto';
-import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
-import { GlobalRoles } from '../common/decorators';
+import { JwtAuthGuard, GlobalRolesGuard, PermissionsGuard } from '../common/guards';
+import {
+  AuthorizationResource,
+  GlobalRoles,
+  RequirePermissions,
+} from '../common/decorators';
 
 @ApiTags('evidence-review')
 @ApiBearerAuth()
 @Controller('evidence-review')
-@UseGuards(JwtAuthGuard, GlobalRolesGuard)
+@UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @GlobalRoles('admin', 'super-admin', 'coordinator')
+@RequirePermissions('validation:review')
+@AuthorizationResource({ type: 'global' })
 export class EvidenceReviewController {
   constructor(private readonly evidenceReviewService: EvidenceReviewService) {}
 

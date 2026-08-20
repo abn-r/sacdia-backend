@@ -76,6 +76,8 @@ export class RbacController {
   }
 
   @Post('permissions')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Crear un nuevo permiso' })
   @ApiResponse({ status: 201, description: 'Permiso creado' })
@@ -85,6 +87,8 @@ export class RbacController {
   }
 
   @Patch('permissions/:id')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Actualizar un permiso' })
   @ApiResponse({ status: 200, description: 'Permiso actualizado' })
@@ -97,6 +101,8 @@ export class RbacController {
   }
 
   @Delete('permissions/:id')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Desactivar un permiso' })
   @ApiResponse({ status: 200, description: 'Permiso desactivado' })
@@ -190,6 +196,8 @@ export class RbacController {
   // ─── Asignación de permisos a roles ─────────────────────────
 
   @Post('roles/:id/permissions')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Asignar permisos a un rol' })
   @ApiResponse({ status: 200, description: 'Permisos asignados' })
@@ -201,6 +209,8 @@ export class RbacController {
   }
 
   @Put('roles/:id/permissions')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Sincronizar permisos de un rol (reemplaza todos)' })
   @ApiResponse({ status: 200, description: 'Permisos sincronizados' })
@@ -212,6 +222,8 @@ export class RbacController {
   }
 
   @Delete('roles/:id/permissions/:permissionId')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Remover un permiso de un rol' })
   @ApiResponse({ status: 200, description: 'Permiso removido del rol' })

@@ -132,11 +132,12 @@ export class ClubsController {
 
   @Patch(':clubId')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'deputy-director')
+  @ClubRoles('director', 'deputy-director', 'secretary', 'secretary-treasurer')
   @RequirePermissions('clubs:update')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
-    summary: 'Actualizar club (requiere rol director o deputy director)',
+    summary:
+      'Actualizar club (dirección o secretaría de la sección activa)',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Club actualizado' })
@@ -219,12 +220,12 @@ export class ClubsController {
 
   @Patch(':clubId/sections/:sectionId')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'deputy-director', 'secretary')
+  @ClubRoles('director', 'deputy-director', 'secretary', 'secretary-treasurer')
   @RequirePermissions('club_sections:update')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary:
-      'Actualizar sección (requiere director, deputy director o secretary)',
+      'Actualizar sección (dirección o secretaría de la sección activa)',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
