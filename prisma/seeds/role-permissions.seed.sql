@@ -1438,6 +1438,11 @@ WHERE r.role_name = 'assistant-lf'
     'camporees:create',
     'camporees:update',
     'camporees:delete',
+    -- Eventos / rúbricas / clasificación (mismo alcance que camporees:*)
+    'camporee_events:read',
+    'camporee_events:create',
+    'camporee_events:update',
+    'camporee_events:delete',
     'inventory:read',
     'inventory:create',
     'inventory:update',
@@ -2001,6 +2006,32 @@ WHERE r.role_name IN ('director-union', 'assistant-union')
   AND p.active = true
   AND p.permission_name IN ('ranking_weights:read', 'ranking_weights:write')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- camporee_events:* — LF/Unión manage events, rubrics and leaderboard.
+-- assistant-lf lists them explicitly; this restore also covers live DBs whose
+-- director-lf copy ran before those grants existed (DELETE+COPY wipes extras).
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+  'assistant-lf',
+  'director-lf',
+  'assistant-union',
+  'director-union'
+)
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee_events:read',
+    'camporee_events:create',
+    'camporee_events:update',
+    'camporee_events:delete'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
 
 -- 8.4-C: ranking_weights:read for GLOBAL field/dia leaders
 INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
