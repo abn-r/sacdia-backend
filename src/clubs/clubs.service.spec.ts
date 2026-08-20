@@ -197,7 +197,7 @@ describe('ClubsService', () => {
         },
       );
 
-      await service.findAll({}, undefined, 'union-director');
+      await service.findAll({}, undefined, 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
 
       expect(mockPrismaService.clubs.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -229,11 +229,22 @@ describe('ClubsService', () => {
       );
 
       await expect(
-        service.findAll({ localFieldId: 4 }, undefined, 'lf-director'),
+        service.findAll({ localFieldId: 4 }, undefined, 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111'),
       ).rejects.toMatchObject({
         code: ErrorCode.GUARD_PERMISSION_DENIED,
       });
       expect(mockPrismaService.clubs.findMany).not.toHaveBeenCalled();
+    });
+
+    it('skips territorial resolve for non-uuid stub JWTs', async () => {
+      mockPrismaService.clubs.findMany.mockResolvedValue([]);
+      mockPrismaService.clubs.count.mockResolvedValue(0);
+
+      await service.findAll({}, undefined, 'clubs-e2e-user');
+
+      expect(
+        mockAuthorizationContextService.resolveUserAuthorization,
+      ).not.toHaveBeenCalled();
     });
   });
 

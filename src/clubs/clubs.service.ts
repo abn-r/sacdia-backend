@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -105,7 +106,7 @@ export class ClubsService {
 
     let where: Prisma.clubsWhereInput = clientWhere;
 
-    if (actorUserId) {
+    if (actorUserId && isUUID(actorUserId, 'all')) {
       const resolved =
         await this.authorizationContext.resolveUserAuthorization(actorUserId);
       const scope = resolveActorTerritoryScope(resolved);
