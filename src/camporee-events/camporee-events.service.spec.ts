@@ -28,6 +28,7 @@ const makePrismaMock = () => {
       findUnique: jest.fn(),
     },
     camporee_event_rubrics: {
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
     },
     camporee_events: {
@@ -483,6 +484,49 @@ describe('CamporeeEventsService', () => {
         schedule_blocks: [],
         staff_assignments: [],
       });
+    });
+
+    it('rejects max_points that does not match active rubric sum', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue({
+        ...baseEvent,
+        scoring_enabled: true,
+        max_points: 100,
+      });
+      prisma.camporee_event_rubrics.findMany.mockResolvedValue([
+        { max_points: 40 },
+        { max_points: 60 },
+      ]);
+
+      await expect(
+        service.updateEvent(1, { max_points: 1000 }, ACTOR_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_SCORING_RUBRIC_SUM_MISMATCH,
+      });
+    });
+
+    it('skips rubric sum check when scoring is enabled but no active rubrics exist', async () => {
+      const updated = {
+        ...baseEvent,
+        scoring_enabled: true,
+        max_points: 1000,
+        event_type: baseEventType,
+        leader: null,
+        venue: null,
+      };
+      prisma.camporee_events.findUnique.mockResolvedValue({
+        ...baseEvent,
+        scoring_enabled: true,
+        max_points: 100,
+      });
+      prisma.camporee_event_rubrics.findMany.mockResolvedValue([]);
+      prisma.camporee_events.update.mockResolvedValue(updated);
+
+      const result = await service.updateEvent(
+        1,
+        { max_points: 1000 },
+        ACTOR_ID,
+      );
+      expect(result.max_points).toBe(1000);
     });
   });
 
