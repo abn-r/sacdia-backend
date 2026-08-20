@@ -39,7 +39,8 @@ type EligibilityDb = Pick<
 /**
  * Camporee purpose port (plan base Tasks 3.1–3.2, decisiones 8 y 12).
  * Ningún camporee es gratis: registration_cost null/0 bloquea la orden.
- * El approve crea todos los camporee_members `approved` en la misma TX.
+ * El approve crea todos los camporee_members `approved` y un
+ * camporee_payments de inscripción `approved` por línea, en la misma TX.
  */
 @Injectable()
 export class CamporeeFulfillmentService implements PurposeFulfillment {
@@ -214,6 +215,7 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
         | 'union_camporees'
         | 'clubs'
         | 'field_payment_order_lines'
+        | 'camporee_payments'
       >;
 
     await this.assertCamporeeStillActive(db, scope, camporeeId);
@@ -257,6 +259,22 @@ export class CamporeeFulfillmentService implements PurposeFulfillment {
           field_payment_order_line_id: line.field_payment_order_line_id,
         },
         data: { camporee_member_id: member.camporee_member_id },
+      });
+      const amountPesos = Number(
+        ((order.unit_cost_centavos ?? 0) / 100).toFixed(2),
+      );
+      await db.camporee_payments.create({
+        data: {
+          camporee_member_id: member.camporee_member_id,
+          amount: amountPesos,
+          payment_type: 'inscription',
+          reference: order.folio_reference,
+          notes: `field_payment_order:${order.field_payment_order_id}`,
+          registered_by: order.issued_by_id,
+          approved_by: actor.userId,
+          paid_at: now,
+          status: 'approved',
+        },
       });
     }
   }

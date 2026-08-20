@@ -74,6 +74,7 @@ function buildDb() {
     member_insurances: { findMany: jest.fn().mockResolvedValue([]) },
     clubs: { findUnique: jest.fn().mockResolvedValue({ name: 'Club Orión' }) },
     field_payment_order_lines: { update: jest.fn() },
+    camporee_payments: { create: jest.fn() },
   };
 }
 
@@ -334,6 +335,19 @@ describe('CamporeeFulfillmentService.fulfill', () => {
     expect(tx.field_payment_order_lines.update).toHaveBeenCalledWith({
       where: { field_payment_order_line_id: 'l1' },
       data: { camporee_member_id: 1 },
+    });
+    expect(tx.camporee_payments.create).toHaveBeenCalledTimes(2);
+    expect(tx.camporee_payments.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        camporee_member_id: 1,
+        amount: 250,
+        payment_type: 'inscription',
+        reference: 'ORD20260009',
+        notes: 'field_payment_order:o1',
+        registered_by: 'director-1',
+        approved_by: 'lf-1',
+        status: 'approved',
+      }),
     });
   });
 
