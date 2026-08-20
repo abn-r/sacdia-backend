@@ -24,9 +24,14 @@ export type ClubRoleType =
 
 const CLUB_ROLE_ALIASES: Record<string, string> = {
   subdirector: 'deputy-director',
+  'sub-director': 'deputy-director',
+  sub_director: 'deputy-director',
   secretario: 'secretary',
   tesorero: 'treasurer',
   consejero: 'counselor',
+  'secretario-tesorero': 'secretary-treasurer',
+  secretario_tesorero: 'secretary-treasurer',
+  secretary_treasurer: 'secretary-treasurer',
 };
 
 function normalizeClubRoleName(roleName: string): string {

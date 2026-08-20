@@ -16,6 +16,7 @@ import {
 } from '@nestjs/swagger';
 
 import { GlobalRoles, CurrentUser } from '../common/decorators';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
 import {
   AdminSupportReportDto,
@@ -28,6 +29,7 @@ import { SupportService } from './support.service';
 @ApiTags('admin-support')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+@SkipPermissions()
 @Controller('admin/support')
 export class SupportAdminController {
   constructor(private readonly supportService: SupportService) {}

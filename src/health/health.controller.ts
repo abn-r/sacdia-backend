@@ -11,6 +11,7 @@ import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { GlobalRoles, Public } from '../common/decorators';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 
 @ApiTags('health')
@@ -43,6 +44,7 @@ export class HealthController {
   @Get('details')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
+  @SkipPermissions()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Detailed health status (admin only)',

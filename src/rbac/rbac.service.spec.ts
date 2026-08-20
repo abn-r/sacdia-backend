@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RbacService } from './rbac.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { CreateRoleDto, RoleCategoryEnum } from './dto/create-role.dto';
@@ -135,11 +136,13 @@ const mockPrismaService = {
 
 describe('RbacService', () => {
   let service: RbacService;
+  let auditLogs: { recordEvent: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrismaService.users_roles.findMany.mockResolvedValue([]);
     mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+    auditLogs = { recordEvent: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -152,6 +155,7 @@ describe('RbacService', () => {
             isSuperAdmin: jest.fn().mockResolvedValue(false),
           },
         },
+        { provide: AuditLogsService, useValue: auditLogs },
       ],
     }).compile();
 
@@ -174,6 +178,15 @@ describe('RbacService', () => {
       expect(mockPrismaService.users_roles.create).toHaveBeenCalledWith({
         data: { user_id: USER_ID, role_id: ROLE_ID },
       });
+      expect(auditLogs.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity_type: 'users_roles',
+          entity_id: USER_ID,
+          action: 'CREATED',
+          actor_user_id: ACTOR_ADMIN_ID,
+          changes: { role_id: ROLE_ID, role_name: 'admin' },
+        }),
+      );
     });
 
     it('blocks admin/assistant-admin from assigning super-admin', async () => {

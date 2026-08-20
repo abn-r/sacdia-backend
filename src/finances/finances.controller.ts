@@ -244,7 +244,12 @@ export class FinancesController {
 
   @Post('clubs/:clubId/finances')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'deputy-director', 'treasurer')
+  @ClubRoles(
+    'director',
+    'deputy-director',
+    'treasurer',
+    'secretary-treasurer',
+  )
   @RequirePermissions('finances:create')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({

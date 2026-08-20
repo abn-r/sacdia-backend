@@ -18,6 +18,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { JwtAuthGuard } from '../common/guards';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { CreateSupportReportDto } from './dto/create-support-report.dto';
 import { SupportReportResponseDto } from './dto/support-report-response.dto';
 import { SupportService } from './support.service';
@@ -30,6 +31,7 @@ interface JwtUser {
 @ApiTags('support')
 @Controller('support')
 @UseGuards(JwtAuthGuard)
+@SkipPermissions()
 @ApiBearerAuth()
 export class SupportController {
   constructor(private readonly supportService: SupportService) {}

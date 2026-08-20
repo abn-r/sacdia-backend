@@ -20,12 +20,14 @@ import {
 import type { Request as ExpressRequest } from 'express';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { GlobalRoles } from '../common/decorators';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { AdminCronAlertsService } from './admin-cron-alerts.service';
 
 @ApiTags('admin')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
 @GlobalRoles('admin', 'super-admin')
+@SkipPermissions()
 @Controller('admin/cron-alerts')
 export class AdminCronAlertsController {
   constructor(private readonly cronAlertsService: AdminCronAlertsService) {}

@@ -60,12 +60,14 @@ describe('AuthorizationContextService', () => {
   });
 
   it('uses versioned cache keys so stale legacy snapshots are bypassed', () => {
-    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v3:user-123');
+    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v5:user-123');
   });
 
   it('invalidates both current and legacy authorization cache keys', async () => {
     await service.invalidateUserAuthorizationCache('user-123');
 
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v5:user-123');
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v4:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v3:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v2:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:user-123');
@@ -208,6 +210,7 @@ describe('AuthorizationContextService', () => {
       'finances:update',
       'reports:read',
     ]);
+    expect(result.authorization.grants.direct_permissions).toEqual([]);
     expect(result.authorization.effective.scope.club).toEqual({
       assignment_id: 'assignment-2',
       role_name: 'treasurer',
@@ -230,6 +233,54 @@ describe('AuthorizationContextService', () => {
       club_name: 'Club Amanecer',
       club_type: 'Conquistadores',
     });
+  });
+
+  it('merges active users_permissions into effective and direct grants', async () => {
+    mockPrismaService.users.findUnique.mockResolvedValue({
+      user_id: 'user-direct',
+      email: 'direct@example.com',
+      name: 'Direct',
+      paternal_last_name: 'Grant',
+      maternal_last_name: null,
+      gender: 'M',
+      birthday: null,
+      baptism: false,
+      baptism_date: null,
+      blood: null,
+      user_image: null,
+      country_id: 1,
+      union_id: 2,
+      local_field_id: 3,
+      created_at: new Date('2026-02-10'),
+      countries: { country_id: 1, name: 'México' },
+      unions: { union_id: 2, name: 'Unión Norte' },
+      local_fields: { local_field_id: 3, name: 'Campo Centro' },
+      users_pr: { complete: true, active_club_assignment_id: null },
+      users_roles: [
+        {
+          roles: {
+            role_name: 'pastor',
+            role_permissions: [
+              { permissions: { permission_name: 'dashboard:read' } },
+            ],
+          },
+        },
+      ],
+      club_role_assignments: [],
+      users_permissions: [
+        { permissions: { permission_name: 'reports:read' } },
+      ],
+    });
+
+    const result = await service.resolveUserAuthorization('user-direct');
+
+    expect(result.authorization.grants.direct_permissions).toEqual([
+      'reports:read',
+    ]);
+    expect(result.authorization.effective.permissions).toEqual([
+      'dashboard:read',
+      'reports:read',
+    ]);
   });
 
   describe('isSuperAdmin', () => {

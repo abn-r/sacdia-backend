@@ -72,6 +72,7 @@ import { buildBullRootConfig } from './config/bullmq.config';
 import { buildThrottlerOptions } from './config/throttler.config';
 import { UserAwareThrottlerGuard } from './config/user-aware-throttler.guard';
 import { GlobalJwtAuthGuard } from './common/guards/global-jwt-auth.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
 
 @Module({
   imports: [
@@ -274,6 +275,12 @@ import { GlobalJwtAuthGuard } from './common/guards/global-jwt-auth.guard';
     {
       provide: APP_GUARD,
       useClass: GlobalJwtAuthGuard,
+    },
+    // Deny-by-default permissions: JWT-only is not enough unless the route
+    // declares @RequirePermissions, @SkipPermissions or @Public().
+    {
+      provide: APP_GUARD,
+      useClass: PermissionsGuard,
     },
   ],
 })

@@ -33,10 +33,12 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { namedThrottle } from '../config/throttler.helpers';
 
 @ApiTags('auth')
 @Controller('auth')
+@SkipPermissions()
 export class AuthController {
   constructor(
     private readonly authService: AuthService,

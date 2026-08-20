@@ -16,6 +16,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { CertificateBulkImportsService } from './certificate-bulk-imports.service';
 import {
   CreateCertificateBulkImportDto,
@@ -29,6 +30,7 @@ interface AuthenticatedRequest {
 @ApiTags('certificate-bulk-imports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
+@SkipPermissions()
 @Controller('certificate-bulk-imports')
 export class CertificateBulkImportsController {
   constructor(private readonly service: CertificateBulkImportsService) {}

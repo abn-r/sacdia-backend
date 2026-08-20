@@ -2,7 +2,12 @@ import { type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from './permissions.guard';
 import { AuthorizationContextService } from '../services/authorization-context.service';
-import { AUTHORIZATION_RESOURCE_KEY, PERMISSIONS_KEY } from '../decorators';
+import {
+  AUTHORIZATION_RESOURCE_KEY,
+  PERMISSIONS_KEY,
+} from '../decorators';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { SKIP_PERMISSIONS_KEY } from '../decorators/skip-permissions.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../errors/error-codes';
 import { InstitutionalHierarchyService } from '../services/institutional-hierarchy.service';
@@ -65,6 +70,7 @@ describe('PermissionsGuard', () => {
   const createResolved = ({
     globalPermissions = [],
     activeClubPermissions = [],
+    directPermissions = [],
     clubId = 10,
     instanceType = 'pathfinders',
     instanceId = 22,
@@ -78,6 +84,7 @@ describe('PermissionsGuard', () => {
   }: {
     globalPermissions?: string[];
     activeClubPermissions?: string[];
+    directPermissions?: string[];
     clubId?: number;
     instanceType?: 'adventurers' | 'pathfinders' | 'master_guilds';
     instanceId?: number;
@@ -107,6 +114,7 @@ describe('PermissionsGuard', () => {
             },
           },
         ],
+        direct_permissions: directPermissions,
         club_assignments: [
           {
             assignment_id: 'assignment-1',
@@ -298,7 +306,33 @@ describe('PermissionsGuard', () => {
     );
   });
 
-  it('allows when no permissions are required', async () => {
+  it('rejects authenticated routes that declare neither permissions nor an opt-out', async () => {
+    await expect(
+      guard.canActivate(createContext({ user: { sub: 'user-123' } })),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_RBAC_MISCONFIGURATION });
+  });
+
+  it('allows @Public() routes without a permission catalog entry', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === IS_PUBLIC_KEY) {
+        return true;
+      }
+      return undefined;
+    });
+
+    await expect(
+      guard.canActivate(createContext({})),
+    ).resolves.toBe(true);
+  });
+
+  it('allows @SkipPermissions() routes without a permission catalog entry', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === SKIP_PERMISSIONS_KEY) {
+        return true;
+      }
+      return undefined;
+    });
+
     await expect(
       guard.canActivate(createContext({ user: { sub: 'user-123' } })),
     ).resolves.toBe(true);
@@ -412,6 +446,25 @@ describe('PermissionsGuard', () => {
     await expect(
       guard.canActivate(createContext({ user: { sub: 'club-user-1' } })),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+  });
+
+  it('allows a global resource when the permission is a direct users_permissions grant', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['reports:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'global' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({ directPermissions: ['reports:read'] }),
+    );
+
+    await expect(
+      guard.canActivate(createContext({ user: { sub: 'direct-user-1' } })),
+    ).resolves.toBe(true);
   });
 
   it('allows a club resource when the active assignment belongs to the same club and has the permission', async () => {
@@ -533,6 +586,44 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.CLUB_SECTION_NOT_FOUND });
+  });
+
+  it('allows a club section resource when the active assignment matches that section', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['club_sections:update'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return {
+          type: 'club_section',
+          idParam: 'sectionId',
+          clubIdParam: 'clubId',
+        };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['club_sections:update'],
+        clubId: 10,
+        instanceId: 22,
+      }),
+    );
+    mockAuthorizationContext.canManageClub.mockResolvedValue(false);
+    mockPrisma.club_sections.findUnique.mockResolvedValue({
+      club_section_id: 22,
+      main_club_id: 10,
+      club_type_id: 2,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'section-a-secretary' },
+          params: { clubId: '10', sectionId: '22' },
+        }),
+      ),
+    ).resolves.toBe(true);
   });
 
   it('allows an instance resource when the active assignment matches the exact instance', async () => {

@@ -22,6 +22,8 @@ import {
   PERMISSIONS_KEY,
   type PermissionRequirement,
 } from '../decorators/permissions.decorator';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { SKIP_PERMISSIONS_KEY } from '../decorators/skip-permissions.decorator';
 import {
   SENSITIVE_USER_SUBRESOURCE_KEY,
   type SensitiveUserSubresourceMetadata,
@@ -76,13 +78,31 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+
+    const skipPermissions = this.reflector.getAllAndOverride<boolean>(
+      SKIP_PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (skipPermissions) {
+      return true;
+    }
+
     const requirement = this.reflector.getAllAndOverride<PermissionRequirement>(
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
 
     if (!requirement || requirement.permissions.length === 0) {
-      return true;
+      throw new AppInternalServerErrorException(
+        ErrorCode.GUARD_RBAC_MISCONFIGURATION,
+      );
     }
 
     const request = context.switchToHttp().getRequest();
@@ -322,11 +342,12 @@ export class PermissionsGuard implements CanActivate {
   private getGlobalPermissions(
     resolved: ResolvedAuthorizationProfile,
   ): Set<string> {
-    return new Set(
-      resolved.authorization.grants.global_roles.flatMap(
+    return new Set([
+      ...resolved.authorization.grants.global_roles.flatMap(
         (grant) => grant.permissions,
       ),
-    );
+      ...(resolved.authorization.grants.direct_permissions ?? []),
+    ]);
   }
 
   private getActiveClubPermissions(

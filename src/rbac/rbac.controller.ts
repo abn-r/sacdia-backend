@@ -145,6 +145,7 @@ export class RbacController {
   @Post('roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('super-admin')
+  @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Crear un nuevo rol' })
   @ApiResponse({ status: 201, description: 'Rol creado con sus permisos' })
   @ApiResponse({ status: 400, description: 'Nombre inválido o reservado' })
@@ -158,6 +159,7 @@ export class RbacController {
   @Patch('roles/:id')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('super-admin')
+  @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Actualizar descripción y/o permisos de un rol' })
   @ApiResponse({ status: 200, description: 'Rol actualizado' })
   @ApiResponse({
@@ -177,6 +179,7 @@ export class RbacController {
   @Delete('roles/:id')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('super-admin')
+  @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Desactivar (soft delete) un rol' })
   @ApiResponse({
     status: 200,
@@ -202,10 +205,13 @@ export class RbacController {
   @ApiOperation({ summary: 'Asignar permisos a un rol' })
   @ApiResponse({ status: 200, description: 'Permisos asignados' })
   async assignPermissions(
+    @CurrentUser() actor: { userId: string },
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignPermissionsDto,
   ) {
-    return this.rbacService.assignPermissionsToRole(id, dto.permission_ids);
+    return this.rbacService.assignPermissionsToRole(id, dto.permission_ids, {
+      actorUserId: actor.userId,
+    });
   }
 
   @Put('roles/:id/permissions')
@@ -215,10 +221,15 @@ export class RbacController {
   @ApiOperation({ summary: 'Sincronizar permisos de un rol (reemplaza todos)' })
   @ApiResponse({ status: 200, description: 'Permisos sincronizados' })
   async syncPermissions(
+    @CurrentUser() actor: { userId: string },
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignPermissionsDto,
   ) {
-    return this.rbacService.syncRolePermissions(id, dto.permission_ids);
+    return this.rbacService.syncRolePermissions(
+      id,
+      dto.permission_ids,
+      actor.userId,
+    );
   }
 
   @Delete('roles/:id/permissions/:permissionId')
@@ -228,10 +239,15 @@ export class RbacController {
   @ApiOperation({ summary: 'Remover un permiso de un rol' })
   @ApiResponse({ status: 200, description: 'Permiso removido del rol' })
   async removePermission(
+    @CurrentUser() actor: { userId: string },
     @Param('id', ParseUUIDPipe) id: string,
     @Param('permissionId', ParseUUIDPipe) permissionId: string,
   ) {
-    return this.rbacService.removePermissionFromRole(id, permissionId);
+    return this.rbacService.removePermissionFromRole(
+      id,
+      permissionId,
+      actor.userId,
+    );
   }
 
   // ─── Permisos directos de usuario ───────────────────────────
@@ -246,26 +262,40 @@ export class RbacController {
   }
 
   @Post('users/:userId/permissions')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Asignar un permiso directo a un usuario' })
   @ApiResponse({ status: 200, description: 'Permiso asignado al usuario' })
   async assignPermissionToUser(
+    @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: AssignPermissionsDto,
   ) {
     const permissionId = dto.permission_ids[0];
-    return this.rbacService.assignPermissionToUser(userId, permissionId);
+    return this.rbacService.assignPermissionToUser(
+      userId,
+      permissionId,
+      actor.userId,
+    );
   }
 
   @Delete('users/:userId/permissions/:permissionId')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Remover un permiso directo de un usuario' })
   @ApiResponse({ status: 200, description: 'Permiso removido del usuario' })
   async removePermissionFromUser(
+    @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('permissionId', ParseUUIDPipe) permissionId: string,
   ) {
-    return this.rbacService.removePermissionFromUser(userId, permissionId);
+    return this.rbacService.removePermissionFromUser(
+      userId,
+      permissionId,
+      actor.userId,
+    );
   }
 
   // ─── Roles de usuario ─────────────────────────────────────
@@ -273,6 +303,7 @@ export class RbacController {
   @Get('users/:userId/roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
+  @RequirePermissions('roles:read')
   @ApiOperation({ summary: 'Listar roles asignados a un usuario' })
   @ApiResponse({ status: 200, description: 'Lista de roles del usuario' })
   async getUserRoles(@Param('userId', ParseUUIDPipe) userId: string) {
@@ -283,6 +314,7 @@ export class RbacController {
   @Post('users/:userId/roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
+  @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Asignar un rol a un usuario' })
   @ApiResponse({ status: 201, description: 'Rol asignado al usuario' })
   async assignRoleToUser(
@@ -296,6 +328,7 @@ export class RbacController {
   @Delete('users/:userId/roles/:roleId')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
+  @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Remover un rol de un usuario' })
   @ApiResponse({ status: 200, description: 'Rol removido del usuario' })
   async removeRoleFromUser(

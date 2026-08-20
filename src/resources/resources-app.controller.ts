@@ -15,6 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { ResourceQueryDto } from './dto/resource-query.dto';
 import { ResourcesService } from './resources.service';
@@ -29,6 +30,7 @@ import { ResourcesService } from './resources.service';
 @ApiTags('Resources (App)')
 @Controller('resources')
 @UseGuards(JwtAuthGuard)
+@SkipPermissions()
 @ApiBearerAuth()
 export class ResourcesAppController {
   constructor(

@@ -18,6 +18,7 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { MfaGuard } from '../common/guards/mfa.guard';
 import { SkipMfaCheck } from '../common/decorators/skip-mfa-check.decorator';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { MfaService } from '../common/services/mfa.service';
 import { namedThrottle } from '../config/throttler.helpers';
 import { EnrollMfaDto, VerifyMfaDto, DisableMfaDto } from './dto/mfa.dto';
@@ -52,6 +53,7 @@ import { EnrollMfaDto, VerifyMfaDto, DisableMfaDto } from './dto/mfa.dto';
 @ApiTags('auth')
 @Controller('auth/mfa')
 @UseGuards(JwtAuthGuard, MfaGuard)
+@SkipPermissions()
 @ApiBearerAuth()
 export class MfaController {
   constructor(private readonly mfaService: MfaService) {}

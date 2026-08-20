@@ -111,7 +111,13 @@ export class ActivitiesController {
 
   @Post('clubs/:clubId/activities')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'deputy-director', 'secretary', 'counselor')
+  @ClubRoles(
+    'director',
+    'deputy-director',
+    'secretary',
+    'secretary-treasurer',
+    'counselor',
+  )
   @RequirePermissions('activities:create')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({

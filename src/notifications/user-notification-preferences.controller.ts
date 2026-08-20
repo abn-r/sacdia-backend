@@ -20,6 +20,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import {
@@ -42,6 +43,7 @@ import type { MobileNotificationCategory } from './notification-categories.const
 @ApiTags('User Notification Preferences')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
+@SkipPermissions()
 @Controller('users/me')
 export class UserNotificationPreferencesController {
   constructor(

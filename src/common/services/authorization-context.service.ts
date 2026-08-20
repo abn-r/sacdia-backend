@@ -70,6 +70,8 @@ export type AuthorizationSnapshot = {
   grants: {
     global_roles: GlobalAuthorizationGrant[];
     club_assignments: ClubAuthorizationGrant[];
+    /** Direct user grants from users_permissions (not role-derived). */
+    direct_permissions: string[];
   };
   active_assignment: {
     assignment_id: string | null;
@@ -176,12 +178,14 @@ type ClubAssignmentRecord = {
  * authorization-resolution semantics.
  */
 export const AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
-  `auth:context:v3:${userId}`;
+  `auth:context:v5:${userId}`;
 
 const LEGACY_AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
   `auth:context:${userId}`;
 
 const PREVIOUS_AUTH_CONTEXT_CACHE_KEYS = (userId: string): string[] => [
+  `auth:context:v4:${userId}`,
+  `auth:context:v3:${userId}`,
   `auth:context:v2:${userId}`,
   LEGACY_AUTH_CONTEXT_CACHE_KEY(userId),
 ];
@@ -232,6 +236,7 @@ export class AuthorizationContextService {
    * are mutated so that the next request reflects the updated state.
    *
    * Mutation points that MUST call this method:
+   *   - RbacService.assignPermissionToUser / removePermissionFromUser
    *   - RbacService.assignRoleToUser / removeRoleFromUser / bootstrapAdmin
    *   - RbacService.assignPermissionsToRole / removePermissionFromRole / syncRolePermissions
    *     (affects all users that hold the modified role)
@@ -382,6 +387,19 @@ export class AuthorizationContextService {
             },
           },
         },
+        users_permissions: {
+          where: {
+            active: true,
+            permissions: { active: true },
+          },
+          select: {
+            permissions: {
+              select: {
+                permission_name: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -421,8 +439,14 @@ export class AuthorizationContextService {
     const globalPermissions = this.uniqueSorted(
       globalGrants.flatMap((grant) => grant.permissions),
     );
+    const directPermissions = this.uniqueSorted(
+      (user.users_permissions ?? [])
+        .map((record) => record.permissions?.permission_name)
+        .filter((name): name is string => Boolean(name)),
+    );
     const effectivePermissions = this.uniqueSorted([
       ...globalPermissions,
+      ...directPermissions,
       ...(activeClubGrant?.permissions ?? []),
     ]);
 
@@ -453,6 +477,7 @@ export class AuthorizationContextService {
         grants: {
           global_roles: globalGrants,
           club_assignments: clubGrants,
+          direct_permissions: directPermissions,
         },
         active_assignment: {
           assignment_id: activeClubGrant?.assignment_id ?? null,
@@ -474,7 +499,10 @@ export class AuthorizationContextService {
       },
       legacy: {
         roles: globalGrants.map((grant) => grant.role_name),
-        permissions: globalPermissions,
+        permissions: this.uniqueSorted([
+          ...globalPermissions,
+          ...directPermissions,
+        ]),
         club: activeClubGrant
           ? {
               club_id: activeClubGrant.club.club_id,

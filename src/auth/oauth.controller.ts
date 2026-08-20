@@ -20,6 +20,7 @@ import { OAuthInitiateDto } from './dto/oauth-initiate.dto';
 import { OAuthCallbackDto } from './dto/oauth-callback.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { Public } from '../common/decorators/public.decorator';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 
 /**
  * OAuthController — Better Auth edition (W3-008 Part 3)
@@ -45,6 +46,7 @@ import { Public } from '../common/decorators/public.decorator';
  */
 @ApiTags('OAuth')
 @Controller('auth/oauth')
+@SkipPermissions()
 export class OAuthController {
   constructor(private readonly oauthService: OAuthService) {}
 

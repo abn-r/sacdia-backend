@@ -38,6 +38,7 @@ import {
   ClubRoles,
   CurrentUser,
   RequirePermissions,
+  SkipPermissions,
 } from '../common/decorators';
 import {
   JwtAuthGuard,
@@ -58,6 +59,7 @@ export class ClubsController {
   // ========================================
 
   @Get()
+  @SkipPermissions()
   @ApiOperation({
     summary: 'Listar clubs',
     description:
@@ -167,6 +169,7 @@ export class ClubsController {
   // ========================================
 
   @Get(':clubId/sections')
+  @SkipPermissions()
   @ApiOperation({
     summary: 'Obtener secciones del club',
     description:
@@ -189,7 +192,11 @@ export class ClubsController {
 
   @Get(':clubId/sections/:sectionId')
   @RequirePermissions('club_sections:read')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @AuthorizationResource({
+    type: 'club_section',
+    clubIdParam: 'clubId',
+    idParam: 'sectionId',
+  })
   @ApiOperation({ summary: 'Obtener sección por ID' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
@@ -222,7 +229,11 @@ export class ClubsController {
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'deputy-director', 'secretary', 'secretary-treasurer')
   @RequirePermissions('club_sections:update')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @AuthorizationResource({
+    type: 'club_section',
+    clubIdParam: 'clubId',
+    idParam: 'sectionId',
+  })
   @ApiOperation({
     summary:
       'Actualizar sección (dirección o secretaría de la sección activa)',

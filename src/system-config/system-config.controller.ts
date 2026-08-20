@@ -10,12 +10,14 @@ import {
 } from '@nestjs/swagger';
 import { SystemConfigService } from './system-config.service';
 import { GlobalRoles } from '../common/decorators';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { UpdateSystemConfigDto } from './dto/update-system-config.dto';
 
 @ApiTags('system-config')
 @Controller('system-config')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+@SkipPermissions()
 @ApiBearerAuth()
 export class SystemConfigController {
   constructor(private readonly systemConfigService: SystemConfigService) {}

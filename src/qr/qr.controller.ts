@@ -21,6 +21,7 @@ import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { AuthorizationResource } from '../common/decorators/authorization-resource.decorator';
 import { QrMemberTokenDto } from './dto/qr-token.dto';
 import { ScanQrDto, ScanResponseDto } from './dto/scan-qr.dto';
@@ -50,6 +51,7 @@ export class QrController {
   }
 
   @Get('member/token')
+  @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
     summary: 'Issue a short-lived QR token for the authenticated member',
@@ -70,6 +72,7 @@ export class QrController {
   }
 
   @Get('me')
+  @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
     summary: 'Get the authenticated user QR metadata',
@@ -88,6 +91,7 @@ export class QrController {
   }
 
   @Get('me/card')
+  @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
     summary: 'Get the QR card payload for the authenticated user',
@@ -106,6 +110,7 @@ export class QrController {
   }
 
   @Get('me/card.pdf')
+  @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiProduces('application/pdf')
   @ApiOperation({
