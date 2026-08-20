@@ -63,6 +63,16 @@ describe('ClubsService', () => {
     ecclesiastical_years: {
       findFirst: jest.fn(),
     },
+    local_fields: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+    },
+    districts: {
+      findUnique: jest.fn(),
+    },
+    churches: {
+      findUnique: jest.fn(),
+    },
     enrollments: {
       count: jest.fn(),
       findMany: jest.fn(),
@@ -85,6 +95,7 @@ describe('ClubsService', () => {
     invalidateUserAuthorizationCache: jest.fn(),
     hasAnyGlobalRole: jest.fn(),
     canManageClub: jest.fn(),
+    resolveUserAuthorization: jest.fn(),
   };
 
   const mockAuthorizationContextVersionService = {
@@ -161,6 +172,68 @@ describe('ClubsService', () => {
           }),
         }),
       );
+    });
+
+    it('intersects GET /clubs with director-union scope even if home local_field is set', async () => {
+      mockPrismaService.clubs.findMany.mockResolvedValue([]);
+      mockPrismaService.clubs.count.mockResolvedValue(0);
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          authorization: {
+            grants: {
+              global_roles: [
+                { role_name: 'director-union', permissions: [], scope: {} },
+              ],
+            },
+            effective: {
+              scope: {
+                global: {
+                  union: { id: 2 },
+                  local_field: { id: 9 },
+                },
+              },
+            },
+          },
+        },
+      );
+
+      await service.findAll({}, undefined, 'union-director');
+
+      expect(mockPrismaService.clubs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            AND: [{ local_fields: { union_id: 2 } }, {}],
+          },
+        }),
+      );
+    });
+
+    it('403s when a territorial actor filters by a local field outside scope', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          authorization: {
+            grants: {
+              global_roles: [
+                { role_name: 'director-lf', permissions: [], scope: {} },
+              ],
+            },
+            effective: {
+              scope: {
+                global: {
+                  local_field: { id: 9 },
+                },
+              },
+            },
+          },
+        },
+      );
+
+      await expect(
+        service.findAll({ localFieldId: 4 }, undefined, 'lf-director'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+      expect(mockPrismaService.clubs.findMany).not.toHaveBeenCalled();
     });
   });
 
@@ -241,6 +314,40 @@ describe('ClubsService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.CLUB_SECTION_TYPES_REQUIRED,
       });
+    });
+
+    it('rejects create when local_field_id is outside the actor territory', async () => {
+      await expect(
+        service.create(
+          {
+            name: 'Nuevo Club',
+            local_field_id: 4,
+            districlub_type_id: 1,
+            church_id: 1,
+            enabled_club_type_ids: [1],
+          },
+          {
+            grants: {
+              global_roles: [
+                { role_name: 'director-lf', permissions: [], scope: {} },
+              ],
+              club_assignments: [],
+              direct_permissions: [],
+            },
+            active_assignment: { assignment_id: null },
+            effective: {
+              permissions: [],
+              scope: {
+                global: { local_field: { id: 9 } },
+                club: null,
+              },
+            },
+          },
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+      expect(mockPrismaService.club_types.findMany).not.toHaveBeenCalled();
     });
   });
 

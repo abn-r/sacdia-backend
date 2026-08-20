@@ -70,7 +70,12 @@ export class ConfigController {
       localFieldIdParam !== undefined
         ? parseInt(localFieldIdParam, 10)
         : undefined;
-    const localFieldId = requireLocalFieldFor(scope, override, 'read');
+    const localFieldId = await requireLocalFieldFor(
+      this.prisma,
+      scope,
+      override,
+      'read',
+    );
     return this.configService.get(localFieldId);
   }
 
@@ -119,7 +124,12 @@ export class ConfigController {
       localFieldIdParam !== undefined
         ? parseInt(localFieldIdParam, 10)
         : undefined;
-    const localFieldId = requireLocalFieldFor(scope, override, 'write');
+    const localFieldId = await requireLocalFieldFor(
+      this.prisma,
+      scope,
+      override,
+      'write',
+    );
     const userId: string = req.user.sub;
     return this.configService.upsert(localFieldId, dto, userId);
   }
@@ -141,7 +151,12 @@ export class ConfigController {
   ) {
     // Scope still enforced: a single-scope caller can only target their own LF.
     const scope = await resolveActorLocalField(this.prisma, req.authorization);
-    const resolvedLfId = requireLocalFieldFor(scope, localFieldId, 'write');
+    const resolvedLfId = await requireLocalFieldFor(
+      this.prisma,
+      scope,
+      localFieldId,
+      'write',
+    );
     const userId: string = req.user.sub;
     return this.configService.upsert(resolvedLfId, dto, userId);
   }

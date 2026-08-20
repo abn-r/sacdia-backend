@@ -45,6 +45,7 @@ import {
   type ClubAuthorizationGrant,
   type GlobalAuthorizationGrant,
 } from '../common/services/authorization-context.service';
+import { resolveActorTerritoryScope } from '../common/authorization/actor-territory-scope';
 import { AchievementsService } from '../achievements/achievements.service';
 import pLimit from 'p-limit';
 import {
@@ -71,6 +72,13 @@ type CamporeeRegistrationDb = Pick<
   | 'club_role_assignments'
   | '$queryRaw'
 >;
+
+type CamporeeAccessScope =
+  | { type: 'local_field'; id: number }
+  | { type: 'union'; id: number }
+  | { type: 'division'; id: number }
+  | { type: 'denied' }
+  | null;
 
 @Injectable()
 export class CamporeesService {
@@ -3198,8 +3206,17 @@ export class CamporeesService {
       return;
     }
 
+    if (scope.type === 'union') {
+      where.local_fields = {
+        union_id: scope.id,
+      };
+      return;
+    }
+
     where.local_fields = {
-      union_id: scope.id,
+      unions: {
+        division_id: scope.id,
+      },
     };
   }
 
@@ -3804,6 +3821,13 @@ export class CamporeesService {
       return;
     }
 
+    if (scope.type === 'division') {
+      where.unions = {
+        division_id: scope.id,
+      };
+      return;
+    }
+
     // local_field scope: show union camporees where the local field participates
     if (scope.type === 'local_field') {
       where.union_camporee_local_fields = {
@@ -3830,6 +3854,16 @@ export class CamporeesService {
 
     if (scope.type === 'union' && scope.id === unionId) {
       return;
+    }
+
+    if (scope.type === 'division') {
+      const union = await this.prisma.unions.findUnique({
+        where: { union_id: unionId },
+        select: { division_id: true },
+      });
+      if (union?.division_id === scope.id) {
+        return;
+      }
     }
 
     throw new AppForbiddenException(ErrorCode.CAMPOREE_UNION_ACCESS_DENIED);
@@ -3867,6 +3901,17 @@ export class CamporeesService {
       );
     }
 
+    if (scope.type === 'division') {
+      const localField = await this.prisma.local_fields.findUnique({
+        where: { local_field_id: localFieldId },
+        select: { unions: { select: { division_id: true } } },
+      });
+
+      if (localField?.unions?.division_id === scope.id) {
+        return;
+      }
+    }
+
     throw new AppForbiddenException(
       ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
     );
@@ -3874,40 +3919,33 @@ export class CamporeesService {
 
   private resolveCamporeeAccessScope(
     authorization?: AuthorizationSnapshot,
-  ):
-    | { type: 'local_field'; id: number }
-    | { type: 'union'; id: number }
-    | { type: 'denied' }
-    | null {
+  ): CamporeeAccessScope {
     if (!authorization) {
       return null;
     }
 
-    const globalRoles = authorization.grants.global_roles;
-    if (this.hasGlobalRole(globalRoles, ['super-admin'])) {
+    const actor = resolveActorTerritoryScope(authorization);
+    if (actor.level === 'all') {
       return null;
     }
+    if (actor.level === 'unconfigured') {
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+    if (actor.level === 'division') {
+      return { type: 'division', id: actor.divisionId };
+    }
+    if (actor.level === 'union') {
+      return { type: 'union', id: actor.unionId };
+    }
+    if (actor.level === 'local_field') {
+      return { type: 'local_field', id: actor.localFieldId };
+    }
 
-    const isAdministrative = this.hasGlobalRole(globalRoles, [
-      'admin',
-      'assistant-admin',
-    ]);
-    const isCoordinator = this.hasGlobalRole(globalRoles, [
+    const isCoordinator = this.hasGlobalRole(authorization.grants.global_roles, [
       'coordinator',
       'zone-coordinator',
       'general-coordinator',
     ]);
-
-    const globalScope = authorization.effective.scope.global;
-    const globalLocalFieldId = globalScope.local_field?.id;
-    if (isAdministrative && typeof globalLocalFieldId === 'number') {
-      return { type: 'local_field', id: globalLocalFieldId };
-    }
-
-    const globalUnionId = globalScope.union?.id;
-    if (isAdministrative && typeof globalUnionId === 'number') {
-      return { type: 'union', id: globalUnionId };
-    }
 
     const activeAssignmentId = authorization.active_assignment.assignment_id;
     const activeGrant = authorization.grants.club_assignments.find(
@@ -3921,7 +3959,7 @@ export class CamporeesService {
 
     // Camporee stays outside coordinator surface. Do not treat the role as
     // local-field admin, and do not fall through to unrestricted (null).
-    if (isCoordinator && !isAdministrative) {
+    if (isCoordinator) {
       return { type: 'denied' };
     }
 
@@ -3929,15 +3967,12 @@ export class CamporeesService {
   }
 
   private rejectDeniedCamporeeScope(
-    scope:
-      | { type: 'local_field'; id: number }
-      | { type: 'union'; id: number }
-      | { type: 'denied' }
-      | null,
+    scope: CamporeeAccessScope,
     deniedCode: ErrorCode,
   ): asserts scope is
     | { type: 'local_field'; id: number }
     | { type: 'union'; id: number }
+    | { type: 'division'; id: number }
     | null {
     if (scope?.type === 'denied') {
       throw new AppForbiddenException(deniedCode);

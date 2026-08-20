@@ -1,37 +1,51 @@
 import { ForbiddenException, BadRequestException } from '@nestjs/common';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { AuthorizationSnapshot } from '../../common/services/authorization-context.service';
+import { AppForbiddenException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
+import {
+  assertLocalFieldInActorScope,
+  resolveActorTerritoryScope,
+  resolveLocalFieldIdsForList,
+  type ActorTerritoryScope,
+} from '../../common/authorization/actor-territory-scope';
 
 /**
  * ActorLocalFieldScope describes how a caller is allowed to address local_fields
  * within the materials module.
  *
- *  - 'single'    → the user is bound to exactly one local_field. The service
- *                  must auto-filter by that local_field_id; ignore any
- *                  ?local_field_id=… override (or 403 if the override doesn't
- *                  match).
- *  - 'all'       → unscoped caller (super-admin / admin GLOBAL with no
- *                  territorial scope). The service must require the caller
- *                  to pass an explicit local_field_id when targeting a single
- *                  field, or fan out across fields for listing endpoints.
+ *  - 'single'    → bound to exactly one local_field.
+ *  - 'union'     → every local_field in that union (does not collapse to home field).
+ *  - 'division'  → every local_field in that division.
+ *  - 'all'       → unscoped caller (super-admin / club-only fallback with no LF).
  */
 export type ActorLocalFieldScope =
   | { scope: 'single'; localFieldId: number }
+  | { scope: 'union'; unionId: number }
+  | { scope: 'division'; divisionId: number }
   | { scope: 'all' };
 
+function actorFromMaterialsScope(
+  scope: ActorLocalFieldScope,
+): ActorTerritoryScope {
+  if (scope.scope === 'single') {
+    return { level: 'local_field', localFieldId: scope.localFieldId };
+  }
+  if (scope.scope === 'union') {
+    return { level: 'union', unionId: scope.unionId };
+  }
+  if (scope.scope === 'division') {
+    return { level: 'division', divisionId: scope.divisionId };
+  }
+  return { level: 'all' };
+}
+
 /**
- * Resolves the local_field constraint for the current request based on the
- * authorization snapshot attached by PermissionsGuard.
+ * Role-first local_field constraint. A union/division actor with a home
+ * `local_field_id` stays at union/division — they do not collapse to 'single'.
  *
- * Resolution order (first match wins):
- *  1. effective.scope.club.local_field_id          → director (CLUB role)
- *  2. effective.scope.global.local_field.id        → director-lf / assistant-lf
- *     (LF-territorial GLOBAL role)
- *  3. effective.scope.global.union/country/none    → admin / super-admin
- *
- * For (1) we still need a Prisma lookup because the snapshot only carries
- * { club_id, club_name }, not the FK to local_fields. We expose the helper as
- * a function that takes the prisma client + the snapshot.
+ * Club-only actors (no territorial global role) still resolve via the active
+ * club assignment's local_field.
  */
 export async function resolveActorLocalField(
   prisma: PrismaService,
@@ -44,14 +58,21 @@ export async function resolveActorLocalField(
     });
   }
 
-  const territorial = authorization.effective.scope.global;
-  const lfNodeId = territorial?.local_field?.id;
-  if (lfNodeId !== undefined && lfNodeId !== null) {
-    const lfId =
-      typeof lfNodeId === 'string' ? parseInt(lfNodeId, 10) : lfNodeId;
-    if (Number.isFinite(lfId)) {
-      return { scope: 'single', localFieldId: lfId };
-    }
+  const actor = resolveActorTerritoryScope(authorization);
+  if (actor.level === 'unconfigured') {
+    throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+  }
+  if (actor.level === 'local_field') {
+    return { scope: 'single', localFieldId: actor.localFieldId };
+  }
+  if (actor.level === 'union') {
+    return { scope: 'union', unionId: actor.unionId };
+  }
+  if (actor.level === 'division') {
+    return { scope: 'division', divisionId: actor.divisionId };
+  }
+  if (actor.level === 'all') {
+    return { scope: 'all' };
   }
 
   const club = authorization.effective.scope.club;
@@ -69,24 +90,22 @@ export async function resolveActorLocalField(
     return { scope: 'single', localFieldId: found.local_field_id };
   }
 
-  // Admin / super-admin with no territorial scope → 'all'
   return { scope: 'all' };
 }
 
 /**
- * Asserts that an explicit local_field_id (e.g. from a query param) is
- * compatible with the actor scope. Returns the resolved id.
+ * Asserts that an explicit local_field_id is compatible with the actor scope.
  *
- *  - 'single' actor MUST hit only their own LF. If they pass an override
- *    that doesn't match, 403.
- *  - 'all' actor MUST pass an explicit override (otherwise 400) because
- *    the service can't guess which LF to write to.
+ *  - 'single' actor MUST hit only their own LF.
+ *  - 'all' / union / division MUST pass an explicit override for writes/reads
+ *    that target one field; union/division overrides must sit inside the territory.
  */
-export function requireLocalFieldFor(
+export async function requireLocalFieldFor(
+  prisma: PrismaService,
   scope: ActorLocalFieldScope,
   override: number | undefined,
   reason: 'write' | 'read' = 'write',
-): number {
+): Promise<number> {
   if (scope.scope === 'single') {
     if (override !== undefined && override !== scope.localFieldId) {
       throw new ForbiddenException({
@@ -107,5 +126,34 @@ export function requireLocalFieldFor(
     });
   }
 
+  if (scope.scope === 'union' || scope.scope === 'division') {
+    await assertLocalFieldInActorScope(
+      prisma,
+      override,
+      actorFromMaterialsScope(scope),
+    );
+  }
+
   return override;
+}
+
+export async function resolveMaterialsListLocalFieldId(
+  prisma: PrismaService,
+  authorization: AuthorizationSnapshot | undefined,
+  override?: number,
+): Promise<number | number[] | undefined> {
+  const scope = await resolveActorLocalField(prisma, authorization);
+  const actor = resolveActorTerritoryScope(authorization);
+
+  if (scope.scope === 'single') {
+    if (override !== undefined && override !== scope.localFieldId) {
+      throw new ForbiddenException({
+        code: 'local_field_scope_violation',
+        message: 'You may only operate within your own local_field.',
+      });
+    }
+    return scope.localFieldId;
+  }
+
+  return resolveLocalFieldIdsForList(prisma, actor, override);
 }
