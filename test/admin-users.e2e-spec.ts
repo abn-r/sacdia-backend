@@ -15,9 +15,11 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import {
   buildAuthorizationSnapshot,
   createTestJwtService,
+  useE2ePermissionsPassthrough,
 } from './helpers/rbac-test-helpers';
 
 describe('Admin Users Detail E2E', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let prisma: PrismaService;
   let jwtService: JwtService;

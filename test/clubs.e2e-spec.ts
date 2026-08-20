@@ -8,9 +8,11 @@ import { PermissionsGuard } from '../src/common/guards';
 import {
   createBearerToken,
   createTestJwtService,
+  useE2ePermissionsPassthrough,
 } from './helpers/rbac-test-helpers';
 
 describe('Clubs E2E Tests', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let prisma: PrismaService;
   let jwtService: JwtService;

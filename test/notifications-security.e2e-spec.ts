@@ -6,9 +6,13 @@ import { AppModule } from '../src/app.module';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { FcmTokensService } from '../src/notifications/fcm-tokens.service';
 import { PermissionsGuard } from '../src/common/guards';
-import { createTestJwtService } from './helpers/rbac-test-helpers';
+import {
+  createTestJwtService,
+  useE2ePermissionsPassthrough,
+} from './helpers/rbac-test-helpers';
 
 describe('Notifications Security E2E', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let jwtService: JwtService;
 

@@ -531,7 +531,12 @@ export class InvestitureController {
   // ========================================
 
   @Get('investiture/enrollments/:enrollmentId/history')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('investiture:read')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({
     summary: 'Historial de validación de investidura de un enrollment',
   })
@@ -660,7 +665,12 @@ export class InvestitureController {
   }
 
   @Get('enrollments/:enrollmentId/investiture-history')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('investiture:read')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({
     summary: '[LEGACY] Historial de validación de investidura de un enrollment',
   })
@@ -687,7 +697,7 @@ export class InvestitureController {
   // ========================================
 
   @Get('admin/investiture/config')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles(
     'admin',
     'coordinator',
@@ -698,6 +708,8 @@ export class InvestitureController {
     'director-dia',
     'assistant-dia',
   )
+  @RequirePermissions('investiture_config:read')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Listar configuraciones de investidura' })
   @ApiQuery({
     name: 'local_field_id',
@@ -721,7 +733,7 @@ export class InvestitureController {
   }
 
   @Get('admin/investiture/config/:configId')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles(
     'admin',
     'coordinator',
@@ -732,6 +744,8 @@ export class InvestitureController {
     'director-dia',
     'assistant-dia',
   )
+  @RequirePermissions('investiture_config:read')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Obtener configuración de investidura por ID' })
   @ApiParam({
     name: 'configId',
@@ -751,7 +765,7 @@ export class InvestitureController {
   }
 
   @Post('admin/investiture/config')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles(
     'admin',
     'coordinator',
@@ -762,6 +776,8 @@ export class InvestitureController {
     'director-dia',
     'assistant-dia',
   )
+  @RequirePermissions('investiture_config:create')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Crear configuración de investidura' })
   @ApiResponse({ status: 201, description: 'Configuración creada' })
   @ApiResponse({ status: 403, description: 'Sin rol de admin' })
@@ -776,7 +792,7 @@ export class InvestitureController {
   }
 
   @Patch('admin/investiture/config/:configId')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles(
     'admin',
     'coordinator',
@@ -787,6 +803,8 @@ export class InvestitureController {
     'director-dia',
     'assistant-dia',
   )
+  @RequirePermissions('investiture_config:update')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Actualizar configuración de investidura' })
   @ApiParam({
     name: 'configId',
@@ -807,7 +825,7 @@ export class InvestitureController {
   }
 
   @Delete('admin/investiture/config/:configId')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles(
     'admin',
     'coordinator',
@@ -818,6 +836,8 @@ export class InvestitureController {
     'director-dia',
     'assistant-dia',
   )
+  @RequirePermissions('investiture_config:delete')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
     summary: 'Soft-delete de configuración de investidura (active = false)',
   })

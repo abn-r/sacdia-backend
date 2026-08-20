@@ -23,6 +23,7 @@ import {
 import type { Request as ExpressRequest } from 'express';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { GlobalRoles } from '../common/decorators';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { AnalyticsService } from './analytics.service';
 import { SlaDashboardDto } from './dto/sla-dashboard.dto';
 import { LocalFieldDashboardDto } from './dto/local-field-dashboard.dto';
@@ -44,6 +45,7 @@ import { OperationsDashboardService } from './operations-dashboard.service';
 @ApiTags('analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+@SkipPermissions()
 @Controller('admin/analytics')
 export class AnalyticsController {
   constructor(

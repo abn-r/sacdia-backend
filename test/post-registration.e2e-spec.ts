@@ -10,9 +10,11 @@ import { Prisma } from '@prisma/client';
 import {
   createBearerToken,
   createTestJwtService,
+  useE2ePermissionsPassthrough,
 } from './helpers/rbac-test-helpers';
 
 describe('Post-registration step 3 E2E', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let prisma: PrismaService;
   let jwtService: JwtService;

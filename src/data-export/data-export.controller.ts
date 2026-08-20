@@ -27,6 +27,7 @@ import {
   DataExportRateLimitResponseDto,
 } from './dto/data-export-response.dto';
 import { JwtAuthGuard } from '../common/guards';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 
 interface JwtUser {
   sub: string;
@@ -36,6 +37,7 @@ interface JwtUser {
 @ApiTags('data-export')
 @Controller('users/me')
 @UseGuards(JwtAuthGuard)
+@SkipPermissions()
 @ApiBearerAuth()
 export class DataExportController {
   constructor(private readonly dataExportService: DataExportService) {}

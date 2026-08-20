@@ -7,10 +7,12 @@ import {
 } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../common/guards';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 
 @ApiTags('dashboard')
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard)
+@SkipPermissions()
 @ApiBearerAuth()
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}

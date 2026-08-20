@@ -11,11 +11,18 @@ export type SensitiveUserSubresourcePolicy = {
   legacyFallbackPermission: string;
 };
 
-const LEGACY_PERMISSION_BY_MODE: Record<SensitiveUserSubresourceMode, string> =
+export const LEGACY_PERMISSION_BY_MODE: Record<SensitiveUserSubresourceMode, string> =
   {
     read: 'users:read_detail',
     update: 'users:update_profile',
   };
+
+/**
+ * Last day the users:* OR fallback remains canonical for third-party
+ * sensitive subresources. After this date the fine family permission is
+ * required. Owner self-service is unaffected.
+ */
+export const USERS_LEGACY_OR_SUNSET_DATE = '2027-03-31';
 
 export function getSensitiveUserSubresourcePolicy(
   family: SensitiveUserSubresourceFamily,

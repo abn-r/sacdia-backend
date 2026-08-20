@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { namedThrottle } from '../config/throttler.helpers';
 import { SessionsService } from './sessions.service';
 import {
@@ -43,6 +44,7 @@ import {
 @ApiTags('auth')
 @Controller('auth/sessions')
 @UseGuards(JwtAuthGuard)
+@SkipPermissions()
 @ApiBearerAuth()
 export class SessionsController {
   constructor(private readonly sessionsService: SessionsService) {}

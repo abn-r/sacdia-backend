@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { useE2ePermissionsPassthrough } from './helpers/rbac-test-helpers';
 import { JwtAuthGuard, PermissionsGuard } from '../src/common/guards';
 import { InsuranceService } from '../src/insurance/insurance.service';
 
@@ -32,6 +33,7 @@ class MockJwtAuthGuard implements CanActivate {
 }
 
 describe('Insurance E2E', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let jwtService: JwtService;
 

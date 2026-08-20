@@ -37,6 +37,7 @@ import {
 import {
   AuthorizationResource,
   RequirePermissions,
+  SkipPermissions,
 } from '../common/decorators';
 import {
   JwtAuthGuard,
@@ -197,6 +198,7 @@ export class NotificationsController {
   }
 
   @Get('history')
+  @SkipPermissions()
   @ApiResponse({ status: 200, description: 'Paginated notification audit log' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiOperation({
@@ -222,6 +224,7 @@ export class NotificationsController {
   // ---------------------------------------------------------------------------
 
   @Get('unread-count')
+  @SkipPermissions()
   @UseGuards(JwtAuthGuard)
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiOperation({
@@ -239,6 +242,7 @@ export class NotificationsController {
   }
 
   @Patch('read-all')
+  @SkipPermissions()
   @UseGuards(JwtAuthGuard)
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiOperation({
@@ -256,6 +260,7 @@ export class NotificationsController {
   }
 
   @Patch(':deliveryId/read')
+  @SkipPermissions()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: 'Mark a single notification delivery as read',
@@ -283,6 +288,7 @@ export class NotificationsController {
   // ---------------------------------------------------------------------------
 
   @Get('preferences')
+  @SkipPermissions()
   @UseGuards(JwtAuthGuard)
   @ApiResponse({ status: 200, description: 'User notification preferences' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
@@ -299,6 +305,7 @@ export class NotificationsController {
   }
 
   @Put('preferences/:category')
+  @SkipPermissions()
   @UseGuards(JwtAuthGuard)
   @ApiResponse({ status: 200, description: 'Preference updated' })
   @ApiResponse({ status: 400, description: 'Invalid notification category' })
@@ -330,6 +337,7 @@ export class NotificationsController {
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('fcm-tokens')
+@SkipPermissions()
 export class FcmTokensController {
   constructor(private fcmTokensService: FcmTokensService) {}
 

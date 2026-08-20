@@ -13,9 +13,12 @@ import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { maskEmail } from '../common/utils/mask-email.util';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 type AssignRolePermissionOptions = {
   invalidateAffectedUsers?: boolean;
+  actorUserId?: string;
+  skipAudit?: boolean;
 };
 
 @Injectable()
@@ -25,6 +28,7 @@ export class RbacService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly auditLogs: AuditLogsService,
   ) {}
 
   // ─── Permisos ───────────────────────────────────────────────
@@ -436,6 +440,17 @@ export class RbacService {
       `Permisos asignados a rol ${role.role_name}: ${created} nuevos, ${reactivated} reactivados`,
     );
 
+    if (!options.skipAudit) {
+      this.auditMatrixChange({
+        actorUserId: options.actorUserId,
+        entityType: 'role_permissions',
+        entityId: roleId,
+        action: 'UPDATED',
+        summary: `Assigned permissions to role ${role.role_name}`,
+        changes: { permission_ids: permissionIds, created, reactivated },
+      });
+    }
+
     return {
       success: true,
       message: `${created} permisos asignados, ${reactivated} reactivados`,
@@ -444,7 +459,11 @@ export class RbacService {
     };
   }
 
-  async removePermissionFromRole(roleId: string, permissionId: string) {
+  async removePermissionFromRole(
+    roleId: string,
+    permissionId: string,
+    actorUserId?: string,
+  ) {
     const assignment = await this.prisma.role_permissions.findFirst({
       where: { role_id: roleId, permission_id: permissionId, active: true },
     });
@@ -464,6 +483,15 @@ export class RbacService {
     await this.invalidateAuthorizationCacheForRoleHolders(roleId);
 
     this.logger.log(`Permiso ${permissionId} removido del rol ${roleId}`);
+
+    this.auditMatrixChange({
+      actorUserId,
+      entityType: 'role_permissions',
+      entityId: roleId,
+      action: 'DELETED',
+      summary: `Removed permission ${permissionId} from role ${roleId}`,
+      changes: { permission_id: permissionId },
+    });
 
     return { success: true, message: 'Permiso removido del rol' };
   }
@@ -490,7 +518,11 @@ export class RbacService {
     });
   }
 
-  async assignPermissionToUser(userId: string, permissionId: string) {
+  async assignPermissionToUser(
+    userId: string,
+    permissionId: string,
+    actorUserId?: string,
+  ) {
     const existing = await this.prisma.users_permissions.findFirst({
       where: { user_id: userId, permission_id: permissionId },
     });
@@ -504,6 +536,17 @@ export class RbacService {
         this.logger.log(
           `Permiso ${permissionId} reactivado para usuario ${userId}`,
         );
+        await this.authorizationContext.invalidateUserAuthorizationCache(
+          userId,
+        );
+        this.auditMatrixChange({
+          actorUserId,
+          entityType: 'users_permissions',
+          entityId: userId,
+          action: 'UPDATED',
+          summary: `Reactivated direct permission ${permissionId}`,
+          changes: { permission_id: permissionId, reactivated: true },
+        });
         return { success: true, message: 'Permiso reactivado' };
       }
       throw new AppConflictException(
@@ -517,10 +560,23 @@ export class RbacService {
     });
 
     this.logger.log(`Permiso ${permissionId} asignado a usuario ${userId}`);
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    this.auditMatrixChange({
+      actorUserId,
+      entityType: 'users_permissions',
+      entityId: userId,
+      action: 'CREATED',
+      summary: `Assigned direct permission ${permissionId}`,
+      changes: { permission_id: permissionId },
+    });
     return { success: true, message: 'Permiso asignado' };
   }
 
-  async removePermissionFromUser(userId: string, permissionId: string) {
+  async removePermissionFromUser(
+    userId: string,
+    permissionId: string,
+    actorUserId?: string,
+  ) {
     const assignment = await this.prisma.users_permissions.findFirst({
       where: { user_id: userId, permission_id: permissionId, active: true },
     });
@@ -538,6 +594,15 @@ export class RbacService {
     });
 
     this.logger.log(`Permiso ${permissionId} removido del usuario ${userId}`);
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    this.auditMatrixChange({
+      actorUserId,
+      entityType: 'users_permissions',
+      entityId: userId,
+      action: 'DELETED',
+      summary: `Removed direct permission ${permissionId}`,
+      changes: { permission_id: permissionId },
+    });
     return { success: true, message: 'Permiso removido del usuario' };
   }
 
@@ -616,6 +681,14 @@ export class RbacService {
         await this.authorizationContext.invalidateUserAuthorizationCache(
           userId,
         );
+        this.auditMatrixChange({
+          actorUserId,
+          entityType: 'users_roles',
+          entityId: userId,
+          action: 'UPDATED',
+          summary: `Reactivated role ${role.role_name}`,
+          changes: { role_id: roleId, role_name: role.role_name, reactivated: true },
+        });
         return { success: true, message: 'Rol reactivado' };
       }
       throw new AppConflictException(
@@ -630,6 +703,14 @@ export class RbacService {
 
     this.logger.log(`Rol ${role.role_name} asignado a usuario ${userId}`);
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    this.auditMatrixChange({
+      actorUserId,
+      entityType: 'users_roles',
+      entityId: userId,
+      action: 'CREATED',
+      summary: `Assigned role ${role.role_name}`,
+      changes: { role_id: roleId, role_name: role.role_name },
+    });
     return { success: true, message: 'Rol asignado' };
   }
 
@@ -668,6 +749,14 @@ export class RbacService {
 
     this.logger.log(`Rol ${roleId} removido del usuario ${userId}`);
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    this.auditMatrixChange({
+      actorUserId,
+      entityType: 'users_roles',
+      entityId: userId,
+      action: 'DELETED',
+      summary: `Removed role ${assignment.roles.role_name}`,
+      changes: { role_id: roleId, role_name: assignment.roles.role_name },
+    });
     return { success: true, message: 'Rol removido del usuario' };
   }
 
@@ -743,7 +832,11 @@ export class RbacService {
     };
   }
 
-  async syncRolePermissions(roleId: string, permissionIds: string[]) {
+  async syncRolePermissions(
+    roleId: string,
+    permissionIds: string[],
+    actorUserId?: string,
+  ) {
     const role = await this.prisma.roles.findUnique({
       where: { role_id: roleId },
     });
@@ -784,6 +877,8 @@ export class RbacService {
     if (toAdd.length > 0) {
       await this.assignPermissionsToRole(roleId, toAdd, {
         invalidateAffectedUsers: false,
+        actorUserId,
+        skipAudit: true,
       });
     }
 
@@ -794,6 +889,20 @@ export class RbacService {
     this.logger.log(
       `Permisos sincronizados para rol ${role.role_name}: +${toAdd.length} -${toRemove.length}`,
     );
+
+    this.auditMatrixChange({
+      actorUserId,
+      entityType: 'role_permissions',
+      entityId: roleId,
+      action: 'UPDATED',
+      summary: `Synced permissions for role ${role.role_name}`,
+      changes: {
+        before: [...currentIds],
+        after: permissionIds,
+        added: toAdd,
+        removed: toRemove.map((rp) => rp.permission_id),
+      },
+    });
 
     return {
       success: true,
@@ -835,5 +944,24 @@ export class RbacService {
         `Auth context cache invalidado para ${userIds.size} usuario(s) por cambio de permisos del rol ${roleId}`,
       );
     }
+  }
+
+  private auditMatrixChange(params: {
+    actorUserId?: string;
+    entityType: string;
+    entityId: string;
+    action: 'CREATED' | 'UPDATED' | 'DELETED';
+    summary: string;
+    changes?: Record<string, unknown>;
+  }): void {
+    void this.auditLogs.recordEvent({
+      entity_type: params.entityType,
+      entity_id: params.entityId,
+      action: params.action,
+      actor_user_id: params.actorUserId,
+      actor_kind: 'user',
+      summary: params.summary,
+      changes: params.changes,
+    });
   }
 }

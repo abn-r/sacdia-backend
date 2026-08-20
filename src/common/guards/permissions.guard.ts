@@ -22,6 +22,8 @@ import {
   PERMISSIONS_KEY,
   type PermissionRequirement,
 } from '../decorators/permissions.decorator';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { SKIP_PERMISSIONS_KEY } from '../decorators/skip-permissions.decorator';
 import {
   SENSITIVE_USER_SUBRESOURCE_KEY,
   type SensitiveUserSubresourceMetadata,
@@ -66,6 +68,16 @@ const SECTION_MEMBER_PROFILE_GATE_PERMISSIONS = new Set([
   'users:read_detail',
 ]);
 
+/** E2E-only. Nest cannot rebind APP_GUARD via overrideGuard(PermissionsGuard). */
+export const E2E_PASSTHROUGH_PERMISSIONS_ENV = 'E2E_PASSTHROUGH_PERMISSIONS';
+
+function isE2ePermissionsPassthrough(): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' &&
+    process.env[E2E_PASSTHROUGH_PERMISSIONS_ENV] === 'true'
+  );
+}
+
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -76,13 +88,35 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+
+    const skipPermissions = this.reflector.getAllAndOverride<boolean>(
+      SKIP_PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (skipPermissions) {
+      return true;
+    }
+
+    if (isE2ePermissionsPassthrough()) {
+      return true;
+    }
+
     const requirement = this.reflector.getAllAndOverride<PermissionRequirement>(
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
 
     if (!requirement || requirement.permissions.length === 0) {
-      return true;
+      throw new AppInternalServerErrorException(
+        ErrorCode.GUARD_RBAC_MISCONFIGURATION,
+      );
     }
 
     const request = context.switchToHttp().getRequest();
@@ -322,11 +356,12 @@ export class PermissionsGuard implements CanActivate {
   private getGlobalPermissions(
     resolved: ResolvedAuthorizationProfile,
   ): Set<string> {
-    return new Set(
-      resolved.authorization.grants.global_roles.flatMap(
+    return new Set([
+      ...resolved.authorization.grants.global_roles.flatMap(
         (grant) => grant.permissions,
       ),
-    );
+      ...(resolved.authorization.grants.direct_permissions ?? []),
+    ]);
   }
 
   private getActiveClubPermissions(

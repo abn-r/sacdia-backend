@@ -26,6 +26,7 @@ import {
   buildAuthorizationSnapshot,
   createBearerToken,
   createTestJwtService,
+  useE2ePermissionsPassthrough,
 } from './helpers/rbac-test-helpers';
 
 // ---------------------------------------------------------------------------
@@ -112,6 +113,7 @@ const mockPermissionsGuard = {
 // ---------------------------------------------------------------------------
 
 describe('Section Rankings E2E (/api/v1/section-rankings)', () => {
+  useE2ePermissionsPassthrough();
   let app: INestApplication;
   let prisma: PrismaService;
   let jwtService: JwtService;

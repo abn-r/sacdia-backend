@@ -18,6 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { AchievementsService } from './achievements.service';
 
 // ---------------------------------------------------------------------------
@@ -52,6 +53,7 @@ function maskSecretAchievement<
 @ApiTags('Achievements')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
+@SkipPermissions()
 @Controller('achievements')
 export class AchievementsController {
   constructor(private readonly achievementsService: AchievementsService) {}

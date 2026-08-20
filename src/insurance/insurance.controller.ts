@@ -34,6 +34,7 @@ import {
   CurrentUser,
   GlobalRoles,
   RequirePermissions,
+  SkipPermissions,
 } from '../common/decorators';
 import {
   GlobalRolesGuard,
@@ -244,6 +245,7 @@ export class InsuranceController {
   @Get('insurance/expiring')
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
+  @SkipPermissions()
   @ApiOperation({
     summary: 'Listar seguros próximos a vencer',
     description:

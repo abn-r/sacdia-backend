@@ -7,6 +7,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { GlobalRoles } from '../common/decorators';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import {
   NotificationCategorySettingDto,
@@ -22,6 +23,7 @@ import { NotificationCategorySettingsService } from '../notifications/notificati
 @Controller('admin/notifications')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
 @GlobalRoles('admin', 'super-admin')
+@SkipPermissions()
 export class AdminNotificationsController {
   constructor(
     private readonly adminNotificationsService: AdminNotificationsService,
