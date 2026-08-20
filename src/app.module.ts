@@ -278,9 +278,11 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     },
     // Deny-by-default permissions: JWT-only is not enough unless the route
     // declares @RequirePermissions, @SkipPermissions or @Public().
+    // useExisting so e2e `.overrideGuard(PermissionsGuard)` replaces this
+    // APP_GUARD instead of leaving a second useClass instance.
     {
       provide: APP_GUARD,
-      useClass: PermissionsGuard,
+      useExisting: PermissionsGuard,
     },
   ],
 })
