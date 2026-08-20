@@ -736,6 +736,23 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- Materiales (órdenes de insumos)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('materiales:read', 'Ver catálogo y órdenes de materiales', true),
+  ('materiales:create', 'Crear órdenes de materiales', true),
+  ('materiales:approve', 'Revisar líneas y aprobar/cancelar órdenes', true),
+  ('materiales:upload-receipt', 'Subir comprobantes de pago', true),
+  ('materiales:validate-receipt', 'Aprobar/rechazar comprobantes', true),
+  ('materiales:deliver', 'Marcar órdenes como entregadas', true),
+  ('materiales:manage-inventory', 'CRUD de productos e inventario de materiales', true),
+  ('materiales:configure', 'Editar configuración bancaria y de entrega', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Field Payment Orders (órdenes de pago territoriales: seguros + camporees)
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES

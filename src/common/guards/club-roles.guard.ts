@@ -15,6 +15,7 @@ export type ClubRoleType =
   | 'director'
   | 'deputy-director'
   | 'secretary'
+  | 'secretary-treasurer'
   | 'treasurer'
   | 'counselor'
   | 'instructor'

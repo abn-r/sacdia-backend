@@ -14,12 +14,17 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { YearEndService } from './year-end.service';
-import { GlobalRoles } from '../common/decorators';
-import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
+import {
+  AuthorizationResource,
+  GlobalRoles,
+  RequirePermissions,
+} from '../common/decorators';
+import { JwtAuthGuard, GlobalRolesGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('year-end')
 @Controller('year-end')
-@UseGuards(JwtAuthGuard, GlobalRolesGuard)
+@UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @ApiBearerAuth()
 export class YearEndController {
   constructor(private readonly yearEndService: YearEndService) {}
@@ -30,6 +35,7 @@ export class YearEndController {
 
   @Get(':yearId/preview')
   @GlobalRoles('admin', 'super-admin')
+  @RequirePermissions('ecclesiastical_years:update')
   @ApiOperation({
     summary: 'Vista previa del impacto de cierre de ano',
     description:
@@ -61,6 +67,7 @@ export class YearEndController {
 
   @Post(':yearId/close')
   @GlobalRoles('admin', 'super-admin')
+  @RequirePermissions('ecclesiastical_years:update')
   @ApiOperation({
     summary: 'Cerrar ano eclesiastico',
     description:

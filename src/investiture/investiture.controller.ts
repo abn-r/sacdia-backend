@@ -337,8 +337,10 @@ export class InvestitureController {
 
   @Post('investiture/enrollments/bulk-approve')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin', 'coordinator')
+  @RequirePermissions('investiture:validate')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
     summary: 'Aprobar múltiples enrollments en bloque',
     description:
@@ -386,8 +388,10 @@ export class InvestitureController {
 
   @Post('investiture/enrollments/bulk-reject')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin', 'coordinator')
+  @RequirePermissions('investiture:validate')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
     summary: 'Rechazar múltiples enrollments en bloque',
     description:
@@ -457,8 +461,10 @@ export class InvestitureController {
   // ========================================
 
   @Get('investiture/pending')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin', 'coordinator')
+  @RequirePermissions('investiture:read')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
     summary:
       'Listar enrollments pendientes de aprobación (filtrable por nivel)',
