@@ -9,6 +9,7 @@ import {
   Body,
   ParseIntPipe,
   ParseUUIDPipe,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { AppBadRequestException } from '../common/errors/app.exception';
@@ -63,7 +64,7 @@ export class ClubsController {
   @ApiOperation({
     summary: 'Listar clubs',
     description:
-      'Obtiene la lista de clubs con filtros opcionales y paginación. No requiere permiso clubs:read — diseñado para permitir la selección de club durante el post-registro. Solo devuelve campos de identificación del club y un resumen mínimo de secciones (id, tipo, estado activo); no se exponen datos operacionales de las secciones.',
+      'Obtiene la lista de clubs con filtros opcionales y paginación. No requiere permiso clubs:read — diseñado para permitir la selección de club durante el post-registro. Un actor con rol territorial (campo, unión o división) recibe recorte por JWT; filtros fuera de alcance responden 403 GUARD_PERMISSION_DENIED. Solo devuelve campos de identificación del club y un resumen mínimo de secciones (id, tipo, estado activo); no se exponen datos operacionales de las secciones.',
   })
   @ApiQuery({ name: 'localFieldId', required: false, type: Number })
   @ApiQuery({ name: 'districtId', required: false, type: Number })
@@ -91,6 +92,7 @@ export class ClubsController {
     @Query('active') active?: string,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @CurrentUser() user?: { sub: string },
   ) {
     const pagination = new PaginationDto();
     if (page) pagination.page = page;
@@ -105,6 +107,7 @@ export class ClubsController {
           active === 'true' ? true : active === 'false' ? false : undefined,
       },
       pagination,
+      user?.sub,
     );
   }
 
@@ -128,8 +131,8 @@ export class ClubsController {
     description:
       'Club creado con una sección por cada club_type activo. enabled_club_type_ids marca cuáles quedan active=true.',
   })
-  async create(@Body() dto: CreateClubDto) {
-    return this.clubsService.create(dto);
+  async create(@Body() dto: CreateClubDto, @Request() req: any) {
+    return this.clubsService.create(dto, req.authorization);
   }
 
   @Patch(':clubId')

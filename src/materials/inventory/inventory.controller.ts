@@ -31,6 +31,7 @@ import { MATERIALS_MANAGE_INVENTORY } from '../shared/permissions';
 import {
   requireLocalFieldFor,
   resolveActorLocalField,
+  resolveMaterialsListLocalFieldId,
 } from '../shared/actor-local-field';
 import { InventoryService } from './inventory.service';
 import { ListInventoryQueryDto } from './dto/list-inventory.query.dto';
@@ -78,19 +79,17 @@ export class InventoryController {
     @Request() req: any,
     @Query('local_field_id') localFieldIdParam?: string,
   ): Promise<PaginatedInventoryProductDto> {
-    const scope = await resolveActorLocalField(this.prisma, req.authorization);
     // For listing we permit an unscoped admin to omit local_field_id and see
-    // every LF's inventory at once.
+    // every LF's inventory at once. Union/division actors see their territory.
     const override =
       localFieldIdParam !== undefined
         ? parseInt(localFieldIdParam, 10)
         : undefined;
-    const localFieldId =
-      scope.scope === 'single'
-        ? scope.localFieldId
-        : Number.isFinite(override)
-          ? (override as number)
-          : undefined;
+    const localFieldId = await resolveMaterialsListLocalFieldId(
+      this.prisma,
+      req.authorization,
+      Number.isFinite(override) ? (override as number) : undefined,
+    );
     return this.inventoryService.list(query, localFieldId);
   }
 
@@ -126,7 +125,12 @@ export class InventoryController {
       localFieldIdParam !== undefined
         ? parseInt(localFieldIdParam, 10)
         : undefined;
-    const localFieldId = requireLocalFieldFor(scope, override, 'write');
+    const localFieldId = await requireLocalFieldFor(
+      this.prisma,
+      scope,
+      override,
+      'write',
+    );
     return this.inventoryService.create(dto, localFieldId);
   }
 

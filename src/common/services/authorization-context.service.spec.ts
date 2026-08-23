@@ -573,4 +573,39 @@ describe('AuthorizationContextService', () => {
       ),
     ).toBe(true);
   });
+
+  it('keeps director-union at union even when home local_field is set', () => {
+    const resolved = {
+      authorization: {
+        grants: {
+          global_roles: [
+            { role_name: 'director-union', permissions: [], scope: {} },
+          ],
+        },
+        effective: {
+          scope: {
+            global: {
+              union: { id: 2, name: 'Unión' },
+              local_field: { id: 7, name: 'Campo' },
+            },
+          },
+        },
+      },
+    } as any;
+
+    expect(
+      service.canAccessHierarchyScope(
+        resolved,
+        { union_id: 2, local_field_id: 99 },
+        'current-write',
+      ),
+    ).toBe(true);
+    expect(
+      service.canAccessHierarchyScope(
+        resolved,
+        { union_id: 3, local_field_id: 7 },
+        'current-write',
+      ),
+    ).toBe(false);
+  });
 });

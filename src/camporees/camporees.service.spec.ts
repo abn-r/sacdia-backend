@@ -2000,6 +2000,39 @@ describe('CamporeesService', () => {
         }),
       );
     });
+
+    it('scopes director-lf listing to their local field', async () => {
+      mockPrismaService.local_camporees.findMany.mockResolvedValue([]);
+      mockPrismaService.local_camporees.count.mockResolvedValue(0);
+
+      await service.findAll(
+        {},
+        undefined,
+        coordinatorAuth('director-lf', { localFieldId: 9 }),
+      );
+
+      expect(mockPrismaService.local_camporees.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { local_field_id: 9 },
+        }),
+      );
+    });
+
+    it('keeps director-union listing at union even with a home local_field', async () => {
+      mockPrismaService.local_camporees.findMany.mockResolvedValue([]);
+      mockPrismaService.local_camporees.count.mockResolvedValue(0);
+
+      const auth = coordinatorAuth('director-union', { localFieldId: 9 });
+      auth.effective.scope.global.union = { id: 2, name: 'Unión' };
+
+      await service.findAll({}, undefined, auth);
+
+      expect(mockPrismaService.local_camporees.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { local_fields: { union_id: 2 } },
+        }),
+      );
+    });
   });
 
   describe('findOne', () => {

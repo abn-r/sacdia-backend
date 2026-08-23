@@ -35,7 +35,7 @@ export class InventoryService {
 
   async list(
     query: ListInventoryQueryDto,
-    localFieldId: number | undefined,
+    localFieldId: number | number[] | undefined,
   ): Promise<PaginatedInventoryProductDto> {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
@@ -44,7 +44,9 @@ export class InventoryService {
     const where: Prisma.MaterialProductWhereInput = {};
 
     if (localFieldId !== undefined) {
-      where.local_field_id = localFieldId;
+      where.local_field_id = Array.isArray(localFieldId)
+        ? { in: localFieldId }
+        : localFieldId;
     }
 
     if (query.cat) {

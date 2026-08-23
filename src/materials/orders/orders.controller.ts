@@ -30,7 +30,7 @@ import {
   MATERIALS_DELIVER,
   MATERIALS_READ,
 } from '../shared/permissions';
-import { resolveActorLocalField } from '../shared/actor-local-field';
+import { resolveMaterialsListLocalFieldId } from '../shared/actor-local-field';
 import { OrdersService } from './orders.service';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -55,12 +55,14 @@ export class OrdersController {
   private async resolveLfForRead(
     req: any,
     localFieldIdParam: string | undefined,
-  ): Promise<number | undefined> {
-    const scope = await resolveActorLocalField(this.prisma, req.authorization);
-    if (scope.scope === 'single') return scope.localFieldId;
+  ): Promise<number | number[] | undefined> {
     const parsed =
       localFieldIdParam !== undefined ? parseInt(localFieldIdParam, 10) : NaN;
-    return Number.isFinite(parsed) ? parsed : undefined;
+    return resolveMaterialsListLocalFieldId(
+      this.prisma,
+      req.authorization,
+      Number.isFinite(parsed) ? parsed : undefined,
+    );
   }
 
   // ---------------------------------------------------------------------------

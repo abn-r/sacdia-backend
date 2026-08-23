@@ -22,7 +22,7 @@ import {
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MATERIALS_READ } from '../shared/permissions';
-import { resolveActorLocalField } from '../shared/actor-local-field';
+import { resolveMaterialsListLocalFieldId } from '../shared/actor-local-field';
 import { CatalogService } from './catalog.service';
 import { ListCatalogQueryDto } from './dto/list-catalog.query.dto';
 import {
@@ -49,12 +49,14 @@ export class CatalogController {
   private async resolveLfForRead(
     req: any,
     localFieldIdParam: string | undefined,
-  ): Promise<number | undefined> {
-    const scope = await resolveActorLocalField(this.prisma, req.authorization);
-    if (scope.scope === 'single') return scope.localFieldId;
+  ): Promise<number | number[] | undefined> {
     const parsed =
       localFieldIdParam !== undefined ? parseInt(localFieldIdParam, 10) : NaN;
-    return Number.isFinite(parsed) ? parsed : undefined;
+    return resolveMaterialsListLocalFieldId(
+      this.prisma,
+      req.authorization,
+      Number.isFinite(parsed) ? parsed : undefined,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -124,9 +126,10 @@ export class CatalogController {
   @ApiResponse({ status: 200, type: MaterialProductDto })
   @ApiResponse({ status: 404 })
   async getById(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    const scope = await resolveActorLocalField(this.prisma, req.authorization);
-    const localFieldId =
-      scope.scope === 'single' ? scope.localFieldId : undefined;
+    const localFieldId = await resolveMaterialsListLocalFieldId(
+      this.prisma,
+      req.authorization,
+    );
     // Catalog endpoint returns 404 for inactive products (REQ-CAT-005)
     // and for products that belong to a different LF when caller is scoped.
     return this.catalogService.getById(id, false, localFieldId);
