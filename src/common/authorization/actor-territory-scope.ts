@@ -415,3 +415,144 @@ export async function resolveLocalFieldIdsForList(
 
   return rows.map((row) => row.local_field_id);
 }
+
+export function catalogCountryIdFromActor(
+  input: ActorTerritoryInput,
+): number | undefined {
+  const snapshot = asAuthorizationSnapshot(input);
+  const fromScope = toTerritoryId(
+    snapshot?.effective?.scope?.global?.country?.id,
+  );
+  if (fromScope) {
+    return fromScope;
+  }
+
+  if (input && typeof input === 'object' && 'profile' in input) {
+    return toTerritoryId(input.profile?.country_id);
+  }
+
+  return undefined;
+}
+
+/**
+ * Country used to recorte GET /catalogs geography. `all` / `open` → no
+ * recorte. Territorial without a resolvable country → fail-closed.
+ */
+export async function resolveActorCatalogCountryId(
+  prisma: Pick<PrismaService, 'local_fields' | 'unions'>,
+  input: ActorTerritoryInput,
+): Promise<number | undefined> {
+  const scope = resolveActorTerritoryScope(input);
+  if (scope.level === 'all' || scope.level === 'open') {
+    return undefined;
+  }
+
+  if (scope.level === 'unconfigured') {
+    throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+  }
+
+  const fromActor = catalogCountryIdFromActor(input);
+  if (fromActor) {
+    return fromActor;
+  }
+
+  if (scope.level === 'local_field') {
+    const localField = await prisma.local_fields.findUnique({
+      where: { local_field_id: scope.localFieldId },
+      select: { unions: { select: { country_id: true } } },
+    });
+    const countryId = toTerritoryId(localField?.unions?.country_id);
+    if (!countryId) {
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+    return countryId;
+  }
+
+  if (scope.level === 'union') {
+    const union = await prisma.unions.findUnique({
+      where: { union_id: scope.unionId },
+      select: { country_id: true },
+    });
+    const countryId = toTerritoryId(union?.country_id);
+    if (!countryId) {
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+    return countryId;
+  }
+
+  throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+}
+
+export async function assertCatalogFiltersInCountry(
+  prisma: Pick<PrismaService, 'unions' | 'local_fields' | 'districts'>,
+  countryId: number,
+  filters?: {
+    countryId?: number;
+    divisionId?: number;
+    unionId?: number;
+    localFieldId?: number;
+    districtId?: number;
+  },
+): Promise<void> {
+  if (!filters) {
+    return;
+  }
+
+  if (
+    filters.countryId !== undefined &&
+    filters.countryId !== countryId
+  ) {
+    throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+  }
+
+  if (filters.unionId !== undefined) {
+    const union = await prisma.unions.findUnique({
+      where: { union_id: filters.unionId },
+      select: { country_id: true },
+    });
+    if (!union || union.country_id !== countryId) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+  }
+
+  if (filters.divisionId !== undefined) {
+    const unionInCountry = await prisma.unions.findFirst({
+      where: {
+        division_id: filters.divisionId,
+        country_id: countryId,
+        active: true,
+      },
+      select: { union_id: true },
+    });
+    if (!unionInCountry) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+  }
+
+  if (filters.localFieldId !== undefined) {
+    const localField = await prisma.local_fields.findUnique({
+      where: { local_field_id: filters.localFieldId },
+      select: { unions: { select: { country_id: true } } },
+    });
+    if (!localField?.unions || localField.unions.country_id !== countryId) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+  }
+
+  if (filters.districtId !== undefined) {
+    const district = await prisma.districts.findUnique({
+      where: { districlub_type_id: filters.districtId },
+      select: {
+        local_fields: {
+          select: { unions: { select: { country_id: true } } },
+        },
+      },
+    });
+    if (
+      !district?.local_fields?.unions ||
+      district.local_fields.unions.country_id !== countryId
+    ) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+  }
+}

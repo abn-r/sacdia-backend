@@ -2,9 +2,11 @@ import { ErrorCode } from '../errors/error-codes';
 import type { AuthorizationSnapshot } from '../services/authorization-context.service';
 import {
   actorCanAccessHierarchyScope,
+  assertCatalogFiltersInCountry,
   assertLocalFieldInActorScope,
   clubsWhereForActor,
   localFieldsWhereForActor,
+  resolveActorCatalogCountryId,
   resolveActorTerritoryScope,
 } from './actor-territory-scope';
 
@@ -13,6 +15,7 @@ function snapshot(options: {
   localFieldId?: number | string;
   unionId?: number | string;
   divisionId?: number | string;
+  countryId?: number | string;
 }): AuthorizationSnapshot {
   return {
     grants: {
@@ -34,6 +37,9 @@ function snapshot(options: {
           ...(options.divisionId === undefined
             ? {}
             : { division: { id: options.divisionId, name: 'DIA' } }),
+          ...(options.countryId === undefined
+            ? {}
+            : { country: { id: options.countryId, name: 'México' } }),
           ...(options.unionId === undefined
             ? {}
             : { union: { id: options.unionId, name: 'Unión' } }),
@@ -305,5 +311,171 @@ describe('assertLocalFieldInActorScope', () => {
       }),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
     expect(prisma.local_fields.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveActorCatalogCountryId', () => {
+  it('does not recorte open, all, or missing actors', async () => {
+    const prisma = {
+      local_fields: { findUnique: jest.fn() },
+      unions: { findUnique: jest.fn() },
+    };
+
+    await expect(
+      resolveActorCatalogCountryId(prisma as never, undefined),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolveActorCatalogCountryId(
+        prisma as never,
+        snapshot({ role: 'coordinator', countryId: 52 }),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolveActorCatalogCountryId(
+        prisma as never,
+        snapshot({
+          role: 'super-admin',
+          countryId: 52,
+          localFieldId: 9,
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(prisma.local_fields.findUnique).not.toHaveBeenCalled();
+    expect(prisma.unions.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('uses snapshot country for director-union with a home field', async () => {
+    const prisma = {
+      local_fields: { findUnique: jest.fn() },
+      unions: { findUnique: jest.fn() },
+    };
+
+    await expect(
+      resolveActorCatalogCountryId(
+        prisma as never,
+        snapshot({
+          role: 'director-union',
+          unionId: 2,
+          localFieldId: 9,
+          countryId: 52,
+        }),
+      ),
+    ).resolves.toBe(52);
+    expect(prisma.unions.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the union country when the snapshot has none', async () => {
+    const prisma = {
+      local_fields: { findUnique: jest.fn() },
+      unions: {
+        findUnique: jest.fn().mockResolvedValue({ country_id: 52 }),
+      },
+    };
+
+    await expect(
+      resolveActorCatalogCountryId(
+        prisma as never,
+        snapshot({ role: 'director-union', unionId: 2, localFieldId: 9 }),
+      ),
+    ).resolves.toBe(52);
+    expect(prisma.unions.findUnique).toHaveBeenCalledWith({
+      where: { union_id: 2 },
+      select: { country_id: true },
+    });
+  });
+
+  it('falls back to the field union country for director-lf', async () => {
+    const prisma = {
+      local_fields: {
+        findUnique: jest.fn().mockResolvedValue({
+          unions: { country_id: 52 },
+        }),
+      },
+      unions: { findUnique: jest.fn() },
+    };
+
+    await expect(
+      resolveActorCatalogCountryId(
+        prisma as never,
+        snapshot({ role: 'director-lf', localFieldId: 9, unionId: 2 }),
+      ),
+    ).resolves.toBe(52);
+  });
+
+  it('fail-closes territorial roles without a resolvable country', async () => {
+    const prisma = {
+      local_fields: { findUnique: jest.fn() },
+      unions: { findUnique: jest.fn() },
+    };
+
+    await expect(
+      resolveActorCatalogCountryId(
+        prisma as never,
+        snapshot({ role: 'director-union' }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+    await expect(
+      resolveActorCatalogCountryId(
+        prisma as never,
+        snapshot({ role: 'director-dia', divisionId: 1 }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+  });
+});
+
+describe('assertCatalogFiltersInCountry', () => {
+  it('403s a country query outside the actor country', async () => {
+    await expect(
+      assertCatalogFiltersInCountry(
+        { unions: {}, local_fields: {}, districts: {} } as never,
+        52,
+        { countryId: 99 },
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+  });
+
+  it('403s a union from another country without leaking existence', async () => {
+    const prisma = {
+      unions: {
+        findUnique: jest.fn().mockResolvedValue({ country_id: 1 }),
+      },
+      local_fields: { findUnique: jest.fn() },
+      districts: { findUnique: jest.fn() },
+    };
+
+    await expect(
+      assertCatalogFiltersInCountry(prisma as never, 52, { unionId: 8 }),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+  });
+
+  it('allows a local field that belongs to the actor country', async () => {
+    const prisma = {
+      unions: { findUnique: jest.fn(), findFirst: jest.fn() },
+      local_fields: {
+        findUnique: jest.fn().mockResolvedValue({
+          unions: { country_id: 52 },
+        }),
+      },
+      districts: { findUnique: jest.fn() },
+    };
+
+    await expect(
+      assertCatalogFiltersInCountry(prisma as never, 52, { localFieldId: 9 }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('403s a missing division-country pair', async () => {
+    const prisma = {
+      unions: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      local_fields: { findUnique: jest.fn() },
+      districts: { findUnique: jest.fn() },
+    };
+
+    await expect(
+      assertCatalogFiltersInCountry(prisma as never, 52, { divisionId: 2 }),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
   });
 });

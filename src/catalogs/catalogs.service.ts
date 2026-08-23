@@ -11,6 +11,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 type GetUnionsFilters = {
   countryId?: number;
   divisionId?: number;
+  actorCountryId?: number;
 };
 
 @Injectable()
@@ -70,39 +71,57 @@ export class CatalogsService {
   // ========================================
   // COUNTRIES
   // ========================================
-  async getCountries() {
-    return this.catalogCache.getOrSet(CATALOG_CACHE_KEYS.COUNTRIES, () =>
-      this.prisma.countries.findMany({
-        where: { active: true },
-        select: {
-          country_id: true,
-          name: true,
-          abbreviation: true,
-        },
-        orderBy: { name: 'asc' },
-      }),
+  async getCountries(actorCountryId?: number) {
+    const rows = await this.catalogCache.getOrSet(
+      CATALOG_CACHE_KEYS.COUNTRIES,
+      () =>
+        this.prisma.countries.findMany({
+          where: { active: true },
+          select: {
+            country_id: true,
+            name: true,
+            abbreviation: true,
+          },
+          orderBy: { name: 'asc' },
+        }),
     );
+
+    if (!actorCountryId) {
+      return rows;
+    }
+
+    return rows.filter((row) => row.country_id === actorCountryId);
   }
 
   // ========================================
   // DIVISIONS
   // ========================================
-  async getDivisions() {
-    return this.catalogCache.getOrSet(CATALOG_CACHE_KEYS.DIVISIONS, () =>
-      this.prisma.$queryRaw<
-        Array<{
-          division_id: number;
-          code: string;
-          name: string;
-          abbreviation: string;
-        }>
-      >(Prisma.sql`
+  async getDivisions(actorCountryId?: number) {
+    const rows = await this.catalogCache.getOrSet(
+      CATALOG_CACHE_KEYS.DIVISIONS,
+      () =>
+        this.prisma.$queryRaw<
+          Array<{
+            division_id: number;
+            code: string;
+            name: string;
+            abbreviation: string;
+          }>
+        >(Prisma.sql`
         SELECT division_id, code, name, abbreviation
         FROM divisions
         WHERE active = TRUE
         ORDER BY name ASC
       `),
     );
+
+    if (!actorCountryId) {
+      return rows;
+    }
+
+    const unions = await this.loadUnionsInCountry(actorCountryId);
+    const allowed = new Set(unions.map((union) => union.division_id));
+    return rows.filter((row) => allowed.has(row.division_id));
   }
 
   // ========================================
@@ -117,13 +136,37 @@ export class CatalogsService {
         ? countryIdOrFilters
         : { countryId: countryIdOrFilters, divisionId };
 
+    if (filters.actorCountryId) {
+      const unions = await this.loadUnionsInCountry(filters.actorCountryId);
+      if (!filters.divisionId) {
+        return unions;
+      }
+      return unions.filter(
+        (union) => union.division_id === filters.divisionId,
+      );
+    }
+
     if (filters.countryId && !filters.divisionId) {
       await this.ensureCountryAliasUnambiguous(filters.countryId);
     }
 
     return this.catalogCache.getOrSet(CATALOG_CACHE_KEYS.UNIONS(filters), () =>
-      this.queryUnions(filters),
+      this.queryUnions({
+        countryId: filters.countryId,
+        divisionId: filters.divisionId,
+      }),
     );
+  }
+
+  private async loadAllUnions() {
+    return this.catalogCache.getOrSet(CATALOG_CACHE_KEYS.UNIONS(), () =>
+      this.queryUnions({}),
+    );
+  }
+
+  private async loadUnionsInCountry(countryId: number) {
+    const unions = await this.loadAllUnions();
+    return unions.filter((union) => union.country_id === countryId);
   }
 
   private async ensureCountryAliasUnambiguous(
@@ -174,8 +217,8 @@ export class CatalogsService {
   // ========================================
   // LOCAL FIELDS (Campos Locales)
   // ========================================
-  async getLocalFields(unionId?: number) {
-    return this.catalogCache.getOrSet(
+  async getLocalFields(unionId?: number, actorCountryId?: number) {
+    const rows = await this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.LOCAL_FIELDS(unionId),
       () =>
         this.prisma.local_fields.findMany({
@@ -191,6 +234,14 @@ export class CatalogsService {
           orderBy: { name: 'asc' },
         }),
     );
+
+    if (!actorCountryId) {
+      return rows;
+    }
+
+    const unions = await this.loadUnionsInCountry(actorCountryId);
+    const allowed = new Set(unions.map((union) => union.union_id));
+    return rows.filter((row) => allowed.has(row.union_id));
   }
 
   // ========================================
@@ -212,11 +263,11 @@ export class CatalogsService {
     };
   }
 
-  async getDistricts(localFieldId?: number) {
-    return this.catalogCache.getOrSet(
+  async getDistricts(localFieldId?: number, actorCountryId?: number) {
+    const rows = await this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.DISTRICTS(localFieldId),
       async () => {
-        const rows = await this.prisma.districts.findMany({
+        const mapped = await this.prisma.districts.findMany({
           where: {
             active: true,
             ...(localFieldId && { local_field_id: localFieldId }),
@@ -228,9 +279,17 @@ export class CatalogsService {
           },
           orderBy: { name: 'asc' },
         });
-        return rows.map((r) => this.mapDistrict(r));
+        return mapped.map((r) => this.mapDistrict(r));
       },
     );
+
+    if (!actorCountryId) {
+      return rows;
+    }
+
+    const fields = await this.getLocalFields(undefined, actorCountryId);
+    const allowed = new Set(fields.map((field) => field.local_field_id));
+    return rows.filter((row) => allowed.has(row.local_field_id));
   }
 
   // ========================================
@@ -253,11 +312,11 @@ export class CatalogsService {
     };
   }
 
-  async getChurches(districtId?: number) {
-    return this.catalogCache.getOrSet(
+  async getChurches(districtId?: number, actorCountryId?: number) {
+    const rows = await this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.CHURCHES(districtId),
       async () => {
-        const rows = await this.prisma.churches.findMany({
+        const mapped = await this.prisma.churches.findMany({
           where: {
             active: true,
             ...(districtId && { districlub_type_id: districtId }),
@@ -269,9 +328,17 @@ export class CatalogsService {
           },
           orderBy: { name: 'asc' },
         });
-        return rows.map((r) => this.mapChurch(r));
+        return mapped.map((r) => this.mapChurch(r));
       },
     );
+
+    if (!actorCountryId) {
+      return rows;
+    }
+
+    const districts = await this.getDistricts(undefined, actorCountryId);
+    const allowed = new Set(districts.map((district) => district.district_id));
+    return rows.filter((row) => allowed.has(row.district_id));
   }
 
   // ========================================
