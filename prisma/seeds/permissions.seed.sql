@@ -753,6 +753,16 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- Audit (global viewer — super-admin only)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('audit:read', 'Read the global audit log viewer (super-admin only)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Field Payment Orders (órdenes de pago territoriales: seguros + camporees)
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
