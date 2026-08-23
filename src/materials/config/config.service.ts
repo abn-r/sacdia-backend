@@ -53,11 +53,30 @@ export class ConfigService {
   }
 
   // ---------------------------------------------------------------------------
-  // LIST — for unscoped admin/super-admin to see configs across all LFs.
+  // LIST — unscoped callers see every LF; territorial callers pass ids.
   // ---------------------------------------------------------------------------
 
   async listAll(): Promise<ConfigDto[]> {
+    return this.listForScope(undefined);
+  }
+
+  async listForScope(
+    localFieldIds: number | number[] | undefined,
+  ): Promise<ConfigDto[]> {
+    if (localFieldIds === undefined) {
+      return this.prisma.materialConfig.findMany({
+        select: CONFIG_SELECT,
+        orderBy: { local_field_id: 'asc' },
+      });
+    }
+
+    const ids = Array.isArray(localFieldIds) ? localFieldIds : [localFieldIds];
+    if (ids.length === 0) {
+      return [];
+    }
+
     return this.prisma.materialConfig.findMany({
+      where: { local_field_id: { in: ids } },
       select: CONFIG_SELECT,
       orderBy: { local_field_id: 'asc' },
     });
