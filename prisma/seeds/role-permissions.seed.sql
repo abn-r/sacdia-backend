@@ -1744,9 +1744,9 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- ============================
 -- ADMIN role (GLOBAL)
 -- ============================
--- Platform administrator. Has ALL permissions EXCEPT delete permissions.
+-- Platform administrator. Has ALL permissions EXCEPT delete permissions
+-- and audit:read (global audit viewer is super-admin only).
 -- Cannot destroy data, but can manage everything else.
--- Total: 92 (all active permissions minus those ending in :delete)
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1763,6 +1763,7 @@ WHERE r.role_name = 'admin'
   AND r.active = true
   AND p.active = true
   AND p.permission_name NOT LIKE '%:delete'
+  AND p.permission_name <> 'audit:read'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ============================

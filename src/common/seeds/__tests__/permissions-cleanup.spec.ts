@@ -149,8 +149,10 @@ describe('Phase 3 permission cleanup — seed files', () => {
       );
       expect(adminBlock).toContain('CROSS JOIN permissions p');
       expect(adminBlock).toContain("p.permission_name NOT LIKE '%:delete'");
+      expect(adminBlock).toContain("p.permission_name <> 'audit:read'");
       expect(superAdminBlock).toContain('CROSS JOIN permissions p');
       expect(superAdminBlock).not.toContain('p.permission_name IN');
+      expect(superAdminBlock).not.toContain("p.permission_name <> 'audit:read'");
 
       const adminGrantIndex = rolePermissionsSeedWithoutComments.indexOf(
         "WHERE r.role_name = 'admin'",
@@ -288,6 +290,10 @@ describe('Phase 3 permission cleanup — seed files', () => {
   });
 
   describe('permissions.seed.sql', () => {
+    it('defines audit:read for the super-admin global viewer', () => {
+      expect(permissionsSeedWithoutComments).toContain("('audit:read',");
+    });
+
     it('defines active-section camporee registration canonically', () => {
       expect(permissionsSeedWithoutComments).toContain(
         `('${ACTIVE_SECTION_REGISTRATION_PERMISSION}', 'Register the director active club section in a camporee', true)`,
