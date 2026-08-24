@@ -476,6 +476,23 @@ export class CamporeesService {
         agenda_visible_from: dto.agenda_visible_from
           ? new Date(dto.agenda_visible_from)
           : null,
+        ...(dto.orders_enabled !== undefined
+          ? { orders_enabled: dto.orders_enabled }
+          : {}),
+        ...(dto.orders_opens_at !== undefined
+          ? {
+              orders_opens_at: dto.orders_opens_at
+                ? new Date(dto.orders_opens_at)
+                : null,
+            }
+          : {}),
+        ...(dto.orders_deadline !== undefined
+          ? {
+              orders_deadline: dto.orders_deadline
+                ? new Date(dto.orders_deadline)
+                : null,
+            }
+          : {}),
         local_field_id: dto.local_field_id,
         includes_adventurers: dto.includes_adventurers,
         includes_pathfinders: dto.includes_pathfinders,
@@ -532,6 +549,8 @@ export class CamporeesService {
         'member_registration_deadline',
         'payment_deadline',
         'agenda_visible_from',
+        'orders_opens_at',
+        'orders_deadline',
       ]),
       ...(typeof dto.timezone === 'string' && actorUserId
         ? {
@@ -786,6 +805,23 @@ export class CamporeesService {
           agenda_visible_from: dto.agenda_visible_from
             ? new Date(dto.agenda_visible_from)
             : null,
+          ...(dto.orders_enabled !== undefined
+            ? { orders_enabled: dto.orders_enabled }
+            : {}),
+          ...(dto.orders_opens_at !== undefined
+            ? {
+                orders_opens_at: dto.orders_opens_at
+                  ? new Date(dto.orders_opens_at)
+                  : null,
+              }
+            : {}),
+          ...(dto.orders_deadline !== undefined
+            ? {
+                orders_deadline: dto.orders_deadline
+                  ? new Date(dto.orders_deadline)
+                  : null,
+              }
+            : {}),
           union_id: dto.union_id,
           includes_adventurers: dto.includes_adventurers,
           includes_pathfinders: dto.includes_pathfinders,
@@ -873,6 +909,8 @@ export class CamporeesService {
         'member_registration_deadline',
         'payment_deadline',
         'agenda_visible_from',
+        'orders_opens_at',
+        'orders_deadline',
       ]),
       ...(typeof dto.timezone === 'string' && actorUserId
         ? {

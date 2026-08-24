@@ -181,4 +181,30 @@ export class CreateUnionCamporeeDto {
   @IsOptional()
   @Matches(OFFSET_TIMESTAMP_PATTERN)
   agenda_visible_from?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Habilita pedidos de artículos para este camporee',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  orders_enabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Apertura de pedidos con Z u offset explícito',
+    example: '2026-09-01T08:00:00-06:00',
+    nullable: true,
+  })
+  @IsOptional()
+  @Matches(OFFSET_TIMESTAMP_PATTERN)
+  orders_opens_at?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Cierre de pedidos con Z u offset explícito',
+    example: '2026-09-22T23:59:59-06:00',
+    nullable: true,
+  })
+  @IsOptional()
+  @Matches(OFFSET_TIMESTAMP_PATTERN)
+  orders_deadline?: string | null;
 }
