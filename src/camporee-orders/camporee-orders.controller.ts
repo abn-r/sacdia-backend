@@ -133,6 +133,19 @@ export class CamporeeOrdersController {
     };
   }
 
+  @Get('camporee-orders/review-queue')
+  @RequirePermissions(CAMPOREE_ORDERS_REVIEW)
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Bandeja de revisión de pedidos con comprobante (Campo Local)',
+  })
+  async reviewQueue(@Req() request: RequestWithProfile) {
+    return {
+      status: 'success',
+      data: await this.orders.reviewQueue(resolveCamporeeOrderActor(request)),
+    };
+  }
+
   @Get('camporee-orders/:orderId')
   @RequirePermissions(CAMPOREE_ORDERS_READ)
   @AuthorizationResource({ type: 'global' })

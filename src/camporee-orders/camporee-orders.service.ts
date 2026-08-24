@@ -261,6 +261,25 @@ export class CamporeeOrdersService {
     return orders.map((order) => this.toDto(order));
   }
 
+  async reviewQueue(actor: CamporeeOrderActor): Promise<CamporeeOrderView[]> {
+    if (!actor.canReview) {
+      throw new AppForbiddenException(ErrorCode.CAMPOREE_ORDER_FORBIDDEN);
+    }
+    if (!actor.globalAccess && typeof actor.localFieldId !== 'number') {
+      throw new AppForbiddenException(ErrorCode.CAMPOREE_ORDER_FORBIDDEN);
+    }
+    const scope: Prisma.camporee_ordersWhereInput = actor.globalAccess
+      ? {}
+      : { local_field_id: actor.localFieldId };
+    await this.expireDueOrders(scope);
+    const orders = await this.prisma.camporee_orders.findMany({
+      where: { ...scope, status: 'PROOF_SUBMITTED' },
+      include: ORDER_INCLUDE,
+      orderBy: { created_at: 'asc' },
+    });
+    return orders.map((order) => this.toDto(order));
+  }
+
   async get(
     orderId: string,
     actor: CamporeeOrderActor,

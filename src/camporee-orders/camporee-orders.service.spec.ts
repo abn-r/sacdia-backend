@@ -54,7 +54,9 @@ function clubActor(): CamporeeOrderActor {
   });
 }
 
-function lfReviewer(): CamporeeOrderActor {
+function lfReviewer(
+  overrides: Partial<CamporeeOrderActor> = {},
+): CamporeeOrderActor {
   return baseActor({
     userId: 'lf-reviewer-1',
     localFieldId: LF_10,
@@ -67,6 +69,7 @@ function lfReviewer(): CamporeeOrderActor {
       unionId: 2,
       divisionId: 1,
     },
+    ...overrides,
   });
 }
 
@@ -658,6 +661,63 @@ describe('CamporeeOrdersService', () => {
           where: expect.objectContaining({ local_field_id: LF_10 }),
         }),
       );
+    });
+
+    it('lists the LF review queue of PROOF_SUBMITTED orders', async () => {
+      prisma.camporee_orders.findMany.mockImplementation(
+        ({ where }: { where: { status?: string } }) => {
+          if (where.status === 'ISSUED') {
+            return [];
+          }
+          return [existingOrder({ status: 'PROOF_SUBMITTED' })];
+        },
+      );
+
+      const result = await service.reviewQueue(lfReviewer());
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.status).toBe('PROOF_SUBMITTED');
+      const submittedCall = prisma.camporee_orders.findMany.mock.calls.find(
+        ([args]: [{ where: { status?: string } }]) =>
+          args.where.status === 'PROOF_SUBMITTED',
+      );
+      expect(submittedCall?.[0]).toEqual(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'PROOF_SUBMITTED',
+            local_field_id: LF_10,
+          }),
+        }),
+      );
+    });
+
+    it('lists the review queue without a local-field filter for globalAccess', async () => {
+      prisma.camporee_orders.findMany.mockImplementation(
+        ({ where }: { where: { status?: string } }) => {
+          if (where.status === 'ISSUED') {
+            return [];
+          }
+          return [existingOrder({ status: 'PROOF_SUBMITTED' })];
+        },
+      );
+
+      await service.reviewQueue(
+        lfReviewer({ globalAccess: true, localFieldId: undefined }),
+      );
+
+      const submittedCall = prisma.camporee_orders.findMany.mock.calls.find(
+        ([args]: [{ where: { status?: string; local_field_id?: number } }]) =>
+          args.where.status === 'PROOF_SUBMITTED',
+      );
+      expect(submittedCall?.[0].where.local_field_id).toBeUndefined();
+    });
+
+    it('forbids the review queue to a club issuer', async () => {
+      await expect(service.reviewQueue(clubActor())).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_ORDER_FORBIDDEN,
+        status: 403,
+      });
+      expect(prisma.camporee_orders.findMany).not.toHaveBeenCalled();
     });
 
     it('derives distribution_status from named lines', async () => {
