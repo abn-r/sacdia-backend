@@ -1,4 +1,4 @@
-import { verify } from 'jsonwebtoken';
+import { JwtService } from '@nestjs/jwt';
 import {
   ACCESS_JWT_AUDIENCE,
   ACCESS_JWT_ISSUER,
@@ -11,6 +11,10 @@ import {
  * True when `token` is an HS256 SACDIA access JWT for `expectedUserId`.
  * Expired signatures still count — refresh often happens after a 401.
  * QR audience, wrong secret, or another subject → false. Never throws.
+ *
+ * Uses `@nestjs/jwt` (declared dependency) instead of importing
+ * `jsonwebtoken` directly — that package is only transitive and breaks
+ * `nest build` without `@types/jsonwebtoken` on the root.
  */
 export function isPresentedAccessJwtForUser(
   token: string,
@@ -22,14 +26,19 @@ export function isPresentedAccessJwtForUser(
   }
 
   try {
-    const payload = verify(token, secret, {
+    const jwtService = new JwtService({ secret });
+    const payload = jwtService.verify<{
+      sub?: string;
+      aud?: unknown;
+      iss?: unknown;
+    }>(token, {
       algorithms: ['HS256'],
       issuer: ACCESS_JWT_ISSUER,
       audience: ACCESS_JWT_AUDIENCE,
       ignoreExpiration: true,
     });
 
-    if (typeof payload === 'string' || typeof payload.sub !== 'string') {
+    if (typeof payload.sub !== 'string') {
       return false;
     }
 

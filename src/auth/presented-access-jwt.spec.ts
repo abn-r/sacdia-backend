@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import { JwtService } from '@nestjs/jwt';
 import {
   ACCESS_JWT_AUDIENCE,
   QR_MEMBER_AUDIENCE,
@@ -12,16 +12,15 @@ const OTHER_SECRET = 'other-secret-min-32-chars-hs256!!';
 function signAccess(
   overrides: Record<string, unknown> = {},
   secret = SECRET,
-  signOptions: jwt.SignOptions = {},
+  signOptions: { expiresIn?: string | number } = {},
 ): string {
-  return jwt.sign(
+  return new JwtService({ secret }).sign(
     {
       sub: 'user-123',
       email: 'juan.garcia@example.com',
       ...accessJwtClaims(),
       ...overrides,
     },
-    secret,
     { algorithm: 'HS256', expiresIn: '8h', ...signOptions },
   );
 }
@@ -35,7 +34,7 @@ describe('isPresentedAccessJwtForUser', () => {
 
   it('accepts an expired access JWT for the same user', () => {
     const now = Math.floor(Date.now() / 1000);
-    const token = jwt.sign(
+    const token = new JwtService({ secret: SECRET }).sign(
       {
         sub: 'user-123',
         email: 'juan.garcia@example.com',
@@ -43,7 +42,6 @@ describe('isPresentedAccessJwtForUser', () => {
         iat: now - 100,
         exp: now - 10,
       },
-      SECRET,
       { algorithm: 'HS256' },
     );
 
@@ -67,14 +65,13 @@ describe('isPresentedAccessJwtForUser', () => {
   });
 
   it('rejects a QR member audience', () => {
-    const token = jwt.sign(
+    const token = new JwtService({ secret: SECRET }).sign(
       {
         sub: 'user-123',
         email: 'juan.garcia@example.com',
         iss: 'https://api.sacdia.app',
         aud: QR_MEMBER_AUDIENCE,
       },
-      SECRET,
       { algorithm: 'HS256', expiresIn: '24h' },
     );
 
@@ -90,14 +87,13 @@ describe('isPresentedAccessJwtForUser', () => {
   });
 
   it('rejects an access JWT whose aud is not sacdia:access', () => {
-    const token = jwt.sign(
+    const token = new JwtService({ secret: SECRET }).sign(
       {
         sub: 'user-123',
         email: 'juan.garcia@example.com',
         iss: 'https://api.sacdia.app',
         aud: 'other-audience',
       },
-      SECRET,
       { algorithm: 'HS256', expiresIn: '8h' },
     );
 
