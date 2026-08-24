@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PermissionsGuard } from '../src/common/guards';
 import {
+  createBearerToken,
   createTestJwtService,
   useE2ePermissionsPassthrough,
 } from './helpers/rbac-test-helpers';
@@ -19,7 +20,7 @@ describe('Admin Users Scope E2E', () => {
   let jwtService: JwtService;
 
   const makeToken = (sub: string, email: string) =>
-    jwtService.sign({ sub, email });
+    createBearerToken(jwtService, sub, email);
   const mockThrottlerGuard = {
     canActivate: jest.fn().mockReturnValue(true),
   };

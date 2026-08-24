@@ -8,7 +8,8 @@ export class AssignRoleDto {
   declare user_id: string;
 
   @ApiPropertyOptional({
-    description: 'ID del rol a asignar (preferido, formato UUID)',
+    description:
+      'ID del rol a asignar (preferido, formato UUID). Solo roles CLUB activos; un role_id GLOBAL o inactivo responde 400 CLUB_ROLE_NOT_FOUND.',
   })
   @IsOptional()
   @IsUUID()
@@ -50,7 +51,8 @@ export class AssignRoleDto {
 
 export class UpdateRoleAssignmentDto {
   @ApiPropertyOptional({
-    description: 'Nuevo ID del rol asignado (preferido, formato UUID)',
+    description:
+      'Nuevo ID del rol asignado (preferido, formato UUID). Solo roles CLUB activos; un role_id GLOBAL o inactivo responde 400 CLUB_ROLE_NOT_FOUND.',
   })
   @IsOptional()
   @IsUUID()

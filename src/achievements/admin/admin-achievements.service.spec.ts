@@ -480,7 +480,7 @@ describe('AdminAchievementsService', () => {
         originalname: 'badge.png',
         mimetype: 'image/png',
         size: 512 * 1024, // 512 KB
-        buffer: Buffer.from('png-data'),
+        buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       } as Express.Multer.File;
 
       const result = await service.uploadBadgeImage(1, pngFile);
@@ -550,6 +550,33 @@ describe('AdminAchievementsService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.ACHIEVEMENT_BADGE_TOO_LARGE,
       });
+    });
+
+    it('should reject PNG MIME with non-PNG magic bytes', async () => {
+      const mockAchievement = {
+        achievement_id: 1,
+        name: 'Test',
+        tier: 'BRONZE',
+        active: true,
+        category: { achievement_category_id: 1 },
+      };
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: mockAchievement,
+      });
+
+      const spoofedPng: Express.Multer.File = {
+        originalname: 'badge.png',
+        mimetype: 'image/png',
+        size: 100 * 1024,
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+      } as Express.Multer.File;
+
+      await expect(
+        service.uploadBadgeImage(1, spoofedPng),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_BADGE_INVALID_TYPE,
+      });
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
     });
 
     it('should reject SVG badge uploads because badges are served publicly', async () => {

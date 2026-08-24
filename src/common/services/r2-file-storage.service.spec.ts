@@ -18,6 +18,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ErrorCode } from '../errors/error-codes';
 import {
+  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -567,6 +568,33 @@ describe('R2FileStorageService', () => {
       );
       // The object key stored in R2 is "honors/badge.png"
       expect(key).toBe('honors/badge.png');
+    });
+  });
+
+  describe('getObjectPrefix', () => {
+    it('range-reads the first bytes of an object', async () => {
+      mockS3Send.mockResolvedValueOnce({
+        Body: {
+          transformToByteArray: async () =>
+            Uint8Array.from([0x25, 0x50, 0x44, 0x46]),
+        },
+      });
+
+      const prefix = await service.getObjectPrefix(
+        StorageBucketAlias.USER_PROFILES,
+        'photo-x.jpeg',
+        64,
+      );
+
+      expect(prefix).toEqual(Buffer.from([0x25, 0x50, 0x44, 0x46]));
+      expect(mockS3Send).toHaveBeenCalledWith(expect.any(GetObjectCommand));
+      const command = mockS3Send.mock.calls[0][0] as GetObjectCommand;
+      expect(command.input).toEqual(
+        expect.objectContaining({
+          Key: 'user-profiles/photo-x.jpeg',
+          Range: 'bytes=0-63',
+        }),
+      );
     });
   });
 });

@@ -504,3 +504,70 @@ describe('ResourcesService institutional scope policy', () => {
     );
   });
 });
+
+describe('ResourcesService createFromUploaded magic bytes', () => {
+  const prisma = {
+    resource_categories: { findUnique: jest.fn() },
+    resources: { create: jest.fn() },
+  };
+  const fileStorage = {
+    getObjectInfo: jest.fn(),
+    getObjectPrefix: jest.fn(),
+  };
+  const hierarchy = { resolveCurrent: jest.fn() };
+  const service = new ResourcesService(
+    prisma as any,
+    hierarchy as unknown as InstitutionalHierarchyService,
+    fileStorage as any,
+  );
+  const actor = {
+    effective: {
+      permissions: ['resources:create'],
+      scope: {
+        global: { country: { id: 1, name: 'México' } },
+        club: null,
+      },
+    },
+  };
+  const dto = {
+    title: 'Manual',
+    resource_type: 'document' as const,
+    scope_level: 'system' as const,
+    file_key: 'system/system/abc.pdf',
+    file_name: 'manual.pdf',
+    file_mime_type: 'application/pdf',
+    file_size: 1024,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.resource_categories.findUnique.mockResolvedValue(null);
+    prisma.resources.create.mockResolvedValue({ resource_id: 'resource-1' });
+    fileStorage.getObjectInfo.mockResolvedValue({
+      size: 1024,
+      contentType: 'application/pdf',
+    });
+  });
+
+  it('persists when the R2 prefix matches the declared PDF MIME', async () => {
+    fileStorage.getObjectPrefix.mockResolvedValue(Buffer.from('%PDF-1.7\n'));
+
+    await expect(
+      service.createFromUploaded(dto, 'user-1', actor),
+    ).resolves.toEqual({ resource_id: 'resource-1' });
+    expect(prisma.resources.create).toHaveBeenCalled();
+  });
+
+  it('rejects when magic bytes do not match the declared MIME', async () => {
+    fileStorage.getObjectPrefix.mockResolvedValue(
+      Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+    );
+
+    await expect(
+      service.createFromUploaded(dto, 'user-1', actor),
+    ).rejects.toMatchObject({
+      code: ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH,
+    });
+    expect(prisma.resources.create).not.toHaveBeenCalled();
+  });
+});

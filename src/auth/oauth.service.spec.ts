@@ -115,6 +115,27 @@ describe('OAuthService', () => {
       });
     });
 
+    it('rejects a redirect URL that is not an exact allowlist match', async () => {
+      const previous = process.env.ALLOWED_OAUTH_REDIRECT_URLS;
+      process.env.ALLOWED_OAUTH_REDIRECT_URLS =
+        'https://app.sacdia.app/auth/callback';
+
+      try {
+        await expect(
+          service.initiateGoogleSignIn('https://app.sacdia.app/evil'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_OAUTH_REDIRECT_NOT_ALLOWED,
+        });
+        expect(mockBetterAuthService.getOAuthUrl).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined) {
+          delete process.env.ALLOWED_OAUTH_REDIRECT_URLS;
+        } else {
+          process.env.ALLOWED_OAUTH_REDIRECT_URLS = previous;
+        }
+      }
+    });
+
     it('should use default redirect URL when redirect is not provided', async () => {
       mockBetterAuthService.getOAuthUrl.mockResolvedValue({
         url: 'https://accounts.google.com/o/oauth2/auth',

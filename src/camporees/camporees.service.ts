@@ -10,6 +10,7 @@ import {
   AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { fileBufferMatchesDeclaredMime } from '../common/pipes/file-validation.pipe';
 import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -2228,6 +2229,12 @@ export class CamporeesService {
     }
 
     if (!CamporeesService.VOUCHER_ALLOWED_MIMES.includes(file.mimetype)) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_PAYMENT_VOUCHER_MIME_INVALID,
+      );
+    }
+
+    if (!fileBufferMatchesDeclaredMime(file)) {
       throw new AppBadRequestException(
         ErrorCode.CAMPOREE_PAYMENT_VOUCHER_MIME_INVALID,
       );

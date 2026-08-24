@@ -8,6 +8,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -21,6 +22,7 @@ import { OAuthCallbackDto } from './dto/oauth-callback.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
+import { namedThrottle } from '../config/throttler.helpers';
 
 /**
  * OAuthController — Better Auth edition (W3-008 Part 3)
@@ -47,6 +49,9 @@ import { SkipPermissions } from '../common/decorators/skip-permissions.decorator
 @ApiTags('OAuth')
 @Controller('auth/oauth')
 @SkipPermissions()
+// Auth-grade: 5/min on every OAuth route (initiate, callback, unlink).
+// Public routes key by IP; JWT routes key by user. Same budget as login.
+@Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
 export class OAuthController {
   constructor(private readonly oauthService: OAuthService) {}
 

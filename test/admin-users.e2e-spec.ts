@@ -14,6 +14,7 @@ import {
 import { PrismaService } from '../src/prisma/prisma.service';
 import {
   buildAuthorizationSnapshot,
+  createBearerToken,
   createTestJwtService,
   useE2ePermissionsPassthrough,
 } from './helpers/rbac-test-helpers';
@@ -43,7 +44,7 @@ describe('Admin Users Detail E2E', () => {
   >;
 
   const makeToken = (sub: string, email: string) =>
-    jwtService.sign({ sub, email });
+    createBearerToken(jwtService, sub, email);
   const mockThrottlerGuard = {
     canActivate: jest.fn().mockReturnValue(true),
   };

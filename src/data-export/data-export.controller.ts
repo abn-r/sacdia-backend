@@ -28,6 +28,7 @@ import {
 } from './dto/data-export-response.dto';
 import { JwtAuthGuard } from '../common/guards';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
+import { resolveClientIp } from '../config/client-ip';
 
 interface JwtUser {
   sub: string;
@@ -156,14 +157,10 @@ export class DataExportController {
     @Req() req: Request & { user: JwtUser },
     @Param('exportId') exportId: string,
   ) {
-    const ipAddress =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
-      req.socket?.remoteAddress;
-
     return this.dataExportService.getDownloadUrl(
       req.user.sub,
       exportId,
-      ipAddress,
+      resolveClientIp(req),
     );
   }
 }

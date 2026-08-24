@@ -5,11 +5,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'crypto';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
+import { isPresentedAccessJwtForUser } from './presented-access-jwt';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
@@ -33,8 +36,16 @@ import { ErrorCode } from '../common/errors/error-codes';
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
 
+const NON_EMAIL_VERIFICATION_PREFIXES = [
+  'password-reset:',
+  'totp:',
+  'mfa-session:',
+] as const;
+
 type RefreshSessionContext = {
   userAgent?: string;
+  /** Current access JWT from `Authorization: Bearer`. Optional. */
+  accessToken?: string;
 };
 
 export type LogoutRequest = {
@@ -62,6 +73,7 @@ export class AuthService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly emailService: EmailService,
+    private readonly config: ConfigService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -379,6 +391,13 @@ export class AuthService {
       }),
     );
 
+    await this.revokePresentedAccessTokenOnRefresh({
+      presented: this.normalizeToken(context?.accessToken),
+      userId: baResult.user.id,
+      replacement: baResult.accessToken,
+      userAgent: context?.userAgent ?? 'unknown',
+    });
+
     const expiresAtSeconds = Math.floor(
       baResult.session.expiresAt.getTime() / 1000,
     );
@@ -511,6 +530,41 @@ export class AuthService {
       success: true,
       message: 'Correo de recuperación enviado',
     };
+  }
+
+  /**
+   * Confirms password recovery with the emailed token.
+   * Does not issue a session or JWT. Existing sessions and access JWTs are revoked.
+   */
+  async confirmPasswordReset(dto: ResetPasswordDto) {
+    try {
+      const { userId } = await this.betterAuthService.resetPasswordWithToken(
+        dto.token,
+        dto.password,
+      );
+      await this.prisma.session.deleteMany({ where: { userId } });
+      await this.tokenBlacklist.blacklistAllUserTokens(
+        userId,
+        AuthService.JWT_TTL_SECONDS,
+      );
+      this.logger.log(`Password reset confirmed; sessions revoked for ${userId}`);
+      return {
+        success: true,
+        message: 'Contraseña actualizada. Inicie sesión de nuevo',
+      };
+    } catch (error) {
+      if (
+        error instanceof AppBadRequestException ||
+        error instanceof ServiceUnavailableException
+      ) {
+        throw error;
+      }
+      this.logger.error(
+        `Password reset confirm error: ${error instanceof Error ? error.message : String(error)}`,
+        error,
+      );
+      throw new AppBadRequestException(ErrorCode.AUTH_PASSWORD_RESET_FAILED);
+    }
   }
 
   /**
@@ -707,6 +761,16 @@ export class AuthService {
       );
     }
 
+    if (
+      NON_EMAIL_VERIFICATION_PREFIXES.some((prefix) =>
+        verification.identifier.startsWith(prefix),
+      )
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID,
+      );
+    }
+
     if (verification.expiresAt < new Date()) {
       // Clean up expired token
       await this.prisma.verification.delete({
@@ -782,6 +846,55 @@ export class AuthService {
     this.logger.log(
       `Verification email enqueued for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
     );
+  }
+
+  /**
+   * Best-effort rotation: if the client presented its current access JWT and
+   * that JWT belongs to this refresh user, blacklist it. Missing / foreign /
+   * QR / garbage tokens are ignored so refresh still works for older clients.
+   */
+  private async revokePresentedAccessTokenOnRefresh(input: {
+    presented?: string;
+    userId: string;
+    replacement: string;
+    userAgent: string;
+  }): Promise<void> {
+    if (!input.presented || input.presented === input.replacement) {
+      return;
+    }
+
+    const secret = this.config.getOrThrow<string>('BETTER_AUTH_SECRET');
+    if (!isPresentedAccessJwtForUser(input.presented, input.userId, secret)) {
+      this.logger.debug(
+        JSON.stringify({
+          event: 'auth_refresh_access_not_revoked',
+          reason: 'not_same_user_access_jwt',
+          userAgent: input.userAgent,
+        }),
+      );
+      return;
+    }
+
+    try {
+      await this.tokenBlacklist.blacklistToken(
+        input.presented,
+        AuthService.JWT_TTL_SECONDS,
+      );
+      this.logger.log(
+        JSON.stringify({
+          event: 'auth_refresh_access_revoked',
+          userAgent: input.userAgent,
+        }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_refresh_blacklist_failed',
+          reason: error instanceof Error ? error.message : String(error),
+          userAgent: input.userAgent,
+        }),
+      );
+    }
   }
 
   private normalizeToken(token?: string | null): string | undefined {

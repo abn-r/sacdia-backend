@@ -14,8 +14,8 @@ import { PRESIGNED_UPLOAD_MAX_BYTES } from './generate-upload-url.dto';
 
 /**
  * Payload for creating a resource whose file has already been uploaded to R2
- * via the presigned PUT flow. Server verifies the key exists on R2 before
- * persisting the DB row.
+ * via the presigned PUT flow. Server verifies the key exists on R2, the
+ * size, and that magic bytes match `file_mime_type` before persisting.
  */
 export class CreateResourceFromUploadedDto {
   @ApiProperty({ description: 'Título del recurso', maxLength: 255 })

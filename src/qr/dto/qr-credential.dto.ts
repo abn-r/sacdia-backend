@@ -36,11 +36,19 @@ export class QrMemberViewDto {
 
   @ApiPropertyOptional({
     nullable: true,
-    description: 'Blood type string (e.g. "O+", "A-")',
+    description:
+      'Blood type on the printable card (accepted residual) and on staff ' +
+      'validate/scan. Omitted from GET /qr/me.',
   })
   blood_type?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, type: QrEmergencyContactDto })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: QrEmergencyContactDto,
+    description:
+      'Primary emergency contact. Only on POST /qr/validate and /qr/scan. ' +
+      'Never on /qr/me, /qr/me/card, or the PDF.',
+  })
   emergency_contact?: QrEmergencyContactDto | null;
 }
 
@@ -56,13 +64,6 @@ export class QrMeResponseDto {
 
   @ApiProperty({ type: QrMemberViewDto })
   member!: QrMemberViewDto;
-
-  @ApiProperty({
-    description: 'Canonical authorization snapshot resolved by backend.',
-    type: 'object',
-    additionalProperties: true,
-  })
-  authorization!: unknown;
 }
 
 export class QrCardVisualDto {

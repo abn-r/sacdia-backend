@@ -16,6 +16,7 @@ import {
 import type { CertificateOcrProvider } from './ocr/certificate-ocr.provider';
 import { CERTIFICATE_OCR_PROVIDER } from './ocr/certificate-ocr.provider';
 import { Inject } from '@nestjs/common';
+import { normalizeCertificateImportFileRef } from './certificate-import-file-ref';
 
 @Injectable()
 export class CertificateBulkImportsService {
@@ -26,6 +27,11 @@ export class CertificateBulkImportsService {
   ) {}
 
   async createDraft(userId: string, dto: CreateCertificateBulkImportDto) {
+    const files = dto.files.map((file) => ({
+      ...file,
+      file_url: normalizeCertificateImportFileRef(file.file_url),
+    }));
+
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
       select: { local_field_id: true },
@@ -42,7 +48,7 @@ export class CertificateBulkImportsService {
           local_field_id: user.local_field_id,
           raw_ocr_payload: this.toInputJson(dto.raw_ocr_payload),
           files: {
-            create: dto.files.map((file) => ({
+            create: files.map((file) => ({
               file_url: file.file_url,
               file_name: file.file_name,
               file_type: file.file_type,
@@ -74,14 +80,14 @@ export class CertificateBulkImportsService {
 
       this.assertDraftLike(batch.status, 'process OCR');
 
-      const ocrResult = await this.ocrProvider.extract(
-        batch.files.map((file) => ({
-          fileUrl: file.file_url,
-          fileName: file.file_name,
-          fileType: file.file_type,
-          rawText: file.ocr_raw_text ?? undefined,
-        })),
-      );
+      const fileRefs = batch.files.map((file) => ({
+        fileUrl: normalizeCertificateImportFileRef(file.file_url),
+        fileName: file.file_name,
+        fileType: file.file_type,
+        rawText: file.ocr_raw_text ?? undefined,
+      }));
+
+      const ocrResult = await this.ocrProvider.extract(fileRefs);
 
       if (ocrResult.items.length > 0) {
         await tx.certificate_bulk_import_items.createMany({
