@@ -10,6 +10,7 @@ describe('AuditLogsService', () => {
     audit_logs: {
       create: jest.fn(),
       findMany: jest.fn(),
+      findUnique: jest.fn(),
     },
     users: {
       findMany: jest.fn(),
@@ -256,6 +257,111 @@ describe('AuditLogsService', () => {
       expect(mockPrisma.audit_logs.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 101 }), // 100 + 1 lookahead
       );
+    });
+  });
+
+  describe('listAdmin', () => {
+    const makeRow = (id: bigint) => ({
+      audit_log_id: id,
+      entity_type: 'club',
+      entity_id: '42',
+      action: 'CREATED',
+      result: 'succeeded',
+      source: 'service',
+      summary: 'Club creado',
+      club_id: 42,
+      correlation_id: null,
+      actor_user_id: null,
+      created_at: new Date('2026-08-23T10:00:00Z'),
+    });
+
+    it('does not persist rows and omits changes from the list select', async () => {
+      mockPrisma.audit_logs.findMany.mockResolvedValue([makeRow(3n)]);
+      mockPrisma.users.findMany.mockResolvedValue([]);
+
+      const result = await service.listAdmin({
+        entity_type: 'club',
+        from: '2026-08-01',
+        to: '2026-08-23',
+        limit: 50,
+      });
+
+      expect(mockPrisma.audit_logs.create).not.toHaveBeenCalled();
+      expect(result.items[0]).toMatchObject({
+        audit_log_id: '3',
+        result: 'succeeded',
+        source: 'service',
+        club_id: 42,
+      });
+      expect(result.items[0]).not.toHaveProperty('changes');
+      expect(result.items[0]).not.toHaveProperty('request_context');
+      expect(mockPrisma.audit_logs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            entity_type: 'club',
+            created_at: {
+              gte: new Date('2026-08-01T00:00:00.000Z'),
+              lte: new Date('2026-08-23T23:59:59.999Z'),
+            },
+          }),
+          select: expect.not.objectContaining({
+            changes: true,
+            request_context: true,
+          }),
+        }),
+      );
+    });
+
+    it('applies cursor as exclusive upper id bound', async () => {
+      mockPrisma.audit_logs.findMany.mockResolvedValue([]);
+      mockPrisma.users.findMany.mockResolvedValue([]);
+
+      await service.listAdmin({ cursor: '100' });
+
+      expect(mockPrisma.audit_logs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ audit_log_id: { lt: 100n } }),
+        }),
+      );
+    });
+  });
+
+  describe('getById', () => {
+    it('returns changes and request_context without writing', async () => {
+      mockPrisma.audit_logs.findUnique.mockResolvedValue({
+        audit_log_id: 9n,
+        entity_type: 'club',
+        entity_id: '42',
+        action: 'UPDATED',
+        result: 'succeeded',
+        source: 'service',
+        summary: 'Nombre',
+        club_id: 42,
+        correlation_id: null,
+        actor_user_id: null,
+        created_at: new Date('2026-08-23T10:00:00Z'),
+        changes: { name: { from: 'A', to: 'B' } },
+        request_context: { method: 'PATCH' },
+      });
+      mockPrisma.users.findMany.mockResolvedValue([]);
+
+      const result = await service.getById('9');
+
+      expect(mockPrisma.audit_logs.create).not.toHaveBeenCalled();
+      expect(result.changes).toEqual({ name: { from: 'A', to: 'B' } });
+      expect(result.request_context).toEqual({ method: 'PATCH' });
+    });
+
+    it('throws RECORD_NOT_FOUND for a missing or non-numeric id', async () => {
+      await expect(service.getById('abc')).rejects.toMatchObject({
+        code: 'RECORD_NOT_FOUND',
+      });
+      expect(mockPrisma.audit_logs.findUnique).not.toHaveBeenCalled();
+
+      mockPrisma.audit_logs.findUnique.mockResolvedValue(null);
+      await expect(service.getById('99')).rejects.toMatchObject({
+        code: 'RECORD_NOT_FOUND',
+      });
     });
   });
 });

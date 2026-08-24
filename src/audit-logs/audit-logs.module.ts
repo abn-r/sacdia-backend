@@ -5,9 +5,11 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { CriticalAuditWriterService } from './critical-audit-writer.service';
 import { SecurityDenialAuditService } from './security-denial-audit.service';
 import { HttpAuditInterceptor } from './http-audit.interceptor';
+import { AdminAuditLogsController } from './admin-audit-logs.controller';
 
 @Module({
   imports: [PrismaModule],
+  controllers: [AdminAuditLogsController],
   providers: [
     AuditLogsService,
     CriticalAuditWriterService,
