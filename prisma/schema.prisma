@@ -194,6 +194,7 @@ model camporee_members {
   local_fields       local_fields?       @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
   users              users               @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   camporee_payments  camporee_payments[]
+  camporee_order_lines camporee_order_lines[]
 
   @@index([camporee_club_id], map: "idx_camporee_members_camporee_club_id")
   @@index([union_camporee_id], map: "idx_camporee_members_union_camporee_id")
@@ -634,6 +635,7 @@ model club_types {
   coordinator_assignments         coordinator_assignments[]
   insurance_cycle_configs         insurance_cycle_configs[]
   certification_eligibility_rules certification_eligibility_rules[]
+  camporee_order_products         camporee_order_products[]
 }
 
 model clubs {
@@ -664,6 +666,7 @@ model clubs {
   institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_club")
   insurance_purchases_owned  insurance_purchases[]        @relation("insurance_purchase_owner_club")
   insurance_coverage_slots_owned insurance_coverage_slots[] @relation("insurance_slot_owner_club")
+  camporee_orders            camporee_orders[]
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
   @@index([church_id], map: "idx_clubs_church_id")
@@ -722,6 +725,7 @@ model club_sections {
   insurance_coverage_slots_current    insurance_coverage_slots[]  @relation("insurance_slot_current_section")
   insurance_slot_movements_from        insurance_slot_movements[]  @relation("insurance_slot_movement_from_section")
   insurance_slot_movements_to          insurance_slot_movements[]  @relation("insurance_slot_movement_to_section")
+  camporee_orders                      camporee_orders[]
   @@unique([main_club_id, club_type_id])
   @@index([club_type_id, active], map: "idx_club_sections_club_type_active")
   @@index([main_club_id, active], map: "idx_club_sections_club_active")
@@ -917,6 +921,7 @@ model divisions {
   hierarchy_contexts                      hierarchy_contexts[]                      @relation("hierarchy_contexts_division")
   institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_division")
   institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_division")
+  camporee_order_products         camporee_order_products[]
 
   @@index([active], map: "idx_divisions_active")
   @@map("divisions")
@@ -1573,6 +1578,9 @@ model local_camporees {
   club_registration_closed_by  String?              @db.Uuid
   member_registration_deadline DateTime?            @db.Timestamptz(6)
   payment_deadline             DateTime?            @db.Timestamptz(6)
+  orders_enabled               Boolean              @default(false)
+  orders_opens_at              DateTime?            @db.Timestamptz(6)
+  orders_deadline              DateTime?            @db.Timestamptz(6)
   agenda_visible_from          DateTime?            @db.Timestamptz(6)
   ecclesiastical_year          Int
   active                       Boolean              @default(true)
@@ -1588,6 +1596,8 @@ model local_camporees {
   timezone_verifier            users?               @relation("local_camporee_timezone_verifier", fields: [timezone_verified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_local_camporees_timezone_verified_by")
   camporee_judges              camporee_judges[]
   insurance_external_participants camporee_external_participants[]
+  camporee_order_offerings     camporee_order_offerings[]
+  camporee_orders              camporee_orders[]
 
   @@index([timezone_verified_by], map: "idx_local_camporees_timezone_verified_by")
   @@index([local_field_id, active], map: "idx_local_camporees_local_field_active")
@@ -1633,6 +1643,9 @@ model local_fields {
   coordinator_assignments         coordinator_assignments[]
   insurance_products               insurance_products[]
   insurance_cycle_configs          insurance_cycle_configs[]
+  camporee_order_products          camporee_order_products[]
+  camporee_orders                  camporee_orders[]
+  camporee_order_folio_counters    camporee_order_folio_counters[]
 
   @@index([union_id, active], map: "idx_local_fields_union_active")
 }
@@ -1877,6 +1890,9 @@ model union_camporees {
   club_registration_closed_by  String?                       @db.Uuid
   member_registration_deadline DateTime?                     @db.Timestamptz(6)
   payment_deadline             DateTime?                     @db.Timestamptz(6)
+  orders_enabled               Boolean                       @default(false)
+  orders_opens_at              DateTime?                     @db.Timestamptz(6)
+  orders_deadline              DateTime?                     @db.Timestamptz(6)
   agenda_visible_from          DateTime?                     @db.Timestamptz(6)
   ecclesiastical_year          Int
   active                       Boolean                       @default(true)
@@ -1893,6 +1909,8 @@ model union_camporees {
   timezone_verifier            users?                        @relation("union_camporee_timezone_verifier", fields: [timezone_verified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_union_camporees_timezone_verified_by")
   camporee_judges              camporee_judges[]
   insurance_external_participants camporee_external_participants[]
+  camporee_order_offerings     camporee_order_offerings[]
+  camporee_orders              camporee_orders[]
 
   @@index([timezone_verified_by], map: "idx_union_camporees_timezone_verified_by")
   @@index([union_id, active], map: "idx_union_camporees_union_active")
@@ -1924,6 +1942,7 @@ model unions {
   annual_ranking_configs                  annual_ranking_configs[]
   users                                   users[]
   translations                            unions_translations[]
+  camporee_order_products                 camporee_order_products[]
 
   @@index([division_id], map: "idx_unions_division_id")
 }
@@ -2453,6 +2472,19 @@ model users {
   insurance_evidence_files_modified         insurance_evidence_files[]              @relation("insurance_evidence_modifier")
   camporee_external_participants_created    camporee_external_participants[]         @relation("camporee_external_participant_creator")
   camporee_external_participants_modified   camporee_external_participants[]         @relation("camporee_external_participant_modifier")
+  camporee_order_products_created           camporee_order_products[]                @relation("camporee_order_product_creator")
+  camporee_order_products_modified          camporee_order_products[]                @relation("camporee_order_product_modifier")
+  camporee_order_offerings_created          camporee_order_offerings[]               @relation("camporee_order_offering_creator")
+  camporee_order_offerings_modified         camporee_order_offerings[]               @relation("camporee_order_offering_modifier")
+  camporee_orders_issued                    camporee_orders[]                        @relation("camporee_order_issuer")
+  camporee_orders_approved                  camporee_orders[]                        @relation("camporee_order_approver")
+  camporee_orders_authorized                camporee_orders[]                        @relation("camporee_order_authorizer")
+  camporee_orders_delivered_to_section      camporee_orders[]                        @relation("camporee_order_section_deliverer")
+  camporee_orders_cancelled                 camporee_orders[]                        @relation("camporee_order_canceller")
+  camporee_order_lines_beneficiary          camporee_order_lines[]                   @relation("camporee_order_line_beneficiary")
+  camporee_order_lines_delivered            camporee_order_lines[]                   @relation("camporee_order_line_member_deliverer")
+  camporee_order_proofs_uploaded            camporee_order_proofs[]                  @relation("camporee_order_proof_uploader")
+  camporee_order_proofs_reviewed            camporee_order_proofs[]                  @relation("camporee_order_proof_reviewer")
 }
 
 model authorization_context_versions {
@@ -5646,4 +5678,225 @@ model insurance_reassignment_requests {
 
   @@index([status, created_at], map: "idx_insurance_reassignment_requests_status")
   @@index([insurance_assignment_id], map: "idx_insurance_reassignment_requests_assignment")
+}
+
+// ─── Camporee Orders (pedidos de sección, independientes de field_payment_orders) ─
+// CHECKs XOR/monto/qty y uniques parciales viven en
+// prisma/migrations/20260824190000_camporee_orders/migration.sql.
+// No hay unique (club_section_id, camporee): se permiten pedidos suplementarios.
+
+enum camporee_order_owner_scope_enum {
+  DIVISION
+  UNION
+  LOCAL_FIELD
+}
+
+enum camporee_order_size_scheme_enum {
+  LETTER
+  NUMERIC
+  NONE
+}
+
+enum camporee_order_status_enum {
+  ISSUED
+  PROOF_SUBMITTED
+  PROOF_REJECTED
+  PAID
+  DELIVERED
+  CANCELLED
+  EXPIRED
+}
+
+enum camporee_order_proof_status_enum {
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+model camporee_order_products {
+  camporee_order_product_id String                           @id @default(uuid()) @db.Uuid
+  owner_scope               camporee_order_owner_scope_enum
+  owner_division_id         Int?
+  owner_union_id            Int?
+  owner_local_field_id      Int?
+  title                     String                           @db.VarChar(200)
+  description               String?
+  size_scheme               camporee_order_size_scheme_enum
+  club_type_id              Int?
+  active                    Boolean                          @default(true)
+  created_by_id             String                           @db.Uuid
+  modified_by_id            String                           @db.Uuid
+  created_at                DateTime                         @default(now()) @db.Timestamptz(6)
+  modified_at               DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  owner_division    divisions?                       @relation(fields: [owner_division_id], references: [division_id], onDelete: NoAction, onUpdate: NoAction)
+  owner_union       unions?                          @relation(fields: [owner_union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
+  owner_local_field local_fields?                    @relation(fields: [owner_local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  club_type         club_types?                      @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  creator           users                            @relation("camporee_order_product_creator", fields: [created_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  modifier          users                            @relation("camporee_order_product_modifier", fields: [modified_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  options           camporee_order_product_options[]
+  offerings         camporee_order_offerings[]
+  order_lines       camporee_order_lines[]
+
+  @@index([owner_division_id, active], map: "idx_camporee_order_products_division_active")
+  @@index([owner_union_id, active], map: "idx_camporee_order_products_union_active")
+  @@index([owner_local_field_id, active], map: "idx_camporee_order_products_lf_active")
+}
+
+model camporee_order_product_options {
+  camporee_order_product_option_id String  @id @default(uuid()) @db.Uuid
+  product_id                       String  @db.Uuid
+  label                            String  @db.VarChar(40)
+  sort_order                       Int     @default(0)
+  active                           Boolean @default(true)
+
+  product     camporee_order_products @relation(fields: [product_id], references: [camporee_order_product_id], onDelete: Cascade, onUpdate: NoAction)
+  order_lines camporee_order_lines[]
+
+  @@unique([product_id, label], map: "uq_camporee_order_product_options_product_label")
+}
+
+model camporee_order_offerings {
+  camporee_order_offering_id String   @id @default(uuid()) @db.Uuid
+  local_camporee_id          Int?
+  union_camporee_id          Int?
+  product_id                 String   @db.Uuid
+  price_centavos             Int
+  active                     Boolean  @default(true)
+  sort_order                 Int      @default(0)
+  created_by_id              String   @db.Uuid
+  modified_by_id             String   @db.Uuid
+  created_at                 DateTime @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  local_camporee local_camporees?         @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: NoAction, onUpdate: NoAction)
+  union_camporee union_camporees?         @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: NoAction, onUpdate: NoAction)
+  product        camporee_order_products  @relation(fields: [product_id], references: [camporee_order_product_id], onDelete: NoAction, onUpdate: NoAction)
+  creator        users                    @relation("camporee_order_offering_creator", fields: [created_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  modifier       users                    @relation("camporee_order_offering_modifier", fields: [modified_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  order_lines    camporee_order_lines[]
+
+  // Uniques parciales (local XOR union) en la migración SQL.
+}
+
+model camporee_orders {
+  camporee_order_id          String                    @id @default(uuid()) @db.Uuid
+  local_field_id             Int
+  club_id                    Int
+  club_section_id            Int
+  local_camporee_id          Int?
+  union_camporee_id          Int?
+  folio                      Int
+  folio_reference            String                    @db.VarChar(16)
+  status                     camporee_order_status_enum @default(ISSUED)
+  currency                   String                    @default("MXN") @db.VarChar(3)
+  total_centavos             Int
+  expires_at                 DateTime                  @db.Timestamptz(6)
+  issued_by_id               String                    @db.Uuid
+  approved_by_id             String?                   @db.Uuid
+  approved_at                DateTime?                 @db.Timestamptz(6)
+  authorized_without_proof   Boolean                   @default(false)
+  authorized_by_id           String?                   @db.Uuid
+  authorized_at              DateTime?                 @db.Timestamptz(6)
+  authorization_reason       String?
+  delivered_to_section_by_id String?                   @db.Uuid
+  delivered_to_section_at    DateTime?                 @db.Timestamptz(6)
+  cancelled_by_id            String?                   @db.Uuid
+  cancelled_at               DateTime?                 @db.Timestamptz(6)
+  cancel_reason              String?
+  expired_at                 DateTime?                 @db.Timestamptz(6)
+  idempotency_key            String?                   @db.Uuid
+  bank_name                  String?                   @db.VarChar(255)
+  bank_account               String?                   @db.VarChar(64)
+  bank_clabe                 String?                   @db.VarChar(32)
+  bank_holder                String?                   @db.VarChar(255)
+  cash_instructions          String?
+  extra_notes                String?
+  created_at                 DateTime                  @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime                  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  local_field       local_fields                @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  club              clubs                       @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+  club_section      club_sections               @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  local_camporee    local_camporees?            @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: NoAction, onUpdate: NoAction)
+  union_camporee    union_camporees?            @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: NoAction, onUpdate: NoAction)
+  issuer            users                       @relation("camporee_order_issuer", fields: [issued_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  approver          users?                      @relation("camporee_order_approver", fields: [approved_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  authorizer        users?                      @relation("camporee_order_authorizer", fields: [authorized_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  section_deliverer users?                      @relation("camporee_order_section_deliverer", fields: [delivered_to_section_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  canceller         users?                      @relation("camporee_order_canceller", fields: [cancelled_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  lines             camporee_order_lines[]
+  proofs            camporee_order_proofs[]
+
+  @@unique([local_field_id, folio_reference], map: "uq_camporee_orders_lf_folio")
+  @@unique([issued_by_id, idempotency_key], map: "uq_camporee_orders_idempotency")
+  @@index([local_field_id, status], map: "idx_camporee_orders_lf_status")
+  @@index([club_section_id, local_camporee_id, created_at], map: "idx_camporee_orders_section_local_created")
+  @@index([club_section_id, union_camporee_id, created_at], map: "idx_camporee_orders_section_union_created")
+  @@index([local_camporee_id, status], map: "idx_camporee_orders_local_status")
+  @@index([union_camporee_id, status], map: "idx_camporee_orders_union_status")
+}
+
+model camporee_order_lines {
+  camporee_order_line_id    String    @id @default(uuid()) @db.Uuid
+  order_id                  String    @db.Uuid
+  sequence                  Int
+  camporee_member_id        Int
+  beneficiary_user_id       String    @db.Uuid
+  beneficiary_name_snapshot String    @db.VarChar(255)
+  offering_id               String    @db.Uuid
+  product_id                String    @db.Uuid
+  option_id                 String?   @db.Uuid
+  product_title_snapshot    String    @db.VarChar(200)
+  option_label_snapshot     String?   @db.VarChar(40)
+  qty                       Int
+  unit_price_centavos       Int
+  line_total_centavos       Int
+  delivered_to_member_by_id String?   @db.Uuid
+  delivered_to_member_at    DateTime? @db.Timestamptz(6)
+
+  order            camporee_orders                 @relation(fields: [order_id], references: [camporee_order_id], onDelete: Cascade, onUpdate: NoAction)
+  camporee_member  camporee_members                @relation(fields: [camporee_member_id], references: [camporee_member_id], onDelete: NoAction, onUpdate: NoAction)
+  beneficiary      users                           @relation("camporee_order_line_beneficiary", fields: [beneficiary_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  offering         camporee_order_offerings        @relation(fields: [offering_id], references: [camporee_order_offering_id], onDelete: NoAction, onUpdate: NoAction)
+  product          camporee_order_products         @relation(fields: [product_id], references: [camporee_order_product_id], onDelete: NoAction, onUpdate: NoAction)
+  option           camporee_order_product_options? @relation(fields: [option_id], references: [camporee_order_product_option_id], onDelete: NoAction, onUpdate: NoAction)
+  member_deliverer users?                          @relation("camporee_order_line_member_deliverer", fields: [delivered_to_member_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([order_id, sequence], map: "uq_camporee_order_lines_sequence")
+  @@unique([order_id, camporee_member_id, offering_id, option_id], map: "uq_camporee_order_lines_member_offering_option")
+  // Unique parcial WHERE option_id IS NULL: migración 20260824190000.
+}
+
+model camporee_order_proofs {
+  camporee_order_proof_id String                            @id @default(uuid()) @db.Uuid
+  order_id                String                            @db.Uuid
+  r2_key                  String                            @db.VarChar(500)
+  file_name               String                            @db.VarChar(255)
+  mime_type               String                            @db.VarChar(100)
+  size_bytes              Int
+  status                  camporee_order_proof_status_enum  @default(SUBMITTED)
+  reject_reason           String?
+  uploaded_by_id          String                            @db.Uuid
+  reviewed_by_id          String?                           @db.Uuid
+  reviewed_at             DateTime?                         @db.Timestamptz(6)
+  created_at              DateTime                          @default(now()) @db.Timestamptz(6)
+
+  order    camporee_orders @relation(fields: [order_id], references: [camporee_order_id], onDelete: Cascade, onUpdate: NoAction)
+  uploader users           @relation("camporee_order_proof_uploader", fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewer users?          @relation("camporee_order_proof_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([order_id, status], map: "idx_camporee_order_proofs_order_status")
+}
+
+model camporee_order_folio_counters {
+  local_field_id Int
+  year           Int
+  last_folio     Int      @default(0)
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  local_field local_fields @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([local_field_id, year])
 }
