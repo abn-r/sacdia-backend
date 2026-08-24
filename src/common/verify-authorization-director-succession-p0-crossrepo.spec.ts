@@ -54,9 +54,11 @@ describe('authorization P0 cross-repository contract', () => {
       'SACDIA_APP_CONTRACT_REF',
       'name: Unit Tests',
       'name: Backend E2E Tests',
-      'needs: [backend_unit_tests, cross_repo_contract, redis_contract, backend_e2e_tests]',
+      'name: Dependency Audit',
+      'needs: [backend_unit_tests, cross_repo_contract, redis_contract, backend_e2e_tests, dependency_audit]',
       'REDIS_RESULT: ${{ needs.redis_contract.result }}',
       'E2E_RESULT: ${{ needs.backend_e2e_tests.result }}',
+      'AUDIT_RESULT: ${{ needs.dependency_audit.result }}',
       'if: ${{ always() }}',
       'needs: required_unit_tests',
     ])
