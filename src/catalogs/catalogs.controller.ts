@@ -6,9 +6,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { isUUID } from 'class-validator';
 import { CatalogsService } from './catalogs.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { OptionalJwtAuthGuard } from '../common/guards';
-import { Public } from '../common/decorators';
+import { CurrentUser, Public } from '../common/decorators';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import {
+  assertCatalogFiltersInCountry,
+  resolveActorCatalogCountryId,
+} from '../common/authorization/actor-territory-scope';
 
 @ApiTags('catalogs')
 @Controller('catalogs')
@@ -17,7 +24,24 @@ import { Public } from '../common/decorators';
 @Public()
 @UseGuards(OptionalJwtAuthGuard)
 export class CatalogsController {
-  constructor(private readonly catalogsService: CatalogsService) {}
+  constructor(
+    private readonly catalogsService: CatalogsService,
+    private readonly authorizationContext: AuthorizationContextService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  private async actorCatalogCountryId(
+    user?: { sub?: string },
+  ): Promise<number | undefined> {
+    const userId = user?.sub;
+    if (!userId || !isUUID(userId, 'all')) {
+      return undefined;
+    }
+
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    return resolveActorCatalogCountryId(this.prisma, resolved);
+  }
 
   // ========================================
   // CLUB TYPES
@@ -61,11 +85,14 @@ export class CatalogsController {
   @Get('countries')
   @ApiOperation({
     summary: 'Obtener países',
-    description: 'Lista todos los países activos',
+    description:
+      'Lista países activos. Sin JWT o sin rol territorial: directorio completo. Con rol territorial: solo el país del actor.',
   })
   @ApiResponse({ status: 200, description: 'Lista de países' })
-  async getCountries() {
-    return this.catalogsService.getCountries();
+  @ApiResponse({ status: 403, description: 'Rol territorial sin país resoluble' })
+  async getCountries(@CurrentUser() user?: { sub: string }) {
+    const actorCountryId = await this.actorCatalogCountryId(user);
+    return this.catalogsService.getCountries(actorCountryId);
   }
 
   // ========================================
@@ -74,11 +101,14 @@ export class CatalogsController {
   @Get('divisions')
   @ApiOperation({
     summary: 'Obtener divisiones',
-    description: 'Lista divisiones institucionales activas',
+    description:
+      'Lista divisiones institucionales activas. Con rol territorial: solo divisiones que tienen uniones en el país del actor.',
   })
   @ApiResponse({ status: 200, description: 'Lista de divisiones' })
-  async getDivisions() {
-    return this.catalogsService.getDivisions();
+  @ApiResponse({ status: 403, description: 'Rol territorial sin país resoluble' })
+  async getDivisions(@CurrentUser() user?: { sub: string }) {
+    const actorCountryId = await this.actorCatalogCountryId(user);
+    return this.catalogsService.getDivisions(actorCountryId);
   }
 
   // ========================================
@@ -88,7 +118,7 @@ export class CatalogsController {
   @ApiOperation({
     summary: 'Obtener uniones',
     description:
-      'Lista uniones de la organización, opcionalmente filtradas por división. countryId queda como compatibilidad legacy solo si es un alias no ambiguo.',
+      'Lista uniones de la organización, opcionalmente filtradas por división. countryId queda como compatibilidad legacy solo si es un alias no ambiguo. Con rol territorial: uniones del país del actor; un countryId/divisionId fuera de ese país responde 403.',
   })
   @ApiQuery({
     name: 'divisionId',
@@ -103,13 +133,29 @@ export class CatalogsController {
     description: 'ID del país para compatibilidad legacy',
   })
   @ApiResponse({ status: 200, description: 'Lista de uniones' })
+  @ApiResponse({
+    status: 403,
+    description: 'Filtro geográfico fuera del país del actor territorial',
+  })
   async getUnions(
     @Query('countryId', new ParseIntPipe({ optional: true }))
     countryId?: number,
     @Query('divisionId', new ParseIntPipe({ optional: true }))
     divisionId?: number,
+    @CurrentUser() user?: { sub: string },
   ) {
-    return this.catalogsService.getUnions({ countryId, divisionId });
+    const actorCountryId = await this.actorCatalogCountryId(user);
+    if (actorCountryId !== undefined) {
+      await assertCatalogFiltersInCountry(this.prisma, actorCountryId, {
+        countryId,
+        divisionId,
+      });
+    }
+    return this.catalogsService.getUnions({
+      countryId,
+      divisionId,
+      actorCountryId,
+    });
   }
 
   // ========================================
@@ -118,7 +164,8 @@ export class CatalogsController {
   @Get('local-fields')
   @ApiOperation({
     summary: 'Obtener campos locales',
-    description: 'Lista campos locales, opcionalmente filtrados por unión',
+    description:
+      'Lista campos locales, opcionalmente filtrados por unión. Con rol territorial: campos del país del actor; un unionId de otro país responde 403.',
   })
   @ApiQuery({
     name: 'unionId',
@@ -127,11 +174,22 @@ export class CatalogsController {
     description: 'ID de la unión para filtrar',
   })
   @ApiResponse({ status: 200, description: 'Lista de campos locales' })
+  @ApiResponse({
+    status: 403,
+    description: 'Filtro geográfico fuera del país del actor territorial',
+  })
   async getLocalFields(
     @Query('unionId', new ParseIntPipe({ optional: true }))
     unionId?: number,
+    @CurrentUser() user?: { sub: string },
   ) {
-    return this.catalogsService.getLocalFields(unionId);
+    const actorCountryId = await this.actorCatalogCountryId(user);
+    if (actorCountryId !== undefined) {
+      await assertCatalogFiltersInCountry(this.prisma, actorCountryId, {
+        unionId,
+      });
+    }
+    return this.catalogsService.getLocalFields(unionId, actorCountryId);
   }
 
   // ========================================
@@ -140,7 +198,8 @@ export class CatalogsController {
   @Get('districts')
   @ApiOperation({
     summary: 'Obtener distritos',
-    description: 'Lista distritos, opcionalmente filtrados por campo local',
+    description:
+      'Lista distritos, opcionalmente filtrados por campo local. Con rol territorial: distritos del país del actor; un localFieldId de otro país responde 403.',
   })
   @ApiQuery({
     name: 'localFieldId',
@@ -149,11 +208,22 @@ export class CatalogsController {
     description: 'ID del campo local para filtrar',
   })
   @ApiResponse({ status: 200, description: 'Lista de distritos' })
+  @ApiResponse({
+    status: 403,
+    description: 'Filtro geográfico fuera del país del actor territorial',
+  })
   async getDistricts(
     @Query('localFieldId', new ParseIntPipe({ optional: true }))
     localFieldId?: number,
+    @CurrentUser() user?: { sub: string },
   ) {
-    return this.catalogsService.getDistricts(localFieldId);
+    const actorCountryId = await this.actorCatalogCountryId(user);
+    if (actorCountryId !== undefined) {
+      await assertCatalogFiltersInCountry(this.prisma, actorCountryId, {
+        localFieldId,
+      });
+    }
+    return this.catalogsService.getDistricts(localFieldId, actorCountryId);
   }
 
   // ========================================
@@ -162,7 +232,8 @@ export class CatalogsController {
   @Get('churches')
   @ApiOperation({
     summary: 'Obtener iglesias',
-    description: 'Lista iglesias, opcionalmente filtradas por distrito',
+    description:
+      'Lista iglesias, opcionalmente filtradas por distrito. Con rol territorial: iglesias del país del actor; un districtId de otro país responde 403.',
   })
   @ApiQuery({
     name: 'districtId',
@@ -171,11 +242,22 @@ export class CatalogsController {
     description: 'ID del distrito para filtrar',
   })
   @ApiResponse({ status: 200, description: 'Lista de iglesias' })
+  @ApiResponse({
+    status: 403,
+    description: 'Filtro geográfico fuera del país del actor territorial',
+  })
   async getChurches(
     @Query('districtId', new ParseIntPipe({ optional: true }))
     districtId?: number,
+    @CurrentUser() user?: { sub: string },
   ) {
-    return this.catalogsService.getChurches(districtId);
+    const actorCountryId = await this.actorCatalogCountryId(user);
+    if (actorCountryId !== undefined) {
+      await assertCatalogFiltersInCountry(this.prisma, actorCountryId, {
+        districtId,
+      });
+    }
+    return this.catalogsService.getChurches(districtId, actorCountryId);
   }
 
   // ========================================
