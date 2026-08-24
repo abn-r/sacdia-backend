@@ -10,9 +10,14 @@ const mockDataExportService = {
   getDownloadUrl: jest.fn(),
 };
 
-const mockReq = (sub: string, headers: Record<string, string> = {}) => ({
+const mockReq = (
+  sub: string,
+  headers: Record<string, string> = {},
+  ip = '203.0.113.45',
+) => ({
   user: { sub, email: 'user@test.com' },
   headers,
+  ip,
   socket: { remoteAddress: '127.0.0.1' },
 });
 
@@ -104,7 +109,7 @@ describe('DataExportController', () => {
       expect(mockDataExportService.getDownloadUrl).toHaveBeenCalledWith(
         'user-1',
         'exp-1',
-        '10.0.0.1',
+        '203.0.113.45',
       );
     });
   });

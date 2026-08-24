@@ -290,8 +290,13 @@ export class PermissionsGuard implements CanActivate {
           resolved,
           await this.resolveInsuranceRecordScopes(request, resource),
         );
-      default:
-        return true;
+      default: {
+        const _exhaustive: never = resource.type;
+        void _exhaustive;
+        throw new AppInternalServerErrorException(
+          ErrorCode.GUARD_RBAC_MISCONFIGURATION,
+        );
+      }
     }
   }
 

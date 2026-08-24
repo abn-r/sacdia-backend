@@ -114,6 +114,33 @@ jobs:
           files: ./coverage/lcov.info
           fail_ci_if_error: false
 
+  dependency_audit:
+    name: Dependency Audit
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify audit gate
+        run: pnpm run audit:security:test
+
+      - name: Audit high and critical advisories
+        run: pnpm run audit:security
+
   redis_contract:
     name: Redis Contract
     runs-on: ubuntu-latest
@@ -175,6 +202,7 @@ jobs:
       # Dummy secrets: e2e suites mock BetterAuthService/R2/Resend transports,
       # but env validation and eager constructors require non-empty values.
       BETTER_AUTH_SECRET: e2e-ci-secret-with-at-least-32-characters
+      QR_JWT_SECRET: e2e-ci-qr-secret-with-at-least-32-ch
       EMAIL_ENABLED: 'false'
       RESEND_API_KEY: re_test_dummy_key
       RESEND_FROM_EMAIL: SACDIA <test@test.local>
@@ -333,7 +361,7 @@ jobs:
   required_unit_tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    needs: [backend_unit_tests, cross_repo_contract, redis_contract, backend_e2e_tests]
+    needs: [backend_unit_tests, cross_repo_contract, redis_contract, backend_e2e_tests, dependency_audit]
     if: ${{ always() }}
     steps:
       - name: Require all test gates
@@ -342,11 +370,13 @@ jobs:
           CROSS_REPO_RESULT: ${{ needs.cross_repo_contract.result }}
           REDIS_RESULT: ${{ needs.redis_contract.result }}
           E2E_RESULT: ${{ needs.backend_e2e_tests.result }}
+          AUDIT_RESULT: ${{ needs.dependency_audit.result }}
         run: |
           test "$BACKEND_RESULT" = success
           test "$CROSS_REPO_RESULT" = success
           test "$REDIS_RESULT" = success
           test "$E2E_RESULT" = success
+          test "$AUDIT_RESULT" = success
 
   # ==========================================
   # BUILD CHECK

@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
-  AppConflictException,
+  AppBadRequestException,
   AppInternalServerErrorException,
   AppNotFoundException,
   AppUnauthorizedException,
@@ -19,6 +19,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { BetterAuthInstance } from './better-auth.config';
 import { maskEmail } from '../common/utils/mask-email.util';
 import { EmailService } from '../common/email/email.service';
+import { accessJwtClaims } from '../common/constants/jwt-audiences';
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -84,6 +85,10 @@ export interface IBetterAuthService {
   refreshSession(sessionToken: string): Promise<BaAuthResult>;
   signOut(sessionToken: string): Promise<void>;
   resetPasswordForEmail(email: string, redirectTo?: string): Promise<void>;
+  resetPasswordWithToken(
+    token: string,
+    newPassword: string,
+  ): Promise<{ userId: string }>;
   updatePasswordById(userId: string, newPassword: string): Promise<void>;
   updateOwnPassword(
     userId: string,
@@ -132,6 +137,13 @@ const BCRYPT_ROUNDS = 12;
 function generateToken(): string {
   const { randomBytes } = require('crypto') as typeof import('crypto');
   return randomBytes(32).toString('base64url');
+}
+
+/** Namespaces reset tokens so they cannot satisfy email-verify lookups. */
+export const PASSWORD_RESET_IDENTIFIER_PREFIX = 'password-reset:';
+
+export function passwordResetIdentifier(email: string): string {
+  return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`;
 }
 
 /**
@@ -232,7 +244,7 @@ export class BetterAuthService implements IBetterAuthService {
    * `id` instead of `user_id`, `emailVerified` instead of `email_verified`).
    *
    * Flow:
-   *   1. Check for duplicate email → ConflictException
+   *   1. Duplicate email → dummy bcrypt + AUTH_INVALID_CREDENTIALS (same as login)
    *   2. Hash password with bcrypt (cost 12)
    *   3. Insert `users` row with proper snake_case fields
    *   4. Insert `account` row (credential provider)
@@ -244,25 +256,34 @@ export class BetterAuthService implements IBetterAuthService {
     password: string,
     name: string,
   ): Promise<BaAuthResult> {
-    // 1. Duplicate email check
+    // Public register must not say "email already in use". Same code as login
+    // plus dummy hash so the timing matches a real create. Admin invite still
+    // uses AUTH_EMAIL_ALREADY_IN_USE on its own preflight.
     const existing = await this.prisma.users.findUnique({ where: { email } });
     if (existing) {
-      throw new AppConflictException(ErrorCode.AUTH_EMAIL_ALREADY_IN_USE);
+      await bcrypt.hash(password, BCRYPT_ROUNDS);
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
-    // 2. Hash password
     const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-    // 3. Create user — use crypto.randomUUID() to generate proper UUID v4
     const userId = randomUUID();
-    const dbUser = await this.prisma.users.create({
-      data: {
-        user_id: userId,
-        email,
-        name,
-        email_verified: false,
-      },
-    });
+    let dbUser;
+    try {
+      dbUser = await this.prisma.users.create({
+        data: {
+          user_id: userId,
+          email,
+          name,
+          email_verified: false,
+        },
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2002') {
+        throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+      }
+      throw error;
+    }
 
     // 4. Create credential account
     await this.prisma.account.create({
@@ -427,12 +448,11 @@ export class BetterAuthService implements IBetterAuthService {
 
     const row = rows[0];
 
-    // SECURITY NOTE — JWT blacklisting:
-    // refreshSession issues a new HS256 JWT but cannot blacklist the previous one
-    // because the old access token is not sent to this endpoint (clients send only
-    // the opaque session token). Mitigation: JWTs are short-lived (8h). A proper
-    // blacklist would require a Redis store keyed by jti or token hash — defer to
-    // a future hardening pass if the 8h window is deemed insufficient.
+    // Access-JWT rotation lives in AuthService.refreshSession: if the client
+    // presented Authorization: Bearer with this user's access JWT, that token
+    // is blacklisted after this new JWT is issued. This method only slides the
+    // BA session and signs the replacement. Without a presented access JWT the
+    // previous one remains valid until exp (≤8h).
 
     const session = mapDbSessionToBaSession({
       id: row.id,
@@ -522,11 +542,13 @@ export class BetterAuthService implements IBetterAuthService {
 
     const token = generateToken();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const identifier = passwordResetIdentifier(email);
 
+    await this.prisma.verification.deleteMany({ where: { identifier } });
     await this.prisma.verification.create({
       data: {
         id: randomUUID(),
-        identifier: email,
+        identifier,
         value: token,
         expiresAt,
       },
@@ -551,6 +573,76 @@ export class BetterAuthService implements IBetterAuthService {
     this.logger.log(
       `Password reset token generated for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
     );
+  }
+
+  /**
+   * Consumes a password-reset token and updates the credential hash.
+   * Does not create a credential account for OAuth-only users.
+   * Does not issue a session or JWT — caller must revoke existing sessions.
+   */
+  async resetPasswordWithToken(
+    token: string,
+    newPassword: string,
+  ): Promise<{ userId: string }> {
+    const verification = await this.prisma.verification.findFirst({
+      where: {
+        value: token,
+        identifier: { startsWith: PASSWORD_RESET_IDENTIFIER_PREFIX },
+      },
+    });
+
+    if (!verification) {
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_PASSWORD_RESET_TOKEN_INVALID,
+      );
+    }
+
+    if (verification.expiresAt < new Date()) {
+      await this.prisma.verification.delete({
+        where: { id: verification.id },
+      });
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_PASSWORD_RESET_TOKEN_EXPIRED,
+      );
+    }
+
+    const email = verification.identifier.slice(
+      PASSWORD_RESET_IDENTIFIER_PREFIX.length,
+    );
+    const dbUser = email
+      ? await this.prisma.users.findUnique({ where: { email } })
+      : null;
+    const dbAccount = dbUser
+      ? await this.prisma.account.findFirst({
+          where: { userId: dbUser.user_id, providerId: 'credential' },
+        })
+      : null;
+
+    if (!dbUser || !dbAccount) {
+      await this.prisma.verification.deleteMany({
+        where: { identifier: verification.identifier },
+      });
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_PASSWORD_RESET_TOKEN_INVALID,
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.$transaction([
+      this.prisma.account.update({
+        where: { id: dbAccount.id },
+        data: { password: hashedPassword },
+      }),
+      this.prisma.verification.deleteMany({
+        where: { identifier: verification.identifier },
+      }),
+    ]);
+
+    this.logger.log(
+      `Password reset confirmed for ${maskEmail(email)} (user ${dbUser.user_id})`,
+    );
+
+    return { userId: dbUser.user_id };
   }
 
   /**
@@ -944,9 +1036,10 @@ export class BetterAuthService implements IBetterAuthService {
   /**
    * Signs a SACDIA HS256 JWT for API consumers.
    *
-   * Payload: { sub: user.id, email: user.email, [sid], [mfa_pending] }
+   * Payload: { sub, email, iss, aud, [sid], [mfa_pending] }
    * Algorithm: HS256 (via BETTER_AUTH_SECRET in JwtModule config)
    * Expiry: 8h (configured in BetterAuthModule JwtModule.registerAsync)
+   * Claims: iss=https://api.sacdia.app aud=sacdia:access (required by JwtStrategy)
    *
    * @param user        - User identity fields to embed in the JWT.
    * @param mfaPending  - When `true`, the token carries `mfa_pending: true`,
@@ -965,6 +1058,7 @@ export class BetterAuthService implements IBetterAuthService {
     const payload: Record<string, unknown> = {
       sub: user.id,
       email: user.email,
+      ...accessJwtClaims(),
     };
     if (sessionId) {
       payload['sid'] = sessionId;

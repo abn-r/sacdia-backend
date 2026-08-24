@@ -32,6 +32,7 @@ import {
 } from '../src/common/services/authorization-context.service';
 import {
   buildAuthorizationSnapshot,
+  createBearerToken,
   createTestJwtService,
 } from './helpers/rbac-test-helpers';
 
@@ -207,7 +208,7 @@ describe('Confirm Union — HTTP guard layer (T-C9a / T-C9b)', () => {
       .spyOn(AuthorizationContextService.prototype, 'resolveUserAuthorization')
       .mockResolvedValue(buildClubDirectorProfile(userId, email));
 
-    const token = jwtService.sign({ sub: userId, email });
+    const token = createBearerToken(jwtService, userId, email);
 
     const response = await request(
       app.getHttpServer() as Parameters<typeof request>[0],
@@ -240,7 +241,7 @@ describe('Confirm Union — HTTP guard layer (T-C9a / T-C9b)', () => {
       .spyOn(AuthorizationContextService.prototype, 'resolveUserAuthorization')
       .mockResolvedValue(buildEmptyProfile(userId, email));
 
-    const token = jwtService.sign({ sub: userId, email });
+    const token = createBearerToken(jwtService, userId, email);
 
     const response = await request(
       app.getHttpServer() as Parameters<typeof request>[0],

@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import jwt from 'jsonwebtoken';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
+import { accessJwtClaims } from '../common/constants/jwt-audiences';
 import {
   BadRequestException,
   InternalServerErrorException,
@@ -17,6 +20,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AppBadRequestException } from '../common/errors/app.exception';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -74,6 +78,7 @@ describe('AuthService', () => {
     refreshSession: jest.fn(),
     signOut: jest.fn(),
     resetPasswordForEmail: jest.fn(),
+    resetPasswordWithToken: jest.fn(),
     updateOwnPassword: jest.fn(),
     updatePasswordById: jest.fn(),
     signJwt: jest.fn(),
@@ -90,12 +95,37 @@ describe('AuthService', () => {
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
   };
 
+  const TEST_ACCESS_SECRET = 'test-secret-min-32-chars-for-hs256';
+
   const mockTokenBlacklistService = {
     blacklist: jest.fn(),
+    blacklistToken: jest.fn(),
     isBlacklisted: jest.fn(),
     blacklistAllUserTokens: jest.fn(),
     isUserBlacklisted: jest.fn(),
   };
+
+  const mockConfigService = {
+    getOrThrow: jest.fn((key: string) => {
+      if (key === 'BETTER_AUTH_SECRET') return TEST_ACCESS_SECRET;
+      throw new Error(`Missing env var: ${key}`);
+    }),
+  };
+
+  const signAccessJwt = (
+    sub = 'user-123',
+    overrides: Record<string, unknown> = {},
+  ) =>
+    jwt.sign(
+      {
+        sub,
+        email: 'juan.garcia@example.com',
+        ...accessJwtClaims(),
+        ...overrides,
+      },
+      TEST_ACCESS_SECRET,
+      { algorithm: 'HS256', expiresIn: '8h' },
+    );
 
   const mockEmailService = {
     sendEmailVerification: jest.fn().mockResolvedValue(undefined),
@@ -103,6 +133,7 @@ describe('AuthService', () => {
   };
 
   beforeEach(async () => {
+    mockTokenBlacklistService.blacklistToken.mockResolvedValue(undefined);
     mockPrismaService.$transaction.mockImplementation(
       async (callback: (tx: typeof mockTx) => Promise<unknown>) =>
         callback(mockTx),
@@ -126,6 +157,7 @@ describe('AuthService', () => {
           provide: EmailService,
           useValue: mockEmailService,
         },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
 
@@ -530,6 +562,57 @@ describe('AuthService', () => {
       expect(result.data.accessToken).toBe('new-sacdia-jwt');
       expect(result.data.refreshToken).toBe('same-ba-session-token');
     });
+
+    it('blacklists the presented access JWT when it belongs to the same user', async () => {
+      mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+      mockTokenBlacklistService.blacklistToken.mockResolvedValue(undefined);
+      const presented = signAccessJwt();
+
+      await service.refreshSession(
+        { refreshToken: 'ba-session-token' },
+        { accessToken: presented },
+      );
+
+      expect(mockTokenBlacklistService.blacklistToken).toHaveBeenCalledWith(
+        presented,
+        28800,
+      );
+    });
+
+    it('does not blacklist when no access JWT is presented', async () => {
+      mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+
+      await service.refreshSession({ refreshToken: 'ba-session-token' });
+
+      expect(mockTokenBlacklistService.blacklistToken).not.toHaveBeenCalled();
+    });
+
+    it('does not blacklist a foreign user access JWT', async () => {
+      mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+      const presented = signAccessJwt('other-user');
+
+      await service.refreshSession(
+        { refreshToken: 'ba-session-token' },
+        { accessToken: presented },
+      );
+
+      expect(mockTokenBlacklistService.blacklistToken).not.toHaveBeenCalled();
+    });
+
+    it('does not fail refresh when blacklist storage rejects', async () => {
+      mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+      mockTokenBlacklistService.blacklistToken.mockRejectedValue(
+        new Error('redis down'),
+      );
+      const presented = signAccessJwt();
+
+      const result = await service.refreshSession(
+        { refreshToken: 'ba-session-token' },
+        { accessToken: presented },
+      );
+
+      expect(result.data.accessToken).toBe('new-sacdia-jwt');
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -586,6 +669,60 @@ describe('AuthService', () => {
       await expect(
         service.requestPasswordReset({ email: 'juan.garcia@example.com' }),
       ).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // confirmPasswordReset()
+  // ---------------------------------------------------------------------------
+  describe('confirmPasswordReset', () => {
+    it('should consume the token, revoke sessions, and blacklist JWTs without issuing a session', async () => {
+      mockBetterAuthService.resetPasswordWithToken.mockResolvedValue({
+        userId: 'user-123',
+      });
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 2 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockResolvedValue(
+        undefined,
+      );
+
+      const result = await service.confirmPasswordReset({
+        token: 'reset-token',
+        password: 'NewPassword123!',
+      });
+
+      expect(mockBetterAuthService.resetPasswordWithToken).toHaveBeenCalledWith(
+        'reset-token',
+        'NewPassword123!',
+      );
+      expect(mockPrismaService.session.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123' },
+      });
+      expect(
+        mockTokenBlacklistService.blacklistAllUserTokens,
+      ).toHaveBeenCalledWith('user-123', 28800);
+      expect(result).toEqual({
+        success: true,
+        message: 'Contraseña actualizada. Inicie sesión de nuevo',
+      });
+    });
+
+    it('should propagate invalid token errors without revoking sessions', async () => {
+      mockBetterAuthService.resetPasswordWithToken.mockRejectedValue(
+        new AppBadRequestException(ErrorCode.AUTH_PASSWORD_RESET_TOKEN_INVALID),
+      );
+
+      await expect(
+        service.confirmPasswordReset({
+          token: 'bad-token',
+          password: 'NewPassword123!',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_PASSWORD_RESET_TOKEN_INVALID,
+      });
+      expect(mockPrismaService.session.deleteMany).not.toHaveBeenCalled();
+      expect(
+        mockTokenBlacklistService.blacklistAllUserTokens,
+      ).not.toHaveBeenCalled();
     });
   });
 
@@ -1246,6 +1383,23 @@ describe('AuthService', () => {
   describe('confirmEmailVerification', () => {
     const validToken = 'valid-base64url-token';
     const futureDate = new Date(Date.now() + 60 * 60 * 1000); // 1h from now
+
+    it('should reject namespaced tokens without consuming them', async () => {
+      mockPrismaService.verification.findFirst.mockResolvedValue({
+        id: 'verification-reset-1',
+        identifier: 'password-reset:juan.garcia@example.com',
+        value: validToken,
+        expiresAt: futureDate,
+      });
+
+      await expect(
+        service.confirmEmailVerification({ token: validToken }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID,
+      });
+      expect(mockPrismaService.users.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.verification.delete).not.toHaveBeenCalled();
+    });
 
     it('should throw BadRequestException when token does not exist', async () => {
       mockPrismaService.verification.findFirst.mockResolvedValue(null);

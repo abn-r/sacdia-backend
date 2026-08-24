@@ -109,29 +109,46 @@ const FILE_FREE_TYPES = new Set(['text', 'video_link']);
  * (fail-open) rather than rejected — this keeps the door open for future types
  * while guaranteeing the ones we explicitly know are validated.
  */
-function validateMagicBytes(file: Express.Multer.File): void {
-  const signature = MAGIC_BYTES[file.mimetype];
-  if (!signature || !file.buffer) return; // no entry → skip check
-
+function matchesMagicSignature(
+  buffer: Buffer,
+  signature: { offset: number; bytes: number[]; altBytes?: number[][] },
+): boolean {
   const { offset, bytes, altBytes } = signature;
   const requiredLength = offset + bytes.length;
-
-  if (file.buffer.length < requiredLength) {
-    throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH, {
-      detected: 'unknown',
-    });
+  if (buffer.length < requiredLength) {
+    return false;
   }
 
   const matchesSequence = (seq: number[]): boolean =>
-    seq.every((byte, i) => file.buffer[offset + i] === byte);
+    seq.every((byte, i) => buffer[offset + i] === byte);
 
-  if (matchesSequence(bytes)) return;
+  return (
+    matchesSequence(bytes) ||
+    Boolean(altBytes?.some((alt) => matchesSequence(alt)))
+  );
+}
 
-  if (altBytes && altBytes.some((alt) => matchesSequence(alt))) return;
+/**
+ * Fail-closed magic check for a declared MIME. Used after a presigned PUT
+ * (R2 prefix sample) and by multipart validation for known types.
+ */
+export function assertResourceDeclaredMimeMagic(
+  mimeType: string,
+  buffer: Buffer,
+): void {
+  const signature = MAGIC_BYTES[mimeType];
+  if (!signature || !matchesMagicSignature(buffer, signature)) {
+    throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH, {
+      detected: mimeType,
+    });
+  }
+}
 
-  throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH, {
-    detected: file.mimetype,
-  });
+function validateMagicBytes(file: Express.Multer.File): void {
+  const signature = MAGIC_BYTES[file.mimetype];
+  if (!signature || !file.buffer) return;
+
+  assertResourceDeclaredMimeMagic(file.mimetype, file.buffer);
 }
 
 /**

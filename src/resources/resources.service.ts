@@ -22,6 +22,7 @@ import type {
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ALLOWED_RESOURCE_MIME_TYPES,
+  assertResourceDeclaredMimeMagic,
   validateResourceFile,
 } from './pipes/resource-file-validation.pipe';
 import type { CreateResourceDto } from './dto/create-resource.dto';
@@ -38,6 +39,9 @@ const SIGNED_UPLOAD_TTL_SECONDS = 15 * 60;
 
 /** Tolerancia entre tamaño anunciado y real en R2 antes de rechazar (1%). */
 const FILE_SIZE_TOLERANCE_RATIO = 0.01;
+
+/** Bytes to sample from R2 after a presigned PUT (covers WebP/WAV offset 8). */
+const RESOURCE_MAGIC_SAMPLE_BYTES = 64;
 
 type ResourceScopeLevel = 'system' | 'division' | 'union' | 'local_field';
 
@@ -209,8 +213,8 @@ export class ResourcesService {
       );
     }
 
-    // 2. MIME must match what the resource_type accepts. This is the only line
-    // of defense we have before the upload happens, so do it strictly.
+    // 2. MIME must match what the resource_type accepts before issuing the PUT.
+    // createFromUploaded re-checks MIME and samples magic bytes after the PUT.
     const allowed = ALLOWED_RESOURCE_MIME_TYPES[dto.resource_type];
     if (!allowed || !allowed.includes(dto.mime_type)) {
       throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_TYPE_INVALID, {
@@ -323,6 +327,18 @@ export class ResourcesService {
         max_mb: String(Math.ceil(actual / (1024 * 1024))),
       });
     }
+
+    const prefix = await this.fileStorage.getObjectPrefix(
+      StorageBucketAlias.RESOURCES_FILES,
+      dto.file_key,
+      RESOURCE_MAGIC_SAMPLE_BYTES,
+    );
+    if (!prefix) {
+      throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_REQUIRED, {
+        resource_type: dto.resource_type,
+      });
+    }
+    assertResourceDeclaredMimeMagic(dto.file_mime_type, prefix);
 
     // 5. Validate related FKs (mirror create()).
     if (dto.resource_category_id != null) {

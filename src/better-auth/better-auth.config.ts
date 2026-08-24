@@ -5,6 +5,7 @@ import { prismaAdapter } from 'better-auth/adapters/prisma';
 // See better-auth.service.ts for the TOTP API differences documented there.
 import { twoFactor } from 'better-auth/plugins';
 import { PrismaClient } from '@prisma/client';
+import { resolveBetterAuthTrustedOrigins } from '../auth/oauth-redirect-allowlist';
 
 /**
  * Creates the Better Auth instance.
@@ -82,6 +83,9 @@ export function createBetterAuth(
     },
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL: process.env.BETTER_AUTH_BASE_URL,
+    // Same source as OAuth initiate. http(s) entries become origins (BA API);
+    // custom schemes stay exact. Exact path check remains in OAuthService.
+    trustedOrigins: resolveBetterAuthTrustedOrigins(),
   }) as unknown as ReturnType<typeof betterAuth>;
 }
 

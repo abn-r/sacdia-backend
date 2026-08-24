@@ -12,6 +12,7 @@ describe('AuthController', () => {
     refreshSession: jest.fn(),
     logout: jest.fn(),
     requestPasswordReset: jest.fn(),
+    confirmPasswordReset: jest.fn(),
     sendVerificationEmail: jest.fn(),
     confirmEmailVerification: jest.fn(),
     updateOwnPassword: jest.fn(),
@@ -93,8 +94,21 @@ describe('AuthController', () => {
 
       expect(mockAuthService.refreshSession).toHaveBeenCalledWith(dto, {
         userAgent,
+        accessToken: undefined,
       });
       expect(result).toEqual(expected);
+    });
+
+    it('forwards the Bearer access token when present', async () => {
+      const dto = { refreshToken: 'refresh-token' };
+      mockAuthService.refreshSession.mockResolvedValue({ status: 'success' });
+
+      await controller.refresh(dto, 'sacdia-test-agent', 'Bearer old-access');
+
+      expect(mockAuthService.refreshSession).toHaveBeenCalledWith(dto, {
+        userAgent: 'sacdia-test-agent',
+        accessToken: 'old-access',
+      });
     });
   });
 
@@ -129,6 +143,22 @@ describe('AuthController', () => {
       const result = await controller.requestPasswordReset(dto);
 
       expect(mockAuthService.requestPasswordReset).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('confirmPasswordReset', () => {
+    it('should delegate to authService.confirmPasswordReset with token and password', async () => {
+      const dto = { token: 'reset-token', password: 'NewPassword123!' };
+      const expected = {
+        success: true,
+        message: 'Contraseña actualizada. Inicie sesión de nuevo',
+      };
+      mockAuthService.confirmPasswordReset.mockResolvedValue(expected);
+
+      const result = await controller.confirmPasswordReset(dto);
+
+      expect(mockAuthService.confirmPasswordReset).toHaveBeenCalledWith(dto);
       expect(result).toEqual(expected);
     });
   });

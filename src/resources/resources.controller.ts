@@ -146,12 +146,14 @@ export class ResourcesController {
     summary: 'Crear recurso desde archivo ya subido a R2 (presigned flow)',
     description:
       'Companion a POST /resources/upload-url. El cliente debe haber hecho PUT ' +
-      'al `upload_url` antes de llamar este endpoint con el `file_key` devuelto.',
+      'al `upload_url` antes de llamar este endpoint con el `file_key` devuelto. ' +
+      'El backend hace HEAD + lee un prefijo y exige magic bytes alineados al MIME.',
   })
   @ApiResponse({ status: 201, description: 'Recurso creado' })
   @ApiResponse({
     status: 400,
-    description: 'file_key no existe en R2 o tamaño no coincide',
+    description:
+      'file_key no existe en R2, tamaño no coincide, o magic bytes no coinciden con el MIME',
   })
   @ApiResponse({
     status: 403,

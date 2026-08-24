@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import { CertificateBulkImportsService } from './certificate-bulk-imports.service';
 import { CertificateBulkImportItemType } from './certificate-bulk-imports.types';
 
@@ -53,7 +54,7 @@ describe('CertificateBulkImportsService', () => {
     const result = await service.createDraft('user-1', {
       files: [
         {
-          file_url: 'https://cdn.sacdia.app/cert.jpg',
+          file_url: 'evidence/cert.jpg',
           file_name: 'cert.jpg',
           file_type: 'image/jpeg',
         },
@@ -69,8 +70,68 @@ describe('CertificateBulkImportsService', () => {
           files: {
             create: [
               expect.objectContaining({
-                file_url: 'https://cdn.sacdia.app/cert.jpg',
+                file_url: 'evidence/cert.jpg',
                 uploaded_by_id: 'user-1',
+              }),
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('rejects a draft file_url that is not a storage key or allowed https host', async () => {
+    await expect(
+      service.createDraft('user-1', {
+        files: [
+          {
+            file_url: 'http://127.0.0.1/latest/meta-data',
+            file_name: 'cert.jpg',
+            file_type: 'image/jpeg',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CERTIFICATE_IMPORT_FILE_URL_INVALID,
+    });
+    expect(prisma.users.findUnique).not.toHaveBeenCalled();
+    expect(tx.certificate_bulk_import_batches.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts an https file_url when the host is an R2 public URL', async () => {
+    const previous = process.env.R2_PUBLIC_URL_EVIDENCE_FILES;
+    process.env.R2_PUBLIC_URL_EVIDENCE_FILES = 'https://files.example';
+    tx.certificate_bulk_import_batches.create.mockResolvedValue({
+      batch_id: 'batch-1',
+      status: 'DRAFT',
+      user_id: 'user-1',
+    });
+
+    try {
+      await service.createDraft('user-1', {
+        files: [
+          {
+            file_url: 'https://files.example/evidence/cert.jpg',
+            file_name: 'cert.jpg',
+            file_type: 'image/jpeg',
+          },
+        ],
+      });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.R2_PUBLIC_URL_EVIDENCE_FILES;
+      } else {
+        process.env.R2_PUBLIC_URL_EVIDENCE_FILES = previous;
+      }
+    }
+
+    expect(tx.certificate_bulk_import_batches.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          files: {
+            create: [
+              expect.objectContaining({
+                file_url: 'https://files.example/evidence/cert.jpg',
               }),
             ],
           },
@@ -86,7 +147,7 @@ describe('CertificateBulkImportsService', () => {
       status: 'DRAFT',
       files: [
         {
-          file_url: 'https://cdn.sacdia.app/cert.jpg',
+          file_url: 'evidence/cert.jpg',
           file_name: 'cert.jpg',
           file_type: 'image/jpeg',
           ocr_raw_text: 'Especialidad: Mayordomía',
@@ -124,6 +185,28 @@ describe('CertificateBulkImportsService', () => {
         }),
       ],
     });
+  });
+
+  it('does not run OCR when a stored file_url is not an allowed reference', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      files: [
+        {
+          file_url: 'https://169.254.169.254/latest/meta-data',
+          file_name: 'cert.jpg',
+          file_type: 'image/jpeg',
+        },
+      ],
+    });
+
+    await expect(service.processOcr('user-1', 'batch-1')).rejects.toMatchObject(
+      {
+        code: ErrorCode.CERTIFICATE_IMPORT_FILE_URL_INVALID,
+      },
+    );
+    expect(ocrProvider.extract).not.toHaveBeenCalled();
   });
 
   it('moves an item to READY when required fields are corrected', async () => {

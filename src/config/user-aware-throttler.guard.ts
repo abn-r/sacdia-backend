@@ -3,6 +3,11 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
+  ACCESS_JWT_AUDIENCE,
+  ACCESS_JWT_ISSUER,
+} from '../common/constants/jwt-audiences';
+import { resolveClientIp } from './client-ip';
+import {
   InjectThrottlerOptions,
   InjectThrottlerStorage,
   ThrottlerGuard,
@@ -24,7 +29,9 @@ export class UserAwareThrottlerGuard extends ThrottlerGuard {
     super(options, storageService, reflector);
   }
 
-  protected override async getTracker(req: Record<string, any>): Promise<string> {
+  protected override async getTracker(
+    req: Record<string, any>,
+  ): Promise<string> {
     const userId = this.extractUserId(req?.user);
     if (userId) {
       return `user:${userId}`;
@@ -58,6 +65,8 @@ export class UserAwareThrottlerGuard extends ThrottlerGuard {
       const payload = await this.jwtService.verifyAsync(token, {
         secret,
         algorithms: ['HS256'],
+        issuer: ACCESS_JWT_ISSUER,
+        audience: ACCESS_JWT_AUDIENCE,
       });
 
       if (
@@ -89,7 +98,9 @@ export class UserAwareThrottlerGuard extends ThrottlerGuard {
     return undefined;
   }
 
-  private extractAuthorizationHeader(req: Record<string, any>): string | undefined {
+  private extractAuthorizationHeader(
+    req: Record<string, any>,
+  ): string | undefined {
     const headers = req?.headers;
     if (!headers || typeof headers !== 'object') {
       return undefined;
@@ -122,16 +133,6 @@ export class UserAwareThrottlerGuard extends ThrottlerGuard {
   }
 
   private extractIp(req: Record<string, any>): string {
-    const socketIp = req?.socket?.remoteAddress;
-
-    if (typeof req?.ip === 'string' && req.ip.trim().length > 0) {
-      return req.ip;
-    }
-
-    if (typeof socketIp === 'string' && socketIp.trim().length > 0) {
-      return socketIp;
-    }
-
-    return 'unknown';
+    return resolveClientIp(req);
   }
 }

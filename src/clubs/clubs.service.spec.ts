@@ -854,6 +854,9 @@ describe('ClubsService', () => {
         .mockResolvedValueOnce([
           { start_date: date('2027-03-01'), end_date: date('2027-01-01') },
         ]);
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: 'role-2',
+      });
       mockPrismaService.roles.findUnique.mockResolvedValue({
         role_name: 'secretary-treasurer',
       });
@@ -907,6 +910,9 @@ describe('ClubsService', () => {
         end_date: null,
       });
       mockPrismaService.role_slot_limits.findUnique.mockResolvedValue(null);
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: 'role-director',
+      });
       mockPrismaService.roles.findUnique.mockResolvedValue({
         role_name: 'director',
       });
@@ -946,6 +952,9 @@ describe('ClubsService', () => {
         max_per_section: 3,
       });
       mockPrismaService.club_role_assignments.count.mockResolvedValue(0);
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: 'role-1',
+      });
       mockPrismaService.roles.findUnique.mockResolvedValue({
         role_name: 'member',
       });
@@ -970,6 +979,58 @@ describe('ClubsService', () => {
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith('user-1');
+    });
+
+    it('rejects assignRole when role_id is not an active CLUB role', async () => {
+      mockPrismaService.roles.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.assignRole({
+          user_id: 'user-1',
+          role_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          club_section_id: 7,
+          ecclesiastical_year_id: 2026,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_ROLE_NOT_FOUND,
+      });
+      expect(mockPrismaService.roles.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            role_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            role_category: 'CLUB',
+            active: true,
+          }),
+        }),
+      );
+      expect(
+        mockPrismaService.club_role_assignments.create,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rejects updateRoleAssignment when role_id is not an active CLUB role', async () => {
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+        assignment_id: 'assignment-1',
+        user_id: 'user-1',
+        role_id: 'role-member',
+        club_section_id: 7,
+        active: true,
+        status: 'active',
+        start_date: new Date('2027-01-01'),
+        end_date: null,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateRoleAssignment('assignment-1', {
+          role_id: 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_ROLE_NOT_FOUND,
+      });
+      expect(
+        mockPrismaService.club_role_assignments.update,
+      ).not.toHaveBeenCalled();
     });
 
     it('bumps the durable version when a role assignment is removed', async () => {

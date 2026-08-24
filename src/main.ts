@@ -18,6 +18,13 @@ import { timeoutMiddleware } from './common/middleware/timeout.middleware';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { auditContextMiddleware } from './audit-logs/audit-request-context';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
+import { shouldExposeI18nValidationDetails } from './config/i18n-validation-details';
+import {
+  jsonBodyLimitForPath,
+  urlencodedBodyLimitForPath,
+} from './config/request-body-limits';
+import { resolveTrustProxyHops } from './config/trust-proxy';
+import express from 'express';
 // NOTE: HttpExceptionFilter and AllExceptionsFilter are registered via APP_FILTER
 // in CommonModule so they receive I18nService via DI. Do NOT use useGlobalFilters()
 // here — that would instantiate them without injection and break i18n.
@@ -135,11 +142,11 @@ async function bootstrap() {
   // ==========================================
   // TRUST PROXY — Client IP detection behind reverse proxies
   // ==========================================
-  // Must be set BEFORE any middleware that reads the client IP (helmet, throttler, etc.)
-  // Without this, ThrottlerGuard sees the proxy IP for all requests, making per-IP rate
-  // limiting completely ineffective when running behind Vercel / nginx / load balancers.
-  // Value 1 means: trust exactly one hop (the immediate upstream proxy).
-  app.set('trust proxy', 1);
+  // Must be set BEFORE any middleware that reads the client IP (helmet, throttler, etc.).
+  // Never `true`: leftmost X-Forwarded-For is client-spoofable.
+  // Production default is 1 (Render rewrites XFF; see resolveTrustProxyHops).
+  // Unauthenticated throttle keys on req.ip after this setting.
+  app.set('trust proxy', resolveTrustProxyHops());
 
   // ==========================================
   // SEGURIDAD - Helmet (Security Headers)
@@ -199,11 +206,22 @@ async function bootstrap() {
   // ==========================================
   // SEGURIDAD - Request Size Limits
   // ==========================================
-  app.useBodyParser('json', { limit: '10mb' });
-  app.useBodyParser('urlencoded', { extended: true, limit: '10mb' });
-  // Multipart/form-data size limits live in AppModule via MulterModule.register().
+  // JSON/urlencoded default 512kb (SEC-009). Rare admin catalog writes may use
+  // 10mb via request-body-limits.ts. Multipart uploads use MulterModule (10mb).
   // Do NOT add a raw body parser for multipart here — it consumes the stream
   // before Multer can parse boundaries, causing "Unexpected end of form" 400s.
+  app.use((req, res, next) => {
+    express.json({ limit: jsonBodyLimitForPath(req.path) })(req, res, (err) => {
+      if (err) {
+        next(err);
+        return;
+      }
+      express.urlencoded({
+        extended: true,
+        limit: urlencodedBodyLimitForPath(req.path),
+      })(req, res, next);
+    });
+  });
 
   // ==========================================
   // CORS
@@ -275,8 +293,11 @@ async function bootstrap() {
   // does NOT require injected services — it reads I18nContext from the CLS store
   // populated by nestjs-i18n middleware. Catches I18nValidationException thrown by
   // I18nValidationPipe and returns translated field-level messages.
+  // Production flattens to string[] so 400s do not echo constraint keys or DTO shape.
   app.useGlobalFilters(
-    new I18nValidationExceptionFilter({ detailedErrors: true }),
+    new I18nValidationExceptionFilter({
+      detailedErrors: shouldExposeI18nValidationDetails(),
+    }),
   );
 
   // ==========================================

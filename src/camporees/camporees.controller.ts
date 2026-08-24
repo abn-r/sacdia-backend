@@ -17,6 +17,10 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
+import {
   ApiTags,
   ApiOperation,
   ApiResponse,
@@ -1136,7 +1140,7 @@ export class CamporeesController {
     summary: 'Adjuntar comprobante a un pago',
     description:
       'Sube un archivo (JPG, PNG, WebP o PDF, máximo 10MB) como comprobante del pago. ' +
-      'Reemplaza cualquier comprobante previo.',
+      'El MIME declarado debe coincidir con magic bytes. Reemplaza cualquier comprobante previo.',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'paymentId', type: String, description: 'UUID del pago' })
@@ -1158,7 +1162,13 @@ export class CamporeesController {
   async uploadPaymentVoucher(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('paymentId', ParseUUIDPipe) paymentId: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(
+      new FileValidationPipe({
+        maxSize: 10 * 1024 * 1024,
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
+      }),
+    )
+    file: Express.Multer.File,
   ) {
     return this.camporeesService.uploadPaymentVoucher(
       camporeeId,

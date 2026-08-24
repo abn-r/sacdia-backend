@@ -174,6 +174,40 @@ describe('HttpAuditInterceptor', () => {
     expect(recordEvent).not.toHaveBeenCalled();
   });
 
+  it('records Express req.ip and ignores spoofed forwarded headers', async () => {
+    await runInterceptor(
+      makeRequest({
+        ip: '203.0.113.45',
+        headers: {
+          'user-agent': 'jest',
+          'x-forwarded-for': '198.51.100.1, 203.0.113.45',
+          'x-real-ip': '198.51.100.9',
+        },
+      }),
+    );
+
+    expect(recordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request_context: expect.objectContaining({ ip: '203.0.113.45' }),
+      }),
+    );
+  });
+
+  it('falls back to the socket address when req.ip is missing', async () => {
+    await runInterceptor(
+      makeRequest({
+        ip: undefined,
+        socket: { remoteAddress: '198.51.100.21' },
+      }),
+    );
+
+    expect(recordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request_context: expect.objectContaining({ ip: '198.51.100.21' }),
+      }),
+    );
+  });
+
   it('propagates the request correlation id', async () => {
     const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
     await runWithAuditContext(async () => {
