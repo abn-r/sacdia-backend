@@ -40,7 +40,14 @@ export type CamporeeOrderView = {
   total_centavos: number;
   expires_at: Date;
   issued_by_id: string;
+  approved_by_id: string | null;
+  approved_at: Date | null;
   authorized_without_proof: boolean;
+  authorized_by_id: string | null;
+  authorized_at: Date | null;
+  authorization_reason: string | null;
+  delivered_to_section_by_id: string | null;
+  delivered_to_section_at: Date | null;
   bank_name: string | null;
   bank_account: string | null;
   bank_clabe: string | null;

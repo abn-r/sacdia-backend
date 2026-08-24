@@ -2,8 +2,11 @@ import { ErrorCode } from '../common/errors/error-codes';
 import type { ActorTerritoryScope } from '../common/authorization/actor-territory-scope';
 import type { CamporeeOrderActor } from './camporee-order-actor';
 import { CamporeeOrdersService } from './camporee-orders.service';
+import { CamporeeOrderDistributionService } from './distribution.service';
 import { EligibilityService } from './eligibility.service';
 import type { CreateCamporeeOrderDto } from './dto/create-camporee-order.dto';
+import { CamporeeOrderPdfService } from './pdf.service';
+import { CamporeeOrderProofService } from './proof.service';
 
 const LF_10 = 10;
 const SECTION_11 = 11;
@@ -223,6 +226,11 @@ describe('CamporeeOrdersService', () => {
       camporee_orders: {
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      camporee_order_proofs: {
+        create: jest.fn(),
+        update: jest.fn(),
       },
     };
     prisma = {
@@ -235,11 +243,25 @@ describe('CamporeeOrdersService', () => {
         findUnique: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      camporee_order_proofs: {
+        findFirst: jest.fn(),
+        update: jest.fn(),
+        create: jest.fn(),
+      },
+      camporee_order_lines: {
+        findFirst: jest.fn(),
+        update: jest.fn(),
       },
       camporee_members: { findMany: jest.fn() },
       camporee_clubs: { findFirst: jest.fn() },
       union_camporee_local_fields: { findFirst: jest.fn() },
       system_config: { findUnique: jest.fn().mockResolvedValue(null) },
+      users: { findUnique: jest.fn(), findMany: jest.fn() },
+      local_fields: { findUnique: jest.fn() },
+      clubs: { findUnique: jest.fn() },
+      club_sections: { findUnique: jest.fn() },
       $transaction: jest.fn((cb: any) => cb(tx)),
     };
     folio = {
@@ -296,6 +318,14 @@ describe('CamporeeOrdersService', () => {
       prisma,
       folio,
       new EligibilityService(prisma),
+      new CamporeeOrderPdfService(),
+      new CamporeeOrderProofService(prisma, {
+        upload: jest.fn().mockResolvedValue({ key: 'stored-key' }),
+        getSignedDownloadUrl: jest
+          .fn()
+          .mockResolvedValue('https://signed.example'),
+      } as any),
+      new CamporeeOrderDistributionService(prisma),
     );
   });
 
@@ -651,6 +681,259 @@ describe('CamporeeOrdersService', () => {
 
       const result = await service.get('order-1', clubActor());
       expect(result.distribution_status).toBe('PARTIAL');
+    });
+  });
+
+  describe('lifecycle', () => {
+    const submittedProof = (uploadedBy = DIRECTOR_ID) => ({
+      camporee_order_proof_id: 'proof-1',
+      order_id: 'order-1',
+      status: 'SUBMITTED',
+      uploaded_by_id: uploadedBy,
+      created_at: new Date('2026-08-24T18:30:00.000Z'),
+    });
+
+    it('expires an ISSUED order past its deadline on read', async () => {
+      prisma.camporee_orders.findUnique.mockResolvedValue(
+        existingOrder({ expires_at: new Date('2020-01-01T00:00:00.000Z') }),
+      );
+
+      const result = await service.get('order-1', clubActor());
+
+      expect(result.status).toBe('EXPIRED');
+      expect(prisma.camporee_orders.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { camporee_order_id: 'order-1', status: 'ISSUED' },
+          data: expect.objectContaining({ status: 'EXPIRED' }),
+        }),
+      );
+    });
+
+    it('does not expire a PAID order past expires_at', async () => {
+      prisma.camporee_orders.findUnique.mockResolvedValue(
+        existingOrder({
+          status: 'PAID',
+          expires_at: new Date('2020-01-01T00:00:00.000Z'),
+        }),
+      );
+
+      const result = await service.get('order-1', clubActor());
+      expect(result.status).toBe('PAID');
+      expect(prisma.camporee_orders.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('enforces maker-checker on approve', async () => {
+      prisma.camporee_orders.findUnique.mockResolvedValue(
+        existingOrder({ status: 'PROOF_SUBMITTED' }),
+      );
+      prisma.camporee_order_proofs.findFirst.mockResolvedValue(
+        submittedProof(lfReviewer().userId),
+      );
+
+      await expect(service.approve('order-1', lfReviewer())).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_ORDER_MAKER_CHECKER,
+        status: 403,
+      });
+    });
+
+    it('approves a submitted proof and marks the order PAID', async () => {
+      const submitted = existingOrder({ status: 'PROOF_SUBMITTED' });
+      const paid = existingOrder({ status: 'PAID' });
+      prisma.camporee_orders.findUnique
+        .mockResolvedValueOnce(submitted)
+        .mockResolvedValueOnce(paid);
+      prisma.camporee_order_proofs.findFirst.mockResolvedValue(
+        submittedProof(),
+      );
+      tx.camporee_orders.update.mockResolvedValue(paid);
+
+      const result = await service.approve('order-1', lfReviewer());
+
+      expect(result.status).toBe('PAID');
+      expect(tx.camporee_orders.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            camporee_order_id: 'order-1',
+            status: 'PROOF_SUBMITTED',
+          },
+          data: expect.objectContaining({
+            status: 'PAID',
+            approved_by_id: lfReviewer().userId,
+          }),
+        }),
+      );
+      expect(tx.camporee_order_proofs.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'APPROVED' }),
+        }),
+      );
+    });
+
+    it('rejects a proof with a required reason', async () => {
+      await expect(
+        service.reject('order-1', '   ', lfReviewer()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_ORDER_REJECT_REASON_REQUIRED,
+      });
+    });
+
+    it('moves PROOF_SUBMITTED to PROOF_REJECTED', async () => {
+      prisma.camporee_orders.findUnique
+        .mockResolvedValueOnce(existingOrder({ status: 'PROOF_SUBMITTED' }))
+        .mockResolvedValueOnce(existingOrder({ status: 'PROOF_REJECTED' }));
+      prisma.camporee_order_proofs.findFirst.mockResolvedValue(
+        submittedProof(),
+      );
+
+      const result = await service.reject(
+        'order-1',
+        'monto no coincide',
+        lfReviewer(),
+      );
+
+      expect(result.status).toBe('PROOF_REJECTED');
+      expect(tx.camporee_order_proofs.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'REJECTED',
+            reject_reason: 'monto no coincide',
+          }),
+        }),
+      );
+    });
+
+    it('approves a later documentary proof without changing PAID', async () => {
+      const paid = existingOrder({
+        status: 'PAID',
+        authorized_without_proof: true,
+      });
+      prisma.camporee_orders.findUnique.mockResolvedValue(paid);
+      prisma.camporee_order_proofs.findFirst.mockResolvedValue(
+        submittedProof(),
+      );
+      prisma.camporee_order_proofs.update.mockResolvedValue({
+        status: 'APPROVED',
+      });
+
+      const result = await service.approve('order-1', lfReviewer());
+
+      expect(result.status).toBe('PAID');
+      expect(prisma.camporee_order_proofs.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'APPROVED' }),
+        }),
+      );
+      expect(tx.camporee_orders.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a later documentary proof without leaving PAID', async () => {
+      prisma.camporee_orders.findUnique.mockResolvedValue(
+        existingOrder({
+          status: 'PAID',
+          authorized_without_proof: true,
+        }),
+      );
+      prisma.camporee_order_proofs.findFirst.mockResolvedValue(
+        submittedProof(),
+      );
+
+      const result = await service.reject(
+        'order-1',
+        'ilegible',
+        lfReviewer(),
+      );
+
+      expect(result.status).toBe('PAID');
+      expect(prisma.camporee_order_proofs.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'REJECTED' }),
+        }),
+      );
+      expect(tx.camporee_orders.update).not.toHaveBeenCalled();
+    });
+
+    it('authorizes without proof from ISSUED with a required reason', async () => {
+      prisma.camporee_orders.findUnique
+        .mockResolvedValueOnce(existingOrder())
+        .mockResolvedValueOnce(
+          existingOrder({
+            status: 'PAID',
+            authorized_without_proof: true,
+            authorization_reason: 'pago en caja',
+          }),
+        );
+      prisma.camporee_orders.update.mockResolvedValue(
+        existingOrder({ status: 'PAID' }),
+      );
+
+      const result = await service.authorizeWithoutProof(
+        'order-1',
+        'pago en caja',
+        lfReviewer(),
+      );
+
+      expect(result.status).toBe('PAID');
+      expect(result.authorized_without_proof).toBe(true);
+      expect(prisma.camporee_orders.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'PAID',
+            authorized_without_proof: true,
+            authorized_by_id: lfReviewer().userId,
+            authorization_reason: 'pago en caja',
+          }),
+        }),
+      );
+    });
+
+    it('requires a reason for authorize-without-proof', async () => {
+      prisma.camporee_orders.findUnique.mockResolvedValue(existingOrder());
+      await expect(
+        service.authorizeWithoutProof('order-1', '  ', lfReviewer()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_ORDER_AUTHORIZATION_REASON_REQUIRED,
+      });
+    });
+
+    it('forbids club leadership from authorize-without-proof', async () => {
+      prisma.camporee_orders.findUnique.mockResolvedValue(existingOrder());
+      await expect(
+        service.authorizeWithoutProof('order-1', 'caja', clubActor()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_ORDER_FORBIDDEN,
+        status: 403,
+      });
+    });
+
+    it('delivers to the section only from PAID', async () => {
+      prisma.camporee_orders.findUnique.mockResolvedValue(
+        existingOrder({ status: 'ISSUED' }),
+      );
+      await expect(
+        service.deliverToSection('order-1', lfReviewer()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_ORDER_INVALID_TRANSITION,
+      });
+    });
+
+    it('marks PAID as DELIVERED for an LF operator', async () => {
+      prisma.camporee_orders.findUnique
+        .mockResolvedValueOnce(existingOrder({ status: 'PAID' }))
+        .mockResolvedValueOnce(existingOrder({ status: 'DELIVERED' }));
+      prisma.camporee_orders.update.mockResolvedValue(
+        existingOrder({ status: 'DELIVERED' }),
+      );
+
+      const result = await service.deliverToSection('order-1', lfReviewer());
+      expect(result.status).toBe('DELIVERED');
+      expect(prisma.camporee_orders.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'DELIVERED',
+            delivered_to_section_by_id: lfReviewer().userId,
+          }),
+        }),
+      );
     });
   });
 });

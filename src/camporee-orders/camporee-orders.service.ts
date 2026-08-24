@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
+  AppBadRequestException,
   AppConflictException,
   AppForbiddenException,
   AppNotFoundException,
@@ -10,8 +11,12 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   assertCanIssueOrder,
+  canAuthorizeWithoutProof,
+  canDeliverToSection,
+  canReviewPayment,
   type CamporeeOrderActor,
 } from './camporee-order-actor';
+import { CamporeeOrderDistributionService } from './distribution.service';
 import type { CreateCamporeeOrderDto } from './dto/create-camporee-order.dto';
 import type { ListCamporeeOrdersQueryDto } from './dto/list-camporee-orders.query.dto';
 import {
@@ -27,6 +32,15 @@ import {
   type CamporeeKind,
   type CamporeeOrdersWindowSource,
 } from './offerings.service';
+import {
+  CamporeeOrderPdfService,
+  type CamporeeOrderPdfModel,
+} from './pdf.service';
+import { CamporeeOrderProofService } from './proof.service';
+import {
+  assertTransition,
+  type CamporeeOrderStatus,
+} from './state-machine';
 
 export const CAMPOREE_ORDERS_EXPIRY_DAYS_KEY = 'camporee_orders.expiry_days';
 export const DEFAULT_CAMPOREE_ORDER_EXPIRY_DAYS = 15;
@@ -78,6 +92,9 @@ export class CamporeeOrdersService {
     private readonly prisma: PrismaService,
     private readonly folio: CamporeeOrderFolioService,
     private readonly eligibility: EligibilityService,
+    private readonly pdf: CamporeeOrderPdfService,
+    private readonly proofs: CamporeeOrderProofService,
+    private readonly distribution: CamporeeOrderDistributionService,
   ) {}
 
   async create(
@@ -227,9 +244,11 @@ export class CamporeeOrdersService {
     query: ListCamporeeOrdersQueryDto,
     actor: CamporeeOrderActor,
   ): Promise<CamporeeOrderView[]> {
+    const scope = this.buildScopeWhere(actor);
+    await this.expireDueOrders(scope);
     const orders = await this.prisma.camporee_orders.findMany({
       where: {
-        ...this.buildScopeWhere(actor),
+        ...scope,
         ...(query.status ? { status: query.status } : {}),
         ...(query.camporee_id ? { local_camporee_id: query.camporee_id } : {}),
         ...(query.union_camporee_id
@@ -246,15 +265,286 @@ export class CamporeeOrdersService {
     orderId: string,
     actor: CamporeeOrderActor,
   ): Promise<CamporeeOrderView> {
-    const order = await this.prisma.camporee_orders.findUnique({
-      where: { camporee_order_id: orderId },
-      include: ORDER_INCLUDE,
-    });
-    if (!order) {
-      throw new AppNotFoundException(ErrorCode.CAMPOREE_ORDER_NOT_FOUND);
-    }
-    this.assertCanAccess(order, actor);
+    const found = await this.loadOrder(orderId);
+    this.assertCanAccess(found, actor);
+    const order = await this.expireIfDue(found);
     return this.toDto(order);
+  }
+
+  async getDocument(orderId: string, actor: CamporeeOrderActor) {
+    const view = await this.get(orderId, actor);
+    const order = await this.loadOrder(orderId);
+    const model = await this.buildPdfModel(order);
+    const buffer = await this.pdf.render(model);
+    return { buffer, folio_reference: view.folio_reference };
+  }
+
+  async getProofDownload(orderId: string, actor: CamporeeOrderActor) {
+    const order = await this.loadOrder(orderId);
+    this.assertCanAccess(order, actor);
+    return this.proofs.getSignedDownload(orderId);
+  }
+
+  async uploadProof(
+    orderId: string,
+    file: Express.Multer.File,
+    actor: CamporeeOrderActor,
+  ) {
+    const found = await this.loadOrder(orderId);
+    this.assertCanAccess(found, actor);
+    const order = await this.expireIfDue(found);
+    const result = await this.proofs.upload(
+      {
+        camporee_order_id: order.camporee_order_id,
+        local_field_id: order.local_field_id,
+        status: order.status as CamporeeOrderStatus,
+        authorized_without_proof: order.authorized_without_proof,
+      },
+      file,
+      { userId: actor.userId },
+    );
+    this.logger.log(
+      JSON.stringify({
+        event: 'camporee_order.proof_submitted',
+        order_id: order.camporee_order_id,
+        documentary: result.documentary,
+      }),
+    );
+    return {
+      proof: result.proof,
+      order: this.toDto(await this.loadOrder(orderId)),
+    };
+  }
+
+  async cancel(
+    orderId: string,
+    actor: CamporeeOrderActor,
+    reason?: string,
+  ): Promise<CamporeeOrderView> {
+    const found = await this.loadOrder(orderId);
+    if (!canReviewPayment(actor, found.local_field_id)) {
+      this.assertCanAccess(found, actor);
+    }
+    const order = await this.expireIfDue(found);
+    assertTransition(order.status as CamporeeOrderStatus, 'CANCELLED');
+
+    await this.prisma.camporee_orders.update({
+      where: { camporee_order_id: orderId },
+      data: {
+        status: 'CANCELLED',
+        cancelled_by_id: actor.userId,
+        cancelled_at: new Date(),
+        cancel_reason: reason?.trim() || null,
+      },
+    });
+    this.logger.log(
+      JSON.stringify({
+        event: 'camporee_order.cancelled',
+        order_id: orderId,
+      }),
+    );
+    return this.toDto(await this.loadOrder(orderId));
+  }
+
+  async approve(
+    orderId: string,
+    actor: CamporeeOrderActor,
+  ): Promise<CamporeeOrderView> {
+    const order = await this.loadOrder(orderId);
+    this.assertReviewer(actor, order.local_field_id);
+    const proof = await this.findSubmittedProof(orderId);
+    if (proof.uploaded_by_id === actor.userId) {
+      throw new AppForbiddenException(ErrorCode.CAMPOREE_ORDER_MAKER_CHECKER);
+    }
+
+    const now = new Date();
+    if (this.isDocumentaryReview(order)) {
+      await this.prisma.camporee_order_proofs.update({
+        where: { camporee_order_proof_id: proof.camporee_order_proof_id },
+        data: {
+          status: 'APPROVED',
+          reviewed_by_id: actor.userId,
+          reviewed_at: now,
+        },
+      });
+      this.logger.log(
+        JSON.stringify({
+          event: 'camporee_order.proof_approved_documentary',
+          order_id: orderId,
+          status: order.status,
+        }),
+      );
+      return this.toDto(await this.loadOrder(orderId));
+    }
+
+    assertTransition(order.status as CamporeeOrderStatus, 'PAID');
+    await this.prisma.$transaction(async (tx) => {
+      const moved = await tx.camporee_orders.updateMany({
+        where: {
+          camporee_order_id: orderId,
+          status: 'PROOF_SUBMITTED',
+        },
+        data: {
+          status: 'PAID',
+          approved_by_id: actor.userId,
+          approved_at: now,
+        },
+      });
+      if (moved.count === 0) {
+        throw new AppConflictException(
+          ErrorCode.CAMPOREE_ORDER_INVALID_TRANSITION,
+        );
+      }
+      await tx.camporee_order_proofs.update({
+        where: { camporee_order_proof_id: proof.camporee_order_proof_id },
+        data: {
+          status: 'APPROVED',
+          reviewed_by_id: actor.userId,
+          reviewed_at: now,
+        },
+      });
+    });
+    this.logger.log(
+      JSON.stringify({
+        event: 'camporee_order.paid',
+        order_id: orderId,
+      }),
+    );
+    return this.toDto(await this.loadOrder(orderId));
+  }
+
+  async reject(
+    orderId: string,
+    reason: string,
+    actor: CamporeeOrderActor,
+  ): Promise<CamporeeOrderView> {
+    if (!reason?.trim()) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_ORDER_REJECT_REASON_REQUIRED,
+      );
+    }
+    const order = await this.loadOrder(orderId);
+    this.assertReviewer(actor, order.local_field_id);
+    const proof = await this.findSubmittedProof(orderId);
+    const now = new Date();
+    const trimmed = reason.trim();
+
+    if (this.isDocumentaryReview(order)) {
+      await this.prisma.camporee_order_proofs.update({
+        where: { camporee_order_proof_id: proof.camporee_order_proof_id },
+        data: {
+          status: 'REJECTED',
+          reject_reason: trimmed,
+          reviewed_by_id: actor.userId,
+          reviewed_at: now,
+        },
+      });
+      this.logger.log(
+        JSON.stringify({
+          event: 'camporee_order.proof_rejected_documentary',
+          order_id: orderId,
+          status: order.status,
+        }),
+      );
+      return this.toDto(await this.loadOrder(orderId));
+    }
+
+    assertTransition(order.status as CamporeeOrderStatus, 'PROOF_REJECTED');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.camporee_order_proofs.update({
+        where: { camporee_order_proof_id: proof.camporee_order_proof_id },
+        data: {
+          status: 'REJECTED',
+          reject_reason: trimmed,
+          reviewed_by_id: actor.userId,
+          reviewed_at: now,
+        },
+      });
+      await tx.camporee_orders.update({
+        where: { camporee_order_id: orderId },
+        data: { status: 'PROOF_REJECTED' },
+      });
+    });
+    this.logger.log(
+      JSON.stringify({
+        event: 'camporee_order.proof_rejected',
+        order_id: orderId,
+      }),
+    );
+    return this.toDto(await this.loadOrder(orderId));
+  }
+
+  async authorizeWithoutProof(
+    orderId: string,
+    reason: string,
+    actor: CamporeeOrderActor,
+  ): Promise<CamporeeOrderView> {
+    const found = await this.loadOrder(orderId);
+    if (!canAuthorizeWithoutProof(actor, found.local_field_id)) {
+      throw new AppForbiddenException(ErrorCode.CAMPOREE_ORDER_FORBIDDEN);
+    }
+    if (!reason?.trim()) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_ORDER_AUTHORIZATION_REASON_REQUIRED,
+      );
+    }
+    const order = await this.expireIfDue(found);
+    assertTransition(order.status as CamporeeOrderStatus, 'PAID');
+    const now = new Date();
+    await this.prisma.camporee_orders.update({
+      where: { camporee_order_id: orderId },
+      data: {
+        status: 'PAID',
+        authorized_without_proof: true,
+        authorized_by_id: actor.userId,
+        authorized_at: now,
+        authorization_reason: reason.trim(),
+      },
+    });
+    this.logger.log(
+      JSON.stringify({
+        event: 'camporee_order.authorized_without_proof',
+        order_id: orderId,
+      }),
+    );
+    return this.toDto(await this.loadOrder(orderId));
+  }
+
+  async deliverToSection(
+    orderId: string,
+    actor: CamporeeOrderActor,
+  ): Promise<CamporeeOrderView> {
+    const order = await this.loadOrder(orderId);
+    if (!canDeliverToSection(actor, order.local_field_id)) {
+      throw new AppForbiddenException(ErrorCode.CAMPOREE_ORDER_FORBIDDEN);
+    }
+    assertTransition(order.status as CamporeeOrderStatus, 'DELIVERED');
+    await this.prisma.camporee_orders.update({
+      where: { camporee_order_id: orderId },
+      data: {
+        status: 'DELIVERED',
+        delivered_to_section_by_id: actor.userId,
+        delivered_to_section_at: new Date(),
+      },
+    });
+    this.logger.log(
+      JSON.stringify({
+        event: 'camporee_order.delivered_to_section',
+        order_id: orderId,
+      }),
+    );
+    return this.toDto(await this.loadOrder(orderId));
+  }
+
+  async deliverToMember(
+    orderId: string,
+    lineId: string,
+    actor: CamporeeOrderActor,
+  ): Promise<CamporeeOrderView> {
+    const order = await this.loadOrder(orderId);
+    this.assertCanAccess(order, actor);
+    await this.distribution.deliverToMember(order, lineId, actor);
+    return this.toDto(await this.loadOrder(orderId));
   }
 
   private async buildLineSnapshots(
@@ -419,6 +709,178 @@ export class CamporeeOrdersService {
     return parsed;
   }
 
+  private async loadOrder(orderId: string): Promise<OrderRow> {
+    const order = await this.prisma.camporee_orders.findUnique({
+      where: { camporee_order_id: orderId },
+      include: ORDER_INCLUDE,
+    });
+    if (!order) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_ORDER_NOT_FOUND);
+    }
+    return order;
+  }
+
+  private assertReviewer(actor: CamporeeOrderActor, localFieldId: number) {
+    if (!canReviewPayment(actor, localFieldId)) {
+      throw new AppForbiddenException(ErrorCode.CAMPOREE_ORDER_FORBIDDEN);
+    }
+  }
+
+  private isDocumentaryReview(order: {
+    status: string;
+    authorized_without_proof: boolean;
+  }): boolean {
+    return (
+      order.authorized_without_proof === true &&
+      (order.status === 'PAID' || order.status === 'DELIVERED')
+    );
+  }
+
+  private async findSubmittedProof(orderId: string) {
+    const proof = await this.prisma.camporee_order_proofs.findFirst({
+      where: { order_id: orderId, status: 'SUBMITTED' },
+      orderBy: { created_at: 'desc' },
+    });
+    if (!proof) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_ORDER_PROOF_NOT_FOUND);
+    }
+    return proof;
+  }
+
+  /** Lazy expiry for a single loaded order (ISSUED past expires_at). */
+  private async expireIfDue<
+    T extends {
+      camporee_order_id: string;
+      status: string;
+      expires_at: Date;
+    },
+  >(order: T): Promise<T> {
+    if (order.status !== 'ISSUED' || order.expires_at > new Date()) {
+      return order;
+    }
+    const now = new Date();
+    await this.prisma.camporee_orders.updateMany({
+      where: {
+        camporee_order_id: order.camporee_order_id,
+        status: 'ISSUED',
+      },
+      data: { status: 'EXPIRED', expired_at: now },
+    });
+    this.logger.log(
+      JSON.stringify({
+        event: 'camporee_order.expired',
+        order_id: order.camporee_order_id,
+      }),
+    );
+    return { ...order, status: 'EXPIRED', expired_at: now } as T;
+  }
+
+  /** Lazy expiry for scoped listings. Does not expire PAID. */
+  private async expireDueOrders(scope: Prisma.camporee_ordersWhereInput) {
+    const due = await this.prisma.camporee_orders.findMany({
+      where: { ...scope, status: 'ISSUED', expires_at: { lt: new Date() } },
+      select: { camporee_order_id: true },
+    });
+    if (due.length === 0) {
+      return;
+    }
+    const ids = due.map((order) => order.camporee_order_id);
+    const now = new Date();
+    await this.prisma.camporee_orders.updateMany({
+      where: { camporee_order_id: { in: ids }, status: 'ISSUED' },
+      data: { status: 'EXPIRED', expired_at: now },
+    });
+    this.logger.log(
+      JSON.stringify({
+        event: 'camporee_order.expired',
+        count: ids.length,
+        order_ids: ids,
+      }),
+    );
+  }
+
+  private async buildPdfModel(order: OrderRow): Promise<CamporeeOrderPdfModel> {
+    const lines = [...order.lines].sort((a, b) => a.sequence - b.sequence);
+    const [issuer, localField, club, section, localCamporee, unionCamporee] =
+      await Promise.all([
+        this.prisma.users.findUnique({
+          where: { user_id: order.issued_by_id },
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        }),
+        this.prisma.local_fields.findUnique({
+          where: { local_field_id: order.local_field_id },
+          select: { name: true },
+        }),
+        this.prisma.clubs.findUnique({
+          where: { club_id: order.club_id },
+          select: { name: true },
+        }),
+        this.prisma.club_sections.findUnique({
+          where: { club_section_id: order.club_section_id },
+          select: { club_types: { select: { name: true } } },
+        }),
+        order.local_camporee_id
+          ? this.prisma.local_camporees.findUnique({
+              where: { local_camporee_id: order.local_camporee_id },
+              select: { name: true },
+            })
+          : Promise.resolve(null),
+        order.union_camporee_id
+          ? this.prisma.union_camporees.findUnique({
+              where: { union_camporee_id: order.union_camporee_id },
+              select: { name: true },
+            })
+          : Promise.resolve(null),
+      ]);
+
+    const issuedByName = issuer
+      ? [issuer.name, issuer.paternal_last_name, issuer.maternal_last_name]
+          .filter(Boolean)
+          .join(' ')
+      : order.issued_by_id;
+
+    return {
+      folio_reference: order.folio_reference,
+      camporee_name:
+        localCamporee?.name ??
+        unionCamporee?.name ??
+        (order.union_camporee_id
+          ? `Camporee de union ${order.union_camporee_id}`
+          : `Camporee ${order.local_camporee_id}`),
+      local_field_name:
+        localField?.name ?? `Campo Local ${order.local_field_id}`,
+      club_name: club?.name ?? `Club ${order.club_id}`,
+      section_name:
+        section?.club_types?.name ?? `Seccion ${order.club_section_id}`,
+      issued_by_name: issuedByName,
+      issued_at: order.created_at,
+      expires_at: order.expires_at,
+      currency: order.currency,
+      total_centavos: order.total_centavos,
+      authorized_without_proof: order.authorized_without_proof,
+      summary: summarizeNamedLines(lines),
+      lines: lines.map((line) => ({
+        sequence: line.sequence,
+        beneficiary_name_snapshot: line.beneficiary_name_snapshot,
+        product_title_snapshot: line.product_title_snapshot,
+        option_label_snapshot: line.option_label_snapshot,
+        qty: line.qty,
+      })),
+      payment_instructions: {
+        bank_name: order.bank_name,
+        bank_account: order.bank_account,
+        bank_clabe: order.bank_clabe,
+        bank_holder: order.bank_holder,
+        cash_instructions: order.cash_instructions,
+        extra_notes: order.extra_notes,
+      },
+    };
+  }
+
   private async findByIdempotency(
     issuedById: string,
     idempotencyKey: string,
@@ -506,7 +968,14 @@ export class CamporeeOrdersService {
       total_centavos: order.total_centavos,
       expires_at: order.expires_at,
       issued_by_id: order.issued_by_id,
+      approved_by_id: order.approved_by_id,
+      approved_at: order.approved_at,
       authorized_without_proof: order.authorized_without_proof,
+      authorized_by_id: order.authorized_by_id,
+      authorized_at: order.authorized_at,
+      authorization_reason: order.authorization_reason,
+      delivered_to_section_by_id: order.delivered_to_section_by_id,
+      delivered_to_section_at: order.delivered_to_section_at,
       bank_name: order.bank_name,
       bank_account: order.bank_account,
       bank_clabe: order.bank_clabe,
