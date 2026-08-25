@@ -5,6 +5,7 @@ import type { ListPaymentObligationsQueryDto } from './dto/list-payment-obligati
 import type {
   PaymentObligationAction,
   PaymentObligationDto,
+  PaymentObligationPurpose,
   PaymentObligationStatus,
 } from './dto/payment-obligation.dto';
 
@@ -22,6 +23,27 @@ type TerritorialScope =
   | { type: 'section'; clubSectionId: number };
 
 type ProofStatus = (typeof PENDING_PAYMENT_STATUSES)[number];
+
+type LocalCamporeeNameRow = {
+  local_camporee_id: number;
+  name: string;
+};
+
+type UnionCamporeeNameRow = {
+  union_camporee_id: number;
+  name: string;
+};
+
+function mapFieldPurpose(purpose: string): PaymentObligationPurpose {
+  return purpose === 'INSURANCE' ? 'INSURANCE' : 'CAMPOREE';
+}
+
+function camporeeNameMap<K extends string>(
+  rows: Array<Record<K, number> & { name: string }>,
+  key: K,
+): Map<number, string> {
+  return new Map(rows.map((row): [number, string] => [row[key], row.name]));
+}
 
 function mapProofStatus(status: ProofStatus): {
   status: PaymentObligationStatus;
@@ -186,21 +208,17 @@ export class PaymentObligationsService {
             where: { local_camporee_id: { in: localIds } },
             select: { local_camporee_id: true, name: true },
           })
-        : Promise.resolve([]),
+        : Promise.resolve<LocalCamporeeNameRow[]>([]),
       unionIds.length > 0
         ? this.prisma.union_camporees.findMany({
             where: { union_camporee_id: { in: unionIds } },
             select: { union_camporee_id: true, name: true },
           })
-        : Promise.resolve([]),
+        : Promise.resolve<UnionCamporeeNameRow[]>([]),
     ]);
 
-    const localNames = new Map(
-      localCamporees.map((row) => [row.local_camporee_id, row.name]),
-    );
-    const unionNames = new Map(
-      unionCamporees.map((row) => [row.union_camporee_id, row.name]),
-    );
+    const localNames = camporeeNameMap(localCamporees, 'local_camporee_id');
+    const unionNames = camporeeNameMap(unionCamporees, 'union_camporee_id');
 
     const obligations: PaymentObligationDto[] = [
       ...fieldOrders.map((row) => {
@@ -208,7 +226,7 @@ export class PaymentObligationsService {
         return {
           source: 'FIELD_PAYMENT_ORDER' as const,
           source_id: row.field_payment_order_id,
-          purpose: row.purpose === 'INSURANCE' ? 'INSURANCE' : 'CAMPOREE',
+          purpose: mapFieldPurpose(row.purpose),
           folio: row.folio_reference,
           total_centavos: row.total_centavos,
           currency: 'MXN' as const,
