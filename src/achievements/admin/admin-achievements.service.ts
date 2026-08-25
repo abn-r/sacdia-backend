@@ -27,6 +27,7 @@ import {
   AppNotFoundException,
 } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { fileBufferMatchesDeclaredMime } from '../../common/pipes/file-validation.pipe';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -292,6 +293,12 @@ export class AdminAchievementsService {
     // Validate file size
     if (file.size > MAX_BADGE_SIZE_BYTES) {
       throw new AppBadRequestException(ErrorCode.ACHIEVEMENT_BADGE_TOO_LARGE);
+    }
+
+    if (!fileBufferMatchesDeclaredMime(file)) {
+      throw new AppBadRequestException(
+        ErrorCode.ACHIEVEMENT_BADGE_INVALID_TYPE,
+      );
     }
 
     const ext = MIME_TO_EXT[mimeType];

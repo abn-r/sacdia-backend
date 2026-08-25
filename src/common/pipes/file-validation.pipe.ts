@@ -15,6 +15,23 @@ const MAGIC_BYTES: Record<string, { offset: number; bytes: number[] }> = {
   'application/pdf': { offset: 0, bytes: [0x25, 0x50, 0x44, 0x46] },
 };
 
+/** True when the buffer matches the declared MIME. Unknown MIME or missing buffer → false. */
+export function fileBufferMatchesDeclaredMime(
+  file: Pick<Express.Multer.File, 'mimetype' | 'buffer'>,
+): boolean {
+  const expected = MAGIC_BYTES[file.mimetype];
+  if (!expected || !file.buffer) {
+    return false;
+  }
+
+  const { offset, bytes } = expected;
+  if (file.buffer.length < offset + bytes.length) {
+    return false;
+  }
+
+  return bytes.every((byte, i) => file.buffer[offset + i] === byte);
+}
+
 const DEFAULT_MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
 // image/heic is intentionally excluded: HEIC magic-byte detection requires
@@ -66,17 +83,11 @@ export class FileValidationPipe implements PipeTransform {
   }
 
   private validateMagicBytes(file: Express.Multer.File) {
-    const expected = MAGIC_BYTES[file.mimetype];
-    if (!expected || !file.buffer) return;
-
-    const { offset, bytes } = expected;
-    if (file.buffer.length < offset + bytes.length) {
-      throw new AppBadRequestException(ErrorCode.FILE_TYPE_INVALID);
+    if (!MAGIC_BYTES[file.mimetype]) {
+      return;
     }
 
-    const matches = bytes.every((byte, i) => file.buffer[offset + i] === byte);
-
-    if (!matches) {
+    if (!fileBufferMatchesDeclaredMime(file)) {
       throw new AppBadRequestException(ErrorCode.FILE_TYPE_INVALID);
     }
   }

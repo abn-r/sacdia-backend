@@ -70,6 +70,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     ) {
       return 'invalid_signature';
     }
+    if (lower.includes('audience') || lower.includes('issuer')) {
+      return 'invalid_claims';
+    }
     if (lower.includes('malformed')) return 'malformed';
 
     return 'unauthorized';

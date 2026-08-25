@@ -5,6 +5,7 @@ import { createHmac } from 'crypto';
 import { AppModule } from '../src/app.module';
 import { BetterAuthService } from '../src/better-auth/better-auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { accessJwtClaims } from '../src/common/constants/jwt-audiences';
 
 describe('Auth E2E Tests', () => {
   let app: INestApplication;
@@ -80,7 +81,7 @@ describe('Auth E2E Tests', () => {
       Buffer.from(JSON.stringify(value)).toString('base64url');
 
     const encodedHeader = encode(header);
-    const encodedPayload = encode(payload);
+    const encodedPayload = encode({ ...accessJwtClaims(), ...payload });
     const signature = createHmac('sha256', secret)
       .update(`${encodedHeader}.${encodedPayload}`)
       .digest('base64url');

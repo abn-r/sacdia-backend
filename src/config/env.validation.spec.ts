@@ -3,6 +3,7 @@ import { envValidationSchema } from './env.validation';
 const validBaseEnv = {
   DATABASE_URL: 'postgresql://user:password@example.com:5432/sacdia',
   BETTER_AUTH_SECRET: 'a-secure-test-secret-that-is-32-chars',
+  QR_JWT_SECRET: 'a-distinct-qr-secret-that-is-32ch',
   R2_BUCKET_HONORS_PDF: 'honors-pdf',
   R2_PUBLIC_URL_HONORS_PDF: 'https://storage.example.com/honors',
   R2_BUCKET_EVIDENCE_FILES: 'evidence-files',
@@ -119,6 +120,22 @@ describe('envValidationSchema email configuration', () => {
   });
 });
 
+describe('QR JWT secret validation', () => {
+  it('requires QR_JWT_SECRET', () => {
+    const { error } = validate({ QR_JWT_SECRET: undefined });
+
+    expect(error?.message).toContain('QR_JWT_SECRET');
+  });
+
+  it('rejects QR_JWT_SECRET when it matches BETTER_AUTH_SECRET', () => {
+    const { error } = validate({
+      QR_JWT_SECRET: 'a-secure-test-secret-that-is-32-chars',
+    });
+
+    expect(error?.message).toContain('QR_JWT_SECRET');
+  });
+});
+
 describe('infrastructure environment validation', () => {
   it('applies bounded positive defaults for PostgreSQL pool settings', () => {
     expect(
@@ -208,6 +225,36 @@ describe('production hardening validation', () => {
     const { error } = validate({ SWAGGER_ENABLED: 'true' });
 
     expect(error).toBeUndefined();
+  });
+});
+
+describe('trust proxy hops environment validation', () => {
+  it('allows TRUST_PROXY_HOPS to be omitted or 0–5', () => {
+    expect(validate().error).toBeUndefined();
+    expect(validate({ TRUST_PROXY_HOPS: 0 }).error).toBeUndefined();
+    expect(validate({ TRUST_PROXY_HOPS: 1 }).error).toBeUndefined();
+    expect(validate({ TRUST_PROXY_HOPS: 5 }).error).toBeUndefined();
+  });
+
+  it.each([-1, 6, 1.5, 'true'])(
+    'rejects TRUST_PROXY_HOPS=%s',
+    (TRUST_PROXY_HOPS) => {
+      expect(validate({ TRUST_PROXY_HOPS }).error).toBeDefined();
+    },
+  );
+});
+
+describe('certificate import file host allowlist', () => {
+  it('allows CERTIFICATE_IMPORT_ALLOWED_FILE_HOSTS to be omitted or empty', () => {
+    expect(validate().error).toBeUndefined();
+    expect(
+      validate({ CERTIFICATE_IMPORT_ALLOWED_FILE_HOSTS: '' }).error,
+    ).toBeUndefined();
+    expect(
+      validate({
+        CERTIFICATE_IMPORT_ALLOWED_FILE_HOSTS: 'files.sacdia.app,cdn.example',
+      }).error,
+    ).toBeUndefined();
   });
 });
 

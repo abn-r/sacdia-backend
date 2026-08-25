@@ -14,6 +14,7 @@ import {
   AuditOptions,
 } from '../common/decorators/audit.decorator';
 import { AuditLogsService } from './audit-logs.service';
+import { resolveClientIp } from '../config/client-ip';
 import {
   getAuditContext,
   getAuditCorrelationId,
@@ -215,16 +216,11 @@ export class HttpAuditInterceptor implements NestInterceptor {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
   }
 
-  /**
-   * Obtener IP real del cliente (considerando proxies)
-   */
-  private getClientIp(request: any): string {
-    return (
-      request.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-      request.headers['x-real-ip'] ||
-      request.ip ||
-      'unknown'
-    );
+  private getClientIp(request: {
+    ip?: unknown;
+    socket?: { remoteAddress?: unknown };
+  }): string {
+    return resolveClientIp(request);
   }
 
   /**

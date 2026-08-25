@@ -10,7 +10,10 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { JwtAuthGuard } from '../src/common/guards';
 import { EvidenceFolderService } from '../src/folders/evidence-folder.service';
-import { createTestJwtService } from './helpers/rbac-test-helpers';
+import {
+  createBearerToken,
+  createTestJwtService,
+} from './helpers/rbac-test-helpers';
 
 const TEST_USER_ID = 'user-evidence-1';
 
@@ -38,7 +41,7 @@ describe('Evidence Folder E2E', () => {
   };
 
   const makeToken = (sub: string, email: string) =>
-    jwtService.sign({ sub, email });
+    createBearerToken(jwtService, sub, email);
 
   beforeAll(async () => {
     delete process.env.REDIS_URL;

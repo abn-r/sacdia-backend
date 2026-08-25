@@ -1641,7 +1641,18 @@ export class ClubsService {
     dto: Pick<AssignRoleDto, 'role_id' | 'role'>,
   ): Promise<string> {
     if (dto.role_id) {
-      return dto.role_id;
+      const roleById = await this.prisma.roles.findFirst({
+        where: {
+          role_id: dto.role_id,
+          role_category: 'CLUB',
+          active: true,
+        },
+        select: { role_id: true },
+      });
+      if (!roleById) {
+        throw new AppBadRequestException(ErrorCode.CLUB_ROLE_NOT_FOUND);
+      }
+      return roleById.role_id;
     }
 
     if (!dto.role) {

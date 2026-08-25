@@ -9,6 +9,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { useE2ePermissionsPassthrough } from './helpers/rbac-test-helpers';
+import { accessJwtClaims } from '../src/common/constants/jwt-audiences';
 import { JwtAuthGuard, PermissionsGuard } from '../src/common/guards';
 import { InsuranceService } from '../src/insurance/insurance.service';
 
@@ -21,6 +22,7 @@ const FIX_MEMBER_ID = '00000000-0000-0000-0000-000000000002';
 const TEST_USER = {
   sub: FIX_USER_SUB,
   email: 'insurance@test.local',
+  ...accessJwtClaims(),
 };
 
 @Injectable()

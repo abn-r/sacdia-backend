@@ -4,7 +4,7 @@
 # preDeployCommand guarantees the Prisma schema is applied BEFORE the new
 # code starts serving traffic. Never replace it with `prisma db push`.
 #
-# Secrets (DATABASE_URL, BETTER_AUTH_SECRET, REDIS_URL, R2_*, etc.) are
+# Secrets (DATABASE_URL, BETTER_AUTH_SECRET, QR_JWT_SECRET, REDIS_URL, R2_*, etc.) are
 # managed in the Render dashboard — sync: false keeps them out of this file.
 # See .env.example for the full catalog.
 
@@ -21,6 +21,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: TRUST_PROXY_HOPS
+        value: "1"
       - key: SWAGGER_ENABLED
         value: "false"
       - key: AUTH_REJECT_SNAKE_CASE
@@ -30,6 +32,8 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: QR_JWT_SECRET
         sync: false
       - key: REDIS_URL
         sync: false

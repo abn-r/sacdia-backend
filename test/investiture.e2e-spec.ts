@@ -15,6 +15,7 @@ import { APP_GUARD } from '@nestjs/core';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { useE2ePermissionsPassthrough } from './helpers/rbac-test-helpers';
+import { accessJwtClaims } from '../src/common/constants/jwt-audiences';
 import {
   JwtAuthGuard,
   PermissionsGuard,
@@ -26,6 +27,7 @@ import { InvestitureService } from '../src/investiture/investiture.service';
 const TEST_USER = {
   sub: 'investiture-user-1',
   email: 'investiture@test.local',
+  ...accessJwtClaims(),
 };
 
 @Injectable()

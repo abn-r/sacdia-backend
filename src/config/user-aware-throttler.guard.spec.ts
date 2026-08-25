@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { accessJwtClaims } from '../common/constants/jwt-audiences';
 import { UserAwareThrottlerGuard } from './user-aware-throttler.guard';
 
 describe('UserAwareThrottlerGuard', () => {
@@ -35,23 +36,30 @@ describe('UserAwareThrottlerGuard', () => {
     user?: Record<string, any>;
   }): Record<string, any> => ({
     ip: options.ip ?? '198.51.100.20',
-    headers: options.authorization ? { authorization: options.authorization } : {},
+    headers: options.authorization
+      ? { authorization: options.authorization }
+      : {},
     socket: { remoteAddress: '198.51.100.21' },
     user: options.user,
   });
 
   const makeSignedToken = (secret: string, payload: { sub: string }) =>
-    new JwtService({ secret } as Record<string, string>).sign(payload, {
-      algorithm: 'HS256',
-      expiresIn: '1h',
-    });
+    new JwtService({ secret } as Record<string, string>).sign(
+      { ...payload, ...accessJwtClaims() },
+      {
+        algorithm: 'HS256',
+        expiresIn: '1h',
+      },
+    );
 
   const makeUnsignedToken = (payload: { sub: string }) => {
     const header = Buffer.from(
       JSON.stringify({ alg: 'none', typ: 'JWT' }),
       'utf8',
     ).toString('base64url');
-    const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+    const body = Buffer.from(JSON.stringify(payload), 'utf8').toString(
+      'base64url',
+    );
 
     return `${header}.${body}.`;
   };
@@ -72,6 +80,24 @@ describe('UserAwareThrottlerGuard', () => {
     },
   );
 
+  it('falls back to ip tracker when bearer token lacks access iss/aud', async () => {
+    const secret = 'valid-secret';
+    const token = new JwtService({ secret } as Record<string, string>).sign(
+      { sub: 'user-123' },
+      { algorithm: 'HS256', expiresIn: '1h' },
+    );
+    const guard = createGuard(secret);
+
+    const request = makeRequest({
+      ip: '203.0.113.77',
+      authorization: `Bearer ${token}`,
+    });
+
+    await expect(guard.getTrackerForTest(request)).resolves.toBe(
+      'ip:203.0.113.77',
+    );
+  });
+
   it('uses user tracker when request has a valid signed bearer token', async () => {
     const secret = 'valid-secret';
     const token = makeSignedToken(secret, { sub: 'user-123' });
@@ -81,7 +107,9 @@ describe('UserAwareThrottlerGuard', () => {
       authorization: `Bearer ${token}`,
     });
 
-    await expect(guard.getTrackerForTest(request)).resolves.toBe('user:user-123');
+    await expect(guard.getTrackerForTest(request)).resolves.toBe(
+      'user:user-123',
+    );
   });
 
   it.each([
@@ -110,6 +138,19 @@ describe('UserAwareThrottlerGuard', () => {
   it('uses ip tracker when request is anonymous', async () => {
     const guard = createGuard('valid-secret');
     const request = makeRequest({ ip: '203.0.113.45' });
+
+    await expect(guard.getTrackerForTest(request)).resolves.toBe(
+      'ip:203.0.113.45',
+    );
+  });
+
+  it('keys anonymous requests by req.ip, not raw X-Forwarded-For', async () => {
+    const guard = createGuard('valid-secret');
+    const request = {
+      ip: '203.0.113.45',
+      headers: { 'x-forwarded-for': '198.51.100.1, 203.0.113.45' },
+      socket: { remoteAddress: '10.0.0.2' },
+    };
 
     await expect(guard.getTrackerForTest(request)).resolves.toBe(
       'ip:203.0.113.45',

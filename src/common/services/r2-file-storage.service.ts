@@ -232,6 +232,41 @@ export class R2FileStorageService implements FileStorageService {
     }
   }
 
+  async getObjectPrefix(
+    bucketAlias: StorageBucketAlias,
+    key: string,
+    byteCount: number,
+  ): Promise<Buffer | null> {
+    const config = this.getBucketConfig(bucketAlias);
+    const normalizedKey = this.normalizeKey(key);
+    const objectKey = this.hasKeyPrefix(config.keyPrefix, normalizedKey)
+      ? normalizedKey
+      : this.toObjectKey(config.keyPrefix, normalizedKey);
+    const length = Math.max(1, Math.min(Math.floor(byteCount), 256));
+
+    try {
+      const response = await this.getClient().send(
+        new GetObjectCommand({
+          Bucket: config.bucket,
+          Key: objectKey,
+          Range: `bytes=0-${length - 1}`,
+        }),
+      );
+      if (!response.Body) {
+        return null;
+      }
+      const bytes = await response.Body.transformToByteArray();
+      return Buffer.from(bytes);
+    } catch (error) {
+      if (this.isNotFoundError(error)) return null;
+      this.logger.error(
+        `Error range-reading R2 bucket=${config.bucket} key=${objectKey}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
+    }
+  }
+
   async getObjectInfo(
     bucketAlias: StorageBucketAlias,
     key: string,

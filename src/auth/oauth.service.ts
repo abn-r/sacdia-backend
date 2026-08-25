@@ -9,6 +9,10 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import {
+  DEFAULT_OAUTH_REDIRECT_URL,
+  isExactOAuthRedirectAllowed,
+} from './oauth-redirect-allowlist';
 
 /**
  * OAuthService — Better Auth edition (W3-008 Part 3)
@@ -38,44 +42,13 @@ export class OAuthService {
 
   /** Providers supported for connect/disconnect operations. */
   private static readonly VALID_PROVIDERS = ['google', 'apple'] as const;
-  private static readonly DEFAULT_REDIRECT_URL =
-    'https://sacdia.app/auth/callback';
 
   /**
-   * Returns the allowlist of permitted OAuth redirect URLs.
-   *
-   * Resolution order:
-   *   1. ALLOWED_OAUTH_REDIRECT_URLS (comma-separated) — OAuth-specific list
-   *   2. ALLOWED_ORIGINS (comma-separated) — shared CORS list used as fallback
-   *   3. DEFAULT_REDIRECT_URL — hardcoded fallback when neither env var is set
-   */
-  private getAllowedRedirectUrls(): string[] {
-    const oauthSpecific = process.env.ALLOWED_OAUTH_REDIRECT_URLS;
-    if (oauthSpecific) {
-      return oauthSpecific
-        .split(',')
-        .map((u) => u.trim())
-        .filter(Boolean);
-    }
-
-    const origins = process.env.ALLOWED_ORIGINS;
-    if (origins) {
-      return origins
-        .split(',')
-        .map((u) => u.trim())
-        .filter(Boolean);
-    }
-
-    return [OAuthService.DEFAULT_REDIRECT_URL];
-  }
-
-  /**
-   * Validates that the given redirect URL is in the configured allowlist.
-   * Throws BadRequestException if it is not, preventing open-redirect attacks.
+   * Exact-URL allowlist. BA trustedOrigins is a separate origin-level check
+   * (see resolveBetterAuthTrustedOrigins). Do not weaken this to origin-only.
    */
   private validateRedirectUrl(url: string): void {
-    const allowed = this.getAllowedRedirectUrls();
-    if (!allowed.includes(url)) {
+    if (!isExactOAuthRedirectAllowed(url)) {
       this.logger.warn(
         `OAuth redirect URL rejected — not in allowlist: ${url}`,
       );
@@ -108,7 +81,7 @@ export class OAuthService {
     if (redirectUrl) {
       this.validateRedirectUrl(redirectUrl);
     }
-    const callbackUrl = redirectUrl ?? OAuthService.DEFAULT_REDIRECT_URL;
+    const callbackUrl = redirectUrl ?? DEFAULT_OAUTH_REDIRECT_URL;
     this.logger.log(`Initiating Google OAuth — callbackUrl: ${callbackUrl}`);
 
     const { url } = await this.betterAuth.getOAuthUrl('google', callbackUrl);
@@ -122,7 +95,7 @@ export class OAuthService {
     if (redirectUrl) {
       this.validateRedirectUrl(redirectUrl);
     }
-    const callbackUrl = redirectUrl ?? OAuthService.DEFAULT_REDIRECT_URL;
+    const callbackUrl = redirectUrl ?? DEFAULT_OAUTH_REDIRECT_URL;
     this.logger.log(`Initiating Apple OAuth — callbackUrl: ${callbackUrl}`);
 
     const { url } = await this.betterAuth.getOAuthUrl('apple', callbackUrl);

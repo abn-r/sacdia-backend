@@ -36,6 +36,17 @@ export class ScanMemberDto {
   @ApiPropertyOptional({ nullable: true }) avatar!: string | null;
   @ApiPropertyOptional({ nullable: true }) club_name!: string | null;
   @ApiPropertyOptional({ nullable: true }) section_name!: string | null;
+  @ApiPropertyOptional({ nullable: true }) current_class?: string | null;
+  @ApiPropertyOptional({ nullable: true }) blood_type?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Primary emergency contact — staff validate/scan only',
+  })
+  emergency_contact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  } | null;
 }
 
 export class ScanAttendanceDto {

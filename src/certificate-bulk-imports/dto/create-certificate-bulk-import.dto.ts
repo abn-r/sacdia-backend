@@ -10,6 +10,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { IsCertificateImportFileRef } from '../certificate-import-file-ref';
 import {
   CERTIFICATE_IMPORT_MAX_FILES,
   CERTIFICATE_IMPORT_MAX_ITEMS,
@@ -18,12 +19,16 @@ import { UpdateCertificateImportItemDto } from './update-certificate-import-item
 
 export class CertificateBulkImportFileDto {
   @ApiProperty({
-    description: 'URL o key del archivo ya cargado en storage',
+    description:
+      'Clave de storage relativa (preferida) o URL https cuyo host esté en ' +
+      'R2_PUBLIC_URL_* / CERTIFICATE_IMPORT_ALLOWED_FILE_HOSTS. ' +
+      'http, file, localhost e IPs privadas se rechazan.',
     maxLength: 500,
-    example: 'https://cdn.sacdia.app/evidence/certificado.jpg',
+    example: 'evidence/certificado.jpg',
   })
   @IsString()
   @MaxLength(500)
+  @IsCertificateImportFileRef()
   declare file_url: string;
 
   @ApiProperty({
