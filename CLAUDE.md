@@ -103,7 +103,6 @@ src/
 - Jest: `transformIgnorePatterns: []` para paquetes ESM; `prisma generate` corre antes de los tests
 - Unit tests: bloqueantes; el job ya no usa `continue-on-error`
 - Dependency audit: job `Dependency Audit` corre `pnpm run audit:security` (high/critical + allowlist). Bloqueante.
-- Dependency audit: job `Dependency Audit` corre `pnpm run audit:security` (high/critical + allowlist). Bloqueante.
 - Rate limiting: `@nestjs/throttler` usa storage Redis distribuido cuando `REDIS_URL` está configurado.
   En producción, Redis es requerido y la app falla al iniciar si falta, es inválido o no conecta.
   En `NODE_ENV=development` los límites son más altos (30/s, 200/10s, 1000/min) para soportar fetches paralelos del admin.
