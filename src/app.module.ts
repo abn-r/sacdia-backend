@@ -33,6 +33,8 @@ import { HealthController } from './health/health.controller';
 import { AdminModule } from './admin/admin.module';
 import { InsuranceModule } from './insurance/insurance.module';
 import { FieldPaymentOrdersModule } from './field-payment-orders/field-payment-orders.module';
+import { CamporeeOrdersModule } from './camporee-orders/camporee-orders.module';
+import { PaymentObligationsModule } from './payment-obligations/payment-obligations.module';
 import { InvestitureModule } from './investiture/investiture.module';
 import { UnitsModule } from './units/units.module';
 import { DashboardModule } from './dashboard/dashboard.module';
@@ -221,6 +223,8 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     AdminModule,
     InsuranceModule,
     FieldPaymentOrdersModule,
+    CamporeeOrdersModule,
+    PaymentObligationsModule,
     InvestitureModule,
     UnitsModule,
     DashboardModule,

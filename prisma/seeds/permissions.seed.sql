@@ -777,6 +777,24 @@ ON CONFLICT (permission_name) DO UPDATE SET
   active = EXCLUDED.active,
   modified_at = now();
 
+-- ============================
+-- Camporee Orders (pedidos de mercancía por camporee; cobra el Campo Local)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('camporee-orders:read', 'Read camporee order catalog, offerings and orders within own scope', true),
+  ('camporee-orders:catalog-manage', 'Create and update the territorial camporee-order product library within own scope', true),
+  ('camporee-orders:offering-configure', 'Configure camporee order settings and offerings for an organized camporee', true),
+  ('camporee-orders:create', 'Issue or cancel camporee merchandise orders for own club section', true),
+  ('camporee-orders:upload-proof', 'Upload payment proof for own camporee merchandise orders', true),
+  ('camporee-orders:review', 'Approve or reject camporee order proofs in the effective Local Field', true),
+  ('camporee-orders:authorize-without-proof', 'Mark a camporee order paid without proof (Local Field caja exception)', true),
+  ('camporee-orders:deliver', 'Mark a camporee order delivered from Local Field to the club section', true),
+  ('camporee-orders:distribute', 'Record delivery of a camporee-order line to the beneficiary member', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================
