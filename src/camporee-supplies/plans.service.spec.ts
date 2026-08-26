@@ -131,11 +131,15 @@ describe('CamporeeSupplyPlansService', () => {
       camporee_supply_plan_audits: { create: jest.fn() },
     };
     const prisma = {
-      local_camporees: { findUnique: jest.fn().mockResolvedValue(localCamporee()) },
+      local_camporees: {
+        findUnique: jest.fn().mockResolvedValue(localCamporee()),
+      },
       camporee_clubs: {
         findFirst: jest.fn().mockResolvedValue({ camporee_club_id: 1 }),
       },
-      $transaction: jest.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+      $transaction: jest.fn(async (fn: (client: typeof tx) => unknown) =>
+        fn(tx),
+      ),
     };
     const folio = {
       allocate: jest.fn().mockResolvedValue({
@@ -149,7 +153,11 @@ describe('CamporeeSupplyPlansService', () => {
       folio as unknown as CamporeeSupplyFolioService,
     );
 
-    const result = await service.submit(LOCAL_CAMPOREE_ID, 'local', clubActor());
+    const result = await service.submit(
+      LOCAL_CAMPOREE_ID,
+      'local',
+      clubActor(),
+    );
 
     expect(folio.allocate).toHaveBeenCalled();
     expect(tx.camporee_supply_payment_docs.create).toHaveBeenCalledWith(
@@ -189,9 +197,9 @@ describe('CamporeeSupplyPlansService', () => {
         ),
       },
       camporee_supply_slots: {
-        findMany: jest.fn().mockResolvedValue([
-          { camporee_supply_slot_id: SLOT_ID },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ camporee_supply_slot_id: SLOT_ID }]),
       },
       camporee_supply_products: {
         findMany: jest.fn().mockResolvedValue([
@@ -203,19 +211,21 @@ describe('CamporeeSupplyPlansService', () => {
       },
       camporee_supply_lines: {
         update: jest.fn(),
-        findMany: jest.fn().mockResolvedValue([
-          { line_total_centavos: 4000 },
-        ]),
+        findMany: jest.fn().mockResolvedValue([{ line_total_centavos: 4000 }]),
       },
       camporee_supply_payment_docs: { create: jest.fn() },
       camporee_supply_plan_audits: { create: jest.fn() },
     };
     const prisma = {
-      local_camporees: { findUnique: jest.fn().mockResolvedValue(localCamporee()) },
+      local_camporees: {
+        findUnique: jest.fn().mockResolvedValue(localCamporee()),
+      },
       camporee_clubs: {
         findFirst: jest.fn().mockResolvedValue({ camporee_club_id: 1 }),
       },
-      $transaction: jest.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+      $transaction: jest.fn(async (fn: (client: typeof tx) => unknown) =>
+        fn(tx),
+      ),
     };
     const folio = {
       allocate: jest.fn().mockResolvedValue({
@@ -270,11 +280,15 @@ describe('CamporeeSupplyPlansService', () => {
       },
     };
     const prisma = {
-      local_camporees: { findUnique: jest.fn().mockResolvedValue(localCamporee()) },
+      local_camporees: {
+        findUnique: jest.fn().mockResolvedValue(localCamporee()),
+      },
       camporee_clubs: {
         findFirst: jest.fn().mockResolvedValue({ camporee_club_id: 1 }),
       },
-      $transaction: jest.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+      $transaction: jest.fn(async (fn: (client: typeof tx) => unknown) =>
+        fn(tx),
+      ),
     };
     const service = new CamporeeSupplyPlansService(
       prisma as never,
@@ -304,8 +318,12 @@ describe('CamporeeSupplyPlansService', () => {
       },
     };
     const prisma = {
-      local_camporees: { findUnique: jest.fn().mockResolvedValue(localCamporee()) },
-      $transaction: jest.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+      local_camporees: {
+        findUnique: jest.fn().mockResolvedValue(localCamporee()),
+      },
+      $transaction: jest.fn(async (fn: (client: typeof tx) => unknown) =>
+        fn(tx),
+      ),
     };
     const service = new CamporeeSupplyPlansService(
       prisma as never,

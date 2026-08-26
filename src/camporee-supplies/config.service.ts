@@ -203,10 +203,7 @@ export class CamporeeSupplyConfigService {
     if (canConfigureSupplyOrganizer(actor, target)) {
       return;
     }
-    if (
-      camporee.kind === 'union' &&
-      canConfigureAsParticipatingLf(actor)
-    ) {
+    if (camporee.kind === 'union' && canConfigureAsParticipatingLf(actor)) {
       if (actor.territory.level === 'all') {
         return;
       }

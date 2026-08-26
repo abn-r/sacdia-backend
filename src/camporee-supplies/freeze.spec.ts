@@ -10,7 +10,9 @@ describe('parseCutoffMinutes', () => {
   });
 
   it('rejects invalid cutoff', () => {
-    expect(() => parseCutoffMinutes('9pm')).toThrow(/CAMPOREE_SUPPLIES_CUTOFF_INVALID/);
+    expect(() => parseCutoffMinutes('9pm')).toThrow(
+      /CAMPOREE_SUPPLIES_CUTOFF_INVALID/,
+    );
   });
 });
 

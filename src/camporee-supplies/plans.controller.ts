@@ -130,7 +130,11 @@ export class CamporeeSupplyPlansController {
     @Req() request: RequestWithProfile,
   ) {
     return this.wrap(
-      this.plans.submit(camporeeId, 'local', resolveCamporeeSupplyActor(request)),
+      this.plans.submit(
+        camporeeId,
+        'local',
+        resolveCamporeeSupplyActor(request),
+      ),
     );
   }
 
@@ -143,7 +147,11 @@ export class CamporeeSupplyPlansController {
     @Req() request: RequestWithProfile,
   ) {
     return this.wrap(
-      this.plans.submit(camporeeId, 'union', resolveCamporeeSupplyActor(request)),
+      this.plans.submit(
+        camporeeId,
+        'union',
+        resolveCamporeeSupplyActor(request),
+      ),
     );
   }
 
@@ -346,7 +354,8 @@ export class CamporeeSupplyPlansController {
   @RequirePermissions(CAMPOREE_SUPPLIES_REVIEW_PAY)
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({
-    summary: 'Marcar folio de insumos (principal, cargo o devolución) como pagado',
+    summary:
+      'Marcar folio de insumos (principal, cargo o devolución) como pagado',
   })
   async markPaid(
     @Param('paymentId', ParseUUIDPipe) paymentId: string,

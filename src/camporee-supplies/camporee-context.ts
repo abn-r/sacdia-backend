@@ -25,7 +25,9 @@ export function utcYmd(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function resolveSupplyTimezone(timezone: string | null | undefined): string {
+export function resolveSupplyTimezone(
+  timezone: string | null | undefined,
+): string {
   const candidate = timezone?.trim() || DEFAULT_SUPPLY_TIMEZONE;
   try {
     Intl.DateTimeFormat('en-US', { timeZone: candidate }).format();

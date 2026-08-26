@@ -45,11 +45,15 @@ const PLAN_INCLUDE = {
       product: true,
       deliveries: true,
     },
-    orderBy: [{ supply_date: 'asc' as const }],
+    orderBy: { supply_date: 'asc' as const },
   },
   payments: { orderBy: { created_at: 'asc' as const } },
   club: { select: { name: true } },
 } as const;
+
+type SupplyPlanRow = Prisma.camporee_supply_plansGetPayload<{
+  include: typeof PLAN_INCLUDE;
+}>;
 
 @Injectable()
 export class CamporeeSupplyPlansService {
@@ -241,7 +245,7 @@ export class CamporeeSupplyPlansService {
       const ownSection = clubActor && !canBypassSupplyFreeze(actor);
       const clubSectionId = ownSection
         ? actor.activeSection!.club_section_id
-        : dto.club_section_id ?? actor.activeSection?.club_section_id;
+        : (dto.club_section_id ?? actor.activeSection?.club_section_id);
       if (typeof clubSectionId !== 'number') {
         throw new AppNotFoundException(ErrorCode.CAMPOREE_SUPPLIES_NOT_FOUND);
       }
@@ -258,7 +262,13 @@ export class CamporeeSupplyPlansService {
         );
       }
 
-      this.assertEditableDate(camporee, existing.status, dto.date, actor, dto.bypass_reason);
+      this.assertEditableDate(
+        camporee,
+        existing.status,
+        dto.date,
+        actor,
+        dto.bypass_reason,
+      );
 
       const qtyMilli = toMilli(dto.qty);
       const resolved =
@@ -323,7 +333,9 @@ export class CamporeeSupplyPlansService {
       );
       const delta = newTotal - existing.committed_total_centavos;
       if (delta !== 0) {
-        const principal = existing.payments.find((row) => row.kind === 'PRINCIPAL');
+        const principal = existing.payments.find(
+          (row) => row.kind === 'PRINCIPAL',
+        );
         if (!principal) {
           throw new AppUnprocessableEntityException(
             ErrorCode.CAMPOREE_SUPPLIES_PAYMENT_NOT_FOUND,
@@ -428,7 +440,9 @@ export class CamporeeSupplyPlansService {
           ? line.plan.local_camporee_id !== camporeeId
           : line.plan.union_camporee_id !== camporeeId)
       ) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_SUPPLIES_LINE_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_SUPPLIES_LINE_NOT_FOUND,
+        );
       }
       if (!canDeliverSupplies(actor, line.plan.local_field_id)) {
         throw new AppForbiddenException(ErrorCode.CAMPOREE_SUPPLIES_FORBIDDEN);
@@ -459,15 +473,14 @@ export class CamporeeSupplyPlansService {
     return serializePlan(plan, camporee);
   }
 
-  async markPaid(
-    paymentId: string,
-    actor: CamporeeSupplyActor,
-  ) {
+  async markPaid(paymentId: string, actor: CamporeeSupplyActor) {
     const payment = await this.prisma.camporee_supply_payment_docs.findUnique({
       where: { camporee_supply_payment_doc_id: paymentId },
     });
     if (!payment) {
-      throw new AppNotFoundException(ErrorCode.CAMPOREE_SUPPLIES_PAYMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_SUPPLIES_PAYMENT_NOT_FOUND,
+      );
     }
     if (!canReviewSupplyPayment(actor, payment.local_field_id)) {
       throw new AppForbiddenException(ErrorCode.CAMPOREE_SUPPLIES_FORBIDDEN);
@@ -699,7 +712,9 @@ export class CamporeeSupplyPlansService {
       const key = `${line.date}|${line.slot_id}|${line.product_id}`;
       unique.set(key, line);
     }
-    const slotIds = [...new Set([...unique.values()].map((line) => line.slot_id))];
+    const slotIds = [
+      ...new Set([...unique.values()].map((line) => line.slot_id)),
+    ];
     const productIds = [
       ...new Set([...unique.values()].map((line) => line.product_id)),
     ];
@@ -881,43 +896,11 @@ function mapPayment(row: {
   };
 }
 
-function serializePlan(
-  plan: {
-    camporee_supply_plan_id: string;
-    club_section_id: number;
-    local_field_id: number;
-    status: string;
-    committed_total_centavos: number;
-    submitted_at: Date | null;
-    club: { name: string };
-    lines: Array<{
-      camporee_supply_line_id: string;
-      supply_date: Date;
-      slot_id: string;
-      product_id: string;
-      qty: Prisma.Decimal;
-      unit_cost_centavos: number;
-      line_total_centavos: number;
-      slot: { label: string; deliver_time: string; sort_order: number };
-      product: { name: string; uom: string };
-      deliveries: Array<{ qty: Prisma.Decimal }>;
-    }>;
-    payments: Array<{
-      camporee_supply_payment_doc_id: string;
-      kind: string;
-      parent_id: string | null;
-      folio_reference: string;
-      total_centavos: number;
-      status: string;
-      note: string | null;
-      created_at: Date;
-      paid_at: Date | null;
-    }>;
-  },
-  camporee: SupplyCamporeeRow,
-) {
+function serializePlan(plan: SupplyPlanRow, camporee: SupplyCamporeeRow) {
   const orderedLines = [...plan.lines].sort((left, right) => {
-    const byDate = utcYmd(left.supply_date).localeCompare(utcYmd(right.supply_date));
+    const byDate = utcYmd(left.supply_date).localeCompare(
+      utcYmd(right.supply_date),
+    );
     if (byDate !== 0) {
       return byDate;
     }

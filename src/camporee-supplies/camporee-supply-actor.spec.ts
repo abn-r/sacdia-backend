@@ -55,7 +55,9 @@ describe('camporee supply actor', () => {
   it('rejects deputy-director, treasurer and counselor', () => {
     for (const role of ['deputy-director', 'treasurer', 'counselor']) {
       expect(() => assertCanPlanSupplies(clubActor(role))).toThrow(
-        expect.objectContaining({ code: ErrorCode.CAMPOREE_SUPPLIES_FORBIDDEN }),
+        expect.objectContaining({
+          code: ErrorCode.CAMPOREE_SUPPLIES_FORBIDDEN,
+        }),
       );
     }
   });

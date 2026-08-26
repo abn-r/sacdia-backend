@@ -134,77 +134,77 @@ export class PaymentObligationsService {
 
     const [fieldOrders, camporeeOrders, materialOrders, supplyPayments] =
       await Promise.all([
-      this.prisma.field_payment_orders.findMany({
-        where: {
-          ...territorial,
-          ...camporee,
-          status: { in: [...PENDING_PAYMENT_STATUSES] },
-        },
-        select: {
-          field_payment_order_id: true,
-          purpose: true,
-          folio_reference: true,
-          total_centavos: true,
-          currency: true,
-          status: true,
-          local_camporee_id: true,
-          union_camporee_id: true,
-          created_at: true,
-        },
-      }),
-      this.prisma.camporee_orders.findMany({
-        where: {
-          ...territorial,
-          ...camporee,
-          status: { in: [...PENDING_PAYMENT_STATUSES] },
-        },
-        select: {
-          camporee_order_id: true,
-          folio_reference: true,
-          total_centavos: true,
-          currency: true,
-          status: true,
-          local_camporee_id: true,
-          union_camporee_id: true,
-          created_at: true,
-          local_camporee: { select: { name: true } },
-          union_camporee: { select: { name: true } },
-        },
-      }),
-      hasCamporeeFilter
-        ? Promise.resolve([])
-        : this.prisma.materialOrder.findMany({
-            where: {
-              ...territorial,
-              estado: { in: [...PENDING_MATERIAL_ESTADOS] },
-            },
-            select: {
-              id: true,
-              folio_referencia: true,
-              total_centavos: true,
-              estado: true,
-              created_at: true,
-            },
-          }),
-      this.prisma.camporee_supply_payment_docs.findMany({
-        where: {
-          ...territorial,
-          ...camporee,
-          status: 'ISSUED',
-        },
-        select: {
-          camporee_supply_payment_doc_id: true,
-          kind: true,
-          folio_reference: true,
-          total_centavos: true,
-          local_camporee_id: true,
-          union_camporee_id: true,
-          created_at: true,
-          local_camporee: { select: { name: true } },
-          union_camporee: { select: { name: true } },
-        },
-      }),
-    ]);
+        this.prisma.field_payment_orders.findMany({
+          where: {
+            ...territorial,
+            ...camporee,
+            status: { in: [...PENDING_PAYMENT_STATUSES] },
+          },
+          select: {
+            field_payment_order_id: true,
+            purpose: true,
+            folio_reference: true,
+            total_centavos: true,
+            currency: true,
+            status: true,
+            local_camporee_id: true,
+            union_camporee_id: true,
+            created_at: true,
+          },
+        }),
+        this.prisma.camporee_orders.findMany({
+          where: {
+            ...territorial,
+            ...camporee,
+            status: { in: [...PENDING_PAYMENT_STATUSES] },
+          },
+          select: {
+            camporee_order_id: true,
+            folio_reference: true,
+            total_centavos: true,
+            currency: true,
+            status: true,
+            local_camporee_id: true,
+            union_camporee_id: true,
+            created_at: true,
+            local_camporee: { select: { name: true } },
+            union_camporee: { select: { name: true } },
+          },
+        }),
+        hasCamporeeFilter
+          ? Promise.resolve([])
+          : this.prisma.materialOrder.findMany({
+              where: {
+                ...territorial,
+                estado: { in: [...PENDING_MATERIAL_ESTADOS] },
+              },
+              select: {
+                id: true,
+                folio_referencia: true,
+                total_centavos: true,
+                estado: true,
+                created_at: true,
+              },
+            }),
+        this.prisma.camporee_supply_payment_docs.findMany({
+          where: {
+            ...territorial,
+            ...camporee,
+            status: 'ISSUED',
+          },
+          select: {
+            camporee_supply_payment_doc_id: true,
+            kind: true,
+            folio_reference: true,
+            total_centavos: true,
+            local_camporee_id: true,
+            union_camporee_id: true,
+            created_at: true,
+            local_camporee: { select: { name: true } },
+            union_camporee: { select: { name: true } },
+          },
+        }),
+      ]);
 
     const localIds = [
       ...new Set(

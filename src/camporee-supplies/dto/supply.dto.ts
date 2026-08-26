@@ -148,7 +148,8 @@ export class ReplaceSupplyPlanDto {
 
 export class AdjustSupplyLineDto {
   @ApiPropertyOptional({
-    description: 'Requerido cuando el Campo Local ajusta el plan de otra sección',
+    description:
+      'Requerido cuando el Campo Local ajusta el plan de otra sección',
   })
   @IsOptional()
   @Type(() => Number)

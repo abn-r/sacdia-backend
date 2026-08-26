@@ -6,10 +6,7 @@ import { CamporeeSupplyPlansController } from './plans.controller';
 import { CamporeeSupplyPlansService } from './plans.service';
 
 @Module({
-  controllers: [
-    CamporeeSupplyConfigController,
-    CamporeeSupplyPlansController,
-  ],
+  controllers: [CamporeeSupplyConfigController, CamporeeSupplyPlansController],
   providers: [
     CamporeeSupplyFolioService,
     CamporeeSupplyConfigService,

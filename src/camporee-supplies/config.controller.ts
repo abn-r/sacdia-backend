@@ -50,9 +50,7 @@ export class CamporeeSupplyConfigController {
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Catálogo de insumos del camporee local' })
   @ApiParam({ name: 'camporeeId', type: Number })
-  async catalogLocal(
-    @Param('camporeeId', ParseIntPipe) camporeeId: number,
-  ) {
+  async catalogLocal(@Param('camporeeId', ParseIntPipe) camporeeId: number) {
     return {
       status: 'success',
       data: await this.config.getCatalog(camporeeId, 'local'),
@@ -64,9 +62,7 @@ export class CamporeeSupplyConfigController {
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Catálogo de insumos del camporee de unión' })
   @ApiParam({ name: 'camporeeId', type: Number })
-  async catalogUnion(
-    @Param('camporeeId', ParseIntPipe) camporeeId: number,
-  ) {
+  async catalogUnion(@Param('camporeeId', ParseIntPipe) camporeeId: number) {
     return {
       status: 'success',
       data: await this.config.getCatalog(camporeeId, 'union'),

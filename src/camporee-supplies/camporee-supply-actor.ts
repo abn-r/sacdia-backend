@@ -1,6 +1,9 @@
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import type { ActorTerritoryScope } from '../common/authorization/actor-territory-scope';
+import {
+  resolveActorTerritoryScope,
+  type ActorTerritoryScope,
+} from '../common/authorization/actor-territory-scope';
 import {
   resolveOrderActor,
   type OrderActor,
@@ -74,9 +77,7 @@ export function resolveCamporeeSupplyActor(
   request: RequestWithProfile,
 ): CamporeeSupplyActor {
   const orderActor = resolveOrderActor(request);
-  const territory = resolveActorTerritoryScope(
-    request.authorizationProfile,
-  );
+  const territory = resolveActorTerritoryScope(request.authorizationProfile);
   const globalRoles = (
     request.authorizationProfile?.authorization.grants.global_roles ?? []
   ).map((grant) => normalizeRole(grant.role_name));
@@ -183,7 +184,12 @@ export function canConfigureAsParticipatingLf(
   if (isMutationScopeClosed(territory)) {
     return false;
   }
-  if (!hasAnyRole(globalRoleSet(actor), new Set(['director-lf', 'assistant-lf', 'admin', 'super-admin']))) {
+  if (
+    !hasAnyRole(
+      globalRoleSet(actor),
+      new Set(['director-lf', 'assistant-lf', 'admin', 'super-admin']),
+    )
+  ) {
     return false;
   }
   return territory.level === 'local_field' || territory.level === 'all';
