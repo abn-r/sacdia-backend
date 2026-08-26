@@ -667,6 +667,7 @@ model clubs {
   insurance_purchases_owned  insurance_purchases[]        @relation("insurance_purchase_owner_club")
   insurance_coverage_slots_owned insurance_coverage_slots[] @relation("insurance_slot_owner_club")
   camporee_orders            camporee_orders[]
+  camporee_supply_plans      camporee_supply_plans[]
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
   @@index([church_id], map: "idx_clubs_church_id")
@@ -726,6 +727,8 @@ model club_sections {
   insurance_slot_movements_from        insurance_slot_movements[]  @relation("insurance_slot_movement_from_section")
   insurance_slot_movements_to          insurance_slot_movements[]  @relation("insurance_slot_movement_to_section")
   camporee_orders                      camporee_orders[]
+  camporee_supply_plans                camporee_supply_plans[]
+  camporee_supply_payment_docs         camporee_supply_payment_docs[]
   @@unique([main_club_id, club_type_id])
   @@index([club_type_id, active], map: "idx_club_sections_club_type_active")
   @@index([main_club_id, active], map: "idx_club_sections_club_active")
@@ -1581,6 +1584,7 @@ model local_camporees {
   orders_enabled               Boolean              @default(false)
   orders_opens_at              DateTime?            @db.Timestamptz(6)
   orders_deadline              DateTime?            @db.Timestamptz(6)
+  supply_edit_cutoff_local_time String              @default("21:00") @db.VarChar(5)
   agenda_visible_from          DateTime?            @db.Timestamptz(6)
   ecclesiastical_year          Int
   active                       Boolean              @default(true)
@@ -1598,6 +1602,10 @@ model local_camporees {
   insurance_external_participants camporee_external_participants[]
   camporee_order_offerings     camporee_order_offerings[]
   camporee_orders              camporee_orders[]
+  camporee_supply_slots        camporee_supply_slots[]
+  camporee_supply_products     camporee_supply_products[]
+  camporee_supply_plans        camporee_supply_plans[]
+  camporee_supply_payment_docs camporee_supply_payment_docs[]
 
   @@index([timezone_verified_by], map: "idx_local_camporees_timezone_verified_by")
   @@index([local_field_id, active], map: "idx_local_camporees_local_field_active")
@@ -1646,6 +1654,9 @@ model local_fields {
   camporee_order_products          camporee_order_products[]
   camporee_orders                  camporee_orders[]
   camporee_order_folio_counters    camporee_order_folio_counters[]
+  camporee_supply_plans            camporee_supply_plans[]
+  camporee_supply_payment_docs     camporee_supply_payment_docs[]
+  camporee_supply_folio_counters   camporee_supply_folio_counters[]
 
   @@index([union_id, active], map: "idx_local_fields_union_active")
 }
@@ -1893,6 +1904,7 @@ model union_camporees {
   orders_enabled               Boolean                       @default(false)
   orders_opens_at              DateTime?                     @db.Timestamptz(6)
   orders_deadline              DateTime?                     @db.Timestamptz(6)
+  supply_edit_cutoff_local_time String                       @default("21:00") @db.VarChar(5)
   agenda_visible_from          DateTime?                     @db.Timestamptz(6)
   ecclesiastical_year          Int
   active                       Boolean                       @default(true)
@@ -1911,6 +1923,10 @@ model union_camporees {
   insurance_external_participants camporee_external_participants[]
   camporee_order_offerings     camporee_order_offerings[]
   camporee_orders              camporee_orders[]
+  camporee_supply_slots        camporee_supply_slots[]
+  camporee_supply_products     camporee_supply_products[]
+  camporee_supply_plans        camporee_supply_plans[]
+  camporee_supply_payment_docs camporee_supply_payment_docs[]
 
   @@index([timezone_verified_by], map: "idx_union_camporees_timezone_verified_by")
   @@index([union_id, active], map: "idx_union_camporees_union_active")
@@ -2485,6 +2501,11 @@ model users {
   camporee_order_lines_delivered            camporee_order_lines[]                   @relation("camporee_order_line_member_deliverer")
   camporee_order_proofs_uploaded            camporee_order_proofs[]                  @relation("camporee_order_proof_uploader")
   camporee_order_proofs_reviewed            camporee_order_proofs[]                  @relation("camporee_order_proof_reviewer")
+  camporee_supply_plans_submitted           camporee_supply_plans[]                   @relation("camporee_supply_plan_submitter")
+  camporee_supply_payments_created          camporee_supply_payment_docs[]            @relation("camporee_supply_payment_creator")
+  camporee_supply_payments_paid             camporee_supply_payment_docs[]            @relation("camporee_supply_payment_payer")
+  camporee_supply_deliveries                camporee_supply_deliveries[]              @relation("camporee_supply_deliverer")
+  camporee_supply_plan_audits               camporee_supply_plan_audits[]             @relation("camporee_supply_plan_auditor")
 }
 
 model authorization_context_versions {
@@ -5891,6 +5912,194 @@ model camporee_order_proofs {
 }
 
 model camporee_order_folio_counters {
+  local_field_id Int
+  year           Int
+  last_folio     Int      @default(0)
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  local_field local_fields @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([local_field_id, year])
+}
+
+enum camporee_supply_uom_enum {
+  KG
+  L
+  BAG
+  UNIT
+}
+
+enum camporee_supply_plan_status_enum {
+  DRAFT
+  SUBMITTED
+}
+
+enum camporee_supply_payment_kind_enum {
+  PRINCIPAL
+  CHARGE
+  REFUND
+}
+
+enum camporee_supply_payment_status_enum {
+  ISSUED
+  PAID
+  CANCELLED
+}
+
+model camporee_supply_slots {
+  camporee_supply_slot_id String    @id @default(uuid()) @db.Uuid
+  local_camporee_id       Int?
+  union_camporee_id       Int?
+  label                   String    @db.VarChar(80)
+  deliver_time            String    @db.VarChar(5)
+  sort_order              Int       @default(0)
+  active                  Boolean   @default(true)
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  local_camporee local_camporees?        @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  union_camporee union_camporees?        @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  lines          camporee_supply_lines[]
+
+  @@index([local_camporee_id, sort_order], map: "idx_camporee_supply_slots_local")
+  @@index([union_camporee_id, sort_order], map: "idx_camporee_supply_slots_union")
+}
+
+model camporee_supply_products {
+  camporee_supply_product_id String                   @id @default(uuid()) @db.Uuid
+  local_camporee_id          Int?
+  union_camporee_id          Int?
+  name                       String                   @db.VarChar(120)
+  uom                        camporee_supply_uom_enum
+  unit_cost_centavos         Int
+  active                     Boolean                  @default(true)
+  created_at                 DateTime                 @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+
+  local_camporee local_camporees?        @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  union_camporee union_camporees?        @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  lines          camporee_supply_lines[]
+
+  @@index([local_camporee_id, active], map: "idx_camporee_supply_products_local")
+  @@index([union_camporee_id, active], map: "idx_camporee_supply_products_union")
+}
+
+model camporee_supply_plans {
+  camporee_supply_plan_id    String                           @id @default(uuid()) @db.Uuid
+  local_field_id             Int
+  club_id                    Int
+  club_section_id            Int
+  local_camporee_id          Int?
+  union_camporee_id          Int?
+  status                     camporee_supply_plan_status_enum @default(DRAFT)
+  committed_total_centavos   Int                              @default(0)
+  submitted_by_id            String?                          @db.Uuid
+  submitted_at               DateTime?                        @db.Timestamptz(6)
+  created_at                 DateTime                         @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  local_field    local_fields                   @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  club           clubs                          @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+  club_section   club_sections                  @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  local_camporee local_camporees?               @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: NoAction, onUpdate: NoAction)
+  union_camporee union_camporees?               @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: NoAction, onUpdate: NoAction)
+  submitter      users?                         @relation("camporee_supply_plan_submitter", fields: [submitted_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  lines          camporee_supply_lines[]
+  payments       camporee_supply_payment_docs[]
+  audits         camporee_supply_plan_audits[]
+
+  @@index([local_field_id, status], map: "idx_camporee_supply_plans_lf_status")
+  @@index([local_camporee_id, status], map: "idx_camporee_supply_plans_local")
+  @@index([union_camporee_id, status], map: "idx_camporee_supply_plans_union")
+}
+
+model camporee_supply_lines {
+  camporee_supply_line_id String   @id @default(uuid()) @db.Uuid
+  plan_id                 String   @db.Uuid
+  supply_date             DateTime @db.Date
+  slot_id                 String   @db.Uuid
+  product_id              String   @db.Uuid
+  qty                     Decimal  @db.Decimal(12, 3)
+  unit_cost_centavos      Int
+  line_total_centavos     Int
+
+  plan       camporee_supply_plans        @relation(fields: [plan_id], references: [camporee_supply_plan_id], onDelete: Cascade, onUpdate: NoAction)
+  slot       camporee_supply_slots        @relation(fields: [slot_id], references: [camporee_supply_slot_id], onDelete: NoAction, onUpdate: NoAction)
+  product    camporee_supply_products     @relation(fields: [product_id], references: [camporee_supply_product_id], onDelete: NoAction, onUpdate: NoAction)
+  deliveries camporee_supply_deliveries[]
+
+  @@unique([plan_id, supply_date, slot_id, product_id], map: "uq_camporee_supply_lines_plan_date_slot_product")
+  @@index([slot_id], map: "idx_camporee_supply_lines_slot")
+  @@index([product_id], map: "idx_camporee_supply_lines_product")
+  @@index([supply_date], map: "idx_camporee_supply_lines_date")
+}
+
+model camporee_supply_payment_docs {
+  camporee_supply_payment_doc_id String                             @id @default(uuid()) @db.Uuid
+  plan_id                        String                             @db.Uuid
+  local_field_id                 Int
+  club_section_id                Int
+  local_camporee_id              Int?
+  union_camporee_id              Int?
+  kind                           camporee_supply_payment_kind_enum
+  parent_id                      String?                            @db.Uuid
+  folio                          Int
+  folio_reference                String                             @db.VarChar(16)
+  total_centavos                 Int
+  status                         camporee_supply_payment_status_enum @default(ISSUED)
+  note                           String?
+  created_by_id                  String                             @db.Uuid
+  paid_by_id                     String?                            @db.Uuid
+  paid_at                        DateTime?                          @db.Timestamptz(6)
+  created_at                     DateTime                           @default(now()) @db.Timestamptz(6)
+  modified_at                    DateTime                           @default(now()) @updatedAt @db.Timestamptz(6)
+
+  plan           camporee_supply_plans         @relation(fields: [plan_id], references: [camporee_supply_plan_id], onDelete: Cascade, onUpdate: NoAction)
+  parent         camporee_supply_payment_docs? @relation("supply_payment_children", fields: [parent_id], references: [camporee_supply_payment_doc_id], onDelete: NoAction, onUpdate: NoAction)
+  children       camporee_supply_payment_docs[] @relation("supply_payment_children")
+  local_field    local_fields                  @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  club_section   club_sections                 @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  local_camporee local_camporees?              @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: NoAction, onUpdate: NoAction)
+  union_camporee union_camporees?              @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: NoAction, onUpdate: NoAction)
+  creator        users                         @relation("camporee_supply_payment_creator", fields: [created_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  payer          users?                        @relation("camporee_supply_payment_payer", fields: [paid_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([local_field_id, folio_reference], map: "uq_camporee_supply_payments_lf_folio")
+  @@index([plan_id, kind, status], map: "idx_camporee_supply_payments_plan")
+  @@index([local_field_id, status], map: "idx_camporee_supply_payments_lf_status")
+  @@index([club_section_id, status], map: "idx_camporee_supply_payments_section")
+}
+
+model camporee_supply_deliveries {
+  camporee_supply_delivery_id String   @id @default(uuid()) @db.Uuid
+  line_id                     String   @db.Uuid
+  qty                         Decimal  @db.Decimal(12, 3)
+  delivered_by_id             String   @db.Uuid
+  note                        String?
+  delivered_at                DateTime @default(now()) @db.Timestamptz(6)
+
+  line      camporee_supply_lines @relation(fields: [line_id], references: [camporee_supply_line_id], onDelete: Cascade, onUpdate: NoAction)
+  deliverer users                 @relation("camporee_supply_deliverer", fields: [delivered_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([line_id, delivered_at], map: "idx_camporee_supply_deliveries_line")
+}
+
+model camporee_supply_plan_audits {
+  camporee_supply_plan_audit_id String   @id @default(uuid()) @db.Uuid
+  plan_id                       String   @db.Uuid
+  actor_id                      String   @db.Uuid
+  action                        String   @db.VarChar(40)
+  reason                        String?
+  payload                       Json?
+  created_at                    DateTime @default(now()) @db.Timestamptz(6)
+
+  plan  camporee_supply_plans @relation(fields: [plan_id], references: [camporee_supply_plan_id], onDelete: Cascade, onUpdate: NoAction)
+  actor users                 @relation("camporee_supply_plan_auditor", fields: [actor_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([plan_id, created_at], map: "idx_camporee_supply_plan_audits_plan")
+}
+
+model camporee_supply_folio_counters {
   local_field_id Int
   year           Int
   last_folio     Int      @default(0)

@@ -34,6 +34,7 @@ import { AdminModule } from './admin/admin.module';
 import { InsuranceModule } from './insurance/insurance.module';
 import { FieldPaymentOrdersModule } from './field-payment-orders/field-payment-orders.module';
 import { CamporeeOrdersModule } from './camporee-orders/camporee-orders.module';
+import { CamporeeSuppliesModule } from './camporee-supplies/camporee-supplies.module';
 import { PaymentObligationsModule } from './payment-obligations/payment-obligations.module';
 import { InvestitureModule } from './investiture/investiture.module';
 import { UnitsModule } from './units/units.module';
@@ -224,6 +225,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     InsuranceModule,
     FieldPaymentOrdersModule,
     CamporeeOrdersModule,
+    CamporeeSuppliesModule,
     PaymentObligationsModule,
     InvestitureModule,
     UnitsModule,

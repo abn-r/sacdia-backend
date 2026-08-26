@@ -494,6 +494,11 @@ export class CamporeesService {
                 : null,
             }
           : {}),
+        ...(dto.supply_edit_cutoff_local_time !== undefined
+          ? {
+              supply_edit_cutoff_local_time: dto.supply_edit_cutoff_local_time,
+            }
+          : {}),
         local_field_id: dto.local_field_id,
         includes_adventurers: dto.includes_adventurers,
         includes_pathfinders: dto.includes_pathfinders,
@@ -821,6 +826,11 @@ export class CamporeesService {
                 orders_deadline: dto.orders_deadline
                   ? new Date(dto.orders_deadline)
                   : null,
+              }
+            : {}),
+          ...(dto.supply_edit_cutoff_local_time !== undefined
+            ? {
+                supply_edit_cutoff_local_time: dto.supply_edit_cutoff_local_time,
               }
             : {}),
           union_id: dto.union_id,
