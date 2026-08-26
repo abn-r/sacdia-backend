@@ -795,6 +795,20 @@ ON CONFLICT (permission_name) DO UPDATE SET
   active = EXCLUDED.active,
   modified_at = now();
 
+-- ============================
+-- Camporee Supplies (insumos diarios por sección y slot; cobra el Campo Local)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('camporee-supplies:read', 'Read camporee supply catalog, plans and reports within own scope', true),
+  ('camporee-supplies:plan', 'Draft, submit and adjust the enrolled section supply plan', true),
+  ('camporee-supplies:configure', 'Configure supply cutoff, delivery slots and products for an organized camporee', true),
+  ('camporee-supplies:review-pay', 'Mark camporee supply payment documents paid or refunded in the effective Local Field', true),
+  ('camporee-supplies:deliver', 'Record partial supply delivery from Local Field to the club section', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================

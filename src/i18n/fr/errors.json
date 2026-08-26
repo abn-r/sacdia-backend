@@ -654,5 +654,21 @@
   "FIELD_PAYMENT_ORDER_REJECT_REASON_REQUIRED": "Vous devez indiquer le motif du rejet",
   "INSURANCE_REASSIGNMENT_NOT_FOUND": "Demande de réaffectation introuvable",
   "INSURANCE_REASSIGNMENT_INVALID": "La réaffectation d'assurance n'est pas valide",
-  "INSURANCE_REASSIGNMENT_PENDING_EXISTS": "Une demande de réaffectation en attente existe déjà pour cette couverture"
+  "INSURANCE_REASSIGNMENT_PENDING_EXISTS": "Une demande de réaffectation en attente existe déjà pour cette couverture",
+  "CAMPOREE_SUPPLIES_NOT_FOUND": "Plan ou catalogue de fournitures introuvable",
+  "CAMPOREE_SUPPLIES_FORBIDDEN": "Vous ne pouvez pas gérer les fournitures de ce camporee",
+  "CAMPOREE_SUPPLIES_SECTION_NOT_ELIGIBLE": "La section n'est pas inscrite à ce camporee",
+  "CAMPOREE_SUPPLIES_DAY_LOCKED": "Ce jour est gelé ; vous ne pouvez pas modifier le plan",
+  "CAMPOREE_SUPPLIES_PRICE_LOCKED": "Le prix est verrouillé dès qu'un plan a été soumis",
+  "CAMPOREE_SUPPLIES_BYPASS_REASON_REQUIRED": "Un motif est requis pour modifier un jour gelé",
+  "CAMPOREE_SUPPLIES_CUTOFF_INVALID": "L'heure limite de modification des fournitures est invalide",
+  "CAMPOREE_SUPPLIES_PLAN_NOT_DRAFT": "Seul un plan en brouillon peut être remplacé",
+  "CAMPOREE_SUPPLIES_PLAN_NOT_SUBMITTED": "Seul un plan soumis peut être ajusté",
+  "CAMPOREE_SUPPLIES_LINES_REQUIRED": "Le plan doit inclure au moins une ligne avec une quantité",
+  "CAMPOREE_SUPPLIES_SLOT_INVALID": "Le créneau de livraison n'est pas valide pour ce camporee",
+  "CAMPOREE_SUPPLIES_PRODUCT_INVALID": "Le produit de fourniture n'est pas valide pour ce camporee",
+  "CAMPOREE_SUPPLIES_QTY_INVALID": "La quantité de fourniture est invalide",
+  "CAMPOREE_SUPPLIES_PAYMENT_NOT_FOUND": "Document de paiement des fournitures introuvable",
+  "CAMPOREE_SUPPLIES_OVER_DELIVERY": "La quantité livrée dépasse la quantité demandée",
+  "CAMPOREE_SUPPLIES_LINE_NOT_FOUND": "Ligne de fourniture introuvable"
 }

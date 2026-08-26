@@ -132,7 +132,8 @@ export class PaymentObligationsService {
     const hasCamporeeFilter =
       query.camporee_id !== undefined || query.union_camporee_id !== undefined;
 
-    const [fieldOrders, camporeeOrders, materialOrders] = await Promise.all([
+    const [fieldOrders, camporeeOrders, materialOrders, supplyPayments] =
+      await Promise.all([
       this.prisma.field_payment_orders.findMany({
         where: {
           ...territorial,
@@ -185,6 +186,24 @@ export class PaymentObligationsService {
               created_at: true,
             },
           }),
+      this.prisma.camporee_supply_payment_docs.findMany({
+        where: {
+          ...territorial,
+          ...camporee,
+          status: 'ISSUED',
+        },
+        select: {
+          camporee_supply_payment_doc_id: true,
+          kind: true,
+          folio_reference: true,
+          total_centavos: true,
+          local_camporee_id: true,
+          union_camporee_id: true,
+          created_at: true,
+          local_camporee: { select: { name: true } },
+          union_camporee: { select: { name: true } },
+        },
+      }),
     ]);
 
     const localIds = [
@@ -280,6 +299,29 @@ export class PaymentObligationsService {
               action_required: 'UPLOAD_PROOF' as const,
             }),
         camporee: null,
+        created_at: row.created_at.toISOString(),
+      })),
+      ...supplyPayments.map((row) => ({
+        source:
+          row.kind === 'REFUND'
+            ? ('CAMPOREE_SUPPLY_REFUND' as const)
+            : ('CAMPOREE_SUPPLY_CHARGE' as const),
+        source_id: row.camporee_supply_payment_doc_id,
+        purpose: 'CAMPOREE_SUPPLIES' as const,
+        folio: row.folio_reference,
+        total_centavos: row.total_centavos,
+        currency: 'MXN' as const,
+        status: 'PAYMENT_DUE' as const,
+        action_required:
+          row.kind === 'REFUND'
+            ? ('PROCESS_REFUND' as const)
+            : ('PAY_AT_CAMP' as const),
+        camporee: resolveCamporee(
+          row.local_camporee_id,
+          row.union_camporee_id,
+          row.local_camporee?.name,
+          row.union_camporee?.name,
+        ),
         created_at: row.created_at.toISOString(),
       })),
     ];

@@ -191,6 +191,14 @@ export class CreateUnionCamporeeDto {
   orders_enabled?: boolean;
 
   @ApiPropertyOptional({
+    description: 'Hora local de corte para editar insumos del día siguiente (HH:MM)',
+    example: '21:00',
+  })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
+  supply_edit_cutoff_local_time?: string;
+
+  @ApiPropertyOptional({
     description: 'Apertura de pedidos con Z u offset explícito',
     example: '2026-09-01T08:00:00-06:00',
     nullable: true,

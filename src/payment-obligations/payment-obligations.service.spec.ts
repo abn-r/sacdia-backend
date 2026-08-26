@@ -97,6 +97,21 @@ function materialOrder(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function supplyPayment(overrides: Record<string, unknown> = {}) {
+  return {
+    camporee_supply_payment_doc_id: 'ins-1',
+    kind: 'PRINCIPAL',
+    folio_reference: 'INS20260001',
+    total_centavos: 80000,
+    local_camporee_id: LOCAL_CAMPOREE_ID,
+    union_camporee_id: null,
+    created_at: new Date('2026-08-24T19:00:00.000Z'),
+    local_camporee: { name: 'Camporí 2026' },
+    union_camporee: null,
+    ...overrides,
+  };
+}
+
 describe('PaymentObligationsService', () => {
   let prisma: {
     field_payment_orders: {
@@ -110,6 +125,9 @@ describe('PaymentObligationsService', () => {
       create: jest.Mock;
       update: jest.Mock;
       updateMany: jest.Mock;
+    };
+    camporee_supply_payment_docs: {
+      findMany: jest.Mock;
     };
     materialOrder: {
       findMany: jest.Mock;
@@ -136,6 +154,9 @@ describe('PaymentObligationsService', () => {
         create: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
+      },
+      camporee_supply_payment_docs: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
       materialOrder: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -208,6 +229,37 @@ describe('PaymentObligationsService', () => {
         ]),
       );
       expect(result).toHaveLength(3);
+    });
+
+    it('maps issued supply principal and refund as distinct rows', async () => {
+      prisma.camporee_supply_payment_docs.findMany.mockResolvedValue([
+        supplyPayment(),
+        supplyPayment({
+          camporee_supply_payment_doc_id: 'ins-2',
+          kind: 'REFUND',
+          folio_reference: 'INS20260002',
+          total_centavos: 10000,
+        }),
+      ]);
+
+      const result = await service.listPending({}, clubActor());
+
+      expect(result).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            source: 'CAMPOREE_SUPPLY_CHARGE',
+            purpose: 'CAMPOREE_SUPPLIES',
+            folio: 'INS20260001',
+            action_required: 'PAY_AT_CAMP',
+          }),
+          expect.objectContaining({
+            source: 'CAMPOREE_SUPPLY_REFUND',
+            purpose: 'CAMPOREE_SUPPLIES',
+            folio: 'INS20260002',
+            action_required: 'PROCESS_REFUND',
+          }),
+        ]),
+      );
     });
 
     it('maps ISSUED to PAYMENT_DUE / UPLOAD_PROOF', async () => {

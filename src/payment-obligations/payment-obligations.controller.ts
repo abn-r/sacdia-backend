@@ -6,6 +6,7 @@ import {
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { CAMPOREE_ORDERS_READ } from '../camporee-orders/permissions';
+import { CAMPOREE_SUPPLIES_READ } from '../camporee-supplies/permissions';
 import {
   resolveOrderActor,
   type RequestWithProfile,
@@ -25,6 +26,7 @@ export class PaymentObligationsController {
   @RequirePermissions({
     permissions: [
       CAMPOREE_ORDERS_READ,
+      CAMPOREE_SUPPLIES_READ,
       'field-payment-orders:read',
       MATERIALS_READ,
     ],
@@ -33,7 +35,7 @@ export class PaymentObligationsController {
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary:
-      'Listar obligaciones pendientes (inscripción, materiales y pedidos de camporee) sin fusionar folios',
+      'Listar obligaciones pendientes (inscripción, materiales, pedidos e insumos de camporee) sin fusionar folios',
   })
   async listPending(
     @Query() query: ListPaymentObligationsQueryDto,
