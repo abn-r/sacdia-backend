@@ -56,8 +56,25 @@ import {
   CreateMasterHonorDto,
   UpdateMasterHonorDto,
   CreateClassHonorDto,
+  UpdateClassHonorDto,
   CreateClassPrerequisiteDto,
 } from './dto/phase-e-catalogs.dto';
+
+const CLASS_HONOR_INCLUDE = {
+  honor: {
+    select: {
+      honor_id: true,
+      name: true,
+      honor_image: true,
+      material_url: true,
+      honors_category_id: true,
+      skill_level: true,
+    },
+  },
+  module: {
+    select: { module_id: true, name: true },
+  },
+};
 
 type ClassSectionRequirementConfig = {
   requirement_track: class_requirement_track_enum;
@@ -299,17 +316,7 @@ export class AdminPhaseECatalogsService {
         class_id: classId,
         ...(active === undefined ? {} : { active }),
       },
-      include: {
-        honor: {
-          select: {
-            honor_id: true,
-            name: true,
-            honor_image: true,
-            honors_category_id: true,
-            skill_level: true,
-          },
-        },
-      },
+      include: CLASS_HONOR_INCLUDE,
       orderBy: [{ relation_type: 'asc' }, { honor: { name: 'asc' } }],
     });
   }
@@ -343,27 +350,64 @@ export class AdminPhaseECatalogsService {
       throw new AppConflictException(ErrorCode.ADMIN_CLASS_HONOR_DUPLICATE);
     }
 
+    if (dto.module_id != null) {
+      await this.assertModuleForClass(classId, dto.module_id);
+    }
+
     const record = await this.prisma.class_honors.create({
       data: {
         class_id: classId,
         honor_id: dto.honor_id,
         relation_type: dto.relation_type,
+        module_id: dto.module_id ?? null,
         active: true,
       },
-      include: {
-        honor: {
-          select: {
-            honor_id: true,
-            name: true,
-            honor_image: true,
-            honors_category_id: true,
-            skill_level: true,
-          },
-        },
-      },
+      include: CLASS_HONOR_INCLUDE,
     });
 
     this.logMutation('create', 'class_honors', record.class_honor_id, actorId);
+    return record;
+  }
+
+  async updateClassHonor(
+    classId: number,
+    classHonorId: number,
+    dto: UpdateClassHonorDto,
+    actorId: string,
+  ) {
+    const existing = await this.prisma.class_honors.findFirst({
+      where: { class_honor_id: classHonorId, class_id: classId, active: true },
+    });
+    if (!existing) {
+      throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_HONOR_NOT_FOUND, {
+        id: classHonorId,
+      });
+    }
+
+    if (dto.module_id === undefined) {
+      const current = await this.prisma.class_honors.findUnique({
+        where: { class_honor_id: classHonorId },
+        include: CLASS_HONOR_INCLUDE,
+      });
+      if (!current) {
+        throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_HONOR_NOT_FOUND, {
+          id: classHonorId,
+        });
+      }
+      return current;
+    }
+
+    if (dto.module_id !== null) {
+      await this.assertModuleForClass(classId, dto.module_id);
+    }
+
+    const record = await this.prisma.class_honors.update({
+      where: { class_honor_id: classHonorId },
+      data: { module_id: dto.module_id, modified_at: new Date() },
+      include: CLASS_HONOR_INCLUDE,
+    });
+
+    this.logMutation('update', 'class_honors', classHonorId, actorId);
     return record;
   }
 
@@ -635,6 +679,18 @@ export class AdminPhaseECatalogsService {
 
     this.logMutation('delete', 'class_modules', id, actorId);
     return record;
+  }
+
+  private async assertModuleForClass(classId: number, moduleId: number) {
+    const module = await this.prisma.class_modules.findFirst({
+      where: { module_id: moduleId, class_id: classId, active: true },
+      select: { module_id: true },
+    });
+    if (!module) {
+      throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_MODULE_NOT_FOUND, {
+        id: moduleId,
+      });
+    }
   }
 
   private async ensureClassModuleExists(id: number) {
