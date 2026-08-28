@@ -1232,26 +1232,32 @@ describe('ClassesService', () => {
         {
           class_honor_id: 1,
           honor_id: 50,
+          module_id: null,
           relation_type: 'RECOMMENDED',
           honor: {
             honor_id: 50,
             name: 'Nudos',
             honor_image: null,
+            material_url: 'https://cdn/nudos.pdf',
             honors_category_id: 2,
             skill_level: 1,
           },
+          module: null,
         },
         {
           class_honor_id: 2,
           honor_id: 51,
+          module_id: 12,
           relation_type: 'REQUIRED',
           honor: {
             honor_id: 51,
             name: 'Primeros Auxilios',
             honor_image: 'https://cdn/honor.png',
+            material_url: null,
             honors_category_id: 3,
             skill_level: 2,
           },
+          module: { module_id: 12, name: 'Vida al aire libre' },
         },
       ]);
 
@@ -1261,15 +1267,24 @@ describe('ClassesService', () => {
         {
           class_honor_id: 1,
           relation_type: 'RECOMMENDED',
-          honor: expect.objectContaining({ honor_id: 50, name: 'Nudos' }),
+          module_id: null,
+          module_name: null,
+          honor: expect.objectContaining({
+            honor_id: 50,
+            name: 'Nudos',
+            material_url: 'https://cdn/nudos.pdf',
+          }),
           user_status: null,
         },
         {
           class_honor_id: 2,
           relation_type: 'REQUIRED',
+          module_id: 12,
+          module_name: 'Vida al aire libre',
           honor: expect.objectContaining({
             honor_id: 51,
             name: 'Primeros Auxilios',
+            material_url: null,
           }),
           user_status: null,
         },
@@ -1291,14 +1306,17 @@ describe('ClassesService', () => {
         {
           class_honor_id: 1,
           honor_id: 50,
+          module_id: null,
           relation_type: 'RECOMMENDED',
           honor: {
             honor_id: 50,
             name: 'Nudos',
             honor_image: null,
+            material_url: null,
             honors_category_id: 2,
             skill_level: 1,
           },
+          module: null,
         },
       ]);
       mockPrismaService.users_honors.findMany.mockResolvedValue([

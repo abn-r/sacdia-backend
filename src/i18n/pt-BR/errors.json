@@ -654,5 +654,21 @@
   "FIELD_PAYMENT_ORDER_REJECT_REASON_REQUIRED": "Você deve informar o motivo da rejeição",
   "INSURANCE_REASSIGNMENT_NOT_FOUND": "Solicitação de reatribuição não encontrada",
   "INSURANCE_REASSIGNMENT_INVALID": "A reatribuição de seguro não é válida",
-  "INSURANCE_REASSIGNMENT_PENDING_EXISTS": "Já existe uma solicitação de reatribuição pendente para esta cobertura"
+  "INSURANCE_REASSIGNMENT_PENDING_EXISTS": "Já existe uma solicitação de reatribuição pendente para esta cobertura",
+  "CAMPOREE_SUPPLIES_NOT_FOUND": "Plano ou catálogo de insumos não encontrado",
+  "CAMPOREE_SUPPLIES_FORBIDDEN": "Você não pode operar insumos deste camporee",
+  "CAMPOREE_SUPPLIES_SECTION_NOT_ELIGIBLE": "A seção não está inscrita neste camporee",
+  "CAMPOREE_SUPPLIES_DAY_LOCKED": "Esse dia está congelado; você não pode alterar o plano",
+  "CAMPOREE_SUPPLIES_PRICE_LOCKED": "O preço fica bloqueado depois que um plano é enviado",
+  "CAMPOREE_SUPPLIES_BYPASS_REASON_REQUIRED": "É necessário informar o motivo para editar um dia congelado",
+  "CAMPOREE_SUPPLIES_CUTOFF_INVALID": "O horário de corte de insumos é inválido",
+  "CAMPOREE_SUPPLIES_PLAN_NOT_DRAFT": "Somente um plano em rascunho pode ser substituído",
+  "CAMPOREE_SUPPLIES_PLAN_NOT_SUBMITTED": "Somente um plano enviado pode ser ajustado",
+  "CAMPOREE_SUPPLIES_LINES_REQUIRED": "O plano deve incluir pelo menos uma linha com quantidade",
+  "CAMPOREE_SUPPLIES_SLOT_INVALID": "O horário de entrega não é válido para este camporee",
+  "CAMPOREE_SUPPLIES_PRODUCT_INVALID": "O produto de insumo não é válido para este camporee",
+  "CAMPOREE_SUPPLIES_QTY_INVALID": "A quantidade de insumo é inválida",
+  "CAMPOREE_SUPPLIES_PAYMENT_NOT_FOUND": "Folio de insumos não encontrado ou não pode ser marcado",
+  "CAMPOREE_SUPPLIES_OVER_DELIVERY": "A quantidade entregue supera o solicitado",
+  "CAMPOREE_SUPPLIES_LINE_NOT_FOUND": "Linha de insumo não encontrada"
 }
