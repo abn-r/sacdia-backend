@@ -59,13 +59,13 @@ export class JobsOverviewService {
 
     const queueStats: JobCounts[] = await Promise.all(
       queues.map(async ({ name, queue }) => {
+        // BullMQ 6 dropped JobType 'paused'; paused-queue jobs count as waiting.
         const counts = await queue.getJobCounts(
           'waiting',
           'active',
           'completed',
           'failed',
           'delayed',
-          'paused',
         );
         return {
           name,
@@ -74,7 +74,7 @@ export class JobsOverviewService {
           completed: counts.completed ?? 0,
           failed: counts.failed ?? 0,
           delayed: counts.delayed ?? 0,
-          paused: counts.paused ?? 0,
+          paused: 0,
         };
       }),
     );
