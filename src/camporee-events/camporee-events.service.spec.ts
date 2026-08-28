@@ -795,6 +795,32 @@ describe('CamporeeEventsService', () => {
       );
     });
 
+    it('rejects creating an event as publicado even with a leader name override', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+
+      await expect(
+        service.createEvent(
+          1,
+          'local',
+          {
+            event_type_id: 1,
+            title: 'Rally',
+            max_points: 700,
+            participants_mode: 'count',
+            participants_count: 1,
+            status: CamporeeEventStatusDto.publicado,
+            leader_name_override: 'Persona 1',
+            honor_ids: [16],
+          },
+          ACTOR_ID,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_EVENT_RESPONSIBLE_REQUIRED,
+      });
+      expect(prisma.camporee_events.create).not.toHaveBeenCalled();
+      expect(prisma.honors.findMany).not.toHaveBeenCalled();
+    });
+
     it('rejects publishing an event without a responsible staff assignment', async () => {
       prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
       prisma.camporee_event_staff_assignments.findFirst.mockResolvedValueOnce(
