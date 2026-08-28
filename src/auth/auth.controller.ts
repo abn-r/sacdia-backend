@@ -18,12 +18,14 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiHeader,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { AccountDeletionService } from './account-deletion.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
@@ -56,7 +58,13 @@ export class AuthController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Error en validación o usuario ya existe',
+    description: 'Error de validación del DTO',
+  })
+  @ApiResponse({
+    status: 401,
+    description:
+      'Mismo código que login fallido (`AUTH_INVALID_CREDENTIALS`). ' +
+      'También cubre email ya registrado — no se revela existencia.',
   })
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
@@ -107,7 +115,17 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   // Strict rate limit: 5 attempts per minute — matches login (replay/token-stuffing protection)
   @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
-  @ApiOperation({ summary: 'Refrescar sesión con refresh token' })
+  @ApiOperation({
+    summary: 'Refrescar sesión con refresh token',
+    description:
+      'Body: `refreshToken` (sesión opaca BA). `Authorization: Bearer` opcional con el access JWT actual; si es de este usuario se revoca. Sin Bearer el JWT anterior vive hasta 8h.',
+  })
+  @ApiHeader({
+    name: 'Authorization',
+    required: false,
+    description:
+      'Bearer <access JWT actual>. Si `iss`/`aud` son SACDIA y `sub` es el usuario de esta sesión, se blacklistea. QR u otro aud se ignoran.',
+  })
   @ApiResponse({
     status: 200,
     description: 'Tokens renovados exitosamente',
@@ -143,8 +161,12 @@ export class AuthController {
   async refresh(
     @Body() dto: RefreshSessionDto,
     @Headers('user-agent') userAgent?: string,
+    @Headers('authorization') authorization?: string,
   ) {
-    return this.authService.refreshSession(dto, { userAgent });
+    return this.authService.refreshSession(dto, {
+      userAgent,
+      accessToken: this.extractBearerToken(authorization),
+    });
   }
 
   // Public on purpose: logout must work fail-safe with an expired access
@@ -195,6 +217,31 @@ export class AuthController {
   })
   async requestPasswordReset(@Body() dto: ResetPasswordRequestDto) {
     return this.authService.requestPasswordReset(dto);
+  }
+
+  @Public()
+  @Post('password/reset')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
+  @ApiOperation({ summary: 'Confirmar recuperación de contraseña' })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Contraseña actualizada. No emite sesión ni JWT; el cliente debe iniciar sesión de nuevo',
+    schema: {
+      example: {
+        success: true,
+        message: 'Contraseña actualizada. Inicie sesión de nuevo',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Token inválido, expirado, o contraseña inválida',
+  })
+  async confirmPasswordReset(@Body() dto: ResetPasswordDto) {
+    return this.authService.confirmPasswordReset(dto);
   }
 
   @Post('verify-email/send')

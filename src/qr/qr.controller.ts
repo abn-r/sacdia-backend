@@ -77,8 +77,9 @@ export class QrController {
   @ApiOperation({
     summary: 'Get the authenticated user QR metadata',
     description:
-      'Returns the current token, expiry, resolved authorization and the ' +
-      'visual member metadata used by the app card.',
+      'Returns the current token, expiry, and public member identity. ' +
+      'Does not include authorization grants, blood type, or emergency contact. ' +
+      'Authz lives on GET /auth/me.',
   })
   @ApiResponse({ status: 200, type: QrMeResponseDto })
   async getMe(
@@ -96,8 +97,9 @@ export class QrController {
   @ApiOperation({
     summary: 'Get the QR card payload for the authenticated user',
     description:
-      'Returns the QR token plus the visual fields required by the mobile ' +
-      'and web clients to render the virtual card.',
+      'Returns the QR token plus visual fields for the virtual card. ' +
+      'Includes current_class and blood_type (first-aid residual on a found card). ' +
+      'Does not include emergency_contact or authorization.',
   })
   @ApiResponse({ status: 200, type: QrCardResponseDto })
   async getCard(
@@ -147,7 +149,8 @@ export class QrController {
   @ApiOperation({
     summary: 'Validate a scanned QR token with the canonical QR contract',
     description:
-      'Validates the HS256 token, resolves the member and optionally records ' +
+      'Validates the HS256 token, resolves the member (including blood type ' +
+      'and primary emergency contact for first aid) and optionally records ' +
       'attendance when `activity_id` is present.',
   })
   @ApiResponse({ status: 200, type: QrValidationResponseDto })

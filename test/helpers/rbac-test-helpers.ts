@@ -1,4 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
+import { accessJwtClaims } from '../../src/common/constants/jwt-audiences';
 import type { AuthorizationSnapshot } from '../../src/common/services/authorization-context.service';
 
 type AuthorizationFixtureOptions = {
@@ -22,7 +23,9 @@ type AuthorizationFixtureOptions = {
 
 export function ensureTestJwtSecret() {
   process.env.BETTER_AUTH_SECRET =
-    process.env.BETTER_AUTH_SECRET || 'test-secret';
+    process.env.BETTER_AUTH_SECRET || 'test-better-auth-secret-32chars!!';
+  process.env.QR_JWT_SECRET =
+    process.env.QR_JWT_SECRET || 'test-qr-jwt-secret-32-chars-xxxx';
 }
 
 export function createTestJwtService() {
@@ -58,7 +61,7 @@ export function createBearerToken(
   sub: string,
   email = `${sub}@test.local`,
 ) {
-  return jwtService.sign({ sub, email });
+  return jwtService.sign({ sub, email, ...accessJwtClaims() });
 }
 
 export function buildAuthorizationSnapshot(

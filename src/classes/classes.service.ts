@@ -352,6 +352,22 @@ export class ClassesService {
               },
               orderBy: [{ display_order: 'asc' }, { section_id: 'asc' }],
             },
+            class_honors: {
+              where: { active: true, honor: { active: true } },
+              include: {
+                honor: {
+                  select: {
+                    honor_id: true,
+                    name: true,
+                    honor_image: true,
+                    material_url: true,
+                    honors_category_id: true,
+                    skill_level: true,
+                  },
+                },
+              },
+              orderBy: [{ relation_type: 'asc' }, { honor: { name: 'asc' } }],
+            },
           },
           orderBy: { module_id: 'asc' },
         },
@@ -390,6 +406,24 @@ export class ClassesService {
             'translations',
           );
         }
+        const rawHonors = Array.isArray(mod.class_honors)
+          ? mod.class_honors
+          : [];
+        mod.honors = rawHonors.map(
+          (relation: {
+            class_honor_id: number;
+            relation_type: string;
+            module_id: number | null;
+            honor: unknown;
+          }) => ({
+            class_honor_id: relation.class_honor_id,
+            relation_type: relation.relation_type,
+            module_id: relation.module_id ?? null,
+            module_name: mod.name ?? null,
+            honor: relation.honor,
+          }),
+        );
+        delete mod.class_honors;
       }
     }
 
@@ -435,9 +469,13 @@ export class ClassesService {
             honor_id: true,
             name: true,
             honor_image: true,
+            material_url: true,
             honors_category_id: true,
             skill_level: true,
           },
+        },
+        module: {
+          select: { module_id: true, name: true },
         },
       },
       orderBy: [{ relation_type: 'asc' }, { honor: { name: 'asc' } }],
@@ -460,6 +498,8 @@ export class ClassesService {
     return relations.map((relation) => ({
       class_honor_id: relation.class_honor_id,
       relation_type: relation.relation_type,
+      module_id: relation.module_id ?? null,
+      module_name: relation.module?.name ?? null,
       honor: relation.honor,
       user_status: userHonorsByHonorId.get(relation.honor_id) ?? null,
     }));

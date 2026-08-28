@@ -5,6 +5,10 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  actorCanAccessHierarchyScope,
+  resolveActorTerritoryScope,
+} from '../authorization/actor-territory-scope';
+import {
   InstitutionalHierarchyService,
   type HierarchyContext,
 } from './institutional-hierarchy.service';
@@ -588,53 +592,9 @@ export class AuthorizationContextService {
     },
     _policy: 'current-write' | 'historical-read',
   ): boolean {
-    const roleNames = this.getGlobalRoleNameSet(resolved);
-
-    if (roleNames.has('super-admin')) {
-      return true;
-    }
-
-    const globalScope = resolved.authorization.effective.scope.global;
-    const globalLocalFieldId = globalScope.local_field?.id;
-    const globalUnionId = globalScope.union?.id;
-    const globalDivisionId = globalScope.division?.id;
-
-    const localFieldAllowedRoles = [
-      'admin',
-      'assistant-admin',
-      'director-lf',
-      'assistant-lf',
-    ];
-
-    if (
-      typeof scope.local_field_id === 'number' &&
-      typeof globalLocalFieldId === 'number' &&
-      globalLocalFieldId === scope.local_field_id &&
-      localFieldAllowedRoles.some((role) => roleNames.has(role))
-    ) {
-      return true;
-    }
-
-    if (
-      typeof scope.union_id === 'number' &&
-      typeof globalUnionId === 'number' &&
-      globalUnionId === scope.union_id &&
-      (roleNames.has('admin') ||
-        roleNames.has('assistant-admin') ||
-        roleNames.has('director-union') ||
-        roleNames.has('assistant-union'))
-    ) {
-      return true;
-    }
-
-    return (
-      typeof scope.division_id === 'number' &&
-      typeof globalDivisionId === 'number' &&
-      globalDivisionId === scope.division_id &&
-      (roleNames.has('admin') ||
-        roleNames.has('assistant-admin') ||
-        roleNames.has('director-dia') ||
-        roleNames.has('assistant-dia'))
+    return actorCanAccessHierarchyScope(
+      resolveActorTerritoryScope(resolved),
+      scope,
     );
   }
 
@@ -644,16 +604,6 @@ export class AuthorizationContextService {
   ): Promise<boolean> {
     const resolved = await this.resolveUserAuthorization(userId);
     return this.canAccessHierarchyScope(resolved, scope, 'historical-read');
-  }
-
-  private getGlobalRoleNameSet(
-    resolved: ResolvedAuthorizationProfile,
-  ): Set<string> {
-    return new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
   }
 
   private async buildUserScope(user: {

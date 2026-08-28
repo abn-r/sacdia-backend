@@ -312,6 +312,25 @@ describe('PermissionsGuard', () => {
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_RBAC_MISCONFIGURATION });
   });
 
+  it('rejects unknown authorization resource types even when the permission matches', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['clubs:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'district' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({ globalPermissions: ['clubs:read'] }),
+    );
+
+    await expect(
+      guard.canActivate(createContext({ user: { sub: 'user-123' } })),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_RBAC_MISCONFIGURATION });
+  });
+
   it('allows @Public() routes without a permission catalog entry', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === IS_PUBLIC_KEY) {

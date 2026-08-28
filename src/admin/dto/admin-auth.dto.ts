@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, MinLength, MaxLength, Matches } from 'class-validator';
-import { i18nValidationMessage } from 'nestjs-i18n';
+import { IsNewPassword } from '../../auth/password-policy';
 
 // ---------------------------------------------------------------------------
 // Session DTOs
@@ -65,22 +64,6 @@ export class AdminMfaStatusResponseDto {
 // ---------------------------------------------------------------------------
 
 export class AdminSetPasswordDto {
-  @ApiProperty({
-    description:
-      'Nueva contraseña del usuario (mínimo 8 caracteres, debe incluir mayúscula, minúscula, número y carácter especial)',
-    example: 'SecurePass1!',
-    minLength: 8,
-    maxLength: 128,
-  })
-  @IsString()
-  @MinLength(8, {
-    message: i18nValidationMessage('errors.VALIDATION.password_min_length', {
-      min: 8,
-    }),
-  })
-  @MaxLength(128)
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message: i18nValidationMessage('errors.VALIDATION.password_format'),
-  })
+  @IsNewPassword({ example: 'SecurePass1!' })
   newPassword!: string;
 }

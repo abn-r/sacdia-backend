@@ -32,7 +32,10 @@ describe('BetterAuthService', () => {
   const mockSessionUpdate = jest.fn();
   const mockVerificationCreate = jest.fn();
   const mockVerificationFindFirst = jest.fn();
+  const mockVerificationDelete = jest.fn();
+  const mockVerificationDeleteMany = jest.fn();
   const mockQueryRaw = jest.fn();
+  const mockTransaction = jest.fn();
 
   const mockPrisma = {
     users: {
@@ -53,9 +56,11 @@ describe('BetterAuthService', () => {
     verification: {
       create: mockVerificationCreate,
       findFirst: mockVerificationFindFirst,
-      deleteMany: jest.fn(),
+      delete: mockVerificationDelete,
+      deleteMany: mockVerificationDeleteMany,
     },
     $queryRaw: mockQueryRaw,
+    $transaction: mockTransaction,
   };
 
   // -- BA instance mock (kept for OAuth/TOTP stubs) --------------------------
@@ -169,6 +174,8 @@ describe('BetterAuthService', () => {
         Buffer.from(token.split('.')[1], 'base64url').toString(),
       );
       expect(payload.sub).toBe('user-uuid-123');
+      expect(payload.iss).toBe('https://api.sacdia.app');
+      expect(payload.aud).toBe('sacdia:access');
     });
 
     it('should embed email in the JWT payload', () => {
@@ -323,16 +330,29 @@ describe('BetterAuthService', () => {
       );
     });
 
-    it('should throw ConflictException when email is already in use', async () => {
+    it('does not reveal that the email is already registered', async () => {
       const { svc } = buildService();
 
-      mockUsersFindUnique.mockResolvedValue(mockDbUser); // existing user
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
 
       await expect(
         svc.createUser('test@example.com', 'Password123!', 'Test User'),
-      ).rejects.toMatchObject({ code: ErrorCode.AUTH_EMAIL_ALREADY_IN_USE });
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
 
       expect(mockUsersCreate).not.toHaveBeenCalled();
+    });
+
+    it('maps a unique-email race to the same login-generic error', async () => {
+      const { svc } = buildService();
+      mockUsersFindUnique.mockResolvedValue(null);
+      const conflict = Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+      });
+      mockUsersCreate.mockRejectedValue(conflict);
+
+      await expect(
+        svc.createUser('test@example.com', 'Password123!', 'Test User'),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
     });
   });
 
@@ -603,16 +623,20 @@ describe('BetterAuthService', () => {
       const { svc } = buildService();
 
       mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockVerificationDeleteMany.mockResolvedValue({ count: 0 });
       mockVerificationCreate.mockResolvedValue({});
 
       await expect(
         svc.resetPasswordForEmail('test@example.com'),
       ).resolves.toBeUndefined();
 
+      expect(mockVerificationDeleteMany).toHaveBeenCalledWith({
+        where: { identifier: 'password-reset:test@example.com' },
+      });
       expect(mockVerificationCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            identifier: 'test@example.com',
+            identifier: 'password-reset:test@example.com',
             value: expect.any(String),
             expiresAt: expect.any(Date),
           }),
@@ -641,6 +665,119 @@ describe('BetterAuthService', () => {
       ).rejects.toThrow(ServiceUnavailableException);
 
       expect(mockVerificationCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // resetPasswordWithToken
+  // ---------------------------------------------------------------------------
+
+  describe('resetPasswordWithToken', () => {
+    const resetToken = 'reset-token-abc';
+    const resetIdentifier = 'password-reset:test@example.com';
+    const futureDate = new Date(Date.now() + 60 * 60 * 1000);
+
+    beforeEach(() => {
+      mockTransaction.mockImplementation(async (ops: Promise<unknown>[]) =>
+        Promise.all(ops),
+      );
+    });
+
+    it('should update the credential hash and consume all reset tokens', async () => {
+      const { svc } = buildService();
+
+      mockVerificationFindFirst.mockResolvedValue({
+        id: 'verification-reset-1',
+        identifier: resetIdentifier,
+        value: resetToken,
+        expiresAt: futureDate,
+      });
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(mockDbAccount);
+      mockAccountUpdate.mockResolvedValue({});
+      mockVerificationDeleteMany.mockResolvedValue({ count: 1 });
+
+      await expect(
+        svc.resetPasswordWithToken(resetToken, 'NewPassword123!'),
+      ).resolves.toEqual({ userId: 'user-uuid-123' });
+
+      expect(mockVerificationFindFirst).toHaveBeenCalledWith({
+        where: {
+          value: resetToken,
+          identifier: { startsWith: 'password-reset:' },
+        },
+      });
+      expect(mockAccountUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockDbAccount.id },
+          data: expect.objectContaining({
+            password: expect.stringMatching(/^\$2[ab]\$12\$/),
+          }),
+        }),
+      );
+      expect(mockVerificationDeleteMany).toHaveBeenCalledWith({
+        where: { identifier: resetIdentifier },
+      });
+    });
+
+    it('should reject an unknown token', async () => {
+      const { svc } = buildService();
+
+      mockVerificationFindFirst.mockResolvedValue(null);
+
+      await expect(
+        svc.resetPasswordWithToken('missing-token', 'NewPassword123!'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_PASSWORD_RESET_TOKEN_INVALID,
+      });
+      expect(mockAccountUpdate).not.toHaveBeenCalled();
+    });
+
+    it('should delete and reject an expired token', async () => {
+      const { svc } = buildService();
+
+      mockVerificationFindFirst.mockResolvedValue({
+        id: 'verification-reset-expired',
+        identifier: resetIdentifier,
+        value: resetToken,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      mockVerificationDelete.mockResolvedValue({});
+
+      await expect(
+        svc.resetPasswordWithToken(resetToken, 'NewPassword123!'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_PASSWORD_RESET_TOKEN_EXPIRED,
+      });
+      expect(mockVerificationDelete).toHaveBeenCalledWith({
+        where: { id: 'verification-reset-expired' },
+      });
+      expect(mockAccountUpdate).not.toHaveBeenCalled();
+    });
+
+    it('should fail closed for OAuth-only users without creating a credential', async () => {
+      const { svc } = buildService();
+
+      mockVerificationFindFirst.mockResolvedValue({
+        id: 'verification-reset-1',
+        identifier: resetIdentifier,
+        value: resetToken,
+        expiresAt: futureDate,
+      });
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(null);
+      mockVerificationDeleteMany.mockResolvedValue({ count: 1 });
+
+      await expect(
+        svc.resetPasswordWithToken(resetToken, 'NewPassword123!'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_PASSWORD_RESET_TOKEN_INVALID,
+      });
+      expect(mockAccountCreate).not.toHaveBeenCalled();
+      expect(mockAccountUpdate).not.toHaveBeenCalled();
+      expect(mockVerificationDeleteMany).toHaveBeenCalledWith({
+        where: { identifier: resetIdentifier },
+      });
     });
   });
 

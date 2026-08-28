@@ -63,6 +63,16 @@ describe('ClubsService', () => {
     ecclesiastical_years: {
       findFirst: jest.fn(),
     },
+    local_fields: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+    },
+    districts: {
+      findUnique: jest.fn(),
+    },
+    churches: {
+      findUnique: jest.fn(),
+    },
     enrollments: {
       count: jest.fn(),
       findMany: jest.fn(),
@@ -85,6 +95,7 @@ describe('ClubsService', () => {
     invalidateUserAuthorizationCache: jest.fn(),
     hasAnyGlobalRole: jest.fn(),
     canManageClub: jest.fn(),
+    resolveUserAuthorization: jest.fn(),
   };
 
   const mockAuthorizationContextVersionService = {
@@ -161,6 +172,79 @@ describe('ClubsService', () => {
           }),
         }),
       );
+    });
+
+    it('intersects GET /clubs with director-union scope even if home local_field is set', async () => {
+      mockPrismaService.clubs.findMany.mockResolvedValue([]);
+      mockPrismaService.clubs.count.mockResolvedValue(0);
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          authorization: {
+            grants: {
+              global_roles: [
+                { role_name: 'director-union', permissions: [], scope: {} },
+              ],
+            },
+            effective: {
+              scope: {
+                global: {
+                  union: { id: 2 },
+                  local_field: { id: 9 },
+                },
+              },
+            },
+          },
+        },
+      );
+
+      await service.findAll({}, undefined, 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+
+      expect(mockPrismaService.clubs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            AND: [{ local_fields: { union_id: 2 } }, {}],
+          },
+        }),
+      );
+    });
+
+    it('403s when a territorial actor filters by a local field outside scope', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          authorization: {
+            grants: {
+              global_roles: [
+                { role_name: 'director-lf', permissions: [], scope: {} },
+              ],
+            },
+            effective: {
+              scope: {
+                global: {
+                  local_field: { id: 9 },
+                },
+              },
+            },
+          },
+        },
+      );
+
+      await expect(
+        service.findAll({ localFieldId: 4 }, undefined, 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+      expect(mockPrismaService.clubs.findMany).not.toHaveBeenCalled();
+    });
+
+    it('skips territorial resolve for non-uuid stub JWTs', async () => {
+      mockPrismaService.clubs.findMany.mockResolvedValue([]);
+      mockPrismaService.clubs.count.mockResolvedValue(0);
+
+      await service.findAll({}, undefined, 'clubs-e2e-user');
+
+      expect(
+        mockAuthorizationContextService.resolveUserAuthorization,
+      ).not.toHaveBeenCalled();
     });
   });
 
@@ -241,6 +325,40 @@ describe('ClubsService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.CLUB_SECTION_TYPES_REQUIRED,
       });
+    });
+
+    it('rejects create when local_field_id is outside the actor territory', async () => {
+      await expect(
+        service.create(
+          {
+            name: 'Nuevo Club',
+            local_field_id: 4,
+            districlub_type_id: 1,
+            church_id: 1,
+            enabled_club_type_ids: [1],
+          },
+          {
+            grants: {
+              global_roles: [
+                { role_name: 'director-lf', permissions: [], scope: {} },
+              ],
+              club_assignments: [],
+              direct_permissions: [],
+            },
+            active_assignment: { assignment_id: null },
+            effective: {
+              permissions: [],
+              scope: {
+                global: { local_field: { id: 9 } },
+                club: null,
+              },
+            },
+          },
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+      expect(mockPrismaService.club_types.findMany).not.toHaveBeenCalled();
     });
   });
 
@@ -736,6 +854,9 @@ describe('ClubsService', () => {
         .mockResolvedValueOnce([
           { start_date: date('2027-03-01'), end_date: date('2027-01-01') },
         ]);
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: 'role-2',
+      });
       mockPrismaService.roles.findUnique.mockResolvedValue({
         role_name: 'secretary-treasurer',
       });
@@ -789,6 +910,9 @@ describe('ClubsService', () => {
         end_date: null,
       });
       mockPrismaService.role_slot_limits.findUnique.mockResolvedValue(null);
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: 'role-director',
+      });
       mockPrismaService.roles.findUnique.mockResolvedValue({
         role_name: 'director',
       });
@@ -828,6 +952,9 @@ describe('ClubsService', () => {
         max_per_section: 3,
       });
       mockPrismaService.club_role_assignments.count.mockResolvedValue(0);
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: 'role-1',
+      });
       mockPrismaService.roles.findUnique.mockResolvedValue({
         role_name: 'member',
       });
@@ -852,6 +979,58 @@ describe('ClubsService', () => {
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith('user-1');
+    });
+
+    it('rejects assignRole when role_id is not an active CLUB role', async () => {
+      mockPrismaService.roles.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.assignRole({
+          user_id: 'user-1',
+          role_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          club_section_id: 7,
+          ecclesiastical_year_id: 2026,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_ROLE_NOT_FOUND,
+      });
+      expect(mockPrismaService.roles.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            role_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            role_category: 'CLUB',
+            active: true,
+          }),
+        }),
+      );
+      expect(
+        mockPrismaService.club_role_assignments.create,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rejects updateRoleAssignment when role_id is not an active CLUB role', async () => {
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+        assignment_id: 'assignment-1',
+        user_id: 'user-1',
+        role_id: 'role-member',
+        club_section_id: 7,
+        active: true,
+        status: 'active',
+        start_date: new Date('2027-01-01'),
+        end_date: null,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateRoleAssignment('assignment-1', {
+          role_id: 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_ROLE_NOT_FOUND,
+      });
+      expect(
+        mockPrismaService.club_role_assignments.update,
+      ).not.toHaveBeenCalled();
     });
 
     it('bumps the durable version when a role assignment is removed', async () => {

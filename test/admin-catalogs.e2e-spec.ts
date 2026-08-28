@@ -7,6 +7,7 @@ import { AdminGeographyService } from '../src/admin/admin-geography.service';
 import { AdminReferenceService } from '../src/admin/admin-reference.service';
 import { PermissionsGuard } from '../src/common/guards';
 import {
+  createBearerToken,
   createTestJwtService,
   useE2ePermissionsPassthrough,
 } from './helpers/rbac-test-helpers';
@@ -61,7 +62,7 @@ describe('Admin Catalogs E2E', () => {
   };
 
   const makeToken = (sub: string, email: string) =>
-    jwtService.sign({ sub, email });
+    createBearerToken(jwtService, sub, email);
   const mockPermissionsGuard = {
     canActivate: jest.fn().mockReturnValue(true),
   };

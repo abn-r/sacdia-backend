@@ -753,6 +753,16 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- Audit (global viewer — super-admin only)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('audit:read', 'Read the global audit log viewer (super-admin only)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Field Payment Orders (órdenes de pago territoriales: seguros + camporees)
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
@@ -762,6 +772,38 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('field-payment-orders:cancel', 'Cancel own field payment orders before approval', true),
   ('field-payment-orders:review', 'Approve or reject field payment order proofs in the effective Local Field', true),
   ('field-payment-orders:configure', 'Manage Local Field payment instructions (bank/cashier) for payment orders', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Camporee Orders (pedidos de mercancía por camporee; cobra el Campo Local)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('camporee-orders:read', 'Read camporee order catalog, offerings and orders within own scope', true),
+  ('camporee-orders:catalog-manage', 'Create and update the territorial camporee-order product library within own scope', true),
+  ('camporee-orders:offering-configure', 'Configure camporee order settings and offerings for an organized camporee', true),
+  ('camporee-orders:create', 'Issue or cancel camporee merchandise orders for own club section', true),
+  ('camporee-orders:upload-proof', 'Upload payment proof for own camporee merchandise orders', true),
+  ('camporee-orders:review', 'Approve or reject camporee order proofs in the effective Local Field', true),
+  ('camporee-orders:authorize-without-proof', 'Mark a camporee order paid without proof (Local Field caja exception)', true),
+  ('camporee-orders:deliver', 'Mark a camporee order delivered from Local Field to the club section', true),
+  ('camporee-orders:distribute', 'Record delivery of a camporee-order line to the beneficiary member', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Camporee Supplies (insumos diarios por sección y slot; cobra el Campo Local)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('camporee-supplies:read', 'Read camporee supply catalog, plans and reports within own scope', true),
+  ('camporee-supplies:plan', 'Draft, submit and adjust the enrolled section supply plan', true),
+  ('camporee-supplies:configure', 'Configure supply cutoff, delivery slots and products for an organized camporee', true),
+  ('camporee-supplies:review-pay', 'Mark camporee supply payment documents paid or refunded in the effective Local Field', true),
+  ('camporee-supplies:deliver', 'Record partial supply delivery from Local Field to the club section', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,

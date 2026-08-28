@@ -22,7 +22,7 @@ export class CatalogService {
   async list(
     query: ListCatalogQueryDto,
     includeInactive: boolean,
-    localFieldId: number | undefined,
+    localFieldId: number | number[] | undefined,
   ): Promise<PaginatedMaterialProductDto> {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
@@ -32,7 +32,9 @@ export class CatalogService {
 
     // Per-LF scope. undefined = unscoped admin who wants global view.
     if (localFieldId !== undefined) {
-      where.local_field_id = localFieldId;
+      where.local_field_id = Array.isArray(localFieldId)
+        ? { in: localFieldId }
+        : localFieldId;
     }
 
     // REQ-CAT-005: exclude inactive for non-manage-inventory callers
@@ -86,7 +88,7 @@ export class CatalogService {
   async getById(
     id: string,
     includeInactive: boolean,
-    localFieldId: number | undefined,
+    localFieldId: number | number[] | undefined,
   ): Promise<MaterialProductDto> {
     const product = await this.prisma.materialProduct.findUnique({
       where: { id },
@@ -106,8 +108,13 @@ export class CatalogService {
     }
 
     // Scoped access: callers bound to a local_field can't peek into other LFs
-    if (localFieldId !== undefined && product.local_field_id !== localFieldId) {
-      throw new NotFoundException('Material product not found');
+    if (localFieldId !== undefined) {
+      const allowed = Array.isArray(localFieldId)
+        ? localFieldId.includes(product.local_field_id)
+        : product.local_field_id === localFieldId;
+      if (!allowed) {
+        throw new NotFoundException('Material product not found');
+      }
     }
 
     // REQ-CAT-005: inactive products are 404 for non-manage-inventory callers
@@ -123,7 +130,7 @@ export class CatalogService {
   // ---------------------------------------------------------------------------
 
   async listCategories(
-    localFieldId: number | undefined,
+    localFieldId: number | number[] | undefined,
   ): Promise<{ data: MaterialCategoryWithCountDto[] }> {
     const categories = await this.prisma.materialCategory.findMany({
       orderBy: { sort_order: 'asc' },
@@ -134,7 +141,9 @@ export class CatalogService {
               where: {
                 active: true,
                 ...(localFieldId !== undefined && {
-                  local_field_id: localFieldId,
+                  local_field_id: Array.isArray(localFieldId)
+                    ? { in: localFieldId }
+                    : localFieldId,
                 }),
               },
             },

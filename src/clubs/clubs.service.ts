@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -34,6 +35,13 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { clubTypeSectionName } from './section-display';
+import {
+  assertClubListFiltersInActorScope,
+  assertLocalFieldInActorScope,
+  clubsWhereForActor,
+  resolveActorTerritoryScope,
+} from '../common/authorization/actor-territory-scope';
+import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 
 const CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS = [
   { name: { contains: 'Guía Mayor', mode: 'insensitive' as const } },
@@ -85,8 +93,9 @@ export class ClubsService {
       active?: boolean;
     },
     pagination?: PaginationDto,
+    actorUserId?: string,
   ): Promise<PaginatedResult<any>> {
-    const where = {
+    const clientWhere: Prisma.clubsWhereInput = {
       ...(filters?.localFieldId && { local_field_id: filters.localFieldId }),
       ...(filters?.districtId && {
         districlub_type_id: filters.districtId,
@@ -94,6 +103,20 @@ export class ClubsService {
       ...(filters?.churchId && { church_id: filters.churchId }),
       ...(filters?.active !== undefined && { active: filters.active }),
     };
+
+    let where: Prisma.clubsWhereInput = clientWhere;
+
+    if (actorUserId && isUUID(actorUserId, 'all')) {
+      const resolved =
+        await this.authorizationContext.resolveUserAuthorization(actorUserId);
+      const scope = resolveActorTerritoryScope(resolved);
+      await assertClubListFiltersInActorScope(this.prisma, scope, filters);
+      const territorialWhere = clubsWhereForActor(scope);
+      where =
+        Object.keys(territorialWhere).length === 0
+          ? clientWhere
+          : { AND: [territorialWhere, clientWhere] };
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.clubs.findMany({
@@ -145,7 +168,15 @@ export class ClubsService {
     return club;
   }
 
-  async create(dto: CreateClubDto) {
+  async create(dto: CreateClubDto, authorization?: AuthorizationSnapshot) {
+    if (authorization) {
+      await assertLocalFieldInActorScope(
+        this.prisma,
+        dto.local_field_id,
+        resolveActorTerritoryScope(authorization),
+      );
+    }
+
     const enabledIds = [
       ...new Set(
         (dto.enabled_club_type_ids ?? []).filter(
@@ -1610,7 +1641,18 @@ export class ClubsService {
     dto: Pick<AssignRoleDto, 'role_id' | 'role'>,
   ): Promise<string> {
     if (dto.role_id) {
-      return dto.role_id;
+      const roleById = await this.prisma.roles.findFirst({
+        where: {
+          role_id: dto.role_id,
+          role_category: 'CLUB',
+          active: true,
+        },
+        select: { role_id: true },
+      });
+      if (!roleById) {
+        throw new AppBadRequestException(ErrorCode.CLUB_ROLE_NOT_FOUND);
+      }
+      return roleById.role_id;
     }
 
     if (!dto.role) {

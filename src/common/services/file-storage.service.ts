@@ -118,6 +118,15 @@ export interface FileStorageService {
     key: string,
   ): Promise<StoredObjectInfo | null>;
   /**
+   * Read the first `byteCount` bytes (Range GET). Returns null when missing.
+   * Used to verify magic bytes after a client-side presigned PUT.
+   */
+  getObjectPrefix(
+    bucketAlias: StorageBucketAlias,
+    key: string,
+    byteCount: number,
+  ): Promise<Buffer | null>;
+  /**
    * Resolve a stored key to its public CDN URL synchronously.
    * Only valid for public buckets (isPublic: true). Throws if the bucket is private.
    */

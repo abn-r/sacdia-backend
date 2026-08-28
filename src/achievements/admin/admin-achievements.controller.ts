@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import 'multer';
+import { FileValidationPipe } from '../../common/pipes/file-validation.pipe';
 import { AppBadRequestException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import {
@@ -284,7 +285,7 @@ export class AdminAchievementsController {
   @ApiOperation({
     summary: 'Upload badge image for an achievement',
     description:
-      'Accepts PNG or WebP. SVG is intentionally rejected for public badges. Max size: 2 MB. Stores the file in R2 and updates badge_image_key.',
+      'Accepts PNG or WebP. SVG is rejected. MIME must match magic bytes. Max size: 2 MB. Stores the file in R2 and updates badge_image_key.',
   })
   @ApiParam({ name: 'achievementId', type: Number })
   @ApiBody({
@@ -324,7 +325,13 @@ export class AdminAchievementsController {
   @ApiResponse({ status: 404, description: 'Achievement not found' })
   async uploadBadgeImage(
     @Param('achievementId', ParseIntPipe) achievementId: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(
+      new FileValidationPipe({
+        maxSize: 2 * 1024 * 1024,
+        allowedMimeTypes: ['image/png', 'image/webp'],
+      }),
+    )
+    file: Express.Multer.File,
   ) {
     if (!file) {
       throw new AppBadRequestException(

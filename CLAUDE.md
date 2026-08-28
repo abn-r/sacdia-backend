@@ -14,6 +14,7 @@ pnpm run test:e2e
 pnpm run test:cov
 pnpm prisma migrate deploy
 pnpm run verify:fcm-migration
+pnpm run audit:security
 ```
 
 **Variables de entorno**: `.env.example` es la fuente de verdad para todos los nombres de env vars.
@@ -50,7 +51,7 @@ src/
 
 - NestJS 11 + TypeScript
 - Prisma 7.8 + PostgreSQL (Neon)
-- JWT via HS256 usando `BETTER_AUTH_SECRET` (Option C: BA handles auth, SACDIA signs JWT)
+- JWT via HS256 usando `BETTER_AUTH_SECRET` (Option C: BA handles auth, SACDIA signs JWT; `iss=https://api.sacdia.app`, `aud=sacdia:access`). QR member tokens usan `QR_JWT_SECRET` distinto (`aud=sacdia:qr-member`).
 - Redis (`CACHE_MANAGER`, fail-fast en prod; fallback in-memory solo en dev/test):
   - catálogos geográficos/referencia (`cache:catalogs:*`, TTL 1h; año eclesiástico actual 24h);
   - catálogo público de honores agrupado + categorías (`cache:catalogs:honors:*`, TTL 1h; invalidación por epoch al mutar honores, categorías o tipos de club);
@@ -101,6 +102,7 @@ src/
 - ESLint: reglas `no-unsafe-*` deshabilitadas para compatibilidad con Prisma (8328 → 0 errores)
 - Jest: `transformIgnorePatterns: []` para paquetes ESM; `prisma generate` corre antes de los tests
 - Unit tests: bloqueantes; el job ya no usa `continue-on-error`
+- Dependency audit: job `Dependency Audit` corre `pnpm run audit:security` (high/critical + allowlist). Bloqueante.
 - Rate limiting: `@nestjs/throttler` usa storage Redis distribuido cuando `REDIS_URL` está configurado.
   En producción, Redis es requerido y la app falla al iniciar si falta, es inválido o no conecta.
   En `NODE_ENV=development` los límites son más altos (30/s, 200/10s, 1000/min) para soportar fetches paralelos del admin.

@@ -24,6 +24,10 @@ import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MATERIALS_CONFIGURE, MATERIALS_READ } from '../shared/permissions';
 import {
+  resolveActorTerritoryScope,
+  resolveLocalFieldIdsForList,
+} from '../../common/authorization/actor-territory-scope';
+import {
   requireLocalFieldFor,
   resolveActorLocalField,
 } from '../shared/actor-local-field';
@@ -70,23 +74,32 @@ export class ConfigController {
       localFieldIdParam !== undefined
         ? parseInt(localFieldIdParam, 10)
         : undefined;
-    const localFieldId = requireLocalFieldFor(scope, override, 'read');
+    const localFieldId = await requireLocalFieldFor(
+      this.prisma,
+      scope,
+      override,
+      'read',
+    );
     return this.configService.get(localFieldId);
   }
 
   // ---------------------------------------------------------------------------
-  // GET /api/v1/materials/config/all — admin/super-admin only
+  // GET /api/v1/materials/config/all — recortado al territorio del actor
   // ---------------------------------------------------------------------------
 
   @Get('all')
   @RequirePermissions(MATERIALS_CONFIGURE)
   @ApiOperation({
     summary:
-      'List materials configuration for every local_field (unscoped admins)',
+      'List materials configuration in the caller territory (all local fields for unscoped admins)',
   })
   @ApiResponse({ status: 200, type: ConfigDto, isArray: true })
-  listAll() {
-    return this.configService.listAll();
+  async listAll(@Request() req: any) {
+    const ids = await resolveLocalFieldIdsForList(
+      this.prisma,
+      resolveActorTerritoryScope(req.authorization),
+    );
+    return this.configService.listForScope(ids);
   }
 
   // ---------------------------------------------------------------------------
@@ -119,7 +132,12 @@ export class ConfigController {
       localFieldIdParam !== undefined
         ? parseInt(localFieldIdParam, 10)
         : undefined;
-    const localFieldId = requireLocalFieldFor(scope, override, 'write');
+    const localFieldId = await requireLocalFieldFor(
+      this.prisma,
+      scope,
+      override,
+      'write',
+    );
     const userId: string = req.user.sub;
     return this.configService.upsert(localFieldId, dto, userId);
   }
@@ -141,7 +159,12 @@ export class ConfigController {
   ) {
     // Scope still enforced: a single-scope caller can only target their own LF.
     const scope = await resolveActorLocalField(this.prisma, req.authorization);
-    const resolvedLfId = requireLocalFieldFor(scope, localFieldId, 'write');
+    const resolvedLfId = await requireLocalFieldFor(
+      this.prisma,
+      scope,
+      localFieldId,
+      'write',
+    );
     const userId: string = req.user.sub;
     return this.configService.upsert(resolvedLfId, dto, userId);
   }

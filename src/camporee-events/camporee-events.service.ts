@@ -57,6 +57,8 @@ const STATUS_TRANSITIONS: Record<
   cancelado: [], // terminal — Spec C5 / Scenario 5.6
 };
 
+const MAX_EVENT_HONORS = 20;
+
 @Injectable()
 export class CamporeeEventsService {
   private readonly logger = new Logger(CamporeeEventsService.name);
@@ -447,6 +449,118 @@ export class CamporeeEventsService {
     }));
   }
 
+  private mapEventHonor(row: {
+    display_order: number;
+    honor: {
+      honor_id: number;
+      name: string;
+      honor_image: string;
+      material_url: string;
+      honors_category_id: number;
+      skill_level: number;
+      active: boolean;
+      honors_categories?: { name: string } | null;
+    };
+  }) {
+    return {
+      honor_id: row.honor.honor_id,
+      name: row.honor.name,
+      honor_image: row.honor.honor_image,
+      material_url: row.honor.material_url,
+      honors_category_id: row.honor.honors_category_id,
+      category_name: row.honor.honors_categories?.name ?? null,
+      skill_level: row.honor.skill_level,
+      active: row.honor.active,
+      display_order: row.display_order,
+    };
+  }
+
+  private async loadEventHonors(eventIds: number[]) {
+    if (!eventIds.length) return new Map<number, any[]>();
+
+    const rows = await this.prisma.camporee_event_honors.findMany({
+      where: { camporee_event_id: { in: eventIds } },
+      include: {
+        honor: {
+          select: {
+            honor_id: true,
+            name: true,
+            honor_image: true,
+            material_url: true,
+            honors_category_id: true,
+            skill_level: true,
+            active: true,
+            honors_categories: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: [{ display_order: 'asc' }, { camporee_event_honor_id: 'asc' }],
+    });
+
+    const byEvent = new Map<number, any[]>();
+    for (const row of rows) {
+      const list = byEvent.get(row.camporee_event_id) ?? [];
+      list.push(this.mapEventHonor(row));
+      byEvent.set(row.camporee_event_id, list);
+    }
+    return byEvent;
+  }
+
+  private attachEventHonors<T extends Record<string, any>>(
+    events: T[],
+    honorsByEvent: Map<number, any[]>,
+  ): T[] {
+    return events.map((event) => ({
+      ...event,
+      honors: honorsByEvent.get(event.camporee_event_id) ?? [],
+    }));
+  }
+
+  private async assertHonorIds(honorIds: number[]): Promise<void> {
+    if (honorIds.length > MAX_EVENT_HONORS) {
+      throw new AppBadRequestException(ErrorCode.CAMPOREE_EVENT_HONOR_LIMIT, {
+        limit: MAX_EVENT_HONORS,
+        count: honorIds.length,
+      });
+    }
+
+    const unique = new Set(honorIds);
+    if (unique.size !== honorIds.length) {
+      throw new AppBadRequestException(ErrorCode.CAMPOREE_EVENT_HONOR_DUPLICATE);
+    }
+
+    if (honorIds.length === 0) return;
+
+    const found = await this.prisma.honors.findMany({
+      where: { honor_id: { in: honorIds }, active: true },
+      select: { honor_id: true },
+    });
+    const foundIds = new Set(found.map((row) => row.honor_id));
+    const missing = honorIds.filter((id) => !foundIds.has(id));
+    if (missing.length > 0) {
+      throw new AppBadRequestException(ErrorCode.CAMPOREE_EVENT_HONOR_NOT_FOUND, {
+        honor_ids: missing,
+      });
+    }
+  }
+
+  private async replaceEventHonors(eventId: number, honorIds: number[]) {
+    await this.assertHonorIds(honorIds);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.camporee_event_honors.deleteMany({
+        where: { camporee_event_id: eventId },
+      });
+      if (honorIds.length === 0) return;
+      await tx.camporee_event_honors.createMany({
+        data: honorIds.map((honorId, displayOrder) => ({
+          camporee_event_id: eventId,
+          honor_id: honorId,
+          display_order: displayOrder,
+        })),
+      });
+    });
+  }
+
   private async ensureResponsibleAssignmentExists(
     eventId: number,
   ): Promise<void> {
@@ -655,9 +769,12 @@ export class CamporeeEventsService {
     const eventsWithStaff = shouldShowAgenda
       ? this.attachEventStaffAssignments(events, staffByEvent)
       : events;
+    const honorsByEvent = await this.loadEventHonors(
+      data.map((event) => event.camporee_event_id),
+    );
 
     return {
-      data: eventsWithStaff,
+      data: this.attachEventHonors(eventsWithStaff, honorsByEvent),
       total,
       agenda_visible: shouldShowAgenda,
       agenda_visible_from: agenda.visibleFrom,
@@ -690,9 +807,15 @@ export class CamporeeEventsService {
     const staffByEvent = await this.loadEventStaffAssignments([
       event.camporee_event_id,
     ]);
-    return this.attachEventStaffAssignments(
-      this.attachScheduleBlocks([event], blocksByEvent),
-      staffByEvent,
+    const honorsByEvent = await this.loadEventHonors([
+      event.camporee_event_id,
+    ]);
+    return this.attachEventHonors(
+      this.attachEventStaffAssignments(
+        this.attachScheduleBlocks([event], blocksByEvent),
+        staffByEvent,
+      ),
+      honorsByEvent,
     )[0];
   }
 
@@ -731,6 +854,10 @@ export class CamporeeEventsService {
       throw new AppBadRequestException(
         ErrorCode.CAMPOREE_EVENT_RESPONSIBLE_REQUIRED,
       );
+    }
+
+    if (dto.honor_ids !== undefined) {
+      await this.assertHonorIds(dto.honor_ids);
     }
 
     const eventType = dto.event_type_id
@@ -802,6 +929,10 @@ export class CamporeeEventsService {
         { blocks: dto.schedule_blocks },
         actorId,
       );
+    }
+
+    if (dto.honor_ids !== undefined) {
+      await this.replaceEventHonors(event.camporee_event_id, dto.honor_ids);
     }
 
     this.logMutation('create', event.camporee_event_id, actorId);
@@ -931,6 +1062,10 @@ export class CamporeeEventsService {
     actorId: string,
   ) {
     const existing = await this.ensureEventExists(eventId);
+
+    if (dto.honor_ids !== undefined) {
+      await this.assertHonorIds(dto.honor_ids);
+    }
 
     const maxPoints = dto.max_points ?? existing.max_points;
     const minPoints = dto.min_points ?? existing.min_points;
@@ -1063,6 +1198,9 @@ export class CamporeeEventsService {
     });
 
     this.logMutation('update', eventId, actorId);
+    if (dto.honor_ids !== undefined) {
+      await this.replaceEventHonors(eventId, dto.honor_ids);
+    }
     if (dto.schedule_blocks !== undefined) {
       await this.replaceScheduleBlocks(
         eventId,
@@ -1073,9 +1211,13 @@ export class CamporeeEventsService {
     }
     const blocksByEvent = await this.loadScheduleBlocks([eventId]);
     const staffByEvent = await this.loadEventStaffAssignments([eventId]);
-    return this.attachEventStaffAssignments(
-      this.attachScheduleBlocks([updated], blocksByEvent),
-      staffByEvent,
+    const honorsByEvent = await this.loadEventHonors([eventId]);
+    return this.attachEventHonors(
+      this.attachEventStaffAssignments(
+        this.attachScheduleBlocks([updated], blocksByEvent),
+        staffByEvent,
+      ),
+      honorsByEvent,
     )[0];
   }
 

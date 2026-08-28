@@ -2000,6 +2000,39 @@ describe('CamporeesService', () => {
         }),
       );
     });
+
+    it('scopes director-lf listing to their local field', async () => {
+      mockPrismaService.local_camporees.findMany.mockResolvedValue([]);
+      mockPrismaService.local_camporees.count.mockResolvedValue(0);
+
+      await service.findAll(
+        {},
+        undefined,
+        coordinatorAuth('director-lf', { localFieldId: 9 }),
+      );
+
+      expect(mockPrismaService.local_camporees.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { local_field_id: 9 },
+        }),
+      );
+    });
+
+    it('keeps director-union listing at union even with a home local_field', async () => {
+      mockPrismaService.local_camporees.findMany.mockResolvedValue([]);
+      mockPrismaService.local_camporees.count.mockResolvedValue(0);
+
+      const auth = coordinatorAuth('director-union', { localFieldId: 9 });
+      auth.effective.scope.global.union = { id: 2, name: 'Unión' };
+
+      await service.findAll({}, undefined, auth);
+
+      expect(mockPrismaService.local_camporees.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { local_fields: { union_id: 2 } },
+        }),
+      );
+    });
   });
 
   describe('findOne', () => {
@@ -4102,6 +4135,9 @@ describe('CamporeesService', () => {
     const CAMPOREE_ID = 7;
     const PAYMENT_ID = '11111111-2222-3333-4444-555555555555';
 
+    const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    const pdfBuffer = Buffer.from('%PDF-1.7\n');
+
     const makeFile = (
       overrides: Partial<Express.Multer.File> = {},
     ): Express.Multer.File => ({
@@ -4110,7 +4146,7 @@ describe('CamporeesService', () => {
       encoding: '7bit',
       mimetype: 'image/jpeg',
       size: 1024,
-      buffer: Buffer.from('fake-image-bytes'),
+      buffer: jpegBuffer,
       destination: '',
       filename: 'receipt.jpg',
       path: '',
@@ -4192,6 +4228,19 @@ describe('CamporeesService', () => {
 
     it('rejects unsupported mimetypes', async () => {
       const file = makeFile({ mimetype: 'application/zip' });
+      await expect(
+        service.uploadPaymentVoucher(CAMPOREE_ID, PAYMENT_ID, file),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_PAYMENT_VOUCHER_MIME_INVALID,
+      });
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+    });
+
+    it('rejects MIME spoofing when magic bytes do not match', async () => {
+      const file = makeFile({
+        mimetype: 'image/jpeg',
+        buffer: pdfBuffer,
+      });
       await expect(
         service.uploadPaymentVoucher(CAMPOREE_ID, PAYMENT_ID, file),
       ).rejects.toMatchObject({

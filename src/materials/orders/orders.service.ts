@@ -387,7 +387,7 @@ export class OrdersService {
   async list(
     query: ListOrdersQueryDto,
     actor: ActorContext,
-    localFieldId: number | undefined,
+    localFieldId: number | number[] | undefined,
   ): Promise<PaginatedOrdersDto> {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
@@ -398,7 +398,9 @@ export class OrdersService {
     // Per-LF scope: LF-bound callers (director / director-lf / assistant-lf)
     // only see orders in their local_field. undefined = unscoped admin/super.
     if (localFieldId !== undefined) {
-      where.local_field_id = localFieldId;
+      where.local_field_id = Array.isArray(localFieldId)
+        ? { in: localFieldId }
+        : localFieldId;
     }
 
     // REQ-ORD-003: Visibility is server-side.
@@ -560,7 +562,7 @@ export class OrdersService {
   async historial(
     query: ListOrdersQueryDto,
     userId: string,
-    localFieldId: number | undefined,
+    localFieldId: number | number[] | undefined,
   ): Promise<PaginatedOrdersDto> {
     // Force created_by = userId regardless of any permission the caller may have.
     // local_field still applies: a director only sees orders within their LF

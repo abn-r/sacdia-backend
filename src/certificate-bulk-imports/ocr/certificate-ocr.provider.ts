@@ -8,6 +8,12 @@ export interface CertificateOcrFileInput {
 }
 
 export interface CertificateOcrProvider {
+  /**
+   * Parse certificate files into suggested honor/class rows.
+   * Do not HTTP-fetch `fileUrl` unless it already passed
+   * `normalizeCertificateImportFileRef`. Prefer resolving storage keys
+   * via FileStorageService — never follow client-supplied hosts.
+   */
   extract(files: CertificateOcrFileInput[]): Promise<CertificateOcrParseResult>;
 }
 

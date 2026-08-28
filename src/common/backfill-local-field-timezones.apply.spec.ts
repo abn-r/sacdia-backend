@@ -369,24 +369,24 @@ describe('local field timezone backfill apply primitive', () => {
         runCliAsync(schema, values),
         runCliAsync(schema, values),
       ]);
-      expect(results).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            exitCode: 0,
-            report: expect.objectContaining({ status: 'applied' }),
-          }),
-          expect.objectContaining({
-            exitCode: 1,
-            report: {
-              status: 'error',
-              error: {
-                diagnostic: 'BACKFILL_SERIALIZATION_CONFLICT',
-                details: {},
-              },
-            },
-          }),
-        ]),
+      // Overlap can serialize as winner+conflict, or as apply+idempotent
+      // replay if the second CLI starts after commit. Both converge.
+      const applied = results.filter(
+        (result) =>
+          result.exitCode === 0 && result.report.status === 'applied',
       );
+      const conflicts = results.filter((result) => {
+        const error = result.report.error;
+        return (
+          result.exitCode === 1 &&
+          typeof error === 'object' &&
+          error !== null &&
+          'diagnostic' in error &&
+          error.diagnostic === 'BACKFILL_SERIALIZATION_CONFLICT'
+        );
+      });
+      expect(applied.length).toBeGreaterThanOrEqual(1);
+      expect(applied.length + conflicts.length).toBe(2);
       const state = await client.query(`SELECT
         (SELECT timezone FROM local_fields WHERE local_field_id=1),
         (SELECT version FROM authorization_context_versions

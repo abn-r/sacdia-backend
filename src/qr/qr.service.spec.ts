@@ -84,7 +84,7 @@ describe('QrService', () => {
     service = moduleRef.get(QrService);
   });
 
-  it('builds a self QR payload with signed avatar and canonical authorization', async () => {
+  it('builds a self QR payload with signed avatar and no authorization graph', async () => {
     mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
       profile: {
         user_id: 'user-1',
@@ -168,15 +168,8 @@ describe('QrService', () => {
         blood_type: null,
         emergency_contact: null,
       },
-      authorization: {
-        grants: { global_roles: [], club_assignments: [] },
-        active_assignment: { assignment_id: 'assignment-1' },
-        effective: {
-          permissions: ['qr:issue_self'],
-          scope: { global: {}, club: null },
-        },
-      },
     });
+    expect(result).not.toHaveProperty('authorization');
   });
 
   it('uses Guías Mayores on the card even if the active assignment is Aventureros', async () => {
@@ -296,11 +289,7 @@ describe('QrService', () => {
         section_name: null,
         current_class: 'Conquistador',
         blood_type: 'O+',
-        emergency_contact: {
-          name: 'María García',
-          phone: '+1234567890',
-          relationship: 'Madre',
-        },
+        emergency_contact: null,
       },
       visual: {
         title: 'SACDIA',
@@ -353,6 +342,49 @@ describe('QrService', () => {
 
     expect(result.member.current_class).toBeNull();
     expect(result.member.blood_type).toBeNull();
+    expect(result.member.emergency_contact).toBeNull();
+  });
+
+  it('does not put emergency contact on the shareable card even when one exists', async () => {
+    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
+      profile: {
+        user_id: 'user-1',
+        email: 'member@sacdia.app',
+        name: 'Juan',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: null,
+      },
+      authorization: {
+        grants: { global_roles: [], club_assignments: [] },
+        active_assignment: { assignment_id: null },
+        effective: { permissions: [], scope: { global: {}, club: null } },
+      },
+      legacy: {
+        club: null,
+        club_context: {
+          active_assignment_id: null,
+          active: null,
+          available: [],
+        },
+        permissions: [],
+        roles: ['user'],
+      },
+      post_register_complete: true,
+    });
+    mockJwtService.sign.mockReturnValue('jwt-qr-token');
+    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrismaService.users.findUnique.mockResolvedValue({ blood: 'A+' });
+    mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
+    mockPrismaService.emergency_contacts.findFirst.mockResolvedValue({
+      name: 'María García',
+      phone: '+1234567890',
+      relationship_types: { name: 'Madre' },
+    });
+
+    const result = await service.getMyCard('user-1');
+
+    expect(result.member.blood_type).toBe('A+');
     expect(result.member.emergency_contact).toBeNull();
   });
 
@@ -539,22 +571,37 @@ describe('QrService', () => {
       aud: 'sacdia:qr-member',
       ver: 1,
     });
-    mockPrismaService.users.findUnique.mockResolvedValue({
-      user_id: 'member-1',
-      name: 'Ana',
-      paternal_last_name: 'Lopez',
-      maternal_last_name: null,
-      user_image: null,
-      club_role_assignments: [
-        {
-          club_sections: {
-            club_types: { name: 'Pathfinders' },
-            clubs: { name: 'Club Norte' },
-          },
-        },
-      ],
-    });
     mockPrismaService.activities.findUnique.mockResolvedValue(null);
+    mockPrismaService.enrollments.findFirst.mockResolvedValue({
+      classes: { name: 'Guía Mayor' },
+    });
+    mockPrismaService.emergency_contacts.findFirst.mockResolvedValue({
+      name: 'Luis Perez',
+      phone: '+1987654321',
+      relationship_types: { name: 'Padre' },
+    });
+    mockPrismaService.users.findUnique.mockImplementation(
+      (args: { select?: { blood?: boolean } }) => {
+        if (args?.select?.blood) {
+          return Promise.resolve({ blood: 'O-' });
+        }
+        return Promise.resolve({
+          user_id: 'member-1',
+          name: 'Ana',
+          paternal_last_name: 'Lopez',
+          maternal_last_name: null,
+          user_image: null,
+          club_role_assignments: [
+            {
+              club_sections: {
+                club_types: { name: 'Pathfinders' },
+                clubs: { name: 'Club Norte' },
+              },
+            },
+          ],
+        });
+      },
+    );
 
     await expect(
       service.validateMemberQr('jwt-qr-token', 'validator-1'),
@@ -565,6 +612,13 @@ describe('QrService', () => {
         full_name: 'Ana Lopez',
         club_name: 'Club Norte',
         section_name: 'Pathfinders',
+        current_class: 'Guía Mayor',
+        blood_type: 'O-',
+        emergency_contact: {
+          name: 'Luis Perez',
+          phone: '+1987654321',
+          relationship: 'Padre',
+        },
       },
       attendance: null,
       scanned_at: expect.any(String),

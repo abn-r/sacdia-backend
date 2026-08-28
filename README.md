@@ -119,6 +119,7 @@ Ver `docs/BENCHMARKING.md` para perfiles, escenarios y lectura de capacidad esta
 
 - `DATABASE_URL`
 - `BETTER_AUTH_SECRET`
+- `QR_JWT_SECRET`
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`

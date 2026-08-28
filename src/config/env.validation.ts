@@ -68,12 +68,24 @@ export const envValidationSchema = Joi.object({
   // Better Auth (required)
   BETTER_AUTH_SECRET: Joi.string().min(32).required(),
   BETTER_AUTH_BASE_URL: Joi.string().uri().optional(),
+  // QR member JWTs. Must not reuse BETTER_AUTH_SECRET — same key would
+  // make a photographed card a valid API Bearer token.
+  QR_JWT_SECRET: Joi.string()
+    .min(32)
+    .required()
+    .invalid(Joi.ref('BETTER_AUTH_SECRET'))
+    .messages({
+      'any.invalid': 'QR_JWT_SECRET must be distinct from BETTER_AUTH_SECRET',
+    }),
 
   // App
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
     .default('development'),
   PORT: Joi.number().port().default(3000),
+  // Express trust-proxy hop count. 0 = socket only (local). Production
+  // default is 1 (Render). Never `true`. See resolveTrustProxyHops().
+  TRUST_PROXY_HOPS: Joi.number().integer().min(0).max(5).optional(),
   DEV_LOCAL_FIELD_TIMEZONE_BOOTSTRAP: Joi.string()
     .valid('true', 'false')
     .when('NODE_ENV', { is: 'production', then: Joi.forbidden() })
@@ -197,6 +209,11 @@ export const envValidationSchema = Joi.object({
   R2_PUBLIC_URL_CAMPOREE_PAYMENT_VOUCHERS: Joi.string().uri().optional(),
   R2_KEY_PREFIX_CAMPOREE_PAYMENT_VOUCHERS: Joi.string().allow('').optional(),
 
+  // Extra https hosts for certificate-bulk-import file_url (comma-separated).
+  // Hosts from R2_PUBLIC_URL_* are always included. Loopback/private IPs
+  // are dropped even if listed here.
+  CERTIFICATE_IMPORT_ALLOWED_FILE_HOSTS: Joi.string().allow('').optional(),
+
   // Firebase
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow('').optional(),
   FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().allow('').optional(),
@@ -211,7 +228,8 @@ export const envValidationSchema = Joi.object({
   APPLE_TEAM_ID: Joi.string().allow('').optional(),
   APPLE_KEY_ID: Joi.string().allow('').optional(),
   APPLE_PRIVATE_KEY: Joi.string().allow('').optional(),
-  // Comma-separated allowlist of valid OAuth redirectUrl values.
+  // Exact OAuth redirect URLs. Also feeds Better Auth trustedOrigins
+  // (http(s) → origin; custom schemes stay exact).
   // Falls back to ALLOWED_ORIGINS when not set.
   ALLOWED_OAUTH_REDIRECT_URLS: Joi.string().optional(),
 

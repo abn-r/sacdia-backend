@@ -172,6 +172,23 @@ describe('CatalogsService', () => {
       expect(result).toEqual(mockCountries);
       expect(mockPrismaService.countries.findMany).toHaveBeenCalled();
     });
+
+    it('filters cached countries to the actor country without changing the cache key', async () => {
+      const mockCountries = [
+        { country_id: 1, name: 'México' },
+        { country_id: 52, name: 'Colombia' },
+      ];
+
+      mockPrismaService.countries.findMany.mockResolvedValue(mockCountries);
+
+      const result = await service.getCountries(52);
+
+      expect(result).toEqual([{ country_id: 52, name: 'Colombia' }]);
+      expect(mockCatalogCacheService.getOrSet).toHaveBeenCalledWith(
+        'cache:catalogs:countries',
+        expect.any(Function),
+      );
+    });
   });
 
   describe('getDivisions', () => {
@@ -268,6 +285,51 @@ describe('CatalogsService', () => {
       });
       expect(mockCatalogCacheService.getOrSet).not.toHaveBeenCalledWith(
         'cache:catalogs:unions:country:1',
+        expect.any(Function),
+      );
+    });
+
+    it('filters the full unions cache by actor country and skips the alias check', async () => {
+      const mockUnions = [
+        { union_id: 1, name: 'UMN', country_id: 52, division_id: 1 },
+        { union_id: 2, name: 'SAD union', country_id: 7, division_id: 2 },
+        { union_id: 3, name: 'UMS', country_id: 52, division_id: 1 },
+      ];
+
+      mockPrismaService.$queryRaw.mockResolvedValue(mockUnions);
+
+      const result = await service.getUnions({ actorCountryId: 52 });
+
+      expect(result).toEqual([
+        { union_id: 1, name: 'UMN', country_id: 52, division_id: 1 },
+        { union_id: 3, name: 'UMS', country_id: 52, division_id: 1 },
+      ]);
+      expect(mockCatalogCacheService.getOrSet).toHaveBeenCalledWith(
+        'cache:catalogs:unions:all',
+        expect.any(Function),
+      );
+      expect(mockPrismaService.$queryRaw).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getLocalFields', () => {
+    it('filters cached fields to unions in the actor country', async () => {
+      mockPrismaService.local_fields.findMany.mockResolvedValue([
+        { local_field_id: 9, name: 'Campo Norte', union_id: 1 },
+        { local_field_id: 10, name: 'Campo extra', union_id: 2 },
+      ]);
+      mockPrismaService.$queryRaw.mockResolvedValue([
+        { union_id: 1, name: 'UMN', country_id: 52, division_id: 1 },
+        { union_id: 2, name: 'Otra', country_id: 7, division_id: 2 },
+      ]);
+
+      const result = await service.getLocalFields(undefined, 52);
+
+      expect(result).toEqual([
+        { local_field_id: 9, name: 'Campo Norte', union_id: 1 },
+      ]);
+      expect(mockCatalogCacheService.getOrSet).toHaveBeenCalledWith(
+        'cache:catalogs:local_fields:all',
         expect.any(Function),
       );
     });

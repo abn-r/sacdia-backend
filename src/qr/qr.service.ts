@@ -22,10 +22,10 @@ import {
   StorageBucketAlias,
   type FileStorageService,
 } from '../common/services/file-storage.service';
+import { QR_MEMBER_AUDIENCE } from '../common/constants/jwt-audiences';
 import type { QrMemberTokenDto } from './dto/qr-token.dto';
 import type { ScanResponseDto } from './dto/scan-qr.dto';
 
-const QR_MEMBER_AUDIENCE = 'sacdia:qr-member';
 const QR_MEMBER_VERSION = 1;
 const QR_MEMBER_TTL_SECONDS = 24 * 60 * 60;
 const QR_PRIVATE_ASSET_TTL_SECONDS = 300;
@@ -75,7 +75,6 @@ type QrCardVisual = {
 
 export type QrMeResponse = QrMemberTokenDto & {
   member: QrMemberView;
-  authorization: ResolvedAuthorizationProfile['authorization'];
 };
 
 export type QrCardResponse = QrMemberTokenDto & {
@@ -170,8 +169,7 @@ export class QrService {
 
     return {
       ...this.generateMemberToken(userId),
-      member,
-      authorization: resolved.authorization,
+      member: this.omitFirstAidFields(member),
     };
   }
 
@@ -186,7 +184,9 @@ export class QrService {
 
     const enrichedMember: QrMemberView = {
       ...member,
-      ...cardExtras,
+      current_class: cardExtras.current_class,
+      blood_type: cardExtras.blood_type,
+      emergency_contact: null,
     };
 
     return {
@@ -362,6 +362,7 @@ export class QrService {
 
     const signedAvatar = await this.resolveProfilePicture(user.user_image);
 
+    const extras = await this.resolveCardExtras(payload.sub);
     const member = this.buildMemberView({
       user_id: user.user_id,
       name: user.name,
@@ -370,6 +371,9 @@ export class QrService {
       user_image: signedAvatar,
       club_role_assignments: user.club_role_assignments,
       email: null,
+      current_class: extras.current_class,
+      blood_type: extras.blood_type,
+      emergency_contact: extras.emergency_contact,
     });
 
     let attendance: ScanResponseDto['attendance'] = null;
@@ -510,10 +514,9 @@ export class QrService {
     },
   ): Promise<void> {
     if (
-      await this.authorizationContext.hasAnyGlobalRole(
-        callerUserId,
-        [...ADMIN_SCOPE_ROLES],
-      )
+      await this.authorizationContext.hasAnyGlobalRole(callerUserId, [
+        ...ADMIN_SCOPE_ROLES,
+      ])
     ) {
       return;
     }
@@ -573,9 +576,9 @@ export class QrService {
   }
 
   /**
-   * Fetches the three extra fields used exclusively by the credential card:
-   * current_class, blood_type, and emergency_contact.
-   * Single query — no N+1.
+   * Class + first-aid extras. Blood/emergency belong on staff validate/scan,
+   * not on `/qr/me`. The printable card keeps blood_type only (first aid if
+   * the card is found); emergency_contact stays off the shareable artifact.
    */
   private async resolveCardExtras(userId: string): Promise<{
     current_class: string | null;
@@ -730,6 +733,14 @@ export class QrService {
       current_class: input.current_class ?? null,
       blood_type: input.blood_type ?? null,
       emergency_contact: input.emergency_contact ?? null,
+    };
+  }
+
+  private omitFirstAidFields(member: QrMemberView): QrMemberView {
+    return {
+      ...member,
+      blood_type: null,
+      emergency_contact: null,
     };
   }
 
@@ -1061,52 +1072,9 @@ export class QrService {
       cursor += 30;
     }
 
-    // ── 5. Emergency contact card (conditional) ────────────────────────────
-    if (card.member.emergency_contact) {
-      const ec = card.member.emergency_contact;
-      cursor += 6;
-      const ecH = 54;
-      const ecAccentW = 6;
+    // Emergency contact is staff-only (validate/scan). Not printed.
 
-      // Box fill
-      doc.rect(marginH, cursor, contentW, ecH).fill('#FBE9EC');
-
-      // Red accent strip on left
-      doc.rect(marginH, cursor, ecAccentW, ecH).fill('#C8102E');
-
-      // Label: "EMERGENCIA · {RELATIONSHIP}" uppercase
-      const ecRelation = ec.relationship.toUpperCase();
-      doc
-        .fillColor('#6B7280')
-        .font('Helvetica')
-        .fontSize(9)
-        .text(
-          `EMERGENCIA · ${ecRelation}`,
-          marginH + ecAccentW + 8,
-          cursor + 6,
-          { width: contentW - ecAccentW - 10 },
-        );
-
-      // Contact name
-      doc
-        .fillColor('#111827')
-        .font('Helvetica-Bold')
-        .fontSize(12)
-        .text(ec.name, marginH + ecAccentW + 8, cursor + 18, {
-          width: contentW - ecAccentW - 10,
-        });
-
-      // Phone number (red, monospace)
-      doc
-        .fillColor('#C8102E')
-        .font('Courier')
-        .fontSize(12)
-        .text(ec.phone, marginH + ecAccentW + 8, cursor + 34, {
-          width: contentW - ecAccentW - 10,
-        });
-    }
-
-    // ── 6. Footer ─────────────────────────────────────────────────────────
+    // ── 5. Footer ─────────────────────────────────────────────────────────
     const pageH = 595.28;
     const footerY = pageH - 42;
 

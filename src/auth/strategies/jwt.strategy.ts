@@ -6,10 +6,23 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
+import {
+  ACCESS_JWT_AUDIENCE,
+  ACCESS_JWT_ISSUER,
+  QR_MEMBER_AUDIENCE,
+  isAccessJwtClaims,
+  jwtAudienceIncludes,
+} from '../../common/constants/jwt-audiences';
 
 export interface JwtPayload {
   sub: string; // user_id
   email: string;
+  /**
+   * Access JWTs require iss=https://api.sacdia.app and aud=sacdia:access.
+   * QR member tokens set aud=sacdia:qr-member and must not authenticate API routes.
+   */
+  iss?: string;
+  aud?: string | string[];
   /**
    * Present and `true` when the user has TOTP enrolled but has not yet completed
    * the second factor after password login. Endpoints that require full auth
@@ -40,12 +53,34 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       passReqToCallback: true,
       secretOrKey: configService.getOrThrow<string>('BETTER_AUTH_SECRET'),
       algorithms: ['HS256'],
+      issuer: ACCESS_JWT_ISSUER,
+      audience: ACCESS_JWT_AUDIENCE,
     });
 
     this.logger.log('JWT verification via HS256 (BETTER_AUTH_SECRET)');
   }
 
   async validate(req: Request, payload: JwtPayload) {
+    if (jwtAudienceIncludes(payload.aud, QR_MEMBER_AUDIENCE)) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_qr_audience_rejected',
+          sub: payload.sub,
+        }),
+      );
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
+    }
+
+    if (!isAccessJwtClaims(payload)) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_access_claims_rejected',
+          sub: payload.sub,
+        }),
+      );
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
+    }
+
     const token = this.extractToken(req);
 
     if (token && (await this.tokenBlacklistService.isBlacklisted(token))) {
