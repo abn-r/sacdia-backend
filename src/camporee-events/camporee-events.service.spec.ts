@@ -50,6 +50,14 @@ const makePrismaMock = () => {
       updateMany: jest.fn(),
       create: jest.fn(),
     },
+    camporee_event_honors: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    honors: {
+      findMany: jest.fn(),
+    },
     camporee_clubs: {
       findFirst: jest.fn(),
     },
@@ -161,6 +169,8 @@ describe('CamporeeEventsService', () => {
     prisma = makePrismaMock();
     prisma.camporee_event_schedule_blocks.findMany.mockResolvedValue([]);
     prisma.camporee_event_staff_assignments.findMany.mockResolvedValue([]);
+    prisma.camporee_event_honors.findMany.mockResolvedValue([]);
+    prisma.honors.findMany.mockResolvedValue([]);
     prisma.camporee_event_staff_assignments.findFirst.mockResolvedValue({
       camporee_event_staff_assignment_id: 'staff-assignment-id',
     });
@@ -210,6 +220,7 @@ describe('CamporeeEventsService', () => {
           agenda_visible: true,
           schedule_blocks: [],
           staff_assignments: [],
+          honors: [],
         },
       ]);
       expect(result.total).toBe(1);
@@ -249,6 +260,7 @@ describe('CamporeeEventsService', () => {
         agenda_visible: true,
         schedule_blocks: [],
         staff_assignments: [],
+        honors: [],
       });
       expect(prisma.camporee_events.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -483,6 +495,7 @@ describe('CamporeeEventsService', () => {
       expect(result).toMatchObject({
         schedule_blocks: [],
         staff_assignments: [],
+        honors: [],
       });
     });
 
@@ -810,6 +823,172 @@ describe('CamporeeEventsService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('event honors', () => {
+    const nudosHonor = {
+      honor_id: 42,
+      name: 'Nudos',
+      honor_image: 'https://cdn.example/nudos.png',
+      material_url: 'https://cdn.example/nudos.pdf',
+      honors_category_id: 3,
+      skill_level: 1,
+      active: true,
+      honors_categories: { name: 'Actividades recreativas' },
+    };
+
+    it('creates an event with honor_ids and returns honors[]', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+      prisma.camporee_event_types.findUnique.mockResolvedValue(baseEventType);
+      prisma.honors.findMany.mockResolvedValue([{ honor_id: 42 }]);
+      prisma.camporee_events.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          ...baseEvent,
+          event_type: baseEventType,
+          leader: null,
+          venue: null,
+        });
+      prisma.camporee_events.create.mockResolvedValue({
+        ...baseEvent,
+        event_type: baseEventType,
+      });
+      prisma.camporee_event_honors.findMany.mockResolvedValue([
+        {
+          camporee_event_id: 1,
+          display_order: 0,
+          honor: nudosHonor,
+        },
+      ]);
+
+      const result = await service.createEvent(
+        1,
+        'local',
+        {
+          event_type_id: 1,
+          title: 'Amarres',
+          max_points: 100,
+          participants_mode: 'count',
+          participants_count: 8,
+          honor_ids: [42],
+        },
+        ACTOR_ID,
+      );
+
+      expect(prisma.camporee_event_honors.deleteMany).toHaveBeenCalledWith({
+        where: { camporee_event_id: 1 },
+      });
+      expect(prisma.camporee_event_honors.createMany).toHaveBeenCalledWith({
+        data: [
+          { camporee_event_id: 1, honor_id: 42, display_order: 0 },
+        ],
+      });
+      expect(result.honors).toEqual([
+        {
+          honor_id: 42,
+          name: 'Nudos',
+          honor_image: 'https://cdn.example/nudos.png',
+          material_url: 'https://cdn.example/nudos.pdf',
+          honors_category_id: 3,
+          category_name: 'Actividades recreativas',
+          skill_level: 1,
+          active: true,
+          display_order: 0,
+        },
+      ]);
+    });
+
+    it('does not touch honors when PATCH omits honor_ids', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
+      prisma.camporee_events.update.mockResolvedValue({
+        ...baseEvent,
+        title: 'Updated',
+        event_type: baseEventType,
+        leader: null,
+        venue: null,
+      });
+
+      await service.updateEvent(1, { title: 'Updated' }, ACTOR_ID);
+
+      expect(prisma.honors.findMany).not.toHaveBeenCalled();
+      expect(prisma.camporee_event_honors.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('clears honors when PATCH sends honor_ids []', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
+      prisma.camporee_events.update.mockResolvedValue({
+        ...baseEvent,
+        event_type: baseEventType,
+        leader: null,
+        venue: null,
+      });
+
+      await service.updateEvent(1, { honor_ids: [] }, ACTOR_ID);
+
+      expect(prisma.camporee_event_honors.deleteMany).toHaveBeenCalledWith({
+        where: { camporee_event_id: 1 },
+      });
+      expect(prisma.camporee_event_honors.createMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate honor_ids', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
+
+      await expect(
+        service.updateEvent(1, { honor_ids: [42, 42] }, ACTOR_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_EVENT_HONOR_DUPLICATE,
+      });
+    });
+
+    it('rejects more than 20 honor_ids', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
+      const honorIds = Array.from({ length: 21 }, (_, index) => index + 1);
+
+      await expect(
+        service.updateEvent(1, { honor_ids: honorIds }, ACTOR_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_EVENT_HONOR_LIMIT,
+      });
+    });
+
+    it('rejects inactive or missing honors', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
+      prisma.honors.findMany.mockResolvedValue([{ honor_id: 42 }]);
+
+      await expect(
+        service.updateEvent(1, { honor_ids: [42, 99] }, ACTOR_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_EVENT_HONOR_NOT_FOUND,
+      });
+    });
+
+    it('keeps honors on preview when agenda is masked', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue({
+        ...baseLocalCamporee,
+        start_date: new Date('2099-01-01T00:00:00.000Z'),
+        agenda_visible_from: new Date('2099-01-01T00:00:00.000Z'),
+      });
+      prisma.camporee_events.findMany.mockResolvedValue([baseEvent]);
+      prisma.camporee_events.count.mockResolvedValue(1);
+      prisma.camporee_event_honors.findMany.mockResolvedValue([
+        {
+          camporee_event_id: 1,
+          display_order: 0,
+          honor: nudosHonor,
+        },
+      ]);
+
+      const result = await service.listEvents(1, 'local', undefined, {
+        actorId: ACTOR_ID,
+        allowManagerBypass: false,
+      });
+
+      expect(result.agenda_visible).toBe(false);
+      expect(result.data[0].starts_at).toBeNull();
+      expect(result.data[0].honors).toHaveLength(1);
+      expect(result.data[0].honors[0].name).toBe('Nudos');
     });
   });
 });

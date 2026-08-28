@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -347,6 +348,20 @@ export class CreateCamporeeEventDto {
   @ValidateNested({ each: true })
   @Type(() => CamporeeEventScheduleBlockDto)
   schedule_blocks?: CamporeeEventScheduleBlockDto[];
+
+  @ApiPropertyOptional({
+    type: [Number],
+    example: [42, 87],
+    description:
+      'Honor catalog ids used as preparation specialties. Omit on PATCH to leave unchanged; [] clears the list.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Type(() => Number)
+  honor_ids?: number[];
 }
 
 export class CloneFromTemplateDto {
@@ -556,6 +571,20 @@ export class UpdateCamporeeEventDto {
   @ValidateNested({ each: true })
   @Type(() => CamporeeEventScheduleBlockDto)
   schedule_blocks?: CamporeeEventScheduleBlockDto[];
+
+  @ApiPropertyOptional({
+    type: [Number],
+    example: [42, 87],
+    description:
+      'Honor catalog ids used as preparation specialties. Omit on PATCH to leave unchanged; [] clears the list.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Type(() => Number)
+  honor_ids?: number[];
 }
 
 export class ReorderCamporeeEventDto {
