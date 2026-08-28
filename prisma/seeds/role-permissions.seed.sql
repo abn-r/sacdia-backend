@@ -2399,3 +2399,360 @@ WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
 ON CONFLICT (role_id, permission_id) DO UPDATE SET
   active = true,
   modified_at = now();
+
+-- ============================================================================
+-- Camporee Orders (pedidos de mercancía por camporee)
+-- ============================================================================
+-- read: club issuers + territorial readers (LF / union / division / admin).
+-- Counselor is intentionally excluded.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director',
+    'deputy-director',
+    'secretary',
+    'secretary-treasurer',
+    'treasurer'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- create / upload-proof: club issuer roles only (not counselor, not LF caja).
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN (
+    'camporee-orders:create',
+    'camporee-orders:upload-proof'
+  )
+  AND NOT (
+    r.role_name IN (
+      'director',
+      'deputy-director',
+      'secretary',
+      'secretary-treasurer',
+      'treasurer'
+    )
+    AND r.role_category = 'CLUB'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director',
+    'deputy-director',
+    'secretary',
+    'secretary-treasurer',
+    'treasurer'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee-orders:create',
+    'camporee-orders:upload-proof'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- distribute: only the club director of the issuing section.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-orders:distribute'
+  AND NOT (
+    r.role_name = 'director'
+    AND r.role_category = 'CLUB'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'director'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:distribute'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- catalog-manage: territorial library owners (LF / union / division / admin).
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-orders:catalog-manage'
+  AND NOT (
+    r.role_name IN (
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'director-dia',
+      'assistant-dia',
+      'admin',
+      'super-admin'
+    )
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:catalog-manage'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- offering-configure: camporee organizers (LF and union) + platform admins.
+-- Division-only roles do not own camporees and must not receive this grant.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-orders:offering-configure'
+  AND NOT (
+    r.role_name IN (
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'admin',
+      'super-admin'
+    )
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:offering-configure'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- review / authorize-without-proof / deliver: Local Field caja + platform admins.
+-- Union and division directors never review LF payment.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN (
+    'camporee-orders:review',
+    'camporee-orders:authorize-without-proof',
+    'camporee-orders:deliver'
+  )
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee-orders:review',
+    'camporee-orders:authorize-without-proof',
+    'camporee-orders:deliver'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- ============================================================================
+-- Camporee Supplies (insumos diarios; cobra el Campo Local)
+-- ============================================================================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director',
+    'secretary',
+    'secretary-treasurer'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-supplies:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-supplies:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-supplies:plan'
+  AND NOT (
+    r.role_name IN ('director', 'secretary', 'secretary-treasurer')
+    AND r.role_category = 'CLUB'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director', 'secretary', 'secretary-treasurer')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-supplies:plan'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-supplies:configure'
+  AND NOT (
+    r.role_name IN (
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'admin',
+      'super-admin'
+    )
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-supplies:configure'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN (
+    'camporee-supplies:review-pay',
+    'camporee-supplies:deliver'
+  )
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee-supplies:review-pay',
+    'camporee-supplies:deliver'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();

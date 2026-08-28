@@ -667,5 +667,21 @@
   "FIELD_PAYMENT_ORDER_REJECT_REASON_REQUIRED": "You must provide a rejection reason",
   "INSURANCE_REASSIGNMENT_NOT_FOUND": "Reassignment request not found",
   "INSURANCE_REASSIGNMENT_INVALID": "The insurance reassignment is not valid",
-  "INSURANCE_REASSIGNMENT_PENDING_EXISTS": "A pending reassignment request already exists for this coverage"
+  "INSURANCE_REASSIGNMENT_PENDING_EXISTS": "A pending reassignment request already exists for this coverage",
+  "CAMPOREE_SUPPLIES_NOT_FOUND": "Supply plan or catalog not found",
+  "CAMPOREE_SUPPLIES_FORBIDDEN": "You cannot operate supplies for this camporee",
+  "CAMPOREE_SUPPLIES_SECTION_NOT_ELIGIBLE": "The section is not enrolled in this camporee",
+  "CAMPOREE_SUPPLIES_DAY_LOCKED": "That day is frozen; you cannot change the plan",
+  "CAMPOREE_SUPPLIES_PRICE_LOCKED": "Price is locked after a plan has been submitted",
+  "CAMPOREE_SUPPLIES_BYPASS_REASON_REQUIRED": "A reason is required to edit a frozen day",
+  "CAMPOREE_SUPPLIES_CUTOFF_INVALID": "Supply edit cutoff time is invalid",
+  "CAMPOREE_SUPPLIES_PLAN_NOT_DRAFT": "Only a draft plan can be replaced",
+  "CAMPOREE_SUPPLIES_PLAN_NOT_SUBMITTED": "Only a submitted plan can be adjusted",
+  "CAMPOREE_SUPPLIES_LINES_REQUIRED": "The plan must include at least one line with quantity",
+  "CAMPOREE_SUPPLIES_SLOT_INVALID": "Delivery slot is not valid for this camporee",
+  "CAMPOREE_SUPPLIES_PRODUCT_INVALID": "Supply product is not valid for this camporee",
+  "CAMPOREE_SUPPLIES_QTY_INVALID": "Supply quantity is invalid",
+  "CAMPOREE_SUPPLIES_PAYMENT_NOT_FOUND": "Supply payment document not found or cannot be marked",
+  "CAMPOREE_SUPPLIES_OVER_DELIVERY": "Delivered quantity exceeds the requested amount",
+  "CAMPOREE_SUPPLIES_LINE_NOT_FOUND": "Supply line not found"
 }

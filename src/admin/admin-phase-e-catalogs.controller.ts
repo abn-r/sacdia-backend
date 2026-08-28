@@ -88,6 +88,7 @@ import {
   CreateMasterHonorDto,
   UpdateMasterHonorDto,
   CreateClassHonorDto,
+  UpdateClassHonorDto,
   CreateClassPrerequisiteDto,
 } from './dto/phase-e-catalogs.dto';
 
@@ -208,6 +209,26 @@ export class AdminPhaseECatalogsController {
   ) {
     const data = await this.catalogsService.createClassHonor(
       classId,
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Patch('classes/:classId/honors/:classHonorId')
+  @RequirePermissions('catalogs:update')
+  @ApiOperation({
+    summary: 'Update class-honor module assignment (null clears the module)',
+  })
+  async updateClassHonor(
+    @Param('classId', ParseIntPipe) classId: number,
+    @Param('classHonorId', ParseIntPipe) classHonorId: number,
+    @Body() dto: UpdateClassHonorDto,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.catalogsService.updateClassHonor(
+      classId,
+      classHonorId,
       dto,
       this.getActorId(req),
     );

@@ -24,6 +24,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -640,6 +641,30 @@ export class CreateClassHonorDto {
   })
   @IsEnum(ClassHonorRelationTypeDto)
   relation_type!: ClassHonorRelationTypeDto;
+
+  @ApiPropertyOptional({
+    example: 12,
+    nullable: true,
+    description: 'Optional class_modules.module_id of the same class',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  module_id?: number | null;
+}
+
+export class UpdateClassHonorDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'null unassigns the module; omit to leave unchanged',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  module_id?: number | null;
 }
 
 // ─── CLASS PREREQUISITES ──────────────────────────────────────────────────────
