@@ -85,7 +85,7 @@ const baseline = {
   'notifications/notifications.service.ts': 'effectiveWhere|T09|2|12585f37569f',
   'post-registration/post-registration.service.ts':
     'workflowWhere|allowlist|3|4dfdc41976e6',
-  'qr/qr.service.ts': 'effectiveWhere|T08|3|e493ed73e98f',
+  'qr/qr.service.ts': 'effectiveWhere|T08|3|b777ac09536e',
   'quarterly-reports/quarterly-reports.service.ts':
     'effectiveWhere|T09|3|1c55ef0ad8fe',
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':

@@ -58,6 +58,7 @@ describe('QrService', () => {
     mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
       [],
     );
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -128,12 +129,15 @@ describe('QrService', () => {
       'https://signed.example/avatar.png',
     );
     mockJwtService.sign.mockReturnValue('jwt-qr-token');
-    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
-      club_sections: {
-        club_types: { name: 'Pathfinders' },
-        clubs: { name: 'Club Test' },
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      {
+        assignment_id: 'assignment-1',
+        club_sections: {
+          club_types: { name: 'Pathfinders' },
+          clubs: { name: 'Club Test' },
+        },
       },
-    });
+    ]);
 
     const result = await service.getMyQr('user-1');
 
@@ -166,6 +170,67 @@ describe('QrService', () => {
       },
     });
     expect(result).not.toHaveProperty('authorization');
+  });
+
+  it('uses Guías Mayores on the card even if the active assignment is Aventureros', async () => {
+    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
+      profile: {
+        user_id: 'user-1',
+        email: 'member@sacdia.app',
+        name: 'Ana',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: null,
+      },
+      authorization: {
+        grants: { global_roles: [], club_assignments: [] },
+        active_assignment: { assignment_id: 'av' },
+        effective: {
+          permissions: ['qr:issue_self'],
+          scope: { global: {}, club: null },
+        },
+      },
+      legacy: {
+        club: {
+          club_id: 7,
+          club_name: 'Club Test',
+          club_type: 'Aventureros',
+        },
+        club_context: {
+          active_assignment_id: 'av',
+          active: null,
+          available: [],
+        },
+        permissions: ['qr:issue_self'],
+        roles: ['user'],
+      },
+      post_register_complete: true,
+    });
+    mockJwtService.sign.mockReturnValue('jwt-qr-token');
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      {
+        assignment_id: 'av',
+        club_sections: {
+          club_types: { name: 'Aventureros' },
+          clubs: { name: 'Club Test' },
+        },
+      },
+      {
+        assignment_id: 'gm',
+        club_sections: {
+          club_types: { name: 'Guías Mayores' },
+          clubs: { name: 'Club Test' },
+        },
+      },
+    ]);
+    mockPrismaService.users.findUnique.mockResolvedValue({ blood: null });
+    mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
+    mockPrismaService.emergency_contacts.findFirst.mockResolvedValue(null);
+
+    const result = await service.getMyCard('user-1');
+
+    expect(result.member.section_name).toBe('Guías Mayores');
+    expect(result.visual.section_name).toBe('Guías Mayores');
   });
 
   it('builds a card payload with the QR token and visual data', async () => {

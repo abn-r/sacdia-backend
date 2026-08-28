@@ -16,7 +16,7 @@ import {
   type ResolvedAuthorizationProfile,
 } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
-import { clubTypeSectionName } from '../clubs/section-display';
+import { clubTypeCycleRank, clubTypeSectionName } from '../clubs/section-display';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -88,6 +88,45 @@ export type QrValidationResponse = {
   attendance: ScanResponseDto['attendance'];
   scanned_at: string;
 };
+
+type IdentityClubAssignment = {
+  assignment_id: string;
+  club_sections?: {
+    club_types?: { name: string | null } | null;
+    clubs?: { name: string | null } | null;
+  } | null;
+};
+
+/**
+ * Credential identity is the highest JA-cycle club type among active
+ * assignments (Guías Mayores > Conquistadores > Aventureros), not the
+ * assignment currently selected in the section switcher.
+ */
+function pickIdentityClubAssignment(
+  assignments: IdentityClubAssignment[],
+  activeAssignmentId: string | null | undefined,
+): IdentityClubAssignment | null {
+  if (assignments.length === 0) return null;
+
+  let best = assignments[0];
+  let bestRank = clubTypeCycleRank(best.club_sections?.club_types?.name);
+
+  for (const assignment of assignments) {
+    const rank = clubTypeCycleRank(assignment.club_sections?.club_types?.name);
+    if (rank > bestRank) {
+      best = assignment;
+      bestRank = rank;
+    }
+  }
+
+  if (bestRank >= 0) return best;
+
+  return (
+    assignments.find((item) => item.assignment_id === activeAssignmentId) ??
+    assignments[0] ??
+    null
+  );
+}
 
 @Injectable()
 export class QrService {
@@ -610,23 +649,27 @@ export class QrService {
 
     const activeAssignmentId =
       resolved.authorization.active_assignment.assignment_id;
-    const activeAssignment = activeAssignmentId
-      ? await this.prisma.club_role_assignments.findFirst({
-          where: {
-            assignment_id: activeAssignmentId,
-            user_id: resolved.profile.user_id,
-            active: true,
-          },
-          select: {
-            club_sections: {
-              select: {
-                club_types: { select: { name: true } },
-                clubs: { select: { name: true } },
-              },
+    const assignments =
+      (await this.prisma.club_role_assignments.findMany({
+        where: {
+          user_id: resolved.profile.user_id,
+          active: true,
+        },
+        select: {
+          assignment_id: true,
+          club_sections: {
+            select: {
+              club_types: { select: { name: true } },
+              clubs: { select: { name: true } },
             },
           },
-        })
-      : null;
+        },
+      })) ?? [];
+
+    const identityAssignment = pickIdentityClubAssignment(
+      assignments,
+      activeAssignmentId,
+    );
 
     return this.buildMemberView({
       user_id: resolved.profile.user_id,
@@ -637,10 +680,10 @@ export class QrService {
       email: resolved.profile.email,
       fallback_club_name: resolved.legacy.club?.club_name ?? null,
       fallback_section_name: resolved.legacy.club?.club_type ?? null,
-      club_role_assignments: activeAssignment
+      club_role_assignments: identityAssignment
         ? [
             {
-              club_sections: activeAssignment.club_sections,
+              club_sections: identityAssignment.club_sections,
             },
           ]
         : [],
@@ -740,25 +783,41 @@ export class QrService {
   // ── PDF rendering ──────────────────────────────────────────────────────────
 
   /**
-   * Derives the sectional code (AV / CQ / GM) from the combined lowercased
-   * club_name + section_name strings. Mirrors the logic in
-   * `credencial_view_model.dart:_seccionFromCard`. Order matters: AV is
-   * checked before CQ because "aventurero" contains no overlap with "conq".
+   * Derives the sectional code (AV / CQ / GM).
+   * Mirrors `credencial_view_model.dart:_seccionFromCard`:
+   * section name first, then club name; GM > CQ > AV inside a string.
    */
   private static resolveSeccionCode(
     clubName: string | null | undefined,
     sectionName: string | null | undefined,
   ): 'AV' | 'CQ' | 'GM' {
-    const source = `${clubName ?? ''} ${sectionName ?? ''}`.toLowerCase();
-    if (source.includes('avent')) return 'AV';
+    return (
+      QrService.seccionFromName(sectionName) ??
+      QrService.seccionFromName(clubName) ??
+      'CQ'
+    );
+  }
+
+  private static seccionFromName(
+    raw: string | null | undefined,
+  ): 'AV' | 'CQ' | 'GM' | null {
+    if (!raw) return null;
+    const source = raw.toLowerCase();
     if (
       source.includes('guia') ||
       source.includes('guía') ||
-      source.includes('mayor')
-    )
+      source.includes('mayor') ||
+      source.includes('master guide')
+    ) {
       return 'GM';
-    if (source.includes('conq')) return 'CQ';
-    return 'CQ'; // default — most common section in SACDIA
+    }
+    if (source.includes('conq') || source.includes('pathfinder')) {
+      return 'CQ';
+    }
+    if (source.includes('avent') || source.includes('adventurer')) {
+      return 'AV';
+    }
+    return null;
   }
 
   /** Palette keyed by SeccionCode. */
