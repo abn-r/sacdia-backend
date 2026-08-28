@@ -36,6 +36,13 @@ const makePrismaMock = () => ({
     create: jest.fn(),
     update: jest.fn(),
   },
+  class_modules: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
   class_prerequisites: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
@@ -668,6 +675,102 @@ describe('AdminPhaseECatalogsService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.ADMIN_CLASS_HONOR_DUPLICATE,
       });
+    });
+
+    it('creates a class-honor relation with a module of the same class', async () => {
+      prismaMock.classes.findUnique.mockResolvedValue({ class_id: 7 });
+      prismaMock.honors.findUnique.mockResolvedValue({ honor_id: 50 });
+      prismaMock.class_honors.findFirst.mockResolvedValue(null);
+      prismaMock.class_modules.findFirst.mockResolvedValue({ module_id: 12 });
+      prismaMock.class_honors.create.mockResolvedValue({
+        class_honor_id: 1,
+        class_id: 7,
+        honor_id: 50,
+        module_id: 12,
+        relation_type: 'RECOMMENDED',
+        active: true,
+        honor: { honor_id: 50, name: 'Nudos', material_url: 'https://cdn/nudos.pdf' },
+        module: { module_id: 12, name: 'Vida al aire libre' },
+      });
+
+      const result = await service.createClassHonor(
+        7,
+        { honor_id: 50, relation_type: 'RECOMMENDED' as any, module_id: 12 },
+        ACTOR_ID,
+      );
+
+      expect(result.module_id).toBe(12);
+      expect(prismaMock.class_modules.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { module_id: 12, class_id: 7, active: true },
+        }),
+      );
+    });
+
+    it('throws when creating with a module from another class', async () => {
+      prismaMock.classes.findUnique.mockResolvedValue({ class_id: 7 });
+      prismaMock.honors.findUnique.mockResolvedValue({ honor_id: 50 });
+      prismaMock.class_honors.findFirst.mockResolvedValue(null);
+      prismaMock.class_modules.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createClassHonor(
+          7,
+          { honor_id: 50, relation_type: 'RECOMMENDED' as any, module_id: 99 },
+          ACTOR_ID,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_CLASS_MODULE_NOT_FOUND,
+      });
+    });
+
+    it('clears the module on PATCH null', async () => {
+      prismaMock.class_honors.findFirst.mockResolvedValue({
+        class_honor_id: 1,
+        class_id: 7,
+        active: true,
+      });
+      prismaMock.class_honors.update.mockResolvedValue({
+        class_honor_id: 1,
+        module_id: null,
+      });
+
+      const result = await service.updateClassHonor(
+        7,
+        1,
+        { module_id: null },
+        ACTOR_ID,
+      );
+
+      expect(result.module_id).toBeNull();
+      expect(prismaMock.class_honors.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ module_id: null }),
+        }),
+      );
+    });
+
+    it('assigns a valid module on PATCH', async () => {
+      prismaMock.class_honors.findFirst.mockResolvedValue({
+        class_honor_id: 1,
+        class_id: 7,
+        active: true,
+      });
+      prismaMock.class_modules.findFirst.mockResolvedValue({ module_id: 12 });
+      prismaMock.class_honors.update.mockResolvedValue({
+        class_honor_id: 1,
+        module_id: 12,
+      });
+
+      const result = await service.updateClassHonor(
+        7,
+        1,
+        { module_id: 12 },
+        ACTOR_ID,
+      );
+
+      expect(result.module_id).toBe(12);
+      expect(prismaMock.class_modules.findFirst).toHaveBeenCalled();
     });
 
     it('soft-deletes a class-honor relation', async () => {
