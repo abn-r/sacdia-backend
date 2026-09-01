@@ -529,12 +529,17 @@ export class MemberOfMonthService {
 
     // Notify club directors
     if (clubId) {
-      const winnerNames = await this.getWinnerNames(
+      const winnerNames = await this.getWinnerNameList(
         winners.map((w) => w.user_id),
       );
       const pointsLabel = winners[0]
         ? ` con ${winners[0].total_points} puntos`
         : '';
+      const directorBody = this.formatDirectorNotificationBody(
+        winnerNames,
+        sectionName,
+        pointsLabel,
+      );
 
       // Get all director role assignments for this section
       const directorAssignments =
@@ -559,7 +564,7 @@ export class MemberOfMonthService {
           await this.notificationsService.notifySafe(
             directorId,
             '¡Reconocimiento del mes!',
-            `${winnerNames} destacó en ${sectionName}${pointsLabel}`,
+            directorBody,
             {
               type: 'member_of_month_director',
               club_id: String(clubId),
@@ -578,7 +583,24 @@ export class MemberOfMonthService {
     }
   }
 
-  private async getWinnerNames(userIds: string[]): Promise<string> {
+  private formatDirectorNotificationBody(
+    names: string[],
+    sectionName: string,
+    pointsLabel: string,
+  ): string {
+    if (names.length <= 1) {
+      const who = names[0] ?? 'Un miembro';
+      return `${who} destacó en ${sectionName}${pointsLabel}`;
+    }
+
+    return [
+      `${names.length} miembros destacaron en ${sectionName}${pointsLabel}.`,
+      '',
+      ...names,
+    ].join('\n');
+  }
+
+  private async getWinnerNameList(userIds: string[]): Promise<string[]> {
     const users = await this.prisma.users.findMany({
       where: { user_id: { in: userIds } },
       select: { name: true, paternal_last_name: true },
@@ -586,7 +608,7 @@ export class MemberOfMonthService {
 
     return users
       .map((u) => `${u.name ?? ''} ${u.paternal_last_name ?? ''}`.trim())
-      .join(', ');
+      .filter((name) => name.length > 0);
   }
 
   // ============================================================
