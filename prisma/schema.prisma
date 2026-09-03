@@ -65,10 +65,12 @@ model activities {
   activity_type_id   Int
   club_section_id    Int?
   is_joint           Boolean              @default(false)
+  activity_series_id Int?
   activity_types                    activity_types                         @relation(fields: [activity_type_id], references: [activity_type_id], onDelete: NoAction, onUpdate: NoAction)
   club_sections                     club_sections?                         @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
   club_types                        club_types                             @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   users                             users                                  @relation(fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  activity_series                   activity_series?                       @relation(fields: [activity_series_id], references: [activity_series_id], onDelete: SetNull, onUpdate: NoAction)
   activity_instances                activity_instances[]
   certification_component_responses certification_component_responses[]
 
@@ -78,6 +80,7 @@ model activities {
   @@index([created_by], map: "idx_activities_created_by")
   @@index([created_at(sort: Desc)], map: "idx_activities_created_at")
   @@index([created_by, activity_date], map: "idx_activities_created_by_date")
+  @@index([activity_series_id], map: "idx_activities_activity_series_id")
 }
 
 model activity_types {
@@ -89,6 +92,7 @@ model activity_types {
   created_at       DateTime?                     @default(now()) @db.Timestamptz(6)
   modified_at      DateTime?                     @default(now()) @db.Timestamptz(6)
   activities                           activities[]
+  activity_series                      activity_series[]
   translations                         activity_types_translations[]
   certification_requirement_components certification_requirement_components[]
 }
@@ -107,6 +111,59 @@ model activity_instances {
   @@index([activity_id], map: "idx_activity_instances_activity")
   @@index([club_section_id], map: "idx_activity_instances_club_section_id")
   @@index([club_section_id, active], map: "idx_activity_instances_section_active")
+}
+
+model activity_series {
+  activity_series_id     Int       @id @default(autoincrement())
+  club_id                Int
+  ecclesiastical_year_id Int
+  created_by             String    @db.Uuid
+  name                   String    @db.VarChar(80)
+  description            String?
+  club_type_id           Int
+  club_section_id        Int?
+  is_joint               Boolean   @default(false)
+  lat                    Float
+  long                   Float
+  activity_time          String    @default("09:00") @db.VarChar(10)
+  duration_days          Int       @default(0)
+  activity_place         String
+  image                  String    @default("")
+  platform               Int       @default(0)
+  activity_type_id       Int
+  link_meet              String?
+  additional_data        String?
+  classes                Json?     @db.Json
+  first_date             DateTime  @db.Date
+  kind                   String    @db.VarChar(16)
+  interval_days          Int?
+  weekdays               Int[]     @default([])
+  until_date             DateTime  @db.Date
+  active                 Boolean   @default(true)
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  clubs                  clubs     @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+  ecclesiastical_years   ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  users                  users     @relation(fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  club_types             club_types @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  club_sections          club_sections? @relation("activity_series_owner_section", fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  activity_types         activity_types @relation(fields: [activity_type_id], references: [activity_type_id], onDelete: NoAction, onUpdate: NoAction)
+  activities             activities[]
+  activity_series_sections activity_series_sections[]
+
+  @@index([club_id], map: "idx_activity_series_club")
+  @@index([ecclesiastical_year_id], map: "idx_activity_series_year")
+  @@index([created_by], map: "idx_activity_series_created_by")
+}
+
+model activity_series_sections {
+  activity_series_id Int
+  club_section_id    Int
+  activity_series    activity_series @relation(fields: [activity_series_id], references: [activity_series_id], onDelete: Cascade, onUpdate: NoAction)
+  club_sections      club_sections   @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([activity_series_id, club_section_id])
+  @@index([club_section_id], map: "idx_activity_series_sections_section")
 }
 
 model folder_assignments {
@@ -615,6 +672,7 @@ model club_types {
   modified_at                DateTime?                 @default(now()) @db.Timestamptz(6)
   club_type_id               Int                       @id @default(autoincrement())
   activities                 activities[]
+  activity_series            activity_series[]
   classes                    classes[]
   club_ideals                club_ideals[]
   club_sections              club_sections[]
@@ -669,6 +727,7 @@ model clubs {
   insurance_coverage_slots_owned insurance_coverage_slots[] @relation("insurance_slot_owner_club")
   camporee_orders            camporee_orders[]
   camporee_supply_plans      camporee_supply_plans[]
+  activity_series            activity_series[]
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
   @@index([church_id], map: "idx_clubs_church_id")
@@ -696,6 +755,8 @@ model club_sections {
   created_at                  DateTime                      @default(now()) @db.Timestamptz(6)
   modified_at                 DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
   activities                  activities[]
+  activity_series             activity_series[] @relation("activity_series_owner_section")
+  activity_series_sections    activity_series_sections[]
   activity_instances          activity_instances[]
   camporee_clubs              camporee_clubs[]
   club_inventory              club_inventory[]
@@ -1011,6 +1072,7 @@ model ecclesiastical_years {
   section_rankings            SectionRanking[]
   enrollment_ranking_weights  EnrollmentRankingWeight[]
   insurance_cycle_configs     insurance_cycle_configs[]
+  activity_series             activity_series[]
 
   // Date-range queries: "find the active year for today" uses WHERE start_date <= ? AND end_date >= ?
   @@index([start_date, end_date], map: "idx_ecclesiastical_years_date_range")
@@ -1057,6 +1119,8 @@ model enrollments {
   @@index([user_id, ecclesiastical_year_id, active], map: "idx_enrollments_user_year_active")
   @@index([last_progress_change], map: "idx_enrollments_last_progress")
   @@index([ecclesiastical_year_id, investiture_status, active], map: "idx_enrollments_year_status_active")
+  // Partial unique: one regular active + one cross-type active per user/year
+  // (uniq_enrollments_active_user_year_regular / _cross_type): migration 20260903180000.
   // Partial (investiture_status, submitted_at) WHERE active AND submitted_at IS NOT NULL:
   // migration 20260818190000.
 }
@@ -2337,6 +2401,7 @@ model users {
   approval_status                      user_approval_status                  @default(pending)
   rejection_reason                     String?
   activities                           activities[]
+  activity_series                      activity_series[]
   attending_members_camporees          camporee_members[]
   certification_module_progress          certification_module_progress[]
   certification_section_progress         certification_section_progress[]

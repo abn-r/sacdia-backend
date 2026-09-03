@@ -281,6 +281,7 @@ export class PostRegistrationService {
             user_id: userId,
             ecclesiastical_year_id: currentYear.year_id,
             active: true,
+            cross_type_enrollment: false,
             NOT: { class_id: resolvedClassId },
           },
           data: {

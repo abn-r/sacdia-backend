@@ -16,6 +16,9 @@ import {
   Matches,
   IsUrl,
   IsUUID,
+  IsIn,
+  ArrayMaxSize,
+  ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -295,6 +298,54 @@ export class UpdateActivityDto {
   is_joint?: boolean;
 }
 
+export class RecurrenceDto {
+  @ApiProperty({ enum: ['interval', 'weekly'] })
+  @IsIn(['interval', 'weekly'])
+  declare kind: 'interval' | 'weekly';
+
+  @ApiPropertyOptional({ description: 'Cada N días (1-365). Requerido si kind=interval.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  interval_days?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Días ISO 8601 (1=lunes … 7=domingo). En v1 exactamente un valor si kind=weekly.',
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(1)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(7, { each: true })
+  weekdays?: number[];
+
+  @ApiPropertyOptional({
+    description: 'Fecha límite inclusive (YYYY-MM-DD). Si se omite, fin del año eclesiástico activo.',
+  })
+  @IsOptional()
+  @IsDateString()
+  until?: string;
+}
+
+export class CreateActivitySeriesDto extends CreateActivityDto {
+  @ApiProperty({ type: RecurrenceDto })
+  @ValidateNested()
+  @Type(() => RecurrenceDto)
+  declare recurrence: RecurrenceDto;
+}
+
+export class ExtendActivitySeriesDto {
+  @ApiProperty({ description: 'Nueva fecha límite inclusive (YYYY-MM-DD)' })
+  @IsDateString()
+  declare until: string;
+}
+
 export class RecordAttendanceDto {
   @ApiProperty({ description: 'Lista de IDs de usuarios que asistieron' })
   @IsArray()
@@ -319,4 +370,10 @@ export class ActivityFiltersDto {
   @Type(() => Number)
   @IsInt()
   activityTypeId?: number;
+
+  @ApiPropertyOptional({ description: 'Filtrar por serie de actividades' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  seriesId?: number;
 }

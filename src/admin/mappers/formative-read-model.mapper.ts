@@ -69,6 +69,7 @@ export interface FormativeReadModelInput {
 
 export interface FormativeReadModel {
   current_operational_enrollment: CurrentOperationalEnrollmentDto | null;
+  current_cross_type_enrollment: CurrentOperationalEnrollmentDto | null;
   trajectory_classes: TrajectoryClassDto[];
   classes: TrajectoryClassDto[];
   conflictEnrollmentIds: number[];
@@ -93,20 +94,9 @@ function mapTrajectoryClasses(
   }));
 }
 
-function mapCurrentOperationalEnrollment(
-  activeEcclesiasticalYearId: number | null,
-  enrollments: OperationalEnrollmentSource[],
-): CurrentOperationalEnrollmentDto | null {
-  if (activeEcclesiasticalYearId === null) {
-    return null;
-  }
-
-  if (enrollments.length !== 1) {
-    return null;
-  }
-
-  const enrollment = enrollments[0];
-
+function toCurrentOperationalEnrollment(
+  enrollment: OperationalEnrollmentSource,
+): CurrentOperationalEnrollmentDto {
   return {
     enrollment_id: enrollment.enrollment_id,
     ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
@@ -127,6 +117,33 @@ function mapCurrentOperationalEnrollment(
   };
 }
 
+function partitionOperationalEnrollments(
+  enrollments: OperationalEnrollmentSource[],
+): {
+  regular: OperationalEnrollmentSource[];
+  crossType: OperationalEnrollmentSource[];
+} {
+  const regular: OperationalEnrollmentSource[] = [];
+  const crossType: OperationalEnrollmentSource[] = [];
+
+  for (const enrollment of enrollments) {
+    if (enrollment.cross_type_enrollment) {
+      crossType.push(enrollment);
+    } else {
+      regular.push(enrollment);
+    }
+  }
+
+  return { regular, crossType };
+}
+
+function hasOperationalConflict(
+  regular: OperationalEnrollmentSource[],
+  crossType: OperationalEnrollmentSource[],
+): boolean {
+  return regular.length > 1 || crossType.length > 1;
+}
+
 export function buildFormativeReadModel(
   input: FormativeReadModelInput,
 ): FormativeReadModel {
@@ -134,17 +151,35 @@ export function buildFormativeReadModel(
     input.trajectoryClasses,
     input.activeEcclesiasticalYearId,
   );
+  const { regular, crossType } = partitionOperationalEnrollments(
+    input.enrollments,
+  );
+  const conflict =
+    input.activeEcclesiasticalYearId !== null &&
+    hasOperationalConflict(regular, crossType);
+
+  const regularEnrollment = regular.length === 1 ? regular[0] : null;
+  const crossTypeEnrollment = crossType.length === 1 ? crossType[0] : null;
 
   return {
-    current_operational_enrollment: mapCurrentOperationalEnrollment(
-      input.activeEcclesiasticalYearId,
-      input.enrollments,
-    ),
+    current_operational_enrollment:
+      input.activeEcclesiasticalYearId === null || conflict
+        ? null
+        : regularEnrollment
+          ? toCurrentOperationalEnrollment(regularEnrollment)
+          : crossTypeEnrollment
+            ? toCurrentOperationalEnrollment(crossTypeEnrollment)
+            : null,
+    current_cross_type_enrollment:
+      input.activeEcclesiasticalYearId === null ||
+      conflict ||
+      !crossTypeEnrollment
+        ? null
+        : toCurrentOperationalEnrollment(crossTypeEnrollment),
     trajectory_classes: trajectory,
     classes: trajectory,
-    conflictEnrollmentIds:
-      input.activeEcclesiasticalYearId !== null && input.enrollments.length > 1
-        ? input.enrollments.map((item) => item.enrollment_id)
-        : [],
+    conflictEnrollmentIds: conflict
+      ? input.enrollments.map((item) => item.enrollment_id)
+      : [],
   };
 }

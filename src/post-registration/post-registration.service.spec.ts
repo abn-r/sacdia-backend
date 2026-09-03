@@ -456,6 +456,7 @@ describe('PostRegistrationService', () => {
           user_id: userId,
           ecclesiastical_year_id: 2026,
           active: true,
+          cross_type_enrollment: false,
           NOT: { class_id: dto.class_id },
         },
         data: {
@@ -647,6 +648,7 @@ describe('PostRegistrationService', () => {
           user_id: userId,
           ecclesiastical_year_id: 2026,
           active: true,
+          cross_type_enrollment: false,
           NOT: { class_id: dto.class_id },
         },
         data: {

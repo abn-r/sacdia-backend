@@ -236,6 +236,16 @@ export class PermissionsGuard implements CanActivate {
           activityScopeResult,
         );
       }
+      case 'activity_series': {
+        const seriesScope = await this.resolveActivitySeriesScope(
+          request,
+          resource,
+        );
+        if ('participatingSectionIds' in seriesScope) {
+          return this.validateJointActivityScope(userId, resolved, seriesScope);
+        }
+        return this.validateInstanceScope(userId, resolved, seriesScope);
+      }
       case 'finance':
         return this.validateInstanceScope(
           userId,
@@ -701,6 +711,57 @@ export class PermissionsGuard implements CanActivate {
     }
 
     return this.buildInstanceScopeFromSection(activity.club_sections);
+  }
+
+  private async resolveActivitySeriesScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedInstanceScope | ResolvedJointActivityScope> {
+    const seriesId = this.getRequiredNumericValue(
+      this.getRequestValue(request, 'param', resource.idParam ?? 'seriesId'),
+      'Activity series ID not found in request',
+    );
+
+    const series = await this.prisma.activity_series.findUnique({
+      where: { activity_series_id: seriesId },
+      select: {
+        is_joint: true,
+        club_id: true,
+        club_section_id: true,
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_type_id: true,
+          },
+        },
+        activity_series_sections: {
+          select: { club_section_id: true },
+        },
+      },
+    });
+
+    if (!series) {
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_SERIES_NOT_FOUND);
+    }
+
+    const participatingSectionIds = series.activity_series_sections.map(
+      (row) => row.club_section_id,
+    );
+
+    if (series.is_joint || participatingSectionIds.length > 1) {
+      return {
+        mainClubId: series.club_id,
+        participatingSectionIds:
+          participatingSectionIds.length > 0
+            ? participatingSectionIds
+            : series.club_section_id
+              ? [series.club_section_id]
+              : [],
+      };
+    }
+
+    return this.buildInstanceScopeFromSection(series.club_sections);
   }
 
   private async resolveCamporeeScope(

@@ -17,7 +17,9 @@ describe('ActivitiesService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
+      createManyAndReturn: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       count: jest.fn(),
     },
     clubs: {
@@ -25,10 +27,27 @@ describe('ActivitiesService', () => {
     },
     club_sections: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
     },
     users: {
       findMany: jest.fn(),
     },
+    ecclesiastical_years: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    activity_series: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    activity_series_sections: {
+      createMany: jest.fn(),
+    },
+    activity_instances: {
+      createMany: jest.fn(),
+    },
+    $transaction: jest.fn(),
   };
 
   const mockFileStorageService = {
@@ -715,6 +734,173 @@ describe('ActivitiesService', () => {
       expect(mockNotificationsService.sendSilentToSection).toHaveBeenCalledWith(
         expect.objectContaining({
           actorId: 'system',
+        }),
+      );
+    });
+  });
+
+  describe('activity series', () => {
+    const now = new Date('2026-03-08T18:00:00.000Z');
+    const year = {
+      year_id: 9,
+      start_date: new Date('2026-01-01T00:00:00.000Z'),
+      end_date: new Date('2026-12-12T00:00:00.000Z'),
+    };
+    const baseDto = {
+      name: 'Reunión dominical',
+      lat: 19.4,
+      long: -99.1,
+      activity_place: 'Iglesia',
+      activity_type_id: 1,
+      activity_date: '2026-03-08',
+      club_section_id: 4,
+      recurrence: {
+        kind: 'weekly' as const,
+        weekdays: [7],
+        until: '2026-03-29',
+      },
+    };
+
+    beforeEach(() => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(year);
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 4,
+        main_club_id: 1,
+        club_type_id: 2,
+      });
+    });
+
+    it('preview expands weekly Sundays inside the ecclesiastical year', async () => {
+      const result = await service.previewActivitySeries(1, baseDto as any, now);
+
+      expect(result.count).toBe(4);
+      expect(result.dates).toEqual([
+        '2026-03-08',
+        '2026-03-15',
+        '2026-03-22',
+        '2026-03-29',
+      ]);
+      expect(result.until).toBe('2026-03-29');
+    });
+
+    it('rejects a first session in the past', async () => {
+      await expect(
+        service.previewActivitySeries(
+          1,
+          { ...baseDto, activity_date: '2026-03-07' } as any,
+          now,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_SERIES_DATE_IN_PAST,
+      });
+    });
+
+    it('rejects until outside the active ecclesiastical year', async () => {
+      await expect(
+        service.previewActivitySeries(
+          1,
+          {
+            ...baseDto,
+            recurrence: {
+              ...baseDto.recurrence,
+              until: '2026-12-13',
+            },
+          } as any,
+          now,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_SERIES_OUTSIDE_ECCLESIASTICAL_YEAR,
+      });
+    });
+
+    it('creates independent activity rows in one transaction', async () => {
+      mockPrismaService.$transaction.mockImplementation(async (fn: any) =>
+        fn(mockPrismaService),
+      );
+      mockPrismaService.activity_series.create.mockResolvedValue({
+        activity_series_id: 77,
+        club_id: 1,
+        ecclesiastical_year_id: 9,
+        name: baseDto.name,
+        description: null,
+        club_type_id: 2,
+        club_section_id: 4,
+        is_joint: false,
+        activity_time: '09:00',
+        duration_days: 0,
+        activity_place: 'Iglesia',
+        platform: 0,
+        activity_type_id: 1,
+        first_date: new Date('2026-03-08T00:00:00.000Z'),
+        kind: 'weekly',
+        interval_days: null,
+        weekdays: [7],
+        until_date: new Date('2026-03-29T00:00:00.000Z'),
+        active: true,
+      });
+      mockPrismaService.activity_series_sections.createMany.mockResolvedValue({
+        count: 1,
+      });
+      mockPrismaService.activities.createManyAndReturn.mockResolvedValue([
+        { activity_id: 101 },
+        { activity_id: 102 },
+        { activity_id: 103 },
+        { activity_id: 104 },
+      ]);
+      mockPrismaService.activity_instances.createMany.mockResolvedValue({
+        count: 4,
+      });
+
+      const result = await service.createActivitySeries(
+        1,
+        baseDto as any,
+        'user-1',
+        now,
+      );
+
+      expect(result.created_count).toBe(4);
+      expect(result.activity_ids).toEqual([101, 102, 103, 104]);
+      expect(
+        mockPrismaService.activities.createManyAndReturn,
+      ).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.activities.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.activity_instances.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({
+              activity_id: 101,
+              club_section_id: 4,
+            }),
+          ]),
+        }),
+      );
+      expect(mockNotificationsService.sendToClubMembers).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('cancelFuture only deactivates from today onward', async () => {
+      mockPrismaService.activity_series.findUnique.mockResolvedValue({
+        activity_series_id: 77,
+        club_section_id: 4,
+        activity_series_sections: [{ club_section_id: 4 }],
+      });
+      mockPrismaService.activities.updateMany.mockResolvedValue({ count: 3 });
+
+      const result = await service.cancelFutureActivitySeries(
+        77,
+        'user-1',
+        now,
+      );
+
+      expect(result.canceled_count).toBe(3);
+      expect(mockPrismaService.activities.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            activity_series_id: 77,
+            active: true,
+          }),
         }),
       );
     });
