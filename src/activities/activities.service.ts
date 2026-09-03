@@ -13,6 +13,8 @@ import {
   UpdateActivityDto,
   RecordAttendanceDto,
   ActivityFiltersDto,
+  CreateActivitySeriesDto,
+  ExtendActivitySeriesDto,
 } from './dto';
 import {
   PaginationDto,
@@ -26,6 +28,15 @@ import {
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import {
+  ACTIVITY_SERIES_MAX_OCCURRENCES,
+  addDuration,
+  calendarDateInTimeZone,
+  durationDays,
+  expandActivitySeriesDates,
+  isoDateFromDb,
+  toUtcDate,
+} from './activity-series-dates';
 
 @Injectable()
 export class ActivitiesService {
@@ -141,6 +152,9 @@ export class ActivitiesService {
       ...(filters?.active !== undefined && { active: filters.active }),
       ...(filters?.activityTypeId !== undefined && {
         activity_type_id: filters.activityTypeId,
+      }),
+      ...(filters?.seriesId !== undefined && {
+        activity_series_id: filters.seriesId,
       }),
     };
 
@@ -1010,6 +1024,638 @@ export class ActivitiesService {
       data: { url: signedUrl },
       message: 'Imagen de actividad actualizada exitosamente',
     };
+  }
+
+  async previewActivitySeries(
+    clubId: number,
+    dto: CreateActivitySeriesDto,
+    now = new Date(),
+  ) {
+    const plan = await this.planActivitySeries(clubId, dto, now);
+    return {
+      count: plan.dates.length,
+      dates: plan.dates,
+      until: plan.until,
+      ecclesiastical_year: {
+        year_id: plan.year.year_id,
+        start_date: isoDateFromDb(plan.year.start_date),
+        end_date: isoDateFromDb(plan.year.end_date),
+      },
+    };
+  }
+
+  async createActivitySeries(
+    clubId: number,
+    dto: CreateActivitySeriesDto,
+    createdBy: string,
+    now = new Date(),
+  ) {
+    const plan = await this.planActivitySeries(clubId, dto, now);
+    const createdAt = now;
+
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const series = await tx.activity_series.create({
+          data: {
+            club_id: clubId,
+            ecclesiastical_year_id: plan.year.year_id,
+            created_by: createdBy,
+            name: dto.name,
+            description: dto.description,
+            club_type_id: plan.clubTypeId,
+            club_section_id: plan.ownerSectionId,
+            is_joint: plan.isJoint,
+            lat: dto.lat,
+            long: dto.long,
+            activity_time: dto.activity_time || '09:00',
+            duration_days: plan.durationDays,
+            activity_place: dto.activity_place,
+            image: dto.image ?? '',
+            platform: dto.platform || 0,
+            activity_type_id: dto.activity_type_id,
+            link_meet: dto.link_meet,
+            additional_data: dto.additional_data,
+            classes: dto.classes
+              ? (dto.classes as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
+            first_date: toUtcDate(plan.dates[0]),
+            kind: dto.recurrence.kind,
+            interval_days:
+              dto.recurrence.kind === 'interval'
+                ? dto.recurrence.interval_days
+                : null,
+            weekdays:
+              dto.recurrence.kind === 'weekly' ? dto.recurrence.weekdays : [],
+            until_date: toUtcDate(plan.until),
+            active: true,
+            created_at: createdAt,
+            modified_at: createdAt,
+          },
+        });
+
+        await tx.activity_series_sections.createMany({
+          data: plan.sectionIds.map((club_section_id) => ({
+            activity_series_id: series.activity_series_id,
+            club_section_id,
+          })),
+        });
+
+        const activityIds = await this.insertSeriesOccurrences(tx, {
+          dates: plan.dates,
+          durationDays: plan.durationDays,
+          sectionIds: plan.sectionIds,
+          seriesId: series.activity_series_id,
+          createdBy,
+          createdAt,
+          name: dto.name,
+          description: dto.description,
+          clubTypeId: plan.clubTypeId,
+          lat: dto.lat,
+          long: dto.long,
+          activityTime: dto.activity_time || '09:00',
+          activityPlace: dto.activity_place,
+          image: dto.image ?? '',
+          platform: dto.platform || 0,
+          activityTypeId: dto.activity_type_id,
+          linkMeet: dto.link_meet,
+          additionalData: dto.additional_data,
+          classes: dto.classes
+            ? (dto.classes as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+          ownerSectionId: plan.ownerSectionId,
+          isJoint: plan.isJoint,
+        });
+
+        return { series, activityIds };
+      },
+      { timeout: 30_000, maxWait: 10_000 },
+    );
+
+    for (const sectionId of plan.sectionIds) {
+      this.sendSeriesCreatedNotification(
+        dto.name,
+        result.activityIds.length,
+        sectionId,
+        plan.isJoint,
+        result.series.activity_series_id,
+      );
+      this.emitRealtimeInvalidation(
+        sectionId,
+        result.series.activity_series_id,
+        'CREATED',
+        createdBy,
+      );
+    }
+
+    return {
+      series: this.serializeSeries(result.series),
+      created_count: result.activityIds.length,
+      activity_ids: result.activityIds,
+    };
+  }
+
+  async findActivitySeries(seriesId: number, now = new Date()) {
+    const series = await this.prisma.activity_series.findUnique({
+      where: { activity_series_id: seriesId },
+      include: {
+        activity_series_sections: {
+          select: { club_section_id: true },
+        },
+      },
+    });
+
+    if (!series) {
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_SERIES_NOT_FOUND);
+    }
+
+    const today = calendarDateInTimeZone(now);
+    const activities = await this.prisma.activities.findMany({
+      where: { activity_series_id: seriesId },
+      select: { activity_id: true, active: true, activity_date: true },
+    });
+
+    const total = activities.length;
+    const active = activities.filter((row) => row.active).length;
+    const upcoming = activities.filter((row) => {
+      if (!row.active || !row.activity_date) return false;
+      return isoDateFromDb(row.activity_date) >= today;
+    }).length;
+    const past = activities.filter((row) => {
+      if (!row.activity_date) return false;
+      return isoDateFromDb(row.activity_date) < today;
+    }).length;
+
+    return {
+      ...this.serializeSeries(series),
+      club_section_ids: series.activity_series_sections.map(
+        (row) => row.club_section_id,
+      ),
+      counts: { total, active, upcoming, past },
+    };
+  }
+
+  async cancelFutureActivitySeries(
+    seriesId: number,
+    actorId?: string,
+    now = new Date(),
+  ) {
+    const series = await this.requireActivitySeries(seriesId);
+    const today = toUtcDate(calendarDateInTimeZone(now));
+
+    const result = await this.prisma.activities.updateMany({
+      where: {
+        activity_series_id: seriesId,
+        active: true,
+        activity_date: { gte: today },
+      },
+      data: { active: false, modified_at: now },
+    });
+
+    for (const sectionId of await this.seriesSectionIds(series)) {
+      this.emitRealtimeInvalidation(
+        sectionId,
+        series.activity_series_id,
+        'UPDATED',
+        actorId,
+      );
+    }
+
+    return { canceled_count: result.count };
+  }
+
+  async extendActivitySeries(
+    seriesId: number,
+    dto: ExtendActivitySeriesDto,
+    createdBy: string,
+    now = new Date(),
+  ) {
+    const series = await this.requireActivitySeries(seriesId);
+    const newUntil = dto.until.slice(0, 10);
+    const currentUntil = isoDateFromDb(series.until_date);
+    if (newUntil < currentUntil) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SERIES_EXTEND_UNTIL_REGRESSION,
+      );
+    }
+
+    const year = await this.prisma.ecclesiastical_years.findUnique({
+      where: { year_id: series.ecclesiastical_year_id },
+      select: { year_id: true, start_date: true, end_date: true },
+    });
+    if (!year) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SERIES_OUTSIDE_ECCLESIASTICAL_YEAR,
+      );
+    }
+    const yearEnd = isoDateFromDb(year.end_date);
+    if (newUntil > yearEnd) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SERIES_OUTSIDE_ECCLESIASTICAL_YEAR,
+      );
+    }
+
+    const firstDate = isoDateFromDb(series.first_date);
+    const allDates = this.assertSeriesSize(
+      expandActivitySeriesDates({
+        start: firstDate,
+        until: newUntil,
+        rule: {
+          kind: series.kind as 'interval' | 'weekly',
+          intervalDays: series.interval_days,
+          weekdays: series.weekdays,
+        },
+      }),
+    );
+
+    const existing = await this.prisma.activities.findMany({
+      where: { activity_series_id: seriesId },
+      select: { activity_date: true },
+    });
+    const existingDates = new Set(
+      existing
+        .map((row) => row.activity_date)
+        .filter((value): value is Date => Boolean(value))
+        .map((value) => isoDateFromDb(value)),
+    );
+    const datesToCreate = allDates.filter((date) => !existingDates.has(date));
+    const sectionIds = await this.seriesSectionIds(series);
+    const createdAt = now;
+
+    const activityIds = await this.prisma.$transaction(
+      async (tx) => {
+        const ids = await this.insertSeriesOccurrences(tx, {
+          dates: datesToCreate,
+          durationDays: series.duration_days,
+          sectionIds,
+          seriesId: series.activity_series_id,
+          createdBy,
+          createdAt,
+          name: series.name,
+          description: series.description,
+          clubTypeId: series.club_type_id,
+          lat: series.lat,
+          long: series.long,
+          activityTime: series.activity_time,
+          activityPlace: series.activity_place,
+          image: series.image,
+          platform: series.platform,
+          activityTypeId: series.activity_type_id,
+          linkMeet: series.link_meet,
+          additionalData: series.additional_data,
+          classes:
+            (series.classes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+          ownerSectionId: series.club_section_id,
+          isJoint: series.is_joint,
+        });
+
+        await tx.activity_series.update({
+          where: { activity_series_id: seriesId },
+          data: { until_date: toUtcDate(newUntil), modified_at: createdAt },
+        });
+
+        return ids;
+      },
+      { timeout: 30_000, maxWait: 10_000 },
+    );
+
+    if (activityIds.length > 0) {
+      for (const sectionId of sectionIds) {
+        this.sendSeriesCreatedNotification(
+          series.name,
+          activityIds.length,
+          sectionId,
+          series.is_joint,
+          series.activity_series_id,
+        );
+        this.emitRealtimeInvalidation(
+          sectionId,
+          series.activity_series_id,
+          'CREATED',
+          createdBy,
+        );
+      }
+    }
+
+    return { created_count: activityIds.length, activity_ids: activityIds };
+  }
+
+  private async planActivitySeries(
+    clubId: number,
+    dto: CreateActivitySeriesDto,
+    now: Date,
+  ) {
+    if (!dto.activity_date) {
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SERIES_INVALID_RULE);
+    }
+
+    const start = dto.activity_date.slice(0, 10);
+    const today = calendarDateInTimeZone(now);
+    if (start < today) {
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SERIES_DATE_IN_PAST);
+    }
+
+    const rule = this.normalizeRecurrence(dto.recurrence);
+    const year = await this.prisma.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: toUtcDate(today) },
+        end_date: { gte: toUtcDate(today) },
+      },
+      select: { year_id: true, start_date: true, end_date: true },
+    });
+    if (!year) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SERIES_OUTSIDE_ECCLESIASTICAL_YEAR,
+      );
+    }
+
+    const yearStart = isoDateFromDb(year.start_date);
+    const yearEnd = isoDateFromDb(year.end_date);
+    if (start < yearStart || start > yearEnd) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SERIES_OUTSIDE_ECCLESIASTICAL_YEAR,
+      );
+    }
+
+    const until = (dto.recurrence.until ?? yearEnd).slice(0, 10);
+    if (until < start) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SERIES_UNTIL_BEFORE_START,
+      );
+    }
+    if (until > yearEnd || until < yearStart) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SERIES_OUTSIDE_ECCLESIASTICAL_YEAR,
+      );
+    }
+
+    const dates = this.assertSeriesSize(
+      expandActivitySeriesDates({ start, until, rule }),
+    );
+    if (dates.length === 0) {
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SERIES_EMPTY);
+    }
+
+    const duration = durationDays(start, dto.activity_end_date?.slice(0, 10));
+    const isJoint = Boolean(
+      dto.club_section_ids && dto.club_section_ids.length >= 2,
+    );
+
+    if (isJoint) {
+      const rawSectionIds = dto.club_section_ids!;
+      const uniqueSectionIds = [...new Set(rawSectionIds)];
+      if (uniqueSectionIds.length !== rawSectionIds.length) {
+        throw new AppBadRequestException(
+          ErrorCode.ACTIVITY_SECTION_DUPLICATE_IDS,
+        );
+      }
+      if (
+        dto.club_section_id &&
+        !uniqueSectionIds.includes(dto.club_section_id)
+      ) {
+        uniqueSectionIds.push(dto.club_section_id);
+      }
+      const sections = await this.resolveAndValidateMultipleSections(
+        clubId,
+        uniqueSectionIds,
+      );
+      const owner =
+        (dto.club_section_id
+          ? sections.find((row) => row.club_section_id === dto.club_section_id)
+          : sections[0]) ?? sections[0];
+      if (dto.club_type_id && dto.club_type_id !== owner.club_type_id) {
+        throw new AppBadRequestException(
+          ErrorCode.ACTIVITY_SECTION_CLUB_TYPE_MISMATCH,
+        );
+      }
+      return {
+        dates,
+        until,
+        year,
+        durationDays: duration,
+        isJoint: true,
+        ownerSectionId: owner.club_section_id,
+        clubTypeId: dto.club_type_id ?? owner.club_type_id,
+        sectionIds: sections.map((row) => row.club_section_id),
+      };
+    }
+
+    if (!dto.club_section_id) {
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_ID_REQUIRED);
+    }
+    const section = await this.resolveAndValidateSectionRecord(
+      clubId,
+      dto.club_section_id,
+    );
+    return {
+      dates,
+      until,
+      year,
+      durationDays: duration,
+      isJoint: false,
+      ownerSectionId: section.club_section_id,
+      clubTypeId: dto.club_type_id ?? section.club_type_id,
+      sectionIds: [section.club_section_id],
+    };
+  }
+
+  private normalizeRecurrence(recurrence: CreateActivitySeriesDto['recurrence']) {
+    if (recurrence.kind === 'interval') {
+      const intervalDays = recurrence.interval_days;
+      if (
+        !intervalDays ||
+        (recurrence.weekdays && recurrence.weekdays.length > 0)
+      ) {
+        throw new AppBadRequestException(ErrorCode.ACTIVITY_SERIES_INVALID_RULE);
+      }
+      return { kind: 'interval' as const, intervalDays };
+    }
+
+    const weekdays = recurrence.weekdays ?? [];
+    if (weekdays.length !== 1 || recurrence.interval_days != null) {
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SERIES_INVALID_RULE);
+    }
+    return { kind: 'weekly' as const, weekdays };
+  }
+
+  private assertSeriesSize(dates: string[]): string[] {
+    if (dates.length > ACTIVITY_SERIES_MAX_OCCURRENCES) {
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SERIES_TOO_MANY);
+    }
+    return dates;
+  }
+
+  private async insertSeriesOccurrences(
+    tx: Prisma.TransactionClient,
+    params: {
+      dates: string[];
+      durationDays: number;
+      sectionIds: number[];
+      seriesId: number;
+      createdBy: string;
+      createdAt: Date;
+      name: string;
+      description?: string | null;
+      clubTypeId: number;
+      lat: number;
+      long: number;
+      activityTime: string;
+      activityPlace: string;
+      image: string;
+      platform: number;
+      activityTypeId: number;
+      linkMeet?: string | null;
+      additionalData?: string | null;
+      classes: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+      ownerSectionId: number | null;
+      isJoint: boolean;
+    },
+  ): Promise<number[]> {
+    if (params.dates.length === 0) {
+      return [];
+    }
+
+    const created = await tx.activities.createManyAndReturn({
+      data: params.dates.map((date) => ({
+        name: params.name,
+        description: params.description,
+        club_type_id: params.clubTypeId,
+        lat: params.lat,
+        long: params.long,
+        activity_time: params.activityTime,
+        activity_date: toUtcDate(date),
+        activity_end_date: toUtcDate(addDuration(date, params.durationDays)),
+        activity_place: params.activityPlace,
+        image: params.image,
+        platform: params.platform,
+        activity_type_id: params.activityTypeId,
+        link_meet: params.linkMeet,
+        additional_data: params.additionalData,
+        classes: params.classes,
+        created_by: params.createdBy,
+        club_section_id: params.ownerSectionId,
+        is_joint: params.isJoint,
+        active: true,
+        activity_series_id: params.seriesId,
+        created_at: params.createdAt,
+        modified_at: params.createdAt,
+      })),
+      select: { activity_id: true },
+    });
+
+    await tx.activity_instances.createMany({
+      data: created.flatMap((row) =>
+        params.sectionIds.map((club_section_id) => ({
+          activity_id: row.activity_id,
+          club_section_id,
+          active: true,
+          created_at: params.createdAt,
+          modified_at: params.createdAt,
+        })),
+      ),
+    });
+
+    return created.map((row) => row.activity_id);
+  }
+
+  private async requireActivitySeries(seriesId: number) {
+    const series = await this.prisma.activity_series.findUnique({
+      where: { activity_series_id: seriesId },
+      include: {
+        activity_series_sections: { select: { club_section_id: true } },
+      },
+    });
+    if (!series) {
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_SERIES_NOT_FOUND);
+    }
+    return series;
+  }
+
+  private async seriesSectionIds(series: {
+    club_section_id: number | null;
+    activity_series_sections?: Array<{ club_section_id: number }>;
+  }): Promise<number[]> {
+    const fromJoin =
+      series.activity_series_sections?.map((row) => row.club_section_id) ?? [];
+    if (fromJoin.length > 0) {
+      return fromJoin;
+    }
+    return series.club_section_id ? [series.club_section_id] : [];
+  }
+
+  private serializeSeries(series: {
+    activity_series_id: number;
+    club_id: number;
+    ecclesiastical_year_id: number;
+    name: string;
+    description: string | null;
+    club_type_id: number;
+    club_section_id: number | null;
+    is_joint: boolean;
+    activity_time: string;
+    duration_days: number;
+    activity_place: string;
+    platform: number;
+    activity_type_id: number;
+    first_date: Date;
+    kind: string;
+    interval_days: number | null;
+    weekdays: number[];
+    until_date: Date;
+    active: boolean;
+  }) {
+    return {
+      activity_series_id: series.activity_series_id,
+      club_id: series.club_id,
+      ecclesiastical_year_id: series.ecclesiastical_year_id,
+      name: series.name,
+      description: series.description,
+      club_type_id: series.club_type_id,
+      club_section_id: series.club_section_id,
+      is_joint: series.is_joint,
+      activity_time: series.activity_time,
+      duration_days: series.duration_days,
+      activity_place: series.activity_place,
+      platform: series.platform,
+      activity_type_id: series.activity_type_id,
+      first_date: isoDateFromDb(series.first_date),
+      kind: series.kind,
+      interval_days: series.interval_days,
+      weekdays: series.weekdays,
+      until_date: isoDateFromDb(series.until_date),
+      active: series.active,
+    };
+  }
+
+  private sendSeriesCreatedNotification(
+    name: string,
+    count: number,
+    sectionId: number,
+    isJoint: boolean,
+    seriesId: number,
+  ): void {
+    const title = isJoint
+      ? 'Serie conjunta programada'
+      : 'Serie de actividades programada';
+    this.notificationsService
+      .sendToClubMembers(
+        sectionId,
+        {
+          title,
+          body: `${count} sesiones: ${name}`,
+          data: {
+            type: 'activity_series',
+            entity_id: String(seriesId),
+            action: 'created',
+          },
+        },
+        'system',
+        'activities:created',
+      )
+      .catch((err: Error) =>
+        this.logger.warn(
+          `Failed to send series-created notification (series=${seriesId}, section=${sectionId}): ${err.message}`,
+        ),
+      );
   }
 
   /**

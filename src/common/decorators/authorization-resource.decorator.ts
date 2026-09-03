@@ -12,6 +12,7 @@ export type AuthorizationResourceType =
   | 'camporee_event'
   | 'camporee_venue'
   | 'activity'
+  | 'activity_series'
   | 'finance'
   | 'inventory_instance'
   | 'inventory_item'

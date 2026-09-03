@@ -35,6 +35,8 @@ import {
   CreateActivityDto,
   UpdateActivityDto,
   RecordAttendanceDto,
+  CreateActivitySeriesDto,
+  ExtendActivitySeriesDto,
 } from './dto';
 import {
   JwtAuthGuard,
@@ -70,6 +72,7 @@ export class ActivitiesController {
   @ApiQuery({ name: 'clubTypeId', required: false, type: Number })
   @ApiQuery({ name: 'active', required: false, type: Boolean })
   @ApiQuery({ name: 'activityTypeId', required: false, type: Number })
+  @ApiQuery({ name: 'seriesId', required: false, type: Number })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Lista paginada de actividades' })
@@ -80,6 +83,8 @@ export class ActivitiesController {
     @Query('active') active?: string,
     @Query('activityTypeId', new ParseIntPipe({ optional: true }))
     activityTypeId?: number,
+    @Query('seriesId', new ParseIntPipe({ optional: true }))
+    seriesId?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
     @Request() req?: any,
@@ -103,6 +108,7 @@ export class ActivitiesController {
         active:
           active === 'true' ? true : active === 'false' ? false : undefined,
         activityTypeId,
+        seriesId,
       },
       pagination,
       userSectionId,
@@ -138,6 +144,112 @@ export class ActivitiesController {
     @Request() req: any,
   ) {
     return this.activitiesService.create(clubId, dto, req.user.sub);
+  }
+
+  @Post('clubs/:clubId/activity-series/preview')
+  @UseGuards(ClubRolesGuard)
+  @ClubRoles(
+    'director',
+    'deputy-director',
+    'secretary',
+    'secretary-treasurer',
+    'counselor',
+  )
+  @RequirePermissions('activities:create')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Vista previa de serie de actividades',
+    description:
+      'Calcula las fechas que se crearían sin persistir. Mismos permisos que crear actividad.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiResponse({ status: 201, description: 'Fechas calculadas' })
+  async previewSeries(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Body() dto: CreateActivitySeriesDto,
+  ) {
+    return this.activitiesService.previewActivitySeries(clubId, dto);
+  }
+
+  @Post('clubs/:clubId/activity-series')
+  @UseGuards(ClubRolesGuard)
+  @ClubRoles(
+    'director',
+    'deputy-director',
+    'secretary',
+    'secretary-treasurer',
+    'counselor',
+  )
+  @RequirePermissions('activities:create')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Crear serie de actividades',
+    description:
+      'Crea la cabecera y materializa N actividades independientes.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiResponse({ status: 201, description: 'Serie creada' })
+  async createSeries(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Body() dto: CreateActivitySeriesDto,
+    @Request() req: any,
+  ) {
+    return this.activitiesService.createActivitySeries(
+      clubId,
+      dto,
+      req.user.sub,
+    );
+  }
+
+  @Get('activity-series/:seriesId')
+  @RequirePermissions('activities:read')
+  @AuthorizationResource({ type: 'activity_series', idParam: 'seriesId' })
+  @ApiOperation({ summary: 'Obtener serie de actividades' })
+  @ApiParam({ name: 'seriesId', type: Number })
+  @ApiResponse({ status: 200, description: 'Serie encontrada' })
+  @ApiResponse({ status: 404, description: 'Serie no encontrada' })
+  async findSeries(@Param('seriesId', ParseIntPipe) seriesId: number) {
+    return this.activitiesService.findActivitySeries(seriesId);
+  }
+
+  @Post('activity-series/:seriesId/cancel-future')
+  @RequirePermissions('activities:delete')
+  @AuthorizationResource({ type: 'activity_series', idParam: 'seriesId' })
+  @ApiOperation({
+    summary: 'Cancelar sesiones futuras de una serie',
+    description:
+      'Desactiva (soft delete) las actividades de la serie con fecha de hoy en adelante.',
+  })
+  @ApiParam({ name: 'seriesId', type: Number })
+  async cancelFutureSeries(
+    @Param('seriesId', ParseIntPipe) seriesId: number,
+    @Request() req: any,
+  ) {
+    return this.activitiesService.cancelFutureActivitySeries(
+      seriesId,
+      req.user.sub,
+    );
+  }
+
+  @Post('activity-series/:seriesId/extend')
+  @RequirePermissions('activities:create')
+  @AuthorizationResource({ type: 'activity_series', idParam: 'seriesId' })
+  @ApiOperation({
+    summary: 'Agregar más sesiones a una serie',
+    description:
+      'Alarga until y crea solo fechas que la serie aún no tiene. No resucita canceladas.',
+  })
+  @ApiParam({ name: 'seriesId', type: Number })
+  async extendSeries(
+    @Param('seriesId', ParseIntPipe) seriesId: number,
+    @Body() dto: ExtendActivitySeriesDto,
+    @Request() req: any,
+  ) {
+    return this.activitiesService.extendActivitySeries(
+      seriesId,
+      dto,
+      req.user.sub,
+    );
   }
 
   // ========================================
