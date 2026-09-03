@@ -174,6 +174,14 @@ export class AdminUsersController {
                 { type: 'null' },
               ],
             },
+            current_cross_type_enrollment: {
+              oneOf: [
+                {
+                  $ref: '#/components/schemas/AdminCurrentOperationalEnrollmentDto',
+                },
+                { type: 'null' },
+              ],
+            },
             trajectory_classes: {
               type: 'array',
               items: { $ref: '#/components/schemas/AdminTrajectoryClassDto' },

@@ -319,6 +319,8 @@
   "CLASS_MAX_AVENTU_CONQUIS_ACTIVE": "You already have an active enrollment in Adventurers/Pathfinders",
   "CLASS_MAX_GM_ACTIVE": "You already have 1 active enrollment in Senior Guides",
   "CLASS_ALREADY_ENROLLED": "User already has an active enrollment for this class in the indicated ecclesiastical year",
+  "CLASS_ALREADY_INVESTED": "This class is already invested in your history",
+  "CLASS_CROSS_TYPE_GM_REQUIRED": "Only an invested Master Guide can take an Adventurers or Pathfinders class in the same year",
   "CLASS_PROGRESS_LOCKED": "Enrollment is locked for validation or in a terminal state; progress cannot be modified",
   "CLASS_FILE_REQUIRED": "File is required",
   "CLASS_FILE_INVALID_TYPE": "Invalid file type. Allowed: PDF, JPG, PNG, WEBP",

@@ -995,6 +995,7 @@ describe('AdminUsersService', () => {
           class_name: 'Amigo',
         }),
       );
+      expect(result.current_cross_type_enrollment).toBeNull();
       expect(result.trajectory_classes).toEqual([
         {
           enrollment_id: 55,
@@ -1098,6 +1099,51 @@ describe('AdminUsersService', () => {
           source: 'admin-user-detail',
         }),
       );
+
+      warnSpy.mockRestore();
+    });
+
+    it('should keep both operational enrollments when one is cross-type', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+          permissions: ['users:read_detail'],
+        }),
+      );
+
+      const userRecord = buildAdminDetailRecord();
+      userRecord.enrollments = [buildTrajectoryClass()];
+      mockPrismaService.users.findFirst.mockResolvedValue(userRecord);
+
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        buildEnrollmentCandidate(9001),
+        {
+          ...buildEnrollmentCandidate(9002),
+          class_id: 1,
+          cross_type_enrollment: true,
+          classes: { name: 'Abejitas Laboriosas' },
+        },
+      ]);
+
+      const warnSpy = jest
+        .spyOn<any, any>(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      const result = await service.getUserById('actor-super', 'user-1');
+
+      expect(result.current_operational_enrollment).toMatchObject({
+        enrollment_id: 9001,
+        cross_type_enrollment: false,
+      });
+      expect(result.current_cross_type_enrollment).toMatchObject({
+        enrollment_id: 9002,
+        cross_type_enrollment: true,
+        class_name: 'Abejitas Laboriosas',
+      });
+      expect(warnSpy).not.toHaveBeenCalled();
 
       warnSpy.mockRestore();
     });

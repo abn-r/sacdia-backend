@@ -1340,10 +1340,12 @@ describe('ClassesService', () => {
   describe('enrollUser', () => {
     // Reusable mock for prisma.$transaction
     //
-    // enrollments.findFirst is called up to 3 times in enrollUser:
+    // enrollments.findFirst is called up to 5 times in enrollUser:
     //   1. GM investiture pre-condition check (step 2, only if requires_invested_gm)
     //   2. Highest INVESTIDO class for display-order validation (step 3)
     //   3. Base enrollment for display-order validation (step 3, only if no INVESTIDO)
+    //   4. Invested Guía Mayor (GM-01) check (step 4, Aventureros/Conquistadores only)
+    //   5. Target class already INVESTIDO (step 4, Aventureros/Conquistadores only)
     //
     // club_types.findMany is called only for Aventureros/Conquistadores pool check (step 4).
     // For GM classes the pool check uses club_type_id directly — no findMany call.
@@ -1355,6 +1357,7 @@ describe('ClassesService', () => {
       targetClass?: any;
       findFirstResults?: any[];
       activeCount?: number;
+      countResults?: number[];
       existingEnrollment?: any;
       createResult?: any;
       updateResult?: any;
@@ -1365,6 +1368,7 @@ describe('ClassesService', () => {
       // Build a findFirst that returns successive values from the array
       const findFirstResults = mocks.findFirstResults ?? [null];
       let findFirstCallIndex = 0;
+      let countCallIndex = 0;
       const findFirstFn = jest.fn().mockImplementation(() => {
         const result = findFirstResults[findFirstCallIndex] ?? null;
         findFirstCallIndex++;
@@ -1392,7 +1396,14 @@ describe('ClassesService', () => {
           findMany: jest
             .fn()
             .mockResolvedValue(mocks.investedEnrollments ?? []),
-          count: jest.fn().mockResolvedValue(mocks.activeCount ?? 0),
+          count: jest.fn().mockImplementation(() => {
+            if (mocks.countResults) {
+              const next = mocks.countResults[countCallIndex] ?? 0;
+              countCallIndex += 1;
+              return Promise.resolve(next);
+            }
+            return Promise.resolve(mocks.activeCount ?? 0);
+          }),
           findUnique: jest
             .fn()
             .mockResolvedValue(mocks.existingEnrollment ?? null),
@@ -1778,6 +1789,140 @@ describe('ClassesService', () => {
       await expect(
         service.enrollUser(userId, classId, yearId),
       ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
+    });
+
+    describe('cross-type enrollment for invested Guía Mayor', () => {
+      const aventurerosClass = {
+        class_id: 10,
+        club_type_id: 1,
+        requires_invested_gm: false,
+        display_order: 1,
+        club_types: { name: 'Aventureros' },
+      };
+
+      it('should enroll an invested GM in Aventureros and mark the row as cross-type', async () => {
+        const txMock = setupTransactionMock({
+          targetClass: aventurerosClass,
+          findFirstResults: [
+            null,
+            null,
+            { enrollment_id: 50, investiture_status: 'INVESTIDO' },
+            null,
+          ],
+          activeCount: 0,
+          createResult: {
+            enrollment_id: 9,
+            class_id: 10,
+            cross_type_enrollment: true,
+          },
+        });
+
+        const result = await service.enrollUser(userId, classId, yearId);
+
+        expect(result).toMatchObject({
+          enrollment_id: 9,
+          cross_type_enrollment: true,
+        });
+        expect(txMock.enrollments.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              user_id: userId,
+              class_id: classId,
+              ecclesiastical_year_id: yearId,
+              cross_type_enrollment: true,
+            }),
+          }),
+        );
+      });
+
+      it('should reactivate an inactive Aventureros enrollment as cross-type for an invested GM', async () => {
+        const txMock = setupTransactionMock({
+          targetClass: aventurerosClass,
+          findFirstResults: [
+            null,
+            null,
+            { enrollment_id: 50, investiture_status: 'INVESTIDO' },
+            null,
+          ],
+          activeCount: 0,
+          existingEnrollment: { enrollment_id: 5, active: false },
+          updateResult: {
+            enrollment_id: 5,
+            active: true,
+            cross_type_enrollment: true,
+          },
+        });
+
+        const result = await service.enrollUser(userId, classId, yearId);
+
+        expect(result).toMatchObject({
+          enrollment_id: 5,
+          cross_type_enrollment: true,
+        });
+        expect(txMock.enrollments.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: {
+              active: true,
+              cross_type_enrollment: true,
+            },
+          }),
+        );
+      });
+
+      it('should block a second Aventureros/Conquistadores class even for an invested GM', async () => {
+        setupTransactionMock({
+          targetClass: {
+            ...aventurerosClass,
+            club_type_id: 2,
+            club_types: { name: 'Conquistadores' },
+          },
+          findFirstResults: [
+            null,
+            null,
+            { enrollment_id: 50, investiture_status: 'INVESTIDO' },
+            null,
+          ],
+          activeCount: 1,
+        });
+
+        await expect(
+          service.enrollUser(userId, classId, yearId),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
+        });
+      });
+
+      it('should block cross-type enrollment when the target class is already invested', async () => {
+        setupTransactionMock({
+          targetClass: aventurerosClass,
+          findFirstResults: [
+            null,
+            null,
+            { enrollment_id: 50, investiture_status: 'INVESTIDO' },
+            { enrollment_id: 8, investiture_status: 'INVESTIDO' },
+          ],
+        });
+
+        await expect(
+          service.enrollUser(userId, classId, yearId),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CLASS_ALREADY_INVESTED,
+        });
+      });
+
+      it('should block a non-invested GM from adding Aventureros while another class is active', async () => {
+        setupTransactionMock({
+          targetClass: aventurerosClass,
+          findFirstResults: [null, null, null, null],
+          countResults: [0, 1],
+        });
+
+        await expect(
+          service.enrollUser(userId, classId, yearId),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CLASS_CROSS_TYPE_GM_REQUIRED,
+        });
+      });
     });
 
     // ========================================

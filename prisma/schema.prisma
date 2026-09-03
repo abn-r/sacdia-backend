@@ -1119,6 +1119,8 @@ model enrollments {
   @@index([user_id, ecclesiastical_year_id, active], map: "idx_enrollments_user_year_active")
   @@index([last_progress_change], map: "idx_enrollments_last_progress")
   @@index([ecclesiastical_year_id, investiture_status, active], map: "idx_enrollments_year_status_active")
+  // Partial unique: one regular active + one cross-type active per user/year
+  // (uniq_enrollments_active_user_year_regular / _cross_type): migration 20260903180000.
   // Partial (investiture_status, submitted_at) WHERE active AND submitted_at IS NOT NULL:
   // migration 20260818190000.
 }

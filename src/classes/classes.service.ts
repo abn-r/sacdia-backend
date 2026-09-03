@@ -37,6 +37,7 @@ import pLimit from 'p-limit';
 // against the private CLASS_EVIDENCE bucket. Cap matches the pattern established
 // in camporees.service.ts (PROFILE_URL_LIMITER = pLimit(20)).
 export const EVIDENCE_URL_LIMITER = pLimit(20);
+const GUIDE_MAJOR_ASSET_CODE = 'GM-01';
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -630,10 +631,34 @@ export class ClassesService {
         ecclesiasticalYearId,
       });
 
-      // 4. Enrollment limit by club type
+      // 4. Enrollment limit by club type, plus invested-GM cross-type privilege.
       const { club_type_id } = targetClass;
+      let isCrossTypeEnrollment = false;
 
       if (isAventuConquis) {
+        const [investedGuiaMayor, investedInTargetClass] = await Promise.all([
+          tx.enrollments.findFirst({
+            where: {
+              user_id: userId,
+              investiture_status: 'INVESTIDO',
+              classes: { asset_code: GUIDE_MAJOR_ASSET_CODE },
+            },
+            select: { enrollment_id: true },
+          }),
+          tx.enrollments.findFirst({
+            where: {
+              user_id: userId,
+              class_id: classId,
+              investiture_status: 'INVESTIDO',
+            },
+            select: { enrollment_id: true },
+          }),
+        ]);
+
+        if (investedGuiaMayor && investedInTargetClass) {
+          throw new AppConflictException(ErrorCode.CLASS_ALREADY_INVESTED);
+        }
+
         const siblingIds = await this.getSiblingClubTypeIds();
 
         const activeCount = await tx.enrollments.count({
@@ -651,6 +676,23 @@ export class ClassesService {
             ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
           );
         }
+
+        if (investedGuiaMayor) {
+          isCrossTypeEnrollment = true;
+        } else {
+          const anyActiveThisYear = await tx.enrollments.count({
+            where: {
+              user_id: userId,
+              ecclesiastical_year_id: ecclesiasticalYearId,
+              active: true,
+            },
+          });
+          if (anyActiveThisYear >= 1) {
+            throw new AppForbiddenException(
+              ErrorCode.CLASS_CROSS_TYPE_GM_REQUIRED,
+            );
+          }
+        }
       } else if (isGm) {
         const activeCount = await tx.enrollments.count({
           where: {
@@ -660,10 +702,8 @@ export class ClassesService {
             classes: { club_type_id },
           },
         });
-        // DB enforces a single active enrollment per user/year via the partial
-        // unique index uniq_enrollments_active_user_year; keep the service rule
-        // aligned so violations surface as CLASS_MAX_GM_ACTIVE instead of a raw
-        // unique-constraint error.
+        // Regular GM enrollments occupy the non-cross-type slot. A second GM
+        // class in the same year is still rejected as CLASS_MAX_GM_ACTIVE.
         if (activeCount >= 1) {
           throw new AppConflictException(ErrorCode.CLASS_MAX_GM_ACTIVE);
         }
@@ -687,7 +727,10 @@ export class ClassesService {
 
         return tx.enrollments.update({
           where: { enrollment_id: existing.enrollment_id },
-          data: { active: true },
+          data: {
+            active: true,
+            cross_type_enrollment: isCrossTypeEnrollment,
+          },
           include: {
             classes: { select: { name: true, club_type_id: true } },
             ecclesiastical_year: {
@@ -703,6 +746,7 @@ export class ClassesService {
           class_id: classId,
           ecclesiastical_year_id: ecclesiasticalYearId,
           enrollment_date: new Date(),
+          cross_type_enrollment: isCrossTypeEnrollment,
         },
         include: {
           classes: { select: { name: true, club_type_id: true } },

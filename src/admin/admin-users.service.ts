@@ -454,6 +454,7 @@ interface AdminUserDetail extends AdminUserListItem {
   baptism_date: Date | null;
   modified_at: Date;
   current_operational_enrollment: CurrentOperationalEnrollmentDto | null;
+  current_cross_type_enrollment: CurrentOperationalEnrollmentDto | null;
   trajectory_classes: TrajectoryClassDto[];
   classes: TrajectoryClassDto[];
   club_assignments: Array<{
@@ -605,6 +606,8 @@ export class AdminUsersService {
       modified_at: user.modified_at,
       current_operational_enrollment:
         formativeReadModel.current_operational_enrollment,
+      current_cross_type_enrollment:
+        formativeReadModel.current_cross_type_enrollment,
       trajectory_classes: formativeReadModel.trajectory_classes,
       classes: formativeReadModel.classes,
       club_assignments: user.club_role_assignments.map((assignment) => ({
