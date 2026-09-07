@@ -119,14 +119,18 @@ export class CreateWeeklyRecordDto {
   @IsUUID()
   declare user_id: string;
 
-  @ApiProperty({ description: 'Número de semana' })
+  @ApiProperty({
+    description: 'Número de semana (domingo–sábado, hora México)',
+  })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(53)
   declare week: number;
 
-  @ApiProperty({ description: 'Año del registro (ej: 2026)' })
+  @ApiProperty({
+    description: 'Año del sábado que cierra la semana (ej: 2026)',
+  })
   @Type(() => Number)
   @IsInt()
   @Min(2020)
@@ -205,14 +209,18 @@ export class BulkWeeklyRecordEntryDto {
 }
 
 export class BulkUpsertWeeklyRecordsDto {
-  @ApiProperty({ description: 'Número de semana ISO' })
+  @ApiProperty({
+    description: 'Número de semana (domingo–sábado, hora México)',
+  })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(53)
   declare week: number;
 
-  @ApiProperty({ description: 'Año ISO del registro (ej: 2026)' })
+  @ApiProperty({
+    description: 'Año del sábado que cierra la semana (ej: 2026)',
+  })
   @Type(() => Number)
   @IsInt()
   @Min(2020)

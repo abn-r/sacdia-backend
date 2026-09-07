@@ -7,7 +7,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 
 describe('UnitsService', () => {
   let service: UnitsService;
-  const currentIsoPeriod = { week: 27, year: 2026 };
+  const currentScoringPeriod = { week: 27, year: 2026 };
 
   const mockPrismaService = {
     clubs: {
@@ -614,8 +614,8 @@ describe('UnitsService', () => {
           record_id: 1,
           unit_id: null,
           user_id: 'uuid-user-1',
-          week: currentIsoPeriod.week,
-          year: currentIsoPeriod.year,
+          week: currentScoringPeriod.week,
+          year: currentScoringPeriod.year,
           points: 5,
           weekly_record_scores: [],
         },
@@ -623,8 +623,8 @@ describe('UnitsService', () => {
           record_id: 2,
           unit_id: 1,
           user_id: 'uuid-user-1',
-          week: currentIsoPeriod.week,
-          year: currentIsoPeriod.year,
+          week: currentScoringPeriod.week,
+          year: currentScoringPeriod.year,
           points: 10,
           weekly_record_scores: [],
         },
@@ -666,8 +666,8 @@ describe('UnitsService', () => {
   describe('createWeeklyRecord', () => {
     const dto = {
       user_id: 'uuid-user-1',
-      week: currentIsoPeriod.week,
-      year: currentIsoPeriod.year,
+      week: currentScoringPeriod.week,
+      year: currentScoringPeriod.year,
       attendance: 10,
       punctuality: 5,
     };
@@ -727,11 +727,11 @@ describe('UnitsService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.UNIT_WEEKLY_RECORD_DUPLICATE });
     });
 
-    it('should reject records outside the current ISO week', async () => {
+    it('should reject records outside the current scoring week', async () => {
       await expect(
         service.createWeeklyRecord(
           1,
-          { ...dto, week: currentIsoPeriod.week - 1 },
+          { ...dto, week: currentScoringPeriod.week - 1 },
           dto.user_id,
         ),
       ).rejects.toMatchObject({
@@ -764,8 +764,8 @@ describe('UnitsService', () => {
       const hydratedRecord1 = {
         record_id: 1,
         user_id: 'uuid-user-1',
-        week: currentIsoPeriod.week,
-        year: currentIsoPeriod.year,
+        week: currentScoringPeriod.week,
+        year: currentScoringPeriod.year,
         attendance: 1,
         punctuality: 1,
         points: 10,
@@ -786,8 +786,8 @@ describe('UnitsService', () => {
       const existingRecord2 = {
         record_id: 2,
         user_id: 'uuid-user-2',
-        week: currentIsoPeriod.week,
-        year: currentIsoPeriod.year,
+        week: currentScoringPeriod.week,
+        year: currentScoringPeriod.year,
         attendance: 0,
         punctuality: 0,
         points: 0,
@@ -837,8 +837,8 @@ describe('UnitsService', () => {
         record_id: 1,
         unit_id: 1,
         user_id: 'uuid-user-1',
-        week: currentIsoPeriod.week,
-        year: currentIsoPeriod.year,
+        week: currentScoringPeriod.week,
+        year: currentScoringPeriod.year,
       });
       mockPrismaService.weekly_records.update
         .mockResolvedValueOnce({ ...hydratedRecord1 })
@@ -852,8 +852,8 @@ describe('UnitsService', () => {
       const result = await service.bulkUpsertWeeklyRecords(
         1,
         {
-          week: currentIsoPeriod.week,
-          year: currentIsoPeriod.year,
+          week: currentScoringPeriod.week,
+          year: currentScoringPeriod.year,
           records: [
             {
               user_id: 'uuid-user-1',
@@ -919,8 +919,8 @@ describe('UnitsService', () => {
         service.bulkUpsertWeeklyRecords(
           1,
           {
-            week: currentIsoPeriod.week,
-            year: currentIsoPeriod.year,
+            week: currentScoringPeriod.week,
+            year: currentScoringPeriod.year,
             records: [
               {
                 user_id: 'uuid-user-1',
@@ -937,13 +937,13 @@ describe('UnitsService', () => {
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });
 
-    it('should reject bulk records outside the current ISO week before transaction', async () => {
+    it('should reject bulk records outside the current scoring week before transaction', async () => {
       await expect(
         service.bulkUpsertWeeklyRecords(
           1,
           {
-            week: currentIsoPeriod.week - 1,
-            year: currentIsoPeriod.year,
+            week: currentScoringPeriod.week - 1,
+            year: currentScoringPeriod.year,
             records: [{ user_id: 'uuid-user-1' }],
           },
           'uuid-creator',
@@ -962,8 +962,8 @@ describe('UnitsService', () => {
         service.bulkUpsertWeeklyRecords(
           1,
           {
-            week: currentIsoPeriod.week,
-            year: currentIsoPeriod.year,
+            week: currentScoringPeriod.week,
+            year: currentScoringPeriod.year,
             records: [{ user_id: 'uuid-user-1' }, { user_id: 'uuid-user-1' }],
           },
           'uuid-creator',
@@ -986,8 +986,8 @@ describe('UnitsService', () => {
       const mockRecord = {
         record_id: 10,
         user_id: 'uuid-user-1',
-        week: currentIsoPeriod.week,
-        year: currentIsoPeriod.year,
+        week: currentScoringPeriod.week,
+        year: currentScoringPeriod.year,
         attendance: 10,
         punctuality: 5,
         points: 15,
@@ -1035,8 +1035,8 @@ describe('UnitsService', () => {
       const closedRecord = {
         record_id: 10,
         user_id: 'uuid-user-1',
-        week: currentIsoPeriod.week - 1,
-        year: currentIsoPeriod.year,
+        week: currentScoringPeriod.week - 1,
+        year: currentScoringPeriod.year,
         attendance: 10,
         punctuality: 5,
         points: 15,
