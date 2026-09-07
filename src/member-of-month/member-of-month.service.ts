@@ -10,6 +10,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import { getScoringWeekRangeForMonth } from '../common/clock/scoring-week';
 import { ACHIEVEMENT_EVENTS } from '../achievements/events/achievement-events';
 
 const COORDINATOR_ROLES = new Set([
@@ -192,8 +193,7 @@ export class MemberOfMonthService {
     );
     const isAdmin = globalRoles.has('admin') || globalRoles.has('super-admin');
     const isCoordinator =
-      !isAdmin &&
-      [...COORDINATOR_ROLES].some((role) => globalRoles.has(role));
+      !isAdmin && [...COORDINATOR_ROLES].some((role) => globalRoles.has(role));
 
     let coordinatorSectionIds: number[] | undefined;
     if (isCoordinator) {
@@ -366,8 +366,8 @@ export class MemberOfMonthService {
     month: number;
     year: number;
   }> {
-    // 1. Calculate ISO week range for the given month/year
-    const weekRange = this.getWeekRangeForMonth(year, month);
+    // 1. Scoring weeks whose Saturday falls in the given calendar month
+    const weekRange = getScoringWeekRangeForMonth(year, month);
 
     // 2. Aggregate points per user for that section and week range.
     // Prefer unit-specific weekly_records over unit_id NULL via DISTINCT ON
@@ -609,66 +609,6 @@ export class MemberOfMonthService {
     return users
       .map((u) => `${u.name ?? ''} ${u.paternal_last_name ?? ''}`.trim())
       .filter((name) => name.length > 0);
-  }
-
-  // ============================================================
-  // Week calculation helpers
-  // ============================================================
-
-  /**
-   * Returns the ISO week range (start and end week numbers) that fall
-   * within the given calendar month.
-   * Strategy: find weeks where the Thursday falls in the target month
-   * (ISO 8601 standard: a week belongs to the month containing its Thursday).
-   */
-  private getWeekRangeForMonth(
-    year: number,
-    month: number,
-  ): { startWeek: number; endWeek: number } {
-    const weeks: number[] = [];
-
-    // Iterate through all days of the month
-    const daysInMonth = new Date(year, month, 0).getDate();
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month - 1, day);
-      // Only count each week once — use Monday to anchor
-      if (date.getDay() === 1) {
-        // Monday
-        const weekNum = this.getISOWeekNumber(date);
-        weeks.push(weekNum);
-      }
-    }
-
-    // Edge: if the month starts on non-Monday, include the week of the 1st
-    const firstDay = new Date(year, month - 1, 1);
-    if (firstDay.getDay() !== 1) {
-      weeks.unshift(this.getISOWeekNumber(firstDay));
-    }
-
-    const uniqueWeeks = [...new Set(weeks)].sort((a, b) => a - b);
-
-    if (uniqueWeeks.length === 0) {
-      return { startWeek: 1, endWeek: 52 };
-    }
-
-    return {
-      startWeek: Math.min(...uniqueWeeks),
-      endWeek: Math.max(...uniqueWeeks),
-    };
-  }
-
-  private getISOWeekNumber(date: Date): number {
-    const target = new Date(date.valueOf());
-    const dayNumber = (date.getDay() + 6) % 7; // Mon=0, Sun=6
-    target.setDate(target.getDate() - dayNumber + 3); // Move to Thursday
-    const firstThursday = new Date(target.getFullYear(), 0, 4); // First Thursday of year is always in week 1
-    const weekNumber =
-      1 +
-      Math.round(
-        (target.getTime() - firstThursday.getTime()) /
-          (7 * 24 * 60 * 60 * 1000),
-      );
-    return weekNumber;
   }
 
   // ============================================================

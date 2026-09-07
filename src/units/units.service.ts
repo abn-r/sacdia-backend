@@ -18,6 +18,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { getScoringWeekPeriod } from '../common/clock/scoring-week';
 
 interface WeeklyRecordUserResponse {
   user_id: string;
@@ -464,31 +465,16 @@ export class UnitsService {
     });
   }
 
-  private getCurrentIsoPeriod(date = new Date()): {
+  private getCurrentScoringPeriod(date = new Date()): {
     week: number;
     year: number;
   } {
-    const target = new Date(date.valueOf());
-    const dayNumber = (target.getDay() + 6) % 7; // Mon=0, Sun=6
-    target.setDate(target.getDate() - dayNumber + 3); // Thursday anchors ISO year
-
-    const firstThursday = new Date(target.getFullYear(), 0, 4);
-    const firstThursdayDayNumber = (firstThursday.getDay() + 6) % 7;
-    firstThursday.setDate(firstThursday.getDate() - firstThursdayDayNumber + 3);
-
-    return {
-      week:
-        1 +
-        Math.round(
-          (target.getTime() - firstThursday.getTime()) /
-            (7 * 24 * 60 * 60 * 1000),
-        ),
-      year: target.getFullYear(),
-    };
+    const period = getScoringWeekPeriod(date);
+    return { week: period.week, year: period.year };
   }
 
   private assertWeeklyRecordPeriodIsOpen(week: number, year: number): void {
-    const current = this.getCurrentIsoPeriod();
+    const current = this.getCurrentScoringPeriod();
 
     if (year !== current.year || week !== current.week) {
       throw new AppBadRequestException(
