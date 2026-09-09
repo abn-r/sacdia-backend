@@ -21,6 +21,7 @@ describe('ClassProgressScopeService', () => {
     },
     club_role_assignments: {
       findFirst: jest.fn(),
+      create: jest.fn(),
     },
     ecclesiastical_years: {
       findFirst: jest.fn(),
@@ -282,6 +283,7 @@ describe('ClassProgressScopeService', () => {
         class_id: 7,
         ecclesiastical_year_id: 2026,
         investiture_status: 'IN_PROGRESS',
+        cross_type_enrollment: false,
         users: {
           user_id: 'user-1',
           name: 'Ana',
@@ -295,6 +297,7 @@ describe('ClassProgressScopeService', () => {
         class_id: 7,
         ecclesiastical_year_id: 2026,
         investiture_status: 'VALIDATED',
+        cross_type_enrollment: false,
         users: {
           user_id: 'user-2',
           name: 'Bruno',
@@ -331,6 +334,7 @@ describe('ClassProgressScopeService', () => {
           class_id: 7,
           ecclesiastical_year_id: 2026,
           investiture_status: 'IN_PROGRESS',
+          cross_type_enrollment: false,
           completed_sections: 1,
           total_sections: 4,
           overall_progress: 25,
@@ -342,6 +346,7 @@ describe('ClassProgressScopeService', () => {
           class_id: 7,
           ecclesiastical_year_id: 2026,
           investiture_status: 'VALIDATED',
+          cross_type_enrollment: false,
           completed_sections: 2,
           total_sections: 4,
           overall_progress: 50,
@@ -354,15 +359,33 @@ describe('ClassProgressScopeService', () => {
         class_id: 7,
         ecclesiastical_year_id: 2026,
         active: true,
-        users: {
-          club_role_assignments: {
-            some: {
-              club_section_id: 10,
-              ecclesiastical_year_id: 2026,
-              active: true,
+        OR: [
+          {
+            users: {
+              club_role_assignments: {
+                some: {
+                  club_section_id: 10,
+                  ecclesiastical_year_id: 2026,
+                  active: true,
+                  status: 'active',
+                },
+              },
             },
           },
-        },
+          {
+            cross_type_enrollment: true,
+            users: {
+              club_role_assignments: {
+                some: {
+                  ecclesiastical_year_id: 2026,
+                  active: true,
+                  status: 'active',
+                  club_sections: { main_club_id: 99 },
+                },
+              },
+            },
+          },
+        ],
       },
       select: {
         enrollment_id: true,
@@ -370,6 +393,7 @@ describe('ClassProgressScopeService', () => {
         class_id: true,
         ecclesiastical_year_id: true,
         investiture_status: true,
+        cross_type_enrollment: true,
         users: {
           select: {
             user_id: true,
@@ -380,6 +404,129 @@ describe('ClassProgressScopeService', () => {
         },
       },
       orderBy: [{ users: { name: 'asc' } }, { user_id: 'asc' }],
+    });
+  });
+
+  describe('cross-type members in getClassMembersProgress', () => {
+    const sectionWideSetup = () => {
+      // Admin actor → section-wide access
+      mockAuthorizationContext.hasAnyGlobalRole.mockImplementation(
+        (_userId: string, roles: string[]) =>
+          Promise.resolve(roles.includes('admin')),
+      );
+      mockPrisma.classes.findMany.mockResolvedValue([
+        { class_id: 7, name: 'Ruta 1', club_type_id: 2, active: true },
+      ]);
+      mockPrisma.class_section_progress.groupBy.mockResolvedValue([]);
+      mockPrisma.class_sections.count.mockResolvedValue(4);
+    };
+
+    it('includes a cross-type GM from another section of the same club', async () => {
+      sectionWideSetup();
+      mockPrisma.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 201,
+          user_id: 'gm-user',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: 'IN_PROGRESS',
+          cross_type_enrollment: true,
+          users: {
+            user_id: 'gm-user',
+            name: 'Carlos',
+            paternal_last_name: 'Ruiz',
+            maternal_last_name: null,
+          },
+        },
+      ]);
+
+      const result = await service.getClassMembersProgress({
+        actorUserId: 'admin-1',
+        clubId: 99,
+        sectionId: 10,
+        classId: 7,
+        ecclesiasticalYearId: 2026,
+      });
+
+      expect(result.members).toHaveLength(1);
+      expect(result.members[0]).toMatchObject({
+        user_id: 'gm-user',
+        cross_type_enrollment: true,
+      });
+      expect(mockPrisma.club_role_assignments.create).not.toHaveBeenCalled();
+
+      // The OR branch for cross-type must use main_club_id: 99 (params.clubId)
+      expect(mockPrisma.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              expect.objectContaining({
+                cross_type_enrollment: true,
+                users: {
+                  club_role_assignments: {
+                    some: expect.objectContaining({
+                      club_sections: { main_club_id: 99 },
+                    }),
+                  },
+                },
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('excludes a cross-type enrollment whose assignment belongs to another club', async () => {
+      sectionWideSetup();
+      // The DB enforces the main_club_id filter; returning empty from the mock
+      // simulates that no matching row passes the filter.
+      mockPrisma.enrollments.findMany.mockResolvedValue([]);
+
+      const result = await service.getClassMembersProgress({
+        actorUserId: 'admin-1',
+        clubId: 99,
+        sectionId: 10,
+        classId: 7,
+        ecclesiasticalYearId: 2026,
+      });
+
+      expect(result.members).toHaveLength(0);
+      // Confirm the cross-type branch scopes to clubId 99, not another club
+      const call = mockPrisma.enrollments.findMany.mock.calls[0][0];
+      const crossTypeBranch = call.where.OR[1];
+      expect(crossTypeBranch.users.club_role_assignments.some.club_sections).toEqual(
+        { main_club_id: 99 },
+      );
+    });
+
+    it('DTO includes cross_type_enrollment on every member', async () => {
+      sectionWideSetup();
+      mockPrisma.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 301,
+          user_id: 'regular-user',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status: 'IN_PROGRESS',
+          cross_type_enrollment: false,
+          users: {
+            user_id: 'regular-user',
+            name: 'Dora',
+            paternal_last_name: 'Villa',
+            maternal_last_name: null,
+          },
+        },
+      ]);
+
+      const result = await service.getClassMembersProgress({
+        actorUserId: 'admin-1',
+        clubId: 99,
+        sectionId: 10,
+        classId: 7,
+        ecclesiasticalYearId: 2026,
+      });
+
+      expect(result.members[0]).toHaveProperty('cross_type_enrollment', false);
     });
   });
 });

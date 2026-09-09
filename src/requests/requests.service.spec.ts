@@ -396,6 +396,61 @@ describe('RequestsService', () => {
       });
 
       expect(prisma.role_assignment_requests.create).not.toHaveBeenCalled();
+      // Slot count MUST be scoped to the active year and status='active'
+      expect(prisma.club_role_assignments.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ecclesiastical_year_id: 2026,
+            status: 'active',
+          }),
+        }),
+      );
+    });
+
+    it('scopes exclusivity check to ecclesiastical year and status=active', async () => {
+      // Secretary request in year 2026; there is a secretary-treasurer in year 2025 only.
+      // The conflict check scoped to 2026 returns null → request must be accepted.
+      prisma.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 20,
+      });
+      prisma.users.findUnique.mockResolvedValue({ user_id: 'user-3' });
+      prisma.roles.findUnique.mockResolvedValue({
+        role_id: 'role-secretary',
+        role_name: 'secretary',
+      });
+      prisma.role_slot_limits.findUnique.mockResolvedValue({ max_per_section: 1 });
+      prisma.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      // No existing secretary in year 2026 → slot OK
+      prisma.club_role_assignments.count.mockResolvedValue(0);
+      prisma.role_assignment_requests.count.mockResolvedValue(0);
+      // No conflicting secretary-treasurer in year 2026 → exclusivity OK
+      prisma.roles.findMany.mockResolvedValue([{ role_id: 'role-sec-tr' }]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      prisma.role_assignment_requests.findFirst.mockResolvedValue(null);
+      prisma.role_assignment_requests.create.mockResolvedValue({
+        request_id: 'req-new',
+      });
+
+      await expect(
+        service.createAssignmentRequest(
+          20,
+          'user-3',
+          'role-secretary',
+          'requester-1',
+        ),
+      ).resolves.toBeDefined();
+
+      // Exclusivity findFirst MUST scope to year + status='active'
+      expect(prisma.club_role_assignments.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ecclesiastical_year_id: 2026,
+            status: 'active',
+          }),
+        }),
+      );
     });
   });
 

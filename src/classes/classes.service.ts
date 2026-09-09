@@ -26,6 +26,7 @@ import {
   resolveEvidenceFileExtension,
 } from '../common/utils/evidence-file-names';
 import { ClassProgressAccessService } from './class-progress-access.service';
+import { ClassEnrollmentPolicyService } from './class-enrollment-policy.service';
 import {
   ClassRequirementEligibilityService,
   type ClassRequirementEligibilityResult,
@@ -59,6 +60,7 @@ export class ClassesService {
     private readonly translationService: TranslationService,
     private readonly classProgressAccess: ClassProgressAccessService,
     private readonly requirementEligibility: ClassRequirementEligibilityService,
+    private readonly classEnrollmentPolicy: ClassEnrollmentPolicyService,
   ) {}
 
   private static readonly PROGRESS_MUTATION_BLOCKED_STATUSES = new Set([
@@ -82,6 +84,14 @@ export class ClassesService {
     ) {
       throw new AppConflictException(ErrorCode.CLASS_PROGRESS_LOCKED);
     }
+  }
+
+  private async assertOperationalProgressWrite(
+    enrollmentYearId: number,
+  ): Promise<void> {
+    await this.classEnrollmentPolicy.assertOperationalYearWrite(
+      enrollmentYearId,
+    );
   }
 
   private getSiblingClubTypeIds(): Promise<number[]> {
@@ -621,14 +631,16 @@ export class ClassesService {
       }
 
       // 3. Display-order progression restriction
-      // Users can only enroll up to one class above their highest INVESTIDO class
-      // within the same club type. If no INVESTIDO exists, they can only enroll
-      // in their base class (the one selected during post-registration).
-      // Exception: if the ecclesiastical year has ended, allow the next class.
+      // maxAllowedOrder = highest display_order enrollment (any investiture status,
+      // cross_type_enrollment=false) in the same club type.
+      // Advances by +1 only when the target year's start_date is strictly later
+      // than the last enrollment's year start_date. Same year: no advancement.
+      // No prior enrollment → allow (first-ever, set during post-registration).
       await this.validateDisplayOrderProgression(tx, {
         userId,
         targetClass,
         ecclesiasticalYearId,
+        targetYearStartDate: targetYear.start_date,
       });
 
       // 4. Enrollment limit by club type, plus invested-GM cross-type privilege.
@@ -1103,6 +1115,9 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolvedEnrollment.ecclesiasticalYearId,
     });
+    await this.assertOperationalProgressWrite(
+      resolvedEnrollment.ecclesiasticalYearId,
+    );
     this.assertProgressMutable(resolvedEnrollment);
 
     const validSection = await this.prisma.class_sections.findFirst({
@@ -1262,6 +1277,7 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
+    await this.assertOperationalProgressWrite(resolved.ecclesiasticalYearId);
     this.assertProgressMutable(resolved);
 
     // Find or create section progress using the annual enrollment owner.
@@ -1353,6 +1369,7 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
+    await this.assertOperationalProgressWrite(resolved.ecclesiasticalYearId);
 
     // Find the section progress by annual enrollment owner.
     const sectionProgress = await this.prisma.class_section_progress.findFirst({
@@ -1432,6 +1449,7 @@ export class ClassesService {
       classId,
       ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
+    await this.assertOperationalProgressWrite(resolved.ecclesiasticalYearId);
     this.assertProgressMutable(resolved);
 
     // Resolve the section progress from the annual enrollment owner.
@@ -1533,16 +1551,16 @@ export class ClassesService {
    * Validates that the user can enroll in the target class based on
    * display_order progression rules:
    *
-   * 1. Find the user's highest INVESTIDO class within the same club type.
-   *    If found, maxAllowedOrder = highestInvested.display_order + 1.
+   * 1. Find the user's highest display_order enrollment (any investiture_status,
+   *    cross_type_enrollment=false) within the same club_type_id.
+   *    maxAllowedOrder = that enrollment's display_order.
    *
-   * 2. If no INVESTIDO class exists, find the user's base class (earliest
-   *    enrollment for the same club type — set during post-registration).
-   *    maxAllowedOrder = baseClass.display_order (they can only re-enroll
-   *    in the same class they originally picked).
+   * 2. If the target ecclesiastical year's start_date is strictly later than
+   *    the last enrollment's year start_date, maxAllowedOrder += 1 (one advance
+   *    per year). Same year: no advancement. Comparison uses start_date, not
+   *    end_date and not integer year_id.
    *
-   * 3. Exception: if the ecclesiastical year has ended (end_date < today),
-   *    maxAllowedOrder is incremented by 1 (they can advance to the next).
+   * 3. No enrollment in that club type → return early (allow, first-ever pick).
    *
    * 4. If target display_order > maxAllowedOrder → throw BadRequestException.
    */
@@ -1556,49 +1574,34 @@ export class ClassesService {
         display_order: number;
       };
       ecclesiasticalYearId: number;
+      targetYearStartDate: Date;
     },
   ): Promise<void> {
-    const { userId, targetClass, ecclesiasticalYearId } = params;
+    const { userId, targetClass, targetYearStartDate } = params;
 
-    const [highestInvested, year] = await Promise.all([
-      tx.enrollments.findFirst({
-        where: {
-          user_id: userId,
-          investiture_status: 'INVESTIDO',
-          active: true,
-          classes: { club_type_id: targetClass.club_type_id },
-        },
-        include: { classes: { select: { display_order: true } } },
-        orderBy: { classes: { display_order: 'desc' } },
-      }),
-      tx.ecclesiastical_years.findUnique({
-        where: { year_id: ecclesiasticalYearId },
-        select: { end_date: true },
-      }),
-    ]);
+    const lastEnrollment = await tx.enrollments.findFirst({
+      where: {
+        user_id: userId,
+        cross_type_enrollment: false,
+        classes: { club_type_id: targetClass.club_type_id },
+      },
+      include: {
+        classes: { select: { display_order: true } },
+        ecclesiastical_year: { select: { start_date: true } },
+      },
+      orderBy: { classes: { display_order: 'desc' } },
+    });
 
-    let maxAllowedOrder: number;
-
-    if (highestInvested) {
-      maxAllowedOrder = highestInvested.classes.display_order + 1;
-    } else {
-      const baseEnrollment = await tx.enrollments.findFirst({
-        where: {
-          user_id: userId,
-          classes: { club_type_id: targetClass.club_type_id },
-        },
-        include: { classes: { select: { display_order: true } } },
-        orderBy: { enrollment_date: 'asc' },
-      });
-
-      if (!baseEnrollment) {
-        return;
-      }
-
-      maxAllowedOrder = baseEnrollment.classes.display_order;
+    if (!lastEnrollment) {
+      return;
     }
 
-    if (year && year.end_date < new Date()) {
+    let maxAllowedOrder = lastEnrollment.classes.display_order;
+
+    if (
+      lastEnrollment.ecclesiastical_year &&
+      targetYearStartDate > lastEnrollment.ecclesiastical_year.start_date
+    ) {
       maxAllowedOrder += 1;
     }
 

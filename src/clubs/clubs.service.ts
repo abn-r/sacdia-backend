@@ -42,6 +42,7 @@ import {
   resolveActorTerritoryScope,
 } from '../common/authorization/actor-territory-scope';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 
 const CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS = [
   { name: { contains: 'Guía Mayor', mode: 'insensitive' as const } },
@@ -79,6 +80,7 @@ export class ClubsService {
     private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly notificationsService: NotificationsService,
     private readonly auditLogs: AuditLogsService,
+    private readonly ecclesiasticalYear: EcclesiasticalYearService,
   ) {}
 
   // ========================================
@@ -415,25 +417,27 @@ export class ClubsService {
   // ========================================
 
   async getMembers(sectionId: number) {
-    const now = new Date();
-    const [section, activeYear] = await Promise.all([
+    const [section, currentYear] = await Promise.all([
       this.prisma.club_sections.findUnique({
         where: { club_section_id: sectionId },
         select: { club_type_id: true },
       }),
-      this.prisma.ecclesiastical_years.findFirst({
-        where: {
-          start_date: { lte: now },
-          end_date: { gte: now },
-        },
-        select: { year_id: true },
-        orderBy: { start_date: 'desc' },
+      this.ecclesiasticalYear.getCurrentYear().catch((err: unknown) => {
+        if (
+          err instanceof AppNotFoundException &&
+          err.code === ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND
+        ) {
+          return null;
+        }
+        throw err;
       }),
     ]);
 
-    if (!activeYear) {
+    if (!currentYear) {
       return [];
     }
+
+    const activeYear = { year_id: currentYear.year_id };
 
     const currentEnrollmentSelect = section?.club_type_id
       ? {
@@ -627,11 +631,18 @@ export class ClubsService {
     const ecclesiasticalYearId =
       dto.ecclesiastical_year_id ??
       (await this.getActiveEcclesiasticalYearId());
+    await this.assertDirectorAssignmentIsCurrentYear(
+      roleId,
+      ecclesiasticalYearId,
+    );
     await this.validateRoleSlot(
       dto.club_section_id,
       roleId,
       startDate,
+      ecclesiasticalYearId,
       dto.end_date,
+      undefined,
+      'active',
     );
 
     const assignment = {
@@ -713,11 +724,19 @@ export class ClubsService {
         status: true,
         start_date: true,
         end_date: true,
+        ecclesiastical_year_id: true,
       },
     });
 
     if (!existing) {
       throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
+    }
+
+    this.assertNotDesignatedStatus(dto.status);
+    if (existing.status === 'designated') {
+      throw new AppConflictException(
+        ErrorCode.CLUB_DIRECTOR_DESIGNATED_UNRECONCILED,
+      );
     }
 
     const updateData: Record<string, unknown> = {
@@ -732,18 +751,29 @@ export class ClubsService {
       dto.role_id || dto.role
         ? await this.resolveRoleId(dto)
         : existing.role_id;
+    const slotYear =
+      dto.ecclesiastical_year_id ?? existing.ecclesiastical_year_id;
+    if (
+      dto.ecclesiastical_year_id !== undefined ||
+      dto.role_id !== undefined ||
+      dto.role !== undefined
+    ) {
+      await this.assertDirectorAssignmentIsCurrentYear(targetRoleId, slotYear);
+    }
     if (
       existing.active &&
       existing.club_section_id != null &&
       (targetRoleId !== existing.role_id ||
         dto.start_date ||
         dto.end_date !== undefined ||
-        dto.status !== undefined)
+        dto.status !== undefined ||
+        dto.ecclesiastical_year_id !== undefined)
     ) {
       await this.validateRoleSlot(
         existing.club_section_id,
         targetRoleId,
         startDate,
+        slotYear,
         endDate,
         existing.assignment_id,
         dto.status ?? existing.status,
@@ -861,6 +891,8 @@ export class ClubsService {
           club_section_id: true,
           role_id: true,
           active: true,
+          status: true,
+          ecclesiastical_year_id: true,
           roles: { select: { role_name: true } },
         },
       });
@@ -872,6 +904,16 @@ export class ClubsService {
         current.roles.role_name.toLowerCase() !== 'director'
       ) {
         throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
+      }
+
+      const currentYear = await this.ecclesiasticalYear.getCurrentYear();
+      if (
+        current.ecclesiastical_year_id !== currentYear.year_id ||
+        dto.ecclesiastical_year_id !== currentYear.year_id
+      ) {
+        throw new AppBadRequestException(
+          ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+        );
       }
 
       const ended = await tx.club_role_assignments.update({
@@ -894,6 +936,8 @@ export class ClubsService {
           club_section_id: sectionId,
           role_id: directorRole.role_id,
           active: true,
+          status: 'active',
+          ecclesiastical_year_id: current.ecclesiastical_year_id,
           assignment_id: { not: dto.current_assignment_id },
         },
       });
@@ -974,6 +1018,13 @@ export class ClubsService {
       throw new AppNotFoundException(ErrorCode.CLUB_ROLE_NOT_FOUND);
     }
 
+    const currentYear = await this.ecclesiasticalYear.getCurrentYear();
+    if (dto.ecclesiastical_year_id !== currentYear.year_id) {
+      throw new AppBadRequestException(
+        ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+      );
+    }
+
     const startDate = dto.start_date ?? new Date();
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -982,6 +1033,8 @@ export class ClubsService {
           club_section_id: sectionId,
           role_id: directorRole.role_id,
           active: true,
+          status: 'active',
+          ecclesiastical_year_id: dto.ecclesiastical_year_id,
         },
       });
 
@@ -1038,9 +1091,28 @@ export class ClubsService {
    * Others: all remaining CLUB-category assignments
    */
   async getClubLeadership(clubId: number) {
+    // Resolve the current ecclesiastical year so we only return operational
+    // (current-year, status='active') assignments.  Designated directors have
+    // status='designated' and must be excluded here so that a single
+    // operational director is visible per section.
+    let currentYearId: number | null = null;
+    try {
+      const currentYear = await this.ecclesiasticalYear.getCurrentYear();
+      currentYearId = currentYear.year_id;
+    } catch {
+      // No active ecclesiastical year — return empty leadership so the page
+      // still loads rather than throwing a 404.
+      return {
+        status: 'ok',
+        data: { director: null, deputies: [], secretaries: [], others: [] },
+      };
+    }
+
     const assignments = await this.prisma.club_role_assignments.findMany({
       where: {
         active: true,
+        status: 'active',
+        ecclesiastical_year_id: currentYearId,
         club_sections: {
           main_club_id: clubId,
         },
@@ -1334,10 +1406,19 @@ export class ClubsService {
     //    unit_members → units.club_section_id → club_sections.main_club_id
     let investidos_year = 0;
     if (sectionIds.length > 0) {
-      const activeYear = await this.prisma.ecclesiastical_years.findFirst({
-        where: { active: true },
-        select: { year_id: true },
-      });
+      let activeYear: { year_id: number } | null = null;
+      try {
+        activeYear = await this.ecclesiasticalYear.getCurrentYear();
+      } catch (err) {
+        if (
+          !(
+            err instanceof AppNotFoundException &&
+            err.code === ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND
+          )
+        ) {
+          throw err;
+        }
+      }
 
       if (activeYear) {
         // Collect user_ids that are active unit members of this club
@@ -1428,6 +1509,7 @@ export class ClubsService {
     sectionId: number,
     roleId: string,
     startDate: Date,
+    ecclesiasticalYearId: number,
     endDate?: Date | null,
     excludeAssignmentId?: string,
     status: string | null = 'active',
@@ -1464,6 +1546,7 @@ export class ClubsService {
         ...(excludeAssignmentId
           ? { assignment_id: { not: excludeAssignmentId } }
           : {}),
+        ecclesiastical_year_id: ecclesiasticalYearId,
       };
       const assignments = await this.prisma.club_role_assignments.findMany({
         where,
@@ -1490,6 +1573,7 @@ export class ClubsService {
             role_id: { in: secTreasRoleIds },
             active: true,
             status: 'active',
+            ecclesiastical_year_id: ecclesiasticalYearId,
             start_date: { lte: endDate ?? new Date('9999-12-31T00:00:00Z') },
             OR: [{ end_date: null }, { end_date: { gte: startDate } }],
             ...(excludeAssignmentId
@@ -1522,6 +1606,7 @@ export class ClubsService {
               role_id: { in: conflictingIds },
               active: true,
               status: 'active',
+              ecclesiastical_year_id: ecclesiasticalYearId,
               start_date: { lte: endDate ?? new Date('9999-12-31T00:00:00Z') },
               OR: [{ end_date: null }, { end_date: { gte: startDate } }],
               ...(excludeAssignmentId
@@ -1537,6 +1622,34 @@ export class ClubsService {
           );
         }
       }
+    }
+  }
+
+  private async assertDirectorAssignmentIsCurrentYear(
+    roleId: string,
+    ecclesiasticalYearId: number,
+  ): Promise<void> {
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      select: { role_name: true },
+    });
+    if (!role || role.role_name.toLowerCase() !== 'director') {
+      return;
+    }
+
+    const currentYear = await this.ecclesiasticalYear.getCurrentYear();
+    if (ecclesiasticalYearId !== currentYear.year_id) {
+      throw new AppBadRequestException(
+        ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+      );
+    }
+  }
+
+  private assertNotDesignatedStatus(status: string | undefined): void {
+    if (status === 'designated') {
+      throw new AppBadRequestException(
+        ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+      );
     }
   }
 
@@ -1622,19 +1735,18 @@ export class ClubsService {
   }
 
   private async getActiveEcclesiasticalYearId(): Promise<number> {
-    const currentYear = await this.prisma.ecclesiastical_years.findFirst({
-      where: {
-        start_date: { lte: new Date() },
-        end_date: { gte: new Date() },
-      },
-      select: { year_id: true },
-    });
-
-    if (!currentYear) {
-      throw new AppBadRequestException(ErrorCode.CLUB_NO_ACTIVE_YEAR);
+    try {
+      const currentYear = await this.ecclesiasticalYear.getCurrentYear();
+      return currentYear.year_id;
+    } catch (err) {
+      if (
+        err instanceof AppNotFoundException &&
+        err.code === ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND
+      ) {
+        throw new AppBadRequestException(ErrorCode.CLUB_NO_ACTIVE_YEAR);
+      }
+      throw err;
     }
-
-    return currentYear.year_id;
   }
 
   private async resolveRoleId(

@@ -52,6 +52,7 @@ export type ClassMemberProgress = {
   class_id: number;
   ecclesiastical_year_id: number;
   investiture_status: string;
+  cross_type_enrollment: boolean;
   completed_sections: number;
   total_sections: number;
   overall_progress: number;
@@ -216,15 +217,36 @@ export class ClassProgressScopeService {
         class_id: params.classId,
         ecclesiastical_year_id: scope.ecclesiastical_year_id,
         active: true,
-        users: {
-          club_role_assignments: {
-            some: {
-              club_section_id: scope.club_section_id,
-              ecclesiastical_year_id: scope.ecclesiastical_year_id,
-              active: true,
+        OR: [
+          // Regular section members
+          {
+            users: {
+              club_role_assignments: {
+                some: {
+                  club_section_id: scope.club_section_id,
+                  ecclesiastical_year_id: scope.ecclesiastical_year_id,
+                  active: true,
+                  status: 'active',
+                },
+              },
             },
           },
-        },
+          // Cross-type enrollments: GM catching up in AV/CQ in another section
+          // of the same club (cross_type_enrollment=true marks these rows).
+          {
+            cross_type_enrollment: true,
+            users: {
+              club_role_assignments: {
+                some: {
+                  ecclesiastical_year_id: scope.ecclesiastical_year_id,
+                  active: true,
+                  status: 'active',
+                  club_sections: { main_club_id: params.clubId },
+                },
+              },
+            },
+          },
+        ],
       },
       select: {
         enrollment_id: true,
@@ -232,6 +254,7 @@ export class ClassProgressScopeService {
         class_id: true,
         ecclesiastical_year_id: true,
         investiture_status: true,
+        cross_type_enrollment: true,
         users: {
           select: {
             user_id: true,
@@ -314,6 +337,7 @@ export class ClassProgressScopeService {
           class_id: enrollment.class_id,
           ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
           investiture_status: enrollment.investiture_status,
+          cross_type_enrollment: enrollment.cross_type_enrollment,
           completed_sections,
           total_sections: totalSections,
           overall_progress,

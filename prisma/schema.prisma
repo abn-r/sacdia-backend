@@ -728,6 +728,7 @@ model clubs {
   camporee_orders            camporee_orders[]
   camporee_supply_plans      camporee_supply_plans[]
   activity_series            activity_series[]
+  club_year_transitions      club_year_transitions[]
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
   @@index([church_id], map: "idx_clubs_church_id")
@@ -889,6 +890,18 @@ model club_role_assignments {
   @@index([ecclesiastical_year_id, active, status], map: "idx_club_role_assignments_year_active_status")
   // auth/me hot path: resolveUserAuthorization filters WHERE user_id = ? AND active = true, ordered by start_date DESC
   @@index([user_id, active, start_date(sort: Desc)], map: "idx_club_role_assignments_user_active_start")
+  // Partial unique index NOT expressible in Prisma schema — enforced by migration SQL:
+  // CREATE UNIQUE INDEX uniq_cra_director_status_section_year
+  //   ON club_role_assignments (club_section_id, ecclesiastical_year_id, role_id, status)
+  //   WHERE active = true AND status IN ('active', 'designated') AND role_id = <CLUB director uuid>
+  // Guarantees one operational director per section per ecclesiastical year.
+  // See: prisma/migrations/20260908180000_director_year_slots/migration.sql
+  // CREATE UNIQUE INDEX uniq_cra_annual_member_section_year
+  //   ON club_role_assignments (user_id, club_section_id, ecclesiastical_year_id)
+  //   WHERE active = true AND status IN ('active', 'inactive')
+  //     AND role_id = <CLUB member uuid> AND club_section_id IS NOT NULL
+  // One annual membership row (enrolled or not-enrolled) per user/section/year.
+  // See: prisma/migrations/20260909120000_annual_membership_cycle/migration.sql
 }
 
 enum director_succession_status_enum {
@@ -901,7 +914,7 @@ enum director_succession_status_enum {
 model director_succession_plans {
   succession_id                 String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   club_section_id               Int
-  outgoing_assignment_id        String                           @db.Uuid
+  outgoing_assignment_id        String?                          @db.Uuid
   successor_user_id             String                           @db.Uuid
   target_ecclesiastical_year_id Int
   effective_date                DateTime                         @db.Date
@@ -924,19 +937,46 @@ model director_succession_plans {
   created_at                    DateTime                         @default(now()) @db.Timestamptz(6)
   modified_at                   DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
   club_section                  club_sections                    @relation(fields: [club_section_id], references: [club_section_id], onDelete: Restrict, onUpdate: NoAction)
-  outgoing_assignment           club_role_assignments            @relation("director_succession_outgoing_assignment", fields: [outgoing_assignment_id], references: [assignment_id], onDelete: Restrict, onUpdate: NoAction)
+  outgoing_assignment           club_role_assignments?           @relation("director_succession_outgoing_assignment", fields: [outgoing_assignment_id], references: [assignment_id], onDelete: Restrict, onUpdate: NoAction)
   activated_assignment          club_role_assignments?           @relation("director_succession_activated_assignment", fields: [activated_assignment_id], references: [assignment_id], onDelete: Restrict, onUpdate: NoAction)
   successor                     users                            @relation("director_succession_successor", fields: [successor_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
   target_ecclesiastical_year    ecclesiastical_years              @relation(fields: [target_ecclesiastical_year_id], references: [year_id], onDelete: Restrict, onUpdate: NoAction)
   scheduled_by                  users                            @relation("director_succession_scheduler", fields: [scheduled_by_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
   scheduled_local_field         local_fields                     @relation(fields: [scheduled_local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
 
-  @@unique([club_section_id, target_ecclesiastical_year_id])
+  // Open-plan uniqueness is SQL-only (uniq_director_succession_open_section_year):
+  // (club_section_id, target_ecclesiastical_year_id) WHERE status IN ('scheduled','activated','blocked').
+  // Cancelled plans may be re-scheduled. Do not restore a full unique here.
   @@unique([scheduled_by_id, idempotency_key])
+  @@index([club_section_id, target_ecclesiastical_year_id])
   @@index([status, effective_date, processing_expires_at])
   @@index([successor_user_id])
   @@index([outgoing_assignment_id])
   @@index([scheduled_local_field_id])
+}
+
+enum club_year_transition_status_enum {
+  pending
+  in_progress
+  completed
+  failed
+}
+
+model club_year_transitions {
+  transition_id          String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  club_id                Int
+  ecclesiastical_year_id Int
+  status                 club_year_transition_status_enum @default(pending)
+  version                Int                               @default(1)
+  started_at             DateTime                         @default(now()) @db.Timestamptz(6)
+  completed_at           DateTime?                       @db.Timestamptz(6)
+  created_at             DateTime                         @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+  clubs                  clubs                            @relation(fields: [club_id], references: [club_id], onDelete: Restrict, onUpdate: NoAction)
+  ecclesiastical_year    ecclesiastical_years               @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([club_id, ecclesiastical_year_id])
+  @@index([status, ecclesiastical_year_id])
 }
 
 model countries {
@@ -1052,6 +1092,7 @@ model ecclesiastical_years {
   modified_at                 DateTime?                     @default(now()) @db.Timestamptz(6)
   club_role_assignments       club_role_assignments[]
   director_succession_plans   director_succession_plans[]
+  club_year_transitions        club_year_transitions[]
   class_counselor_assignments class_counselor_assignments[]
   classes_available_from      classes[]                     @relation("classes_available_from_year")
   classes_available_until     classes[]                     @relation("classes_available_until_year")

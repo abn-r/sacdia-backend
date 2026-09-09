@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { AppUnauthorizedException } from '../errors/app.exception';
+import { AppNotFoundException, AppUnauthorizedException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -12,6 +12,18 @@ import {
   InstitutionalHierarchyService,
   type HierarchyContext,
 } from './institutional-hierarchy.service';
+import {
+  ECCLESIASTICAL_YEAR_TIMEZONE,
+  EcclesiasticalYearService,
+  ecclesiasticalCalendarRevision,
+  type EcclesiasticalYear,
+} from './ecclesiastical-year.service';
+import { ClubCycleReadinessService } from './club-cycle-readiness.service';
+import { CLOCK, type Clock } from '../clock/clock';
+import {
+  type BusinessDate,
+  ZonedBusinessTimeService,
+} from '../clock/zoned-business-time.service';
 
 export const CANONICAL_CLUB_ASSIGNMENT_ORDER = [
   { start_date: 'desc' as const },
@@ -40,6 +52,8 @@ export type ClubAuthorizationGrant = {
   assignment_id: string;
   role_name: string;
   permissions: string[];
+  operational: boolean;
+  ecclesiastical_year_id: number;
   club: {
     club_id: number;
     club_name: string;
@@ -160,6 +174,7 @@ type ClubHierarchyRecord = {
 
 type ClubAssignmentRecord = {
   assignment_id: string;
+  ecclesiastical_year_id: number;
   status: string | null;
   start_date: Date | null;
   end_date: Date | null;
@@ -182,12 +197,14 @@ type ClubAssignmentRecord = {
  * authorization-resolution semantics.
  */
 export const AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
-  `auth:context:v5:${userId}`;
+  `auth:context:v7:${userId}`;
 
 const LEGACY_AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
   `auth:context:${userId}`;
 
 const PREVIOUS_AUTH_CONTEXT_CACHE_KEYS = (userId: string): string[] => [
+  `auth:context:v6:${userId}`,
+  `auth:context:v5:${userId}`,
   `auth:context:v4:${userId}`,
   `auth:context:v3:${userId}`,
   `auth:context:v2:${userId}`,
@@ -224,6 +241,11 @@ const CLUB_SCOPE_SELECT = {
   },
 } as const;
 
+type AuthContextCacheEnvelope = {
+  calendarRevision: string;
+  payload: ResolvedAuthorizationProfile;
+};
+
 @Injectable()
 export class AuthorizationContextService {
   private readonly logger = new Logger(AuthorizationContextService.name);
@@ -231,6 +253,10 @@ export class AuthorizationContextService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hierarchy: InstitutionalHierarchyService,
+    private readonly ecclesiasticalYear: EcclesiasticalYearService,
+    private readonly clubCycleReadiness: ClubCycleReadinessService,
+    private readonly zonedBusinessTime: ZonedBusinessTimeService,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
@@ -270,17 +296,21 @@ export class AuthorizationContextService {
     userId: string,
   ): Promise<ResolvedAuthorizationProfile> {
     const cacheKey = AUTH_CONTEXT_CACHE_KEY(userId);
+    const currentYear = await this.resolveCurrentYearForAuthorization();
+    const calendarRevision = currentYear
+      ? ecclesiasticalCalendarRevision(currentYear)
+      : 'none';
 
-    // ── Cache HIT path ──────────────────────────────────────────────────────
     try {
       const cached =
-        await this.cacheManager.get<ResolvedAuthorizationProfile>(cacheKey);
-      if (cached !== null && cached !== undefined) {
+        await this.cacheManager.get<AuthContextCacheEnvelope | ResolvedAuthorizationProfile>(
+          cacheKey,
+        );
+      if (this.isFreshEnvelope(cached, calendarRevision)) {
         this.logger.debug(`Auth context cache HIT  — ${cacheKey}`);
-        return cached;
+        return cached.payload;
       }
     } catch (err) {
-      // Redis down or deserialization error — degrade gracefully to DB
       this.logger.warn(
         `Auth context cache GET fallido para "${cacheKey}": ${this.extractMessage(err)}`,
       );
@@ -288,7 +318,6 @@ export class AuthorizationContextService {
 
     this.logger.debug(`Auth context cache MISS — ${cacheKey}`);
 
-    // ── DB query (unchanged) ────────────────────────────────────────────────
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
       select: {
@@ -362,6 +391,7 @@ export class AuthorizationContextService {
           orderBy: CANONICAL_CLUB_ASSIGNMENT_ORDER,
           select: {
             assignment_id: true,
+            ecclesiastical_year_id: true,
             status: true,
             start_date: true,
             end_date: true,
@@ -418,17 +448,29 @@ export class AuthorizationContextService {
       scope: globalScope,
     }));
 
-    // All grants (active + pending) — exposed in authorization.grants.club_assignments
+    const currentYearId = currentYear?.year_id ?? null;
+    const clubIds = (user.club_role_assignments ?? [])
+      .map((assignment) => assignment.club_sections?.clubs?.club_id)
+      .filter((id): id is number => id != null);
+    const cycleReady =
+      currentYearId != null
+        ? await this.clubCycleReadiness.readinessByClub(clubIds, currentYearId)
+        : new Map<number, boolean>();
+
     const clubGrants = (user.club_role_assignments ?? [])
-      .map((assignment) => this.buildClubGrant(assignment))
+      .map((assignment) =>
+        this.buildClubGrant(assignment, currentYearId, cycleReady),
+      )
       .filter((assignment): assignment is ClubAuthorizationGrant =>
         Boolean(assignment),
       );
 
-    // Only status:'active' grants are used for permission resolution and active context
-    const activeClubGrants = clubGrants.filter(
-      (grant) => grant.status === 'active',
-    );
+    // Only status:'active' grants whose ecclesiastical_year_id matches the
+    // current year are used for permission resolution and active context.
+    // Grants from past/future years or with non-active status appear in
+    // grants.club_assignments (with empty permissions) but do NOT contribute
+    // to effective.permissions.
+    const activeClubGrants = clubGrants.filter((grant) => grant.operational);
 
     const persistedActiveAssignmentId =
       user.users_pr?.active_club_assignment_id ?? null;
@@ -526,12 +568,18 @@ export class AuthorizationContextService {
 
     // ── Cache SET path ──────────────────────────────────────────────────────
     try {
-      await this.cacheManager.set(cacheKey, result, AUTH_CONTEXT_TTL_MS);
-      this.logger.debug(
-        `Auth context cache SET  — ${cacheKey} (TTL ${AUTH_CONTEXT_TTL_MS}ms)`,
-      );
+      const ttlMs = this.cacheTtlMs(currentYear);
+      if (ttlMs > 0) {
+        const envelope: AuthContextCacheEnvelope = {
+          calendarRevision,
+          payload: result,
+        };
+        await this.cacheManager.set(cacheKey, envelope, ttlMs);
+        this.logger.debug(
+          `Auth context cache SET  — ${cacheKey} (TTL ${ttlMs}ms)`,
+        );
+      }
     } catch (err) {
-      // Redis down — return DB result without caching, degrade gracefully
       this.logger.warn(
         `Auth context cache SET fallido para "${cacheKey}": ${this.extractMessage(err)}`,
       );
@@ -675,16 +723,34 @@ export class AuthorizationContextService {
 
   private buildClubGrant(
     assignment: ClubAssignmentRecord,
+    currentYearId: number | null,
+    cycleReady: Map<number, boolean>,
   ): ClubAuthorizationGrant | null {
-    const permissions = this.collectPermissionNames(
-      assignment.roles.role_permissions,
-    );
+    if (assignment.status === 'designated') {
+      return null;
+    }
+
+    const clubId = assignment.club_sections?.clubs?.club_id;
+    const cycleAllows =
+      clubId == null || cycleReady.get(clubId) !== false;
+
+    const isOperational =
+      assignment.status === 'active' &&
+      currentYearId !== null &&
+      assignment.ecclesiastical_year_id === currentYearId &&
+      cycleAllows;
+
+    const permissions = isOperational
+      ? this.collectPermissionNames(assignment.roles.role_permissions)
+      : [];
 
     if (assignment.club_sections?.clubs) {
       return {
         assignment_id: assignment.assignment_id,
         role_name: assignment.roles.role_name,
         permissions,
+        operational: isOperational,
+        ecclesiastical_year_id: assignment.ecclesiastical_year_id,
         club: {
           club_id: assignment.club_sections.clubs.club_id,
           club_name: assignment.club_sections.clubs.name ?? '',
@@ -695,7 +761,8 @@ export class AuthorizationContextService {
           club_type_name: assignment.club_sections.club_types?.name ?? null,
         },
         scope: this.buildClubScope(assignment.club_sections.clubs),
-        status: assignment.status ?? 'active',
+        // Use 'inactive' as the null-safe fallback — null status is not active.
+        status: assignment.status ?? 'inactive',
         start_date: assignment.start_date,
         end_date: assignment.end_date,
         expires_at: assignment.expires_at,
@@ -790,5 +857,51 @@ export class AuthorizationContextService {
 
   private extractMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
+  }
+
+  private async resolveCurrentYearForAuthorization(): Promise<EcclesiasticalYear | null> {
+    try {
+      return await this.ecclesiasticalYear.getCurrentYear();
+    } catch (err) {
+      if (
+        err instanceof AppNotFoundException &&
+        err.code === ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND
+      ) {
+        this.logger.warn(
+          `No se encontró un año eclesiástico vigente; ninguna asignación de club otorgará permisos. ${this.extractMessage(err)}`,
+        );
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  private isFreshEnvelope(
+    cached: AuthContextCacheEnvelope | ResolvedAuthorizationProfile | null | undefined,
+    calendarRevision: string,
+  ): cached is AuthContextCacheEnvelope {
+    if (cached == null || typeof cached !== 'object') {
+      return false;
+    }
+    if (!('calendarRevision' in cached) || !('payload' in cached)) {
+      return false;
+    }
+    return cached.calendarRevision === calendarRevision;
+  }
+
+  private cacheTtlMs(currentYear: EcclesiasticalYear | null): number {
+    if (currentYear == null) {
+      return AUTH_CONTEXT_TTL_MS;
+    }
+    const endDate = currentYear.end_date.toISOString().slice(0, 10) as BusinessDate;
+    const boundary = this.zonedBusinessTime.startOfNextBusinessDate(
+      endDate,
+      ECCLESIASTICAL_YEAR_TIMEZONE,
+    );
+    const remaining = boundary.getTime() - this.clock.now().getTime();
+    if (remaining <= 0) {
+      return 0;
+    }
+    return Math.min(AUTH_CONTEXT_TTL_MS, remaining);
   }
 }
