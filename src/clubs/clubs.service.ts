@@ -1095,10 +1095,9 @@ export class ClubsService {
     // (current-year, status='active') assignments.  Designated directors have
     // status='designated' and must be excluded here so that a single
     // operational director is visible per section.
-    let currentYearId: number | null = null;
+    let currentYear: { year_id: number };
     try {
-      const currentYear = await this.ecclesiasticalYear.getCurrentYear();
-      currentYearId = currentYear.year_id;
+      currentYear = await this.ecclesiasticalYear.getCurrentYear();
     } catch {
       // No active ecclesiastical year — return empty leadership so the page
       // still loads rather than throwing a 404.
@@ -1112,7 +1111,7 @@ export class ClubsService {
       where: {
         active: true,
         status: 'active',
-        ecclesiastical_year_id: currentYearId,
+        ecclesiastical_year_id: currentYear.year_id,
         club_sections: {
           main_club_id: clubId,
         },
