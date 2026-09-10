@@ -562,9 +562,12 @@ export class RequestsService {
       throw new AppNotFoundException(ErrorCode.REQUEST_ROLE_NOT_FOUND);
     }
 
-    // Check role_slot_limits before creating request
+    // Check role_slot_limits before creating request.
+    // Resolve year first so the count excludes prior-year or designated directors.
+    const createRequestYearId = await this.getActiveEcclesiasticalYearId();
     await this.validateRoleSlotForRequest(sectionId, roleId, {
       includePendingRequests: true,
+      ecclesiasticalYearId: createRequestYearId,
     });
 
     // Check no pending request for same user + role + section
@@ -662,16 +665,18 @@ export class RequestsService {
 
     if (action === 'approved') {
       const approved = await this.prisma.$transaction(async (tx) => {
+        // Resolve the active ecclesiastical year first so the slot check
+        // can scope its count to the current year and exclude designated directors.
+        const ecclesiasticalYearId =
+          await this.getActiveEcclesiasticalYearId(tx);
+
         // Re-validate role limits/exclusivity at approval time in case section
         // leadership changed after the request was created.
         await this.validateRoleSlotForRequest(
           request.club_section_id,
           request.role_id,
-          { client: tx, includePendingRequests: false },
+          { client: tx, includePendingRequests: false, ecclesiasticalYearId },
         );
-
-        const ecclesiasticalYearId =
-          await this.getActiveEcclesiasticalYearId(tx);
 
         // Create the club_role_assignment
         const assignment = await tx.club_role_assignments.create({
@@ -923,7 +928,8 @@ export class RequestsService {
     options: {
       client?: PrismaService | Prisma.TransactionClient;
       includePendingRequests?: boolean;
-    } = {},
+      ecclesiasticalYearId: number;
+    },
   ): Promise<void> {
     const client = options.client ?? this.prisma;
     const role = await client.roles.findUnique({
@@ -943,12 +949,15 @@ export class RequestsService {
     );
 
     if (maxPerSection != null) {
-      // Count current active assignments
+      // Count current active assignments (scope to year + status='active' to
+      // avoid counting designated directors from N+1 or prior-year directors).
       const currentCount = await client.club_role_assignments.count({
         where: {
           club_section_id: sectionId,
           role_id: roleId,
           active: true,
+          status: 'active',
+          ecclesiastical_year_id: options.ecclesiasticalYearId,
         },
       });
 
@@ -970,13 +979,19 @@ export class RequestsService {
       }
     }
 
-    await this.validateRoleExclusivityForRequest(client, sectionId, roleName);
+    await this.validateRoleExclusivityForRequest(
+      client,
+      sectionId,
+      roleName,
+      options.ecclesiasticalYearId,
+    );
   }
 
   private async validateRoleExclusivityForRequest(
     client: PrismaService | Prisma.TransactionClient,
     sectionId: number,
     roleName: string,
+    ecclesiasticalYearId: number,
   ): Promise<void> {
     const conflictingRoleNames =
       roleName === 'secretary' || roleName === 'treasurer'
@@ -999,6 +1014,8 @@ export class RequestsService {
         club_section_id: sectionId,
         role_id: { in: conflictingRoles.map((item) => item.role_id) },
         active: true,
+        status: 'active',
+        ecclesiastical_year_id: ecclesiasticalYearId,
       },
     });
 

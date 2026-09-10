@@ -7,6 +7,9 @@ import { ClassCounselorAssignmentsService } from './class-counselor-assignments.
 import { ClassProgressAccessService } from './class-progress-access.service';
 import { ClassProgressScopeService } from './class-progress-scope.service';
 import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
+import { NextClassResolver } from './next-class.resolver';
+import { ClassEnrollmentPolicyService } from './class-enrollment-policy.service';
+import { ClassEnrollmentWriter } from './class-enrollment-writer.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { CoordinationModule } from '../coordination/coordination.module';
@@ -25,6 +28,9 @@ import { CoordinationModule } from '../coordination/coordination.module';
     ClassProgressAccessService,
     ClassProgressScopeService,
     ClassRequirementEligibilityService,
+    NextClassResolver,
+    ClassEnrollmentPolicyService,
+    ClassEnrollmentWriter,
   ],
   exports: [
     ClassesService,
@@ -32,6 +38,9 @@ import { CoordinationModule } from '../coordination/coordination.module';
     ClassProgressAccessService,
     ClassProgressScopeService,
     ClassRequirementEligibilityService,
+    NextClassResolver,
+    ClassEnrollmentPolicyService,
+    ClassEnrollmentWriter,
   ],
 })
 export class ClassesModule {}

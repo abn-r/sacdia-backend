@@ -48,7 +48,9 @@ import { AnnualReportsModule } from './annual-reports/annual-reports.module';
 import { RequestsModule } from './requests/requests.module';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { YearEndModule } from './year-end/year-end.module';
+import { YearCutModule } from './year-cut/year-cut.module';
 import { MembershipRequestsModule } from './membership-requests/membership-requests.module';
+import { AnnualMembershipModule } from './annual-membership/annual-membership.module';
 import { ResourcesModule } from './resources/resources.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { EvidenceReviewModule } from './evidence-review/evidence-review.module';
@@ -239,7 +241,9 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     RequestsModule,
     SystemConfigModule,
     YearEndModule,
+    YearCutModule,
     MembershipRequestsModule,
+    AnnualMembershipModule,
     ResourcesModule,
     AnalyticsModule,
     EvidenceReviewModule,

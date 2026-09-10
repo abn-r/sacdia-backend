@@ -10,3 +10,4 @@ export * from './distributed-lock.service';
 export * from './cron-run-logger.service';
 export * from './translation.service';
 export * from './class-assignment-resolver.service';
+export * from './ecclesiastical-year.service';

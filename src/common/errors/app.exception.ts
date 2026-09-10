@@ -101,3 +101,9 @@ export class AppUnprocessableEntityException extends AppException {
     super(code, HttpStatus.UNPROCESSABLE_ENTITY, namedArgs);
   }
 }
+
+export class AppServiceUnavailableException extends AppException {
+  constructor(code: ErrorCode, namedArgs?: Record<string, unknown>) {
+    super(code, HttpStatus.SERVICE_UNAVAILABLE, namedArgs);
+  }
+}

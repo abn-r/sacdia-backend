@@ -110,6 +110,32 @@ export class DirectorSuccessionDto {
   start_date?: Date;
 }
 
+export class DirectorDesignationDto {
+  @ApiProperty({ description: 'Usuario que será preelegido como director para el año futuro' })
+  @IsUUID()
+  declare user_id: string;
+
+  @ApiProperty({ description: 'ID del año eclesiástico futuro para la programación' })
+  @Type(() => Number)
+  @IsInt()
+  declare ecclesiastical_year_id: number;
+}
+
+export class ReplaceDirectorPlanDto {
+  @ApiProperty({ description: 'ID de la programación a reemplazar' })
+  @IsUUID()
+  declare succession_id: string;
+
+  @ApiProperty({ description: 'Versión actual de la programación (control optimista)' })
+  @Type(() => Number)
+  @IsInt()
+  declare version: number;
+
+  @ApiProperty({ description: 'Usuario sucesor que reemplaza al programado' })
+  @IsUUID()
+  declare successor_user_id: string;
+}
+
 export class DirectorInitialAssignmentDto {
   @ApiProperty({ description: 'Usuario que será asignado como director inicial' })
   @IsUUID()

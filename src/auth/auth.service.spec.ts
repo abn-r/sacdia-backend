@@ -17,10 +17,12 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AppBadRequestException } from '../common/errors/app.exception';
+import { ClubCycleReadinessService } from '../common/services/club-cycle-readiness.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -95,6 +97,16 @@ describe('AuthService', () => {
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
   };
 
+  const CURRENT_YEAR_ID = 5;
+  const mockEcclesiasticalYearService = {
+    getCurrentYear: jest.fn(),
+  };
+
+  const mockClubCycleReadiness = {
+    isReady: jest.fn().mockResolvedValue(true),
+    assertReady: jest.fn().mockResolvedValue(undefined),
+  };
+
   const TEST_ACCESS_SECRET = 'test-secret-min-32-chars-for-hs256';
 
   const mockTokenBlacklistService = {
@@ -139,6 +151,15 @@ describe('AuthService', () => {
         callback(mockTx),
     );
 
+    mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+      year_id: CURRENT_YEAR_ID,
+      start_date: new Date('2026-01-01'),
+      end_date: new Date('2026-12-31'),
+      active: true,
+    });
+    mockClubCycleReadiness.assertReady.mockResolvedValue(undefined);
+    mockClubCycleReadiness.isReady.mockResolvedValue(true);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -148,6 +169,14 @@ describe('AuthService', () => {
         {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContextService,
+        },
+        {
+          provide: EcclesiasticalYearService,
+          useValue: mockEcclesiasticalYearService,
+        },
+        {
+          provide: ClubCycleReadinessService,
+          useValue: mockClubCycleReadiness,
         },
         {
           provide: TokenBlacklistService,
@@ -1045,6 +1074,8 @@ describe('AuthService', () => {
     it('should persist active assignment and return normalized context', async () => {
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'assignment-1',
+        ecclesiastical_year_id: CURRENT_YEAR_ID,
+        status: 'active',
         roles: { role_name: 'member' },
         club_sections: {
           club_section_id: 22,
@@ -1220,6 +1251,159 @@ describe('AuthService', () => {
           },
         },
       });
+    });
+
+    it('throws AUTH_ASSIGNMENT_YEAR_MISMATCH when assignment has status=designated', async () => {
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'designated-assignment',
+        ecclesiastical_year_id: CURRENT_YEAR_ID,
+        status: 'designated',
+        roles: { role_name: 'director' },
+        club_sections: {
+          club_section_id: 10,
+          club_types: { name: 'Conquistadores' },
+          clubs: { club_id: 1, name: 'Club A' },
+        },
+      });
+
+      await expect(
+        service.setActiveClubContext('user-123', {
+          assignment_id: 'designated-assignment',
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH });
+    });
+
+    it('throws AUTH_ASSIGNMENT_YEAR_MISMATCH when assignment is from a past year', async () => {
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'past-assignment',
+        ecclesiastical_year_id: CURRENT_YEAR_ID - 1,
+        status: 'active',
+        roles: { role_name: 'director' },
+        club_sections: {
+          club_section_id: 10,
+          club_types: { name: 'Aventureros' },
+          clubs: { club_id: 1, name: 'Club A' },
+        },
+      });
+
+      await expect(
+        service.setActiveClubContext('user-123', {
+          assignment_id: 'past-assignment',
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH });
+    });
+
+    it('throws AUTH_ASSIGNMENT_YEAR_MISMATCH for inactive not-enrolled assignment', async () => {
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'inactive-assignment',
+        ecclesiastical_year_id: CURRENT_YEAR_ID,
+        status: 'inactive',
+        roles: { role_name: 'member' },
+        club_sections: {
+          club_section_id: 10,
+          club_types: { name: 'Guías Mayores' },
+          clubs: { club_id: 1, name: 'Club A' },
+        },
+      });
+
+      await expect(
+        service.setActiveClubContext('user-123', {
+          assignment_id: 'inactive-assignment',
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH });
+    });
+
+    it('throws AUTH_ASSIGNMENT_YEAR_MISMATCH for ended assignment', async () => {
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'ended-assignment',
+        ecclesiastical_year_id: CURRENT_YEAR_ID - 1,
+        status: 'ended',
+        roles: { role_name: 'director' },
+        club_sections: {
+          club_section_id: 10,
+          club_types: { name: 'Conquistadores' },
+          clubs: { club_id: 1, name: 'Club A' },
+        },
+      });
+
+      await expect(
+        service.setActiveClubContext('user-123', {
+          assignment_id: 'ended-assignment',
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH });
+    });
+
+    it('A06: throws CLUB_CYCLE_NOT_READY when the club cut has not completed', async () => {
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'assignment-1',
+        ecclesiastical_year_id: CURRENT_YEAR_ID,
+        status: 'active',
+        roles: { role_name: 'director' },
+        club_sections: {
+          club_section_id: 10,
+          club_types: { name: 'Conquistadores' },
+          clubs: { club_id: 1, name: 'Club A' },
+        },
+      });
+      mockClubCycleReadiness.assertReady.mockRejectedValue(
+        Object.assign(new Error('not ready'), {
+          code: ErrorCode.CLUB_CYCLE_NOT_READY,
+        }),
+      );
+
+      await expect(
+        service.setActiveClubContext('user-123', {
+          assignment_id: 'assignment-1',
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.CLUB_CYCLE_NOT_READY });
+      expect(mockPrismaService.users_pr.upsert).not.toHaveBeenCalled();
+    });
+
+    it('R09: does not blacklist JWT when switching club context', async () => {
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'assignment-1',
+        ecclesiastical_year_id: CURRENT_YEAR_ID,
+        status: 'active',
+        roles: { role_name: 'member' },
+        club_sections: {
+          club_section_id: 22,
+          club_types: { name: 'Conquistadores' },
+          clubs: { club_id: 2, name: 'Club B' },
+        },
+      });
+      mockPrismaService.users_pr.upsert.mockResolvedValue({
+        user_id: 'user-123',
+        active_club_assignment_id: 'assignment-1',
+      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: { user_id: 'user-123' },
+          post_register_complete: true,
+          authorization: {
+            grants: { global_roles: [], club_assignments: [], direct_permissions: [] },
+            active_assignment: { assignment_id: 'assignment-1' },
+            effective: { permissions: [], scope: { global: {}, club: null } },
+          },
+          legacy: {
+            roles: [],
+            permissions: [],
+            club: { club_id: 2, club_name: 'Club B', club_type: 'Conquistadores' },
+            club_context: {
+              active_assignment_id: 'assignment-1',
+              active: { assignment_id: 'assignment-1' },
+              available: [],
+            },
+          },
+        },
+      );
+
+      await service.setActiveClubContext('user-123', {
+        assignment_id: 'assignment-1',
+      });
+
+      expect(mockTokenBlacklistService.blacklist).not.toHaveBeenCalled();
+      expect(mockTokenBlacklistService.blacklistToken).not.toHaveBeenCalled();
+      expect(mockTokenBlacklistService.blacklistAllUserTokens).not.toHaveBeenCalled();
     });
   });
 

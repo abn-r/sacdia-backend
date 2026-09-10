@@ -182,7 +182,7 @@ function existingOrder(overrides: Record<string, unknown> = {}) {
     status: 'ISSUED',
     currency: 'MXN',
     total_centavos: 15000,
-    expires_at: new Date('2026-09-08T18:00:00.000Z'),
+    expires_at: new Date('2099-12-31T18:00:00.000Z'),
     issued_by_id: DIRECTOR_ID,
     authorized_without_proof: false,
     bank_name: 'BBVA',

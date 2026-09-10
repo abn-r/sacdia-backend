@@ -7,6 +7,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
+import { AppNotFoundException } from '../common/errors/app.exception';
 
 describe('ClubsService', () => {
   let service: ClubsService;
@@ -104,6 +106,10 @@ describe('ClubsService', () => {
     bumpMany: jest.fn().mockResolvedValue(0),
   };
 
+  const mockEcclesiasticalYearService = {
+    getCurrentYear: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -127,6 +133,10 @@ describe('ClubsService', () => {
         {
           provide: AuditLogsService,
           useValue: mockAuditLogsService,
+        },
+        {
+          provide: EcclesiasticalYearService,
+          useValue: mockEcclesiasticalYearService,
         },
       ],
     }).compile();
@@ -500,7 +510,9 @@ describe('ClubsService', () => {
       mockPrismaService.club_sections.findUnique.mockResolvedValue({
         club_type_id: 2,
       });
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
+      mockEcclesiasticalYearService.getCurrentYear.mockRejectedValue(
+        new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND),
+      );
 
       await expect(service.getMembers(7)).resolves.toEqual([]);
       expect(
@@ -512,8 +524,11 @@ describe('ClubsService', () => {
       mockPrismaService.club_sections.findUnique.mockResolvedValue({
         club_type_id: 2,
       });
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
         year_id: 2026,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
       });
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
         {
@@ -645,6 +660,16 @@ describe('ClubsService', () => {
         : null,
     });
 
+    beforeEach(() => {
+      // All pre-existing tests expect a resolved year so findMany is reached.
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
+      });
+    });
+
     it('happy path — groups director, deputies, secretaries and others', async () => {
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
         makeAssignment('director'),
@@ -714,7 +739,9 @@ describe('ClubsService', () => {
       mockPrismaService.unit_members.findMany.mockResolvedValue([]);
       mockPrismaService.weekly_records.findMany.mockResolvedValue([]);
       // Default: no active ecclesiastical year → investidos_year stays 0
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
+      mockEcclesiasticalYearService.getCurrentYear.mockRejectedValue(
+        new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND),
+      );
       mockPrismaService.enrollments.count.mockResolvedValue(0);
     });
 
@@ -908,6 +935,13 @@ describe('ClubsService', () => {
         status: 'active',
         start_date: new Date('2027-01-01'),
         end_date: null,
+        ecclesiastical_year_id: 2026,
+      });
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
       });
       mockPrismaService.role_slot_limits.findUnique.mockResolvedValue(null);
       mockPrismaService.roles.findFirst.mockResolvedValue({
@@ -1058,6 +1092,15 @@ describe('ClubsService', () => {
     const assignmentId = '00000000-0000-0000-0000-000000000003';
     const directorRoleId = '00000000-0000-0000-0000-000000000004';
 
+    beforeEach(() => {
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
+      });
+    });
+
     function mockInitialAssignmentTransaction(existingDirectorCount = 0) {
       const tx = {
         club_role_assignments: {
@@ -1101,6 +1144,8 @@ describe('ClubsService', () => {
           club_section_id: 7,
           role_id: directorRoleId,
           active: true,
+          status: 'active',
+          ecclesiastical_year_id: 2026,
         },
       });
       expect(tx.club_role_assignments.create).toHaveBeenCalledWith(
@@ -1154,6 +1199,29 @@ describe('ClubsService', () => {
 
       expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
     });
+
+    it('rejects initial assignment when the requested year is not the current year', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: directorRoleId,
+      });
+      const tx = mockInitialAssignmentTransaction(0);
+
+      await expect(
+        service.assignInitialSectionDirector(7, actorUserId, {
+          user_id: directorUserId,
+          ecclesiastical_year_id: 2027,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+      });
+
+      expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('succeedSectionDirector', () => {
@@ -1164,7 +1232,18 @@ describe('ClubsService', () => {
     const newAssignmentId = '00000000-0000-0000-0000-000000000005';
     const directorRoleId = '00000000-0000-0000-0000-000000000006';
 
-    function mockSuccessionTransaction() {
+    beforeEach(() => {
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
+      });
+    });
+
+    function mockSuccessionTransaction(
+      overrideCurrentYearId = 2026,
+    ) {
       const tx = {
         club_role_assignments: {
           findUnique: jest.fn().mockResolvedValue({
@@ -1173,6 +1252,8 @@ describe('ClubsService', () => {
             club_section_id: 7,
             role_id: directorRoleId,
             active: true,
+            status: 'active',
+            ecclesiastical_year_id: overrideCurrentYearId,
             roles: { role_name: 'director' },
           }),
           count: jest.fn().mockResolvedValue(0),
@@ -1270,6 +1351,330 @@ describe('ClubsService', () => {
       });
 
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects succession when dto.ecclesiastical_year_id differs from current assignment year', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: directorRoleId,
+      });
+      // current assignment is in year 2026; dto requests year 2027
+      mockSuccessionTransaction(2026);
+
+      await expect(
+        service.succeedSectionDirector(7, actorUserId, {
+          current_assignment_id: currentAssignmentId,
+          successor_user_id: successorUserId,
+          ecclesiastical_year_id: 2027,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+      });
+    });
+
+    it('rejects succession when the assignment year is not the current ecclesiastical year', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: directorRoleId,
+      });
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: 2027,
+        start_date: new Date('2027-01-01'),
+        end_date: new Date('2027-12-31'),
+        active: true,
+      });
+      const tx = mockSuccessionTransaction(2026);
+
+      await expect(
+        service.succeedSectionDirector(7, actorUserId, {
+          current_assignment_id: currentAssignmentId,
+          successor_user_id: successorUserId,
+          ecclesiastical_year_id: 2026,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+      });
+
+      expect(tx.club_role_assignments.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('director year-slot invariants', () => {
+    const actorUserId = '00000000-0000-0000-0000-000000000001';
+    const directorUserId = '00000000-0000-0000-0000-000000000002';
+    const directorRoleId = '00000000-0000-0000-0000-000000000006';
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: directorRoleId,
+      });
+      // director role has max_per_section = 1
+      mockPrismaService.roles.findUnique.mockResolvedValue({
+        role_name: 'director',
+      });
+      mockPrismaService.role_slot_limits.findUnique.mockResolvedValue({
+        max_per_section: 1,
+      });
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+      });
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
+      });
+    });
+
+    it('allows two active directors in the same section when they are in different ecclesiastical years', async () => {
+      // Existing director is in year 2025; new assignment is for year 2026
+      // The slot check filtered to year 2026 should return 0 conflicts
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+      mockPrismaService.club_role_assignments.create.mockResolvedValue({
+        assignment_id: 'new-id',
+        user_id: directorUserId,
+        club_section_id: 7,
+        roles: { role_name: 'director' },
+        users: { name: 'Test', paternal_last_name: 'User' },
+      });
+
+      // Should NOT throw CLUB_ROLE_SLOT_LIMIT_REACHED
+      // findMany returns [] meaning no active director for year 2026
+      await expect(
+        service.assignRole({
+          club_section_id: 7,
+          role: 'director',
+          user_id: directorUserId,
+          ecclesiastical_year_id: 2026,
+          start_date: new Date('2026-01-15'),
+        }),
+      ).resolves.toBeDefined();
+
+      // The where clause MUST filter by year so prior-year directors are excluded
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ecclesiastical_year_id: 2026,
+            status: 'active',
+          }),
+        }),
+      );
+    });
+
+    it('rejects a second active director in the same section and same ecclesiastical year', async () => {
+      // Slot check: findMany returns one active director for the same year 2026
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        {
+          start_date: new Date('2026-01-01'),
+          end_date: null,
+        },
+      ]);
+
+      await expect(
+        service.assignRole({
+          club_section_id: 7,
+          role: 'director',
+          user_id: directorUserId,
+          ecclesiastical_year_id: 2026,
+          start_date: new Date('2026-06-01'),
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED,
+      });
+
+      // The where clause MUST scope to the same year so cross-year directors are not blocked
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ecclesiastical_year_id: 2026,
+          }),
+        }),
+      );
+    });
+
+    it('does not count a designated director as an operational active slot', async () => {
+      // validateRoleSlot early-returns when status !== 'active';
+      // This test verifies that assignRole with status=active is accepted even
+      // when there is an existing designated row for the same section/year.
+      // The designated row is NOT counted because the slot query filters status='active'.
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+      mockPrismaService.club_role_assignments.create.mockResolvedValue({
+        assignment_id: 'new-active-id',
+        user_id: directorUserId,
+        club_section_id: 7,
+        roles: { role_name: 'director' },
+        users: { name: 'Test', paternal_last_name: 'User' },
+      });
+
+      // validateRoleSlot filters status='active', so the existing designated row
+      // is excluded from the slot count (findMany returns []).
+      await expect(
+        service.assignRole({
+          club_section_id: 7,
+          role: 'director',
+          user_id: directorUserId,
+          ecclesiastical_year_id: 2026,
+          start_date: new Date('2026-06-01'),
+          status: 'active',
+        }),
+      ).resolves.toBeDefined();
+
+      // The where clause MUST include status:'active' so designated rows are not counted
+      // AND ecclesiastical_year_id so cross-year rows are also excluded.
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'active',
+            ecclesiastical_year_id: 2026,
+          }),
+        }),
+      );
+    });
+
+    it('assignInitialSectionDirector scopes slot count to the dto year and status=active', async () => {
+      const assignmentId = '00000000-0000-0000-0000-000000000099';
+      mockPrismaService.club_role_assignments.count.mockResolvedValue(0);
+      mockPrismaService.club_role_assignments.create.mockResolvedValue({
+        assignment_id: assignmentId,
+        user_id: directorUserId,
+        club_section_id: 7,
+      });
+
+      await service.assignInitialSectionDirector(7, actorUserId, {
+        user_id: directorUserId,
+        ecclesiastical_year_id: 2026,
+      });
+
+      expect(mockPrismaService.club_role_assignments.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            club_section_id: 7,
+            role_id: directorRoleId,
+            active: true,
+            status: 'active',
+            ecclesiastical_year_id: 2026,
+          }),
+        }),
+      );
+    });
+
+    it('rejects PATCH that moves a director assignment to a non-current year', async () => {
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+        assignment_id: 'assignment-y',
+        user_id: directorUserId,
+        role_id: directorRoleId,
+        club_section_id: 7,
+        active: true,
+        status: 'active',
+        start_date: new Date('2026-01-01'),
+        end_date: null,
+        ecclesiastical_year_id: 2026,
+      });
+      mockPrismaService.roles.findUnique.mockResolvedValue({
+        role_name: 'director',
+      });
+
+      await expect(
+        service.updateRoleAssignment('assignment-y', {
+          ecclesiastical_year_id: 2027,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+      });
+
+      expect(mockPrismaService.club_role_assignments.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects updateRoleAssignment that writes status designated', async () => {
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+        assignment_id: 'assignment-y',
+        user_id: directorUserId,
+        role_id: directorRoleId,
+        club_section_id: 7,
+        active: true,
+        status: 'active',
+        start_date: new Date('2026-01-01'),
+        end_date: null,
+        ecclesiastical_year_id: 2026,
+      });
+      mockPrismaService.roles.findUnique.mockResolvedValue({
+        role_name: 'director',
+      });
+
+      await expect(
+        service.updateRoleAssignment('assignment-y', {
+          status: 'designated',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+      });
+
+      expect(mockPrismaService.club_role_assignments.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects activating an unreconciled designated CRA', async () => {
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+        assignment_id: 'assignment-designated',
+        user_id: directorUserId,
+        role_id: directorRoleId,
+        club_section_id: 7,
+        active: true,
+        status: 'designated',
+        start_date: new Date('2027-01-01'),
+        end_date: null,
+        ecclesiastical_year_id: 2027,
+      });
+
+      await expect(
+        service.updateRoleAssignment('assignment-designated', {
+          status: 'active',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_DIRECTOR_DESIGNATED_UNRECONCILED,
+      });
+
+      expect(mockPrismaService.club_role_assignments.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects assignRole of director for a non-current year', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue({
+        role_name: 'director',
+      });
+
+      await expect(
+        service.assignRole({
+          club_section_id: 7,
+          role: 'director',
+          user_id: directorUserId,
+          ecclesiastical_year_id: 2027,
+          start_date: new Date('2027-01-15'),
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID,
+      });
+
+      expect(mockPrismaService.club_role_assignments.create).not.toHaveBeenCalled();
     });
   });
 
@@ -1399,8 +1804,11 @@ describe('ClubsService', () => {
         { user_id: 'u2' },
       ]);
       mockPrismaService.weekly_records.findMany.mockResolvedValue([]);
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
         year_id: 10,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
       });
       mockPrismaService.enrollments.count.mockResolvedValue(3);
 
@@ -1419,7 +1827,9 @@ describe('ClubsService', () => {
     });
 
     it('returns 0 when no active ecclesiastical year', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
+      mockEcclesiasticalYearService.getCurrentYear.mockRejectedValue(
+        new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND),
+      );
 
       const result = await service.getClubOverview(1);
 
@@ -1458,6 +1868,156 @@ describe('ClubsService', () => {
       await expect(service.getClubHistory(999, {})).rejects.toMatchObject({
         code: ErrorCode.CLUB_NOT_FOUND,
       });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // getClubLeadership
+  // -----------------------------------------------------------------------
+  describe('getClubLeadership', () => {
+    const YEAR_ID = 2025;
+    const CLUB_ID = 10;
+
+    const activeDirectorRow = {
+      assignment_id: 1,
+      user_id: 'u1',
+      active: true,
+      status: 'active',
+      ecclesiastical_year_id: YEAR_ID,
+      start_date: new Date('2025-01-01'),
+      users: {
+        user_id: 'u1',
+        name: 'John',
+        paternal_last_name: 'Doe',
+        maternal_last_name: null,
+        user_image: null,
+        email: 'john@example.com',
+      },
+      roles: { role_name: 'director', role_category: 'CLUB' },
+      club_sections: { club_types: { name: 'Conquistadores' } },
+    };
+
+    const designatedDirectorRow = {
+      ...activeDirectorRow,
+      assignment_id: 2,
+      user_id: 'u2',
+      status: 'designated',
+      users: { ...activeDirectorRow.users, user_id: 'u2', name: 'Jane' },
+    };
+
+    beforeEach(() => {
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: YEAR_ID,
+        start_date: new Date('2025-01-01'),
+        end_date: new Date('2025-12-31'),
+        active: true,
+      });
+    });
+
+    it('passes status="active" and ecclesiastical_year_id in the where clause', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+
+      await service.getClubLeadership(CLUB_ID);
+
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            status: 'active',
+            ecclesiastical_year_id: YEAR_ID,
+            club_sections: { main_club_id: CLUB_ID },
+          }),
+        }),
+      );
+    });
+
+    it('returns only the active director, not the designated one', async () => {
+      // findMany returns only rows that match the DB filter; in the real DB
+      // designated rows are filtered out. We assert the WHERE, then also
+      // verify shape with an active-only mock return.
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        activeDirectorRow,
+      ]);
+
+      const result = await service.getClubLeadership(CLUB_ID);
+
+      expect(result.data.director).not.toBeNull();
+      expect(result.data.director?.user_id).toBe('u1');
+      expect(result.data.director?.name).toBe('John');
+    });
+
+    it('does NOT include designated-shaped rows (status assertion)', async () => {
+      // Simulate a buggy DB returning a designated row (regression guard).
+      // The query WHERE ensures this never comes back from the real DB, but
+      // the test also confirms that if somehow it did, the where filter would
+      // have stopped it. We verify the WHERE explicitly.
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        designatedDirectorRow,
+      ]);
+
+      // Regardless of what findMany returns, the call MUST have the status filter.
+      await service.getClubLeadership(CLUB_ID);
+
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'active',
+          }),
+        }),
+      );
+    });
+
+    it('returns empty leadership when getCurrentYear throws CLASS_ACTIVE_YEAR_NOT_FOUND', async () => {
+      mockEcclesiasticalYearService.getCurrentYear.mockRejectedValue(
+        new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND),
+      );
+
+      const result = await service.getClubLeadership(CLUB_ID);
+
+      expect(result.status).toBe('ok');
+      expect(result.data.director).toBeNull();
+      expect(result.data.deputies).toEqual([]);
+      expect(result.data.secretaries).toEqual([]);
+      expect(result.data.others).toEqual([]);
+      // findMany must NOT have been called
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('groups deputies and secretaries correctly', async () => {
+      const deputyRow = {
+        ...activeDirectorRow,
+        assignment_id: 3,
+        user_id: 'u3',
+        roles: { role_name: 'deputy-director', role_category: 'CLUB' },
+        users: { ...activeDirectorRow.users, user_id: 'u3', name: 'Deputy' },
+      };
+      const secretaryRow = {
+        ...activeDirectorRow,
+        assignment_id: 4,
+        user_id: 'u4',
+        roles: { role_name: 'secretary', role_category: 'CLUB' },
+        users: { ...activeDirectorRow.users, user_id: 'u4', name: 'Secretary' },
+      };
+
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        activeDirectorRow,
+        deputyRow,
+        secretaryRow,
+      ]);
+
+      const result = await service.getClubLeadership(CLUB_ID);
+
+      expect(result.data.director?.user_id).toBe('u1');
+      expect(result.data.deputies).toHaveLength(1);
+      expect(result.data.deputies[0].user_id).toBe('u3');
+      expect(result.data.secretaries).toHaveLength(1);
+      expect(result.data.secretaries[0].user_id).toBe('u4');
     });
   });
 });

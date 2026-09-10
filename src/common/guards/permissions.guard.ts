@@ -393,7 +393,11 @@ export class PermissionsGuard implements CanActivate {
       (assignment) => assignment.assignment_id === activeAssignmentId,
     );
 
-    return new Set(activeGrant?.permissions ?? []);
+    if (!activeGrant || activeGrant.operational === false) {
+      return new Set<string>();
+    }
+
+    return new Set(activeGrant.permissions ?? []);
   }
 
   private async canReadSectionMemberProfile(

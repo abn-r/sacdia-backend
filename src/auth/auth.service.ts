@@ -19,6 +19,8 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { buildAuthTokenResponse } from './utils/auth-token-response.util';
 import { maskEmail } from '../common/utils/mask-email.util';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
+import { ClubCycleReadinessService } from '../common/services/club-cycle-readiness.service';
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import {
   FILE_STORAGE_SERVICE,
@@ -69,6 +71,8 @@ export class AuthService {
     private prisma: PrismaService,
     private betterAuthService: BetterAuthService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly ecclesiasticalYear: EcclesiasticalYearService,
+    private readonly clubCycleReadiness: ClubCycleReadinessService,
     private readonly tokenBlacklist: TokenBlacklistService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
@@ -615,15 +619,19 @@ export class AuthService {
   }
 
   async setActiveClubContext(userId: string, dto: SetActiveClubContextDto) {
+    // Resolve current year first — propagates CLASS_ACTIVE_YEAR_NOT_FOUND if
+    // no active year exists (prevents activating any assignment without a year).
+    const currentYear = await this.ecclesiasticalYear.getCurrentYear();
+
     const assignment = await this.prisma.club_role_assignments.findFirst({
       where: {
         assignment_id: dto.assignment_id,
         user_id: userId,
-        active: true,
-        status: 'active',
       },
       select: {
         assignment_id: true,
+        ecclesiastical_year_id: true,
+        status: true,
         roles: { select: { role_name: true } },
         club_sections: {
           select: {
@@ -639,6 +647,25 @@ export class AuthService {
       throw new AppBadRequestException(ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND, {
         assignmentId: dto.assignment_id,
       });
+    }
+
+    // Only status:'active' assignments in the current ecclesiastical year may
+    // become the active context. Designated (next year) and past-year
+    // assignments are visible in grants.club_assignments but cannot be
+    // activated as the operative club context.
+    if (
+      assignment.status !== 'active' ||
+      assignment.ecclesiastical_year_id !== currentYear.year_id
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH,
+        { assignmentId: dto.assignment_id },
+      );
+    }
+
+    const clubId = assignment.club_sections?.clubs?.club_id;
+    if (clubId != null) {
+      await this.clubCycleReadiness.assertReady(clubId, currentYear.year_id);
     }
 
     await this.prisma.users_pr.upsert({

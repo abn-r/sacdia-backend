@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   Body,
+  Headers,
   ParseIntPipe,
   ParseUUIDPipe,
   Request,
@@ -19,10 +20,12 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiHeader,
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
 import { ClubsService } from './clubs.service';
+import { DirectorDesignationService } from './director-designation.service';
 import {
   CreateClubDto,
   UpdateClubDto,
@@ -31,6 +34,8 @@ import {
   AssignRoleDto,
   DirectorInitialAssignmentDto,
   DirectorSuccessionDto,
+  DirectorDesignationDto,
+  ReplaceDirectorPlanDto,
   UpdateRoleAssignmentDto,
 } from './dto';
 import { ClubHistoryResponseDto } from './dto/overview.dto';
@@ -53,7 +58,10 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class ClubsController {
-  constructor(private readonly clubsService: ClubsService) {}
+  constructor(
+    private readonly clubsService: ClubsService,
+    private readonly directorDesignationService: DirectorDesignationService,
+  ) {}
 
   // ========================================
   // CLUBS - CRUD
@@ -414,7 +422,7 @@ export class ClubsController {
   @ApiOperation({
     summary: 'Sucesión anual de director de sección',
     description:
-      'Cierra la asignación activa del director actual y crea la nueva asignación director para el año eclesiástico indicado. Solo super-admin, admin, director-lf y assistant-lf pueden ejecutar este flujo.',
+      'Cierra la asignación activa del director actual y crea la nueva asignación director para el año eclesiástico vigente. El year del body y el de la asignación deben coincidir con el año vigente. Para preelegir director del año siguiente use director-designation.',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
@@ -426,6 +434,126 @@ export class ClubsController {
     @Body() dto: DirectorSuccessionDto,
   ) {
     return this.clubsService.succeedSectionDirector(sectionId, user.sub, dto);
+  }
+
+  // ─── Director designation (future year, private plan) ─────────────────────
+
+  @Post(':clubId/sections/:sectionId/director-designation')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Preelegir director para un año eclesiástico futuro',
+    description:
+      'Crea una programación en director_succession_plans. No crea CRA designated ni invalida la caché del sucesor. Actores: super-admin, admin, director-lf, assistant-lf con canManageClub. Requiere Idempotency-Key.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Clave de idempotencia del actor. Misma clave y payload reutilizan el plan; distinta payload → 409 IDEMPOTENCY_KEY_REUSED.',
+  })
+  @ApiResponse({ status: 201, description: 'Programación creada o reutilizada' })
+  @ApiResponse({ status: 400, description: 'Año inválido o falta Idempotency-Key' })
+  @ApiResponse({ status: 409, description: 'Ya existe un plan abierto para esa sección/año' })
+  async designateDirector(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() user: { sub: string },
+    @Body() dto: DirectorDesignationDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.directorDesignationService.designate(
+      clubId,
+      sectionId,
+      dto,
+      user.sub,
+      idempotencyKey,
+    );
+  }
+
+  @Get(':clubId/sections/:sectionId/director-designation')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Obtener programación de director para un año futuro',
+    description:
+      'Retorna el plan abierto (scheduled/activated/blocked) o null. Nunca datos de otro Campo Local. Mismos actores que POST.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiQuery({ name: 'yearId', type: Number, required: true })
+  @ApiResponse({ status: 200, description: 'Programación encontrada o null' })
+  async getDirectorDesignation(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Query('yearId', ParseIntPipe) yearId: number,
+    @CurrentUser() user: { sub: string },
+  ) {
+    return this.directorDesignationService.getDesignation(
+      clubId,
+      sectionId,
+      yearId,
+      user.sub,
+    );
+  }
+
+  @Patch(':clubId/sections/:sectionId/director-designation')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Reemplazar sucesor en una programación de director no activada',
+    description:
+      'Requiere succession_id y version. No muta al director operativo ni invalida caché del sucesor.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 200, description: 'Programación actualizada' })
+  @ApiResponse({ status: 404, description: 'No hay programación scheduled' })
+  @ApiResponse({ status: 409, description: 'Versión obsoleta' })
+  async replaceDirectorDesignation(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() user: { sub: string },
+    @Body() dto: ReplaceDirectorPlanDto,
+  ) {
+    return this.directorDesignationService.replacePlan(
+      clubId,
+      sectionId,
+      dto,
+      user.sub,
+    );
+  }
+
+  @Delete(':clubId/sections/:sectionId/director-designation')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Cancelar una programación de director no activada',
+    description:
+      'Query successionId y version. No muta al director operativo. Tras cancelar se puede volver a programar.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiQuery({ name: 'successionId', required: true, type: String })
+  @ApiQuery({ name: 'version', required: true, type: Number })
+  @ApiResponse({ status: 200, description: 'Programación cancelada' })
+  @ApiResponse({ status: 404, description: 'No hay programación scheduled' })
+  @ApiResponse({ status: 409, description: 'Versión obsoleta' })
+  async cancelDirectorDesignation(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Query('successionId', ParseUUIDPipe) successionId: string,
+    @Query('version', ParseIntPipe) version: number,
+    @CurrentUser() user: { sub: string },
+  ) {
+    return this.directorDesignationService.cancelPlan(
+      clubId,
+      sectionId,
+      successionId,
+      version,
+      user.sub,
+    );
   }
 }
 
