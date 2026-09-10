@@ -33,9 +33,12 @@ const baseline = {
     'effectiveWhere|T08|2|c7726a03d3c1',
   'annual-folders/score-calculators/sacdia-operational-usage-score.ts':
     'effectiveWhere|T09|1|bbabd16a2b24',
+  'annual-membership/annual-membership-policy.service.ts':
+    'workflowWhere|allowlist|6|fa7e3eebce24',
+  'annual-membership/annual-membership.service.ts':
+    'workflowWhere|allowlist|4|675d62144165',
   'annual-reports/annual-reports.service.ts':
     'effectiveWhere|T09|3|45560f10e5fd',
-  'auth/auth.service.ts': 'effectiveWhere|T08|1|f977d2dd17f2',
   'camporee-scoring/camporee-scoring.service.ts':
     'effectiveWhere|T09|1|7e83a87c1703',
   'camporees/camporees.service.ts': 'workflowWhere|allowlist|2|090cfe32db47',
@@ -44,18 +47,20 @@ const baseline = {
   'classes/class-progress-access.service.ts':
     'effectiveWhere|T08|2|636ca870e3ce',
   'classes/class-progress-scope.service.ts':
-    'effectiveWhere|T08|2|48c80c658b3f',
+    'effectiveWhere|T08|3|4213f4a7f3ae',
   'classes/class-requirement-eligibility.service.ts':
     'effectiveWhere|T08|1|f0f7540f4594',
   'club-enrollments/club-enrollments.service.ts':
     'effectiveWhere|T08|1|1f2269db063f',
   'certifications/eligibility/eligibility-rule-handlers.ts':
     'effectiveWhere|T08|2|9841f0b29dc2',
-  'clubs/clubs.service.ts': 'effectiveWhere|T08|8|78fd1b9f6e11',
+  'clubs/clubs.service.ts': 'effectiveWhere|T08|8|d339f433e308',
+  'clubs/director-designation.service.ts':
+    'workflowWhere|allowlist|2|b32d443733e9',
   'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|32d48d679749',
   'common/guards/permissions.guard.ts': 'effectiveWhere|T08|3|e8b370c41349',
   'common/services/authorization-context.service.ts':
-    'effectiveWhere|T08|1|c5e3b3bd1aa7',
+    'effectiveWhere|T08|1|388da81fc937',
   'coordination/coordination.service.ts': 'effectiveWhere|T08|1|9a134e551821',
   'dashboard/dashboard.service.ts': 'effectiveWhere|T08|2|ffdfddfae134',
   'evidence-review/evidence-review.service.ts':
@@ -91,12 +96,13 @@ const baseline = {
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
     'effectiveWhere|T08|1|11a310c43604',
   'rbac/rbac.service.ts': 'effectiveWhere|T08|1|68c2f63166fd',
-  'requests/requests.service.ts': 'effectiveWhere|T08|7|98c8941232e0',
+  'requests/requests.service.ts': 'effectiveWhere|T08|7|30e5ede30d88',
   'scoring-categories/scoring-categories.service.ts':
     'effectiveWhere|T09|2|13fb6223b7d5',
   'support/support.service.ts': 'effectiveWhere|T09|1|1048e37fdce1',
   'units/units.service.ts': 'effectiveWhere|T08|1|46d392950956',
   'validation/validation.service.ts': 'effectiveWhere|T09|3|af6362f7dd6f',
+  'year-cut/year-cut.service.ts': 'workflowWhere|allowlist|5|6bd1f33a51dc',
 } as const;
 
 export const ASSIGNMENT_QUERY_INVENTORY: readonly AssignmentQueryInventoryEntry[] =
