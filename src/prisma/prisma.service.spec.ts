@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { PrismaService } from './prisma.service';
+import {
+  PrismaService,
+  SLOW_QUERY_WARN_MS,
+  shouldLogSlowQuery,
+} from './prisma.service';
 import { ConfigService } from '@nestjs/config';
 
 describe('PrismaService', () => {
@@ -30,6 +34,13 @@ describe('PrismaService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('does not treat Neon RTT (~100ms) as a slow query', () => {
+    expect(SLOW_QUERY_WARN_MS).toBe(400);
+    expect(shouldLogSlowQuery(100)).toBe(false);
+    expect(shouldLogSlowQuery(400)).toBe(false);
+    expect(shouldLogSlowQuery(401)).toBe(true);
   });
 
   it('reports pool capacity without exposing connection credentials', () => {

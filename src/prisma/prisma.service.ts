@@ -14,6 +14,15 @@ import { buildPrismaPoolConfig } from './prisma-pool.config';
 // auth-context fan-out) doesn't pay one TLS handshake per query.
 const POOL_WARMUP_CONNECTIONS = 4;
 
+// Dev-only Prisma query log. Mexico → Neon us-east-1 RTT is often 80–120ms,
+// so 100ms marked almost every PK lookup as "slow". 400ms still catches
+// real sequential piles without drowning the console.
+export const SLOW_QUERY_WARN_MS = 400;
+
+export function shouldLogSlowQuery(durationMs: number): boolean {
+  return durationMs > SLOW_QUERY_WARN_MS;
+}
+
 export interface PrismaPoolMetrics {
   max: number;
   total: number;
@@ -71,7 +80,7 @@ export class PrismaService
     if (process.env.NODE_ENV !== 'production') {
       // Prisma 7 changed $on signature; cast to bypass strict check (dev-only)
       (this as any).$on('query', (e: any) => {
-        if (e.duration > 100) {
+        if (shouldLogSlowQuery(e.duration)) {
           this.logger.warn(
             `Slow query (${e.duration}ms): ${e.query?.substring(0, 200)}`,
           );

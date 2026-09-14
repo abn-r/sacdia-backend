@@ -50,7 +50,7 @@ src/
 ## Stack
 
 - NestJS 11 + TypeScript
-- Prisma 7.8 + PostgreSQL (Neon)
+- Prisma 7.8 + PostgreSQL (Neon). En development, `Slow query` WARN si la query dura más de 400ms (`SLOW_QUERY_WARN_MS`). 100ms era ruido de RTT a Neon us-east-1.
 - JWT via HS256 usando `BETTER_AUTH_SECRET` (Option C: BA handles auth, SACDIA signs JWT; `iss=https://api.sacdia.app`, `aud=sacdia:access`). QR member tokens usan `QR_JWT_SECRET` distinto (`aud=sacdia:qr-member`).
 - Redis (`CACHE_MANAGER`, fail-fast en prod; fallback in-memory solo en dev/test):
   - catálogos geográficos/referencia (`cache:catalogs:*`, TTL 1h; año eclesiástico actual 24h);
