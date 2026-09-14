@@ -28,12 +28,43 @@ describe('DashboardService', () => {
 
   const mockRequirementEligibilityService = {
     calculateForEnrollment: jest.fn(),
+    calculateForEnrollmentRecord: jest.fn(),
+  };
+
+  const assignmentClubCentral = {
+    assignment_id: 'assign-uuid-007',
+    club_sections: {
+      club_section_id: 7,
+      club_types: { name: 'Conquistadores' },
+      clubs: { name: 'Club Central' },
+    },
+    roles: { role_name: 'member' },
+  };
+
+  const amigoEnrollment = {
+    enrollment_id: 10,
+    user_id: 'user-uuid-001',
+    class_id: 3,
+    ecclesiastical_year_id: 1,
+    classes: {
+      class_id: 3,
+      name: 'Amigo',
+      club_type_id: 2,
+      advanced_enabled: false,
+    },
+    ecclesiastical_year: {
+      year_id: 1,
+      start_date: new Date('2025-09-01'),
+    },
   };
 
   beforeEach(async () => {
     mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue({
       overall_progress: 0,
     });
+    mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValue(
+      { overall_progress: 0 },
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -58,50 +89,49 @@ describe('DashboardService', () => {
     expect(service).toBeDefined();
   });
 
+  function expectSingleUserRoundTrip() {
+    expect(mockPrismaService.users.findUnique).toHaveBeenCalledTimes(1);
+    expect(mockPrismaService.users_pr.findUnique).not.toHaveBeenCalled();
+    expect(mockPrismaService.users_honors.findMany).not.toHaveBeenCalled();
+    expect(mockPrismaService.enrollments.findFirst).not.toHaveBeenCalled();
+    expect(
+      mockPrismaService.club_role_assignments.findFirst,
+    ).not.toHaveBeenCalled();
+    expect(
+      mockRequirementEligibilityService.calculateForEnrollment,
+    ).not.toHaveBeenCalled();
+  }
+
   // ----------------------------------------
   // Scenario 1: user with full data (with explicit active assignment stored in users_pr)
   // ----------------------------------------
   describe('user with full data', () => {
     it('returns complete dashboard summary using the stored active_club_assignment_id', async () => {
       const userId = 'user-uuid-001';
-      const activeAssignmentId = 'assign-uuid-007';
 
       mockPrismaService.users.findUnique.mockResolvedValue({
         name: 'Juan',
         paternal_last_name: 'Pérez',
         maternal_last_name: 'García',
         user_image: 'https://cdn.example.com/avatar.jpg',
+        users_pr: { active_club_assignment_id: assignmentClubCentral.assignment_id },
+        users_honors: [{ validate: true }, { validate: true }, { validate: false }],
+        enrollments: [amigoEnrollment],
+        club_role_assignments: [
+          {
+            assignment_id: 'assign-older',
+            club_sections: {
+              club_section_id: 1,
+              club_types: { name: 'Aventureros' },
+              clubs: { name: 'Club Viejo' },
+            },
+            roles: { role_name: 'director' },
+          },
+          assignmentClubCentral,
+        ],
       });
 
-      mockPrismaService.enrollments.findFirst.mockResolvedValue({
-        enrollment_id: 10,
-        class_id: 3,
-        classes: { name: 'Amigo' },
-      });
-
-      mockPrismaService.users_honors.findMany.mockResolvedValue([
-        { validate: true },
-        { validate: true },
-        { validate: false },
-      ]);
-
-      // users_pr returns a persisted active assignment ID
-      mockPrismaService.users_pr.findUnique.mockResolvedValue({
-        active_club_assignment_id: activeAssignmentId,
-      });
-
-      // club_role_assignments.findFirst is called with the explicit assignment ID
-      // and returns the matching active assignment.
-      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
-        club_sections: {
-          club_section_id: 7,
-          club_types: { name: 'Conquistadores' },
-          clubs: { name: 'Club Central' },
-        },
-        roles: { role_name: 'member' },
-      });
-
-      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+      mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValue(
         { overall_progress: 40 },
       );
 
@@ -142,17 +172,10 @@ describe('DashboardService', () => {
           }),
         }),
       );
-
-      // Verify the explicit assignment ID was used
       expect(
-        mockPrismaService.club_role_assignments.findFirst,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            assignment_id: activeAssignmentId,
-          }),
-        }),
-      );
+        mockRequirementEligibilityService.calculateForEnrollmentRecord,
+      ).toHaveBeenCalledWith(amigoEnrollment);
+      expectSingleUserRoundTrip();
     });
 
     it('falls back to most-recent active assignment when stored ID is no longer active', async () => {
@@ -164,26 +187,21 @@ describe('DashboardService', () => {
         paternal_last_name: 'Pérez',
         maternal_last_name: null,
         user_image: null,
-      });
-      mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
-      mockPrismaService.users_honors.findMany.mockResolvedValue([]);
-
-      mockPrismaService.users_pr.findUnique.mockResolvedValue({
-        active_club_assignment_id: staleAssignmentId,
-      });
-
-      // First call (explicit ID) returns null — the assignment was revoked.
-      // Second call (fallback by start_date) returns the next-best assignment.
-      mockPrismaService.club_role_assignments.findFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          club_sections: {
-            club_section_id: 9,
-            club_types: { name: 'Aventureros' },
-            clubs: { name: 'Club Sur' },
+        users_pr: { active_club_assignment_id: staleAssignmentId },
+        users_honors: [],
+        enrollments: [],
+        club_role_assignments: [
+          {
+            assignment_id: 'assign-current',
+            club_sections: {
+              club_section_id: 9,
+              club_types: { name: 'Aventureros' },
+              clubs: { name: 'Club Sur' },
+            },
+            roles: { role_name: 'member' },
           },
-          roles: { role_name: 'member' },
-        });
+        ],
+      });
 
       mockPrismaService.activities.findMany.mockResolvedValue([]);
 
@@ -191,9 +209,7 @@ describe('DashboardService', () => {
 
       expect(result.club_name).toBe('Club Sur');
       expect(result.club_type).toBe('Aventureros');
-      expect(
-        mockPrismaService.club_role_assignments.findFirst,
-      ).toHaveBeenCalledTimes(2);
+      expectSingleUserRoundTrip();
     });
   });
 
@@ -210,23 +226,20 @@ describe('DashboardService', () => {
         paternal_last_name: 'López',
         maternal_last_name: null,
         user_image: null,
-      });
-
-      mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
-
-      mockPrismaService.users_honors.findMany.mockResolvedValue([]);
-
-      mockPrismaService.users_pr.findUnique.mockResolvedValue({
-        active_club_assignment_id: activeAssignmentId,
-      });
-
-      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
-        club_sections: {
-          club_section_id: 5,
-          club_types: { name: 'Aventureros' },
-          clubs: { name: 'Club Norte' },
-        },
-        roles: { role_name: 'director' },
+        users_pr: { active_club_assignment_id: activeAssignmentId },
+        users_honors: [],
+        enrollments: [],
+        club_role_assignments: [
+          {
+            assignment_id: activeAssignmentId,
+            club_sections: {
+              club_section_id: 5,
+              club_types: { name: 'Aventureros' },
+              clubs: { name: 'Club Norte' },
+            },
+            roles: { role_name: 'director' },
+          },
+        ],
       });
 
       mockPrismaService.activities.findMany.mockResolvedValue([]);
@@ -240,8 +253,9 @@ describe('DashboardService', () => {
       expect(result.club_name).toBe('Club Norte');
       expect(result.user_name).toBe('María López');
       expect(
-        mockRequirementEligibilityService.calculateForEnrollment,
+        mockRequirementEligibilityService.calculateForEnrollmentRecord,
       ).not.toHaveBeenCalled();
+      expectSingleUserRoundTrip();
     });
   });
 
@@ -257,23 +271,30 @@ describe('DashboardService', () => {
         paternal_last_name: null,
         maternal_last_name: null,
         user_image: null,
+        users_pr: null,
+        users_honors: [{ validate: true }],
+        enrollments: [
+          {
+            enrollment_id: 20,
+            user_id: userId,
+            class_id: 2,
+            ecclesiastical_year_id: 1,
+            classes: {
+              class_id: 2,
+              name: 'Conquistador',
+              club_type_id: 2,
+              advanced_enabled: false,
+            },
+            ecclesiastical_year: {
+              year_id: 1,
+              start_date: new Date('2025-09-01'),
+            },
+          },
+        ],
+        club_role_assignments: [],
       });
 
-      mockPrismaService.enrollments.findFirst.mockResolvedValue({
-        enrollment_id: 20,
-        class_id: 2,
-        classes: { name: 'Conquistador' },
-      });
-
-      mockPrismaService.users_honors.findMany.mockResolvedValue([
-        { validate: true },
-      ]);
-
-      // No active context stored, and no active assignments exist.
-      mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
-      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
-
-      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+      mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValue(
         { overall_progress: 25 },
       );
 
@@ -283,12 +304,12 @@ describe('DashboardService', () => {
       expect(result.club_type).toBeNull();
       expect(result.user_role).toBeNull();
       expect(result.upcoming_activities).toEqual([]);
-      // activities.findMany should NOT be called — no club section
       expect(mockPrismaService.activities.findMany).not.toHaveBeenCalled();
       expect(result.current_class_name).toBe('Conquistador');
       expect(result.class_progress).toBe(25);
       expect(result.honors_completed).toBe(1);
       expect(result.honors_in_progress).toBe(0);
+      expectSingleUserRoundTrip();
     });
 
     it('uses fallback when users_pr has no active_club_assignment_id', async () => {
@@ -299,23 +320,20 @@ describe('DashboardService', () => {
         paternal_last_name: null,
         maternal_last_name: null,
         user_image: null,
-      });
-      mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
-      mockPrismaService.users_honors.findMany.mockResolvedValue([]);
-
-      // users_pr exists but has no stored active assignment
-      mockPrismaService.users_pr.findUnique.mockResolvedValue({
-        active_club_assignment_id: null,
-      });
-
-      // Fallback query returns the most recently started assignment
-      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
-        club_sections: {
-          club_section_id: 3,
-          club_types: { name: 'Conquistadores' },
-          clubs: { name: 'Club Este' },
-        },
-        roles: { role_name: 'member' },
+        users_pr: { active_club_assignment_id: null },
+        users_honors: [],
+        enrollments: [],
+        club_role_assignments: [
+          {
+            assignment_id: 'assign-latest',
+            club_sections: {
+              club_section_id: 3,
+              club_types: { name: 'Conquistadores' },
+              clubs: { name: 'Club Este' },
+            },
+            roles: { role_name: 'member' },
+          },
+        ],
       });
 
       mockPrismaService.activities.findMany.mockResolvedValue([]);
@@ -324,10 +342,7 @@ describe('DashboardService', () => {
 
       expect(result.club_name).toBe('Club Este');
       expect(result.club_type).toBe('Conquistadores');
-      // Only the fallback query should be called (no explicit ID, skip explicit lookup)
-      expect(
-        mockPrismaService.club_role_assignments.findFirst,
-      ).toHaveBeenCalledTimes(1);
+      expectSingleUserRoundTrip();
     });
   });
 
@@ -343,25 +358,37 @@ describe('DashboardService', () => {
         paternal_last_name: 'Torres',
         maternal_last_name: null,
         user_image: null,
+        users_pr: null,
+        users_honors: [],
+        enrollments: [
+          {
+            enrollment_id: 30,
+            user_id: userId,
+            class_id: 5,
+            ecclesiastical_year_id: 1,
+            classes: {
+              class_id: 5,
+              name: 'Avanzado',
+              club_type_id: 2,
+              advanced_enabled: false,
+            },
+            ecclesiastical_year: {
+              year_id: 1,
+              start_date: new Date('2025-09-01'),
+            },
+          },
+        ],
+        club_role_assignments: [],
       });
 
-      mockPrismaService.enrollments.findFirst.mockResolvedValue({
-        enrollment_id: 30,
-        class_id: 5,
-        classes: { name: 'Avanzado' },
-      });
-
-      mockPrismaService.users_honors.findMany.mockResolvedValue([]);
-      mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
-      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
-
-      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+      mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValue(
         { overall_progress: 0 },
       );
 
       const result = await service.getSummary(userId);
 
       expect(result.class_progress).toBe(0);
+      expectSingleUserRoundTrip();
     });
   });
 
@@ -377,19 +404,30 @@ describe('DashboardService', () => {
         paternal_last_name: 'Ruiz',
         maternal_last_name: null,
         user_image: null,
+        users_pr: null,
+        users_honors: [],
+        enrollments: [
+          {
+            enrollment_id: 1,
+            user_id: userId,
+            class_id: 13,
+            ecclesiastical_year_id: 1,
+            classes: {
+              class_id: 13,
+              name: 'Guía Mayor',
+              club_type_id: 3,
+              advanced_enabled: false,
+            },
+            ecclesiastical_year: {
+              year_id: 1,
+              start_date: new Date('2025-09-01'),
+            },
+          },
+        ],
+        club_role_assignments: [],
       });
 
-      mockPrismaService.enrollments.findFirst.mockResolvedValue({
-        enrollment_id: 1,
-        class_id: 13,
-        classes: { name: 'Guía Mayor' },
-      });
-
-      mockPrismaService.users_honors.findMany.mockResolvedValue([]);
-      mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
-      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
-
-      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+      mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValue(
         { overall_progress: 0 },
       );
 
@@ -399,8 +437,11 @@ describe('DashboardService', () => {
       expect(result.class_progress).toBe(0);
 
       expect(
-        mockRequirementEligibilityService.calculateForEnrollment,
-      ).toHaveBeenCalledWith(1);
+        mockRequirementEligibilityService.calculateForEnrollmentRecord,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({ enrollment_id: 1 }),
+      );
+      expectSingleUserRoundTrip();
     });
   });
 });

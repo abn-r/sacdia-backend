@@ -46,53 +46,51 @@ export class DashboardService {
   ) {}
 
   async getSummary(userId: string): Promise<DashboardSummaryDto> {
-    const [user, enrollment, honors, userPr] = await Promise.all([
-      this.prisma.users.findUnique({
-        where: { user_id: userId },
-        select: {
-          name: true,
-          paternal_last_name: true,
-          maternal_last_name: true,
-          user_image: true,
+    // One Prisma round-trip for identity + active context + honors + class.
+    // Club pick is in-memory from users_pr.active_club_assignment_id (same
+    // canon as AuthorizationContextService / PATCH /auth/me/context).
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: {
+        name: true,
+        paternal_last_name: true,
+        maternal_last_name: true,
+        user_image: true,
+        users_pr: { select: { active_club_assignment_id: true } },
+        users_honors: {
+          where: { active: true },
+          select: { validate: true },
         },
-      }),
-      this.prisma.enrollments.findFirst({
-        where: { user_id: userId, active: true },
-        orderBy: { created_at: 'desc' },
-        select: {
-          enrollment_id: true,
-          class_id: true,
-          classes: { select: { name: true } },
-        },
-      }),
-      this.prisma.users_honors.findMany({
-        where: { user_id: userId, active: true },
-        select: { validate: true },
-      }),
-      // Read the persisted active context from users_pr — this is the single
-      // source of truth set by PATCH /auth/me/context. Mirrors exactly the
-      // logic used by AuthorizationContextService.resolveUserAuthorization().
-      this.prisma.users_pr.findUnique({
-        where: { user_id: userId },
-        select: { active_club_assignment_id: true },
-      }),
-    ]);
-
-    // Resolve the active club assignment using the same priority order as
-    // AuthorizationContextService: persisted ID first, then most-recent fallback.
-    const clubAssignment = await (async () => {
-      const activeAssignmentId = userPr?.active_club_assignment_id;
-
-      if (activeAssignmentId) {
-        // Try to fetch the explicitly chosen assignment first.
-        const explicit = await this.prisma.club_role_assignments.findFirst({
-          where: {
-            assignment_id: activeAssignmentId,
-            user_id: userId,
-            active: true,
-            status: 'active',
-          },
+        enrollments: {
+          where: { active: true },
+          orderBy: { created_at: 'desc' },
+          take: 1,
           select: {
+            enrollment_id: true,
+            user_id: true,
+            class_id: true,
+            ecclesiastical_year_id: true,
+            classes: {
+              select: {
+                class_id: true,
+                name: true,
+                club_type_id: true,
+                advanced_enabled: true,
+              },
+            },
+            ecclesiastical_year: {
+              select: {
+                year_id: true,
+                start_date: true,
+              },
+            },
+          },
+        },
+        club_role_assignments: {
+          where: { active: true, status: 'active' },
+          orderBy: { start_date: 'desc' },
+          select: {
+            assignment_id: true,
             club_sections: {
               select: {
                 club_section_id: true,
@@ -102,38 +100,18 @@ export class DashboardService {
             },
             roles: { select: { role_name: true } },
           },
-        });
-
-        if (explicit) return explicit;
-
-        // If the stored ID is no longer active (e.g. revoked), fall through to
-        // the same auto-select that AuthorizationContextService uses.
-        this.logger.warn(
-          `Dashboard: stored active_club_assignment_id ${activeAssignmentId} is no longer active for user ${userId}. Falling back to most recent.`,
-        );
-      }
-
-      // Fallback: most recently started active assignment — mirrors
-      // AuthorizationContextService's activeClubGrants[0] (ordered by start_date desc).
-      return this.prisma.club_role_assignments.findFirst({
-        where: { user_id: userId, active: true, status: 'active' },
-        orderBy: { start_date: 'desc' },
-        select: {
-          club_sections: {
-            select: {
-              club_section_id: true,
-              club_types: { select: { name: true } },
-              clubs: { select: { name: true } },
-            },
-          },
-          roles: { select: { role_name: true } },
         },
-      });
-    })();
+      },
+    });
 
-    // ----------------------------------------
-    // User name
-    // ----------------------------------------
+    const enrollment = user?.enrollments[0] ?? null;
+    const honors = user?.users_honors ?? [];
+    const clubAssignment = this.pickActiveClubAssignment(
+      userId,
+      user?.users_pr?.active_club_assignment_id,
+      user?.club_role_assignments ?? [],
+    );
+
     const nameParts = [
       user?.name,
       user?.paternal_last_name,
@@ -141,113 +119,32 @@ export class DashboardService {
     ].filter(Boolean);
     const userName = nameParts.length > 0 ? nameParts.join(' ') : 'Usuario';
 
-    // ----------------------------------------
-    // Class progress
-    // ----------------------------------------
-    let currentClassName: string | null = null;
-    let classProgress = 0;
-
-    if (enrollment) {
-      currentClassName = enrollment.classes.name;
-
-      classProgress =
-        (
-          await this.requirementEligibility.calculateForEnrollment(
-            enrollment.enrollment_id,
-          )
-        )?.overall_progress ?? 0;
-    }
-
-    // ----------------------------------------
-    // Honors
-    // ----------------------------------------
     const honorsCompleted = honors.filter((h) => h.validate).length;
     const honorsInProgress = honors.filter((h) => !h.validate).length;
 
-    // ----------------------------------------
-    // Club info
-    // ----------------------------------------
-    let clubName: string | null = null;
-    let clubType: string | null = null;
-    let userRole: string | null = null;
-    let clubSectionId: number | null = null;
+    const section = clubAssignment?.club_sections;
+    const clubName = section?.clubs?.name ?? null;
+    const clubType = section?.club_types?.name ?? null;
+    const userRole = clubAssignment?.roles?.role_name ?? null;
+    const clubSectionId = section?.club_section_id ?? null;
 
-    if (clubAssignment) {
-      const section = clubAssignment.club_sections;
-      clubName = section?.clubs?.name ?? null;
-      clubType = section?.club_types?.name ?? null;
-      userRole = clubAssignment.roles?.role_name ?? null;
-      clubSectionId = section?.club_section_id ?? null;
-    }
-
-    // ----------------------------------------
-    // Upcoming activities (next 5 from user's section)
-    // ----------------------------------------
-    const upcomingActivities: UpcomingActivityDto[] = [];
-
-    if (clubSectionId !== null) {
-      const now = new Date();
-
-      const activities = await this.prisma.activities.findMany({
-        where: {
-          activity_instances: {
-            some: {
-              active: true,
-              club_section_id: clubSectionId,
-            },
-          },
-          active: true,
-          activity_date: { gte: now },
-        },
-        orderBy: { activity_date: 'asc' },
-        take: 5,
-        select: {
-          activity_id: true,
-          name: true,
-          activity_date: true,
-          activity_time: true,
-          activity_place: true,
-          activity_types: { select: { name: true } },
-        },
-      });
-
-      for (const a of activities) {
-        // Extract date-only string (YYYY-MM-DD) directly from the UTC midnight
-        // Date value stored in the DB (@db.Date). Using split('T')[0] on the
-        // ISO string is safe because Prisma stores @db.Date as UTC midnight,
-        // so the date component is always correct regardless of the server TZ.
-        const activityDateOnly = a.activity_date
-          ? a.activity_date.toISOString().split('T')[0]
-          : null;
-
-        // Build the deprecated combined field using the date-only string to
-        // avoid the UTC-offset bug that treated local HH:mm as if it were UTC.
-        // Kept for backwards-compat — consumers should migrate to activity_date
-        // + activity_time fields.
-        const legacyDate = activityDateOnly
-          ? `${activityDateOnly}T${a.activity_time ?? '00:00'}:00`
-          : new Date().toISOString();
-
-        upcomingActivities.push({
-          id: a.activity_id,
-          title: a.name,
-          date: legacyDate,
-          activity_date: activityDateOnly,
-          activity_time: a.activity_time ?? null,
-          location: a.activity_place ?? null,
-        });
-      }
-    }
+    const [eligibility, upcomingActivities, userAvatar] = await Promise.all([
+      enrollment
+        ? this.requirementEligibility.calculateForEnrollmentRecord(enrollment)
+        : Promise.resolve(null),
+      this.loadUpcomingActivities(clubSectionId),
+      this.resolveAvatarUrl(user?.user_image),
+    ]);
 
     return {
       user_name: userName,
-      user_avatar: await this.resolveAvatarUrl(user?.user_image),
+      user_avatar: userAvatar,
       club_name: clubName,
       club_type: clubType,
       user_role: userRole,
-      current_class_name: currentClassName,
+      current_class_name: enrollment?.classes.name ?? null,
       current_class_id: enrollment?.class_id ?? null,
-      class_progress: classProgress,
+      class_progress: eligibility?.overall_progress ?? 0,
       honors_completed: honorsCompleted,
       honors_in_progress: honorsInProgress,
       upcoming_activities: upcomingActivities,
@@ -257,6 +154,83 @@ export class DashboardService {
   // ----------------------------------------
   // Private helpers
   // ----------------------------------------
+
+  private pickActiveClubAssignment<
+    T extends { assignment_id: string },
+  >(
+    userId: string,
+    storedAssignmentId: string | null | undefined,
+    activeAssignments: T[],
+  ): T | null {
+    if (storedAssignmentId) {
+      const explicit = activeAssignments.find(
+        (assignment) => assignment.assignment_id === storedAssignmentId,
+      );
+      if (explicit) return explicit;
+
+      this.logger.warn(
+        `Dashboard: stored active_club_assignment_id ${storedAssignmentId} is no longer active for user ${userId}. Falling back to most recent.`,
+      );
+    }
+
+    return activeAssignments[0] ?? null;
+  }
+
+  private async loadUpcomingActivities(
+    clubSectionId: number | null,
+  ): Promise<UpcomingActivityDto[]> {
+    if (clubSectionId === null) return [];
+
+    const activities = await this.prisma.activities.findMany({
+      where: {
+        activity_instances: {
+          some: {
+            active: true,
+            club_section_id: clubSectionId,
+          },
+        },
+        active: true,
+        activity_date: { gte: new Date() },
+      },
+      orderBy: { activity_date: 'asc' },
+      take: 5,
+      select: {
+        activity_id: true,
+        name: true,
+        activity_date: true,
+        activity_time: true,
+        activity_place: true,
+        activity_types: { select: { name: true } },
+      },
+    });
+
+    return activities.map((a) => {
+      // Extract date-only string (YYYY-MM-DD) directly from the UTC midnight
+      // Date value stored in the DB (@db.Date). Using split('T')[0] on the
+      // ISO string is safe because Prisma stores @db.Date as UTC midnight,
+      // so the date component is always correct regardless of the server TZ.
+      const activityDateOnly = a.activity_date
+        ? a.activity_date.toISOString().split('T')[0]
+        : null;
+
+      // Build the deprecated combined field using the date-only string to
+      // avoid the UTC-offset bug that treated local HH:mm as if it were UTC.
+      // Kept for backwards-compat — consumers should migrate to activity_date
+      // + activity_time fields.
+      const legacyDate = activityDateOnly
+        ? `${activityDateOnly}T${a.activity_time ?? '00:00'}:00`
+        : new Date().toISOString();
+
+      return {
+        id: a.activity_id,
+        title: a.name,
+        date: legacyDate,
+        activity_date: activityDateOnly,
+        activity_time: a.activity_time ?? null,
+        location: a.activity_place ?? null,
+      };
+    });
+  }
 
   /**
    * Generates a short-lived signed download URL for the user's profile picture
