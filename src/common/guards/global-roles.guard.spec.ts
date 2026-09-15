@@ -143,7 +143,27 @@ describe('GlobalRolesGuard', () => {
         'coordinator',
         'zone-coordinator',
         'general-coordinator',
+        'director-lf',
+        'assistant-lf',
       ]),
+    );
+  });
+
+  it('should expand coordinator alias to include director-lf', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(['coordinator']);
+    mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(false);
+    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(true);
+
+    await expect(
+      guard.canActivate(
+        createContext({ user: { sub: 'director-lf-user' } }),
+      ),
+    ).resolves.toBe(true);
+
+    const firstRoleCall =
+      mockAuthorizationContext.hasAnyGlobalRole.mock.calls[0];
+    expect(firstRoleCall[1]).toEqual(
+      expect.arrayContaining(['director-lf', 'assistant-lf']),
     );
   });
 

@@ -2319,40 +2319,7 @@ export class InvestitureService {
   private async resolveCoordinatorSectionScopeForGlobalEndpoint(
     actorId: string,
   ): Promise<number[] | undefined> {
-    const resolved =
-      await this.authorizationContext.resolveUserAuthorization(actorId);
-    const roleNames = new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
-
-    const hasAdminRole = [
-      'super-admin',
-      'admin',
-      'assistant-admin',
-      'director-lf',
-      'assistant-lf',
-      'director-union',
-      'assistant-union',
-      'director-dia',
-      'assistant-dia',
-    ].some((roleName) => roleNames.has(roleName));
-
-    if (hasAdminRole) {
-      return undefined;
-    }
-
-    const hasCoordinatorRole =
-      roleNames.has('coordinator') ||
-      roleNames.has('zone-coordinator') ||
-      roleNames.has('general-coordinator');
-
-    if (!hasCoordinatorRole) {
-      return undefined;
-    }
-
-    return this.coordinationService.getEffectiveCoordinatorSectionIds(actorId);
+    return this.coordinationService.resolveCoordinatorLikeSectionScope(actorId);
   }
 
   /**

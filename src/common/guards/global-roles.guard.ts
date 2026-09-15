@@ -26,7 +26,15 @@ const GLOBAL_ROLE_ALIASES: Record<GlobalRoleType, GlobalRoleType[]> = {
   'super-admin': ['super-admin'],
   admin: ['admin', 'assistant-admin'],
   'assistant-admin': ['assistant-admin', 'admin'],
-  coordinator: ['coordinator', 'zone-coordinator', 'general-coordinator'],
+  // Local-field directors do what coordinators do (product 2026-09-15).
+  // One-level expansion: listing `coordinator` admits LF without union/dia.
+  coordinator: [
+    'coordinator',
+    'zone-coordinator',
+    'general-coordinator',
+    'director-lf',
+    'assistant-lf',
+  ],
   'zone-coordinator': ['zone-coordinator', 'general-coordinator'],
   'general-coordinator': ['general-coordinator'],
   pastor: ['pastor'],
