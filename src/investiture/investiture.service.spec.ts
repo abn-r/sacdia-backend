@@ -79,6 +79,7 @@ describe('InvestitureService', () => {
 
   const mockCoordinationService = {
     getEffectiveCoordinatorSectionIds: jest.fn(),
+    resolveCoordinatorLikeSectionScope: jest.fn(),
   };
 
   const mockRequirementEligibilityService = {
@@ -132,6 +133,9 @@ describe('InvestitureService', () => {
     mockAuthorizationContext.canManageClub.mockResolvedValue(true);
     mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
       [],
+    );
+    mockCoordinationService.resolveCoordinatorLikeSectionScope.mockResolvedValue(
+      undefined,
     );
     mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue({
       investiture_eligibility: {

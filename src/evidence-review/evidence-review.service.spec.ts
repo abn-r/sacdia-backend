@@ -36,6 +36,7 @@ describe('EvidenceReviewService', () => {
 
   const mockCoordinationService = {
     getEffectiveCoordinatorSectionIds: jest.fn(),
+    resolveCoordinatorLikeSectionScope: jest.fn(),
   };
 
   const mockFileStorage = {
@@ -45,7 +46,6 @@ describe('EvidenceReviewService', () => {
   const service = new EvidenceReviewService(
     mockPrisma as any,
     mockHonorWorkflow as any,
-    mockAuthorizationContext as any,
     mockCoordinationService as any,
     mockFileStorage as any,
   );
@@ -59,6 +59,9 @@ describe('EvidenceReviewService', () => {
     });
     mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
       [],
+    );
+    mockCoordinationService.resolveCoordinatorLikeSectionScope.mockResolvedValue(
+      undefined,
     );
     mockPrisma.class_section_progress.count.mockResolvedValue(1);
     mockPrisma.class_section_progress.findMany.mockResolvedValue([]);
@@ -357,7 +360,7 @@ describe('EvidenceReviewService', () => {
         grants: { global_roles: [{ role_name: 'coordinator' }] },
       },
     });
-    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+    mockCoordinationService.resolveCoordinatorLikeSectionScope.mockResolvedValue(
       [],
     );
 
@@ -761,7 +764,6 @@ describe('EvidenceReviewService', () => {
     const serviceWithWorkflow = new EvidenceReviewService(
       mockPrisma as any,
       workflow as any,
-      mockAuthorizationContext as any,
       mockCoordinationService as any,
       mockFileStorage as any,
     );
@@ -788,7 +790,6 @@ describe('EvidenceReviewService', () => {
     const serviceWithWorkflow = new EvidenceReviewService(
       mockPrisma as any,
       workflow as any,
-      mockAuthorizationContext as any,
       mockCoordinationService as any,
       mockFileStorage as any,
     );

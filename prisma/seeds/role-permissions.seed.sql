@@ -1127,8 +1127,8 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- Global role that oversees assigned club sections.
 -- Can view club info, members, classes, and approve/reject class progress
 -- and investiture candidates. Read-heavy with limited write (classes:update,
--- investiture:validate, user_honors:update).
--- Total: 18
+-- investiture:validate, investiture:mark_invested, user_honors:update).
+-- Total: 19
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1157,9 +1157,10 @@ WHERE r.role_name = 'coordinator'
     -- Classes & progress (read + approve/reject)
     'classes:read',
 
-    -- Investiture (read + validate)
+    -- Investiture (read + validate + mark invested)
     'investiture:read',
     'investiture:validate',
+    'investiture:mark_invested',
 
     -- Evidence & honors (read + validate/reject)
     'evidence_folders:read',
@@ -1191,9 +1192,9 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- ZONE-COORDINATOR role (GLOBAL)
 -- ============================
 -- Global role that oversees coordinators across a zone.
--- Has ALL coordinator permissions (18) PLUS the ability to view
+-- Has ALL coordinator permissions (19) PLUS the ability to view
 -- coordinator profiles (emergency contacts, health, insurance).
--- Total: 18 (coordinator) + 3 (additional) = 21
+-- Total: 19 (coordinator) + 3 (additional) = 22
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1223,9 +1224,10 @@ WHERE r.role_name = 'zone-coordinator'
     -- Classes & progress (read + approve/reject)
     'classes:read',
 
-    -- Investiture (read + validate)
+    -- Investiture (read + validate + mark invested)
     'investiture:read',
     'investiture:validate',
+    'investiture:mark_invested',
 
     -- Evidence & honors (read + validate/reject)
     'evidence_folders:read',
@@ -1267,7 +1269,7 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- Global role that oversees zone-coordinators and coordinators across
 -- the entire local field. Has ALL zone-coordinator permissions.
 -- The difference is organizational scope (handled at application level).
--- Total: 21 (same as zone-coordinator)
+-- Total: 22 (same as zone-coordinator)
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1284,7 +1286,7 @@ WHERE r.role_name = 'general-coordinator'
   AND r.active = true
   AND p.active = true
   AND p.permission_name IN (
-    -- ===== All ZONE-COORDINATOR permissions (21) =====
+    -- ===== All ZONE-COORDINATOR permissions (22) =====
     -- Club info (read only)
     'clubs:read',
     'club_sections:read',
@@ -1297,9 +1299,10 @@ WHERE r.role_name = 'general-coordinator'
     -- Classes & progress (read + approve/reject)
     'classes:read',
 
-    -- Investiture (read + validate)
+    -- Investiture (read + validate + mark invested)
     'investiture:read',
     'investiture:validate',
+    'investiture:mark_invested',
 
     -- Evidence & honors (read + validate/reject)
     'evidence_folders:read',
@@ -2753,6 +2756,23 @@ WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
     'camporee-supplies:review-pay',
     'camporee-supplies:deliver'
   )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'coordinator',
+    'zone-coordinator',
+    'general-coordinator'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'investiture:mark_invested'
 ON CONFLICT (role_id, permission_id) DO UPDATE SET
   active = true,
   modified_at = now();

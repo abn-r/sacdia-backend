@@ -250,7 +250,9 @@ export class InsuranceController {
     summary: 'Listar seguros próximos a vencer',
     description:
       'Devuelve seguros activos cuyo end_date cae dentro de los próximos `days_ahead` días. ' +
-      'Requiere rol global admin o coordinator. Los coordinadores ignoran `local_field_id` y solo ven miembros de sus secciones asignadas.',
+      'Requiere rol global admin o coordinator (alias: zone/general + director-lf/assistant-lf). ' +
+      'Los coordinadores ignoran `local_field_id` y solo ven miembros de sus secciones asignadas. ' +
+      'Campo local recorta a su local_field.',
   })
   @ApiQuery({
     name: 'days_ahead',
@@ -271,7 +273,7 @@ export class InsuranceController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — requiere rol admin o coordinator',
+    description: 'Forbidden — requiere rol admin, coordinator o campo local (alias)',
   })
   async getExpiringInsurances(
     @CurrentUser() user: CurrentUserPayload,

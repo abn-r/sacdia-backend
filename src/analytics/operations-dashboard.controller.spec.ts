@@ -14,7 +14,6 @@ describe('AnalyticsController operations dashboard', () => {
     {} as any,
     {} as any,
     {} as any,
-    {} as any,
     undefined as any,
     {} as any,
     operationsDashboardService as any,

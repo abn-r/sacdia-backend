@@ -532,6 +532,7 @@ export class AdminReferenceController {
   }
 
   @Post('ecclesiastical-years')
+  @GlobalRoles('super-admin')
   @RequirePermissions('ecclesiastical_years:create')
   @ApiOperation({ summary: 'Create ecclesiastical year' })
   async createEcclesiasticalYear(
@@ -562,6 +563,7 @@ export class AdminReferenceController {
   }
 
   @Delete('ecclesiastical-years/:yearId')
+  @GlobalRoles('super-admin')
   @RequirePermissions('ecclesiastical_years:delete')
   @ApiOperation({ summary: 'Soft delete ecclesiastical year' })
   async deleteEcclesiasticalYear(

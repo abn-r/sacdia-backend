@@ -10,6 +10,14 @@ import { InsuranceService } from './insurance.service';
 describe('InsuranceService', () => {
   let service: InsuranceService;
 
+  const mockAuthorizationContext = {
+    resolveUserAuthorization: jest.fn(),
+  };
+
+  const mockCoordinationService = {
+    getEffectiveCoordinatorSectionIds: jest.fn(),
+  };
+
   const mockPrismaService = {
     users: {
       findUnique: jest.fn(),
@@ -22,6 +30,7 @@ describe('InsuranceService', () => {
     },
     member_insurances: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -55,15 +64,11 @@ describe('InsuranceService', () => {
         },
         {
           provide: AuthorizationContextService,
-          useValue: {
-            resolveUserAuthorization: jest.fn(),
-          },
+          useValue: mockAuthorizationContext,
         },
         {
           provide: CoordinationService,
-          useValue: {
-            getEffectiveCoordinatorSectionIds: jest.fn(),
-          },
+          useValue: mockCoordinationService,
         },
         {
           provide: FieldPaymentOrdersFlagService,
@@ -486,5 +491,91 @@ describe('InsuranceService', () => {
     await expect(
       service.getMemberInsurance('missing-member'),
     ).rejects.toMatchObject({ code: ErrorCode.INSURANCE_MEMBER_NOT_FOUND });
+  });
+
+  describe('getExpiringInsurances', () => {
+    function authProfile(roles: string[], localFieldId?: number) {
+      return {
+        authorization: {
+          grants: {
+            global_roles: roles.map((role_name) => ({ role_name })),
+          },
+          effective: {
+            scope: {
+              global:
+                localFieldId != null
+                  ? { local_field: { id: localFieldId } }
+                  : {},
+            },
+          },
+        },
+      };
+    }
+
+    beforeEach(() => {
+      mockPrismaService.member_insurances.findMany.mockResolvedValue([]);
+    });
+
+    it('scopes director-lf to the actor local field', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        authProfile(['director-lf'], 7),
+      );
+
+      await service.getExpiringInsurances('lf-1', 30);
+
+      expect(mockPrismaService.member_insurances.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            users: { local_field_id: 7 },
+          }),
+        }),
+      );
+    });
+
+    it('rejects a field filter outside the actor local field', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        authProfile(['assistant-lf'], 7),
+      );
+
+      await expect(
+        service.getExpiringInsurances('lf-1', 30, 99),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+    });
+
+    it('rejects director-lf without local_field scope', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        authProfile(['director-lf']),
+      );
+
+      await expect(
+        service.getExpiringInsurances('lf-1', 30),
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+    });
+
+    it('scopes coordinators to assigned sections', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        authProfile(['coordinator']),
+      );
+      mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+        [21, 22],
+      );
+
+      await service.getExpiringInsurances('coord-1', 30);
+
+      expect(mockPrismaService.member_insurances.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            users: {
+              club_role_assignments: {
+                some: {
+                  club_section_id: { in: [21, 22] },
+                  active: true,
+                },
+              },
+            },
+          }),
+        }),
+      );
+    });
   });
 });
