@@ -32,6 +32,7 @@ import {
   AuthorizationResource,
   RequirePermissions,
   GlobalRoles,
+  type GlobalRoleType,
 } from '../common/decorators';
 import {
   JwtAuthGuard,
@@ -59,6 +60,24 @@ const BULK_ALLOWED_MIME_TYPES = new Set([
 
 const BULK_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
+/**
+ * Roles allowed to operate the user-management surface (list, detail,
+ * create, bulk create). Field-level roles are safe here because
+ * AdminUsersService.resolveScope() trims every query to the actor's
+ * territory (DIVISION / UNION / LOCAL_FIELD). Overrides the class-level
+ * `@GlobalRoles('admin', 'super-admin')` on the methods where applied.
+ */
+export const USER_MANAGEMENT_ROLES: readonly GlobalRoleType[] = [
+  'admin',
+  'super-admin',
+  'director-lf',
+  'assistant-lf',
+  'director-union',
+  'assistant-union',
+  'director-dia',
+  'assistant-dia',
+] as const;
+
 @ApiTags('admin-users')
 @ApiBearerAuth()
 @ApiExtraModels(AdminCurrentOperationalEnrollmentDto, AdminTrajectoryClassDto)
@@ -76,6 +95,7 @@ export class AdminUsersController {
   }
 
   @Get('users')
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
   @RequirePermissions('users:read')
   @ApiOperation({
     summary:
@@ -109,16 +129,7 @@ export class AdminUsersController {
   }
 
   @Get('users/bulk-template')
-  @GlobalRoles(
-    'admin',
-    'super-admin',
-    'director-lf',
-    'assistant-lf',
-    'director-union',
-    'assistant-union',
-    'director-dia',
-    'assistant-dia',
-  )
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
   @RequirePermissions('users:bulk_create')
   @Header(
     'Content-Type',
@@ -145,6 +156,7 @@ export class AdminUsersController {
   }
 
   @Get('users/:userId')
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
   @RequirePermissions('users:read_detail')
   @ApiOperation({
     summary: 'Obtener detalle de usuario validando alcance por rol del actor',
@@ -250,16 +262,7 @@ export class AdminUsersController {
   }
 
   @Post('users')
-  @GlobalRoles(
-    'admin',
-    'super-admin',
-    'director-lf',
-    'assistant-lf',
-    'director-union',
-    'assistant-union',
-    'director-dia',
-    'assistant-dia',
-  )
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
   @RequirePermissions('users:create')
   @ApiOperation({
     summary: 'Crear usuario manualmente (admin-iniciado, con invite por email)',
@@ -288,16 +291,7 @@ export class AdminUsersController {
   }
 
   @Post('users/bulk')
-  @GlobalRoles(
-    'admin',
-    'super-admin',
-    'director-lf',
-    'assistant-lf',
-    'director-union',
-    'assistant-union',
-    'director-dia',
-    'assistant-dia',
-  )
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
   @RequirePermissions('users:bulk_create')
   @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiOperation({
