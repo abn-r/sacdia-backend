@@ -26,7 +26,6 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
-import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
@@ -155,7 +154,6 @@ export class EvidenceReviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly honorValidationWorkflow: HonorValidationWorkflowService,
-    private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
@@ -1307,31 +1305,7 @@ export class EvidenceReviewService {
   private async resolveCoordinatorSectionScope(
     actorId: string,
   ): Promise<number[] | undefined> {
-    const resolved =
-      await this.authorizationContext.resolveUserAuthorization(actorId);
-    const roleNames = resolved.authorization.grants.global_roles.map((grant) =>
-      grant.role_name.toLowerCase(),
-    );
-
-    const isAdmin = roleNames.some((roleName) =>
-      ['admin', 'assistant-admin', 'super-admin'].includes(roleName),
-    );
-
-    if (isAdmin) {
-      return undefined;
-    }
-
-    const isCoordinator = roleNames.some((roleName) =>
-      ['coordinator', 'zone-coordinator', 'general-coordinator'].includes(
-        roleName,
-      ),
-    );
-
-    if (!isCoordinator) {
-      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
-    }
-
-    return this.coordinationService.getEffectiveCoordinatorSectionIds(actorId);
+    return this.coordinationService.resolveCoordinatorLikeSectionScope(actorId);
   }
 
   private buildUserSectionScopeWhere(

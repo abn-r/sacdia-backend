@@ -7,6 +7,10 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import {
+  LOCAL_FIELD_ROLES,
+  toTerritoryId,
+} from '../common/authorization/actor-territory-scope';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -443,6 +447,62 @@ export class CoordinationService {
   async getEffectiveCoordinatorSectionIds(userId: string): Promise<number[]> {
     const scope = await this.resolveCoordinatorScope(userId);
     return scope.club_section_ids;
+  }
+
+  async getSectionIdsForLocalField(localFieldId: number): Promise<number[]> {
+    const sections = await this.prisma.club_sections.findMany({
+      where: {
+        active: true,
+        clubs: { is: { active: true, local_field_id: localFieldId } },
+      },
+      select: { club_section_id: true },
+    });
+    return sections.map((section) => section.club_section_id);
+  }
+
+  /**
+   * Admin → no filter (undefined). Local-field directors → sections of their
+   * campo. Coordinators → assigned sections. Anyone else → 403.
+   */
+  async resolveCoordinatorLikeSectionScope(
+    actorId: string,
+  ): Promise<number[] | undefined> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorId);
+    const roleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    if (
+      roleNames.has('admin') ||
+      roleNames.has('assistant-admin') ||
+      roleNames.has('super-admin')
+    ) {
+      return undefined;
+    }
+
+    if ([...LOCAL_FIELD_ROLES].some((role) => roleNames.has(role))) {
+      const actorFieldId = toTerritoryId(
+        resolved.authorization.effective.scope.global.local_field?.id,
+      );
+      if (actorFieldId === undefined) {
+        throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+      }
+      return this.getSectionIdsForLocalField(actorFieldId);
+    }
+
+    const isCoordinator =
+      roleNames.has('coordinator') ||
+      roleNames.has('zone-coordinator') ||
+      roleNames.has('general-coordinator');
+
+    if (!isCoordinator) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+
+    return this.getEffectiveCoordinatorSectionIds(actorId);
   }
 
   async backfillLegacyAssignments(

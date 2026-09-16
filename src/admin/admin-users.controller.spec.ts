@@ -1,8 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { user_approval_status } from '@prisma/client';
 import type { Request } from 'express';
-import { AdminUsersController } from './admin-users.controller';
+import {
+  AdminUsersController,
+  USER_MANAGEMENT_ROLES,
+} from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
+import { GLOBAL_ROLES_KEY, PERMISSIONS_KEY } from '../common/decorators';
 import {
   JwtAuthGuard,
   GlobalRolesGuard,
@@ -48,6 +52,68 @@ describe('AdminUsersController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('authorization metadata', () => {
+    const fieldRoles = [
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'director-dia',
+      'assistant-dia',
+    ];
+
+    it('keeps the class-level admin fence', () => {
+      expect(
+        Reflect.getMetadata(GLOBAL_ROLES_KEY, AdminUsersController),
+      ).toEqual(['admin', 'super-admin']);
+    });
+
+    it('opens list and detail reads to field-level roles (scope-trimmed in service)', () => {
+      for (const handler of [
+        AdminUsersController.prototype.listUsers,
+        AdminUsersController.prototype.getUserById,
+      ]) {
+        const roles = Reflect.getMetadata(GLOBAL_ROLES_KEY, handler);
+        expect(roles).toEqual([...USER_MANAGEMENT_ROLES]);
+        expect(roles).toEqual(expect.arrayContaining(fieldRoles));
+      }
+
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          AdminUsersController.prototype.listUsers,
+        ),
+      ).toEqual({ permissions: ['users:read'], mode: 'all' });
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          AdminUsersController.prototype.getUserById,
+        ),
+      ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
+    });
+
+    it('uses the same role set for create, bulk create and bulk template', () => {
+      for (const handler of [
+        AdminUsersController.prototype.createUser,
+        AdminUsersController.prototype.bulkCreateUsers,
+        AdminUsersController.prototype.downloadBulkTemplate,
+      ]) {
+        expect(Reflect.getMetadata(GLOBAL_ROLES_KEY, handler)).toEqual([
+          ...USER_MANAGEMENT_ROLES,
+        ]);
+      }
+    });
+
+    it('keeps administrative writes admin-only', () => {
+      for (const handler of [
+        AdminUsersController.prototype.updateUser,
+        AdminUsersController.prototype.updateUserApproval,
+      ]) {
+        expect(Reflect.getMetadata(GLOBAL_ROLES_KEY, handler)).toBeUndefined();
+      }
+    });
   });
 
   describe('listUsers', () => {

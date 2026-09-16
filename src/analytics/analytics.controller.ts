@@ -28,7 +28,6 @@ import { AnalyticsService } from './analytics.service';
 import { SlaDashboardDto } from './dto/sla-dashboard.dto';
 import { LocalFieldDashboardDto } from './dto/local-field-dashboard.dto';
 import { LocalFieldDashboardService } from './local-field-dashboard.service';
-import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import { JobsOverviewService, JobsOverviewDto } from './jobs-overview.service';
 import {
@@ -51,7 +50,6 @@ export class AnalyticsController {
   constructor(
     private readonly analyticsService: AnalyticsService,
     private readonly localFieldDashboardService: LocalFieldDashboardService,
-    private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
     @Optional()
     @Inject(JobsOverviewService)
@@ -66,8 +64,9 @@ export class AnalyticsController {
     summary: 'SLA Dashboard',
     description:
       'Returns aggregated SLA metrics for investiture pipeline, validation queues, camporee approvals, timing, and throughput. ' +
-      'Coordinators are automatically scoped to their effective club_section_ids. ' +
-      'Cached for 60 seconds.',
+      'Coordinators are scoped to assigned club_section_ids. Local-field directors ' +
+      '(director-lf / assistant-lf, via coordinator alias) are scoped to sections ' +
+      'of their campo. Cached for 60 seconds.',
   })
   @ApiOkResponse({
     description: 'SLA Dashboard data',
@@ -78,9 +77,10 @@ export class AnalyticsController {
   ): Promise<{ status: string; data: SlaDashboardDto }> {
     const userId = req.user.sub;
 
-    // Coordinators are scoped to resolved club_section_ids; admins see global view.
+    // Coordinators: assigned sections. Local-field directors: campo sections.
+    // Admins: global view.
     const scopedClubSectionIds =
-      await this.resolveCoordinatorSectionScope(userId);
+      await this.coordinationService.resolveCoordinatorLikeSectionScope(userId);
 
     const data =
       await this.analyticsService.getSlaDashboard(scopedClubSectionIds);
@@ -299,34 +299,5 @@ export class AnalyticsController {
       limit,
     });
     return { status: 'ok', data };
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // Private helpers
-  // ──────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Returns club_section_ids if the user is a coordinator (and NOT an admin).
-   * Admins see the global view (undefined filter).
-   */
-  private async resolveCoordinatorSectionScope(
-    userId: string,
-  ): Promise<number[] | undefined> {
-    const resolved =
-      await this.authorizationContext.resolveUserAuthorization(userId);
-
-    const roleNames = resolved.authorization.grants.global_roles.map((g) =>
-      g.role_name.toLowerCase(),
-    );
-
-    const isAdmin = roleNames.some((r) =>
-      ['admin', 'assistant-admin', 'super-admin'].includes(r),
-    );
-
-    if (isAdmin) {
-      return undefined;
-    }
-
-    return this.coordinationService.getEffectiveCoordinatorSectionIds(userId);
   }
 }

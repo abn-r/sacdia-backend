@@ -10,7 +10,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 const SUPER_ADMIN_ROLES = new Set(['super-admin']);
 const DIVISION_ROLES = new Set(['director-dia', 'assistant-dia']);
 const UNION_ROLES = new Set(['director-union', 'assistant-union']);
-const LOCAL_FIELD_ROLES = new Set(['director-lf', 'assistant-lf']);
+export const LOCAL_FIELD_ROLES = new Set(['director-lf', 'assistant-lf']);
 const ADMIN_SCOPE_ROLES = new Set(['admin', 'assistant-admin']);
 
 export type ActorTerritoryScope =

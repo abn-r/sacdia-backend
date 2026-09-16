@@ -15,6 +15,10 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
+import {
+  LOCAL_FIELD_ROLES,
+  toTerritoryId,
+} from '../common/authorization/actor-territory-scope';
 
 type InsuranceMutationInput = {
   insurance_type?: string;
@@ -309,6 +313,19 @@ export class InsuranceService {
       }
 
       return { users: { local_field_id: localFieldId } };
+    }
+
+    if ([...LOCAL_FIELD_ROLES].some((role) => roleNames.has(role))) {
+      const actorFieldId = toTerritoryId(
+        resolved.authorization.effective.scope.global.local_field?.id,
+      );
+      if (actorFieldId === undefined) {
+        throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+      }
+      if (localFieldId !== undefined && localFieldId !== actorFieldId) {
+        throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+      }
+      return { users: { local_field_id: actorFieldId } };
     }
 
     if (
