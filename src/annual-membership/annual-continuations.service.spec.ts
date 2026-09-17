@@ -23,7 +23,13 @@ const CURRENT_YEAR = {
 const SECTION_ID = 101;
 const GM_SECTION_ID = 301;
 const CQ_SECTION_ID = 101;
+const AV_SECTION_ID = 201;
+const AV_TYPE_ID = 1;
+const CQ_TYPE_ID = 2;
 const MAIN_CLUB_ID = 500;
+const USER_AV_GRADUATE = 'user-av-graduate-uuid';
+const USER_AV_TOO_YOUNG = 'user-av-too-young-uuid';
+const CLASS_CQ_AGE = 201;
 const MEMBER_ROLE_ID = 'r-member-uuid';
 const DIRECTOR_ROLE_ID = 'r-director-uuid';
 
@@ -37,6 +43,13 @@ function makePrismaMock() {
   return {
     club_sections: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
+    },
+    club_types: {
+      findFirst: jest.fn(),
+    },
+    classes: {
+      findFirst: jest.fn(),
     },
     club_role_assignments: {
       findMany: jest.fn(),
@@ -51,6 +64,7 @@ function makePrismaMock() {
     enrollments: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -614,6 +628,249 @@ describe('AnnualMembershipService', () => {
         status: 'blocked',
         code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
       });
+    });
+  });
+
+  describe('D02 type jump continuations', () => {
+    function stubCqDestination() {
+      prisma.club_sections.findUnique.mockResolvedValue({
+        club_section_id: CQ_SECTION_ID,
+        main_club_id: MAIN_CLUB_ID,
+        active: true,
+        club_type_id: CQ_TYPE_ID,
+        club_types: { name: 'Conquistadores' },
+      });
+      prisma.club_types.findFirst.mockResolvedValue({
+        club_type_id: AV_TYPE_ID,
+        name: 'Aventureros',
+      });
+      prisma.club_sections.findFirst.mockResolvedValue({
+        club_section_id: AV_SECTION_ID,
+        main_club_id: MAIN_CLUB_ID,
+        club_type_id: AV_TYPE_ID,
+        active: true,
+      });
+      prisma.classes.findFirst.mockResolvedValue({
+        class_id: 118,
+        display_order: 18,
+        club_type_id: AV_TYPE_ID,
+      });
+    }
+
+    function jumpResolve(userId: string, sectionId: number) {
+      if (sectionId === AV_SECTION_ID) {
+        if (userId === USER_AV_TOO_YOUNG) {
+          return Promise.resolve({
+            kind: 'configuration_error' as const,
+            code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+          });
+        }
+        return Promise.resolve({
+          kind: 'next_class' as const,
+          class_id: CLASS_CQ_AGE,
+          display_order: 1,
+          club_type_id: CQ_TYPE_ID,
+          club_section_id: CQ_SECTION_ID,
+          ecclesiastical_year_id: YEAR_ID_CURRENT,
+          crossed_type: true,
+        });
+      }
+      return Promise.resolve({
+        kind: 'next_class' as const,
+        class_id: CLASS_CQ_AGE,
+        display_order: 1,
+        club_type_id: CQ_TYPE_ID,
+        club_section_id: CQ_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+        crossed_type: false,
+      });
+    }
+
+    it('GET CQ lists an AV graduate with resolved dest class', async () => {
+      stubCqDestination();
+      membershipPolicy.listNotEnrolled.mockResolvedValue([]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+      prisma.enrollments.findMany.mockResolvedValue([
+        {
+          user_id: USER_AV_GRADUATE,
+          users: {
+            name: 'Eva',
+            paternal_last_name: 'Ávila',
+            maternal_last_name: 'Cruz',
+          },
+        },
+      ]);
+      nextClassResolver.resolve.mockImplementation(jumpResolve);
+
+      const result = await service.listContinuations(CQ_SECTION_ID, pagination());
+
+      expect(result.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            user_id: USER_AV_GRADUATE,
+            eligibility: 'eligible',
+            suggested_class: { status: 'resolved', class_id: CLASS_CQ_AGE },
+          }),
+        ]),
+      );
+      expect(
+        result.data.some(
+          (row) =>
+            row.suggested_class.status === 'blocked' &&
+            row.suggested_class.code === ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+        ),
+      ).toBe(false);
+    });
+
+    it('GET CQ excludes an already active CQ member', async () => {
+      stubCqDestination();
+      membershipPolicy.listNotEnrolled.mockResolvedValue([]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        {
+          user_id: USER_AV_GRADUATE,
+          status: 'active',
+          active: true,
+          ecclesiastical_year_id: YEAR_ID_CURRENT,
+          club_section_id: CQ_SECTION_ID,
+          users: { name: 'Eva', paternal_last_name: 'Ávila', maternal_last_name: 'Cruz' },
+          roles: { role_name: 'member' },
+        },
+      ]);
+      prisma.enrollments.findMany.mockResolvedValue([
+        { user_id: USER_AV_GRADUATE, users: { name: 'Eva' } },
+      ]);
+      nextClassResolver.resolve.mockImplementation(jumpResolve);
+
+      const result = await service.listContinuations(CQ_SECTION_ID, pagination());
+
+      expect(result.data.map((row) => row.user_id)).not.toContain(USER_AV_GRADUATE);
+    });
+
+    it('GET CQ does not list an R04 GM returner who is not an AV graduate', async () => {
+      stubCqDestination();
+      membershipPolicy.listNotEnrolled.mockResolvedValue([]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+      prisma.enrollments.findMany.mockResolvedValue([]);
+      nextClassResolver.resolve.mockImplementation(jumpResolve);
+
+      const result = await service.listContinuations(CQ_SECTION_ID, pagination());
+
+      expect(result.data.map((row) => row.user_id)).not.toContain(USER_RETURNED);
+    });
+
+    it('GET CQ does not list an age-9 AV graduate as eligible', async () => {
+      stubCqDestination();
+      membershipPolicy.listNotEnrolled.mockResolvedValue([]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+      prisma.enrollments.findMany.mockResolvedValue([
+        {
+          user_id: USER_AV_TOO_YOUNG,
+          users: { name: 'Nico', paternal_last_name: 'Luna', maternal_last_name: 'Sol' },
+        },
+      ]);
+      nextClassResolver.resolve.mockImplementation(jumpResolve);
+
+      const result = await service.listContinuations(CQ_SECTION_ID, pagination());
+
+      expect(result.data.find((row) => row.user_id === USER_AV_TOO_YOUNG)?.eligibility).not.toBe(
+        'eligible',
+      );
+    });
+
+    it('POST CQ enrolls the AV graduate as member+class without rewriting origin history', async () => {
+      stubCqDestination();
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      membershipPolicy.resolveBase.mockResolvedValue({
+        clubId: MAIN_CLUB_ID,
+        baseSectionId: AV_SECTION_ID,
+        clubTypeName: 'Aventureros',
+      });
+      prisma.club_role_assignments.create.mockResolvedValue({
+        assignment_id: 'cq-member-new',
+      });
+      nextClassResolver.resolve.mockImplementation(jumpResolve);
+
+      const result = await service.continueUsers(
+        CQ_SECTION_ID,
+        [USER_AV_GRADUATE],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        user_id: USER_AV_GRADUATE,
+        outcome: 'enrolled',
+        club_section_id: CQ_SECTION_ID,
+        enrollment_id: 99,
+        error_code: null,
+      });
+      expect(prisma.club_role_assignments.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            user_id: USER_AV_GRADUATE,
+            club_section_id: CQ_SECTION_ID,
+            ecclesiastical_year_id: YEAR_ID_CURRENT,
+            status: 'active',
+            role_id: MEMBER_ROLE_ID,
+          }),
+        }),
+      );
+      expect(classWriter.upsert).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: USER_AV_GRADUATE,
+          classId: CLASS_CQ_AGE,
+          ecclesiasticalYearId: YEAR_ID_CURRENT,
+          crossType: false,
+        }),
+      );
+      expect(prisma.enrollments.update).not.toHaveBeenCalled();
+    });
+
+    it('POST CQ of an already enrolled graduate is already_enrolled', async () => {
+      stubCqDestination();
+      prisma.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'cq-member',
+        status: 'active',
+        role_id: MEMBER_ROLE_ID,
+      });
+
+      const result = await service.continueUsers(
+        CQ_SECTION_ID,
+        [USER_AV_GRADUATE],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0].outcome).toBe('already_enrolled');
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+    });
+
+    it('POST is blocked when the resolver dest section is not the posted section', async () => {
+      stubCqDestination();
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      membershipPolicy.resolveBase.mockResolvedValue({
+        clubId: MAIN_CLUB_ID,
+        baseSectionId: AV_SECTION_ID,
+        clubTypeName: 'Aventureros',
+      });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'next_class',
+        class_id: CLASS_CQ_AGE,
+        display_order: 1,
+        club_type_id: CQ_TYPE_ID,
+        club_section_id: GM_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+        crossed_type: true,
+      });
+
+      const result = await service.continueUsers(
+        CQ_SECTION_ID,
+        [USER_AV_GRADUATE],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0].outcome).toBe('blocked');
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+      expect(classWriter.upsert).not.toHaveBeenCalled();
     });
   });
 

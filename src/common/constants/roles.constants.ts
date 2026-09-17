@@ -6,10 +6,12 @@
  *
  * Global roles (role_category = 'GLOBAL'):
  *   super-admin, admin, assistant-admin, coordinator, zone-coordinator,
- *   general-coordinator, pastor, user
+ *   general-coordinator, pastor, user, director-lf, assistant-lf,
+ *   director-union, assistant-union, director-dia, assistant-dia
  *
  * Club roles (role_category = 'CLUB'):
- *   director, deputy-director, secretary, treasurer, counselor, instructor, member
+ *   director, deputy-director, secretary, treasurer, secretary-treasurer,
+ *   counselor, instructor, member
  */
 
 export const GLOBAL_ROLE = {
@@ -21,6 +23,12 @@ export const GLOBAL_ROLE = {
   GENERAL_COORDINATOR: 'general-coordinator',
   PASTOR: 'pastor',
   USER: 'user',
+  DIRECTOR_LF: 'director-lf',
+  ASSISTANT_LF: 'assistant-lf',
+  DIRECTOR_UNION: 'director-union',
+  ASSISTANT_UNION: 'assistant-union',
+  DIRECTOR_DIA: 'director-dia',
+  ASSISTANT_DIA: 'assistant-dia',
 } as const;
 
 export type GlobalRoleName = (typeof GLOBAL_ROLE)[keyof typeof GLOBAL_ROLE];
@@ -30,6 +38,7 @@ export const CLUB_ROLE = {
   DEPUTY_DIRECTOR: 'deputy-director',
   SECRETARY: 'secretary',
   TREASURER: 'treasurer',
+  SECRETARY_TREASURER: 'secretary-treasurer',
   COUNSELOR: 'counselor',
   INSTRUCTOR: 'instructor',
   MEMBER: 'member',

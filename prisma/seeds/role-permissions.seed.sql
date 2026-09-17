@@ -1770,6 +1770,33 @@ WHERE r.role_name = 'admin'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ============================
+-- ASSISTANT-ADMIN role (GLOBAL)
+-- ============================
+-- Subset of admin: same operational keys minus destroy, global audit, and
+-- RBAC assignment (permissions:assign is reserved to admin/super-admin
+-- write paths in rbac.controller). finances:read is included because it
+-- is an active non-delete permission.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'assistant-admin' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'assistant-admin'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name NOT LIKE '%:delete'
+  AND p.permission_name <> 'audit:read'
+  AND p.permission_name <> 'permissions:assign'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
 -- SUPER_ADMIN role (GLOBAL)
 -- ============================
 -- Supreme platform administrator. Has ALL permissions, no exceptions.

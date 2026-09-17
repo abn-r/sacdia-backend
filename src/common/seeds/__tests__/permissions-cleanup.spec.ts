@@ -184,6 +184,31 @@ describe('Phase 3 permission cleanup — seed files', () => {
       ).toBe(true);
     });
 
+    it('grants assistant-admin a subset of admin without permissions:assign', () => {
+      const assistantBlock = extractRoleInsertBlock(
+        rolePermissionsSeedWithoutComments,
+        'assistant-admin',
+      );
+      expect(assistantBlock).toContain('CROSS JOIN permissions p');
+      expect(assistantBlock).toContain("p.permission_name NOT LIKE '%:delete'");
+      expect(assistantBlock).toContain("p.permission_name <> 'audit:read'");
+      expect(assistantBlock).toContain(
+        "p.permission_name <> 'permissions:assign'",
+      );
+
+      const adminGrantIndex = rolePermissionsSeedWithoutComments.indexOf(
+        "WHERE r.role_name = 'admin'",
+      );
+      const assistantGrantIndex = rolePermissionsSeedWithoutComments.indexOf(
+        "WHERE r.role_name = 'assistant-admin'",
+      );
+      const superAdminGrantIndex = rolePermissionsSeedWithoutComments.indexOf(
+        "WHERE r.role_name = 'super-admin'",
+      );
+      expect(assistantGrantIndex).toBeGreaterThan(adminGrantIndex);
+      expect(superAdminGrantIndex).toBeGreaterThan(assistantGrantIndex);
+    });
+
     it('rejects a COMMIT inserted between broad grants and exclusive cleanup', () => {
       const cleanupMarker = 'DELETE FROM role_permissions rp';
       const withIntermediateCommit = rolePermissionsSeedWithoutComments.replace(

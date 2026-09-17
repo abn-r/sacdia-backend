@@ -62,12 +62,15 @@ export class YearCutCronService implements OnModuleInit {
 
         this.logger.log(
           `Year cut finished: ended=${summary.ended}, activated=${summary.activated}, ` +
-            `returnedNotEnrolled=${summary.returnedNotEnrolled}, usersInvalidated=${summary.usersInvalidated}`,
+            `returnedNotEnrolled=${summary.returnedNotEnrolled}, typeGraduatesEnrolled=${summary.typeGraduatesEnrolled}, usersInvalidated=${summary.usersInvalidated}`,
         );
 
         return {
           itemsProcessed:
-            summary.ended + summary.activated + summary.returnedNotEnrolled,
+            summary.ended +
+            summary.activated +
+            summary.returnedNotEnrolled +
+            summary.typeGraduatesEnrolled,
         };
       });
     } catch (error) {

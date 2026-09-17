@@ -118,7 +118,13 @@ export class AnnualMembershipService {
     const currentYear = await this.ecclesiasticalYear.getCurrentYear();
     const section = await this.prisma.club_sections.findUnique({
       where: { club_section_id: sectionId },
-      select: { club_section_id: true, main_club_id: true, active: true },
+      select: {
+        club_section_id: true,
+        main_club_id: true,
+        active: true,
+        club_type_id: true,
+        club_types: { select: { name: true } },
+      },
     });
 
     if (!section) {
@@ -227,6 +233,19 @@ export class AnnualMembershipService {
       );
     }
 
+    const jumpCandidates = await this._listTypeJumpCandidates({
+      destSection: section,
+      year: currentYear,
+      enrolledHere,
+      directorHere,
+    });
+    for (const candidate of jumpCandidates) {
+      if (byUser.has(candidate.user_id)) {
+        continue;
+      }
+      byUser.set(candidate.user_id, candidate);
+    }
+
     let items = [...byUser.values()];
     const query = search?.trim().toLowerCase();
     if (query) {
@@ -282,6 +301,94 @@ export class AnnualMembershipService {
     }
 
     return { results };
+  }
+
+  async writeTypeJumpEnrollment(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      destSectionId: number;
+      year: CurrentYear;
+    },
+  ): Promise<'enrolled' | 'already_enrolled' | 'skipped'> {
+    const memberRole = await tx.roles.findFirst({
+      where: { role_name: 'member', role_category: 'CLUB', active: true },
+      select: { role_id: true },
+    });
+    if (!memberRole) {
+      return 'skipped';
+    }
+
+    const existingMember = await tx.club_role_assignments.findFirst({
+      where: {
+        user_id: params.userId,
+        role_id: memberRole.role_id,
+        club_section_id: params.destSectionId,
+        ecclesiastical_year_id: params.year.year_id,
+        status: { in: ['active', 'inactive'] },
+      },
+      select: { assignment_id: true, status: true },
+    });
+    if (existingMember?.status === 'active') {
+      return 'already_enrolled';
+    }
+
+    const directorRole = await tx.roles.findFirst({
+      where: { role_name: 'director', role_category: 'CLUB', active: true },
+      select: { role_id: true },
+    });
+    if (directorRole) {
+      const destDirector = await tx.club_role_assignments.findFirst({
+        where: {
+          user_id: params.userId,
+          role_id: directorRole.role_id,
+          club_section_id: params.destSectionId,
+          ecclesiastical_year_id: params.year.year_id,
+          status: 'active',
+        },
+        select: { assignment_id: true },
+      });
+      if (destDirector) {
+        return 'already_enrolled';
+      }
+    }
+
+    const accepted = await this._acceptTypeJump(tx, {
+      userId: params.userId,
+      sectionId: params.destSectionId,
+      year: params.year,
+    });
+    if (!accepted) {
+      return 'skipped';
+    }
+
+    if (existingMember?.status === 'inactive') {
+      await tx.club_role_assignments.update({
+        where: { assignment_id: existingMember.assignment_id },
+        data: { status: 'active' },
+      });
+    } else {
+      await tx.club_role_assignments.create({
+        data: {
+          user_id: params.userId,
+          role_id: memberRole.role_id,
+          club_section_id: params.destSectionId,
+          ecclesiastical_year_id: params.year.year_id,
+          start_date: params.year.start_date,
+          active: true,
+          status: 'active',
+        },
+        select: { assignment_id: true },
+      });
+    }
+
+    await this.authorizationContextVersion.bumpMany(tx, [params.userId]);
+    await this._applyClassInTransaction(tx, {
+      userId: params.userId,
+      sectionId: params.destSectionId,
+      year: params.year,
+    });
+    return 'enrolled';
   }
 
   async annualEnroll(
@@ -435,45 +542,218 @@ export class AnnualMembershipService {
       return this._outcome(params, 'blocked', ErrorCode.MR_ALREADY_PENDING);
     }
 
-    let base;
+    let base: { baseSectionId: number } | null = null;
+    let baseError: ErrorCode | null = null;
     try {
       base = await this.membershipPolicy.resolveBase(tx, params.userId);
     } catch (error) {
-      return this._outcome(
-        params,
-        'blocked',
+      baseError =
         error instanceof AppException
           ? error.code
-          : ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
+          : ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED;
+    }
+
+    if (base?.baseSectionId === params.sectionId) {
+      const ensured = await this.membershipPolicy.ensureNotEnrolled(
+        tx,
+        params.userId,
+        params.sectionId,
+        params.year,
       );
+
+      if (!ensured.assignment_id) {
+        return this._outcome(params, 'already_enrolled');
+      }
+
+      await tx.club_role_assignments.update({
+        where: { assignment_id: ensured.assignment_id },
+        data: { status: 'active' },
+      });
+    } else {
+      const acceptedJump = await this._acceptTypeJump(tx, params);
+      if (!acceptedJump) {
+        return this._outcome(
+          params,
+          'blocked',
+          baseError ?? ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
+        );
+      }
+
+      await tx.club_role_assignments.create({
+        data: {
+          user_id: params.userId,
+          role_id: memberRole.role_id,
+          club_section_id: params.sectionId,
+          ecclesiastical_year_id: params.year.year_id,
+          start_date: params.year.start_date,
+          active: true,
+          status: 'active',
+        },
+        select: { assignment_id: true },
+      });
     }
 
-    if (base.baseSectionId !== params.sectionId) {
-      return this._outcome(
-        params,
-        'blocked',
-        ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
-      );
-    }
-
-    const ensured = await this.membershipPolicy.ensureNotEnrolled(
-      tx,
-      params.userId,
-      params.sectionId,
-      params.year,
-    );
-
-    if (!ensured.assignment_id) {
-      return this._outcome(params, 'already_enrolled');
-    }
-
-    await tx.club_role_assignments.update({
-      where: { assignment_id: ensured.assignment_id },
-      data: { status: 'active' },
-    });
     await this.authorizationContextVersion.bumpMany(tx, [params.userId]);
     const enrollmentId = await this._applyClassInTransaction(tx, params);
     return this._outcome(params, 'enrolled', null, enrollmentId);
+  }
+
+  private originTypeNameForDest(destTypeName: string | null | undefined): string | null {
+    if (destTypeName === 'Conquistadores') {
+      return 'Aventureros';
+    }
+    if (destTypeName === 'Guías Mayores') {
+      return 'Conquistadores';
+    }
+    return null;
+  }
+
+  private async _listTypeJumpCandidates(params: {
+    destSection: {
+      club_section_id: number;
+      main_club_id: number | null;
+      club_types?: { name: string } | null;
+    };
+    year: CurrentYear;
+    enrolledHere: Set<string>;
+    directorHere: Set<string>;
+  }): Promise<ContinuationListItem[]> {
+    const originName = this.originTypeNameForDest(params.destSection.club_types?.name);
+    if (!originName || params.destSection.main_club_id == null) {
+      return [];
+    }
+
+    const originType = await this.prisma.club_types.findFirst({
+      where: { name: originName },
+      select: { club_type_id: true },
+    });
+    if (!originType) {
+      return [];
+    }
+
+    const originSection = await this.prisma.club_sections.findFirst({
+      where: {
+        main_club_id: params.destSection.main_club_id,
+        club_type_id: originType.club_type_id,
+        active: true,
+      },
+      select: { club_section_id: true },
+    });
+    if (!originSection) {
+      return [];
+    }
+
+    const lastClass = await this.prisma.classes.findFirst({
+      where: { club_type_id: originType.club_type_id, active: true },
+      orderBy: { display_order: 'desc' },
+      select: { class_id: true },
+    });
+    if (!lastClass) {
+      return [];
+    }
+
+    const graduates = await this.prisma.enrollments.findMany({
+      where: {
+        class_id: lastClass.class_id,
+        cross_type_enrollment: false,
+        ecclesiastical_year: { end_date: { lt: params.year.start_date } },
+      },
+      select: {
+        user_id: true,
+        users: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      distinct: ['user_id'],
+    });
+
+    const items: ContinuationListItem[] = [];
+    for (const graduate of graduates) {
+      if (
+        params.enrolledHere.has(graduate.user_id) ||
+        params.directorHere.has(graduate.user_id)
+      ) {
+        continue;
+      }
+
+      const decision = await this.nextClassResolver.resolve(
+        graduate.user_id,
+        originSection.club_section_id,
+        params.year.year_id,
+      );
+      if (
+        decision.kind !== 'next_class' ||
+        decision.crossed_type !== true ||
+        decision.club_section_id !== params.destSection.club_section_id
+      ) {
+        continue;
+      }
+
+      items.push(
+        this._toListItem({
+          userId: graduate.user_id,
+          name: this._formatName(graduate.users),
+          sectionId: params.destSection.club_section_id,
+          yearId: params.year.year_id,
+          currentRole: null,
+        }),
+      );
+    }
+
+    return items;
+  }
+
+  private async _acceptTypeJump(
+    tx: Prisma.TransactionClient,
+    params: { userId: string; sectionId: number; year: CurrentYear },
+  ): Promise<boolean> {
+    const dest = await tx.club_sections.findUnique({
+      where: { club_section_id: params.sectionId },
+      select: {
+        club_section_id: true,
+        main_club_id: true,
+        club_types: { select: { name: true } },
+      },
+    });
+    const originName = this.originTypeNameForDest(dest?.club_types?.name);
+    if (!originName || dest?.main_club_id == null) {
+      return false;
+    }
+
+    const originType = await tx.club_types.findFirst({
+      where: { name: originName },
+      select: { club_type_id: true },
+    });
+    if (!originType) {
+      return false;
+    }
+
+    const originSection = await tx.club_sections.findFirst({
+      where: {
+        main_club_id: dest.main_club_id,
+        club_type_id: originType.club_type_id,
+        active: true,
+      },
+      select: { club_section_id: true },
+    });
+    if (!originSection) {
+      return false;
+    }
+
+    const decision = await this.nextClassResolver.resolve(
+      params.userId,
+      originSection.club_section_id,
+      params.year.year_id,
+    );
+    return (
+      decision.kind === 'next_class' &&
+      decision.crossed_type === true &&
+      decision.club_section_id === params.sectionId
+    );
   }
 
   private async _applyClassInTransaction(

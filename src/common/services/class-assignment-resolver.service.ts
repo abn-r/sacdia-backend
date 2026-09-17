@@ -155,6 +155,10 @@ export class ClassAssignmentResolverService {
     return startsAfterFrom && startsBeforeUntil;
   }
 
+  ageAtDate(birthday: Date, referenceDate: Date): number {
+    return this.calculateAgeAtDate(birthday, referenceDate);
+  }
+
   private calculateAgeAtDate(birthday: Date, referenceDate: Date): number {
     let age = referenceDate.getUTCFullYear() - birthday.getUTCFullYear();
     const monthDiff = referenceDate.getUTCMonth() - birthday.getUTCMonth();
