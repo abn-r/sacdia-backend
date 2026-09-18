@@ -70,7 +70,7 @@ describe('Clubs E2E Tests', () => {
   });
 
   describe('/api/v1/clubs (POST)', () => {
-    it('should create a new club', async () => {
+    it('should create a new club with Guías Mayores always active', async () => {
       const mockClub = {
         club_id: 1,
         name: 'Test Club',
@@ -79,23 +79,24 @@ describe('Clubs E2E Tests', () => {
       };
 
       jest.spyOn(prisma.club_types, 'findMany').mockResolvedValue([
-        { club_type_id: 1 },
-        { club_type_id: 2 },
-        { club_type_id: 3 },
+        { club_type_id: 1, name: 'Aventureros' },
+        { club_type_id: 2, name: 'Conquistadores' },
+        { club_type_id: 99, name: 'Guías Mayores' },
       ] as never);
+      const createMany = jest.fn().mockResolvedValue({ count: 3 });
       jest.spyOn(prisma, '$transaction').mockImplementation(async (fn) => {
         const tx = {
           clubs: {
             create: jest.fn().mockResolvedValue(mockClub),
           },
           club_sections: {
-            createMany: jest.fn().mockResolvedValue({ count: 3 }),
+            createMany,
           },
         };
         return (fn as (client: typeof tx) => Promise<typeof mockClub>)(tx);
       });
 
-      return request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post('/api/v1/clubs')
         .set(authHeaders())
         .send({
@@ -106,6 +107,14 @@ describe('Clubs E2E Tests', () => {
           enabled_club_type_ids: [1, 2],
         })
         .expect(201);
+
+      expect(createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({ club_type_id: 1, active: true }),
+          expect.objectContaining({ club_type_id: 2, active: true }),
+          expect.objectContaining({ club_type_id: 99, active: true }),
+        ]),
+      });
     });
   });
 });

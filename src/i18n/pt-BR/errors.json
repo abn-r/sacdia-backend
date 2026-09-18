@@ -441,6 +441,8 @@
   "CLUB_SECTION_NOT_FOUND": "Seção do clube não encontrada",
   "CLUB_TYPE_NOT_FOUND": "Tipo de clube não encontrado ou inativo",
   "CLUB_SECTION_ID_REQUIRED": "O identificador da seção do clube é obrigatório",
+  "CLUB_SECTION_TYPES_REQUIRED": "É necessário habilitar pelo menos um tipo de clube",
+  "CLUB_SECTION_MASTER_GUIDES_REQUIRED": "A seção de Guias Maiores não pode ser desativada",
   "CLUB_ROLE_SLOT_LIMIT_REACHED": "O máximo de atribuições permitidas para esta função na seção foi atingido",
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Não é possível atribuir esta função porque há um conflito de exclusividade com outra função nesta seção",
   "CLUB_ROLE_DATE_RANGE_INVALID": "A data de término da função não pode ser anterior à data de início",

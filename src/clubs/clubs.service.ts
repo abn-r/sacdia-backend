@@ -34,7 +34,11 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import { clubTypeSectionName } from './section-display';
+import {
+  clubTypeSectionName,
+  findMasterGuidesClubTypeId,
+  isMasterGuidesClubType,
+} from './section-display';
 import {
   assertClubListFiltersInActorScope,
   assertLocalFieldInActorScope,
@@ -187,13 +191,9 @@ export class ClubsService {
       ),
     ];
 
-    if (enabledIds.length === 0) {
-      throw new AppBadRequestException(ErrorCode.CLUB_SECTION_TYPES_REQUIRED);
-    }
-
     const catalogTypes = await this.prisma.club_types.findMany({
       where: { active: true },
-      select: { club_type_id: true },
+      select: { club_type_id: true, name: true },
       orderBy: { club_type_id: 'asc' },
     });
 
@@ -206,6 +206,15 @@ export class ClubsService {
       if (!catalogIds.has(id)) {
         throw new AppBadRequestException(ErrorCode.CLUB_TYPE_NOT_FOUND);
       }
+    }
+
+    const masterGuidesTypeId = findMasterGuidesClubTypeId(catalogTypes);
+    if (masterGuidesTypeId != null && !enabledIds.includes(masterGuidesTypeId)) {
+      enabledIds.push(masterGuidesTypeId);
+    }
+
+    if (enabledIds.length === 0) {
+      throw new AppBadRequestException(ErrorCode.CLUB_SECTION_TYPES_REQUIRED);
     }
 
     const club = await this.prisma.$transaction(async (tx) => {
@@ -395,6 +404,21 @@ export class ClubsService {
   }
 
   async updateSection(sectionId: number, dto: UpdateClubSectionDto) {
+    if (dto.active === false) {
+      const section = await this.prisma.club_sections.findUnique({
+        where: { club_section_id: sectionId },
+        include: { club_types: { select: { name: true } } },
+      });
+      if (!section) {
+        throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
+      }
+      if (isMasterGuidesClubType(section.club_types ?? {})) {
+        throw new AppBadRequestException(
+          ErrorCode.CLUB_SECTION_MASTER_GUIDES_REQUIRED,
+        );
+      }
+    }
+
     const { meeting_day, meeting_time, ...rest } = dto;
     return this.prisma.club_sections.update({
       where: { club_section_id: sectionId },

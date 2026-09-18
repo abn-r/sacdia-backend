@@ -137,7 +137,12 @@ export class ClubsController {
   @ApiResponse({
     status: 201,
     description:
-      'Club creado con una sección por cada club_type activo. enabled_club_type_ids marca cuáles quedan active=true.',
+      'Club creado con una sección por cada club_type activo. enabled_club_type_ids marca Aventureros/Conquistadores active=true. Guías Mayores (name/slug/code, no id numérico) queda siempre active=true y se inyecta si se omite.',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'CLUB_SECTION_TYPES_REQUIRED si el array queda vacío y el catálogo no tiene Guías Mayores. CLUB_TYPE_NOT_FOUND si el catálogo está vacío o un id no existe. No se inventa un id GM.',
   })
   async create(@Body() dto: CreateClubDto, @Request() req: any) {
     return this.clubsService.create(dto, req.authorization);
@@ -248,11 +253,18 @@ export class ClubsController {
   @ApiOperation({
     summary:
       'Actualizar sección (dirección o secretaría de la sección activa)',
+    description:
+      'Aventureros y Conquistadores pueden apagarse con active=false. Guías Mayores no: 400 CLUB_SECTION_MASTER_GUIDES_REQUIRED. active=true en una GM inactiva (legado) está permitido. fee, souls_target y meeting no se bloquean.',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Sección actualizada' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'CLUB_SECTION_MASTER_GUIDES_REQUIRED si se intenta desactivar Guías Mayores',
+  })
   async updateSection(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Body() dto: UpdateClubSectionDto,

@@ -446,6 +446,8 @@
   "CLUB_SECTION_NOT_FOUND": "Club section not found",
   "CLUB_TYPE_NOT_FOUND": "Club type not found or inactive",
   "CLUB_SECTION_ID_REQUIRED": "Club section ID is required",
+  "CLUB_SECTION_TYPES_REQUIRED": "At least one club type must be enabled",
+  "CLUB_SECTION_MASTER_GUIDES_REQUIRED": "The Master Guides section cannot be deactivated",
   "CLUB_ROLE_SLOT_LIMIT_REACHED": "Maximum role assignments per section reached",
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Cannot assign this role due to an exclusivity conflict with another role in this section",
   "CLUB_ROLE_DATE_RANGE_INVALID": "The role end date cannot be before its start date",

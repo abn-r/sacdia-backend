@@ -441,6 +441,8 @@
   "CLUB_SECTION_NOT_FOUND": "Section du club introuvable",
   "CLUB_TYPE_NOT_FOUND": "Type de club introuvable ou inactif",
   "CLUB_SECTION_ID_REQUIRED": "L'identifiant de la section du club est requis",
+  "CLUB_SECTION_TYPES_REQUIRED": "Au moins un type de club doit être activé",
+  "CLUB_SECTION_MASTER_GUIDES_REQUIRED": "La section Guides majeurs ne peut pas être désactivée",
   "CLUB_ROLE_SLOT_LIMIT_REACHED": "Le nombre maximum d'attributions de rôle par section a été atteint",
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Impossible d'attribuer ce rôle en raison d'un conflit d'exclusivité avec un autre rôle dans cette section",
   "CLUB_ROLE_DATE_RANGE_INVALID": "La date de fin du rôle ne peut pas précéder sa date de début",
