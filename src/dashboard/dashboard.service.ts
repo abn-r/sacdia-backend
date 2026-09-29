@@ -62,7 +62,7 @@ export class DashboardService {
           select: { validate: true },
         },
         enrollments: {
-          where: { active: true },
+          where: { active: true, record_kind: 'OPERATIONAL' },
           orderBy: { created_at: 'desc' },
           take: 1,
           select: {

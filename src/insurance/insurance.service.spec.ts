@@ -143,6 +143,18 @@ describe('InsuranceService', () => {
           active: true,
           club_sections: { main_club_id: 9 },
         },
+        select: expect.objectContaining({
+          users: expect.objectContaining({
+            select: expect.objectContaining({
+              enrollments: expect.objectContaining({
+                where: {
+                  active: true,
+                  record_kind: 'OPERATIONAL',
+                },
+              }),
+            }),
+          }),
+        }),
       }),
     );
     expect(mockPrismaService.member_insurances.findFirst).toHaveBeenCalledWith(

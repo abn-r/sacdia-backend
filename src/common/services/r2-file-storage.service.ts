@@ -3,6 +3,7 @@ import { AppInternalServerErrorException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { ConfigService } from '@nestjs/config';
 import {
+  CopyObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
@@ -265,6 +266,85 @@ export class R2FileStorageService implements FileStorageService {
       );
       throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
     }
+  }
+
+  async getObject(
+    bucketAlias: StorageBucketAlias,
+    key: string,
+    maxBytes: number,
+  ): Promise<Buffer | null> {
+    const config = this.getBucketConfig(bucketAlias);
+    const normalizedKey = this.normalizeKey(key);
+    const objectKey = this.hasKeyPrefix(config.keyPrefix, normalizedKey)
+      ? normalizedKey
+      : this.toObjectKey(config.keyPrefix, normalizedKey);
+    const ceiling = Math.max(1, Math.floor(maxBytes));
+
+    try {
+      const response = await this.getClient().send(
+        new GetObjectCommand({
+          Bucket: config.bucket,
+          Key: objectKey,
+        }),
+      );
+      if (!response.Body) {
+        return null;
+      }
+      const declared = response.ContentLength ?? 0;
+      if (declared > ceiling) {
+        throw new AppInternalServerErrorException(
+          ErrorCode.R2_VALIDATION_FAILED,
+        );
+      }
+      const bytes = await response.Body.transformToByteArray();
+      if (bytes.byteLength > ceiling) {
+        throw new AppInternalServerErrorException(
+          ErrorCode.R2_VALIDATION_FAILED,
+        );
+      }
+      return Buffer.from(bytes);
+    } catch (error) {
+      if (error instanceof AppInternalServerErrorException) {
+        throw error;
+      }
+      if (this.isNotFoundError(error)) return null;
+      this.logger.error(
+        `Error reading R2 bucket=${config.bucket}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
+    }
+  }
+
+  async copyObject(
+    bucketAlias: StorageBucketAlias,
+    sourceKey: string,
+    destinationKey: string,
+  ): Promise<{ key: string }> {
+    const config = this.getBucketConfig(bucketAlias);
+    const source = this.resolveStoredKey(config, sourceKey);
+    const destination = this.resolveStoredKey(config, destinationKey);
+
+    try {
+      await this.getClient().send(
+        new CopyObjectCommand({
+          Bucket: config.bucket,
+          CopySource: `${config.bucket}/${source
+            .split('/')
+            .map((segment) => encodeURIComponent(segment))
+            .join('/')}`,
+          Key: destination,
+        }),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error copying R2 object bucket=${config.bucket}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_UPLOAD_FAILED);
+    }
+
+    return { key: destination };
   }
 
   async getObjectInfo(
@@ -619,6 +699,18 @@ export class R2FileStorageService implements FileStorageService {
           ),
           isPublic: false,
         };
+      case StorageBucketAlias.CERTIFICATE_IMPORTS:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_CERTIFICATE_IMPORTS'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_CERTIFICATE_IMPORTS',
+          ),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_CERTIFICATE_IMPORTS',
+            'certificate-imports',
+          ),
+          isPublic: false,
+        };
       default:
         throw new AppInternalServerErrorException(
           ErrorCode.R2_VALIDATION_FAILED,
@@ -653,6 +745,13 @@ export class R2FileStorageService implements FileStorageService {
 
   private normalizeBaseUrl(baseUrl: string) {
     return baseUrl.replace(/\/+$/, '');
+  }
+
+  private resolveStoredKey(config: R2BucketConfig, key: string) {
+    const normalized = this.normalizeKey(key);
+    return this.hasKeyPrefix(config.keyPrefix, normalized)
+      ? normalized
+      : this.toObjectKey(config.keyPrefix, normalized);
   }
 
   private normalizeKey(key: string) {

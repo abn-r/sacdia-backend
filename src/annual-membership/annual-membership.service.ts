@@ -24,7 +24,7 @@ import {
 
 
 export type SuggestedClass = {
-  status: 'pending' | 'blocked' | 'resolved';
+  status: 'pending' | 'blocked' | 'resolved' | 'complete';
   class_id?: number;
   code?: string;
 };
@@ -43,6 +43,7 @@ export interface ContinuationListItem {
 
 export type ContinuationOutcome =
   | 'enrolled'
+  | 'path_complete'
   | 'already_enrolled'
   | 'blocked'
   | 'failed';
@@ -419,7 +420,7 @@ export class AnnualMembershipService {
         this._enrollInTransaction(tx, params),
       );
 
-      if (result.outcome === 'enrolled') {
+      if (result.outcome === 'enrolled' || result.outcome === 'path_complete') {
         await this.authorizationContext.invalidateUserAuthorizationCache(params.userId);
         await this.auditLogs.recordEvent({
           entity_type: 'annual_membership',
@@ -507,8 +508,7 @@ export class AnnualMembershipService {
         data: { status: 'active' },
       });
       await this.authorizationContextVersion.bumpMany(tx, [params.userId]);
-      const enrollmentId = await this._applyClassInTransaction(tx, params);
-      return this._outcome(params, 'enrolled', null, enrollmentId);
+      return this._afterClass(tx, params);
     }
 
     if (directorRole) {
@@ -594,7 +594,21 @@ export class AnnualMembershipService {
     }
 
     await this.authorizationContextVersion.bumpMany(tx, [params.userId]);
+    return this._afterClass(tx, params);
+  }
+
+  private async _afterClass(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      sectionId: number;
+      year: CurrentYear;
+    },
+  ): Promise<ContinuationUserResult> {
     const enrollmentId = await this._applyClassInTransaction(tx, params);
+    if (enrollmentId == null) {
+      return this._outcome(params, 'path_complete');
+    }
     return this._outcome(params, 'enrolled', null, enrollmentId);
   }
 
@@ -763,12 +777,16 @@ export class AnnualMembershipService {
       sectionId: number;
       year: CurrentYear;
     },
-  ): Promise<number> {
+  ): Promise<number | null> {
     const decision = await this.nextClassResolver.resolve(
       params.userId,
       params.sectionId,
       params.year.year_id,
     );
+
+    if (decision.kind === 'journey_complete') {
+      return null;
+    }
 
     if (decision.kind !== 'next_class') {
       if (decision.kind === 'policy_blocked') {
@@ -818,6 +836,9 @@ export class AnnualMembershipService {
       );
       if (decision.kind === 'next_class') {
         return { status: 'resolved', class_id: decision.class_id };
+      }
+      if (decision.kind === 'journey_complete') {
+        return { status: 'complete' };
       }
       return { status: 'blocked', code: decision.code };
     } catch {

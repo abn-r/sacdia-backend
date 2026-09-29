@@ -41,7 +41,10 @@ describe('ClassesService', () => {
     },
     ecclesiastical_years: { findFirst: jest.fn(), findUnique: jest.fn() },
     enrollments: { findMany: jest.fn(), findUnique: jest.fn() },
-    class_sections: { findFirst: jest.fn(), groupBy: jest.fn() },
+    certificate_bulk_import_items: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    class_sections: { findFirst: jest.fn(), findMany: jest.fn(), groupBy: jest.fn() },
     class_modules: { findMany: jest.fn() },
     class_honors: { findMany: jest.fn() },
     users_honors: { findMany: jest.fn() },
@@ -78,6 +81,8 @@ describe('ClassesService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPrismaService.certificate_bulk_import_items.findMany.mockResolvedValue([]);
+    mockPrismaService.class_sections.findMany.mockResolvedValue([]);
     mockClassProgressAccessService.assertCanAccessProgress.mockResolvedValue(
       undefined,
     );
@@ -324,7 +329,87 @@ describe('ClassesService', () => {
       expect(result[0]).toMatchObject({
         enrollment_id: 501,
         overall_progress: 100,
+        course_open: true,
+        progress_archive: null,
         investiture_eligibility: expect.objectContaining({ eligible: true }),
+      });
+    });
+
+    it('keeps a historical certificate visible with its proof and archived progress', async () => {
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 80,
+          user_id: 'user-1',
+          class_id: 8,
+          ecclesiastical_year_id: 1999,
+          enrollment_date: new Date('2026-09-23T00:00:00.000Z'),
+          investiture_status: 'INVESTIDO',
+          investiture_date: new Date('1999-06-01T00:00:00.000Z'),
+          record_kind: 'HISTORICAL_CERTIFICATE',
+          submitted_for_validation: false,
+          submitted_at: null,
+          validated_by: null,
+          validated_at: null,
+          locked_for_validation: true,
+          cross_type_enrollment: false,
+          created_at: new Date('2026-09-23T00:00:00.000Z'),
+          modified_at: new Date('2026-09-23T00:00:00.000Z'),
+          classes: {
+            class_id: 8,
+            name: 'Guía Mayor',
+            description: null,
+            asset_code: 'GM-01',
+            advanced_enabled: false,
+            club_types: { name: 'Guías Mayores' },
+          },
+          ecclesiastical_year: {
+            start_date: new Date('1999-01-01T00:00:00.000Z'),
+            end_date: new Date('1999-12-31T00:00:00.000Z'),
+          },
+        },
+      ]);
+      mockPrismaService.certificate_bulk_import_items.findMany.mockResolvedValue([
+        {
+          applied_entity_id: 80,
+          batch_id: 'batch-gm',
+          batch: { files: [{ file_id: 'file-gm' }] },
+        },
+      ]);
+      mockPrismaService.class_section_progress.findMany.mockResolvedValue([
+        {
+          enrollment_id: 80,
+          section_id: 3,
+          score: 4,
+          status: 'VALIDATED',
+        },
+      ]);
+      mockPrismaService.class_sections.findMany.mockResolvedValue([
+        {
+          section_id: 3,
+          name: 'Nudos',
+          class_modules: { name: 'Campamento' },
+        },
+      ]);
+
+      const result = await service.getUserEnrollments('user-1');
+
+      expect(
+        mockRequirementEligibilityService.calculateForEnrollment,
+      ).not.toHaveBeenCalled();
+      expect(result[0]).toMatchObject({
+        enrollment_id: 80,
+        record_kind: 'HISTORICAL_CERTIFICATE',
+        course_open: false,
+        overall_progress: null,
+        certificate_proof: { batch_id: 'batch-gm', file_id: 'file-gm' },
+        progress_archive: [
+          {
+            section_name: 'Nudos',
+            module_name: 'Campamento',
+            score: 4,
+            status: 'VALIDATED',
+          },
+        ],
       });
     });
   });
@@ -1645,7 +1730,7 @@ describe('ClassesService', () => {
       //   1. GM investiture check → found (INVESTIDO in GM)
       //   2. lastEnrollment for display-order → display_order 1 in previous year
       //      target year is later → maxAllowedOrder = 1+1 = 2 = target → ALLOW
-      setupTransactionMock({
+      const txMock = setupTransactionMock({
         targetClass: {
           class_id: 10,
           club_type_id: 3,
@@ -1672,6 +1757,17 @@ describe('ClassesService', () => {
 
       const result = await service.enrollUser(userId, classId, yearId);
       expect(result).toMatchObject({ enrollment_id: 2, class_id: 10 });
+      expect(txMock.enrollments.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: userId,
+            investiture_status: 'INVESTIDO',
+          }),
+        }),
+      );
+      const investitureWhere = txMock.enrollments.findFirst.mock.calls[0][0]
+        .where as Record<string, unknown>;
+      expect(investitureWhere).not.toHaveProperty('record_kind');
     });
 
     it('should allow GM class without requires_invested_gm (no investiture needed)', async () => {
@@ -1720,7 +1816,7 @@ describe('ClassesService', () => {
     });
 
     it('should allow enrollment when prerequisite class is INVESTIDO', async () => {
-      setupTransactionMock({
+      const txMock = setupTransactionMock({
         targetClass: {
           class_id: 10,
           club_type_id: 1,
@@ -1754,6 +1850,18 @@ describe('ClassesService', () => {
 
       const result = await service.enrollUser(userId, classId, yearId);
       expect(result).toMatchObject({ enrollment_id: 4, class_id: 10 });
+      expect(txMock.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: userId,
+            investiture_status: 'INVESTIDO',
+            class_id: { in: [5] },
+          }),
+        }),
+      );
+      const prerequisiteWhere = txMock.enrollments.findMany.mock.calls[0][0]
+        .where as Record<string, unknown>;
+      expect(prerequisiteWhere).not.toHaveProperty('record_kind');
     });
 
     it('should ignore inactive prerequisites by querying only active ones', async () => {
@@ -1904,6 +2012,51 @@ describe('ClassesService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
     });
 
+    it('does not adopt a HISTORICAL_CERTIFICATE enrollment as operational', async () => {
+      setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          club_type_id: 3,
+          requires_invested_gm: false,
+          display_order: 1,
+          club_types: { name: 'Guías Mayores' },
+        },
+        findFirstResults: [null],
+        activeCount: 0,
+        existingEnrollment: {
+          enrollment_id: 15,
+          active: false,
+          record_kind: 'HISTORICAL_CERTIFICATE',
+        },
+      });
+
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
+    });
+
+    it('does not create a second Guía Mayor GM-01 enrollment when a prior row exists', async () => {
+      setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          club_type_id: 3,
+          requires_invested_gm: false,
+          display_order: 1,
+          asset_code: 'GM-01',
+          club_types: { name: 'Guías Mayores' },
+        },
+        findFirstResults: [
+          null,
+          { enrollment_id: 15, record_kind: 'HISTORICAL_CERTIFICATE' },
+        ],
+        activeCount: 0,
+      });
+
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
+    });
+
     describe('cross-type enrollment for invested Guía Mayor', () => {
       const aventurerosClass = {
         class_id: 10,
@@ -1948,6 +2101,18 @@ describe('ClassesService', () => {
             }),
           }),
         );
+        const investedGmWhere = txMock.enrollments.findFirst.mock.calls.find(
+          (call) =>
+            call[0]?.where?.classes?.asset_code !== undefined ||
+            call[0]?.where?.investiture_status === 'INVESTIDO',
+        )?.[0]?.where as Record<string, unknown> | undefined;
+        expect(investedGmWhere).toEqual(
+          expect.objectContaining({
+            user_id: userId,
+            investiture_status: 'INVESTIDO',
+          }),
+        );
+        expect(investedGmWhere).not.toHaveProperty('record_kind');
       });
 
       it('should reactivate an inactive Aventureros enrollment as cross-type for an invested GM', async () => {

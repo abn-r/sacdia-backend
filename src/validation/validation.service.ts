@@ -280,6 +280,7 @@ export class ValidationService {
         where: {
           investiture_status: investiture_status_enum.SUBMITTED_FOR_VALIDATION,
           active: true,
+          record_kind: 'OPERATIONAL',
           ...(filters?.club_section_id
             ? {
                 users: {

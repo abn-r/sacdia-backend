@@ -7,7 +7,10 @@ import {
   CATALOG_CACHE_KEYS,
 } from '../catalogs/catalog-cache.service';
 import { TranslationService } from '../common/services/translation.service';
-import { AppBadRequestException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppConflictException,
+} from '../common/errors/app.exception';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -121,6 +124,7 @@ const makePrismaMock = () => ({
   ecclesiastical_years: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
@@ -943,6 +947,87 @@ describe('AdminReferenceService', () => {
         undefined,
         ['name', 'description'],
       );
+    });
+  });
+
+  describe('ecclesiastical year ranges', () => {
+    it('creates an inactive historical year without replacing the active year', async () => {
+      prismaMock.ecclesiastical_years.findFirst.mockResolvedValue(null);
+      prismaMock.ecclesiastical_years.create.mockResolvedValue({
+        year_id: 9,
+        active: false,
+      });
+
+      await service.createEcclesiasticalYear(
+        { start_date: '2004-01-01', end_date: '2004-12-31' },
+        ACTOR_ID,
+      );
+
+      expect(prismaMock.ecclesiastical_years.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.ecclesiastical_years.create).toHaveBeenCalledWith({
+        data: {
+          start_date: new Date('2004-01-01T00:00:00.000Z'),
+          end_date: new Date('2004-12-31T00:00:00.000Z'),
+          active: false,
+        },
+      });
+    });
+
+    it('rejects an overlapping range before insert or activation', async () => {
+      prismaMock.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 3,
+      });
+
+      await expect(
+        service.createEcclesiasticalYear(
+          { start_date: '2004-06-01', end_date: '2005-05-31', active: true },
+          ACTOR_ID,
+        ),
+      ).rejects.toBeInstanceOf(AppConflictException);
+
+      expect(prismaMock.ecclesiastical_years.create).not.toHaveBeenCalled();
+      expect(prismaMock.ecclesiastical_years.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('still deactivates the current year when a non-overlapping year is activated', async () => {
+      prismaMock.ecclesiastical_years.findFirst.mockResolvedValue(null);
+      prismaMock.ecclesiastical_years.create.mockResolvedValue({
+        year_id: 10,
+        active: true,
+      });
+
+      await service.createEcclesiasticalYear(
+        { start_date: '2005-01-01', end_date: '2005-12-31', active: true },
+        ACTOR_ID,
+      );
+
+      expect(prismaMock.ecclesiastical_years.updateMany).toHaveBeenCalledWith({
+        where: { active: true },
+        data: expect.objectContaining({ active: false }),
+      });
+    });
+
+    it('rejects an edit that would overlap another period', async () => {
+      prismaMock.ecclesiastical_years.findUnique.mockResolvedValue({
+        year_id: 9,
+        start_date: new Date('2004-01-01T00:00:00.000Z'),
+        end_date: new Date('2004-12-31T00:00:00.000Z'),
+        active: false,
+      });
+      prismaMock.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 10,
+      });
+
+      await expect(
+        service.updateEcclesiasticalYear(
+          9,
+          { end_date: '2005-06-01' },
+          ACTOR_ID,
+        ),
+      ).rejects.toBeInstanceOf(AppConflictException);
+
+      expect(prismaMock.ecclesiastical_years.update).not.toHaveBeenCalled();
+      expect(prismaMock.ecclesiastical_years.updateMany).not.toHaveBeenCalled();
     });
   });
 });

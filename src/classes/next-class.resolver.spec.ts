@@ -383,7 +383,7 @@ describe('NextClassResolver', () => {
     });
   });
 
-  it('D02 — last GM class is configuration_error, not no_class_required', async () => {
+  it('D02 — Guía Mayor is the last class and does not open another one', async () => {
     (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(SECTION_GM);
     (mock.enrollments.findMany as jest.Mock).mockResolvedValue([mkEnrollment(CLASS_GM_8)]);
     (mock.classes.findFirst as jest.Mock).mockResolvedValue(null);
@@ -391,11 +391,9 @@ describe('NextClassResolver', () => {
 
     const result = await resolver.resolve(USER_ID, SECTION_GM.club_section_id, YEAR_ID);
 
-    expect(result).toEqual({
-      kind: 'configuration_error',
-      code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
-    });
+    expect(result).toEqual({ kind: 'journey_complete' });
     expect(mock.club_types.findFirst).not.toHaveBeenCalled();
+    expect(mock.enrollments.create).toBeUndefined();
   });
 
   it('T9 — resolver is read-only', async () => {

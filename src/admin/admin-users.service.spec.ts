@@ -409,8 +409,30 @@ describe('AdminUsersService', () => {
           },
           users_roles: [],
           club_role_assignments: [
-            { roles: { role_name: 'director' } },
-            { roles: { role_name: 'member' } },
+            {
+              assignment_id: 'cra-director',
+              roles: { role_name: 'director' },
+              club_sections: {
+                club_types: { name: 'Aventureros' },
+                clubs: { name: 'ACV' },
+              },
+            },
+            {
+              assignment_id: 'cra-member',
+              roles: { role_name: 'member' },
+              club_sections: {
+                club_types: { name: 'Guías Mayores' },
+                clubs: { name: 'ACV' },
+              },
+            },
+            {
+              assignment_id: 'cra-secretary',
+              roles: { role_name: 'secretary' },
+              club_sections: {
+                club_types: { name: 'Conquistadores' },
+                clubs: { name: 'ACV' },
+              },
+            },
           ],
           users_pr: {
             complete: true,
@@ -424,7 +446,106 @@ describe('AdminUsersService', () => {
 
       const result = await service.listUsers('actor-super', buildListQuery());
 
-      expect(result.data[0].roles).toEqual(['director', 'member']);
+      expect(result.data[0].roles).toEqual(['director', 'member', 'secretary']);
+      expect(result.data[0].club_assignments).toEqual([
+        {
+          assignment_id: 'cra-director',
+          role_name: 'director',
+          section_name: 'Aventureros',
+          club_name: 'ACV',
+        },
+        {
+          assignment_id: 'cra-secretary',
+          role_name: 'secretary',
+          section_name: 'Conquistadores',
+          club_name: 'ACV',
+        },
+        {
+          assignment_id: 'cra-member',
+          role_name: 'member',
+          section_name: 'Guías Mayores',
+          club_name: 'ACV',
+        },
+      ]);
+    });
+
+    it('should sort the full result set by name and surnames before pagination', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+        }),
+      );
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+      mockPrismaService.users.count.mockResolvedValue(0);
+
+      await service.listUsers('actor-super', buildListQuery());
+
+      expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 0,
+          take: 20,
+          orderBy: [
+            { name: { sort: 'asc', nulls: 'last' } },
+            { paternal_last_name: { sort: 'asc', nulls: 'last' } },
+            { maternal_last_name: { sort: 'asc', nulls: 'last' } },
+            { user_id: 'asc' },
+          ],
+        }),
+      );
+      expect(mockPrismaService.users.findMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: { created_at: 'desc' },
+        }),
+      );
+    });
+
+    it('should restore created_at desc when sortBy=created_at and sortOrder=desc', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+        }),
+      );
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+      mockPrismaService.users.count.mockResolvedValue(0);
+
+      await service.listUsers(
+        'actor-super',
+        buildListQuery({ sortBy: 'created_at', sortOrder: 'desc' }),
+      );
+
+      expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ created_at: 'desc' }, { user_id: 'asc' }],
+        }),
+      );
+    });
+
+    it('should keep the same name orderBy on page 2 instead of restarting the alphabet', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+        }),
+      );
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+      mockPrismaService.users.count.mockResolvedValue(40);
+
+      await service.listUsers(
+        'actor-super',
+        buildListQuery({ page: 2, limit: 20 }),
+      );
+
+      expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 20,
+          take: 20,
+          orderBy: [
+            { name: { sort: 'asc', nulls: 'last' } },
+            { paternal_last_name: { sort: 'asc', nulls: 'last' } },
+            { maternal_last_name: { sort: 'asc', nulls: 'last' } },
+            { user_id: 'asc' },
+          ],
+        }),
+      );
     });
 
     it('should filter users by either global or club role', async () => {
@@ -865,6 +986,52 @@ describe('AdminUsersService', () => {
       );
     });
 
+    describe('assertUserInActorScope', () => {
+      it('resolves when the target user is inside the actor territory', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          buildResolvedAuthorization({
+            roles: ['director-lf'],
+            permissions: ['users:read_detail'],
+            localFieldId: 3,
+          }),
+        );
+        mockPrismaService.users.findFirst.mockResolvedValue({
+          user_id: 'user-in-field',
+        });
+
+        await expect(
+          service.assertUserInActorScope('actor-lf', 'user-in-field'),
+        ).resolves.toBeUndefined();
+
+        expect(mockPrismaService.users.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              AND: [
+                { user_id: 'user-in-field' },
+                { local_field_id: 3 },
+              ],
+            },
+            select: { user_id: true },
+          }),
+        );
+      });
+
+      it('throws ADMIN_USER_NOT_FOUND when the target is outside scope', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          buildResolvedAuthorization({
+            roles: ['director-lf'],
+            permissions: ['users:read_detail'],
+            localFieldId: 3,
+          }),
+        );
+        mockPrismaService.users.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.assertUserInActorScope('actor-lf', 'user-other-field'),
+        ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_NOT_FOUND });
+      });
+    });
+
     describe('sensitive subresource pruning', () => {
       const actor = {
         user_id: 'actor-admin',
@@ -987,6 +1154,16 @@ describe('AdminUsersService', () => {
 
       const result = await service.getUserById('actor-super', 'user-1');
 
+      expect(mockPrismaService.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: 'user-1',
+            ecclesiastical_year_id: 2026,
+            active: true,
+            record_kind: 'OPERATIONAL',
+          }),
+        }),
+      );
       expect(result.current_operational_enrollment).toEqual(
         expect.objectContaining({
           enrollment_id: 9001,

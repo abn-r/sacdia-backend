@@ -70,6 +70,7 @@ describe('PostRegistrationService', () => {
     enrollments: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ enrollment_id: 77, active: true }),
       create: jest
         .fn()
@@ -567,6 +568,64 @@ describe('PostRegistrationService', () => {
       expect(
         mockMembershipRequestsService.notifyNewRequestCreated,
       ).not.toHaveBeenCalled();
+    });
+
+    it('does not adopt a HISTORICAL_CERTIFICATE enrollment as operational', async () => {
+      transactionMock.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 15,
+        active: true,
+        record_kind: 'HISTORICAL_CERTIFICATE',
+      });
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
+
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+      expect(transactionMock.enrollments.update).not.toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
+    });
+
+    it('does not create a second Guía Mayor GM-01 enrollment when a prior row exists', async () => {
+      transactionMock.users.findUnique.mockResolvedValue({
+        birthday: new Date('2000-01-01'),
+      });
+      transactionMock.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 10,
+        club_type_id: 3,
+      });
+      transactionMock.classes.findUnique.mockResolvedValue({
+        class_id: 5,
+        active: true,
+        club_type_id: 3,
+        minimum_age: 16,
+        asset_code: 'GM-01',
+        available_from_year: null,
+        available_until_year: null,
+      });
+      transactionMock.classes.findFirst.mockResolvedValue({
+        class_id: 5,
+        minimum_age: 16,
+      });
+      transactionMock.enrollments.findUnique.mockResolvedValue(null);
+      transactionMock.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 15,
+      });
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
+
+      expect(transactionMock.enrollments.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            user_id: userId,
+            class_id: dto.class_id,
+          },
+        }),
+      );
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
     });
 
     it('should reactivate existing inactive enrollment without resetting metadata', async () => {

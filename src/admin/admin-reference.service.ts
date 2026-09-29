@@ -1043,8 +1043,8 @@ export class AdminReferenceService {
     dto: CreateEcclesiasticalYearDto,
     actorId: string,
   ) {
-    const startDate = new Date(dto.start_date);
-    const endDate = new Date(dto.end_date);
+    const startDate = this.parseCatalogDate(dto.start_date);
+    const endDate = this.parseCatalogDate(dto.end_date);
     this.validateDateRange(startDate, endDate);
 
     const data = {
@@ -1053,16 +1053,19 @@ export class AdminReferenceService {
       active: dto.active ?? false,
     };
 
-    const year = await this.prisma.$transaction(async (tx) => {
-      if (data.active) {
-        await tx.ecclesiastical_years.updateMany({
-          where: { active: true },
-          data: { active: false, modified_at: new Date() },
-        });
-      }
+    const year = await this.withEcclesiasticalYearOverlapGuard(() =>
+      this.prisma.$transaction(async (tx) => {
+        await this.assertNoEcclesiasticalYearOverlap(tx, startDate, endDate);
+        if (data.active) {
+          await tx.ecclesiastical_years.updateMany({
+            where: { active: true },
+            data: { active: false, modified_at: new Date() },
+          });
+        }
 
-      return tx.ecclesiastical_years.create({ data });
-    });
+        return tx.ecclesiastical_years.create({ data });
+      }),
+    );
 
     this.logMutation('create', 'ecclesiastical_years', year.year_id, actorId);
 
@@ -1082,20 +1085,29 @@ export class AdminReferenceService {
     const current = await this.ensureEcclesiasticalYearExists(yearId);
 
     const startDate = dto.start_date
-      ? new Date(dto.start_date)
+      ? this.parseCatalogDate(dto.start_date)
       : current.start_date;
-    const endDate = dto.end_date ? new Date(dto.end_date) : current.end_date;
+    const endDate = dto.end_date
+      ? this.parseCatalogDate(dto.end_date)
+      : current.end_date;
     this.validateDateRange(startDate, endDate);
 
-    const year = await this.prisma.$transaction(async (tx) => {
-      if (dto.active === true) {
-        await tx.ecclesiastical_years.updateMany({
-          where: { active: true, NOT: { year_id: yearId } },
-          data: { active: false, modified_at: new Date() },
-        });
-      }
+    const year = await this.withEcclesiasticalYearOverlapGuard(() =>
+      this.prisma.$transaction(async (tx) => {
+        await this.assertNoEcclesiasticalYearOverlap(
+          tx,
+          startDate,
+          endDate,
+          yearId,
+        );
+        if (dto.active === true) {
+          await tx.ecclesiastical_years.updateMany({
+            where: { active: true, NOT: { year_id: yearId } },
+            data: { active: false, modified_at: new Date() },
+          });
+        }
 
-      return tx.ecclesiastical_years.update({
+        return tx.ecclesiastical_years.update({
         where: { year_id: yearId },
         data: {
           ...(dto.start_date ? { start_date: startDate } : {}),
@@ -1104,7 +1116,8 @@ export class AdminReferenceService {
           modified_at: new Date(),
         },
       });
-    });
+      }),
+    );
 
     this.logMutation('update', 'ecclesiastical_years', yearId, actorId);
 
@@ -1335,6 +1348,67 @@ export class AdminReferenceService {
     this.logMutation('delete', 'honors_categories', id, actorId);
     await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
     return category;
+  }
+
+  private parseCatalogDate(value: string): Date {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (!match) {
+      return new Date(value);
+    }
+    return new Date(
+      Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+    );
+  }
+
+  private async assertNoEcclesiasticalYearOverlap(
+    tx: Prisma.TransactionClient,
+    startDate: Date,
+    endDate: Date,
+    excludeYearId?: number,
+  ) {
+    const overlap = await tx.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: endDate },
+        end_date: { gte: startDate },
+        ...(excludeYearId ? { year_id: { not: excludeYearId } } : {}),
+      },
+      select: { year_id: true },
+    });
+    if (overlap) {
+      throw new AppConflictException(
+        ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_OVERLAP,
+        { id: overlap.year_id },
+      );
+    }
+  }
+
+  private async withEcclesiasticalYearOverlapGuard<T>(
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (this.isEcclesiasticalYearOverlapError(error)) {
+        throw new AppConflictException(
+          ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_OVERLAP,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private isEcclesiasticalYearOverlapError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+    const message =
+      'message' in error && typeof error.message === 'string'
+        ? error.message
+        : '';
+    return (
+      message.includes('23P01') ||
+      message.includes('ecclesiastical_years_no_overlap')
+    );
   }
 
   private validateDateRange(startDate: Date, endDate: Date) {

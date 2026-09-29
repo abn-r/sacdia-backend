@@ -19,6 +19,7 @@ export class SectionAggregationService {
         club_section_id: sectionId,
         ecclesiastical_year_id: ecclesiasticalYearId,
         composite_score_pct: { not: null },
+        enrollment: { record_kind: 'OPERATIONAL' },
       },
       select: { composite_score_pct: true },
     });

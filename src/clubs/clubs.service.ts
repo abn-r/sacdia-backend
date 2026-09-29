@@ -469,6 +469,7 @@ export class ClubsService {
             where: {
               ecclesiastical_year_id: activeYear.year_id,
               active: true,
+              record_kind: 'OPERATIONAL' as const,
               classes: {
                 club_type_id: section.club_type_id,
               },

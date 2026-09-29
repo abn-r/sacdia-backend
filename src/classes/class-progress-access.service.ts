@@ -88,6 +88,7 @@ export class ClassProgressAccessService {
         class_id: params.classId,
         ecclesiastical_year_id: params.ecclesiasticalYearId,
         active: true,
+        record_kind: 'OPERATIONAL',
       },
       select: {
         enrollment_id: true,

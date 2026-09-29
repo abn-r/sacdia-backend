@@ -1,10 +1,73 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { FinancePeriodService } from './finance-period.service';
+import {
+  FinancePeriodService,
+  listUtcMonthsThroughPrevious,
+  previousUtcMonth,
+  utcMonthClosedAt,
+} from './finance-period.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ForbiddenException } from '@nestjs/common';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
 import { ErrorCode } from '../common/errors/error-codes';
+
+describe('previousUtcMonth', () => {
+  it('closes August when cron fires at 1 Sep 00:00 UTC', () => {
+    const getMonth = jest.spyOn(Date.prototype, 'getMonth');
+    const getFullYear = jest.spyOn(Date.prototype, 'getFullYear');
+
+    expect(previousUtcMonth(new Date('2026-09-01T00:00:00.000Z'))).toEqual({
+      year: 2026,
+      month: 8,
+    });
+
+    expect(getMonth).not.toHaveBeenCalled();
+    expect(getFullYear).not.toHaveBeenCalled();
+    getMonth.mockRestore();
+    getFullYear.mockRestore();
+  });
+
+  it('wraps January UTC to December of the previous year', () => {
+    expect(previousUtcMonth(new Date('2026-01-01T00:00:00.000Z'))).toEqual({
+      year: 2025,
+      month: 12,
+    });
+  });
+});
+
+describe('utcMonthClosedAt', () => {
+  it('stamps closing at 00:00 UTC on the first of the next month', () => {
+    expect(utcMonthClosedAt(2026, 4).toISOString()).toBe(
+      '2026-05-01T00:00:00.000Z',
+    );
+  });
+
+  it('rolls December into January of the next year', () => {
+    expect(utcMonthClosedAt(2026, 12).toISOString()).toBe(
+      '2027-01-01T00:00:00.000Z',
+    );
+  });
+});
+
+describe('listUtcMonthsThroughPrevious', () => {
+  it('includes January through August when now is mid-September UTC', () => {
+    expect(
+      listUtcMonthsThroughPrevious(
+        new Date('2026-01-01T00:00:00.000Z'),
+        new Date('2026-09-19T21:00:00.000Z'),
+      ),
+    ).toEqual([
+      { year: 2026, month: 1 },
+      { year: 2026, month: 2 },
+      { year: 2026, month: 3 },
+      { year: 2026, month: 4 },
+      { year: 2026, month: 5 },
+      { year: 2026, month: 6 },
+      { year: 2026, month: 7 },
+      { year: 2026, month: 8 },
+    ]);
+  });
+});
 
 describe('FinancePeriodService', () => {
   let service: FinancePeriodService;
@@ -13,7 +76,12 @@ describe('FinancePeriodService', () => {
     clubs: { findMany: jest.fn() },
     club_sections: { findMany: jest.fn() },
     finances: { findMany: jest.fn(), groupBy: jest.fn() },
-    financePeriodClosing: { findUnique: jest.fn(), create: jest.fn() },
+    financePeriodClosing: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    ecclesiastical_years: { findFirst: jest.fn() },
   };
 
   const mockAuthorizationContextService = {
@@ -148,6 +216,57 @@ describe('FinancePeriodService', () => {
           total_expense: 0,
           balance: 0,
           movement_count: 0,
+        }),
+      });
+    });
+
+    it('should replace an existing closing when replace is true', async () => {
+      mockPrismaService.club_sections.findMany.mockResolvedValue([
+        { club_section_id: 10, club_types: { name: 'Conquistadores' } },
+      ]);
+      mockPrismaService.finances.findMany.mockResolvedValue([
+        {
+          finance_id: 12,
+          amount: 100,
+          club_section_id: 10,
+          finance_category_id: 1,
+          finances_categories: {
+            finance_category_id: 1,
+            name: 'Ventas',
+            type: 0,
+          },
+        },
+      ]);
+      mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue({
+        finance_period_closing_id: 99,
+        club_id: 1,
+        year: 2026,
+        month: 8,
+      });
+      const closedAt = utcMonthClosedAt(2026, 8);
+      mockPrismaService.financePeriodClosing.update.mockResolvedValue({
+        finance_period_closing_id: 99,
+      });
+
+      const result = await service.closeMonthForClub(1, 2026, 8, null, {
+        replace: true,
+        closedAt,
+      });
+
+      expect(result).toEqual({ finance_period_closing_id: 99 });
+      expect(
+        mockPrismaService.financePeriodClosing.create,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.financePeriodClosing.update,
+      ).toHaveBeenCalledWith({
+        where: { finance_period_closing_id: 99 },
+        data: expect.objectContaining({
+          total_income: 100,
+          total_expense: 0,
+          movement_count: 1,
+          closed_at: closedAt,
+          closed_by: null,
         }),
       });
     });
@@ -338,6 +457,17 @@ describe('FinancePeriodService', () => {
       expect(service.closeMonthForClub).toHaveBeenCalledWith(2, 2026, 3);
     });
 
+    it('closes the previous UTC month at 00:00 UTC on the 1st', async () => {
+      jest.setSystemTime(new Date('2026-09-01T00:00:00.000Z'));
+      mockPrismaService.clubs.findMany
+        .mockResolvedValueOnce([{ club_id: 1, name: 'ACV' }])
+        .mockResolvedValueOnce([]);
+
+      await service.handleMonthlyClosing();
+
+      expect(service.closeMonthForClub).toHaveBeenCalledWith(1, 2026, 8);
+    });
+
     it('should isolate errors per club and continue processing', async () => {
       mockPrismaService.clubs.findMany
         .mockResolvedValueOnce([
@@ -355,6 +485,38 @@ describe('FinancePeriodService', () => {
 
       await expect(service.handleMonthlyClosing()).resolves.not.toThrow();
       expect(service.closeMonthForClub).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('rebuildCompletedClosings', () => {
+    it('rebuilds each completed UTC month with the intended closing timestamp', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        start_date: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      mockPrismaService.clubs.findMany.mockImplementation(
+        async ({ skip }: { skip: number }) => {
+          if (skip === 0) return [{ club_id: 1, name: 'ACV' }];
+          return [];
+        },
+      );
+      jest.spyOn(service, 'closeMonthForClub').mockResolvedValue({
+        finance_period_closing_id: 1,
+      } as Awaited<ReturnType<FinancePeriodService['closeMonthForClub']>>);
+
+      const result = await service.rebuildCompletedClosings(
+        new Date('2026-09-19T21:00:00.000Z'),
+      );
+
+      expect(result).toEqual({
+        months: 8,
+        itemsProcessed: 8,
+        rebuilt: 8,
+      });
+      expect(service.closeMonthForClub).toHaveBeenCalledTimes(8);
+      expect(service.closeMonthForClub).toHaveBeenCalledWith(1, 2026, 8, null, {
+        replace: true,
+        closedAt: utcMonthClosedAt(2026, 8),
+      });
     });
   });
 });

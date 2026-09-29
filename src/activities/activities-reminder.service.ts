@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ACTIVITY_BOARD_ROLE_NAMES, classIdsFromJson, parseActivityAudience } from './activity-audience';
+import { calendarDateInTimeZone, toUtcDate } from './activity-series-dates';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
 
@@ -81,6 +83,8 @@ export class ActivitiesReminderService {
             name: true,
             activity_time: true,
             club_section_id: true,
+            audience: true,
+            classes: true,
           },
         });
 
@@ -126,21 +130,39 @@ export class ActivitiesReminderService {
             const sectionId = activity.club_section_id;
             if (sectionId == null) continue;
 
-            // 5. Send notification to section members
-            await this.notificationsService.sendToClubMembers(
-              sectionId,
-              {
-                title: 'Tu actividad está por comenzar',
-                body: `${activity.name} empieza a las ${activity.activity_time}`,
-                data: {
-                  type: 'activity',
-                  entity_id: String(activity.activity_id),
-                  action: 'reminder',
-                },
+            const payload = {
+              title: 'Tu actividad está por comenzar',
+              body: `${activity.name} empieza a las ${activity.activity_time}`,
+              data: {
+                type: 'activity',
+                entity_id: String(activity.activity_id),
+                action: 'reminder',
               },
-              'system',
-              'activities:reminder',
-            );
+            };
+            const audience = parseActivityAudience(activity.audience);
+            if (audience === 'board') {
+              await this.notificationsService.sendToSectionRole(
+                sectionId,
+                [...ACTIVITY_BOARD_ROLE_NAMES],
+                payload.title,
+                payload.body,
+                payload.data,
+                'activities:reminder',
+              );
+            } else if (audience === 'classes') {
+              await this.sendClassReminder(
+                sectionId,
+                classIdsFromJson(activity.classes),
+                payload,
+              );
+            } else {
+              await this.notificationsService.sendToClubMembers(
+                sectionId,
+                payload,
+                'system',
+                'activities:reminder',
+              );
+            }
 
             // 6. Mark reminder as sent
             await this.prisma.activities.update({
@@ -170,5 +192,78 @@ export class ActivitiesReminderService {
     } finally {
       await this.lockService.release('cron:activities-reminder');
     }
+  }
+
+  private async sendClassReminder(
+    sectionId: number,
+    classIds: number[],
+    payload: {
+      title: string;
+      body: string;
+      data: Record<string, string>;
+    },
+  ) {
+    if (classIds.length === 0) return;
+
+    const today = toUtcDate(calendarDateInTimeZone(new Date()));
+    const year = await this.prisma.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: today },
+        end_date: { gte: today },
+      },
+      select: { year_id: true },
+    });
+    if (!year) return;
+
+    const members = await this.prisma.club_role_assignments.findMany({
+      where: {
+        club_section_id: sectionId,
+        active: true,
+        status: 'active',
+        ecclesiastical_year_id: year.year_id,
+      },
+      select: { user_id: true },
+    });
+    const memberIds = [...new Set(members.map((row) => row.user_id))];
+    if (memberIds.length === 0) return;
+
+    const enrolled = await this.prisma.enrollments.findMany({
+      where: {
+        user_id: { in: memberIds },
+        class_id: { in: classIds },
+        active: true,
+        record_kind: 'OPERATIONAL',
+        ecclesiastical_year_id: year.year_id,
+      },
+      select: { user_id: true },
+    });
+    const recipients = new Set(enrolled.map((row) => row.user_id));
+    const board = await this.prisma.club_role_assignments.findMany({
+      where: {
+        club_section_id: sectionId,
+        active: true,
+        status: 'active',
+        ecclesiastical_year_id: year.year_id,
+        user_id: { in: memberIds },
+        roles: { role_name: { in: [...ACTIVITY_BOARD_ROLE_NAMES] } },
+      },
+      select: { user_id: true },
+    });
+    for (const row of board) recipients.add(row.user_id);
+
+    await Promise.all(
+      [...recipients].map((userId) =>
+        this.notificationsService.sendToUser(
+          {
+            userId,
+            title: payload.title,
+            body: payload.body,
+            data: payload.data,
+          },
+          'system',
+          'activities:reminder',
+        ),
+      ),
+    );
   }
 }

@@ -541,6 +541,29 @@ describe('AnnualMembershipService', () => {
       expect(classWriter.upsert).not.toHaveBeenCalled();
     });
 
+    it('continues Guía Mayor membership without a new class enrollment', async () => {
+      prisma.club_role_assignments.findFirst.mockResolvedValueOnce({
+        assignment_id: 'gm-not-enrolled-2026',
+        status: 'inactive',
+        role_id: MEMBER_ROLE_ID,
+      });
+      nextClassResolver.resolve.mockResolvedValue({ kind: 'journey_complete' });
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_RETURNED],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        outcome: 'path_complete',
+        enrollment_id: null,
+        error_code: null,
+      });
+      expect(classWriter.upsert).not.toHaveBeenCalled();
+      expect(prisma.club_role_assignments.update).toHaveBeenCalled();
+    });
+
     it('A11 next class in another section is blocked without writing enrollment', async () => {
       prisma.club_role_assignments.findFirst.mockResolvedValueOnce({
         assignment_id: 'gm-not-enrolled-2026',

@@ -18,6 +18,7 @@ export interface NextClassResult {
 
 export type NextClassDecision =
   | ({ kind: 'next_class' } & NextClassResult)
+  | { kind: 'journey_complete' }
   | { kind: 'policy_blocked'; code: ErrorCode }
   | { kind: 'configuration_error'; code: ErrorCode };
 
@@ -126,7 +127,10 @@ export class NextClassResolver {
     });
 
     const jump = lastClubType ? TYPE_JUMP[lastClubType.name] : undefined;
-    if (!jump || fromSection.main_club_id == null) {
+    if (!jump) {
+      return { kind: 'journey_complete' };
+    }
+    if (fromSection.main_club_id == null) {
       return unresolved();
     }
 

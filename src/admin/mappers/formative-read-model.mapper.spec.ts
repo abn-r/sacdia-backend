@@ -65,4 +65,66 @@ describe('buildFormativeReadModel', () => {
     expect(result.current_cross_type_enrollment).toBeNull();
     expect(result.conflictEnrollmentIds).toEqual([9001, 9002]);
   });
+
+  it('keeps a historical investiture visible without treating it as the current course', () => {
+    const historical = buildEnrollment(9001, {
+      class_id: 8,
+      classes: { name: 'Guía Mayor' },
+      investiture_status: 'INVESTIDO',
+      record_kind: 'HISTORICAL_CERTIFICATE',
+    });
+    const operational = buildEnrollment(9002, {
+      class_id: 1,
+      classes: { name: 'Amigo' },
+      record_kind: 'OPERATIONAL',
+    });
+
+    const result = buildFormativeReadModel({
+      activeEcclesiasticalYearId: 2026,
+      enrollments: [historical, operational],
+      trajectoryClasses: [
+        {
+          enrollment_id: 9001,
+          class_id: 8,
+          ecclesiastical_year_id: 2026,
+          advanced_status: false,
+          active: true,
+          enrollment_date: historical.enrollment_date,
+          investiture_status: 'INVESTIDO',
+          record_kind: 'HISTORICAL_CERTIFICATE',
+          classes: { name: 'Guía Mayor' },
+        },
+        {
+          enrollment_id: 9002,
+          class_id: 1,
+          ecclesiastical_year_id: 2026,
+          advanced_status: false,
+          active: true,
+          enrollment_date: operational.enrollment_date,
+          investiture_status: 'IN_PROGRESS',
+          record_kind: 'OPERATIONAL',
+          classes: { name: 'Amigo' },
+        },
+      ],
+    });
+
+    expect(result.current_operational_enrollment).toMatchObject({
+      enrollment_id: 9002,
+      class_name: 'Amigo',
+    });
+    expect(result.conflictEnrollmentIds).toEqual([]);
+    expect(result.trajectory_classes).toEqual([
+      expect.objectContaining({
+        enrollment_id: 9001,
+        class_name: 'Guía Mayor',
+        investiture_status: 'INVESTIDO',
+        current_class: false,
+      }),
+      expect.objectContaining({
+        enrollment_id: 9002,
+        class_name: 'Amigo',
+        current_class: true,
+      }),
+    ]);
+  });
 });

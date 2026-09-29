@@ -114,4 +114,14 @@ export class UpdateCertificateImportItemDto {
   @IsOptional()
   @IsBoolean()
   mark_as_ready?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Revisión leída por el cliente. Si no coincide, no se pisa el cambio más nuevo.',
+    minimum: 0,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  expected_revision?: number;
 }

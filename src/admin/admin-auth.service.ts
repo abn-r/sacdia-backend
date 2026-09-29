@@ -6,6 +6,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
+import { AdminUsersService } from './admin-users.service';
 
 // ---------------------------------------------------------------------------
 // Response shapes
@@ -39,7 +40,9 @@ export interface AdminMfaStatusDto {
  * AdminAuthService — Admin-scoped session and MFA management.
  *
  * This service operates on OTHER users' sessions and MFA — not the caller's own.
- * All operations require admin/super-admin role (enforced at controller level).
+ * Session list/revoke assert the target is in the actor territory
+ * (`AdminUsersService.assertUserInActorScope`). MFA and password stay
+ * admin-only at the controller.
  *
  * Session data is read/written directly from the Prisma `session` table.
  * MFA (TOTP) data lives in the `verification` table via BetterAuthService.
@@ -60,6 +63,7 @@ export class AdminAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly betterAuthService: BetterAuthService,
+    private readonly adminUsersService: AdminUsersService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -68,11 +72,15 @@ export class AdminAuthService {
 
   /**
    * Lists all active (non-expired) sessions for a target user.
-   *
-   * @param targetUserId - UUID of the user whose sessions to list.
    */
-  async listUserSessions(targetUserId: string): Promise<AdminSessionListDto> {
-    await this.assertUserExists(targetUserId);
+  async listUserSessions(
+    actorUserId: string,
+    targetUserId: string,
+  ): Promise<AdminSessionListDto> {
+    await this.adminUsersService.assertUserInActorScope(
+      actorUserId,
+      targetUserId,
+    );
 
     const sessions = await this.prisma.session.findMany({
       where: {
@@ -117,10 +125,14 @@ export class AdminAuthService {
    * @param sessionId    - ID of the session to revoke.
    */
   async revokeUserSession(
+    actorUserId: string,
     targetUserId: string,
     sessionId: string,
   ): Promise<void> {
-    await this.assertUserExists(targetUserId);
+    await this.adminUsersService.assertUserInActorScope(
+      actorUserId,
+      targetUserId,
+    );
 
     // Verify the session belongs to this user before deletion
     const session = await this.prisma.session.findFirst({
@@ -148,8 +160,14 @@ export class AdminAuthService {
    * @param targetUserId - UUID of the user whose sessions to revoke.
    * @returns Number of sessions revoked.
    */
-  async revokeAllUserSessions(targetUserId: string): Promise<number> {
-    await this.assertUserExists(targetUserId);
+  async revokeAllUserSessions(
+    actorUserId: string,
+    targetUserId: string,
+  ): Promise<number> {
+    await this.adminUsersService.assertUserInActorScope(
+      actorUserId,
+      targetUserId,
+    );
 
     const result = await this.prisma.session.deleteMany({
       where: { userId: targetUserId },

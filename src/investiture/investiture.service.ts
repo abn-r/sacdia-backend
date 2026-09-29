@@ -673,6 +673,7 @@ export class InvestitureService {
     const where: Prisma.enrollmentsWhereInput = {
       investiture_status: { in: pendingStatuses },
       active: true,
+      record_kind: 'OPERATIONAL',
     };
 
     if (scopedClubSectionIds !== undefined) {
@@ -1755,6 +1756,7 @@ export class InvestitureService {
     const candidates = await this.prisma.enrollments.findMany({
       where: {
         active: true,
+        record_kind: 'OPERATIONAL',
         investiture_status: { in: EXPIRABLE_STATUSES },
       },
       select: {
@@ -1787,6 +1789,7 @@ export class InvestitureService {
           where: {
             enrollment_id: { in: overdueIds },
             active: true,
+            record_kind: 'OPERATIONAL',
             investiture_status: { in: EXPIRABLE_STATUSES },
           },
           select: { enrollment_id: true },
@@ -1803,6 +1806,7 @@ export class InvestitureService {
           where: {
             enrollment_id: { in: revalidatedIds },
             active: true,
+            record_kind: 'OPERATIONAL',
             investiture_status: { in: EXPIRABLE_STATUSES },
           },
           data: {

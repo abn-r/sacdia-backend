@@ -112,6 +112,18 @@ export class AdminUsersController {
   @ApiQuery({ name: 'active', required: false, type: Boolean })
   @ApiQuery({ name: 'unionId', required: false, type: Number })
   @ApiQuery({ name: 'localFieldId', required: false, type: Number })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ['name', 'created_at'],
+    description: 'Campo de ordenamiento del conjunto filtrado (default: name)',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['asc', 'desc'],
+    description: 'Dirección del ordenamiento (default: asc)',
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async listUsers(

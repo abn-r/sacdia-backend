@@ -111,6 +111,54 @@ export class ClassesService {
     return this.siblingTypeIdsCache;
   }
 
+  private async readCertificateProgressArchive(enrollmentId: number) {
+    const rows = await this.prisma.class_section_progress.findMany({
+      where: { enrollment_id: enrollmentId, active: true },
+      select: {
+        section_id: true,
+        score: true,
+        status: true,
+      },
+    });
+    const sections =
+      rows.length === 0
+        ? []
+        : await this.prisma.class_sections.findMany({
+            where: {
+              section_id: { in: rows.map((row) => row.section_id) },
+            },
+            select: {
+              section_id: true,
+              name: true,
+              class_modules: { select: { name: true } },
+            },
+          });
+    const sectionById = new Map(
+      sections.map((section) => [section.section_id, section]),
+    );
+    return {
+      enrollment_id: enrollmentId,
+      record_kind: 'HISTORICAL_CERTIFICATE' as const,
+      course_open: false,
+      overall_progress: null,
+      progress_archive: rows.map((row) => {
+        const section = sectionById.get(row.section_id);
+        return {
+          section_name: section?.name ?? null,
+          module_name: section?.class_modules.name ?? null,
+          score: row.score,
+          status: row.status,
+        };
+      }),
+    };
+  }
+
+  private assertOperationalProgressEnrollment(recordKind: string) {
+    if (recordKind === 'HISTORICAL_CERTIFICATE') {
+      throw new AppConflictException(ErrorCode.CLASS_PROGRESS_LOCKED);
+    }
+  }
+
   private async resolveProgressEnrollment(params: {
     userId: string;
     classId: number;
@@ -120,6 +168,7 @@ export class ClassesService {
     ecclesiasticalYearId: number;
     investitureStatus: string;
     lockedForValidation: boolean;
+    recordKind: string;
   }> {
     if (params.enrollmentId !== undefined) {
       const enrollment = await this.prisma.enrollments.findUnique({
@@ -133,6 +182,7 @@ export class ClassesService {
           ecclesiastical_year_id: true,
           investiture_status: true,
           locked_for_validation: true,
+          record_kind: true,
         },
       });
 
@@ -149,6 +199,7 @@ export class ClassesService {
         ecclesiasticalYearId: enrollment.ecclesiastical_year_id,
         investitureStatus: enrollment.investiture_status,
         lockedForValidation: enrollment.locked_for_validation,
+        recordKind: enrollment.record_kind,
       };
     }
 
@@ -172,12 +223,14 @@ export class ClassesService {
         class_id: params.classId,
         ecclesiastical_year_id: activeYear.year_id,
         active: true,
+        record_kind: 'OPERATIONAL',
       },
       select: {
         enrollment_id: true,
         ecclesiastical_year_id: true,
         investiture_status: true,
         locked_for_validation: true,
+        record_kind: true,
       },
     });
 
@@ -194,6 +247,7 @@ export class ClassesService {
       ecclesiasticalYearId: enrollments[0].ecclesiastical_year_id,
       investitureStatus: enrollments[0].investiture_status,
       lockedForValidation: enrollments[0].locked_for_validation,
+      recordKind: enrollments[0].record_kind ?? 'OPERATIONAL',
     };
   }
 
@@ -678,6 +732,7 @@ export class ClassesService {
             user_id: userId,
             ecclesiastical_year_id: ecclesiasticalYearId,
             active: true,
+            record_kind: 'OPERATIONAL',
             classes: {
               club_type_id: { in: siblingIds },
             },
@@ -697,6 +752,7 @@ export class ClassesService {
               user_id: userId,
               ecclesiastical_year_id: ecclesiasticalYearId,
               active: true,
+              record_kind: 'OPERATIONAL',
             },
           });
           if (anyActiveThisYear >= 1) {
@@ -711,6 +767,7 @@ export class ClassesService {
             user_id: userId,
             ecclesiastical_year_id: ecclesiasticalYearId,
             active: true,
+            record_kind: 'OPERATIONAL',
             classes: { club_type_id },
           },
         });
@@ -718,6 +775,19 @@ export class ClassesService {
         // class in the same year is still rejected as CLASS_MAX_GM_ACTIVE.
         if (activeCount >= 1) {
           throw new AppConflictException(ErrorCode.CLASS_MAX_GM_ACTIVE);
+        }
+      }
+
+      if (targetClass.asset_code === GUIDE_MAJOR_ASSET_CODE) {
+        const priorGuideMajor = await tx.enrollments.findFirst({
+          where: {
+            user_id: userId,
+            class_id: classId,
+          },
+          select: { enrollment_id: true },
+        });
+        if (priorGuideMajor) {
+          throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
         }
       }
 
@@ -733,7 +803,10 @@ export class ClassesService {
       });
 
       if (existing) {
-        if (existing.active) {
+        if (
+          existing.active ||
+          existing.record_kind === 'HISTORICAL_CERTIFICATE'
+        ) {
           throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
         }
 
@@ -807,6 +880,8 @@ export class ClassesService {
         validated_at: true,
         locked_for_validation: true,
         cross_type_enrollment: true,
+        record_kind: true,
+        investiture_date: true,
         created_at: true,
         modified_at: true,
         classes: {
@@ -828,18 +903,56 @@ export class ClassesService {
       return [];
     }
 
-    const eligibilityEntries = await Promise.all(
-      enrollments.map(
-        async (
-          enrollment,
-        ): Promise<[number, ClassRequirementEligibilityResult | null]> => [
-          enrollment.enrollment_id,
-          await this.requirementEligibility.calculateForEnrollment(
-            enrollment.enrollment_id,
-          ),
-        ],
+    const operationalIds = enrollments
+      .filter((enrollment) => enrollment.record_kind !== 'HISTORICAL_CERTIFICATE')
+      .map((enrollment) => enrollment.enrollment_id);
+    const historicalIds = enrollments
+      .filter((enrollment) => enrollment.record_kind === 'HISTORICAL_CERTIFICATE')
+      .map((enrollment) => enrollment.enrollment_id);
+    const [eligibilityEntries, proofs, archivedSections] = await Promise.all([
+      Promise.all(
+        operationalIds.map(
+          async (
+            enrollmentId,
+          ): Promise<[number, ClassRequirementEligibilityResult | null]> => [
+            enrollmentId,
+            await this.requirementEligibility.calculateForEnrollment(enrollmentId),
+          ],
+        ),
       ),
-    );
+      this.prisma.certificate_bulk_import_items.findMany({
+        where: {
+          active: true,
+          status: 'APPROVED',
+          applied_entity_type: 'ENROLLMENT',
+          applied_entity_id: { in: enrollments.map((row) => row.enrollment_id) },
+        },
+        select: {
+          applied_entity_id: true,
+          batch_id: true,
+          batch: {
+            select: {
+              files: {
+                where: { active: true, upload_status: 'CONFIRMED' },
+                select: { file_id: true },
+                take: 1,
+              },
+            },
+          },
+        },
+      }),
+      historicalIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.class_section_progress.findMany({
+            where: { enrollment_id: { in: historicalIds }, active: true },
+            select: {
+              enrollment_id: true,
+              section_id: true,
+              score: true,
+              status: true,
+            },
+          }),
+    ]);
 
     const eligibilityByEnrollment = new Map<
       number,
@@ -853,17 +966,69 @@ export class ClassesService {
       ),
     );
 
+    const sectionIds = [
+      ...new Set(
+        archivedSections
+          .map((row) => row.section_id)
+          .filter((sectionId): sectionId is number => sectionId != null),
+      ),
+    ];
+    const sectionCatalog =
+      sectionIds.length === 0
+        ? []
+        : await this.prisma.class_sections.findMany({
+            where: { section_id: { in: sectionIds } },
+            select: {
+              section_id: true,
+              name: true,
+              class_modules: { select: { name: true } },
+            },
+          });
+    const sectionById = new Map(
+      sectionCatalog.map((section) => [section.section_id, section]),
+    );
+    const proofByEnrollment = new Map(
+      proofs
+        .filter((proof) => proof.applied_entity_id != null)
+        .map((proof) => [
+          proof.applied_entity_id as number,
+          {
+            batch_id: proof.batch_id,
+            file_id: proof.batch.files[0]?.file_id ?? null,
+          },
+        ]),
+    );
+
     return enrollments.map((enrollment) => {
+      const historical = enrollment.record_kind === 'HISTORICAL_CERTIFICATE';
       const eligibility = eligibilityByEnrollment.get(enrollment.enrollment_id);
+      const archive = archivedSections
+        .filter((row) => row.enrollment_id === enrollment.enrollment_id)
+        .map((row) => {
+          const section = sectionById.get(row.section_id);
+          return {
+            section_name: section?.name ?? null,
+            module_name: section?.class_modules.name ?? null,
+            score: row.score,
+            status: row.status,
+          };
+        });
 
       return {
         ...enrollment,
-        overall_progress: eligibility?.overall_progress ?? 0,
-        basic_progress: eligibility?.basic_progress,
-        advanced_progress: eligibility?.advanced_progress,
-        extra_progress: eligibility?.extra_progress,
-        investiture_eligibility: eligibility?.investiture_eligibility,
-        advanced_eligibility: eligibility?.advanced_eligibility,
+        course_open: !historical,
+        certificate_proof: proofByEnrollment.get(enrollment.enrollment_id) ?? null,
+        progress_archive: historical ? archive : null,
+        overall_progress: historical
+          ? null
+          : (eligibility?.overall_progress ?? 0),
+        basic_progress: historical ? null : eligibility?.basic_progress,
+        advanced_progress: historical ? null : eligibility?.advanced_progress,
+        extra_progress: historical ? null : eligibility?.extra_progress,
+        investiture_eligibility: historical
+          ? null
+          : eligibility?.investiture_eligibility,
+        advanced_eligibility: historical ? null : eligibility?.advanced_eligibility,
       };
     });
   }
@@ -883,6 +1048,9 @@ export class ClassesService {
       classId,
       enrollmentId,
     });
+    if (resolvedEnrollment.recordKind === 'HISTORICAL_CERTIFICATE') {
+      return this.readCertificateProgressArchive(resolvedEnrollment.enrollmentId);
+    }
     await this.classProgressAccess.assertCanAccessProgress({
       actorUserId,
       targetUserId,
@@ -1109,6 +1277,7 @@ export class ClassesService {
       classId,
       enrollmentId,
     });
+    this.assertOperationalProgressEnrollment(resolvedEnrollment.recordKind);
     await this.classProgressAccess.assertCanAccessProgress({
       actorUserId,
       targetUserId,
@@ -1271,6 +1440,7 @@ export class ClassesService {
       classId,
       enrollmentId,
     });
+    this.assertOperationalProgressEnrollment(resolved.recordKind);
     await this.classProgressAccess.assertCanAccessProgress({
       actorUserId,
       targetUserId,
@@ -1363,6 +1533,7 @@ export class ClassesService {
       classId,
       enrollmentId,
     });
+    this.assertOperationalProgressEnrollment(resolved.recordKind);
     await this.classProgressAccess.assertCanAccessProgress({
       actorUserId,
       targetUserId,
@@ -1443,6 +1614,7 @@ export class ClassesService {
       classId,
       enrollmentId,
     });
+    this.assertOperationalProgressEnrollment(resolved.recordKind);
     await this.classProgressAccess.assertCanAccessProgress({
       actorUserId,
       targetUserId,

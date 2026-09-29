@@ -755,6 +755,7 @@ describe('ClubsService', () => {
                   where: expect.objectContaining({
                     ecclesiastical_year_id: 2026,
                     active: true,
+                    record_kind: 'OPERATIONAL',
                     classes: { club_type_id: 2 },
                   }),
                 }),

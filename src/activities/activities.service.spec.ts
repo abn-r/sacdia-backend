@@ -47,6 +47,12 @@ describe('ActivitiesService', () => {
     activity_instances: {
       createMany: jest.fn(),
     },
+    club_role_assignments: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+    $executeRaw: jest.fn(),
+    $executeRawUnsafe: jest.fn(),
     $transaction: jest.fn(),
   };
 
@@ -107,7 +113,14 @@ describe('ActivitiesService', () => {
       // Member of section 1 — should only see activities with an instance in section 1.
       const result = await service.findByClub(1, undefined, undefined, 1);
 
-      expect(result.data).toEqual([{ ...mockActivities[0], instances: [] }]);
+      expect(result.data).toEqual([
+        {
+          ...mockActivities[0],
+          instances: [],
+          audience: 'all',
+          audience_classes: [],
+        },
+      ]);
       expect(result.meta.total).toBe(1);
       expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -139,7 +152,14 @@ describe('ActivitiesService', () => {
       // Admin — userSectionId null means broad club-level filter.
       const result = await service.findByClub(1, undefined, undefined, null);
 
-      expect(result.data).toEqual([{ ...mockActivities[0], instances: [] }]);
+      expect(result.data).toEqual([
+        {
+          ...mockActivities[0],
+          instances: [],
+          audience: 'all',
+          audience_classes: [],
+        },
+      ]);
       expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -267,7 +287,12 @@ describe('ActivitiesService', () => {
       const result = await service.findOne(1);
 
       const { activity_instances: _ignored, ...rest } = mockActivity as any;
-      expect(result).toEqual({ ...rest, instances: [] });
+      expect(result).toEqual({
+        ...rest,
+        instances: [],
+        audience: 'all',
+        audience_classes: [],
+      });
     });
 
     it('should throw NotFoundException when not found', async () => {
@@ -319,7 +344,12 @@ describe('ActivitiesService', () => {
         }),
       );
       const { activity_instances: _ignored, ...rest } = mockActivity as any;
-      expect(result).toEqual({ ...rest, instances: [] });
+      expect(result).toEqual({
+        ...rest,
+        instances: [],
+        audience: 'all',
+        audience_classes: [],
+      });
     });
 
     it('should throw when no club_section_id is provided', async () => {
@@ -390,7 +420,14 @@ describe('ActivitiesService', () => {
         }),
       );
       const { activity_instances: _ignored, ...rest } = updated as any;
-      expect(result).toEqual({ ...rest, instances: [] });
+      expect(result).toEqual({
+        ...rest,
+        instances: [],
+        image: undefined,
+        users: undefined,
+        audience: 'all',
+        audience_classes: [],
+      });
     });
 
     it('should throw NotFoundException when activity does not exist', async () => {
@@ -474,6 +511,177 @@ describe('ActivitiesService', () => {
       await expect(
         service.recordAttendance(999, { user_ids: ['user-1'] }),
       ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
+    });
+
+    it('emits activity.attended only for newly confirmed users', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue({
+        activity_id: 1,
+        name: 'Reunión',
+        platform: 0,
+        attendees: ['user-1'],
+        activity_types: { code: 'meeting' },
+        club_sections: { main_club_id: 3 },
+      });
+      mockPrismaService.activities.update.mockResolvedValue({
+        activity_id: 1,
+        attendees: ['user-1', 'user-2'],
+      });
+
+      await service.recordAttendance(1, { user_ids: ['user-1', 'user-2'] });
+
+      expect(mockAchievementsService.emitEvent).toHaveBeenCalledTimes(1);
+      expect(mockAchievementsService.emitEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-2',
+          eventType: 'activity.attended',
+        }),
+      );
+    });
+
+    it('rejects virtual confirmation of someone outside the section', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue({
+        activity_id: 1,
+        name: 'Zoom',
+        platform: 1,
+        club_section_id: 5,
+        attendees: [],
+        instances: [],
+      });
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 9,
+      });
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.recordAttendance(1, {
+          user_ids: ['11111111-1111-4111-8111-111111111111'],
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_ATTENDANCE_OUTSIDE_SECTION,
+      });
+      expect(mockPrismaService.activities.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('virtual rsvp', () => {
+    const virtualActivity = {
+      activity_id: 4,
+      platform: 1,
+      club_section_id: 5,
+      attendees: ['user-going'],
+      rsvp: { 'user-going': 'going', 'user-skip': 'not_going' },
+      activity_instances: [{ club_section_id: 5 }],
+    };
+
+    it('stores intention without confirming attendance', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue(
+        virtualActivity,
+      );
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 9,
+      });
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'assignment-1',
+      });
+      mockPrismaService.$executeRawUnsafe.mockResolvedValue(1);
+
+      const result = await service.setRsvp(4, 'user-going', 'going');
+
+      expect(result).toEqual({ activity_id: 4, status: 'going' });
+      expect(mockPrismaService.$executeRawUnsafe).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'jsonb_build_object($1::text, $2::text)',
+        ),
+        'user-going',
+        'going',
+        4,
+      );
+      expect(mockPrismaService.activities.update).not.toHaveBeenCalled();
+      expect(mockAchievementsService.emitEvent).not.toHaveBeenCalled();
+    });
+
+    it('rejects rsvp when the caller is not a section member', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue(
+        virtualActivity,
+      );
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 9,
+      });
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        service.setRsvp(4, 'outsider', 'not_going'),
+      ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_RSVP_NOT_MEMBER });
+    });
+
+    it('rejects rsvp on a presencial activity', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue({
+        ...virtualActivity,
+        platform: 0,
+      });
+
+      await expect(
+        service.setRsvp(4, 'user-going', 'going'),
+      ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_RSVP_NOT_VIRTUAL });
+    });
+
+    it('lists every section member, including those who will not attend', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue(
+        virtualActivity,
+      );
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 9,
+      });
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        {
+          user_id: 'user-skip',
+          users: {
+            user_id: 'user-skip',
+            name: 'Ana',
+            paternal_last_name: 'López',
+            maternal_last_name: null,
+            user_image: null,
+          },
+        },
+        {
+          user_id: 'user-going',
+          users: {
+            user_id: 'user-going',
+            name: 'Luis',
+            paternal_last_name: 'Paz',
+            maternal_last_name: null,
+            user_image: null,
+          },
+        },
+        {
+          user_id: 'user-open',
+          users: {
+            user_id: 'user-open',
+            name: 'María',
+            paternal_last_name: 'Sol',
+            maternal_last_name: null,
+            user_image: null,
+          },
+        },
+      ]);
+
+      const result = await service.getAttendanceRoster(4);
+
+      expect(result.members.map((member) => member.user_id)).toEqual([
+        'user-going',
+        'user-open',
+        'user-skip',
+      ]);
+      expect(result.members[0]).toMatchObject({
+        rsvp: 'going',
+        confirmed: true,
+      });
+      expect(result.members[2]).toMatchObject({
+        rsvp: 'not_going',
+        confirmed: false,
+      });
     });
   });
 

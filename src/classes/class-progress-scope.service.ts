@@ -217,6 +217,7 @@ export class ClassProgressScopeService {
         class_id: params.classId,
         ecclesiastical_year_id: scope.ecclesiastical_year_id,
         active: true,
+        record_kind: 'OPERATIONAL',
         OR: [
           // Regular section members
           {

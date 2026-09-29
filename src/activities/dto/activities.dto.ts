@@ -152,7 +152,18 @@ export class CreateActivityDto {
   @ApiPropertyOptional({ description: 'Clases invitadas (IDs)' })
   @IsOptional()
   @IsArray()
+  @IsInt({ each: true })
   classes?: number[];
+
+  @ApiPropertyOptional({
+    description:
+      'Público. all = toda la sección. board = directiva de las secciones. classes = solo las clases indicadas.',
+    enum: ['all', 'board', 'classes'],
+    default: 'all',
+  })
+  @IsOptional()
+  @IsIn(['all', 'board', 'classes'])
+  audience?: 'all' | 'board' | 'classes';
 
   @ApiPropertyOptional({
     description:
@@ -273,7 +284,17 @@ export class UpdateActivityDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
+  @IsInt({ each: true })
   classes?: number[];
+
+  @ApiPropertyOptional({
+    enum: ['all', 'board', 'classes'],
+    description:
+      'Público. all = toda la sección. board = directiva. classes = clases indicadas.',
+  })
+  @IsOptional()
+  @IsIn(['all', 'board', 'classes'])
+  audience?: 'all' | 'board' | 'classes';
 
   @ApiPropertyOptional({
     description:
@@ -351,6 +372,16 @@ export class RecordAttendanceDto {
   @IsArray()
   @IsUUID('4', { each: true })
   declare user_ids: string[];
+}
+
+export class SetActivityRsvpDto {
+  @ApiProperty({
+    description:
+      'Intención de asistir. No confirma la asistencia. going = hará lo posible; not_going = no asistirá.',
+    enum: ['going', 'not_going'],
+  })
+  @IsIn(['going', 'not_going'])
+  declare status: 'going' | 'not_going';
 }
 
 export class ActivityFiltersDto {
