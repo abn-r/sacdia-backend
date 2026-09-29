@@ -57,7 +57,9 @@ model activities {
   link_meet          String?
   additional_data    String?
   attendees          Json?                @db.Json
+  rsvp               Json?                @db.Json
   classes            Json?                @db.Json
+  audience           String               @default("all") @db.VarChar(20)
   reminder_sent      Boolean              @default(false)
   created_by         String               @db.Uuid
   created_at         DateTime?            @db.Timestamptz(6)
@@ -134,6 +136,7 @@ model activity_series {
   link_meet              String?
   additional_data        String?
   classes                Json?     @db.Json
+  audience               String    @default("all") @db.VarChar(20)
   first_date             DateTime  @db.Date
   kind                   String    @db.VarChar(16)
   interval_days          Int?
@@ -446,6 +449,7 @@ model classes {
   class_modules                 class_modules[]
   class_section_progress        class_section_progress[]
   certificate_bulk_import_items certificate_bulk_import_items[]
+  institutional_certificate_requests institutional_certificate_requests[]
   club_types                    club_types                      @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   available_from_year           ecclesiastical_years?           @relation("classes_available_from_year", fields: [available_from_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   available_until_year          ecclesiastical_years?           @relation("classes_available_until_year", fields: [available_until_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
@@ -469,6 +473,7 @@ model certificate_bulk_import_batches {
   raw_ocr_payload Json?
   submitted_at    DateTime?                                 @db.Timestamptz(6)
   reviewed_at     DateTime?                                 @db.Timestamptz(6)
+  revision        Int                                       @default(0)
   active          Boolean                                   @default(true)
   created_at      DateTime                                  @default(now()) @db.Timestamptz(6)
   modified_at     DateTime                                  @default(now()) @updatedAt @db.Timestamptz(6)
@@ -478,6 +483,7 @@ model certificate_bulk_import_batches {
   items       certificate_bulk_import_items[]
   files       certificate_bulk_import_files[]
   events      certificate_bulk_import_item_events[]
+  institutional_certificate_requests institutional_certificate_requests[]
 
   @@index([user_id, status], map: "idx_certificate_bulk_batches_user_status")
   @@index([local_field_id, status], map: "idx_certificate_bulk_batches_lf_status")
@@ -501,6 +507,7 @@ model certificate_bulk_import_items {
   reviewed_at         DateTime?                                         @db.Timestamptz(6)
   applied_entity_type certificate_bulk_import_applied_entity_type_enum?
   applied_entity_id   Int?
+  revision            Int                                               @default(0)
   active              Boolean                                           @default(true)
   created_at          DateTime                                          @default(now()) @db.Timestamptz(6)
   modified_at         DateTime                                          @default(now()) @updatedAt @db.Timestamptz(6)
@@ -519,18 +526,25 @@ model certificate_bulk_import_items {
 }
 
 model certificate_bulk_import_files {
-  file_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  batch_id       String   @db.Uuid
-  file_url       String   @db.VarChar(500)
-  file_name      String   @db.VarChar(255)
-  file_type      String   @db.VarChar(50)
-  uploaded_by_id String   @db.Uuid
+  file_id        String                                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batch_id       String                                  @db.Uuid
+  file_url       String                                  @db.VarChar(500)
+  file_name      String                                  @db.VarChar(255)
+  file_type      String                                  @db.VarChar(50)
+  uploaded_by_id String                                  @db.Uuid
   ocr_raw_text   String?
-  active         Boolean  @default(true)
-  uploaded_at    DateTime @default(now()) @db.Timestamptz(6)
+  active         Boolean                                 @default(true)
+  uploaded_at    DateTime                                @default(now()) @db.Timestamptz(6)
+  upload_status  certificate_import_file_status_enum     @default(CONFIRMED)
+  staging_key    String?                                 @db.VarChar(500)
+  object_key     String?                                 @db.VarChar(500)
+  size_bytes     BigInt?
+  confirmed_at   DateTime?                               @db.Timestamptz(6)
+  jurisdiction   certificate_import_file_jurisdiction_enum @default(CAMPO_LOCAL)
 
   batch       certificate_bulk_import_batches @relation(fields: [batch_id], references: [batch_id], onDelete: Cascade, onUpdate: NoAction)
   uploaded_by users                           @relation("certificate_import_file_uploader", fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  institutional_certificate_requests institutional_certificate_requests[]
 
   @@index([batch_id], map: "idx_certificate_bulk_files_batch")
   @@index([uploaded_by_id], map: "idx_certificate_bulk_files_uploaded_by")
@@ -553,6 +567,67 @@ model certificate_bulk_import_item_events {
   @@index([batch_id, created_at], map: "idx_certificate_bulk_events_batch_created")
   @@index([item_id, created_at], map: "idx_certificate_bulk_events_item_created")
   @@index([performed_by_id], map: "idx_certificate_bulk_events_performed_by")
+}
+
+enum institutional_certificate_request_status_enum {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum institutional_certificate_request_source_enum {
+  MANUAL
+  OCR
+}
+
+model institutional_certificate_requests {
+  request_id              String                                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                 String                                        @db.Uuid
+  class_id                Int
+  file_id                 String                                        @db.Uuid
+  batch_id                String?                                       @db.Uuid
+  source                  institutional_certificate_request_source_enum @default(MANUAL)
+  completed_at            DateTime                                      @db.Date
+  ecclesiastical_year_id  Int?
+  status                  institutional_certificate_request_status_enum @default(PENDING_REVIEW)
+  revision                Int                                           @default(0)
+  decision_reason         String?
+  reviewed_by_id          String?                                       @db.Uuid
+  reviewed_at             DateTime?                                     @db.Timestamptz(6)
+  predecessor_request_id  String?                                       @db.Uuid
+  active                  Boolean                                       @default(true)
+  created_at              DateTime                                      @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime                                      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user          users                              @relation("institutional_certificate_request_owner", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  class         classes                            @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
+  file          certificate_bulk_import_files      @relation(fields: [file_id], references: [file_id], onDelete: NoAction, onUpdate: NoAction)
+  batch         certificate_bulk_import_batches?   @relation(fields: [batch_id], references: [batch_id], onDelete: NoAction, onUpdate: NoAction)
+  year          ecclesiastical_years?              @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewed_by   users?                             @relation("institutional_certificate_request_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  predecessor   institutional_certificate_requests?  @relation("institutional_certificate_request_predecessor", fields: [predecessor_request_id], references: [request_id], onDelete: NoAction, onUpdate: NoAction)
+  successors    institutional_certificate_requests[] @relation("institutional_certificate_request_predecessor")
+  events        institutional_certificate_request_events[]
+
+  @@index([user_id, status], map: "idx_institutional_certificate_requests_user_status")
+  @@index([status, created_at], map: "idx_institutional_certificate_requests_status_created")
+  @@index([class_id], map: "idx_institutional_certificate_requests_class")
+  @@index([file_id], map: "idx_institutional_certificate_requests_file")
+}
+
+model institutional_certificate_request_events {
+  event_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  request_id      String   @db.Uuid
+  action          String   @db.VarChar(50)
+  performed_by_id String?  @db.Uuid
+  comment         String?
+  revision        Int
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  request      institutional_certificate_requests @relation(fields: [request_id], references: [request_id], onDelete: Cascade, onUpdate: NoAction)
+  performed_by users?                             @relation("institutional_certificate_event_performer", fields: [performed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([request_id, created_at], map: "idx_institutional_certificate_events_request")
 }
 
 model classes_translations {
@@ -1114,6 +1189,7 @@ model ecclesiastical_years {
   enrollment_ranking_weights  EnrollmentRankingWeight[]
   insurance_cycle_configs     insurance_cycle_configs[]
   activity_series             activity_series[]
+  institutional_certificate_requests institutional_certificate_requests[]
 
   // Date-range queries: "find the active year for today" uses WHERE start_date <= ? AND end_date >= ?
   @@index([start_date, end_date], map: "idx_ecclesiastical_years_date_range")
@@ -1137,6 +1213,9 @@ model enrollments {
   advanced_status          Boolean?                         @default(false)
   locked_for_validation    Boolean                          @default(false)
   cross_type_enrollment    Boolean                          @default(false)
+  // OPERATIONAL consumes the active user/year slot. HISTORICAL_CERTIFICATE
+  // does not. Partial uniques live in migration 20260921140000.
+  record_kind              enrollment_record_kind           @default(OPERATIONAL)
   active                   Boolean                          @default(true)
   last_progress_change     DateTime                         @default(now()) @db.Timestamptz(6)
   created_at               DateTime                         @default(now()) @db.Timestamptz(6)
@@ -1160,8 +1239,9 @@ model enrollments {
   @@index([user_id, ecclesiastical_year_id, active], map: "idx_enrollments_user_year_active")
   @@index([last_progress_change], map: "idx_enrollments_last_progress")
   @@index([ecclesiastical_year_id, investiture_status, active], map: "idx_enrollments_year_status_active")
-  // Partial unique: one regular active + one cross-type active per user/year
-  // (uniq_enrollments_active_user_year_regular / _cross_type): migration 20260903180000.
+  // Partial unique: one regular active + one cross-type active per user/year,
+  // only when record_kind = OPERATIONAL
+  // (uniq_enrollments_active_user_year_regular / _cross_type): migration 20260921140000.
   // Partial (investiture_status, submitted_at) WHERE active AND submitted_at IS NOT NULL:
   // migration 20260818190000.
 }
@@ -2460,6 +2540,9 @@ model users {
   certificate_bulk_import_files          certificate_bulk_import_files[]       @relation("certificate_import_file_uploader")
   certificate_bulk_import_events         certificate_bulk_import_item_events[] @relation("certificate_import_event_performer")
   certificate_bulk_import_reviews        certificate_bulk_import_items[]       @relation("certificate_import_item_reviewer")
+  institutional_certificate_requests     institutional_certificate_requests[]  @relation("institutional_certificate_request_owner")
+  institutional_certificate_reviews      institutional_certificate_requests[]  @relation("institutional_certificate_request_reviewer")
+  institutional_certificate_events       institutional_certificate_request_events[] @relation("institutional_certificate_event_performer")
   club_role_assignments                  club_role_assignments[]
   director_succession_plans_as_successor director_succession_plans[] @relation("director_succession_successor")
   director_succession_plans_as_scheduler director_succession_plans[] @relation("director_succession_scheduler")
@@ -3500,6 +3583,11 @@ enum coordinator_assignment_type {
   SECTION
 }
 
+enum enrollment_record_kind {
+  OPERATIONAL
+  HISTORICAL_CERTIFICATE
+}
+
 enum investiture_status_enum {
   IN_PROGRESS
   SUBMITTED_FOR_VALIDATION
@@ -3614,6 +3702,17 @@ enum certificate_bulk_import_item_type_enum {
 enum certificate_bulk_import_applied_entity_type_enum {
   USER_HONOR
   ENROLLMENT
+}
+
+enum certificate_import_file_status_enum {
+  PENDING_UPLOAD
+  CONFIRMED
+  REJECTED
+}
+
+enum certificate_import_file_jurisdiction_enum {
+  CAMPO_LOCAL
+  INSTITUTIONAL
 }
 
 enum evidence_validation_enum {

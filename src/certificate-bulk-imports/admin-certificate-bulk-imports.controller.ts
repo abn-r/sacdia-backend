@@ -67,7 +67,9 @@ export class AdminCertificateBulkImportsController {
   }
 
   @Post(':batchId/approve')
-  @ApiOperation({ summary: 'Aprobar todas las filas pendientes de un lote' })
+  @ApiOperation({
+    summary: 'Rechaza decidir el lote entero; cada fila se aprueba sola',
+  })
   async approveBatch(
     @Request() req: AuthenticatedRequest,
     @Param('batchId') batchId: string,
@@ -78,7 +80,9 @@ export class AdminCertificateBulkImportsController {
   }
 
   @Post(':batchId/reject')
-  @ApiOperation({ summary: 'Rechazar un lote completo y solicitar corrección' })
+  @ApiOperation({
+    summary: 'Rechaza decidir el lote entero; cada fila se rechaza sola',
+  })
   async rejectBatch(
     @Request() req: AuthenticatedRequest,
     @Param('batchId') batchId: string,

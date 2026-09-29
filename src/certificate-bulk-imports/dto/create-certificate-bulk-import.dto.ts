@@ -2,7 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
-  ArrayMinSize,
   IsArray,
   IsObject,
   IsOptional,
@@ -62,12 +61,12 @@ export class CreateCertificateBulkImportDto {
     description: 'Archivos comprobantes/certificados a procesar',
     type: [CertificateBulkImportFileDto],
   })
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(CERTIFICATE_IMPORT_MAX_FILES)
   @ValidateNested({ each: true })
   @Type(() => CertificateBulkImportFileDto)
-  declare files: CertificateBulkImportFileDto[];
+  declare files?: CertificateBulkImportFileDto[];
 
   @ApiPropertyOptional({
     description: 'Payload OCR bruto para auditoría y depuración',

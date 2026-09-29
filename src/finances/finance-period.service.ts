@@ -31,6 +31,50 @@ type Breakdown = {
   by_section: SectionBreakdownItem[];
 };
 
+export type CloseMonthOptions = {
+  replace?: boolean;
+  closedAt?: Date;
+};
+
+export function previousUtcMonth(date: Date): { month: number; year: number } {
+  const currentMonth = date.getUTCMonth() + 1;
+  const currentYear = date.getUTCFullYear();
+
+  if (currentMonth === 1) {
+    return { month: 12, year: currentYear - 1 };
+  }
+
+  return { month: currentMonth - 1, year: currentYear };
+}
+
+export function utcMonthClosedAt(year: number, month: number): Date {
+  if (month === 12) {
+    return new Date(Date.UTC(year + 1, 0, 1, 0, 0, 0, 0));
+  }
+  return new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+}
+
+export function listUtcMonthsThroughPrevious(
+  rangeStart: Date,
+  now: Date,
+): { year: number; month: number }[] {
+  const end = previousUtcMonth(now);
+  let year = rangeStart.getUTCFullYear();
+  let month = rangeStart.getUTCMonth() + 1;
+  const months: { year: number; month: number }[] = [];
+
+  while (year < end.year || (year === end.year && month <= end.month)) {
+    months.push({ year, month });
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+
+  return months;
+}
+
 @Injectable()
 export class FinancePeriodService {
   private readonly logger = new Logger(FinancePeriodService.name);
@@ -49,12 +93,13 @@ export class FinancePeriodService {
     year: number,
     month: number,
     closedBy: string | null = null,
+    options: CloseMonthOptions = {},
   ) {
     const existing = await this.prisma.financePeriodClosing.findUnique({
       where: { club_id_year_month: { club_id: clubId, year, month } },
     });
 
-    if (existing) {
+    if (existing && !options.replace) {
       this.logger.debug(
         `Closing already exists for club ${clubId}, ${year}-${String(month).padStart(2, '0')}. Skipping.`,
       );
@@ -95,19 +140,38 @@ export class FinancePeriodService {
 
     const breakdown = this.buildBreakdown(movements, sections);
 
+    const closingData = {
+      club_id: clubId,
+      year,
+      month,
+      total_income: totalIncome,
+      total_expense: totalExpense,
+      balance: totalIncome - totalExpense,
+      movement_count: movements.length,
+      breakdown: breakdown as any,
+      closed_at: options.closedAt ?? new Date(),
+      closed_by: closedBy,
+    };
+
+    if (existing && options.replace) {
+      return this.prisma.financePeriodClosing.update({
+        where: {
+          finance_period_closing_id: existing.finance_period_closing_id,
+        },
+        data: {
+          total_income: closingData.total_income,
+          total_expense: closingData.total_expense,
+          balance: closingData.balance,
+          movement_count: closingData.movement_count,
+          breakdown: closingData.breakdown,
+          closed_at: closingData.closed_at,
+          closed_by: closingData.closed_by,
+        },
+      });
+    }
+
     return this.prisma.financePeriodClosing.create({
-      data: {
-        club_id: clubId,
-        year,
-        month,
-        total_income: totalIncome,
-        total_expense: totalExpense,
-        balance: totalIncome - totalExpense,
-        movement_count: movements.length,
-        breakdown: breakdown as any,
-        closed_at: new Date(),
-        closed_by: closedBy,
-      },
+      data: closingData,
     });
   }
 
@@ -135,7 +199,7 @@ export class FinancePeriodService {
 
   @Cron('0 0 1 * *', { name: 'finance-period-closing', timeZone: 'UTC' })
   async handleMonthlyClosing(): Promise<void> {
-    const { month, year } = this.getPreviousMonth(new Date());
+    const { month, year } = previousUtcMonth(new Date());
     const period = `${year}-${String(month).padStart(2, '0')}`;
 
     this.logger.log(
@@ -241,15 +305,78 @@ export class FinancePeriodService {
     });
   }
 
-  private getPreviousMonth(date: Date): { month: number; year: number } {
-    const currentMonth = date.getMonth() + 1;
-    const currentYear = date.getFullYear();
+  async rebuildCompletedClosings(now = new Date()): Promise<{
+    months: number;
+    itemsProcessed: number;
+    rebuilt: number;
+  }> {
+    const activeYear = await this.prisma.ecclesiastical_years.findFirst({
+      where: { active: true },
+      select: { start_date: true },
+    });
 
-    if (currentMonth === 1) {
-      return { month: 12, year: currentYear - 1 };
+    if (!activeYear) {
+      this.logger.warn(
+        'No active ecclesiastical year — skipping finance period rebuild',
+      );
+      return { months: 0, itemsProcessed: 0, rebuilt: 0 };
     }
 
-    return { month: currentMonth - 1, year: currentYear };
+    const months = listUtcMonthsThroughPrevious(activeYear.start_date, now);
+    const BATCH_SIZE = 50;
+    let itemsProcessed = 0;
+    let rebuilt = 0;
+
+    for (const { year, month } of months) {
+      const closedAt = utcMonthClosedAt(year, month);
+      const period = `${year}-${String(month).padStart(2, '0')}`;
+      let offset = 0;
+
+      while (true) {
+        const clubs = await this.prisma.clubs.findMany({
+          where: { active: true },
+          select: { club_id: true, name: true },
+          skip: offset,
+          take: BATCH_SIZE,
+          orderBy: { club_id: 'asc' },
+        });
+
+        if (clubs.length === 0) break;
+
+        for (const club of clubs) {
+          itemsProcessed += 1;
+          try {
+            const result = await this.closeMonthForClub(
+              club.club_id,
+              year,
+              month,
+              null,
+              { replace: true, closedAt },
+            );
+            if (result) {
+              rebuilt += 1;
+              this.logger.log(
+                `Rebuilt period ${period} for club "${club.name}" (ID: ${club.club_id})`,
+              );
+            }
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.logger.error(
+              `Failed to rebuild period ${period} for club "${club.name}" (ID: ${club.club_id}): ${message}`,
+            );
+          }
+        }
+
+        offset += BATCH_SIZE;
+      }
+    }
+
+    this.logger.log(
+      `Finance period rebuild complete: ${rebuilt} snapshots across ${months.length} months`,
+    );
+
+    return { months: months.length, itemsProcessed, rebuilt };
   }
 
   private buildBreakdown(

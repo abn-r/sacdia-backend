@@ -13,6 +13,26 @@ export function clubTypeSectionName(
   return type ? type : null;
 }
 
+export type ClubTypeIdentity = {
+  club_type_id?: number | null;
+  name?: string | null;
+  label?: string | null;
+  slug?: string | null;
+  code?: string | null;
+};
+
+function normalizeClubTypeToken(value: string | null | undefined): string {
+  return (
+    value
+      ?.normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() ?? ''
+  );
+}
+
 /**
  * JA cycle rank used to pick the member's identity club type.
  * Guías Mayores (2) > Conquistadores (1) > Aventureros (0).
@@ -21,11 +41,11 @@ export function clubTypeSectionName(
 export function clubTypeCycleRank(
   clubTypeName: string | null | undefined,
 ): number {
-  const normalized = clubTypeName?.trim().toLowerCase() ?? '';
+  const normalized = normalizeClubTypeToken(clubTypeName);
   if (
     normalized.includes('guia') ||
-    normalized.includes('guía') ||
-    normalized.includes('master guide')
+    normalized.includes('master guide') ||
+    normalized.includes('master guild')
   ) {
     return 2;
   }
@@ -42,6 +62,29 @@ export function clubTypeCycleRank(
     return 0;
   }
   return -1;
+}
+
+/**
+ * Detects Guías Mayores from catalog name/slug/code.
+ * Never key off numeric `club_type_id` — seed ids are not a contract.
+ */
+export function isMasterGuidesClubType(item: ClubTypeIdentity): boolean {
+  return [item.name, item.label, item.slug, item.code].some(
+    (token) => clubTypeCycleRank(token) === 2,
+  );
+}
+
+export function findMasterGuidesClubTypeId(
+  items: readonly ClubTypeIdentity[],
+): number | null {
+  for (const item of items) {
+    if (!isMasterGuidesClubType(item)) continue;
+    const id = item.club_type_id;
+    if (typeof id === 'number' && Number.isInteger(id) && id > 0) {
+      return id;
+    }
+  }
+  return null;
 }
 
 export function clubSectionDisplayLabel(

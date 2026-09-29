@@ -39,7 +39,11 @@ describe('RankingsService', () => {
     club_sections: { findMany: jest.Mock };
     classes: { findMany: jest.Mock };
     enrollments: { findMany: jest.Mock };
-    enrollmentRanking: { upsert: jest.Mock; aggregate: jest.Mock };
+    enrollmentRanking: {
+      upsert: jest.Mock;
+      aggregate: jest.Mock;
+      deleteMany: jest.Mock;
+    };
     sectionRanking: { upsert: jest.Mock };
   };
 
@@ -100,6 +104,7 @@ describe('RankingsService', () => {
     enrollmentRanking: {
       upsert: jest.fn(),
       aggregate: jest.fn(),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     sectionRanking: {
       upsert: jest.fn(),
@@ -1466,10 +1471,17 @@ describe('RankingsService', () => {
         mockPrismaService.enrollmentRanking.aggregate,
       ).not.toHaveBeenCalled();
 
-      // findMany has no last_progress_change filter
+      // findMany has no last_progress_change filter and skips historical certificates
       const findManyCall =
         mockPrismaService.enrollments.findMany.mock.calls[0][0];
       expect(findManyCall.where).not.toHaveProperty('last_progress_change');
+      expect(findManyCall.where.record_kind).toBe('OPERATIONAL');
+      expect(mockPrismaService.enrollmentRanking.deleteMany).toHaveBeenCalledWith({
+        where: {
+          ecclesiastical_year_id: 2026,
+          enrollment: { record_kind: 'HISTORICAL_CERTIFICATE' },
+        },
+      });
 
       // Both enrollments processed
       expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(
@@ -1496,6 +1508,7 @@ describe('RankingsService', () => {
           where: expect.objectContaining({
             ecclesiastical_year_id: 2026,
             active: true,
+            record_kind: 'OPERATIONAL',
             class_id: { in: [5] },
             last_progress_change: { gt: prevRecalc },
           }),

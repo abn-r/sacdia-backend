@@ -2,6 +2,7 @@ import { NextClassResolver } from './next-class.resolver';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppNotFoundException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
 
 function makeMock() {
   return {
@@ -14,6 +15,7 @@ function makeMock() {
     },
     classes: {
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
     },
     club_types: {
       findUnique: jest.fn(),
@@ -22,7 +24,39 @@ function makeMock() {
     ecclesiastical_years: {
       findUnique: jest.fn(),
     },
+    users: {
+      findUnique: jest.fn(),
+    },
   } as unknown as jest.Mocked<PrismaService>;
+}
+
+function birthdayForAgeAt2026(age: number): Date {
+  return new Date(`${2026 - age}-01-01T00:00:00.000Z`);
+}
+
+function routeClassesFindFirst(
+  mock: ReturnType<typeof makeMock>,
+  routes: {
+    next?: { class_id: number; display_order: number; club_type_id: number } | null;
+    byAge?: Record<number, { class_id: number; display_order: number; club_type_id: number }>;
+    firstByOrder?: { class_id: number; display_order: number; club_type_id: number } | null;
+  },
+) {
+  (mock.classes.findFirst as jest.Mock).mockImplementation((args: {
+    where?: {
+      display_order?: { gt?: number };
+      minimum_age?: { lte?: number };
+      club_type_id?: number;
+    };
+  }) => {
+    if (args?.where?.display_order?.gt != null) {
+      return Promise.resolve(routes.next ?? null);
+    }
+    if (args?.where?.minimum_age != null && args.where.club_type_id != null) {
+      return Promise.resolve(routes.byAge?.[args.where.club_type_id] ?? null);
+    }
+    return Promise.resolve(routes.firstByOrder ?? null);
+  });
 }
 
 const USER_ID = 'user-abc';
@@ -45,6 +79,8 @@ const AV_TYPE = { club_type_id: AV_TYPE_ID, name: 'Aventureros' };
 const CQ_TYPE = { club_type_id: CQ_TYPE_ID, name: 'Conquistadores' };
 const GM_TYPE = { club_type_id: GM_TYPE_ID, name: 'Guías Mayores' };
 
+const CLASS_AV_10 = { class_id: 110, display_order: 1, club_type_id: AV_TYPE_ID };
+const CLASS_AV_13 = { class_id: 113, display_order: 4, club_type_id: AV_TYPE_ID };
 const CLASS_AV_16 = { class_id: 116, display_order: 16, club_type_id: AV_TYPE_ID };
 const CLASS_AV_17 = { class_id: 117, display_order: 17, club_type_id: AV_TYPE_ID };
 const CLASS_AV_18 = { class_id: 118, display_order: 18, club_type_id: AV_TYPE_ID };
@@ -78,7 +114,10 @@ describe('NextClassResolver', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mock = makeMock();
-    resolver = new NextClassResolver(mock);
+    resolver = new NextClassResolver(
+      mock,
+      new ClassAssignmentResolverService(),
+    );
     (mock.ecclesiastical_years.findUnique as jest.Mock).mockResolvedValue(TARGET_YEAR);
     (mock.enrollments.findMany as jest.Mock).mockResolvedValue([]);
   });
@@ -168,19 +207,108 @@ describe('NextClassResolver', () => {
     expect(result).not.toMatchObject({ class_id: CLASS_AV_18.class_id });
   });
 
-  it('D02 — exhausted AV catalog is configuration_error, not silent CQ enrollment', async () => {
+  it('D02 — exhausted AV catalog with age 10 and CQ section jumps type', async () => {
     (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(SECTION_AV);
     (mock.enrollments.findMany as jest.Mock).mockResolvedValue([mkEnrollment(CLASS_AV_16)]);
-    (mock.classes.findFirst as jest.Mock).mockResolvedValue(null);
     (mock.club_types.findUnique as jest.Mock).mockResolvedValue(AV_TYPE);
     (mock.club_types.findFirst as jest.Mock).mockResolvedValue(CQ_TYPE);
     (mock.club_sections.findFirst as jest.Mock).mockResolvedValue(SECTION_CQ);
+    (mock.users.findUnique as jest.Mock).mockResolvedValue({
+      birthday: birthdayForAgeAt2026(10),
+    });
+    routeClassesFindFirst(mock, { next: null, byAge: { [CQ_TYPE_ID]: CLASS_CQ_1 } });
+    (mock.classes.findUnique as jest.Mock).mockResolvedValue(CLASS_CQ_1);
+
+    const result = await resolver.resolve(USER_ID, SECTION_AV.club_section_id, YEAR_ID);
+
+    expect(result).toMatchObject({
+      kind: 'next_class',
+      class_id: CLASS_CQ_1.class_id,
+      crossed_type: true,
+      club_section_id: SECTION_CQ.club_section_id,
+    });
+  });
+
+  it('D02 — exhausted AV catalog with age 9 stays unresolved', async () => {
+    (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(SECTION_AV);
+    (mock.enrollments.findMany as jest.Mock).mockResolvedValue([mkEnrollment(CLASS_AV_16)]);
+    (mock.club_types.findUnique as jest.Mock).mockResolvedValue(AV_TYPE);
+    (mock.club_types.findFirst as jest.Mock).mockResolvedValue(CQ_TYPE);
+    (mock.club_sections.findFirst as jest.Mock).mockResolvedValue(SECTION_CQ);
+    (mock.users.findUnique as jest.Mock).mockResolvedValue({
+      birthday: birthdayForAgeAt2026(9),
+    });
+    routeClassesFindFirst(mock, { next: null, byAge: { [CQ_TYPE_ID]: CLASS_CQ_1 } });
 
     const result = await resolver.resolve(USER_ID, SECTION_AV.club_section_id, YEAR_ID);
 
     expect(result).toEqual({
       kind: 'configuration_error',
       code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+    });
+  });
+
+  it('D02 — exhausted AV catalog without CQ section is unresolved', async () => {
+    (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(SECTION_AV);
+    (mock.enrollments.findMany as jest.Mock).mockResolvedValue([mkEnrollment(CLASS_AV_16)]);
+    (mock.club_types.findUnique as jest.Mock).mockResolvedValue(AV_TYPE);
+    (mock.club_types.findFirst as jest.Mock).mockResolvedValue(CQ_TYPE);
+    (mock.club_sections.findFirst as jest.Mock).mockResolvedValue(null);
+    (mock.users.findUnique as jest.Mock).mockResolvedValue({
+      birthday: birthdayForAgeAt2026(10),
+    });
+    routeClassesFindFirst(mock, { next: null });
+
+    const result = await resolver.resolve(USER_ID, SECTION_AV.club_section_id, YEAR_ID);
+
+    expect(result).toEqual({
+      kind: 'configuration_error',
+      code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+    });
+  });
+
+  it('D02 — exhausted Guía with age 16 and GM section jumps type', async () => {
+    (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(SECTION_CQ);
+    (mock.enrollments.findMany as jest.Mock).mockResolvedValue([mkEnrollment(CLASS_CQ_4)]);
+    (mock.club_types.findUnique as jest.Mock).mockResolvedValue(CQ_TYPE);
+    (mock.club_types.findFirst as jest.Mock).mockResolvedValue(GM_TYPE);
+    (mock.club_sections.findFirst as jest.Mock).mockResolvedValue(SECTION_GM);
+    (mock.users.findUnique as jest.Mock).mockResolvedValue({
+      birthday: birthdayForAgeAt2026(16),
+    });
+    routeClassesFindFirst(mock, { next: null, byAge: { [GM_TYPE_ID]: CLASS_GM_8 } });
+    (mock.classes.findUnique as jest.Mock).mockResolvedValue(CLASS_GM_8);
+
+    const result = await resolver.resolve(USER_ID, SECTION_CQ.club_section_id, YEAR_ID);
+
+    expect(result).toMatchObject({
+      kind: 'next_class',
+      class_id: CLASS_GM_8.class_id,
+      crossed_type: true,
+      club_section_id: SECTION_GM.club_section_id,
+    });
+  });
+
+  it('D02 — exhausted Guía still jumps when last class is IN_PROGRESS', async () => {
+    (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(SECTION_CQ);
+    (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+      mkEnrollment(CLASS_CQ_4, { investiture_status: 'IN_PROGRESS' }),
+    ]);
+    (mock.club_types.findUnique as jest.Mock).mockResolvedValue(CQ_TYPE);
+    (mock.club_types.findFirst as jest.Mock).mockResolvedValue(GM_TYPE);
+    (mock.club_sections.findFirst as jest.Mock).mockResolvedValue(SECTION_GM);
+    (mock.users.findUnique as jest.Mock).mockResolvedValue({
+      birthday: birthdayForAgeAt2026(16),
+    });
+    routeClassesFindFirst(mock, { next: null, byAge: { [GM_TYPE_ID]: CLASS_GM_8 } });
+    (mock.classes.findUnique as jest.Mock).mockResolvedValue(CLASS_GM_8);
+
+    const result = await resolver.resolve(USER_ID, SECTION_CQ.club_section_id, YEAR_ID);
+
+    expect(result).toMatchObject({
+      kind: 'next_class',
+      crossed_type: true,
+      club_section_id: SECTION_GM.club_section_id,
     });
   });
 
@@ -199,23 +327,36 @@ describe('NextClassResolver', () => {
     });
   });
 
-  it('T5 — no prior regular enrollment returns the first class of the section type', async () => {
+  it('T5 / B01 — no prior regular enrollment assigns class by age, not first display_order', async () => {
     (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(SECTION_AV);
     (mock.enrollments.findMany as jest.Mock).mockResolvedValue([]);
-    (mock.classes.findFirst as jest.Mock).mockResolvedValue(CLASS_AV_16);
+    (mock.users.findUnique as jest.Mock).mockResolvedValue({
+      birthday: birthdayForAgeAt2026(13),
+    });
+    routeClassesFindFirst(mock, {
+      firstByOrder: CLASS_AV_10,
+      byAge: { [AV_TYPE_ID]: CLASS_AV_13 },
+    });
+    (mock.classes.findUnique as jest.Mock).mockResolvedValue(CLASS_AV_13);
 
     const result = await resolver.resolve(USER_ID, SECTION_AV.club_section_id, YEAR_ID);
 
-    expect(mock.classes.findFirst).toHaveBeenCalledWith({
-      where: { club_type_id: AV_TYPE_ID, active: true },
-      orderBy: { display_order: 'asc' },
-      select: { class_id: true, display_order: true, club_type_id: true },
-    });
+    expect(mock.classes.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          club_type_id: AV_TYPE_ID,
+          active: true,
+          minimum_age: { lte: 13 },
+        }),
+      }),
+    );
     expect(result).toMatchObject({
       kind: 'next_class',
-      class_id: CLASS_AV_16.class_id,
+      class_id: CLASS_AV_13.class_id,
       club_section_id: SECTION_AV.club_section_id,
+      crossed_type: false,
     });
+    expect(result).not.toMatchObject({ class_id: CLASS_AV_10.class_id });
   });
 
   it('T6 — missing fromSection throws CLUB_SECTION_NOT_FOUND', async () => {
@@ -229,6 +370,9 @@ describe('NextClassResolver', () => {
   it('missing catalog class is configuration_error, not end of trajectory', async () => {
     (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(SECTION_AV);
     (mock.enrollments.findMany as jest.Mock).mockResolvedValue([]);
+    (mock.users.findUnique as jest.Mock).mockResolvedValue({
+      birthday: birthdayForAgeAt2026(13),
+    });
     (mock.classes.findFirst as jest.Mock).mockResolvedValue(null);
 
     const result = await resolver.resolve(USER_ID, SECTION_AV.club_section_id, YEAR_ID);
@@ -239,7 +383,7 @@ describe('NextClassResolver', () => {
     });
   });
 
-  it('D02 — last GM class is configuration_error, not no_class_required', async () => {
+  it('D02 — Guía Mayor is the last class and does not open another one', async () => {
     (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(SECTION_GM);
     (mock.enrollments.findMany as jest.Mock).mockResolvedValue([mkEnrollment(CLASS_GM_8)]);
     (mock.classes.findFirst as jest.Mock).mockResolvedValue(null);
@@ -247,11 +391,9 @@ describe('NextClassResolver', () => {
 
     const result = await resolver.resolve(USER_ID, SECTION_GM.club_section_id, YEAR_ID);
 
-    expect(result).toEqual({
-      kind: 'configuration_error',
-      code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
-    });
+    expect(result).toEqual({ kind: 'journey_complete' });
     expect(mock.club_types.findFirst).not.toHaveBeenCalled();
+    expect(mock.enrollments.create).toBeUndefined();
   });
 
   it('T9 — resolver is read-only', async () => {

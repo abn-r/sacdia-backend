@@ -84,6 +84,54 @@ async function main() {
                 active: true,
             },
             {
+                role_name: 'zone-coordinator',
+                description: 'Zonal coordinator overseeing clubs in a zone.',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
+                role_name: 'general-coordinator',
+                description: 'General coordinator overseeing zone coordinators in a local field.',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
+                role_name: 'director-lf',
+                description: 'Local-field director.',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
+                role_name: 'assistant-lf',
+                description: 'Local-field assistant director.',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
+                role_name: 'director-union',
+                description: 'Union director.',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
+                role_name: 'assistant-union',
+                description: 'Union assistant director.',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
+                role_name: 'director-dia',
+                description: 'Division director.',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
+                role_name: 'assistant-dia',
+                description: 'Division assistant director.',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
                 role_name: 'pastor',
                 description: 'Church pastor with visibility into club activities and spiritual oversight responsibilities.',
                 role_category: 'GLOBAL',
@@ -124,6 +172,12 @@ async function main() {
             {
                 role_name: 'treasurer',
                 description: 'Club treasurer who manages financial records, budgets, dues, and expense reporting.',
+                role_category: 'CLUB',
+                active: true,
+            },
+            {
+                role_name: 'secretary-treasurer',
+                description: 'Combined secretary and treasurer club role.',
                 role_category: 'CLUB',
                 active: true,
             },

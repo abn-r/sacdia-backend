@@ -278,7 +278,24 @@ describe('ClubsService', () => {
   });
 
   describe('create', () => {
-    it('should create a new club with catalog sections', async () => {
+    const catalogAvCqGm = [
+      { club_type_id: 1, name: 'Aventureros' },
+      { club_type_id: 2, name: 'Conquistadores' },
+      { club_type_id: 99, name: 'Guías Mayores' },
+    ];
+
+    function mockCreateTransaction(club = { club_id: 1, name: 'Nuevo Club' }) {
+      mockPrismaService.clubs.create.mockResolvedValue(club);
+      mockPrismaService.club_sections.createMany.mockResolvedValue({
+        count: catalogAvCqGm.length,
+      });
+      mockPrismaService.$transaction.mockImplementation(async (fn: any) =>
+        fn(mockPrismaService),
+      );
+      return club;
+    }
+
+    it('creates catalog sections and forces Guías Mayores active even when omitted', async () => {
       const createDto = {
         name: 'Nuevo Club',
         local_field_id: 1,
@@ -287,17 +304,8 @@ describe('ClubsService', () => {
         enabled_club_type_ids: [1, 2],
       };
 
-      const mockCreatedClub = { club_id: 1, name: 'Nuevo Club' };
-      mockPrismaService.club_types.findMany.mockResolvedValue([
-        { club_type_id: 1 },
-        { club_type_id: 2 },
-        { club_type_id: 3 },
-      ]);
-      mockPrismaService.clubs.create.mockResolvedValue(mockCreatedClub);
-      mockPrismaService.club_sections.createMany.mockResolvedValue({ count: 3 });
-      mockPrismaService.$transaction.mockImplementation(async (fn: any) =>
-        fn(mockPrismaService),
-      );
+      const mockCreatedClub = mockCreateTransaction();
+      mockPrismaService.club_types.findMany.mockResolvedValue(catalogAvCqGm);
 
       const result = await service.create(createDto);
 
@@ -316,14 +324,94 @@ describe('ClubsService', () => {
           }),
           expect.objectContaining({
             main_club_id: 1,
-            club_type_id: 3,
-            active: false,
+            club_type_id: 99,
+            active: true,
           }),
         ],
       });
     });
 
-    it('rejects create without enabled club types', async () => {
+    it('creates successfully with only Guías Mayores enabled', async () => {
+      mockCreateTransaction();
+      mockPrismaService.club_types.findMany.mockResolvedValue(catalogAvCqGm);
+
+      await service.create({
+        name: 'Nuevo Club',
+        local_field_id: 1,
+        districlub_type_id: 1,
+        church_id: 1,
+        enabled_club_type_ids: [99],
+      });
+
+      expect(mockPrismaService.club_sections.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({ club_type_id: 1, active: false }),
+          expect.objectContaining({ club_type_id: 2, active: false }),
+          expect.objectContaining({ club_type_id: 99, active: true }),
+        ],
+      });
+    });
+
+    it('injects Guías Mayores when enabled_club_type_ids is empty', async () => {
+      mockCreateTransaction();
+      mockPrismaService.club_types.findMany.mockResolvedValue(catalogAvCqGm);
+
+      await service.create({
+        name: 'Nuevo Club',
+        local_field_id: 1,
+        districlub_type_id: 1,
+        church_id: 1,
+        enabled_club_type_ids: [],
+      });
+
+      expect(mockPrismaService.club_sections.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({ club_type_id: 1, active: false }),
+          expect.objectContaining({ club_type_id: 2, active: false }),
+          expect.objectContaining({ club_type_id: 99, active: true }),
+        ],
+      });
+    });
+
+    it('does not invent a Guías Mayores id when the catalog has no matching type', async () => {
+      const catalogWithoutGm = [
+        { club_type_id: 1, name: 'Aventureros' },
+        { club_type_id: 2, name: 'Conquistadores' },
+        { club_type_id: 3, name: 'Pathfinders' },
+      ];
+      mockPrismaService.club_types.findMany.mockResolvedValue(catalogWithoutGm);
+      mockPrismaService.clubs.create.mockResolvedValue({
+        club_id: 1,
+        name: 'Nuevo Club',
+      });
+      mockPrismaService.club_sections.createMany.mockResolvedValue({ count: 3 });
+      mockPrismaService.$transaction.mockImplementation(async (fn: any) =>
+        fn(mockPrismaService),
+      );
+
+      await service.create({
+        name: 'Nuevo Club',
+        local_field_id: 1,
+        districlub_type_id: 1,
+        church_id: 1,
+        enabled_club_type_ids: [1, 2],
+      });
+
+      expect(mockPrismaService.club_sections.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({ club_type_id: 1, active: true }),
+          expect.objectContaining({ club_type_id: 2, active: true }),
+          expect.objectContaining({ club_type_id: 3, active: false }),
+        ],
+      });
+    });
+
+    it('rejects empty enabled types when the catalog has no Guías Mayores row', async () => {
+      mockPrismaService.club_types.findMany.mockResolvedValue([
+        { club_type_id: 1, name: 'Aventureros' },
+        { club_type_id: 2, name: 'Conquistadores' },
+      ]);
+
       await expect(
         service.create({
           name: 'Nuevo Club',
@@ -335,6 +423,7 @@ describe('ClubsService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.CLUB_SECTION_TYPES_REQUIRED,
       });
+      expect(mockPrismaService.club_sections.createMany).not.toHaveBeenCalled();
     });
 
     it('rejects create when local_field_id is outside the actor territory', async () => {
@@ -505,6 +594,75 @@ describe('ClubsService', () => {
     });
   });
 
+  describe('updateSection', () => {
+    it('rejects deactivating Guías Mayores with CLUB_SECTION_MASTER_GUIDES_REQUIRED', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 30,
+        club_type_id: 99,
+        active: true,
+        club_types: { name: 'Guías Mayores' },
+      });
+
+      await expect(
+        service.updateSection(30, { active: false }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_SECTION_MASTER_GUIDES_REQUIRED,
+      });
+      expect(mockPrismaService.club_sections.update).not.toHaveBeenCalled();
+    });
+
+    it('allows reactivating a legacy inactive Guías Mayores section', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 30,
+        club_type_id: 99,
+        active: false,
+        club_types: { name: 'Master Guides' },
+      });
+      mockPrismaService.club_sections.update.mockResolvedValue({
+        club_section_id: 30,
+        active: true,
+        club_types: { name: 'Master Guides' },
+      });
+
+      await expect(
+        service.updateSection(30, { active: true }),
+      ).resolves.toMatchObject({ active: true });
+      expect(mockPrismaService.club_sections.update).toHaveBeenCalled();
+    });
+
+    it('allows deactivating Pathfinders', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 20,
+        club_type_id: 2,
+        active: true,
+        club_types: { name: 'Pathfinders' },
+      });
+      mockPrismaService.club_sections.update.mockResolvedValue({
+        club_section_id: 20,
+        active: false,
+        club_types: { name: 'Pathfinders' },
+      });
+
+      await expect(
+        service.updateSection(20, { active: false }),
+      ).resolves.toMatchObject({ active: false });
+      expect(mockPrismaService.club_sections.update).toHaveBeenCalled();
+    });
+
+    it('does not block fee or meeting updates on Guías Mayores', async () => {
+      mockPrismaService.club_sections.update.mockResolvedValue({
+        club_section_id: 30,
+        fee: 15,
+        club_types: { name: 'Guías Mayores' },
+      });
+
+      await expect(
+        service.updateSection(30, { fee: 15, souls_target: 8 }),
+      ).resolves.toMatchObject({ fee: 15 });
+      expect(mockPrismaService.club_sections.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getMembers', () => {
     it('returns no current members when there is no current ecclesiastical year', async () => {
       mockPrismaService.club_sections.findUnique.mockResolvedValue({
@@ -597,6 +755,7 @@ describe('ClubsService', () => {
                   where: expect.objectContaining({
                     ecclesiastical_year_id: 2026,
                     active: true,
+                    record_kind: 'OPERATIONAL',
                     classes: { club_type_id: 2 },
                   }),
                 }),

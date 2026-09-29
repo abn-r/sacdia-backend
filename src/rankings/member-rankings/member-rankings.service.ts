@@ -68,11 +68,13 @@ export class MemberRankingsService {
     const safePage = Math.max(params.page, 1); // clamp >= 1
     const skip = (safePage - 1) * safeLimit;
 
-    const where = this.buildScopeWhere(params.profile, {
-      yearId: params.yearId,
-      clubId: params.clubId,
-      sectionId: params.sectionId,
-    });
+    const where = this.withOperationalEnrollment(
+      this.buildScopeWhere(params.profile, {
+        yearId: params.yearId,
+        clubId: params.clubId,
+        sectionId: params.sectionId,
+      }),
+    );
     this.logger.log(
       `list: year=${params.yearId} page=${safePage} limit=${safeLimit}`,
     );
@@ -119,7 +121,10 @@ export class MemberRankingsService {
     }
 
     const own = await this.prisma.enrollmentRanking.findFirst({
-      where: { user_id: userId, ecclesiastical_year_id: yearId },
+      where: this.withOperationalEnrollment({
+        user_id: userId,
+        ecclesiastical_year_id: yearId,
+      }),
       orderBy: { rank_position: 'asc' },
       include: {
         user: { select: { name: true } },
@@ -136,10 +141,10 @@ export class MemberRankingsService {
     const totalInSection =
       own?.club_section_id != null
         ? await this.prisma.enrollmentRanking.count({
-            where: {
+            where: this.withOperationalEnrollment({
               club_section_id: own.club_section_id,
               ecclesiastical_year_id: yearId,
-            },
+            }),
           })
         : 0;
 
@@ -150,11 +155,11 @@ export class MemberRankingsService {
       const n = nRaw ? Number(nRaw) : 5;
 
       const topRows = await this.prisma.enrollmentRanking.findMany({
-        where: {
+        where: this.withOperationalEnrollment({
           club_id: own.club_id,
           ecclesiastical_year_id: yearId,
           composite_score_pct: { not: null },
-        },
+        }),
         orderBy: { rank_position: 'asc' },
         take: n,
       });
@@ -187,10 +192,10 @@ export class MemberRankingsService {
   ): Promise<MemberBreakdownDto> {
     // 1. Load the ranking row — include club.local_field_id for read_lf scope check
     const row = await this.prisma.enrollmentRanking.findFirst({
-      where: {
+      where: this.withOperationalEnrollment({
         enrollment_id: enrollmentId,
         ecclesiastical_year_id: yearId,
-      },
+      }),
       include: {
         user: { select: { name: true } },
         club_section: {
@@ -338,6 +343,14 @@ export class MemberRankingsService {
    * from profile.authorization.grants.club_assignments and
    * profile.authorization.effective.scope.global.
    */
+  private withOperationalEnrollment(
+    where: Prisma.EnrollmentRankingWhereInput,
+  ): Prisma.EnrollmentRankingWhereInput {
+    return {
+      AND: [where, { enrollment: { record_kind: 'OPERATIONAL' } }],
+    };
+  }
+
   private buildScopeWhere(
     profile: ResolvedAuthorizationProfile,
     filters: { yearId: number; clubId?: number; sectionId?: number },

@@ -645,10 +645,15 @@ export class PostRegistrationService {
       select: {
         enrollment_id: true,
         active: true,
+        record_kind: true,
       },
     });
 
     if (existingEnrollment) {
+      if (existingEnrollment.record_kind === 'HISTORICAL_CERTIFICATE') {
+        throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
+      }
+
       if (!existingEnrollment.active) {
         await tx.enrollments.update({
           where: {
@@ -662,6 +667,8 @@ export class PostRegistrationService {
 
       return;
     }
+
+    await this.rejectSecondGuideMajor(tx, params);
 
     try {
       await tx.enrollments.create({
@@ -688,6 +695,30 @@ export class PostRegistrationService {
           ErrorCode.POST_REG_ENROLLMENT_FAILED,
         );
       }
+    }
+  }
+
+  private async rejectSecondGuideMajor(
+    tx: Prisma.TransactionClient,
+    params: { userId: string; classId: number },
+  ): Promise<void> {
+    const target = await tx.classes.findUnique({
+      where: { class_id: params.classId },
+      select: { asset_code: true },
+    });
+    if (target?.asset_code !== 'GM-01') {
+      return;
+    }
+
+    const other = await tx.enrollments.findFirst({
+      where: {
+        user_id: params.userId,
+        class_id: params.classId,
+      },
+      select: { enrollment_id: true },
+    });
+    if (other) {
+      throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
     }
   }
 

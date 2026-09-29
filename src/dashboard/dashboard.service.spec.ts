@@ -153,6 +153,15 @@ describe('DashboardService', () => {
       expect(result.club_name).toBe('Club Central');
       expect(result.club_type).toBe('Conquistadores');
       expect(result.user_role).toBe('member');
+      expect(mockPrismaService.users.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            enrollments: expect.objectContaining({
+              where: { active: true, record_kind: 'OPERATIONAL' },
+            }),
+          }),
+        }),
+      );
       expect(result.current_class_name).toBe('Amigo');
       expect(result.class_progress).toBe(40);
       expect(result.honors_completed).toBe(2);

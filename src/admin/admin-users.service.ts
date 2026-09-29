@@ -161,9 +161,24 @@ const adminUserListSelect = Prisma.validator<Prisma.usersSelect>()({
       },
     },
     select: {
+      assignment_id: true,
       roles: {
         select: {
           role_name: true,
+        },
+      },
+      club_sections: {
+        select: {
+          club_types: {
+            select: {
+              name: true,
+            },
+          },
+          clubs: {
+            select: {
+              name: true,
+            },
+          },
         },
       },
     },
@@ -224,6 +239,7 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
       enrollment_date: true,
       investiture_status: true,
       investiture_date: true,
+      record_kind: true,
       classes: {
         select: {
           name: true,
@@ -386,6 +402,7 @@ const adminEnrollmentSelect = Prisma.validator<Prisma.enrollmentsSelect>()({
   locked_for_validation: true,
   cross_type_enrollment: true,
   active: true,
+  record_kind: true,
   classes: {
     select: {
       name: true,
@@ -437,6 +454,12 @@ interface AdminUserListItem {
     name: string;
   } | null;
   roles: string[];
+  club_assignments: Array<{
+    assignment_id: string;
+    role_name: string;
+    section_name: string | null;
+    club_name: string | null;
+  }>;
   post_registration: {
     complete: boolean;
     profile_picture_complete: boolean;
@@ -507,11 +530,12 @@ export class AdminUsersService {
     pagination.limit = query.limit ?? 20;
 
     const where = this.buildListWhere(scope, query);
+    const orderBy = this.buildListOrderBy(query);
 
     const [users, total] = await Promise.all([
       this.prisma.users.findMany({
         where,
-        orderBy: { created_at: 'desc' },
+        orderBy,
         skip: pagination.skip,
         take: pagination.take,
         select: adminUserListSelect,
@@ -568,6 +592,7 @@ export class AdminUsersService {
               user_id: user.user_id,
               ecclesiastical_year_id: activeEcclesiasticalYearId,
               active: true,
+              record_kind: 'OPERATIONAL',
             },
             orderBy: { enrollment_date: 'desc' },
             select: adminEnrollmentSelect,
@@ -633,6 +658,35 @@ export class AdminUsersService {
       post_registration: sensitiveBlocks.post_registration,
       scope: this.toScopeMeta(scope),
     };
+  }
+
+  /**
+   * Same territorial cut as getUserById, without loading the detail payload.
+   * Session list/revoke use this so field staff cannot inspect users outside
+   * DIVISION / UNION / LOCAL_FIELD.
+   */
+  async assertUserInActorScope(
+    actorUserId: string,
+    userId: string,
+  ): Promise<void> {
+    const resolvedAuthorization =
+      await this.authorizationContext.resolveUserAuthorization(actorUserId);
+    const scope = await this.resolveScope(actorUserId, resolvedAuthorization);
+
+    const filters: Prisma.usersWhereInput[] = [{ user_id: userId }];
+    const scopedFilter = this.buildScopeWhere(scope);
+    if (Object.keys(scopedFilter).length > 0) {
+      filters.push(scopedFilter);
+    }
+
+    const user = await this.prisma.users.findFirst({
+      where: { AND: filters },
+      select: { user_id: true },
+    });
+
+    if (!user) {
+      throw new AppNotFoundException(ErrorCode.ADMIN_USER_NOT_FOUND);
+    }
   }
 
   async updateUserApproval(userId: string, dto: UpdateUserApprovalDto) {
@@ -1179,6 +1233,23 @@ export class AdminUsersService {
     throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
   }
 
+  private buildListOrderBy(
+    query: AdminListUsersQueryDto,
+  ): Prisma.usersOrderByWithRelationInput[] {
+    const sortDir = query.sortOrder ?? 'asc';
+
+    if (query.sortBy === 'created_at') {
+      return [{ created_at: sortDir }, { user_id: 'asc' }];
+    }
+
+    return [
+      { name: { sort: sortDir, nulls: 'last' } },
+      { paternal_last_name: { sort: sortDir, nulls: 'last' } },
+      { maternal_last_name: { sort: sortDir, nulls: 'last' } },
+      { user_id: 'asc' },
+    ];
+  }
+
   private buildListWhere(
     scope: ActorScope,
     query: AdminListUsersQueryDto,
@@ -1382,9 +1453,48 @@ export class AdminUsersService {
           }
         : null,
       roles,
+      club_assignments: this.toCompactClubAssignments(
+        user.club_role_assignments ?? [],
+      ),
       post_registration: postRegistration,
       created_at: user.created_at,
     };
+  }
+
+  private toCompactClubAssignments(
+    assignments: AdminUserListRecord['club_role_assignments'],
+  ): AdminUserListItem['club_assignments'] {
+    const rank: Record<string, number> = {
+      director: 0,
+      'deputy-director': 1,
+      secretary: 2,
+      'secretary-treasurer': 3,
+      treasurer: 4,
+      counselor: 5,
+      instructor: 6,
+      member: 9,
+    };
+
+    return [...assignments]
+      .map((assignment) => ({
+        assignment_id: assignment.assignment_id,
+        role_name: assignment.roles.role_name,
+        section_name: assignment.club_sections?.club_types?.name ?? null,
+        club_name: assignment.club_sections?.clubs?.name ?? null,
+      }))
+      .sort((a, b) => {
+        const byRole =
+          (rank[a.role_name.toLowerCase()] ?? 8) -
+          (rank[b.role_name.toLowerCase()] ?? 8);
+        if (byRole !== 0) {
+          return byRole;
+        }
+        return (a.section_name ?? '').localeCompare(
+          b.section_name ?? '',
+          'es',
+          { sensitivity: 'base' },
+        );
+      });
   }
 
   private async resolvePrivateProfileUrl(

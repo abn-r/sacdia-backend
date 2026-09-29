@@ -46,11 +46,15 @@ export class ClassEnrollmentWriter {
         enrollment_id: true,
         active: true,
         cross_type_enrollment: true,
+        record_kind: true,
       },
     });
 
     if (existing) {
-      if (params.ifExists === 'conflict' && existing.active) {
+      if (
+        existing.record_kind === 'HISTORICAL_CERTIFICATE' ||
+        (params.ifExists === 'conflict' && existing.active)
+      ) {
         throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
       }
 
@@ -66,6 +70,8 @@ export class ClassEnrollmentWriter {
 
       return { enrollment_id: existing.enrollment_id, created: false };
     }
+
+    await this.rejectSecondGuideMajor(tx, params);
 
     try {
       const created = await tx.enrollments.create({
@@ -96,6 +102,30 @@ export class ClassEnrollmentWriter {
         throw error;
       }
       return { enrollment_id: recovered.enrollment_id, created: false };
+    }
+  }
+
+  private async rejectSecondGuideMajor(
+    tx: DbClient,
+    params: { userId: string; classId: number },
+  ): Promise<void> {
+    const target = await tx.classes.findUnique({
+      where: { class_id: params.classId },
+      select: { asset_code: true },
+    });
+    if (target?.asset_code !== 'GM-01') {
+      return;
+    }
+
+    const other = await tx.enrollments.findFirst({
+      where: {
+        user_id: params.userId,
+        class_id: params.classId,
+      },
+      select: { enrollment_id: true },
+    });
+    if (other) {
+      throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
     }
   }
 

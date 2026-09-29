@@ -9,7 +9,9 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  Request,
 } from '@nestjs/common';
+import type { Request as ExpressRequest } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -28,6 +30,7 @@ import {
   GlobalRolesGuard,
 } from '../common/guards';
 import { AdminAuthService } from './admin-auth.service';
+import { USER_MANAGEMENT_ROLES } from './admin-users.controller';
 import {
   AdminMfaStatusResponseDto,
   AdminSessionListResponseDto,
@@ -37,13 +40,9 @@ import {
 /**
  * AdminAuthController — Admin-scoped session, MFA, and password management.
  *
- * All endpoints operate on TARGET users (identified by :userId param),
- * not the currently authenticated admin. They are guarded by:
- *   - JwtAuthGuard          — valid SACDIA JWT required
- *   - GlobalRolesGuard      — admin or super-admin global role required
- *   - PermissionsGuard      — users:update permission required
- *
- * These guards are applied at the class level — identical to AdminUsersController.
+ * Session list/revoke override the class-level admin fence with
+ * USER_MANAGEMENT_ROLES + users:read_detail (same as GET /admin/users/:id).
+ * MFA and password stay admin / super-admin + users:update_admin.
  */
 @ApiTags('admin-auth')
 @ApiBearerAuth()
@@ -54,17 +53,24 @@ import {
 export class AdminAuthController {
   constructor(private readonly adminAuthService: AdminAuthService) {}
 
+  private getActorId(
+    request: ExpressRequest & { user: { sub: string } },
+  ): string {
+    return request.user.sub;
+  }
+
   // ---------------------------------------------------------------------------
   // Session management
   // ---------------------------------------------------------------------------
 
   @Get('sessions')
-  @RequirePermissions('users:update_admin')
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
+  @RequirePermissions('users:read_detail')
   @ApiOperation({
     summary: 'List all active sessions for a user',
     description:
       'Returns all non-expired sessions for the target user. ' +
-      'Requires admin or super-admin role.',
+      'Same roles as GET /admin/users/:userId; scoped to the actor territory.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiResponse({
@@ -80,20 +86,25 @@ export class AdminAuthController {
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   async listUserSessions(
+    @Request() request: ExpressRequest & { user: { sub: string } },
     @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<{ status: string; data: AdminSessionListResponseDto }> {
-    const data = await this.adminAuthService.listUserSessions(userId);
+    const data = await this.adminAuthService.listUserSessions(
+      this.getActorId(request),
+      userId,
+    );
     return { status: 'success', data };
   }
 
   @Delete('sessions/:sessionId')
-  @RequirePermissions('users:update_admin')
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
+  @RequirePermissions('users:read_detail')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Revoke a specific session for a user',
     description:
       'Deletes a specific session token, forcing the device to re-authenticate. ' +
-      'Requires admin or super-admin role.',
+      'Same roles as GET /admin/users/:userId; scoped to the actor territory.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiParam({
@@ -104,10 +115,15 @@ export class AdminAuthController {
   @ApiResponse({ status: 200, description: 'Session revoked' })
   @ApiResponse({ status: 404, description: 'User or session not found' })
   async revokeUserSession(
+    @Request() request: ExpressRequest & { user: { sub: string } },
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('sessionId') sessionId: string,
   ): Promise<{ status: string; message: string }> {
-    await this.adminAuthService.revokeUserSession(userId, sessionId);
+    await this.adminAuthService.revokeUserSession(
+      this.getActorId(request),
+      userId,
+      sessionId,
+    );
     return {
       status: 'success',
       message: `Session ${sessionId} revoked for user ${userId}`,
@@ -115,13 +131,14 @@ export class AdminAuthController {
   }
 
   @Delete('sessions')
-  @RequirePermissions('users:update_admin')
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
+  @RequirePermissions('users:read_detail')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Revoke all sessions for a user',
     description:
       'Deletes ALL sessions for the target user, forcing a complete re-authentication ' +
-      'across all devices. Requires admin or super-admin role.',
+      'across all devices. Same roles as GET /admin/users/:userId; scoped to the actor territory.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiResponse({
@@ -140,10 +157,13 @@ export class AdminAuthController {
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   async revokeAllUserSessions(
+    @Request() request: ExpressRequest & { user: { sub: string } },
     @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<{ status: string; data: { revokedCount: number } }> {
-    const revokedCount =
-      await this.adminAuthService.revokeAllUserSessions(userId);
+    const revokedCount = await this.adminAuthService.revokeAllUserSessions(
+      this.getActorId(request),
+      userId,
+    );
     return { status: 'success', data: { revokedCount } };
   }
 

@@ -359,6 +359,7 @@ describe('ClassProgressScopeService', () => {
         class_id: 7,
         ecclesiastical_year_id: 2026,
         active: true,
+        record_kind: 'OPERATIONAL',
         OR: [
           {
             users: {

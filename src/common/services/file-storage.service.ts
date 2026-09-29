@@ -51,6 +51,13 @@ export enum StorageBucketAlias {
    * Optional: R2_KEY_PREFIX_CERTIFICATION_EVIDENCE (default: 'certifications/evidence').
    */
   CERTIFICATION_EVIDENCE = 'CERTIFICATION_EVIDENCE',
+  /**
+   * Private bucket for certificate-import proofs (image/PDF).
+   * Objects are served only through signed download URLs.
+   * Env vars: R2_BUCKET_CERTIFICATE_IMPORTS, R2_PUBLIC_URL_CERTIFICATE_IMPORTS.
+   * Optional prefix: R2_KEY_PREFIX_CERTIFICATE_IMPORTS (default certificate-imports).
+   */
+  CERTIFICATE_IMPORTS = 'CERTIFICATE_IMPORTS',
 }
 
 export type UploadFileOptions = {
@@ -126,6 +133,24 @@ export interface FileStorageService {
     key: string,
     byteCount: number,
   ): Promise<Buffer | null>;
+  /**
+   * Read a whole private object, refusing anything larger than `maxBytes`.
+   * Returns null when the key is missing.
+   */
+  getObject(
+    bucketAlias: StorageBucketAlias,
+    key: string,
+    maxBytes: number,
+  ): Promise<Buffer | null>;
+  /**
+   * Server-side copy inside one bucket. Used to promote a staging upload
+   * to a final key so a still-valid PUT URL cannot replace the sealed object.
+   */
+  copyObject(
+    bucketAlias: StorageBucketAlias,
+    sourceKey: string,
+    destinationKey: string,
+  ): Promise<{ key: string }>;
   /**
    * Resolve a stored key to its public CDN URL synchronously.
    * Only valid for public buckets (isPublic: true). Throws if the bucket is private.

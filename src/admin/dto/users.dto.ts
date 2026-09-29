@@ -72,6 +72,27 @@ export class AdminListUsersQueryDto extends PaginationDto {
   localFieldId?: number;
 
   @ApiPropertyOptional({
+    description:
+      'Campo de ordenamiento del conjunto filtrado (antes de paginar)',
+    enum: ['name', 'created_at'],
+    default: 'name',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['name', 'created_at'])
+  sortBy?: 'name' | 'created_at' = 'name';
+
+  @ApiPropertyOptional({
+    description: 'Dirección del ordenamiento',
+    enum: ['asc', 'desc'],
+    default: 'asc',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc' = 'asc';
+
+  @ApiPropertyOptional({
     description: 'Número de página (1-indexed)',
     minimum: 1,
     default: 1,

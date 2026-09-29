@@ -649,7 +649,7 @@ export class RankingsService {
    * Step 3 always runs even if step 2 threw a partial/total error.
    *
    * mode param (Task 27 delta optimization):
-   *   'full'  — default; processes ALL active enrollments (sections always run full)
+   *   'full'  — default; processes active operational enrollments (sections always run full)
    *   'delta' — processes only enrollments whose last_progress_change > previousRecalcAt;
    *             club rankings (step 1) and section aggregates (step 3) always run full
    *             regardless of mode because they are cheap aggregations, not per-row scans.
@@ -790,6 +790,7 @@ export class RankingsService {
           where: {
             ecclesiastical_year_id: yearId,
             active: true,
+            record_kind: 'OPERATIONAL',
             class_id: { in: classIdSet },
             // Delta mode: only enrollments with progress changes since the last recalc.
             // When previousRecalc is null (no prior recalc), the filter is omitted and
@@ -1581,6 +1582,12 @@ export class RankingsService {
    * Semantics: ties share the same rank; NULLs are ranked last (not excluded).
    */
   private async updateEnrollmentRankPositions(yearId: number): Promise<void> {
+    await this.prisma.enrollmentRanking.deleteMany({
+      where: {
+        ecclesiastical_year_id: yearId,
+        enrollment: { record_kind: 'HISTORICAL_CERTIFICATE' },
+      },
+    });
     await this.prisma.$executeRaw`
       UPDATE enrollment_rankings er
       SET rank_position = sub.rnk
