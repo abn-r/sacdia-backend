@@ -6,7 +6,6 @@ import {
   MaxLength,
   IsObject,
   IsArray,
-  ArrayMinSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -51,10 +50,9 @@ export class CreateClubDto {
     type: [Number],
     example: [1, 2],
     description:
-      'IDs de club_types a habilitar. El backend crea una sección por cada tipo activo del catálogo; estos IDs marcan active=true. Mínimo uno.',
+      'IDs de club_types a habilitar. El backend crea una sección por cada tipo activo del catálogo; estos IDs marcan active=true. Aventureros y Conquistadores son opcionales. Guías Mayores (detectada por name/slug/code, nunca por club_type_id numérico) queda siempre active=true; si se omite, se inyecta. Array vacío es válido si el catálogo tiene GM; si no hay fila GM → 400 CLUB_SECTION_TYPES_REQUIRED. Catálogo vacío o id inexistente → 400 CLUB_TYPE_NOT_FOUND; no se inventa un id GM.',
   })
   @IsArray()
-  @ArrayMinSize(1)
   @Type(() => Number)
   @IsInt({ each: true })
   declare enabled_club_type_ids: number[];

@@ -5,6 +5,8 @@ export interface CertificateOcrFileInput {
   fileName: string;
   fileType: string;
   rawText?: string;
+  objectKey?: string | null;
+  sizeBytes?: number | null;
 }
 
 export interface CertificateOcrProvider {

@@ -56,6 +56,7 @@ describe('SectionAggregationService', () => {
         club_section_id: 5,
         ecclesiastical_year_id: 3,
         composite_score_pct: { not: null },
+        enrollment: { record_kind: 'OPERATIONAL' },
       },
       select: { composite_score_pct: true },
     });

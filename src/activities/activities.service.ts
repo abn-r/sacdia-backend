@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import 'multer';
 import {
   AppBadRequestException,
+  AppForbiddenException,
   AppInternalServerErrorException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
@@ -37,6 +38,13 @@ import {
   isoDateFromDb,
   toUtcDate,
 } from './activity-series-dates';
+import {
+  ACTIVITY_BOARD_ROLE_NAMES,
+  activityVisibleToViewer,
+  classIdsFromJson,
+  parseActivityAudience,
+  type ActivityAudience,
+} from './activity-audience';
 
 @Injectable()
 export class ActivitiesService {
@@ -97,6 +105,7 @@ export class ActivitiesService {
      * Pass `null` to skip section filtering (admin / club-manager bypass).
      */
     userSectionId?: number | null,
+    viewerUserId?: string | null,
   ): Promise<PaginatedResult<any>> {
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
@@ -158,6 +167,17 @@ export class ActivitiesService {
       }),
     };
 
+    if (userSectionId != null && viewerUserId) {
+      const viewer = await this.resolveActivityViewer(
+        viewerUserId,
+        userSectionId,
+      );
+      const audienceFilter = this.audienceWhere(viewer);
+      if (audienceFilter) {
+        where.AND = [audienceFilter];
+      }
+    }
+
     const [data, total] = await Promise.all([
       this.prisma.activities.findMany({
         where,
@@ -174,15 +194,19 @@ export class ActivitiesService {
         this.applySignedPrivateUrls(this.attachInstances(activity)),
       ),
     );
+    const withAudience = await this.attachAudienceClasses(signedActivities);
 
     return createPaginatedResult(
-      signedActivities,
+      withAudience,
       total,
       pagination ?? new PaginationDto(),
     );
   }
 
-  async findOne(activityId: number) {
+  async findOne(
+    activityId: number,
+    viewer?: { userId: string; sectionId: number } | null,
+  ) {
     const activity = await this.prisma.activities.findUnique({
       where: { activity_id: activityId },
       include: this.activityInclude,
@@ -192,7 +216,25 @@ export class ActivitiesService {
       throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
     }
 
-    return this.applySignedPrivateUrls(this.attachInstances(activity));
+    if (viewer) {
+      const access = await this.resolveActivityViewer(
+        viewer.userId,
+        viewer.sectionId,
+      );
+      if (!activityVisibleToViewer(activity, access)) {
+        throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
+      }
+    }
+
+    return this.presentActivity(activity);
+  }
+
+  private async presentActivity(activity: any) {
+    const signed = await this.applySignedPrivateUrls(
+      this.attachInstances(activity),
+    );
+    const [withAudience] = await this.attachAudienceClasses([signed]);
+    return withAudience;
   }
 
   async create(clubId: number, dto: CreateActivityDto, createdBy: string) {
@@ -214,6 +256,11 @@ export class ActivitiesService {
       dto.club_section_id,
     );
     const clubTypeId = dto.club_type_id ?? section.club_type_id;
+    const audience = await this.resolveActivityAudience(
+      dto.audience,
+      dto.classes,
+      [section.club_section_id],
+    );
 
     const created = await this.prisma.activities.create({
       data: {
@@ -233,9 +280,8 @@ export class ActivitiesService {
         activity_type_id: dto.activity_type_id,
         link_meet: dto.link_meet,
         additional_data: dto.additional_data,
-        classes: dto.classes
-          ? (dto.classes as Prisma.InputJsonValue)
-          : Prisma.JsonNull,
+        audience: audience.audience,
+        classes: audience.classes,
         created_by: createdBy,
         club_section_id: section.club_section_id,
         is_joint: false,
@@ -267,7 +313,7 @@ export class ActivitiesService {
       createdBy,
     );
 
-    return this.applySignedPrivateUrls(this.attachInstances(created));
+    return this.presentActivity(created);
   }
 
   private async createJointActivity(
@@ -320,6 +366,11 @@ export class ActivitiesService {
     }
 
     const clubTypeId = dto.club_type_id ?? primarySectionRecord.club_type_id;
+    const audience = await this.resolveActivityAudience(
+      dto.audience,
+      dto.classes,
+      sections.map((row) => row.club_section_id),
+    );
 
     const now = new Date();
 
@@ -341,9 +392,8 @@ export class ActivitiesService {
         activity_type_id: dto.activity_type_id,
         link_meet: dto.link_meet,
         additional_data: dto.additional_data,
-        classes: dto.classes
-          ? (dto.classes as Prisma.InputJsonValue)
-          : Prisma.JsonNull,
+        audience: audience.audience,
+        classes: audience.classes,
         created_by: createdBy,
         club_section_id: primarySectionRecord.club_section_id,
         is_joint: true,
@@ -378,7 +428,7 @@ export class ActivitiesService {
       );
     }
 
-    return this.applySignedPrivateUrls(this.attachInstances(created));
+    return this.presentActivity(created);
   }
 
   /**
@@ -540,9 +590,7 @@ export class ActivitiesService {
       include: this.activityInclude,
     });
 
-    const result = await this.applySignedPrivateUrls(
-      this.attachInstances(updated),
-    );
+    const result = await this.presentActivity(updated);
     this.emitRealtimeInvalidation(
       existing.club_section_id,
       activityId,
@@ -662,7 +710,7 @@ export class ActivitiesService {
       include: this.activityInclude,
     });
 
-    return this.applySignedPrivateUrls(this.attachInstances(updated));
+    return this.presentActivity(updated);
   }
 
   /**
@@ -744,7 +792,7 @@ export class ActivitiesService {
       include: this.activityInclude,
     });
 
-    return this.applySignedPrivateUrls(this.attachInstances(updated));
+    return this.presentActivity(updated);
   }
 
   async remove(activityId: number, actorId?: string) {
@@ -783,6 +831,14 @@ export class ActivitiesService {
     const activity = await this.findOne(activityId);
 
     const attendees = dto.user_ids;
+    const previous = stringIdList(activity.attendees);
+
+    if (activity.platform === 1 && attendees.length > 0) {
+      await this.assertUsersAreSectionMembers(
+        this.sectionIdsFromActivity(activity),
+        attendees,
+      );
+    }
 
     const updated = await this.prisma.activities.update({
       where: { activity_id: activityId },
@@ -792,8 +848,9 @@ export class ActivitiesService {
       },
     });
 
-    // Emit activity.attended for each attending user — fire-and-forget
+    const alreadyConfirmed = new Set(previous);
     for (const userId of attendees) {
+      if (alreadyConfirmed.has(userId)) continue;
       try {
         await this.achievementsService.emitEvent({
           userId,
@@ -813,6 +870,336 @@ export class ActivitiesService {
     }
 
     return updated;
+  }
+
+  async getMyRsvp(activityId: number, userId: string) {
+    const activity = await this.loadRsvpActivity(activityId);
+    this.assertVirtualActivity(activity.platform);
+    const eligible = await this.isActiveSectionMember(
+      userId,
+      this.sectionIdsFromActivity(activity),
+    );
+    const status = parseRsvpMap(activity.rsvp)[userId] ?? null;
+    return {
+      activity_id: activityId,
+      status: eligible ? status : null,
+      eligible,
+    };
+  }
+
+  async setRsvp(
+    activityId: number,
+    userId: string,
+    status: 'going' | 'not_going',
+  ) {
+    const activity = await this.loadRsvpActivity(activityId);
+    this.assertVirtualActivity(activity.platform);
+    const member = await this.isActiveSectionMember(
+      userId,
+      this.sectionIdsFromActivity(activity),
+    );
+    if (!member) {
+      throw new AppForbiddenException(ErrorCode.ACTIVITY_RSVP_NOT_MEMBER);
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE activities
+       SET rsvp = COALESCE(rsvp, '{}'::jsonb) || jsonb_build_object($1::text, $2::text),
+           modified_at = NOW()
+       WHERE activity_id = $3::int`,
+      userId,
+      status,
+      activityId,
+    );
+
+    return { activity_id: activityId, status };
+  }
+
+  async getAttendanceRoster(activityId: number) {
+    const activity = await this.loadRsvpActivity(activityId);
+    this.assertVirtualActivity(activity.platform);
+    const sectionIds = this.sectionIdsFromActivity(activity);
+    const yearId = await this.currentEcclesiasticalYearId();
+    if (!yearId || sectionIds.length === 0) {
+      return { activity_id: activityId, members: [] };
+    }
+
+    const assignments = await this.prisma.club_role_assignments.findMany({
+      where: {
+        club_section_id: { in: sectionIds },
+        active: true,
+        status: 'active',
+        ecclesiastical_year_id: yearId,
+      },
+      select: {
+        user_id: true,
+        users: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+            user_image: true,
+          },
+        },
+      },
+      orderBy: { start_date: 'desc' },
+    });
+
+    const confirmed = new Set(stringIdList(activity.attendees));
+    const intentions = parseRsvpMap(activity.rsvp);
+    const byUser = new Map<
+      string,
+      {
+        user_id: string;
+        name: string;
+        user_image: string | null;
+        rsvp: 'going' | 'not_going' | null;
+        confirmed: boolean;
+      }
+    >();
+
+    for (const assignment of assignments) {
+      if (byUser.has(assignment.user_id)) continue;
+      const user = assignment.users;
+      byUser.set(assignment.user_id, {
+        user_id: assignment.user_id,
+        name: personName(user),
+        user_image: user.user_image,
+        rsvp: intentions[assignment.user_id] ?? null,
+        confirmed: confirmed.has(assignment.user_id),
+      });
+    }
+
+    const members = [...byUser.values()].sort((left, right) => {
+      const byIntention = rsvpRank(left.rsvp) - rsvpRank(right.rsvp);
+      if (byIntention !== 0) return byIntention;
+      return left.name.localeCompare(right.name, 'es');
+    });
+
+    const signedMembers = await Promise.all(
+      members.map(async (member) => ({
+        ...member,
+        user_image:
+          typeof member.user_image === 'string'
+            ? await this.resolvePrivateAssetUrl(
+                StorageBucketAlias.USER_PROFILES,
+                member.user_image,
+              )
+            : member.user_image,
+      })),
+    );
+
+    return { activity_id: activityId, members: signedMembers };
+  }
+
+  private assertVirtualActivity(platform: number) {
+    if (platform !== 1) {
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_RSVP_NOT_VIRTUAL);
+    }
+  }
+
+  private async loadRsvpActivity(activityId: number) {
+    const activity = await this.prisma.activities.findUnique({
+      where: { activity_id: activityId },
+      select: {
+        activity_id: true,
+        platform: true,
+        club_section_id: true,
+        attendees: true,
+        rsvp: true,
+        activity_instances: {
+          where: { active: true },
+          select: { club_section_id: true },
+        },
+      },
+    });
+    if (!activity) {
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
+    }
+    return activity;
+  }
+
+  private sectionIdsFromActivity(activity: {
+    club_section_id?: number | null;
+    activity_instances?: { club_section_id: number | null }[];
+    instances?: { section_id?: number | null }[];
+  }): number[] {
+    const ids = new Set<number>();
+    if (activity.club_section_id) ids.add(activity.club_section_id);
+    for (const row of activity.activity_instances ?? []) {
+      if (row.club_section_id) ids.add(row.club_section_id);
+    }
+    for (const row of activity.instances ?? []) {
+      if (row.section_id) ids.add(row.section_id);
+    }
+    return [...ids];
+  }
+
+  private async currentEcclesiasticalYearId(): Promise<number | null> {
+    const today = calendarDateInTimeZone(new Date());
+    const year = await this.prisma.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: toUtcDate(today) },
+        end_date: { gte: toUtcDate(today) },
+      },
+      select: { year_id: true },
+    });
+    return year?.year_id ?? null;
+  }
+
+  private audienceWhere(viewer: {
+    isBoard: boolean;
+    classId: number | null;
+  }): Prisma.activitiesWhereInput | null {
+    if (viewer.isBoard) return null;
+    const or: Prisma.activitiesWhereInput[] = [{ audience: 'all' }];
+    if (viewer.classId != null) {
+      or.push({
+        audience: 'classes',
+        classes: { array_contains: [viewer.classId] },
+      });
+    }
+    return { OR: or };
+  }
+
+  private async resolveActivityViewer(userId: string, sectionId: number) {
+    const yearId = await this.currentEcclesiasticalYearId();
+    if (!yearId) return { isBoard: false, classId: null as number | null };
+
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { club_type_id: true },
+    });
+    const [board, enrollment] = await Promise.all([
+      this.prisma.club_role_assignments.findFirst({
+        where: {
+          user_id: userId,
+          club_section_id: sectionId,
+          active: true,
+          status: 'active',
+          ecclesiastical_year_id: yearId,
+          roles: { role_name: { in: [...ACTIVITY_BOARD_ROLE_NAMES] } },
+        },
+        select: { assignment_id: true },
+      }),
+      section
+        ? this.prisma.enrollments.findFirst({
+            where: {
+              user_id: userId,
+              active: true,
+              record_kind: 'OPERATIONAL',
+              ecclesiastical_year_id: yearId,
+              classes: { club_type_id: section.club_type_id },
+            },
+            select: { class_id: true },
+            orderBy: { enrollment_date: 'desc' },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      isBoard: Boolean(board),
+      classId: enrollment?.class_id ?? null,
+    };
+  }
+
+  private async resolveActivityAudience(
+    audience: string | undefined,
+    classIds: number[] | undefined,
+    sectionIds: number[],
+  ): Promise<{
+    audience: ActivityAudience;
+    classes: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  }> {
+    const scope = parseActivityAudience(audience);
+    if (
+      audience !== undefined &&
+      audience !== 'all' &&
+      audience !== 'board' &&
+      audience !== 'classes'
+    ) {
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_AUDIENCE_INVALID);
+    }
+    if (scope !== 'classes') {
+      return { audience: scope, classes: Prisma.JsonNull };
+    }
+
+    const ids = [
+      ...new Set((classIds ?? []).filter((id) => Number.isInteger(id))),
+    ];
+    if (ids.length === 0) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_AUDIENCE_CLASSES_REQUIRED,
+      );
+    }
+
+    const sections = await this.prisma.club_sections.findMany({
+      where: { club_section_id: { in: sectionIds } },
+      select: { club_type_id: true },
+    });
+    const clubTypeIds = [...new Set(sections.map((row) => row.club_type_id))];
+    const found = await this.prisma.classes.findMany({
+      where: {
+        class_id: { in: ids },
+        active: true,
+        club_type_id: { in: clubTypeIds },
+      },
+      select: { class_id: true },
+    });
+    if (found.length !== ids.length) {
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_AUDIENCE_CLASS_INVALID);
+    }
+
+    return { audience: 'classes', classes: ids };
+  }
+
+  private async isActiveSectionMember(
+    userId: string,
+    sectionIds: number[],
+  ): Promise<boolean> {
+    if (sectionIds.length === 0) return false;
+    const yearId = await this.currentEcclesiasticalYearId();
+    if (!yearId) return false;
+    const assignment = await this.prisma.club_role_assignments.findFirst({
+      where: {
+        user_id: userId,
+        club_section_id: { in: sectionIds },
+        active: true,
+        status: 'active',
+        ecclesiastical_year_id: yearId,
+      },
+      select: { assignment_id: true },
+    });
+    return Boolean(assignment);
+  }
+
+  private async assertUsersAreSectionMembers(
+    sectionIds: number[],
+    userIds: string[],
+  ) {
+    const yearId = await this.currentEcclesiasticalYearId();
+    if (!yearId || sectionIds.length === 0) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_ATTENDANCE_OUTSIDE_SECTION,
+      );
+    }
+    const rows = await this.prisma.club_role_assignments.findMany({
+      where: {
+        user_id: { in: userIds },
+        club_section_id: { in: sectionIds },
+        active: true,
+        status: 'active',
+        ecclesiastical_year_id: yearId,
+      },
+      select: { user_id: true },
+    });
+    const found = new Set(rows.map((row) => row.user_id));
+    if (userIds.some((id) => !found.has(id))) {
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_ATTENDANCE_OUTSIDE_SECTION,
+      );
+    }
   }
 
   async getAttendance(activityId: number) {
@@ -863,6 +1250,55 @@ export class ActivitiesService {
       total_attendees: signedAttendees.length,
       attendees: signedAttendees,
     };
+  }
+
+  private async attachAudienceClasses<
+    T extends { audience?: string | null; classes?: unknown },
+  >(
+    activities: T[],
+  ): Promise<
+    Array<
+      T & {
+        audience: ActivityAudience;
+        audience_classes: Array<{
+          class_id: number;
+          name: string;
+          asset_code: string | null;
+          club_type_id: number;
+        }>;
+      }
+    >
+  > {
+    const ids = new Set<number>();
+    for (const activity of activities) {
+      if (parseActivityAudience(activity.audience) !== 'classes') continue;
+      for (const id of classIdsFromJson(activity.classes)) ids.add(id);
+    }
+
+    const found =
+      ids.size === 0
+        ? []
+        : await this.prisma.classes.findMany({
+            where: { class_id: { in: [...ids] } },
+            select: {
+              class_id: true,
+              name: true,
+              asset_code: true,
+              club_type_id: true,
+            },
+          });
+    const byId = new Map(found.map((row) => [row.class_id, row]));
+
+    return activities.map((activity) => {
+      const audience = parseActivityAudience(activity.audience);
+      const audienceClasses =
+        audience === 'classes'
+          ? classIdsFromJson(activity.classes)
+              .map((id) => byId.get(id))
+              .filter((row): row is NonNullable<typeof row> => row != null)
+          : [];
+      return { ...activity, audience, audience_classes: audienceClasses };
+    });
   }
 
   private attachInstances(activity: any) {
@@ -1051,6 +1487,11 @@ export class ActivitiesService {
     now = new Date(),
   ) {
     const plan = await this.planActivitySeries(clubId, dto, now);
+    const audience = await this.resolveActivityAudience(
+      dto.audience,
+      dto.classes,
+      plan.sectionIds,
+    );
     const createdAt = now;
 
     const result = await this.prisma.$transaction(
@@ -1075,9 +1516,8 @@ export class ActivitiesService {
             activity_type_id: dto.activity_type_id,
             link_meet: dto.link_meet,
             additional_data: dto.additional_data,
-            classes: dto.classes
-              ? (dto.classes as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
+            audience: audience.audience,
+            classes: audience.classes,
             first_date: toUtcDate(plan.dates[0]),
             kind: dto.recurrence.kind,
             interval_days:
@@ -1119,9 +1559,8 @@ export class ActivitiesService {
           activityTypeId: dto.activity_type_id,
           linkMeet: dto.link_meet,
           additionalData: dto.additional_data,
-          classes: dto.classes
-            ? (dto.classes as Prisma.InputJsonValue)
-            : Prisma.JsonNull,
+          audience: audience.audience,
+          classes: audience.classes,
           ownerSectionId: plan.ownerSectionId,
           isJoint: plan.isJoint,
         });
@@ -1302,6 +1741,7 @@ export class ActivitiesService {
           activityTypeId: series.activity_type_id,
           linkMeet: series.link_meet,
           additionalData: series.additional_data,
+          audience: parseActivityAudience(series.audience),
           classes:
             (series.classes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
           ownerSectionId: series.club_section_id,
@@ -1505,6 +1945,7 @@ export class ActivitiesService {
       activityTypeId: number;
       linkMeet?: string | null;
       additionalData?: string | null;
+      audience: ActivityAudience;
       classes: Prisma.InputJsonValue | typeof Prisma.JsonNull;
       ownerSectionId: number | null;
       isJoint: boolean;
@@ -1530,6 +1971,7 @@ export class ActivitiesService {
         activity_type_id: params.activityTypeId,
         link_meet: params.linkMeet,
         additional_data: params.additionalData,
+        audience: params.audience,
         classes: params.classes,
         created_by: params.createdBy,
         club_section_id: params.ownerSectionId,
@@ -1748,4 +2190,38 @@ export class ActivitiesService {
       club_type_id: number;
     }>;
   }
+}
+
+function stringIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function parseRsvpMap(value: unknown): Record<string, 'going' | 'not_going'> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const parsed: Record<string, 'going' | 'not_going'> = {};
+  for (const [userId, status] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    if (status === 'going' || status === 'not_going') {
+      parsed[userId] = status;
+    }
+  }
+  return parsed;
+}
+
+function personName(user: {
+  name: string | null;
+  paternal_last_name: string | null;
+  maternal_last_name: string | null;
+}): string {
+  return [user.name, user.paternal_last_name, user.maternal_last_name]
+    .filter((part) => typeof part === 'string' && part.trim().length > 0)
+    .join(' ');
+}
+
+function rsvpRank(status: 'going' | 'not_going' | null): number {
+  if (status === 'going') return 0;
+  if (status == null) return 1;
+  return 2;
 }

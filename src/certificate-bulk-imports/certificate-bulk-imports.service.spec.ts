@@ -8,15 +8,24 @@ describe('CertificateBulkImportsService', () => {
     certificate_bulk_import_batches: {
       create: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
       update: jest.fn(),
     },
+    certificate_bulk_import_files: {
+      count: jest.fn(),
+    },
     certificate_bulk_import_items: {
+      create: jest.fn(),
       createMany: jest.fn(),
+      count: jest.fn(),
       findFirst: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    honors: { findUnique: jest.fn() },
+    classes: { findUnique: jest.fn() },
     certificate_bulk_import_item_events: {
       create: jest.fn(),
     },
@@ -42,6 +51,14 @@ describe('CertificateBulkImportsService', () => {
     jest.clearAllMocks();
     service = new CertificateBulkImportsService(prisma as any, ocrProvider);
     prisma.users.findUnique.mockResolvedValue({ local_field_id: 7 });
+    tx.certificate_bulk_import_items.count.mockResolvedValue(1);
+    tx.certificate_bulk_import_files.count.mockResolvedValue(1);
+    tx.honors.findUnique.mockResolvedValue({ active: true });
+    tx.classes.findUnique.mockResolvedValue({
+      active: true,
+      asset_code: 'CQ-01',
+    });
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([]);
   });
 
   it('creates a draft batch for the owner and stores proof files', async () => {
@@ -150,6 +167,8 @@ describe('CertificateBulkImportsService', () => {
           file_url: 'evidence/cert.jpg',
           file_name: 'cert.jpg',
           file_type: 'image/jpeg',
+          upload_status: 'CONFIRMED',
+          object_key: 'batches/batch-1/sealed/cert.jpg',
           ocr_raw_text: 'Especialidad: Mayordomía',
         },
       ],
@@ -172,7 +191,7 @@ describe('CertificateBulkImportsService', () => {
       items: [{ detected_name: 'Mayordomía' }],
     });
 
-    await service.processOcr('user-1', 'batch-1');
+    await service.runQueuedOcr('user-1', 'batch-1');
 
     expect(tx.certificate_bulk_import_items.createMany).toHaveBeenCalledWith({
       data: [
@@ -207,6 +226,160 @@ describe('CertificateBulkImportsService', () => {
       },
     );
     expect(ocrProvider.extract).not.toHaveBeenCalled();
+  });
+
+  it('does not call the vendor on the request when Redis is absent', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      files: [
+        {
+          file_url: 'evidence/cert.jpg',
+          file_name: 'cert.jpg',
+          file_type: 'image/jpeg',
+          upload_status: 'CONFIRMED',
+          object_key: 'batches/batch-1/sealed/cert.jpg',
+          active: true,
+        },
+      ],
+    });
+
+    await expect(service.processOcr('user-1', 'batch-1')).rejects.toThrow(
+      'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+    );
+    expect(ocrProvider.extract).not.toHaveBeenCalled();
+    expect(
+      tx.certificate_bulk_import_item_events.create,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('enqueues the read and leaves extraction to the worker', async () => {
+    const queue = { add: jest.fn().mockResolvedValue({ id: 'job-1' }) };
+    const queued = new CertificateBulkImportsService(
+      prisma as never,
+      ocrProvider,
+      queue,
+    );
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      files: [
+        {
+          file_url: 'evidence/cert.jpg',
+          file_name: 'cert.jpg',
+          file_type: 'image/jpeg',
+          upload_status: 'CONFIRMED',
+          object_key: 'batches/batch-1/sealed/cert.jpg',
+          active: true,
+        },
+      ],
+    });
+
+    await queued.processOcr('user-1', 'batch-1');
+
+    expect(queue.add).toHaveBeenCalledWith(
+      'read',
+      { userId: 'user-1', batchId: 'batch-1' },
+      expect.objectContaining({
+        jobId: 'certificate-ocr-batch-1',
+        attempts: 2,
+      }),
+    );
+    expect(JSON.stringify(queue.add.mock.calls[0])).not.toContain(
+      'sealed/cert.jpg',
+    );
+    expect(ocrProvider.extract).not.toHaveBeenCalled();
+    expect(tx.certificate_bulk_import_item_events.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'OCR_QUEUED' }),
+      }),
+    );
+  });
+
+  it('does not record a successful read when storage fails', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      files: [
+        {
+          file_url: 'evidence/cert.jpg',
+          file_name: 'cert.jpg',
+          file_type: 'image/jpeg',
+          upload_status: 'CONFIRMED',
+          object_key: 'batches/batch-1/sealed/cert.jpg',
+          active: true,
+        },
+      ],
+    });
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([
+      {
+        item_id: 'kept',
+        status: 'READY',
+        honor_id: 12,
+        class_id: null,
+      },
+    ]);
+    ocrProvider.extract.mockRejectedValue(
+      new BadRequestException('CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE'),
+    );
+
+    await expect(service.runQueuedOcr('user-1', 'batch-1')).rejects.toThrow(
+      'CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE',
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.certificate_bulk_import_items.updateMany).not.toHaveBeenCalled();
+    expect(tx.certificate_bulk_import_item_events.create).not.toHaveBeenCalled();
+  });
+
+  it('does not replace a row a person already corrected', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      files: [
+        {
+          file_url: 'evidence/cert.jpg',
+          file_name: 'cert.jpg',
+          file_type: 'image/jpeg',
+          upload_status: 'CONFIRMED',
+          object_key: 'batches/batch-1/sealed/cert.jpg',
+          active: true,
+        },
+      ],
+    });
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([
+      {
+        item_id: 'kept',
+        status: 'READY',
+        honor_id: 12,
+        class_id: null,
+      },
+      {
+        item_id: 'draft',
+        status: 'NEEDS_REVIEW',
+        honor_id: null,
+        class_id: null,
+      },
+    ]);
+    ocrProvider.extract.mockResolvedValue({ rawText: '', items: [] });
+    tx.certificate_bulk_import_batches.update.mockResolvedValue({
+      batch_id: 'batch-1',
+    });
+
+    await service.runQueuedOcr('user-1', 'batch-1');
+
+    expect(tx.certificate_bulk_import_items.updateMany).toHaveBeenCalledWith({
+      where: { item_id: { in: ['draft'] } },
+      data: { active: false },
+    });
+    expect(ocrProvider.extract).toHaveBeenCalledWith([
+      expect.objectContaining({
+        objectKey: 'batches/batch-1/sealed/cert.jpg',
+      }),
+    ]);
   });
 
   it('moves an item to READY when required fields are corrected', async () => {
@@ -297,6 +470,121 @@ describe('CertificateBulkImportsService', () => {
         mark_as_ready: true,
       }),
     ).resolves.toMatchObject({ status: 'RESUBMITTED' });
+  });
+
+  it('keeps a stored honor when a later patch only marks the row ready', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 2,
+    });
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'NEEDS_REVIEW',
+      item_type: 'HONOR',
+      honor_id: 12,
+      class_id: null,
+      completed_at: new Date('2026-04-12T00:00:00.000Z'),
+      revision: 1,
+    });
+    tx.certificate_bulk_import_items.update.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'READY',
+    });
+
+    await service.updateItem('user-1', 'batch-1', 'item-1', {
+      mark_as_ready: true,
+      expected_revision: 1,
+    });
+
+    expect(tx.certificate_bulk_import_items.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'READY', revision: 2 }),
+      }),
+    );
+    expect(tx.honors.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { honor_id: 12 } }),
+    );
+  });
+
+  it('rejects a future certificate date and a stale revision', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+    });
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'NEEDS_REVIEW',
+      item_type: 'HONOR',
+      honor_id: 12,
+      completed_at: null,
+      revision: 3,
+    });
+
+    await expect(
+      service.updateItem('user-1', 'batch-1', 'item-1', {
+        completed_at: '2999-01-01',
+        expected_revision: 3,
+      }),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_DATE_IN_FUTURE');
+
+    await expect(
+      service.updateItem('user-1', 'batch-1', 'item-1', {
+        mark_as_ready: true,
+        expected_revision: 1,
+      }),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_REVISION_CONFLICT');
+    expect(tx.certificate_bulk_import_items.update).not.toHaveBeenCalled();
+  });
+
+  it('does not submit a draft without a sealed file', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+    });
+    tx.certificate_bulk_import_files.count.mockResolvedValue(0);
+
+    await expect(service.submit('user-1', 'batch-1')).rejects.toThrow(
+      'CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED',
+    );
+    expect(tx.certificate_bulk_import_items.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not send an institutional class to Campo Local', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+    });
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([
+      { item_id: 'item-1', class: { asset_code: 'GM-02' } },
+    ]);
+
+    await expect(service.submit('user-1', 'batch-1')).rejects.toThrow(
+      'CERTIFICATE_IMPORT_INSTITUTIONAL_REVIEW_REQUIRED',
+    );
+    expect(tx.certificate_bulk_import_batches.update).not.toHaveBeenCalled();
+  });
+
+  it('lists the owner drafts', async () => {
+    tx.certificate_bulk_import_batches.findMany.mockResolvedValue([]);
+    tx.certificate_bulk_import_batches.count.mockResolvedValue(0);
+
+    await expect(service.listMine('user-1', 1, 20)).resolves.toMatchObject({
+      total: 0,
+      page: 1,
+    });
+    expect(tx.certificate_bulk_import_batches.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { user_id: 'user-1', active: true },
+      }),
+    );
   });
 
   it('throws not found when member does not own the batch', async () => {

@@ -1,8 +1,12 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -15,19 +19,30 @@ import {
 } from './certificate-bulk-imports.types';
 import type { CertificateOcrProvider } from './ocr/certificate-ocr.provider';
 import { CERTIFICATE_OCR_PROVIDER } from './ocr/certificate-ocr.provider';
+import {
+  CERTIFICATE_OCR_JOB,
+  CERTIFICATE_OCR_QUEUE,
+} from './ocr/certificate-ocr.queue';
 import { Inject } from '@nestjs/common';
 import { normalizeCertificateImportFileRef } from './certificate-import-file-ref';
 
+const INSTITUTIONAL_CLASS_ASSET_CODES = new Set(['GM-02', 'GM-03']);
+
 @Injectable()
 export class CertificateBulkImportsService {
+  private readonly logger = new Logger(CertificateBulkImportsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(CERTIFICATE_OCR_PROVIDER)
     private readonly ocrProvider: CertificateOcrProvider,
+    @Optional()
+    @InjectQueue(CERTIFICATE_OCR_QUEUE)
+    private readonly ocrQueue: Pick<Queue, 'add'> | null = null,
   ) {}
 
   async createDraft(userId: string, dto: CreateCertificateBulkImportDto) {
-    const files = dto.files.map((file) => ({
+    const files = (dto.files ?? []).map((file) => ({
       ...file,
       file_url: normalizeCertificateImportFileRef(file.file_url),
     }));
@@ -47,15 +62,20 @@ export class CertificateBulkImportsService {
           user_id: userId,
           local_field_id: user.local_field_id,
           raw_ocr_payload: this.toInputJson(dto.raw_ocr_payload),
-          files: {
-            create: files.map((file) => ({
-              file_url: file.file_url,
-              file_name: file.file_name,
-              file_type: file.file_type,
-              ocr_raw_text: file.ocr_raw_text,
-              uploaded_by_id: userId,
-            })),
-          },
+          ...(files.length > 0
+            ? {
+                files: {
+                  create: files.map((file) => ({
+                    file_url: file.file_url,
+                    file_name: file.file_name,
+                    file_type: file.file_type,
+                    ocr_raw_text: file.ocr_raw_text,
+                    uploaded_by_id: userId,
+                    upload_status: 'PENDING_UPLOAD' as const,
+                  })),
+                },
+              }
+            : {}),
         },
         include: this.batchInclude(),
       });
@@ -75,19 +95,76 @@ export class CertificateBulkImportsService {
   }
 
   async processOcr(userId: string, batchId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const batch = await this.findOwnedBatchWithFiles(tx, userId, batchId);
+    await this.loadReadableOcrBatch(userId, batchId);
+    if (!this.ocrQueue) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_OCR_UNAVAILABLE');
+    }
 
-      this.assertDraftLike(batch.status, 'process OCR');
+    try {
+      await this.ocrQueue.add(
+        CERTIFICATE_OCR_JOB,
+        { userId, batchId },
+        {
+          jobId: `certificate-ocr-${batchId}`,
+          attempts: 2,
+          backoff: { type: 'fixed', delay: 5_000 },
+          removeOnComplete: true,
+          removeOnFail: { age: 3_600, count: 20 },
+        },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (!/already exists|already waiting|jobid/i.test(message)) {
+        this.logger.error('certificate OCR enqueue failed');
+        throw new BadRequestException('CERTIFICATE_IMPORT_OCR_UNAVAILABLE');
+      }
+      return this.getBatch(userId, batchId);
+    }
 
-      const fileRefs = batch.files.map((file) => ({
-        fileUrl: normalizeCertificateImportFileRef(file.file_url),
+    await this.recordEvent(this.prisma, batchId, null, 'OCR_QUEUED', userId, {
+      queued: true,
+    });
+    return this.getBatch(userId, batchId);
+  }
+
+  async runQueuedOcr(userId: string, batchId: string) {
+    const { batch, readable } = await this.loadReadableOcrBatch(
+      userId,
+      batchId,
+    );
+    const started = Date.now();
+    const ocrResult = await this.ocrProvider.extract(
+      readable.map((file) => ({
+        fileUrl: file.object_key as string,
         fileName: file.file_name,
         fileType: file.file_type,
-        rawText: file.ocr_raw_text ?? undefined,
-      }));
+        objectKey: file.object_key,
+        sizeBytes: file.size_bytes == null ? null : Number(file.size_bytes),
+      })),
+    );
 
-      const ocrResult = await this.ocrProvider.extract(fileRefs);
+    const stored = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.certificate_bulk_import_items.findMany({
+        where: { batch_id: batchId, active: true },
+        select: {
+          item_id: true,
+          status: true,
+          honor_id: true,
+          class_id: true,
+        },
+      });
+      const disposableIds = existing
+        .filter(
+          (item) =>
+            item.status === 'NEEDS_REVIEW' && !item.honor_id && !item.class_id,
+        )
+        .map((item) => item.item_id);
+      if (disposableIds.length > 0) {
+        await tx.certificate_bulk_import_items.updateMany({
+          where: { item_id: { in: disposableIds } },
+          data: { active: false },
+        });
+      }
 
       if (ocrResult.items.length > 0) {
         await tx.certificate_bulk_import_items.createMany({
@@ -106,9 +183,12 @@ export class CertificateBulkImportsService {
 
       await this.recordEvent(tx, batchId, null, 'OCR_PROCESSED', userId, {
         item_count: ocrResult.items.length,
+        institutional_count: ocrResult.items.filter(
+          (item) => item.fieldConfidence.institutional === 1,
+        ).length,
       });
 
-      return tx.certificate_bulk_import_batches.update({
+      const updated = await tx.certificate_bulk_import_batches.update({
         where: { batch_id: batchId },
         data: {
           raw_ocr_payload: this.toInputJson({
@@ -118,7 +198,36 @@ export class CertificateBulkImportsService {
         },
         include: this.batchInclude(),
       });
+      return updated;
     });
+    this.logger.log(
+      `certificate OCR stored ${ocrResult.items.length} suggestions in ${Date.now() - started}ms`,
+    );
+    return stored;
+  }
+
+  private async loadReadableOcrBatch(userId: string, batchId: string) {
+    const batch = await this.findOwnedBatchWithFiles(
+      this.prisma,
+      userId,
+      batchId,
+    );
+    this.assertDraftLike(batch.status, 'process OCR');
+
+    const activeFiles = batch.files.filter((file) => file.active !== false);
+    for (const file of activeFiles) {
+      normalizeCertificateImportFileRef(file.file_url);
+    }
+    const readable = activeFiles.filter(
+      (file) =>
+        file.upload_status === 'CONFIRMED' &&
+        !!file.object_key &&
+        !/^https?:\/\//i.test(file.object_key),
+    );
+    if (readable.length === 0) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
+    }
+    return { batch, readable };
   }
 
   async getBatch(userId: string, batchId: string) {
@@ -130,6 +239,79 @@ export class CertificateBulkImportsService {
     );
   }
 
+  async listMine(userId: string, page = 1, limit = 20) {
+    const take = Math.min(Math.max(limit, 1), 50);
+    const skip = (Math.max(page, 1) - 1) * take;
+    const where = { user_id: userId, active: true };
+    const [items, total] = await Promise.all([
+      this.prisma.certificate_bulk_import_batches.findMany({
+        where,
+        orderBy: { modified_at: 'desc' },
+        skip,
+        take,
+        include: {
+          files: { where: { active: true }, select: { file_id: true, upload_status: true } },
+          items: { where: { active: true }, select: { item_id: true, status: true } },
+        },
+      }),
+      this.prisma.certificate_bulk_import_batches.count({ where }),
+    ]);
+    return { items, total, page: Math.max(page, 1), limit: take };
+  }
+
+  async addItem(
+    userId: string,
+    batchId: string,
+    dto: UpdateCertificateImportItemDto,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const batch = await this.findOwnedBatch(tx, userId, batchId);
+      this.assertDraftLike(batch.status, 'add item');
+      this.assertRevision(batch.revision, dto.expected_revision);
+      await this.assertCatalogChoice(tx, dto);
+      const count = await tx.certificate_bulk_import_items.count({
+        where: { batch_id: batchId, active: true },
+      });
+      if (count >= 100) {
+        throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_LIMIT');
+      }
+      const item = await tx.certificate_bulk_import_items.create({
+        data: this.toItemCreateData(batchId, dto),
+      });
+      await tx.certificate_bulk_import_batches.update({
+        where: { batch_id: batchId },
+        data: { revision: (batch.revision ?? 0) + 1 },
+      });
+      await this.recordEvent(tx, batchId, item.item_id, 'ITEM_ADDED', userId);
+      return item;
+    });
+  }
+
+  async removeItem(userId: string, batchId: string, itemId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const batch = await this.findOwnedBatch(tx, userId, batchId);
+      this.assertDraftLike(batch.status, 'remove item');
+      const item = await this.findOwnedItem(tx, batchId, itemId);
+      if (
+        item.status === CertificateBulkImportItemStatus.APPROVED ||
+        item.status === CertificateBulkImportItemStatus.SUBMITTED ||
+        item.status === CertificateBulkImportItemStatus.RESUBMITTED
+      ) {
+        throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_LOCKED');
+      }
+      await tx.certificate_bulk_import_items.update({
+        where: { item_id: itemId },
+        data: { active: false, revision: (item.revision ?? 0) + 1 },
+      });
+      await tx.certificate_bulk_import_batches.update({
+        where: { batch_id: batchId },
+        data: { revision: (batch.revision ?? 0) + 1 },
+      });
+      await this.recordEvent(tx, batchId, itemId, 'ITEM_REMOVED', userId);
+      return { item_id: itemId, active: false };
+    });
+  }
+
   async updateItem(
     userId: string,
     batchId: string,
@@ -139,19 +321,33 @@ export class CertificateBulkImportsService {
     return this.prisma.$transaction(async (tx) => {
       const batch = await this.findOwnedBatch(tx, userId, batchId);
       this.assertDraftLike(batch.status, 'update item');
-      await this.findOwnedItem(tx, batchId, itemId);
+      const existing = await this.findOwnedItem(tx, batchId, itemId);
+      this.assertRevision(existing.revision, dto.expected_revision);
 
-      const status = this.isReady(dto)
-        ? CertificateBulkImportItemStatus.READY
-        : CertificateBulkImportItemStatus.NEEDS_REVIEW;
+      const merged = this.mergeItem(existing, dto);
+      this.assertNotFuture(merged.completed_at);
+      if (dto.mark_as_ready) {
+        await this.assertCatalogChoice(tx, merged);
+      }
+
+      const status = dto.mark_as_ready
+        ? this.isReady(merged)
+          ? CertificateBulkImportItemStatus.READY
+          : CertificateBulkImportItemStatus.NEEDS_REVIEW
+        : existing.status;
 
       const item = await tx.certificate_bulk_import_items.update({
         where: { item_id: itemId },
         data: {
           ...this.toItemUpdateData(dto),
-          status,
-          rejection_reason: null,
+          ...(dto.mark_as_ready ? { status, rejection_reason: null } : { status }),
+          revision: (existing.revision ?? 0) + 1,
         },
+      });
+
+      await tx.certificate_bulk_import_batches.update({
+        where: { batch_id: batchId },
+        data: { revision: (batch.revision ?? 0) + 1 },
       });
 
       await this.recordEvent(tx, batchId, itemId, 'ITEM_UPDATED', userId, {
@@ -167,10 +363,52 @@ export class CertificateBulkImportsService {
       const batch = await this.findOwnedBatch(tx, userId, batchId);
       this.assertDraftLike(batch.status, 'submit');
 
+      const activeCount = await tx.certificate_bulk_import_items.count({
+        where: { batch_id: batch.batch_id, active: true },
+      });
+      if (activeCount === 0) {
+        throw new BadRequestException('CERTIFICATE_IMPORT_ITEMS_INCOMPLETE');
+      }
+
+      const confirmedFiles = await tx.certificate_bulk_import_files.count({
+        where: {
+          batch_id: batch.batch_id,
+          active: true,
+          upload_status: 'CONFIRMED',
+          object_key: { not: null },
+        },
+      });
+      if (confirmedFiles === 0) {
+        throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
+      }
+
+      const classItems = await tx.certificate_bulk_import_items.findMany({
+        where: {
+          batch_id: batch.batch_id,
+          active: true,
+          item_type: CertificateBulkImportItemType.CLASS,
+        },
+        select: {
+          item_id: true,
+          class: { select: { asset_code: true } },
+        },
+      });
+      const institutionalIds = classItems
+        .filter((item) =>
+          INSTITUTIONAL_CLASS_ASSET_CODES.has(item.class?.asset_code ?? ''),
+        )
+        .map((item) => item.item_id);
+      if (institutionalIds.length === activeCount) {
+        throw new BadRequestException(
+          'CERTIFICATE_IMPORT_INSTITUTIONAL_REVIEW_REQUIRED',
+        );
+      }
+
       const incompleteItems = await tx.certificate_bulk_import_items.findMany({
         where: {
           batch_id: batch.batch_id,
           active: true,
+          item_id: { notIn: institutionalIds },
           status: {
             notIn: [
               CertificateBulkImportItemStatus.READY,
@@ -189,6 +427,7 @@ export class CertificateBulkImportsService {
         where: {
           batch_id: batch.batch_id,
           active: true,
+          item_id: { notIn: institutionalIds },
           status: {
             in: [
               CertificateBulkImportItemStatus.READY,
@@ -206,6 +445,7 @@ export class CertificateBulkImportsService {
         data: {
           status: 'SUBMITTED',
           submitted_at: new Date(),
+          revision: (batch.revision ?? 0) + 1,
         },
         include: this.batchInclude(),
       });
@@ -226,9 +466,12 @@ export class CertificateBulkImportsService {
         throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_NOT_REJECTED');
       }
 
-      if (!this.isReady(dto)) {
+      const merged = this.mergeItem(existingItem, dto);
+      this.assertNotFuture(merged.completed_at);
+      if (!this.isReady({ ...merged, mark_as_ready: true })) {
         throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_INCOMPLETE');
       }
+      await this.assertCatalogChoice(tx, merged);
 
       const item = await tx.certificate_bulk_import_items.update({
         where: { item_id: itemId },
@@ -236,6 +479,7 @@ export class CertificateBulkImportsService {
           ...this.toItemUpdateData(dto),
           status: CertificateBulkImportItemStatus.RESUBMITTED,
           rejection_reason: null,
+          revision: (existingItem.revision ?? 0) + 1,
         },
       });
 
@@ -385,7 +629,97 @@ export class CertificateBulkImportsService {
     return data;
   }
 
-  private isReady(dto: UpdateCertificateImportItemDto): boolean {
+  private mergeItem(
+    existing: {
+      item_type: string;
+      honor_id?: number | null;
+      class_id?: number | null;
+      completed_at?: Date | null;
+    },
+    dto: UpdateCertificateImportItemDto,
+  ) {
+    const itemType = dto.item_type ?? existing.item_type;
+    return {
+      item_type: itemType,
+      honor_id:
+        itemType === CertificateBulkImportItemType.HONOR
+          ? (dto.honor_id ?? existing.honor_id ?? null)
+          : null,
+      class_id:
+        itemType === CertificateBulkImportItemType.CLASS
+          ? (dto.class_id ?? existing.class_id ?? null)
+          : null,
+      completed_at: dto.completed_at ?? this.civilDate(existing.completed_at),
+      mark_as_ready: dto.mark_as_ready,
+    };
+  }
+
+  private assertRevision(current: number | null | undefined, expected?: number) {
+    if (expected === undefined) return;
+    if (expected !== (current ?? 0)) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_REVISION_CONFLICT');
+    }
+  }
+
+  private assertNotFuture(completedAt?: string) {
+    if (!completedAt) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (completedAt > today) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_DATE_IN_FUTURE');
+    }
+  }
+
+  private async assertCatalogChoice(
+    tx: Prisma.TransactionClient,
+    item: {
+      item_type?: string | null;
+      honor_id?: number | null;
+      class_id?: number | null;
+    },
+  ) {
+    if (
+      item.item_type === CertificateBulkImportItemType.HONOR &&
+      item.honor_id
+    ) {
+      const honor = await tx.honors.findUnique({
+        where: { honor_id: item.honor_id },
+        select: { active: true },
+      });
+      if (!honor?.active) {
+        throw new BadRequestException('CERTIFICATE_IMPORT_CATALOG_NOT_FOUND');
+      }
+    }
+
+    if (
+      item.item_type === CertificateBulkImportItemType.CLASS &&
+      item.class_id
+    ) {
+      const klass = await tx.classes.findUnique({
+        where: { class_id: item.class_id },
+        select: { active: true, asset_code: true },
+      });
+      const institutional = INSTITUTIONAL_CLASS_ASSET_CODES.has(
+        klass?.asset_code ?? '',
+      );
+      if (!klass || (!klass.active && !institutional)) {
+        throw new BadRequestException('CERTIFICATE_IMPORT_CATALOG_NOT_FOUND');
+      }
+    }
+  }
+
+  private civilDate(value?: Date | string | null): string | undefined {
+    if (!value) return undefined;
+    if (typeof value === 'string') return value.slice(0, 10);
+    return value.toISOString().slice(0, 10);
+  }
+
+  private isReady(dto: {
+    item_type?: string | null;
+    honor_id?: number | null;
+    class_id?: number | null;
+    completed_at?: string | null;
+    mark_as_ready?: boolean;
+  }): boolean {
     if (!dto.mark_as_ready || !dto.completed_at) {
       return false;
     }

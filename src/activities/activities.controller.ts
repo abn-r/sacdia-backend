@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Param,
@@ -35,6 +36,7 @@ import {
   CreateActivityDto,
   UpdateActivityDto,
   RecordAttendanceDto,
+  SetActivityRsvpDto,
   CreateActivitySeriesDto,
   ExtendActivitySeriesDto,
 } from './dto';
@@ -112,6 +114,7 @@ export class ActivitiesController {
       },
       pagination,
       userSectionId,
+      userSectionId == null ? null : req?.user?.sub,
     );
   }
 
@@ -263,8 +266,19 @@ export class ActivitiesController {
   @ApiParam({ name: 'activityId', type: Number })
   @ApiResponse({ status: 200, description: 'Actividad encontrada' })
   @ApiResponse({ status: 404, description: 'Actividad no encontrada' })
-  async findOne(@Param('activityId', ParseIntPipe) activityId: number) {
-    return this.activitiesService.findOne(activityId);
+  async findOne(
+    @Param('activityId', ParseIntPipe) activityId: number,
+    @Request() req: any,
+  ) {
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        number | undefined) ?? null;
+    return this.activitiesService.findOne(
+      activityId,
+      userSectionId == null || !req?.user?.sub
+        ? null
+        : { userId: req.user.sub, sectionId: userSectionId },
+    );
   }
 
   @Patch('activities/:activityId')
@@ -355,5 +369,53 @@ export class ActivitiesController {
   @ApiResponse({ status: 200, description: 'Lista de asistentes' })
   async getAttendance(@Param('activityId', ParseIntPipe) activityId: number) {
     return this.activitiesService.getAttendance(activityId);
+  }
+
+  @Get('activities/:activityId/rsvp')
+  @RequirePermissions('activities:read')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
+  @ApiOperation({
+    summary: 'Intención de asistencia del usuario actual',
+    description:
+      'Solo actividades virtuales. status null si aún no respondió. eligible false si no es miembro de la sección.',
+  })
+  @ApiParam({ name: 'activityId', type: Number })
+  async getMyRsvp(
+    @Param('activityId', ParseIntPipe) activityId: number,
+    @Request() req: { user: { sub: string } },
+  ) {
+    return this.activitiesService.getMyRsvp(activityId, req.user.sub);
+  }
+
+  @Put('activities/:activityId/rsvp')
+  @RequirePermissions('activities:read')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
+  @ApiOperation({
+    summary: 'Marcar si el usuario hará lo posible por asistir',
+    description:
+      'No confirma asistencia ni emite activity.attended. going o not_going, reversible.',
+  })
+  @ApiParam({ name: 'activityId', type: Number })
+  async setRsvp(
+    @Param('activityId', ParseIntPipe) activityId: number,
+    @Body() dto: SetActivityRsvpDto,
+    @Request() req: { user: { sub: string } },
+  ) {
+    return this.activitiesService.setRsvp(activityId, req.user.sub, dto.status);
+  }
+
+  @Get('activities/:activityId/attendance-roster')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
+  @ApiOperation({
+    summary: 'Miembros de la sección para confirmar asistencia virtual',
+    description:
+      'Incluye a todos los miembros activos de las secciones de la actividad, hayan marcado o no su intención.',
+  })
+  @ApiParam({ name: 'activityId', type: Number })
+  async getAttendanceRoster(
+    @Param('activityId', ParseIntPipe) activityId: number,
+  ) {
+    return this.activitiesService.getAttendanceRoster(activityId);
   }
 }

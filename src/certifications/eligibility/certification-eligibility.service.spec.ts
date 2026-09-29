@@ -214,6 +214,7 @@ describe('CertificationEligibilityService', () => {
       // Assert the query shape never references classes.name
       const callArg = mockPrisma.enrollments.findFirst.mock.calls[0][0];
       expect(JSON.stringify(callArg)).not.toMatch(/classes/i);
+      expect(callArg.where).not.toHaveProperty('record_kind');
       expect(result.eligible).toBe(true);
       expect(result.rules[0]).toMatchObject({
         type: 'INVESTED_CLASS',

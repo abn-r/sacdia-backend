@@ -209,10 +209,20 @@ export const envValidationSchema = Joi.object({
   R2_PUBLIC_URL_CAMPOREE_PAYMENT_VOUCHERS: Joi.string().uri().optional(),
   R2_KEY_PREFIX_CAMPOREE_PAYMENT_VOUCHERS: Joi.string().allow('').optional(),
 
+  // Private certificate-import proofs. Optional so environments without the
+  // bucket still boot; presign fails closed when the vars are missing.
+  R2_BUCKET_CERTIFICATE_IMPORTS: Joi.string().optional(),
+  R2_PUBLIC_URL_CERTIFICATE_IMPORTS: Joi.string().uri().optional(),
+  R2_KEY_PREFIX_CERTIFICATE_IMPORTS: Joi.string().allow('').optional(),
+
   // Extra https hosts for certificate-bulk-import file_url (comma-separated).
   // Hosts from R2_PUBLIC_URL_* are always included. Loopback/private IPs
   // are dropped even if listed here.
   CERTIFICATE_IMPORT_ALLOWED_FILE_HOSTS: Joi.string().allow('').optional(),
+  // Google Cloud Vision for certificate images. Optional so boot does not
+  // require it. Empty means reading stays manual. Restrict the key to the
+  // Cloud Vision API. PDFs are not sent.
+  GOOGLE_VISION_API_KEY: Joi.string().allow('').optional(),
 
   // Firebase
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow('').optional(),

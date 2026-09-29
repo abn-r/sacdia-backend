@@ -1,0 +1,123 @@
+{
+  "note": "Muestras sintéticas. No son comprobantes ni personas reales.",
+  "memberId": "11111111-1111-4111-8111-111111111111",
+  "reviewerId": "22222222-2222-4222-8222-222222222222",
+  "classes": {
+    "amigo": { "classId": 1, "name": "Amigo", "assetCode": "CQ-01" },
+    "companero": { "classId": 2, "name": "Compañero", "assetCode": "CQ-02" },
+    "explorador": { "classId": 3, "name": "Explorador", "assetCode": "CQ-03" },
+    "guiaMayor": { "classId": 8, "name": "Guía Mayor", "assetCode": "GM-01" },
+    "guiaMayorAvanzado": {
+      "classId": 9,
+      "name": "Guía Mayor Avanzado",
+      "assetCode": "GM-02",
+      "institutionalReview": true
+    },
+    "instructor": {
+      "classId": 10,
+      "name": "Instructor",
+      "assetCode": "GM-03",
+      "institutionalReview": true
+    }
+  },
+  "scenarios": [
+    {
+      "id": "honor-single",
+      "itemType": "HONOR",
+      "honorId": 10,
+      "completedAt": "2019-05-04"
+    },
+    {
+      "id": "two-certificates-same-year",
+      "note": "Amigo y Compañero, documentos separados, mismo periodo. No hay orden.",
+      "items": [
+        { "classKey": "amigo", "completedAt": "2018-06-01" },
+        { "classKey": "companero", "completedAt": "2018-11-02" }
+      ]
+    },
+    {
+      "id": "mixed-document",
+      "note": "Un documento respalda un honor y una clase. Las filas no dependen entre sí.",
+      "items": [
+        { "itemType": "HONOR", "honorId": 11, "completedAt": "2017-03-03" },
+        { "classKey": "amigo", "completedAt": "2017-03-03" }
+      ]
+    },
+    {
+      "id": "missing-period",
+      "classKey": "explorador",
+      "completedAt": "1999-01-15",
+      "yearId": null
+    },
+    {
+      "id": "illegible-date",
+      "classKey": "amigo",
+      "completedAt": null
+    },
+    {
+      "id": "duplicate-final-fact",
+      "classKey": "amigo",
+      "completedAt": "2018-06-01",
+      "existingInvestitureDate": "2018-06-01"
+    },
+    {
+      "id": "no-current-enrollment",
+      "classKey": "explorador",
+      "completedAt": "2016-08-20",
+      "currentEnrollment": null
+    },
+    {
+      "id": "skip-companero",
+      "note": "Amigo y Explorador sin Compañero.",
+      "items": [
+        { "classKey": "amigo", "completedAt": "2015-04-01" },
+        { "classKey": "explorador", "completedAt": "2016-04-01" }
+      ]
+    },
+    {
+      "id": "reverse-order",
+      "note": "Primero Explorador, después Amigo.",
+      "items": [
+        { "classKey": "explorador", "completedAt": "2016-04-01" },
+        { "classKey": "amigo", "completedAt": "2015-04-01" }
+      ]
+    },
+    {
+      "id": "same-or-higher-than-current",
+      "note": "No se rechaza por posición en la escala.",
+      "currentClassKey": "amigo",
+      "classKey": "explorador",
+      "completedAt": "2014-02-02"
+    },
+    {
+      "id": "gm-replaces-current",
+      "classKey": "guiaMayor",
+      "completedAt": "2004-03-15",
+      "certificateYearId": 2004,
+      "currentEnrollment": {
+        "enrollmentId": 15,
+        "yearId": 2026,
+        "investitureStatus": "IN_PROGRESS"
+      }
+    },
+    {
+      "id": "gm-without-current-enrollment",
+      "classKey": "guiaMayor",
+      "completedAt": "2004-03-15",
+      "certificateYearId": 2004,
+      "currentEnrollment": null
+    },
+    {
+      "id": "institutional-avanzado-ocr",
+      "classKey": "guiaMayorAvanzado",
+      "completedAt": "2008-07-07",
+      "origin": "ocr"
+    },
+    {
+      "id": "institutional-instructor-manual",
+      "classKey": "instructor",
+      "completedAt": "2010-09-09",
+      "origin": "manual"
+    }
+  ]
+}

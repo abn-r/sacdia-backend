@@ -11,6 +11,11 @@ import {
   CertificateBulkImportItemStatus,
   CertificateBulkImportItemType,
 } from './certificate-bulk-imports.types';
+import {
+  civilDateFromDbDate,
+  classifyCertificateImportYear,
+  utcCivilDate,
+} from './certificate-import-year-resolver.service';
 
 type CertificateImportApplicationTransaction = Pick<
   Prisma.TransactionClient,
@@ -20,14 +25,38 @@ type CertificateImportApplicationTransaction = Pick<
   | 'evidence_files'
   | 'ecclesiastical_years'
   | 'enrollments'
+  | 'classes'
   | 'investiture_validation_history'
   | 'certificate_bulk_import_item_events'
 >;
+
+const GUIDE_MAJOR_ASSET_CODE = 'GM-01';
+const INSTITUTIONAL_CLASS_ASSET_CODES = new Set(['GM-02', 'GM-03']);
 
 const REVIEWABLE_ITEM_STATUSES = [
   CertificateBulkImportItemStatus.SUBMITTED,
   CertificateBulkImportItemStatus.RESUBMITTED,
 ];
+
+type ExistingClassEnrollment = {
+  enrollment_id: number;
+  ecclesiastical_year_id: number;
+  investiture_status: string;
+  investiture_date: Date | null;
+  record_kind: string;
+  modified_at: Date;
+};
+
+type AccreditedEnrollment = {
+  enrollmentId: number;
+  recordHistory: boolean;
+  historyComment?: string;
+};
+
+type EnrollmentReconciliation = {
+  enrollmentId?: number;
+  expectedModifiedAt?: string;
+};
 
 type CertificateImportItemWithBatch = {
   item_id: string;
@@ -78,6 +107,23 @@ export class CertificateBulkImportApplicationService {
       return item;
     }
 
+    const claimed = await tx.certificate_bulk_import_items.updateMany({
+      where: {
+        item_id: item.item_id,
+        active: true,
+        status: { in: REVIEWABLE_ITEM_STATUSES },
+        applied_entity_id: null,
+      },
+      data: { revision: { increment: 1 } },
+    });
+    if (claimed.count !== 1) {
+      const current = await this.findSubmittedItem(tx, batchId, itemId);
+      if (current.applied_entity_id) {
+        return current;
+      }
+      throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_NOT_REVIEWABLE');
+    }
+
     if (!item.completed_at) {
       throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_MISSING_DATE');
     }
@@ -87,7 +133,7 @@ export class CertificateBulkImportApplicationService {
     }
 
     if (item.item_type === CertificateBulkImportItemType.CLASS) {
-      return this.approveClassItem(tx, item, reviewerId, dto.comment);
+      return this.approveClassItem(tx, item, reviewerId, dto);
     }
 
     throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_TYPE_INVALID');
@@ -110,24 +156,49 @@ export class CertificateBulkImportApplicationService {
         user_id: item.batch.user_id,
         honor_id: item.honor_id,
       },
-      select: { user_honor_id: true, active: true },
+      select: {
+        user_honor_id: true,
+        active: true,
+        date: true,
+        validation_status: true,
+      },
     });
+
+    if (
+      existingUserHonor?.date &&
+      existingUserHonor.validation_status === 'APPROVED' &&
+      civilDateFromDbDate(existingUserHonor.date) !==
+        civilDateFromDbDate(item.completed_at)
+    ) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_FINAL_DATE_CONFLICT');
+    }
+
+    const identicalHonor =
+      !!existingUserHonor?.date &&
+      civilDateFromDbDate(existingUserHonor.date) ===
+        civilDateFromDbDate(item.completed_at);
 
     const userHonor = existingUserHonor
       ? await tx.users_honors.update({
           where: { user_honor_id: existingUserHonor.user_honor_id },
-          data: {
-            active: true,
-            validate: true,
-            validation_status: 'APPROVED',
-            submitted_at: now,
-            validated_by_id: reviewerId,
-            validated_at: now,
-            rejection_reason: null,
-            certificate: primaryFile.file_url,
-            images: item.batch.files.map((file) => file.file_url),
-            date: item.completed_at!,
-          },
+          data: identicalHonor
+            ? {
+                active: true,
+                certificate: primaryFile.file_url,
+                images: item.batch.files.map((file) => file.file_url),
+              }
+            : {
+                active: true,
+                validate: true,
+                validation_status: 'APPROVED',
+                submitted_at: now,
+                validated_by_id: reviewerId,
+                validated_at: now,
+                rejection_reason: null,
+                certificate: primaryFile.file_url,
+                images: item.batch.files.map((file) => file.file_url),
+                date: item.completed_at!,
+              },
         })
       : await tx.users_honors.create({
           data: {
@@ -185,82 +256,105 @@ export class CertificateBulkImportApplicationService {
     tx: CertificateImportApplicationTransaction,
     item: CertificateImportItemWithBatch,
     reviewerId: string,
-    comment?: string,
+    dto: ApproveCertificateImportDto,
   ) {
     if (!item.class_id) {
       throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_MISSING_CLASS');
     }
 
-    const year = await tx.ecclesiastical_years.findFirst({
+    const civilDate = civilDateFromDbDate(item.completed_at);
+    if (!civilDate) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_DATE_REQUIRED');
+    }
+    const civilInstant = utcCivilDate(civilDate);
+    const years = await tx.ecclesiastical_years.findMany({
       where: {
-        start_date: { lte: item.completed_at! },
-        end_date: { gte: item.completed_at! },
+        start_date: { lte: civilInstant },
+        end_date: { gte: civilInstant },
       },
-      select: { year_id: true },
+      select: {
+        year_id: true,
+        start_date: true,
+        end_date: true,
+        active: true,
+      },
     });
-
-    if (!year) {
+    const resolution = classifyCertificateImportYear(civilDate, years);
+    if (resolution.status === 'missing') {
       throw new BadRequestException('CERTIFICATE_IMPORT_YEAR_NOT_FOUND');
+    }
+    if (resolution.status === 'ambiguous') {
+      throw new BadRequestException('CERTIFICATE_IMPORT_YEAR_AMBIGUOUS');
+    }
+    const year = { year_id: resolution.yearId };
+    const klass = await tx.classes.findUnique({
+      where: { class_id: item.class_id },
+      select: { asset_code: true },
+    });
+    if (INSTITUTIONAL_CLASS_ASSET_CODES.has(klass?.asset_code ?? '')) {
+      throw new BadRequestException(
+        'CERTIFICATE_IMPORT_INSTITUTIONAL_REVIEW_REQUIRED',
+      );
     }
 
     const now = new Date();
-    const existingEnrollment = await tx.enrollments.findFirst({
+    const rows = await tx.enrollments.findMany({
       where: {
         user_id: item.batch.user_id,
         class_id: item.class_id,
-        ecclesiastical_year_id: year.year_id,
       },
-      select: { enrollment_id: true, active: true },
-    });
-
-    const enrollment = existingEnrollment
-      ? await tx.enrollments.update({
-          where: { enrollment_id: existingEnrollment.enrollment_id },
-          data: {
-            active: true,
-            investiture_status: 'FIELD_APPROVED',
-            submitted_for_validation: true,
-            submitted_at: now,
-            validated_by: reviewerId,
-            validated_at: now,
-            rejection_reason: null,
-            investiture_date: item.completed_at!,
-            locked_for_validation: true,
-          },
-        })
-      : await tx.enrollments.create({
-          data: {
-            user_id: item.batch.user_id,
-            class_id: item.class_id,
-            ecclesiastical_year_id: year.year_id,
-            enrollment_date: item.completed_at!,
-            investiture_status: 'FIELD_APPROVED',
-            submitted_for_validation: true,
-            submitted_at: now,
-            validated_by: reviewerId,
-            validated_at: now,
-            rejection_reason: null,
-            investiture_date: item.completed_at!,
-            locked_for_validation: true,
-            active: true,
-          },
-        });
-
-    await tx.investiture_validation_history.create({
-      data: {
-        enrollment_id: enrollment.enrollment_id,
-        action: 'FIELD_APPROVED',
-        performed_by: reviewerId,
-        comments: comment ?? 'Validado por carga masiva de certificado',
+      select: {
+        enrollment_id: true,
+        ecclesiastical_year_id: true,
+        investiture_status: true,
+        investiture_date: true,
+        record_kind: true,
+        modified_at: true,
       },
     });
+    const reconciliation: EnrollmentReconciliation = {
+      enrollmentId: dto.reconcile_enrollment_id,
+      expectedModifiedAt: dto.expected_modified_at,
+    };
+    const accredited =
+      klass?.asset_code === GUIDE_MAJOR_ASSET_CODE
+        ? await this.substituteGuideMajor(tx, {
+            item,
+            yearId: year.year_id,
+            now,
+            reviewerId,
+            rows,
+            reconciliation,
+          })
+        : await this.accreditHistoricalClass(tx, {
+            item,
+            yearId: year.year_id,
+            now,
+            reviewerId,
+            rows,
+            reconciliation,
+          });
+
+    if (accredited.recordHistory) {
+      await tx.investiture_validation_history.create({
+        data: {
+          enrollment_id: accredited.enrollmentId,
+          action: 'INVESTIDO',
+          performed_by: reviewerId,
+          comments:
+            dto.comment ??
+            accredited.historyComment ??
+            'Acreditación histórica por certificado. No sustituye una ceremonia de este ciclo.',
+        },
+      });
+    }
 
     const updatedItem = await this.markItemApproved(
       tx,
       item,
       reviewerId,
       CertificateBulkImportAppliedEntityType.ENROLLMENT,
-      enrollment.enrollment_id,
+      accredited.enrollmentId,
     );
 
     await this.recordEvent(
@@ -269,14 +363,216 @@ export class CertificateBulkImportApplicationService {
       item.item_id,
       'ITEM_APPROVED',
       reviewerId,
-      comment,
+      dto.comment,
       {
         applied_entity_type: 'ENROLLMENT',
-        applied_entity_id: enrollment.enrollment_id,
+        applied_entity_id: accredited.enrollmentId,
       },
     );
 
     return updatedItem;
+  }
+
+  private async accreditHistoricalClass(
+    tx: CertificateImportApplicationTransaction,
+    params: {
+      item: CertificateImportItemWithBatch;
+      yearId: number;
+      now: Date;
+      reviewerId: string;
+      rows: ExistingClassEnrollment[];
+      reconciliation?: EnrollmentReconciliation;
+    },
+  ): Promise<AccreditedEnrollment> {
+    const sameYear = params.rows.find(
+      (row) => row.ecclesiastical_year_id === params.yearId,
+    );
+    if (sameYear) {
+      if (sameYear.investiture_status !== 'INVESTIDO') {
+        return this.reconcileOperationalEnrollment(tx, {
+          ...params,
+          current: sameYear,
+        });
+      }
+      this.assertReconciliationTarget(
+        params.reconciliation?.enrollmentId,
+        sameYear.enrollment_id,
+      );
+      return this.reuseOrRejectFinalFact(sameYear, params.item.completed_at);
+    }
+    if (params.reconciliation?.enrollmentId) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_ENROLLMENT_MISMATCH');
+    }
+    if (!params.item.class_id) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_MISSING_CLASS');
+    }
+
+    const created = await tx.enrollments.create({
+      data: {
+        user_id: params.item.batch.user_id,
+        class_id: params.item.class_id,
+        ecclesiastical_year_id: params.yearId,
+        enrollment_date: params.now,
+        record_kind: 'HISTORICAL_CERTIFICATE',
+        investiture_status: 'INVESTIDO',
+        investiture_date: params.item.completed_at!,
+        validated_by: params.reviewerId,
+        validated_at: params.now,
+        rejection_reason: null,
+        locked_for_validation: true,
+        active: true,
+        submitted_for_validation: false,
+      },
+      select: { enrollment_id: true },
+    });
+    return { enrollmentId: created.enrollment_id, recordHistory: true };
+  }
+
+  private async substituteGuideMajor(
+    tx: CertificateImportApplicationTransaction,
+    params: {
+      item: CertificateImportItemWithBatch;
+      yearId: number;
+      now: Date;
+      reviewerId: string;
+      rows: ExistingClassEnrollment[];
+      reconciliation?: EnrollmentReconciliation;
+    },
+  ): Promise<AccreditedEnrollment> {
+    if (params.rows.length > 1) {
+      throw new BadRequestException(
+        'CERTIFICATE_IMPORT_ENROLLMENT_RECONCILIATION_REQUIRED',
+      );
+    }
+    if (params.rows.length === 0) {
+      return this.accreditHistoricalClass(tx, params);
+    }
+    this.assertReconciliationTarget(
+      params.reconciliation?.enrollmentId,
+      params.rows[0].enrollment_id,
+    );
+
+    const current = params.rows[0];
+    if (current.investiture_status === 'INVESTIDO') {
+      return this.reuseOrRejectFinalFact(current, params.item.completed_at);
+    }
+
+    await tx.enrollments.update({
+      where: { enrollment_id: current.enrollment_id },
+      data: {
+        ecclesiastical_year_id: params.yearId,
+        record_kind: 'HISTORICAL_CERTIFICATE',
+        investiture_status: 'INVESTIDO',
+        investiture_date: params.item.completed_at!,
+        validated_by: params.reviewerId,
+        validated_at: params.now,
+        rejection_reason: null,
+        locked_for_validation: true,
+        active: true,
+        submitted_for_validation: false,
+      },
+    });
+    return { enrollmentId: current.enrollment_id, recordHistory: true };
+  }
+
+  private assertReconciliationTarget(
+    requestedId: number | undefined,
+    enrollmentId: number,
+  ) {
+    if (requestedId !== undefined && requestedId !== enrollmentId) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_ENROLLMENT_MISMATCH');
+    }
+  }
+
+  private async reconcileOperationalEnrollment(
+    tx: CertificateImportApplicationTransaction,
+    params: {
+      item: CertificateImportItemWithBatch;
+      now: Date;
+      reviewerId: string;
+      current: ExistingClassEnrollment;
+      reconciliation?: EnrollmentReconciliation;
+    },
+  ): Promise<AccreditedEnrollment> {
+    const requestedId = params.reconciliation?.enrollmentId;
+    if (requestedId === undefined) {
+      throw new BadRequestException(
+        'CERTIFICATE_IMPORT_ENROLLMENT_RECONCILIATION_REQUIRED',
+      );
+    }
+    if (requestedId !== params.current.enrollment_id) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_ENROLLMENT_MISMATCH');
+    }
+    const expected = params.reconciliation?.expectedModifiedAt
+      ? new Date(params.reconciliation.expectedModifiedAt)
+      : null;
+    if (
+      !expected ||
+      Number.isNaN(expected.getTime()) ||
+      !params.current.modified_at ||
+      expected.getTime() !== params.current.modified_at.getTime()
+    ) {
+      throw new BadRequestException(
+        'CERTIFICATE_IMPORT_ENROLLMENT_VERSION_CONFLICT',
+      );
+    }
+    if (!params.item.class_id) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_MISSING_CLASS');
+    }
+
+    const updated = await tx.enrollments.updateMany({
+      where: {
+        enrollment_id: params.current.enrollment_id,
+        user_id: params.item.batch.user_id,
+        class_id: params.item.class_id,
+        ecclesiastical_year_id: params.current.ecclesiastical_year_id,
+        record_kind: 'OPERATIONAL',
+        investiture_status: { not: 'INVESTIDO' },
+        modified_at: params.current.modified_at,
+      },
+      data: {
+        investiture_status: 'INVESTIDO',
+        investiture_date: params.item.completed_at!,
+        validated_by: params.reviewerId,
+        validated_at: params.now,
+        rejection_reason: null,
+        locked_for_validation: true,
+        active: true,
+        submitted_for_validation: false,
+      },
+    });
+    if (updated.count !== 1) {
+      throw new BadRequestException(
+        'CERTIFICATE_IMPORT_ENROLLMENT_VERSION_CONFLICT',
+      );
+    }
+    return {
+      enrollmentId: params.current.enrollment_id,
+      recordHistory: true,
+      historyComment:
+        'Acreditación sobre la inscripción vigente. Se conservan el progreso y la fecha de alta.',
+    };
+  }
+
+  private reuseOrRejectFinalFact(
+    existing: ExistingClassEnrollment,
+    completedAt: Date | null | undefined,
+  ): AccreditedEnrollment {
+    const sameDate =
+      civilDateFromDbDate(existing.investiture_date) ===
+      civilDateFromDbDate(completedAt);
+    if (
+      existing.investiture_status === 'INVESTIDO' &&
+      sameDate
+    ) {
+      return { enrollmentId: existing.enrollment_id, recordHistory: false };
+    }
+    if (existing.investiture_status === 'INVESTIDO') {
+      throw new BadRequestException('CERTIFICATE_IMPORT_FINAL_DATE_CONFLICT');
+    }
+    throw new BadRequestException(
+      'CERTIFICATE_IMPORT_ENROLLMENT_RECONCILIATION_REQUIRED',
+    );
   }
 
   private async findSubmittedItem(
@@ -331,6 +627,31 @@ export class CertificateBulkImportApplicationService {
     return primaryFile;
   }
 
+  async resolveBatchStatus(
+    tx: Pick<Prisma.TransactionClient, 'certificate_bulk_import_items'>,
+    batchId: string,
+  ): Promise<'SUBMITTED' | 'APPROVED' | 'NEEDS_CORRECTION'> {
+    const open = await tx.certificate_bulk_import_items.count({
+      where: {
+        batch_id: batchId,
+        active: true,
+        status: { in: REVIEWABLE_ITEM_STATUSES },
+      },
+    });
+    if (open > 0) {
+      return 'SUBMITTED';
+    }
+
+    const rejected = await tx.certificate_bulk_import_items.count({
+      where: {
+        batch_id: batchId,
+        active: true,
+        status: CertificateBulkImportItemStatus.REJECTED,
+      },
+    });
+    return rejected > 0 ? 'NEEDS_CORRECTION' : 'APPROVED';
+  }
+
   private async markItemApproved(
     tx: CertificateImportApplicationTransaction,
     item: CertificateImportItemWithBatch,
@@ -350,9 +671,14 @@ export class CertificateBulkImportApplicationService {
       },
     });
 
+    const status = await this.resolveBatchStatus(tx, item.batch.batch_id);
+
     await tx.certificate_bulk_import_batches.update({
       where: { batch_id: item.batch.batch_id },
-      data: { status: 'PARTIALLY_APPROVED', reviewed_at: new Date() },
+      data: {
+        status,
+        reviewed_at: new Date(),
+      },
     });
 
     return updatedItem;

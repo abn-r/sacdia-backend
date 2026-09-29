@@ -9,8 +9,12 @@ const YEAR_ID = 2026;
 
 function makeTx() {
   return {
+    classes: {
+      findUnique: jest.fn().mockResolvedValue({ asset_code: 'CQ-01' }),
+    },
     enrollments: {
       findUnique: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -135,5 +139,42 @@ describe('ClassEnrollmentWriter', () => {
         ifExists: 'conflict',
       }),
     ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
+  });
+
+  it('does not adopt a historical certificate row as an operational enrollment', async () => {
+    tx.enrollments.findUnique.mockResolvedValue({
+      enrollment_id: 15,
+      active: true,
+      record_kind: 'HISTORICAL_CERTIFICATE',
+    });
+
+    await expect(
+      writer.upsert(tx as never, {
+        userId: USER_ID,
+        classId: CLASS_ID,
+        ecclesiasticalYearId: YEAR_ID,
+        crossType: false,
+        ifExists: 'return',
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
+    expect(tx.enrollments.update).not.toHaveBeenCalled();
+    expect(tx.enrollments.create).not.toHaveBeenCalled();
+  });
+
+  it('does not create a second Guía Mayor enrollment', async () => {
+    tx.enrollments.findUnique.mockResolvedValue(null);
+    tx.classes.findUnique.mockResolvedValue({ asset_code: 'GM-01' });
+    tx.enrollments.findFirst.mockResolvedValue({ enrollment_id: 15 });
+
+    await expect(
+      writer.upsert(tx as never, {
+        userId: USER_ID,
+        classId: CLASS_ID,
+        ecclesiasticalYearId: YEAR_ID,
+        crossType: false,
+        ifExists: 'return',
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
+    expect(tx.enrollments.create).not.toHaveBeenCalled();
   });
 });

@@ -105,6 +105,7 @@ export class InsuranceService {
             enrollments: {
               where: {
                 active: true,
+                record_kind: 'OPERATIONAL',
               },
               orderBy: {
                 ecclesiastical_year_id: 'desc',
@@ -514,6 +515,7 @@ export class InsuranceService {
         enrollments: {
           where: {
             active: true,
+            record_kind: 'OPERATIONAL',
           },
           orderBy: {
             ecclesiastical_year_id: 'desc',

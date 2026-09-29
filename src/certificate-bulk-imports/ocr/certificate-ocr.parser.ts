@@ -13,7 +13,7 @@ export interface CertificateOcrParseResult {
   items: CertificateOcrCandidate[];
 }
 
-const HONOR_LABEL_REGEX = /(?:especialidad(?:es)?|honores?)\s*:\s*([^\n]+)/gi;
+const HONOR_LABEL_REGEX = /(?:especialidad(?:es)?|honor(?:es)?)\s*:\s*([^\n]+)/gi;
 const CLASS_LABEL_REGEX = /(?:clase|investidura)\s*:\s*([^\n]+)/gi;
 
 export class CertificateOcrParser {
@@ -37,7 +37,21 @@ export class CertificateOcrParser {
 
     return {
       rawText: normalizedText,
-      items,
+      items: items.map((item) => this.tagInstitutional(item)),
+    };
+  }
+
+  private tagInstitutional(
+    item: CertificateOcrCandidate,
+  ): CertificateOcrCandidate {
+    if (!/gu[ií]a\s+mayor\s+avanzad|^\s*instructor\s*$|\bgm-0?2\b|\bgm-0?3\b/i.test(
+      item.detectedName,
+    )) {
+      return item;
+    }
+    return {
+      ...item,
+      fieldConfidence: { ...item.fieldConfidence, institutional: 1 },
     };
   }
 

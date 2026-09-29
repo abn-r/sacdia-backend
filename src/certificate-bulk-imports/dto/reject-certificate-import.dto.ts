@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, MaxLength, MinLength, IsOptional } from 'class-validator';
+import {
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import {
   CERTIFICATE_IMPORT_COMMENT_MAX_LENGTH,
   CERTIFICATE_IMPORT_REJECTION_REASON_MAX_LENGTH,
@@ -28,4 +36,23 @@ export class ApproveCertificateImportDto {
   @IsString()
   @MaxLength(CERTIFICATE_IMPORT_COMMENT_MAX_LENGTH)
   comment?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Inscripción operativa no investida del mismo usuario, clase y periodo. Confirma acreditar sobre esa fila.',
+    example: 4001,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  reconcile_enrollment_id?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'modified_at de esa inscripción, en ISO-8601. Si cambió, la aprobación no escribe.',
+    example: '2026-03-01T12:00:00.000Z',
+  })
+  @IsOptional()
+  @IsISO8601()
+  expected_modified_at?: string;
 }

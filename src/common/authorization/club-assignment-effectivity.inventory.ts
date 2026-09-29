@@ -22,10 +22,13 @@ export type AssignmentQueryInventoryEntry = {
 };
 
 const baseline = {
+  'activities/activities-reminder.service.ts':
+    'effectiveWhere|T09|2|2948ae2063cb',
+  'activities/activities.service.ts': 'effectiveWhere|T09|4|01e15b0aca14',
   'admin/admin-geography.service.ts':
     'historicalWhere|allowlist|1|d56c9a4907fd',
   'admin/admin-reference.service.ts': 'effectiveWhere|T09|1|f9e0a7b798f8',
-  'admin/admin-users.service.ts': 'effectiveWhere|T09|4|ddf8a92e7a05',
+  'admin/admin-users.service.ts': 'effectiveWhere|T09|4|d435f7ee3328',
   'analytics/analytics.service.ts': 'effectiveWhere|T09|9|1b4524a7aaa5',
   'analytics/operations-dashboard.repository.ts':
     'effectiveWhere|T09|5|b1e4bbcd3060',
@@ -36,7 +39,7 @@ const baseline = {
   'annual-membership/annual-membership-policy.service.ts':
     'workflowWhere|allowlist|6|fa7e3eebce24',
   'annual-membership/annual-membership.service.ts':
-    'workflowWhere|allowlist|4|675d62144165',
+    'workflowWhere|allowlist|6|daf4122904fa',
   'annual-reports/annual-reports.service.ts':
     'effectiveWhere|T09|3|45560f10e5fd',
   'camporee-scoring/camporee-scoring.service.ts':
@@ -77,7 +80,7 @@ const baseline = {
   'honors/master-honors-evaluator.service.ts':
     'effectiveWhere|T08|2|637369e238ef',
   'honors/master-honors.service.ts': 'effectiveWhere|T08|2|2741ba22d4d7',
-  'insurance/insurance.service.ts': 'effectiveWhere|T09|3|3a39020396c0',
+  'insurance/insurance.service.ts': 'effectiveWhere|T09|3|d2a51bca41f2',
   'investiture/investiture.service.ts': 'effectiveWhere|T08|7|659426390804',
   'member-of-month/member-of-month.service.ts':
     'effectiveWhere|T09|2|4a63b7e684b3',

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+  AppBadRequestException,
   AppForbiddenException,
   AppNotFoundException,
   AppUnauthorizedException,
@@ -425,6 +426,7 @@ export class QrService {
       where: { activity_id: activityId },
       select: {
         activity_id: true,
+        platform: true,
         attendees: true,
         activity_type_id: true,
         is_joint: true,
@@ -445,6 +447,10 @@ export class QrService {
 
     if (!activity) {
       throw new AppNotFoundException(ErrorCode.QR_ACTIVITY_NOT_FOUND);
+    }
+
+    if (activity.platform === 1) {
+      throw new AppBadRequestException(ErrorCode.QR_ACTIVITY_VIRTUAL_NO_SCAN);
     }
 
     await this.assertCallerCanManageActivity(callerUserId, activity);

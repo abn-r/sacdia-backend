@@ -1,5 +1,24 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { CertificateBulkImportApplicationService } from './certificate-bulk-imports-application.service';
 import { BadRequestException } from '@nestjs/common';
+
+const certificateScenarios = JSON.parse(
+  readFileSync(
+    join(
+      __dirname,
+      '../../test/fixtures/certificate-import/scenarios.json',
+    ),
+    'utf8',
+  ),
+) as {
+  memberId: string;
+  classes: Record<
+    string,
+    { classId: number; name: string; assetCode: string; institutionalReview?: boolean }
+  >;
+  scenarios: Array<Record<string, unknown>>;
+};
 
 describe('CertificateBulkImportApplicationService', () => {
   const batchFiles = [
@@ -15,6 +34,8 @@ describe('CertificateBulkImportApplicationService', () => {
     certificate_bulk_import_items: {
       findFirst: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
+      count: jest.fn(),
     },
     certificate_bulk_import_batches: {
       update: jest.fn(),
@@ -29,11 +50,17 @@ describe('CertificateBulkImportApplicationService', () => {
     },
     ecclesiastical_years: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+    classes: {
+      findUnique: jest.fn(),
     },
     enrollments: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
     investiture_validation_history: {
       create: jest.fn(),
@@ -59,6 +86,10 @@ describe('CertificateBulkImportApplicationService', () => {
     );
     service = new CertificateBulkImportApplicationService(prisma as any);
     tx.certificate_bulk_import_batches.update.mockResolvedValue({});
+    tx.certificate_bulk_import_items.count.mockResolvedValue(0);
+    tx.certificate_bulk_import_items.updateMany.mockResolvedValue({ count: 1 });
+    tx.classes.findUnique.mockResolvedValue({ asset_code: 'CQ-03' });
+    tx.enrollments.findMany.mockResolvedValue([]);
   });
 
   it('approves an HONOR item into users_honors and evidence_files', async () => {
@@ -158,7 +189,7 @@ describe('CertificateBulkImportApplicationService', () => {
       applied_entity_id: null,
       batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
     });
-    tx.ecclesiastical_years.findFirst.mockResolvedValue({ year_id: 2026 });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2026 }]);
     tx.enrollments.findFirst.mockResolvedValue(null);
     tx.enrollments.create.mockResolvedValue({ enrollment_id: 90 });
     tx.certificate_bulk_import_items.update.mockResolvedValue({
@@ -178,16 +209,18 @@ describe('CertificateBulkImportApplicationService', () => {
           user_id: 'member-1',
           class_id: 4,
           ecclesiastical_year_id: 2026,
-          investiture_status: 'FIELD_APPROVED',
-          submitted_for_validation: true,
+          record_kind: 'HISTORICAL_CERTIFICATE',
+          investiture_status: 'INVESTIDO',
+          investiture_date: new Date('2026-04-12T00:00:00.000Z'),
           validated_by: 'reviewer-1',
+          submitted_for_validation: false,
         }),
       }),
     );
     expect(tx.investiture_validation_history.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         enrollment_id: 90,
-        action: 'FIELD_APPROVED',
+        action: 'INVESTIDO',
         performed_by: 'reviewer-1',
       }),
     });
@@ -240,5 +273,370 @@ describe('CertificateBulkImportApplicationService', () => {
 
     expect(tx.users_honors.create).not.toHaveBeenCalled();
     expect(tx.enrollments.create).not.toHaveBeenCalled();
+  });
+
+  it('accredits an independent CLASS as INVESTIDO on the certificate date without a current enrollment', async () => {
+    const scenario = certificateScenarios.scenarios.find(
+      (entry) => entry.id === 'no-current-enrollment',
+    );
+    const completedAt = new Date('2016-08-20T00:00:00.000Z');
+    const explorador = certificateScenarios.classes.explorador;
+
+    expect(scenario).toMatchObject({ currentEnrollment: null });
+
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-explorador',
+      status: 'SUBMITTED',
+      item_type: 'CLASS',
+      class_id: explorador.classId,
+      completed_at: completedAt,
+      applied_entity_id: null,
+      batch: {
+        batch_id: 'batch-1',
+        user_id: certificateScenarios.memberId,
+        files: batchFiles,
+      },
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2016 }]);
+    tx.enrollments.findFirst.mockResolvedValue(null);
+    tx.enrollments.create.mockResolvedValue({ enrollment_id: 91 });
+    tx.certificate_bulk_import_items.update.mockResolvedValue({
+      item_id: 'item-explorador',
+      status: 'APPROVED',
+    });
+
+    await service.approveItem('reviewer-1', 'batch-1', 'item-explorador', {});
+
+    expect(tx.enrollments.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          class_id: explorador.classId,
+          ecclesiastical_year_id: 2016,
+          investiture_status: 'INVESTIDO',
+          investiture_date: completedAt,
+        }),
+      }),
+    );
+    expect(tx.investiture_validation_history.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'INVESTIDO',
+      }),
+    });
+    expect(tx.certificate_bulk_import_items.updateMany).toHaveBeenCalledWith({
+      where: {
+        item_id: 'item-explorador',
+        active: true,
+        status: { in: ['SUBMITTED', 'RESUBMITTED'] },
+        applied_entity_id: null,
+      },
+      data: { revision: { increment: 1 } },
+    });
+  });
+
+  it('does not accredit again when another review already claimed the row', async () => {
+    const completedAt = new Date('2016-08-20T00:00:00.000Z');
+    const submitted = {
+      item_id: 'item-explorador',
+      status: 'SUBMITTED',
+      item_type: 'CLASS',
+      class_id: certificateScenarios.classes.explorador.classId,
+      completed_at: completedAt,
+      applied_entity_id: null,
+      batch: {
+        batch_id: 'batch-1',
+        user_id: certificateScenarios.memberId,
+        files: batchFiles,
+      },
+    };
+    tx.certificate_bulk_import_items.findFirst
+      .mockResolvedValueOnce(submitted)
+      .mockResolvedValueOnce({
+        ...submitted,
+        status: 'APPROVED',
+        applied_entity_id: 91,
+      });
+    tx.certificate_bulk_import_items.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.approveItem('reviewer-1', 'batch-1', 'item-explorador', {}),
+    ).resolves.toMatchObject({ applied_entity_id: 91, status: 'APPROVED' });
+
+    expect(tx.enrollments.create).not.toHaveBeenCalled();
+    expect(tx.investiture_validation_history.create).not.toHaveBeenCalled();
+  });
+
+  it('replaces the current Guía Mayor enrollment instead of keeping two rows', async () => {
+    const guiaMayor = certificateScenarios.classes.guiaMayor;
+    const completedAt = new Date('2004-03-15T00:00:00.000Z');
+
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-gm',
+      status: 'SUBMITTED',
+      item_type: 'CLASS',
+      class_id: guiaMayor.classId,
+      completed_at: completedAt,
+      applied_entity_id: null,
+      class: guiaMayor,
+      batch: {
+        batch_id: 'batch-gm',
+        user_id: certificateScenarios.memberId,
+        files: batchFiles,
+      },
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2004 }]);
+    tx.classes.findUnique.mockResolvedValue({ asset_code: 'GM-01' });
+    tx.enrollments.findMany.mockResolvedValue([
+      {
+        enrollment_id: 15,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        investiture_date: null,
+        record_kind: 'OPERATIONAL',
+      },
+    ]);
+    tx.enrollments.create.mockResolvedValue({ enrollment_id: 99 });
+    tx.enrollments.update.mockResolvedValue({ enrollment_id: 15 });
+    tx.certificate_bulk_import_items.update.mockResolvedValue({
+      item_id: 'item-gm',
+      status: 'APPROVED',
+    });
+
+    await service.approveItem('reviewer-1', 'batch-gm', 'item-gm', {
+      comment: 'Sustituir inscripción GM actual',
+    });
+
+    expect(tx.enrollments.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { enrollment_id: 15 },
+        data: expect.objectContaining({
+          ecclesiastical_year_id: 2004,
+          investiture_status: 'INVESTIDO',
+          investiture_date: completedAt,
+        }),
+      }),
+    );
+    expect(tx.enrollments.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['guiaMayorAvanzado', 'instructor'] as const)(
+    'does not create an enrollment when Campo Local approves %s',
+    async (classKey) => {
+      const discontinued = certificateScenarios.classes[classKey];
+
+      tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+        item_id: `item-${classKey}`,
+        status: 'SUBMITTED',
+        item_type: 'CLASS',
+        class_id: discontinued.classId,
+        completed_at: new Date('2008-07-07T00:00:00.000Z'),
+        applied_entity_id: null,
+        class: discontinued,
+        batch: {
+          batch_id: 'batch-institutional',
+          user_id: certificateScenarios.memberId,
+          files: batchFiles,
+        },
+      });
+      tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2008 }]);
+      tx.classes.findUnique.mockResolvedValue({
+        asset_code: discontinued.assetCode,
+      });
+      tx.enrollments.findMany.mockResolvedValue([]);
+      tx.enrollments.create.mockResolvedValue({ enrollment_id: 100 });
+      tx.certificate_bulk_import_items.update.mockResolvedValue({
+        item_id: `item-${classKey}`,
+        status: 'APPROVED',
+      });
+
+      await expect(
+        service.approveItem(
+          'reviewer-1',
+          'batch-institutional',
+          `item-${classKey}`,
+          {},
+        ),
+      ).rejects.toThrow('CERTIFICATE_IMPORT_INSTITUTIONAL_REVIEW_REQUIRED');
+
+      expect(tx.enrollments.create).not.toHaveBeenCalled();
+      expect(tx.enrollments.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not overwrite an approved honor when the certificate date differs', async () => {
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'SUBMITTED',
+      item_type: 'HONOR',
+      honor_id: 10,
+      completed_at: new Date('2026-04-12T00:00:00.000Z'),
+      batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
+    });
+    tx.users_honors.findFirst.mockResolvedValue({
+      user_honor_id: 77,
+      active: true,
+      date: new Date('2010-01-01T00:00:00.000Z'),
+      validation_status: 'APPROVED',
+    });
+
+    await expect(
+      service.approveItem('reviewer-1', 'batch-1', 'item-1', {}),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_FINAL_DATE_CONFLICT');
+
+    expect(tx.users_honors.update).not.toHaveBeenCalled();
+  });
+
+  it('links an identical honor without changing its original date or validator', async () => {
+    const completedAt = new Date('2026-04-12T00:00:00.000Z');
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'SUBMITTED',
+      item_type: 'HONOR',
+      honor_id: 10,
+      completed_at: completedAt,
+      batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
+    });
+    tx.users_honors.findFirst.mockResolvedValue({
+      user_honor_id: 77,
+      active: true,
+      date: completedAt,
+      validation_status: 'APPROVED',
+    });
+    tx.users_honors.update.mockResolvedValue({ user_honor_id: 77 });
+    tx.certificate_bulk_import_items.update.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'APPROVED',
+    });
+
+    await service.approveItem('reviewer-1', 'batch-1', 'item-1', {});
+
+    expect(tx.users_honors.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          active: true,
+          certificate: batchFiles[0].file_url,
+          images: [batchFiles[0].file_url],
+        },
+      }),
+    );
+  });
+
+  it('does not convert an ordinary in-progress enrollment into a historical fact', async () => {
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-2',
+      status: 'SUBMITTED',
+      item_type: 'CLASS',
+      class_id: 3,
+      completed_at: new Date('2016-08-20T00:00:00.000Z'),
+      applied_entity_id: null,
+      batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2016 }]);
+    tx.enrollments.findMany.mockResolvedValue([
+      {
+        enrollment_id: 40,
+        ecclesiastical_year_id: 2016,
+        investiture_status: 'IN_PROGRESS',
+        investiture_date: null,
+        record_kind: 'OPERATIONAL',
+      },
+    ]);
+
+    await expect(
+      service.approveItem('reviewer-1', 'batch-1', 'item-2', {}),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_ENROLLMENT_RECONCILIATION_REQUIRED');
+
+    expect(tx.enrollments.create).not.toHaveBeenCalled();
+    expect(tx.enrollments.update).not.toHaveBeenCalled();
+    expect(tx.enrollments.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('invests the matching operational enrollment and keeps its kind', async () => {
+    const modifiedAt = new Date('2016-01-02T00:00:00.000Z');
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-2',
+      status: 'SUBMITTED',
+      item_type: 'CLASS',
+      class_id: 3,
+      completed_at: new Date('2016-08-20T00:00:00.000Z'),
+      applied_entity_id: null,
+      batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2016 }]);
+    tx.enrollments.findMany.mockResolvedValue([
+      {
+        enrollment_id: 40,
+        ecclesiastical_year_id: 2016,
+        investiture_status: 'IN_PROGRESS',
+        investiture_date: null,
+        record_kind: 'OPERATIONAL',
+        modified_at: modifiedAt,
+      },
+    ]);
+    tx.enrollments.updateMany.mockResolvedValue({ count: 1 });
+    tx.certificate_bulk_import_items.update.mockResolvedValue({
+      item_id: 'item-2',
+      status: 'APPROVED',
+    });
+
+    await service.approveItem('reviewer-1', 'batch-1', 'item-2', {
+      reconcile_enrollment_id: 40,
+      expected_modified_at: modifiedAt.toISOString(),
+    });
+
+    const write = tx.enrollments.updateMany.mock.calls[0][0];
+    expect(write.where).toMatchObject({
+      enrollment_id: 40,
+      record_kind: 'OPERATIONAL',
+      ecclesiastical_year_id: 2016,
+    });
+    expect(write.data.investiture_status).toBe('INVESTIDO');
+    expect(write.data).not.toHaveProperty('record_kind');
+    expect(write.data).not.toHaveProperty('enrollment_date');
+    expect(tx.enrollments.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps the batch submitted while another row is still open', async () => {
+    tx.certificate_bulk_import_items.count.mockResolvedValueOnce(1);
+
+    await expect(service.resolveBatchStatus(tx as never, 'batch-1')).resolves.toBe(
+      'SUBMITTED',
+    );
+  });
+
+  it('asks for correction only after every row has been decided and one was rejected', async () => {
+    tx.certificate_bulk_import_items.count
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(1);
+
+    await expect(service.resolveBatchStatus(tx as never, 'batch-1')).resolves.toBe(
+      'NEEDS_CORRECTION',
+    );
+  });
+
+  it('marks the batch approved when the last reviewable item is approved', async () => {
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-2',
+      status: 'SUBMITTED',
+      item_type: 'CLASS',
+      class_id: 4,
+      completed_at: new Date('2026-04-12T00:00:00.000Z'),
+      applied_entity_id: null,
+      batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2026 }]);
+    tx.enrollments.create.mockResolvedValue({ enrollment_id: 90 });
+    tx.certificate_bulk_import_items.update.mockResolvedValue({
+      item_id: 'item-2',
+      status: 'APPROVED',
+    });
+    tx.certificate_bulk_import_items.count.mockResolvedValue(0);
+
+    await service.approveItem('reviewer-1', 'batch-1', 'item-2', {});
+
+    expect(tx.certificate_bulk_import_batches.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'APPROVED' }),
+      }),
+    );
   });
 });

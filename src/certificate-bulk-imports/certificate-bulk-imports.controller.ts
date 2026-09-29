@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   Param,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -20,8 +22,10 @@ import { SkipPermissions } from '../common/decorators/skip-permissions.decorator
 import { CertificateBulkImportsService } from './certificate-bulk-imports.service';
 import {
   CreateCertificateBulkImportDto,
+  PresignCertificateImportFileDto,
   UpdateCertificateImportItemDto,
 } from './dto';
+import { CertificateImportFilesService } from './certificate-import-files.service';
 
 interface AuthenticatedRequest {
   user: { sub: string };
@@ -33,7 +37,25 @@ interface AuthenticatedRequest {
 @SkipPermissions()
 @Controller('certificate-bulk-imports')
 export class CertificateBulkImportsController {
-  constructor(private readonly service: CertificateBulkImportsService) {}
+  constructor(
+    private readonly service: CertificateBulkImportsService,
+    private readonly filesService: CertificateImportFilesService,
+  ) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Listar expedientes propios para retomarlos' })
+  async listMine(
+    @Request() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const data = await this.service.listMine(
+      req.user.sub,
+      Number(page ?? 1),
+      Number(limit ?? 20),
+    );
+    return { status: 'success', data };
+  }
 
   @Post()
   @ApiOperation({
@@ -69,6 +91,28 @@ export class CertificateBulkImportsController {
     @Param('batchId') batchId: string,
   ) {
     const data = await this.service.getBatch(req.user.sub, batchId);
+    return { status: 'success', data };
+  }
+
+  @Post(':batchId/items')
+  @ApiOperation({ summary: 'Agregar una fila manual al borrador' })
+  async addItem(
+    @Request() req: AuthenticatedRequest,
+    @Param('batchId') batchId: string,
+    @Body() dto: UpdateCertificateImportItemDto,
+  ) {
+    const data = await this.service.addItem(req.user.sub, batchId, dto);
+    return { status: 'success', data };
+  }
+
+  @Delete(':batchId/items/:itemId')
+  @ApiOperation({ summary: 'Quitar una fila del borrador' })
+  async removeItem(
+    @Request() req: AuthenticatedRequest,
+    @Param('batchId') batchId: string,
+    @Param('itemId') itemId: string,
+  ) {
+    const data = await this.service.removeItem(req.user.sub, batchId, itemId);
     return { status: 'success', data };
   }
 
@@ -122,6 +166,58 @@ export class CertificateBulkImportsController {
       itemId,
       dto,
     );
+    return { status: 'success', data };
+  }
+
+  @Post(':batchId/files/presign')
+  @ApiOperation({ summary: 'Preparar subida firmada de un comprobante' })
+  async presignFile(
+    @Request() req: AuthenticatedRequest,
+    @Param('batchId') batchId: string,
+    @Body() dto: PresignCertificateImportFileDto,
+  ) {
+    const data = await this.filesService.presign(req.user.sub, batchId, dto);
+    return { status: 'success', data };
+  }
+
+  @Post(':batchId/files/:fileId/confirm')
+  @ApiOperation({ summary: 'Confirmar bytes reales del comprobante' })
+  async confirmFile(
+    @Request() req: AuthenticatedRequest,
+    @Param('batchId') batchId: string,
+    @Param('fileId') fileId: string,
+  ) {
+    const data = await this.filesService.confirm(
+      req.user.sub,
+      batchId,
+      fileId,
+    );
+    return { status: 'success', data };
+  }
+
+  @Get(':batchId/files/:fileId/download')
+  @ApiOperation({ summary: 'Obtener URL efímera del comprobante sellado' })
+  async downloadFile(
+    @Request() req: AuthenticatedRequest,
+    @Param('batchId') batchId: string,
+    @Param('fileId') fileId: string,
+  ) {
+    const data = await this.filesService.download(
+      req.user.sub,
+      batchId,
+      fileId,
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete(':batchId/files/:fileId')
+  @ApiOperation({ summary: 'Retirar un comprobante que todavía no fue enviado' })
+  async removeFile(
+    @Request() req: AuthenticatedRequest,
+    @Param('batchId') batchId: string,
+    @Param('fileId') fileId: string,
+  ) {
+    const data = await this.filesService.remove(req.user.sub, batchId, fileId);
     return { status: 'success', data };
   }
 }

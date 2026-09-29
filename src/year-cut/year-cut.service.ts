@@ -5,6 +5,8 @@ import { EcclesiasticalYearService } from '../common/services/ecclesiastical-yea
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AnnualMembershipPolicyService } from '../annual-membership/annual-membership-policy.service';
+import { AnnualMembershipService } from '../annual-membership/annual-membership.service';
+import { NextClassResolver } from '../classes/next-class.resolver';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
@@ -62,6 +64,7 @@ export interface YearCutSummary {
   ended: number;
   activated: number;
   returnedNotEnrolled: number;
+  typeGraduatesEnrolled: number;
   usersInvalidated: number;
 }
 
@@ -69,6 +72,7 @@ const EMPTY_SUMMARY: YearCutSummary = {
   ended: 0,
   activated: 0,
   returnedNotEnrolled: 0,
+  typeGraduatesEnrolled: 0,
   usersInvalidated: 0,
 };
 
@@ -76,7 +80,11 @@ const EMPTY_SUMMARY: YearCutSummary = {
  * Ecclesiastical year cut: end expired club cargos, activate scheduled director
  * plans, and leave returning people as not-enrolled via AnnualMembershipPolicy.
  *
- * Does not activate leftover CRA `designated`. Does not create `member active`.
+ * Does not activate leftover CRA `designated`. Type graduates (AV→CQ / CQ→GM)
+ * are enrolled on the destination before R04 not-enrolled rows are written.
+ * An ending AV/CQ administrative role returns to the club's active Guías
+ * Mayores section as member inactive. Investiture and a prior GM assignment
+ * are not required. A disabled GM section does not invent that link.
  */
 @Injectable()
 export class YearCutService {
@@ -88,6 +96,8 @@ export class YearCutService {
     private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly annualMembershipPolicy: AnnualMembershipPolicyService,
+    private readonly nextClassResolver: NextClassResolver,
+    private readonly annualMembership: AnnualMembershipService,
   ) {}
 
   async applyCut(now?: Date): Promise<YearCutSummary> {
@@ -108,6 +118,7 @@ export class YearCutService {
       totals.ended += part.ended;
       totals.activated += part.activated;
       totals.returnedNotEnrolled += part.returnedNotEnrolled;
+      totals.typeGraduatesEnrolled += part.typeGraduatesEnrolled;
       for (const userId of part.affectedUserIds) {
         allAffected.add(userId);
       }
@@ -120,6 +131,7 @@ export class YearCutService {
       `YearCut complete (year ${currentYear.year_id}): ` +
         `ended=${totals.ended}, activated=${totals.activated}, ` +
         `returnedNotEnrolled=${totals.returnedNotEnrolled}, ` +
+        `typeGraduatesEnrolled=${totals.typeGraduatesEnrolled}, ` +
         `usersInvalidated=${totals.usersInvalidated}`,
     );
 
@@ -215,6 +227,7 @@ export class YearCutService {
             ended: 0,
             activated: 0,
             returnedNotEnrolled: 0,
+            typeGraduatesEnrolled: 0,
             affectedUserIds: [] as string[],
           };
         }
@@ -285,12 +298,23 @@ export class YearCutService {
           affectedUserIds,
         );
 
+        const jumpedUserIds = await this.applyTypeGraduates(
+          tx,
+          currentYear,
+          avCqTypeIds,
+          expired,
+        );
+        for (const userId of jumpedUserIds) {
+          affectedUserIds.add(userId);
+        }
+
         const returnedNotEnrolled = await this.applyNotEnrolled(
           tx,
           clubId,
           currentYear,
           avCqTypeIds,
           expired,
+          jumpedUserIds,
         );
 
         if (affectedUserIds.size > 0) {
@@ -317,6 +341,7 @@ export class YearCutService {
           ended,
           activated,
           returnedNotEnrolled,
+          typeGraduatesEnrolled: jumpedUserIds.size,
           affectedUserIds: Array.from(affectedUserIds),
         };
       },
@@ -477,12 +502,60 @@ export class YearCutService {
     return activated;
   }
 
+  private async applyTypeGraduates(
+    tx: DbClient,
+    currentYear: CurrentYear,
+    avCqTypeIds: Set<number>,
+    expired: ExpiredAssignment[],
+  ): Promise<Set<string>> {
+    const jumped = new Set<string>();
+    const seen = new Set<string>();
+
+    for (const assignment of expired) {
+      if (assignment.club_section_id == null) continue;
+      const roleName = assignment.roles?.role_name?.toLowerCase() ?? '';
+      const isBoard = (BOARD_ROLE_NAMES as readonly string[]).includes(roleName);
+      if (isBoard && this.isAvCqSection(assignment.club_sections, avCqTypeIds)) {
+        continue;
+      }
+
+      const key = `${assignment.user_id}:${assignment.club_section_id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const decision = await this.nextClassResolver.resolve(
+        assignment.user_id,
+        assignment.club_section_id,
+        currentYear.year_id,
+      );
+      if (
+        decision.kind !== 'next_class' ||
+        decision.crossed_type !== true ||
+        decision.club_section_id === assignment.club_section_id
+      ) {
+        continue;
+      }
+
+      const outcome = await this.annualMembership.writeTypeJumpEnrollment(tx, {
+        userId: assignment.user_id,
+        destSectionId: decision.club_section_id,
+        year: currentYear,
+      });
+      if (outcome === 'enrolled') {
+        jumped.add(assignment.user_id);
+      }
+    }
+
+    return jumped;
+  }
+
   private async applyNotEnrolled(
     tx: DbClient,
     clubId: number,
     currentYear: CurrentYear,
     avCqTypeIds: Set<number>,
     expired: ExpiredAssignment[],
+    jumpedUserIds: Set<string> = new Set(),
   ): Promise<number> {
     const previouslyEnded = (await tx.club_role_assignments.findMany({
       where: {
@@ -510,6 +583,7 @@ export class YearCutService {
 
     for (const assignment of sources.values()) {
       if (assignment.club_section_id == null) continue;
+      if (jumpedUserIds.has(assignment.user_id)) continue;
 
       const destSectionId = await this.resolveNotEnrolledSection(
         tx,

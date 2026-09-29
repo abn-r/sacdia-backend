@@ -7,6 +7,9 @@ import { EcclesiasticalYearService } from '../common/services/ecclesiastical-yea
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AnnualMembershipPolicyService } from '../annual-membership/annual-membership-policy.service';
+import { AnnualMembershipService } from '../annual-membership/annual-membership.service';
+import { NextClassResolver } from '../classes/next-class.resolver';
+import { ErrorCode } from '../common/errors/error-codes';
 
 const YEAR_ID_PREV = 2025;
 const YEAR_ID_CURRENT = 2026;
@@ -38,6 +41,10 @@ const USER_SUCCESSOR = 'user-cq-director-b-uuid';
 const USER_SECRETARY = 'user-secretary-uuid';
 const USER_COUNSELOR = 'user-counselor-uuid';
 const USER_MEMBER = 'user-member-uuid';
+const AV_TYPE_ID = 11;
+const AV_SECTION_ID = 301;
+const USER_AV_GRADUATE = 'user-av-graduate-yearcut';
+const USER_CQ_GUIDE = 'user-cq-guide-yearcut';
 
 const CLUB_ID = 500;
 const CQ_SECTION_ID = 101;
@@ -128,6 +135,8 @@ describe('YearCutService', () => {
     resolveBase: jest.Mock;
     ensureNotEnrolled: jest.Mock;
   };
+  let nextClassResolver: { resolve: jest.Mock };
+  let annualMembership: { writeTypeJumpEnrollment: jest.Mock };
 
   beforeEach(async () => {
     prisma = makePrismaMock();
@@ -145,6 +154,15 @@ describe('YearCutService', () => {
         assignment_id: 'not-enrolled-uuid',
         created: true,
       }),
+    };
+    nextClassResolver = {
+      resolve: jest.fn().mockResolvedValue({
+        kind: 'configuration_error',
+        code: 'ANNUAL_CLASS_POLICY_UNRESOLVED',
+      }),
+    };
+    annualMembership = {
+      writeTypeJumpEnrollment: jest.fn().mockResolvedValue('skipped'),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -167,6 +185,8 @@ describe('YearCutService', () => {
           provide: AnnualMembershipPolicyService,
           useValue: policy,
         },
+        { provide: NextClassResolver, useValue: nextClassResolver },
+        { provide: AnnualMembershipService, useValue: annualMembership },
       ],
     }).compile();
 
@@ -617,6 +637,166 @@ describe('YearCutService', () => {
       );
       expect(summary.ended).toBe(1);
       expect(YEAR_ID_FUTURE).toBe(2027);
+    });
+  });
+
+  describe('D02 type graduates at year-cut', () => {
+    function expiredAvMember(overrides: Record<string, unknown> = {}) {
+      return {
+        assignment_id: 'assign-av-member-2025',
+        user_id: USER_AV_GRADUATE,
+        role_id: MEMBER_ROLE_ID,
+        club_section_id: AV_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_PREV,
+        end_date: null,
+        ecclesiastical_year: { end_date: PREV_YEAR.end_date },
+        status: 'active',
+        roles: { role_name: 'member' },
+        club_sections: {
+          main_club_id: CLUB_ID,
+          club_type_id: AV_TYPE_ID,
+          club_types: { name: 'Aventureros' },
+        },
+        ...overrides,
+      };
+    }
+
+    it('B04 enrolls last AV member into CQ and skips origin inactive', async () => {
+      prisma.club_role_assignments.findMany.mockResolvedValue([expiredAvMember()]);
+      prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'next_class',
+        class_id: 201,
+        display_order: 1,
+        club_type_id: CONQUISTADORES_TYPE_ID,
+        club_section_id: CQ_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+        crossed_type: true,
+      });
+      annualMembership.writeTypeJumpEnrollment.mockResolvedValue('enrolled');
+
+      const summary = await service.applyCut();
+
+      expect(annualMembership.writeTypeJumpEnrollment).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: USER_AV_GRADUATE,
+          destSectionId: CQ_SECTION_ID,
+          year: expect.objectContaining({ year_id: YEAR_ID_CURRENT }),
+        }),
+      );
+      expect(policy.ensureNotEnrolled).not.toHaveBeenCalledWith(
+        expect.anything(),
+        USER_AV_GRADUATE,
+        AV_SECTION_ID,
+        expect.anything(),
+      );
+      expect(summary.typeGraduatesEnrolled).toBe(1);
+    });
+
+    it('B05 still enrolls when the last AV class is in progress', async () => {
+      prisma.club_role_assignments.findMany.mockResolvedValue([expiredAvMember()]);
+      prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'next_class',
+        class_id: 201,
+        crossed_type: true,
+        club_section_id: CQ_SECTION_ID,
+        club_type_id: CONQUISTADORES_TYPE_ID,
+        display_order: 1,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+      });
+      annualMembership.writeTypeJumpEnrollment.mockResolvedValue('enrolled');
+
+      const summary = await service.applyCut();
+      expect(summary.typeGraduatesEnrolled).toBe(1);
+    });
+
+    it('B06 age short does not enroll CQ', async () => {
+      prisma.club_role_assignments.findMany.mockResolvedValue([expiredAvMember()]);
+      prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'configuration_error',
+        code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+      });
+
+      const summary = await service.applyCut();
+      expect(annualMembership.writeTypeJumpEnrollment).not.toHaveBeenCalled();
+      expect(summary.typeGraduatesEnrolled).toBe(0);
+    });
+
+    it('B07 missing dest section does not enroll CQ', async () => {
+      prisma.club_role_assignments.findMany.mockResolvedValue([expiredAvMember()]);
+      prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'configuration_error',
+        code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+      });
+
+      await service.applyCut();
+      expect(annualMembership.writeTypeJumpEnrollment).not.toHaveBeenCalled();
+    });
+
+    it('B08 Guía enrolls into GM', async () => {
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        {
+          assignment_id: 'assign-cq-guide-2025',
+          user_id: USER_CQ_GUIDE,
+          role_id: MEMBER_ROLE_ID,
+          club_section_id: CQ_SECTION_ID,
+          ecclesiastical_year_id: YEAR_ID_PREV,
+          end_date: null,
+          ecclesiastical_year: { end_date: PREV_YEAR.end_date },
+          status: 'active',
+          roles: { role_name: 'member' },
+          club_sections: {
+            main_club_id: CLUB_ID,
+            club_type_id: CONQUISTADORES_TYPE_ID,
+            club_types: { name: 'Conquistadores' },
+          },
+        },
+      ]);
+      prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'next_class',
+        class_id: 308,
+        display_order: 1,
+        club_type_id: GM_TYPE_ID,
+        club_section_id: GM_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+        crossed_type: true,
+      });
+      annualMembership.writeTypeJumpEnrollment.mockResolvedValue('enrolled');
+
+      const summary = await service.applyCut();
+      expect(annualMembership.writeTypeJumpEnrollment).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: USER_CQ_GUIDE,
+          destSectionId: GM_SECTION_ID,
+        }),
+      );
+      expect(summary.typeGraduatesEnrolled).toBe(1);
+    });
+
+    it('B11 board CQ return does not use the type-jump path', async () => {
+      prisma.club_role_assignments.findMany.mockResolvedValue([expiredCqDirector()]);
+      prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'next_class',
+        class_id: 308,
+        crossed_type: true,
+        club_section_id: GM_SECTION_ID,
+        club_type_id: GM_TYPE_ID,
+        display_order: 1,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+      });
+
+      const summary = await service.applyCut();
+      expect(annualMembership.writeTypeJumpEnrollment).not.toHaveBeenCalled();
+      expect(policy.ensureNotEnrolled).toHaveBeenCalled();
+      expect(summary.returnedNotEnrolled).toBe(1);
+      expect(summary.typeGraduatesEnrolled).toBe(0);
     });
   });
 });

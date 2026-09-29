@@ -1,14 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CertificateBulkImportsController } from './certificate-bulk-imports.controller';
 import { CertificateBulkImportsService } from './certificate-bulk-imports.service';
+import { CertificateImportFilesService } from './certificate-import-files.service';
 
 const mockService = {
   createDraft: jest.fn(),
+  listMine: jest.fn(),
+  addItem: jest.fn(),
+  removeItem: jest.fn(),
   processOcr: jest.fn(),
   getBatch: jest.fn(),
   updateItem: jest.fn(),
   submit: jest.fn(),
   resubmitItem: jest.fn(),
+};
+
+const mockFiles = {
+  presign: jest.fn(),
+  confirm: jest.fn(),
+  download: jest.fn(),
+  remove: jest.fn(),
 };
 
 const req = { user: { sub: 'user-1' } } as any;
@@ -21,6 +32,7 @@ describe('CertificateBulkImportsController', () => {
       controllers: [CertificateBulkImportsController],
       providers: [
         { provide: CertificateBulkImportsService, useValue: mockService },
+        { provide: CertificateImportFilesService, useValue: mockFiles },
       ],
     }).compile();
 
@@ -101,5 +113,20 @@ describe('CertificateBulkImportsController', () => {
       'item-1',
       dto,
     );
+  });
+
+  it('presigns a file for the authenticated owner', async () => {
+    const dto = {
+      file_name: 'cert.jpg',
+      mime_type: 'image/jpeg',
+      file_size: 1200,
+    };
+    mockFiles.presign.mockResolvedValue({ file_id: 'file-1' });
+
+    await expect(controller.presignFile(req, 'batch-1', dto)).resolves.toEqual({
+      status: 'success',
+      data: { file_id: 'file-1' },
+    });
+    expect(mockFiles.presign).toHaveBeenCalledWith('user-1', 'batch-1', dto);
   });
 });

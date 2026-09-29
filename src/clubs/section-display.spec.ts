@@ -2,6 +2,8 @@ import {
   clubSectionDisplayLabel,
   clubTypeCycleRank,
   clubTypeSectionName,
+  findMasterGuidesClubTypeId,
+  isMasterGuidesClubType,
 } from './section-display';
 
 describe('club section display', () => {
@@ -24,5 +26,32 @@ describe('club section display', () => {
     expect(clubTypeCycleRank('Conquistadores')).toBe(1);
     expect(clubTypeCycleRank('Aventureros')).toBe(0);
     expect(clubTypeCycleRank(null)).toBe(-1);
+  });
+
+  it('detects Guías Mayores by name, slug, or code, never by numeric id', () => {
+    expect(isMasterGuidesClubType({ name: 'Guías Mayores' })).toBe(true);
+    expect(isMasterGuidesClubType({ name: 'Guias Mayores' })).toBe(true);
+    expect(isMasterGuidesClubType({ name: 'Master Guides' })).toBe(true);
+    expect(isMasterGuidesClubType({ slug: 'master_guides' })).toBe(true);
+    expect(isMasterGuidesClubType({ code: 'master_guilds' })).toBe(true);
+    expect(isMasterGuidesClubType({ name: 'Pathfinders', club_type_id: 3 })).toBe(
+      false,
+    );
+    expect(isMasterGuidesClubType({ name: 'Aventureros' })).toBe(false);
+    expect(isMasterGuidesClubType({ name: 'Conquistadores' })).toBe(false);
+
+    expect(
+      findMasterGuidesClubTypeId([
+        { club_type_id: 1, name: 'Aventureros' },
+        { club_type_id: 2, name: 'Conquistadores' },
+        { club_type_id: 99, name: 'Guías Mayores' },
+      ]),
+    ).toBe(99);
+    expect(
+      findMasterGuidesClubTypeId([
+        { club_type_id: 1, name: 'Aventureros' },
+        { club_type_id: 3, name: 'Conquistadores' },
+      ]),
+    ).toBeNull();
   });
 });

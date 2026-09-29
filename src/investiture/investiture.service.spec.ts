@@ -1333,6 +1333,7 @@ describe('InvestitureService', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             active: true,
+            record_kind: 'OPERATIONAL',
             investiture_status: { in: ['IN_PROGRESS', 'REJECTED'] },
           }),
         }),
@@ -1348,6 +1349,40 @@ describe('InvestitureService', () => {
       expect(
         mockPrismaService.investiture_validation_history.createMany,
       ).not.toHaveBeenCalled();
+    });
+
+    it('does not select or expire HISTORICAL_CERTIFICATE INVESTIDO enrollments', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+
+      const result = await service.expireOverdueEnrollments('admin-1', {
+        ecclesiastical_year_id: 2026,
+        dry_run: false,
+      });
+
+      expect(mockPrismaService.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            record_kind: 'OPERATIONAL',
+            investiture_status: { in: ['IN_PROGRESS', 'REJECTED'] },
+          }),
+        }),
+      );
+      const candidateWhere =
+        mockPrismaService.enrollments.findMany.mock.calls[0][0].where;
+      expect(candidateWhere.record_kind).toBe('OPERATIONAL');
+      expect(candidateWhere.investiture_status.in).not.toContain('INVESTIDO');
+      expect(result).toMatchObject({
+        scanned_count: 0,
+        expired_count: 0,
+        enrollment_ids: [],
+      });
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      expect(mockPrismaService.enrollments.updateMany).not.toHaveBeenCalled();
     });
 
     it('expires overdue enrollments and writes EXPIRED audit rows', async () => {
@@ -1378,7 +1413,10 @@ describe('InvestitureService', () => {
       expect(result.expired_count).toBe(1);
       expect(txMock.enrollments.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ enrollment_id: { in: [11] } }),
+          where: expect.objectContaining({
+            enrollment_id: { in: [11] },
+            record_kind: 'OPERATIONAL',
+          }),
           data: expect.objectContaining({ investiture_status: 'EXPIRED' }),
         }),
       );

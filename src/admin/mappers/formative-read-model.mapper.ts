@@ -37,6 +37,7 @@ export interface TrajectoryClassSource {
   enrollment_date: Date;
   investiture_status: string | null;
   investiture_date?: Date | null;
+  record_kind?: string | null;
   classes?: { name?: string | null } | null;
 }
 
@@ -56,6 +57,7 @@ export interface OperationalEnrollmentSource {
   locked_for_validation: boolean;
   cross_type_enrollment: boolean;
   active: boolean;
+  record_kind?: string | null;
   classes: {
     name: string;
   } | null;
@@ -86,6 +88,7 @@ function mapTrajectoryClasses(
     ecclesiastical_year_id: item.ecclesiastical_year_id,
     advanced: item.advanced_status ?? null,
     current_class:
+      item.record_kind !== 'HISTORICAL_CERTIFICATE' &&
       item.active &&
       activeEcclesiasticalYearId !== null &&
       item.ecclesiastical_year_id === activeEcclesiasticalYearId,
@@ -152,7 +155,9 @@ export function buildFormativeReadModel(
     input.activeEcclesiasticalYearId,
   );
   const { regular, crossType } = partitionOperationalEnrollments(
-    input.enrollments,
+    input.enrollments.filter(
+      (item) => item.record_kind !== 'HISTORICAL_CERTIFICATE',
+    ),
   );
   const conflict =
     input.activeEcclesiasticalYearId !== null &&
