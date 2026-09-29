@@ -128,6 +128,32 @@ describe('AnnualMembershipPolicyService', () => {
       );
     });
 
+    it('returns the GM section for an AV/CQ officer without investiture or a prior GM assignment', async () => {
+      prisma.club_sections.findUnique.mockResolvedValue({
+        club_section_id: CQ_SECTION_ID,
+        main_club_id: CLUB_ID,
+        club_type_id: CONQUISTADORES_TYPE_ID,
+        active: true,
+      });
+      prisma.club_sections.findFirst.mockResolvedValue({
+        club_section_id: GM_SECTION_ID,
+        main_club_id: CLUB_ID,
+        club_type_id: GM_TYPE_ID,
+        active: true,
+      });
+      prisma.enrollments.findFirst.mockResolvedValue(null);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+
+      const base = await service.resolveBase(prisma as never, USER_ID, {
+        sourceClubId: CLUB_ID,
+        sourceSectionId: CQ_SECTION_ID,
+      });
+
+      expect(base.baseSectionId).toBe(GM_SECTION_ID);
+      expect(prisma.enrollments.findFirst).not.toHaveBeenCalled();
+      expect(prisma.club_role_assignments.findFirst).not.toHaveBeenCalled();
+    });
+
     it('ensureNotEnrolled + listNotEnrolled include the returned user without a prior-year GM CRA', async () => {
       prisma.club_role_assignments.findFirst.mockResolvedValue(null);
       prisma.club_role_assignments.create.mockResolvedValue({

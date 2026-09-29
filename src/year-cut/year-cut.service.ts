@@ -82,6 +82,9 @@ const EMPTY_SUMMARY: YearCutSummary = {
  *
  * Does not activate leftover CRA `designated`. Type graduates (AV→CQ / CQ→GM)
  * are enrolled on the destination before R04 not-enrolled rows are written.
+ * An ending AV/CQ administrative role returns to the club's active Guías
+ * Mayores section as member inactive. Investiture and a prior GM assignment
+ * are not required. A disabled GM section does not invent that link.
  */
 @Injectable()
 export class YearCutService {

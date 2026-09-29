@@ -37,7 +37,6 @@ export type NotEnrolledListItem = {
 
 type DbClient = Prisma.TransactionClient | PrismaService;
 
-const GUIDE_MAJOR_ASSET_CODE = 'GM-01';
 const AV_CQ_TYPE_NAMES = ['Aventureros', 'Conquistadores'] as const;
 const VALID_MEMBERSHIP_STATUSES = ['active', 'inactive'] as const;
 
@@ -302,7 +301,7 @@ export class AnnualMembershipPolicyService {
 
   private async resolveReturnBase(
     tx: DbClient,
-    userId: string,
+    _userId: string,
     hint: AnnualBaseHint,
   ): Promise<ResolvedAnnualBase> {
     const sourceClubId = hint.sourceClubId;
@@ -364,51 +363,10 @@ export class AnnualMembershipPolicyService {
       throw new AppConflictException(ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED);
     }
 
-    const eligible = await this.isGmReturnEligible(tx, userId, gmSection.club_section_id);
-    if (!eligible) {
-      throw new AppConflictException(ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED);
-    }
-
     return {
       clubId: gmSection.main_club_id,
       baseSectionId: gmSection.club_section_id,
       clubTypeName: gmType.name,
     };
-  }
-
-  private async isGmReturnEligible(
-    tx: DbClient,
-    userId: string,
-    gmSectionId: number,
-  ): Promise<boolean> {
-    const gmClasses = await tx.classes.findMany({
-      where: { asset_code: GUIDE_MAJOR_ASSET_CODE },
-      select: { class_id: true },
-    });
-    const gmClassIds = gmClasses.map((row) => row.class_id);
-
-    if (gmClassIds.length > 0) {
-      const investiture = await tx.enrollments.findFirst({
-        where: {
-          user_id: userId,
-          class_id: { in: gmClassIds },
-          investiture_status: 'INVESTIDO',
-        },
-        select: { enrollment_id: true },
-      });
-      if (investiture) {
-        return true;
-      }
-    }
-
-    const priorGm = await tx.club_role_assignments.findFirst({
-      where: {
-        user_id: userId,
-        club_section_id: gmSectionId,
-      },
-      select: { assignment_id: true },
-    });
-
-    return priorGm != null;
   }
 }
