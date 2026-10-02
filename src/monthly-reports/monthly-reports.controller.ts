@@ -26,6 +26,7 @@ import {
 import type { Response } from 'express';
 import { MonthlyReportsService } from './monthly-reports.service';
 import { MonthlyReportArtifactsService } from './monthly-report-artifacts.service';
+import { monthlyReportContentDisposition } from './monthly-report-download-filename';
 import { UpdateManualDataDto } from './dto';
 import {
   AuthorizationResource,
@@ -278,7 +279,7 @@ export class MonthlyReportsController {
   @ApiOperation({
     summary: 'Descargar informe mensual en PDF',
     description:
-      'Descarga el artefacto PDF privado almacenado en R2. Si falta o está desactualizado, el backend lo repara desde el snapshot congelado. Solo disponible para informes con estado "generated" o "submitted".',
+      'Descarga el artefacto PDF privado almacenado en R2. Si falta o está desactualizado, el backend lo repara desde el snapshot congelado. Solo disponible para informes con estado "generated" o "submitted". El archivo se llama informe-mensual-{club}-{tipo}-{mes}-{año}.pdf.',
   })
   @ApiParam({
     name: 'reportId',
@@ -299,10 +300,14 @@ export class MonthlyReportsController {
   ) {
     const pdfBuffer =
       await this.monthlyReportArtifactsService.getStoredPdfBuffer(reportId);
+    const filename =
+      await this.monthlyReportArtifactsService.resolveDownloadFilename(
+        reportId,
+      );
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="informe-mensual-${reportId}.pdf"`,
+      'Content-Disposition': monthlyReportContentDisposition(filename),
       'Content-Length': pdfBuffer.length,
     });
 

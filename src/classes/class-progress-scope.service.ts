@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { evidence_validation_enum } from '@prisma/client';
 import {
   AppForbiddenException,
   AppNotFoundException,
@@ -8,6 +7,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
 
 const SECTION_WIDE_ROLE_NAMES = new Set([
   'director',
@@ -84,6 +84,7 @@ export class ClassProgressScopeService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
+    private readonly requirementEligibility: ClassRequirementEligibilityService,
   ) {}
 
   async getProgressScope(
@@ -279,43 +280,22 @@ export class ClassProgressScopeService {
       };
     }
 
-    const enrollmentIds = enrollments.map(
-      (enrollment) => enrollment.enrollment_id,
+    const eligibilityByEnrollment =
+      await this.requirementEligibility.calculateForEnrollments(
+        enrollments.map((enrollment) => enrollment.enrollment_id),
+      );
+    const summaries = enrollments.map((enrollment) => {
+      const eligibility = eligibilityByEnrollment.get(enrollment.enrollment_id);
+      return {
+        enrollment_id: enrollment.enrollment_id,
+        completed: eligibility?.investiture_progress.completed ?? 0,
+        total: eligibility?.investiture_progress.total ?? 0,
+        overall: eligibility?.overall_progress ?? 0,
+      };
+    });
+    const summaryByEnrollment = new Map(
+      summaries.map((summary) => [summary.enrollment_id, summary]),
     );
-    const [completedRows, totalSections] = await Promise.all([
-      this.prisma.class_section_progress.groupBy({
-        by: ['enrollment_id'],
-        where: {
-          enrollment_id: { in: enrollmentIds },
-          class_id: params.classId,
-          active: true,
-          OR: [
-            { status: evidence_validation_enum.VALIDATED },
-            { score: { gte: 70 } },
-          ],
-        },
-        _count: { section_progress_id: true },
-      }),
-      this.prisma.class_sections.count({
-        where: {
-          active: true,
-          class_modules: {
-            class_id: params.classId,
-            active: true,
-          },
-        },
-      }),
-    ]);
-
-    const completedByEnrollment = new Map<number, number>();
-    for (const row of completedRows) {
-      if (row.enrollment_id !== null) {
-        completedByEnrollment.set(
-          row.enrollment_id,
-          row._count.section_progress_id,
-        );
-      }
-    }
 
     return {
       club_section_id: scope.club_section_id,
@@ -324,12 +304,10 @@ export class ClassProgressScopeService {
       ecclesiastical_year_id: scope.ecclesiastical_year_id,
       access_level: scope.access_level,
       members: enrollments.map((enrollment) => {
-        const completed_sections =
-          completedByEnrollment.get(enrollment.enrollment_id) ?? 0;
-        const overall_progress =
-          totalSections > 0
-            ? Math.round((completed_sections / totalSections) * 100)
-            : 0;
+        const summary = summaryByEnrollment.get(enrollment.enrollment_id);
+        const completed_sections = summary?.completed ?? 0;
+        const total_sections = summary?.total ?? 0;
+        const overall_progress = summary?.overall ?? 0;
 
         return {
           user_id: enrollment.user_id,
@@ -340,7 +318,7 @@ export class ClassProgressScopeService {
           investiture_status: enrollment.investiture_status,
           cross_type_enrollment: enrollment.cross_type_enrollment,
           completed_sections,
-          total_sections: totalSections,
+          total_sections,
           overall_progress,
         };
       }),

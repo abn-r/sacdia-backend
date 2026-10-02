@@ -55,6 +55,9 @@ describe('CertificateBulkImportApplicationService', () => {
     classes: {
       findUnique: jest.fn(),
     },
+    users: {
+      findUnique: jest.fn(),
+    },
     enrollments: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
@@ -88,7 +91,14 @@ describe('CertificateBulkImportApplicationService', () => {
     tx.certificate_bulk_import_batches.update.mockResolvedValue({});
     tx.certificate_bulk_import_items.count.mockResolvedValue(0);
     tx.certificate_bulk_import_items.updateMany.mockResolvedValue({ count: 1 });
-    tx.classes.findUnique.mockResolvedValue({ asset_code: 'CQ-03' });
+    tx.users.findUnique.mockResolvedValue({
+      birthday: new Date('1990-01-01T00:00:00.000Z'),
+    });
+    tx.classes.findUnique.mockResolvedValue({
+      asset_code: 'CQ-03',
+      minimum_age: 10,
+      active: true,
+    });
     tx.enrollments.findMany.mockResolvedValue([]);
   });
 
@@ -189,7 +199,7 @@ describe('CertificateBulkImportApplicationService', () => {
       applied_entity_id: null,
       batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
     });
-    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2026 }]);
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2026, start_date: new Date('2026-01-01T00:00:00.000Z'), end_date: new Date('2026-12-31T00:00:00.000Z'), active: true }]);
     tx.enrollments.findFirst.mockResolvedValue(null);
     tx.enrollments.create.mockResolvedValue({ enrollment_id: 90 });
     tx.certificate_bulk_import_items.update.mockResolvedValue({
@@ -297,7 +307,7 @@ describe('CertificateBulkImportApplicationService', () => {
         files: batchFiles,
       },
     });
-    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2016 }]);
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2016, start_date: new Date('2016-01-01T00:00:00.000Z'), end_date: new Date('2016-12-31T00:00:00.000Z'), active: false }]);
     tx.enrollments.findFirst.mockResolvedValue(null);
     tx.enrollments.create.mockResolvedValue({ enrollment_id: 91 });
     tx.certificate_bulk_import_items.update.mockResolvedValue({
@@ -383,8 +393,8 @@ describe('CertificateBulkImportApplicationService', () => {
         files: batchFiles,
       },
     });
-    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2004 }]);
-    tx.classes.findUnique.mockResolvedValue({ asset_code: 'GM-01' });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2004, start_date: new Date('2004-01-01T00:00:00.000Z'), end_date: new Date('2004-12-31T00:00:00.000Z'), active: false }]);
+    tx.classes.findUnique.mockResolvedValue({ asset_code: 'GM-01', minimum_age: 10, active: true });
     tx.enrollments.findMany.mockResolvedValue([
       {
         enrollment_id: 15,
@@ -437,9 +447,11 @@ describe('CertificateBulkImportApplicationService', () => {
           files: batchFiles,
         },
       });
-      tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2008 }]);
+      tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2008, start_date: new Date('2008-01-01T00:00:00.000Z'), end_date: new Date('2008-12-31T00:00:00.000Z'), active: false }]);
       tx.classes.findUnique.mockResolvedValue({
         asset_code: discontinued.assetCode,
+        minimum_age: 16,
+        active: false,
       });
       tx.enrollments.findMany.mockResolvedValue([]);
       tx.enrollments.create.mockResolvedValue({ enrollment_id: 100 });
@@ -530,7 +542,7 @@ describe('CertificateBulkImportApplicationService', () => {
       applied_entity_id: null,
       batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
     });
-    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2016 }]);
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2016, start_date: new Date('2016-01-01T00:00:00.000Z'), end_date: new Date('2016-12-31T00:00:00.000Z'), active: false }]);
     tx.enrollments.findMany.mockResolvedValue([
       {
         enrollment_id: 40,
@@ -561,7 +573,7 @@ describe('CertificateBulkImportApplicationService', () => {
       applied_entity_id: null,
       batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
     });
-    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2016 }]);
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2016, start_date: new Date('2016-01-01T00:00:00.000Z'), end_date: new Date('2016-12-31T00:00:00.000Z'), active: false }]);
     tx.enrollments.findMany.mockResolvedValue([
       {
         enrollment_id: 40,
@@ -613,6 +625,59 @@ describe('CertificateBulkImportApplicationService', () => {
     );
   });
 
+  it('blocks an Amigo certificate from 2025 when the person was 9 at that year start', async () => {
+    const pending2026 = {
+      enrollment_id: 77,
+      ecclesiastical_year_id: 2026,
+      investiture_status: 'IN_PROGRESS',
+      investiture_date: null,
+      record_kind: 'OPERATIONAL',
+      modified_at: new Date('2026-02-01T00:00:00.000Z'),
+    };
+    tx.users.findUnique.mockResolvedValue({
+      birthday: new Date('2016-01-01T00:00:00.000Z'),
+    });
+    tx.classes.findUnique.mockResolvedValue({
+      asset_code: 'CQ-01',
+      minimum_age: 10,
+      active: true,
+    });
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-amigo-2025',
+      status: 'SUBMITTED',
+      item_type: 'CLASS',
+      class_id: 1,
+      completed_at: new Date('2025-06-01T00:00:00.000Z'),
+      applied_entity_id: null,
+      batch: { batch_id: 'batch-1', user_id: 'member-2016', files: batchFiles },
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([
+      {
+        year_id: 2025,
+        start_date: new Date('2025-01-01T00:00:00.000Z'),
+        end_date: new Date('2025-12-31T00:00:00.000Z'),
+        active: false,
+      },
+    ]);
+    tx.enrollments.findMany.mockResolvedValue([pending2026]);
+    tx.enrollments.create.mockResolvedValue({ enrollment_id: 501 });
+    tx.certificate_bulk_import_items.update.mockResolvedValue({
+      item_id: 'item-amigo-2025',
+      status: 'APPROVED',
+    });
+
+    await expect(
+      service.approveItem('reviewer-1', 'batch-1', 'item-amigo-2025', {}),
+    ).rejects.toMatchObject({
+      code: 'CERTIFICATE_IMPORT_AGE_BELOW_MINIMUM',
+    });
+
+    expect(tx.enrollments.create).not.toHaveBeenCalled();
+    expect(tx.enrollments.update).not.toHaveBeenCalled();
+    expect(tx.enrollments.updateMany).not.toHaveBeenCalled();
+    expect(tx.investiture_validation_history.create).not.toHaveBeenCalled();
+  });
+
   it('marks the batch approved when the last reviewable item is approved', async () => {
     tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
       item_id: 'item-2',
@@ -623,7 +688,7 @@ describe('CertificateBulkImportApplicationService', () => {
       applied_entity_id: null,
       batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
     });
-    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2026 }]);
+    tx.ecclesiastical_years.findMany.mockResolvedValue([{ year_id: 2026, start_date: new Date('2026-01-01T00:00:00.000Z'), end_date: new Date('2026-12-31T00:00:00.000Z'), active: true }]);
     tx.enrollments.create.mockResolvedValue({ enrollment_id: 90 });
     tx.certificate_bulk_import_items.update.mockResolvedValue({
       item_id: 'item-2',

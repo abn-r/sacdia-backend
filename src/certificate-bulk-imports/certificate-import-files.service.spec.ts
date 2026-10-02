@@ -1,3 +1,4 @@
+import { PDFDocument } from 'pdf-lib';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AppInternalServerErrorException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -11,7 +12,9 @@ describe('CertificateImportFilesService', () => {
     getSignedUploadUrl: jest.fn(),
     getObjectInfo: jest.fn(),
     getObjectPrefix: jest.fn(),
+    getObject: jest.fn(),
     copyObject: jest.fn(),
+    upload: jest.fn(),
     deleteMany: jest.fn(),
     getSignedDownloadUrl: jest.fn(),
   };
@@ -58,6 +61,9 @@ describe('CertificateImportFilesService', () => {
     storage.copyObject.mockResolvedValue({
       key: 'certificate-imports/batches/batch-1/sealed/file.jpg',
     });
+    storage.upload.mockResolvedValue({
+      key: 'certificate-imports/batches/batch-1/sealed/file.pdf',
+    });
     storage.deleteMany.mockResolvedValue(undefined);
     storage.getSignedDownloadUrl.mockResolvedValue('https://r2.example/get');
   });
@@ -83,7 +89,10 @@ describe('CertificateImportFilesService', () => {
     expect(storage.getSignedUploadUrl).toHaveBeenCalledWith(
       StorageBucketAlias.CERTIFICATE_IMPORTS,
       expect.stringMatching(/^batches\/batch-1\/staging\//),
-      expect.objectContaining({ contentType: 'image/jpeg', contentLength: 1200 }),
+      expect.objectContaining({
+        contentType: 'image/jpeg',
+        contentLength: 1200,
+      }),
     );
     expect(tx.certificate_bulk_import_files.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -166,6 +175,198 @@ describe('CertificateImportFilesService', () => {
     expect(storage.copyObject).toHaveBeenCalledTimes(1);
   });
 
+  async function preparePdf(pages: number, mutate?: (bytes: Buffer) => Buffer) {
+    const document = await PDFDocument.create();
+    for (let n = 0; n < pages; n++) document.addPage();
+    const generated = Buffer.from(
+      await document.save({ addDefaultPage: false }),
+    );
+    const bytes = mutate ? mutate(generated) : generated;
+    prisma.certificate_bulk_import_files.findFirst.mockResolvedValue({
+      file_id: 'file-1',
+      file_type: 'application/pdf',
+      upload_status: 'PENDING_UPLOAD',
+      staging_key: 'staging-key',
+      object_key: null,
+      size_bytes: BigInt(bytes.length),
+      confirmed_at: null,
+      jurisdiction: 'CAMPO_LOCAL',
+      batch: { user_id: 'owner-1', local_field_id: 7, status: 'DRAFT' },
+    });
+    storage.getObjectInfo.mockResolvedValue({
+      size: bytes.length,
+      contentType: 'application/pdf',
+    });
+    storage.getObjectPrefix.mockResolvedValue(bytes.subarray(0, 16));
+    storage.getObject.mockResolvedValue(bytes);
+    prisma.certificate_bulk_import_files.update.mockResolvedValue({
+      file_id: 'file-1',
+      object_key: 'sealed/file.pdf',
+      size_bytes: BigInt(bytes.length),
+      file_type: 'application/pdf',
+      confirmed_at: new Date(),
+    });
+    return bytes;
+  }
+
+  it.each([1, 5])(
+    'parses a complete %i-page PDF before sealing',
+    async (pages) => {
+      const bytes = await preparePdf(pages);
+      await service.confirm('owner-1', 'batch-1', 'file-1');
+      expect(storage.getObject).toHaveBeenCalledWith(
+        StorageBucketAlias.CERTIFICATE_IMPORTS,
+        'staging-key',
+        10 * 1024 * 1024,
+      );
+      expect(storage.getObject.mock.invocationCallOrder[0]).toBeLessThan(
+        storage.upload.mock.invocationCallOrder[0],
+      );
+      expect(storage.upload).toHaveBeenCalledWith(
+        StorageBucketAlias.CERTIFICATE_IMPORTS,
+        expect.stringMatching(
+          /^batches\/batch-1\/sealed\/file-1-[0-9a-f-]{36}\.pdf$/,
+        ),
+        bytes,
+        { contentType: 'application/pdf', overwrite: false },
+      );
+      expect(storage.copyObject).not.toHaveBeenCalled();
+      expect(prisma.certificate_bulk_import_files.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ size_bytes: BigInt(bytes.length) }),
+        }),
+      );
+    },
+  );
+
+  it('seals the validated bytes even when staging is subsequently replaced', async () => {
+    const validated = await preparePdf(1);
+    const other = await PDFDocument.create();
+    for (let n = 0; n < 6; n++) other.addPage();
+    const replaced = Buffer.from(await other.save());
+    storage.getObject.mockImplementationOnce(async () => {
+      storage.getObject.mockResolvedValue(replaced);
+      return validated;
+    });
+    await service.confirm('owner-1', 'batch-1', 'file-1');
+    expect(storage.upload.mock.calls[0][2]).toEqual(validated);
+    expect(storage.copyObject).not.toHaveBeenCalled();
+  });
+
+  it('cleans only its own seal after a DB failure and retries with a new key', async () => {
+    await preparePdf(1);
+    const failure = new Error('database unavailable');
+    const allocated: string[] = [];
+    storage.upload.mockImplementation(async (_bucket, key) => {
+      allocated.push(key);
+      return { key: 'certificate-imports/' + key };
+    });
+    prisma.certificate_bulk_import_files.update.mockRejectedValueOnce(failure);
+    await expect(
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ).rejects.toThrow(failure);
+    expect(storage.deleteMany).toHaveBeenCalledTimes(1);
+    expect(storage.deleteMany).toHaveBeenCalledWith(
+      StorageBucketAlias.CERTIFICATE_IMPORTS,
+      ['certificate-imports/' + allocated[0]],
+    );
+    await service.confirm('owner-1', 'batch-1', 'file-1');
+    expect(allocated[1]).not.toBe(allocated[0]);
+    expect(storage.deleteMany).toHaveBeenLastCalledWith(
+      StorageBucketAlias.CERTIFICATE_IMPORTS,
+      ['staging-key'],
+    );
+  });
+
+  it('does not delete a seal referenced after an ambiguous successful DB commit', async () => {
+    await preparePdf(1);
+    const pending =
+      prisma.certificate_bulk_import_files.findFirst.getMockImplementation()!;
+    let sealKey = '';
+    storage.upload.mockImplementation(async (_bucket, key) => {
+      sealKey = 'certificate-imports/' + key;
+      return { key: sealKey };
+    });
+    prisma.certificate_bulk_import_files.findFirst
+      .mockImplementationOnce(pending)
+      .mockImplementation(async () => ({ object_key: sealKey }));
+    prisma.certificate_bulk_import_files.update.mockRejectedValueOnce(
+      new Error('ambiguous commit'),
+    );
+    await expect(
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ).rejects.toThrow('ambiguous commit');
+    expect(storage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('preserves the seal when DB reread cannot determine whether commit succeeded', async () => {
+    await preparePdf(1);
+    const pending =
+      prisma.certificate_bulk_import_files.findFirst.getMockImplementation()!;
+    prisma.certificate_bulk_import_files.findFirst
+      .mockImplementationOnce(pending)
+      .mockRejectedValueOnce(new Error('read unavailable'));
+    prisma.certificate_bulk_import_files.update.mockRejectedValueOnce(
+      new Error('ambiguous commit'),
+    );
+    await expect(
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ).rejects.toThrow('ambiguous commit');
+    expect(storage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('maps PDF upload failure safely without confirming or deleting staging', async () => {
+    await preparePdf(1);
+    storage.upload.mockRejectedValueOnce(
+      new AppInternalServerErrorException(ErrorCode.R2_UPLOAD_FAILED),
+    );
+    await expect(
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE');
+    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+    expect(storage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [6, 'CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES'],
+    [0, 'CERTIFICATE_IMPORT_PDF_INVALID'],
+  ])('does not seal a rejected %i-page PDF', async (pages, code) => {
+    await preparePdf(pages as number);
+    await expect(
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ).rejects.toThrow(code as string);
+    expect(storage.copyObject).not.toHaveBeenCalled();
+    expect(storage.upload).not.toHaveBeenCalled();
+    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+    expect(storage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects corrupt PDF bytes before sealing', async () => {
+    await preparePdf(1, () => Buffer.from('%PDF-1.7\n1 0 obj << invalid'));
+    await expect(
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_PDF_INVALID');
+    expect(storage.copyObject).not.toHaveBeenCalled();
+    expect(storage.upload).not.toHaveBeenCalled();
+    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+    expect(storage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing or changed downloaded PDF bytes', async () => {
+    await preparePdf(1);
+    storage.getObject.mockResolvedValueOnce(null);
+    await expect(
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
+    storage.getObject.mockResolvedValueOnce(Buffer.from('%PDF-1.7 changed'));
+    await expect(
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH');
+    expect(storage.copyObject).not.toHaveBeenCalled();
+    expect(storage.upload).not.toHaveBeenCalled();
+    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+  });
+
   it('rejects magic bytes that do not match the declared type', async () => {
     prisma.certificate_bulk_import_files.findFirst.mockResolvedValue({
       file_id: 'file-1',
@@ -183,6 +384,7 @@ describe('CertificateImportFilesService', () => {
       service.confirm('owner-1', 'batch-1', 'file-1'),
     ).rejects.toThrow('CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH');
     expect(storage.copyObject).not.toHaveBeenCalled();
+    expect(storage.upload).not.toHaveBeenCalled();
     expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
   });
 
@@ -304,7 +506,11 @@ describe('CertificateImportFilesService', () => {
       object_key: 'sealed-key',
       upload_status: 'CONFIRMED',
       jurisdiction: 'CAMPO_LOCAL',
-      batch: { user_id: 'owner-1', local_field_id: 7, status: 'NEEDS_CORRECTION' },
+      batch: {
+        user_id: 'owner-1',
+        local_field_id: 7,
+        status: 'NEEDS_CORRECTION',
+      },
     });
     prisma.certificate_bulk_import_items.count.mockResolvedValue(1);
 

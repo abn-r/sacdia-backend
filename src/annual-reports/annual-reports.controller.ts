@@ -23,6 +23,7 @@ import {
 import type { Response } from 'express';
 import { AnnualReportsService } from './annual-reports.service';
 import { AnnualReportsPdfService } from './annual-reports-pdf.service';
+import { monthlyReportContentDisposition } from '../monthly-reports/monthly-report-download-filename';
 import { UpdateAnnualManualDataDto } from './dto';
 import {
   AuthorizationResource,
@@ -189,7 +190,10 @@ export class AnnualReportsController {
 
   @Get('admin/annual-reports/:id/pdf')
   @RequirePermissions('reports:download')
-  @ApiOperation({ summary: 'Descargar PDF del informe anual (admin)' })
+  @ApiOperation({
+    summary:
+      'Descargar PDF del informe anual (admin). Nombre: informe-anual-{club}-{tipo}-{año}.pdf',
+  })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF del informe anual' })
@@ -204,9 +208,11 @@ export class AnnualReportsController {
     @Res() res: Response,
   ) {
     const buffer = await this.annualReportsPdfService.generatePdf(id);
+    const filename =
+      await this.annualReportsPdfService.resolveDownloadFilename(id);
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="informe-anual-${id}.pdf"`,
+      'Content-Disposition': monthlyReportContentDisposition(filename),
       'Content-Length': buffer.length,
     });
     res.end(buffer);
@@ -261,7 +267,10 @@ export class AnnualReportsController {
 
   @Get('clubs/:clubId/annual-reports/:id/pdf')
   @RequirePermissions('reports:download')
-  @ApiOperation({ summary: 'Descargar PDF del informe anual (usuario)' })
+  @ApiOperation({
+    summary:
+      'Descargar PDF del informe anual (usuario). Nombre: informe-anual-{club}-{tipo}-{año}.pdf',
+  })
   @ApiParam({ name: 'clubId', type: 'integer' })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiProduces('application/pdf')
@@ -277,9 +286,11 @@ export class AnnualReportsController {
     @Res() res: Response,
   ) {
     const buffer = await this.annualReportsPdfService.generatePdf(id);
+    const filename =
+      await this.annualReportsPdfService.resolveDownloadFilename(id);
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="informe-anual-${id}.pdf"`,
+      'Content-Disposition': monthlyReportContentDisposition(filename),
       'Content-Length': buffer.length,
     });
     res.end(buffer);

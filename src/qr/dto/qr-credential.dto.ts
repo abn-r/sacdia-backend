@@ -30,6 +30,25 @@ export class QrMemberViewDto {
 
   @ApiPropertyOptional({
     nullable: true,
+    description: 'Local field that owns the credential club',
+  })
+  local_field_name!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Union that owns the local field',
+  })
+  union_name!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Calendar year of the current ecclesiastical year. This is the credential vigencia. Present on GET /qr/me/card.',
+  })
+  ecclesiastical_year!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
     description: 'Most recent active class enrollment name',
   })
   current_class?: string | null;
