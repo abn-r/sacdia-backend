@@ -7,6 +7,10 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import {
+  assertNoPendingInvestitureAuthorization,
+  lockInvestitureAuthorizationEnrollment,
+} from '../investiture-requests/investiture-request-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, evidence_validation_enum } from '@prisma/client';
 import { TranslationService } from '../common/services/translation.service';
@@ -71,6 +75,14 @@ export class ClassesService {
     'INVESTIDO',
     'EXPIRED',
   ]);
+
+  private async lockPendingInvestitureProgress(
+    store: Prisma.TransactionClient,
+    enrollmentId: number,
+  ): Promise<void> {
+    await lockInvestitureAuthorizationEnrollment(store, enrollmentId);
+    await assertNoPendingInvestitureAuthorization(store, enrollmentId);
+  }
 
   private assertProgressMutable(enrollment: {
     investitureStatus: string;
@@ -1147,7 +1159,7 @@ export class ClassesService {
         progress &&
           progress.status !== evidence_validation_enum.REJECTED &&
           (progress.status === evidence_validation_enum.VALIDATED ||
-            progress.score >= 70),
+            progress.score >= (eligibility?.passing_score ?? 80)),
       );
 
     const modulesProgress = classData.class_modules
@@ -1307,6 +1319,10 @@ export class ClassesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await this.lockPendingInvestitureProgress(
+        tx,
+        resolvedEnrollment.enrollmentId,
+      );
       const existingSection = await tx.class_section_progress.findFirst({
         where: {
           enrollment_id: resolvedEnrollment.enrollmentId,
@@ -1450,72 +1466,78 @@ export class ClassesService {
     await this.assertOperationalProgressWrite(resolved.ecclesiasticalYearId);
     this.assertProgressMutable(resolved);
 
-    // Find or create section progress using the annual enrollment owner.
-    let sectionProgress = await this.prisma.class_section_progress.findFirst({
-      where: {
-        enrollment_id: resolved.enrollmentId,
-        section_id: sectionId,
-        active: true,
-      },
-    });
-
-    if (!sectionProgress) {
-      sectionProgress = await this.prisma.class_section_progress.create({
-        data: {
-          user_id: targetUserId,
-          class_id: classId,
+    const created = await this.prisma.$transaction(async (tx) => {
+      await this.lockPendingInvestitureProgress(tx, resolved.enrollmentId);
+      let sectionProgress = await tx.class_section_progress.findFirst({
+        where: {
           enrollment_id: resolved.enrollmentId,
-          module_id: section.module_id,
           section_id: sectionId,
-          score: 0,
           active: true,
         },
       });
-    }
 
-    const progressId = sectionProgress.section_progress_id;
-    const extension = resolveEvidenceFileExtension(file);
-    const objectKey = `${progressId}-${Date.now()}.${extension}`;
-    const existingEvidenceCount = await (
-      this.prisma as any
-    ).evidence_files.count({
-      where: { section_progress_id: progressId },
-    });
-    const displayName = buildEvidenceDisplayNameForFile(
-      existingEvidenceCount + 1,
-      file,
-    );
-
-    const uploaded = await this.fileStorage.upload(
-      StorageBucketAlias.CLASS_EVIDENCE,
-      objectKey,
-      file.buffer,
-      { contentType: file.mimetype },
-    );
-
-    const created = await (this.prisma as any).evidence_files.create({
-      data: {
-        section_progress_id: progressId,
-        file_url: uploaded.url,
-        file_name: displayName,
-        file_type: this.resolveEvidenceFileType(file),
-        uploaded_by_id: actorUserId,
-        active: true,
-      },
-      include: {
-        uploaded_by: {
-          select: {
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
+      if (!sectionProgress) {
+        sectionProgress = await tx.class_section_progress.create({
+          data: {
+            user_id: targetUserId,
+            class_id: classId,
+            enrollment_id: resolved.enrollmentId,
+            module_id: section.module_id,
+            section_id: sectionId,
+            score: 0,
+            active: true,
           },
-        },
-      },
+        });
+      }
+
+      const progressId = sectionProgress.section_progress_id;
+      const extension = resolveEvidenceFileExtension(file);
+      const objectKey = `${progressId}-${Date.now()}.${extension}`;
+      const existingEvidenceCount = await tx.evidence_files.count({
+        where: { section_progress_id: progressId },
+      });
+      const displayName = buildEvidenceDisplayNameForFile(
+        existingEvidenceCount + 1,
+        file,
+      );
+      const uploaded = await this.fileStorage.upload(
+        StorageBucketAlias.CLASS_EVIDENCE,
+        objectKey,
+        file.buffer,
+        { contentType: file.mimetype },
+      );
+
+      try {
+        return await tx.evidence_files.create({
+          data: {
+            section_progress_id: progressId,
+            file_url: uploaded.url,
+            file_name: displayName,
+            file_type: this.resolveEvidenceFileType(file),
+            uploaded_by_id: actorUserId,
+            active: true,
+          },
+          include: {
+            uploaded_by: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        });
+      } catch (error) {
+        await this.fileStorage
+          .deleteMany(StorageBucketAlias.CLASS_EVIDENCE, [objectKey])
+          .catch(() => undefined);
+        throw error;
+      }
     });
 
     const signedUrl = await this.fileStorage.getSignedDownloadUrl(
       StorageBucketAlias.CLASS_EVIDENCE,
-      uploaded.url,
+      created.file_url,
     );
 
     return this.mapEvidenceFile(created, signedUrl);
@@ -1581,16 +1603,19 @@ export class ClassesService {
       throw new AppBadRequestException(ErrorCode.CLASS_SECTION_NO_EVIDENCE);
     }
 
-    const updated = await this.prisma.class_section_progress.update({
-      where: {
-        section_progress_id: sectionProgress.section_progress_id,
-      },
-      data: {
-        status: evidence_validation_enum.SUBMITTED,
-        submitted_by_id: actorUserId,
-        submitted_at: new Date(),
-        modified_at: new Date(),
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockPendingInvestitureProgress(tx, resolved.enrollmentId);
+      return tx.class_section_progress.update({
+        where: {
+          section_progress_id: sectionProgress.section_progress_id,
+        },
+        data: {
+          status: evidence_validation_enum.SUBMITTED,
+          submitted_by_id: actorUserId,
+          submitted_at: new Date(),
+          modified_at: new Date(),
+        },
+      });
     });
 
     return {
@@ -1659,11 +1684,27 @@ export class ClassesService {
       throw new AppNotFoundException(ErrorCode.CLASS_EVIDENCE_FILE_NOT_FOUND);
     }
 
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockPendingInvestitureProgress(tx, resolved.enrollmentId);
+      return tx.evidence_files.update({
+        where: { evidence_file_id: fileId },
+        data: { active: false },
+        include: {
+          uploaded_by: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+      });
+    });
+
     const r2Key = this.fileStorage.extractKeyFromPublicUrl(
       StorageBucketAlias.CLASS_EVIDENCE,
       fileRecord.file_url,
     );
-
     if (r2Key) {
       try {
         await this.fileStorage.deleteMany(StorageBucketAlias.CLASS_EVIDENCE, [
@@ -1673,20 +1714,6 @@ export class ClassesService {
         // Best-effort delete from R2; soft-delete in DB is the source of truth.
       }
     }
-
-    const updated = await (this.prisma as any).evidence_files.update({
-      where: { evidence_file_id: fileId },
-      data: { active: false },
-      include: {
-        uploaded_by: {
-          select: {
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-          },
-        },
-      },
-    });
 
     return this.mapEvidenceFile(updated);
   }

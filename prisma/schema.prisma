@@ -1139,6 +1139,7 @@ model districts {
   institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_district")
   institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_district")
   coordination_zone_districts             coordination_zone_districts[]
+  district_investiture_pastors            district_investiture_pastors[]
   translations                            districts_translations[]
 
   @@index([local_field_id, active], map: "idx_districts_local_field_active")
@@ -1190,6 +1191,8 @@ model ecclesiastical_years {
   insurance_cycle_configs     insurance_cycle_configs[]
   activity_series             activity_series[]
   institutional_certificate_requests institutional_certificate_requests[]
+  local_field_class_thresholds local_field_class_thresholds[]
+  local_field_investiture_windows local_field_investiture_windows[]
 
   // Date-range queries: "find the active year for today" uses WHERE start_date <= ? AND end_date >= ?
   @@index([start_date, end_date], map: "idx_ecclesiastical_years_date_range")
@@ -1817,6 +1820,8 @@ model local_fields {
   districts                       districts[]
   folder_templates                folder_templates[]
   investiture_configs             investiture_config[]
+  local_field_class_thresholds    local_field_class_thresholds[]
+  local_field_investiture_windows local_field_investiture_windows[]
   local_camporees                 local_camporees[]
   certificate_bulk_import_batches certificate_bulk_import_batches[]
   unions                          unions                            @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3214,6 +3219,97 @@ model investiture_config {
   local_fields           local_fields         @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([local_field_id, ecclesiastical_year_id])
+}
+
+model local_field_class_thresholds {
+  local_field_id         Int
+  ecclesiastical_year_id Int
+  minimum_percent        Int                  @default(80)
+  updated_by_id          String?              @db.Uuid
+  created_at             DateTime             @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+  ecclesiastical_year    ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: Cascade, onUpdate: NoAction)
+  local_fields           local_fields         @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([local_field_id, ecclesiastical_year_id])
+}
+
+model local_field_investiture_windows {
+  local_field_id         Int
+  ecclesiastical_year_id Int
+  start_date             DateTime             @db.Date
+  end_date               DateTime             @db.Date
+  updated_by_id          String?              @db.Uuid
+  created_at             DateTime             @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+  ecclesiastical_year    ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: Cascade, onUpdate: NoAction)
+  local_fields           local_fields         @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([local_field_id, ecclesiastical_year_id])
+}
+
+model investiture_pastor_quota {
+  quota_id      Int      @id @default(1)
+  slots         Int
+  updated_by_id String?  @db.Uuid
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  modified_at   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+model district_investiture_pastors {
+  districlub_type_id Int
+  user_id            String    @db.Uuid
+  active             Boolean   @default(true)
+  assigned_by_id     String?   @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  districts          districts @relation(fields: [districlub_type_id], references: [districlub_type_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([districlub_type_id, user_id])
+  @@index([districlub_type_id, active], map: "idx_district_investiture_pastors_active")
+}
+
+enum investiture_request_person_status {
+  PENDING
+  INVESTED
+  REJECTED_BY_PERSON
+  REJECTED_BY_SYSTEM
+  REMOVED
+  CLOSED_YEAR
+}
+
+model investiture_authorization_requests {
+  request_id             String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  club_section_id        Int
+  ecclesiastical_year_id Int
+  created_by_id          String                               @db.Uuid
+  created_at             DateTime                             @default(now()) @db.Timestamptz(6)
+  people                 investiture_authorization_people[]
+
+  @@index([club_section_id, ecclesiastical_year_id], map: "idx_investiture_authorization_requests_section_year")
+}
+
+model investiture_authorization_people {
+  person_id        String                             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  request_id       String                             @db.Uuid
+  user_id          String                             @db.Uuid
+  class_id         Int
+  enrollment_id    Int
+  investiture_date DateTime                           @db.Date
+  status           investiture_request_person_status  @default(PENDING)
+  single_slot      Boolean
+  resolution_code       String?                            @db.VarChar(80)
+  resolved_by_id        String?                            @db.Uuid
+  authorization_comment String?                            @db.Text
+  rejection_reason      String?                            @db.Text
+  system_reason         String?                            @db.Text
+  created_at            DateTime                           @default(now()) @db.Timestamptz(6)
+  modified_at      DateTime                           @default(now()) @updatedAt @db.Timestamptz(6)
+  request          investiture_authorization_requests @relation(fields: [request_id], references: [request_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([request_id, status], map: "idx_investiture_authorization_people_request_status")
+  @@index([enrollment_id, status], map: "idx_investiture_authorization_people_enrollment_status")
+  @@index([user_id, status], map: "idx_investiture_authorization_people_user_status")
 }
 
 model diseases {

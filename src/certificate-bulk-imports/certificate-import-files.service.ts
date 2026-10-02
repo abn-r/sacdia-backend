@@ -18,10 +18,12 @@ import {
   assertCertificateImportObject,
   assertCertificateImportPresign,
   CERTIFICATE_IMPORT_MAGIC_SAMPLE_BYTES,
+  CERTIFICATE_IMPORT_MAX_BYTES,
   CERTIFICATE_IMPORT_SIGNED_TTL_SECONDS,
   EDITABLE_CERTIFICATE_IMPORT_BATCH_STATUSES,
   extensionForCertificateMime,
 } from './certificate-import-files.constants';
+import { assertCertificateImportPdf } from './certificate-import-pdf';
 import type { PresignCertificateImportFileDto } from './dto/presign-certificate-import-file.dto';
 
 const LOCKED_ITEM_STATUSES = ['SUBMITTED', 'APPROVED', 'RESUBMITTED'] as const;
@@ -139,24 +141,89 @@ export class CertificateImportFilesService {
     );
 
     const extension = extensionForCertificateMime(existing.file_type);
+    const sealId =
+      existing.file_type === 'application/pdf'
+        ? `${fileId}-${randomUUID()}`
+        : fileId;
+    const destination = `batches/${batchId}/sealed/${sealId}${extension}`;
+    let pdfBytes: Buffer | undefined;
+    if (existing.file_type === 'application/pdf') {
+      const downloaded = await this.callStorage(() =>
+        this.storage.getObject(
+          StorageBucketAlias.CERTIFICATE_IMPORTS,
+          existing.staging_key!,
+          CERTIFICATE_IMPORT_MAX_BYTES,
+        ),
+      );
+      if (!downloaded) {
+        throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
+      }
+      assertCertificateImportObject(
+        { size: downloaded.length, contentType: existing.file_type },
+        Number(existing.size_bytes),
+        existing.file_type,
+        downloaded,
+      );
+      if (downloaded.length !== stored!.size) {
+        throw new BadRequestException(
+          'CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH',
+        );
+      }
+      await assertCertificateImportPdf(downloaded);
+      pdfBytes = downloaded;
+    }
+    // A signed staging PUT remains mutable. Seal exactly the validated PDF,
+    // never a later copy of the staging key.
     const sealed = await this.callStorage(() =>
-      this.storage.copyObject(
-        StorageBucketAlias.CERTIFICATE_IMPORTS,
-        existing.staging_key!,
-        `batches/${batchId}/sealed/${fileId}${extension}`,
-      ),
+      pdfBytes
+        ? this.storage.upload(
+            StorageBucketAlias.CERTIFICATE_IMPORTS,
+            destination,
+            pdfBytes,
+            {
+              contentType: existing.file_type,
+              overwrite: false,
+            },
+          )
+        : this.storage.copyObject(
+            StorageBucketAlias.CERTIFICATE_IMPORTS,
+            existing.staging_key!,
+            destination,
+          ),
     );
 
-    const confirmed = await this.prisma.certificate_bulk_import_files.update({
-      where: { file_id: existing.file_id },
-      data: {
-        upload_status: 'CONFIRMED',
-        object_key: sealed.key,
-        file_url: sealed.key,
-        size_bytes: BigInt(stored!.size),
-        confirmed_at: existing.confirmed_at ?? new Date(),
-      },
-    });
+    const confirmed = await this.prisma.certificate_bulk_import_files
+      .update({
+        where: { file_id: existing.file_id },
+        data: {
+          upload_status: 'CONFIRMED',
+          object_key: sealed.key,
+          file_url: sealed.key,
+          size_bytes: BigInt(stored!.size),
+          confirmed_at: existing.confirmed_at ?? new Date(),
+        },
+      })
+      .catch(async (error: unknown) => {
+        // A connectivity error may occur after commit. Only remove this
+        // attempt's seal if a successful reread proves it is unreferenced.
+        // Unknown commit state preserves evidence (an orphan is safer).
+        if (pdfBytes) {
+          const current = await this.prisma.certificate_bulk_import_files
+            .findFirst({
+              where: { file_id: existing.file_id },
+              select: { object_key: true },
+            })
+            .catch(() => undefined);
+          if (current !== undefined && current?.object_key !== sealed.key) {
+            await this.callStorage(() =>
+              this.storage.deleteMany(StorageBucketAlias.CERTIFICATE_IMPORTS, [
+                sealed.key,
+              ]),
+            ).catch(() => undefined);
+          }
+        }
+        throw error;
+      });
 
     await this.callStorage(() =>
       this.storage.deleteMany(StorageBucketAlias.CERTIFICATE_IMPORTS, [
@@ -358,9 +425,9 @@ export class CertificateImportFilesService {
 
   private assertEditable(status: string) {
     if (
-      !(EDITABLE_CERTIFICATE_IMPORT_BATCH_STATUSES as readonly string[]).includes(
-        status,
-      )
+      !(
+        EDITABLE_CERTIFICATE_IMPORT_BATCH_STATUSES as readonly string[]
+      ).includes(status)
     ) {
       throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_EDITABLE');
     }

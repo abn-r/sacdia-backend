@@ -16,17 +16,18 @@ describe('ClassesService', () => {
   let service: ClassesService;
 
   const createTransactionMock = () => ({
-    class_section_progress: {
-      findFirst: jest.fn().mockResolvedValue(null),
-      create: jest.fn().mockResolvedValue({ section_progress_id: 1 }),
-      update: jest.fn().mockResolvedValue({ section_progress_id: 1 }),
-      findMany: jest.fn().mockResolvedValue([]),
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    investiture_authorization_people: {
+      findFirst: (...args: unknown[]) =>
+        mockPrismaService.investiture_authorization_people.findFirst(...args),
     },
+    class_section_progress: mockPrismaService.class_section_progress,
     class_module_progress: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ module_progress_id: 1 }),
       update: jest.fn().mockResolvedValue({ module_progress_id: 1 }),
     },
+    evidence_files: mockPrismaService.evidence_files,
   });
 
   let transactionMock: ReturnType<typeof createTransactionMock>;
@@ -67,6 +68,9 @@ describe('ClassesService', () => {
         .fn()
         .mockResolvedValue([{ club_type_id: 1 }, { club_type_id: 2 }]),
     },
+    investiture_authorization_people: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
   };
   const mockClassProgressAccessService = {
     assertCanAccessProgress: jest.fn(),
@@ -93,6 +97,9 @@ describe('ClassesService', () => {
       undefined,
     );
     mockClassEnrollmentPolicyService.evaluate.mockResolvedValue({ kind: 'ok' });
+    mockPrismaService.investiture_authorization_people.findFirst.mockResolvedValue(
+      null,
+    );
 
     transactionMock = createTransactionMock();
 
@@ -147,6 +154,8 @@ describe('ClassesService', () => {
     mockPrismaService.class_sections.groupBy.mockResolvedValue([]);
     mockPrismaService.class_modules.findMany.mockResolvedValue([]);
     mockPrismaService.class_section_progress.groupBy.mockResolvedValue([]);
+    mockPrismaService.class_section_progress.findMany.mockReset();
+    mockPrismaService.class_section_progress.findMany.mockResolvedValue([]);
     mockPrismaService.class_section_progress.findFirst.mockResolvedValue(null);
     mockPrismaService.class_section_progress.create.mockResolvedValue({
       section_progress_id: 123,
@@ -743,6 +752,65 @@ describe('ClassesService', () => {
       });
     });
 
+    it('blocks progress and evidence writes while that enrollment has a pending request', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      mockPrismaService.investiture_authorization_people.findFirst.mockResolvedValue(
+        { person_id: 'pending-person' },
+      );
+
+      await expect(
+        service.updateSectionProgress(
+          'user-1',
+          7,
+          11,
+          101,
+          80,
+          { note: 'evidencia' },
+          901,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+      expect(transactionMock.$executeRaw).toHaveBeenCalled();
+      expect(
+        transactionMock.class_section_progress.create,
+      ).not.toHaveBeenCalled();
+      expect(
+        transactionMock.class_section_progress.update,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('does not block progress of another enrollment of the same person', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 902,
+        user_id: 'user-1',
+        class_id: 8,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+      });
+      mockPrismaService.investiture_authorization_people.findFirst.mockImplementation(
+        async (args: { where: { enrollment_id: number } }) =>
+          args.where.enrollment_id === 901
+            ? { person_id: 'pending-person' }
+            : null,
+      );
+      transactionMock.class_section_progress.findMany.mockResolvedValue([
+        { score: 80 },
+      ]);
+
+      await expect(
+        service.updateSectionProgress('user-1', 8, 11, 101, 80, undefined, 902),
+      ).resolves.toBeDefined();
+    });
+
     it.each([
       'SUBMITTED',
       'CLUB_APPROVED',
@@ -1060,6 +1128,7 @@ describe('ClassesService', () => {
           }),
         }),
       );
+      expect(transactionMock.$executeRaw).toHaveBeenCalled();
       expect(
         mockClassProgressAccessService.assertCanAccessProgress,
       ).toHaveBeenCalledWith({
@@ -1254,6 +1323,72 @@ describe('ClassesService', () => {
         ).resolves.toBeDefined();
       },
     );
+
+    it('blocks submit, upload and delete while that enrollment has a pending request', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
+        record_kind: 'OPERATIONAL',
+      });
+      mockPrismaService.investiture_authorization_people.findFirst.mockResolvedValue(
+        { person_id: 'pending-person' },
+      );
+      mockPrismaService.class_section_progress.findFirst.mockResolvedValue({
+        section_progress_id: 123,
+        section_id: 101,
+        status: 'PENDING',
+        evidence_files: [{ evidence_file_id: 55 }],
+      });
+      mockPrismaService.evidence_files.findFirst.mockResolvedValue({
+        evidence_file_id: 55,
+        file_url: 'https://r2.example/class/123.pdf',
+        uploaded_by: {
+          name: 'A',
+          paternal_last_name: 'B',
+          maternal_last_name: 'C',
+        },
+      });
+      const fileStorage = (service as any).fileStorage;
+
+      await expect(
+        (service as any).submitSection('user-1', 'user-1', 7, 101, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+      await expect(
+        (service as any).uploadSectionFile(
+          'user-1',
+          'user-1',
+          7,
+          101,
+          {
+            buffer: Buffer.from('pdf'),
+            mimetype: 'application/pdf',
+            originalname: 'evidence.pdf',
+          },
+          901,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+      await expect(
+        (service as any).deleteSectionFile('user-1', 'user-1', 7, 101, 55, 901),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+
+      expect(
+        mockPrismaService.class_section_progress.update,
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.evidence_files.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.evidence_files.update).not.toHaveBeenCalled();
+      expect(fileStorage.upload).not.toHaveBeenCalled();
+      expect(fileStorage.deleteMany).not.toHaveBeenCalled();
+    });
 
     it('throws CLASS_PROGRESS_LOCKED on delete when enrollment is locked', async () => {
       mockPrismaService.enrollments.findUnique.mockResolvedValue({

@@ -23,6 +23,7 @@ import {
 import type { Response } from 'express';
 import { QuarterlyReportsService } from './quarterly-reports.service';
 import { QuarterlyReportsPdfService } from './quarterly-reports-pdf.service';
+import { monthlyReportContentDisposition } from '../monthly-reports/monthly-report-download-filename';
 import { UpdateQuarterlyManualDataDto } from './dto';
 import {
   AuthorizationResource,
@@ -163,7 +164,10 @@ export class QuarterlyReportsController {
 
   @Get('admin/quarterly-reports/:id/pdf')
   @RequirePermissions('reports:download')
-  @ApiOperation({ summary: 'Descargar PDF del informe trimestral (admin)' })
+  @ApiOperation({
+    summary:
+      'Descargar PDF del informe trimestral (admin). Nombre: informe-trimestral-{club}-{tipo}-{trimestre}-{año}.pdf',
+  })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF del informe trimestral' })
@@ -172,9 +176,11 @@ export class QuarterlyReportsController {
     @Res() res: Response,
   ) {
     const buffer = await this.quarterlyReportsPdfService.generatePdf(id);
+    const filename =
+      await this.quarterlyReportsPdfService.resolveDownloadFilename(id);
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="informe-trimestral-${id}.pdf"`,
+      'Content-Disposition': monthlyReportContentDisposition(filename),
       'Content-Length': buffer.length,
     });
     res.end(buffer);
@@ -225,7 +231,10 @@ export class QuarterlyReportsController {
 
   @Get('clubs/:clubId/quarterly-reports/:id/pdf')
   @RequirePermissions('reports:download')
-  @ApiOperation({ summary: 'Descargar PDF del informe trimestral (usuario)' })
+  @ApiOperation({
+    summary:
+      'Descargar PDF del informe trimestral (usuario). Nombre: informe-trimestral-{club}-{tipo}-{trimestre}-{año}.pdf',
+  })
   @ApiParam({ name: 'clubId', type: 'integer' })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiProduces('application/pdf')
@@ -235,9 +244,11 @@ export class QuarterlyReportsController {
     @Res() res: Response,
   ) {
     const buffer = await this.quarterlyReportsPdfService.generatePdf(id);
+    const filename =
+      await this.quarterlyReportsPdfService.resolveDownloadFilename(id);
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="informe-trimestral-${id}.pdf"`,
+      'Content-Disposition': monthlyReportContentDisposition(filename),
       'Content-Length': buffer.length,
     });
     res.end(buffer);

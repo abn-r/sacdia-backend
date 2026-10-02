@@ -1,6 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { evidence_validation_enum } from '@prisma/client';
+import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  DEFAULT_CLASS_THRESHOLD_PERCENT,
+  sectionMeetsThreshold,
+} from './field-class-threshold';
 
 export type ClassRequirementTrack = 'BASIC' | 'ADVANCED' | 'EXTRA';
 
@@ -9,6 +13,7 @@ type EnrollmentForEligibility = {
   user_id: string;
   class_id: number;
   ecclesiastical_year_id: number;
+  cross_type_enrollment?: boolean | null;
   classes: {
     class_id: number;
     club_type_id: number;
@@ -47,6 +52,7 @@ export type ClassRequirementEligibilityResult = {
   extra_progress: RequirementTrackProgress;
   investiture_progress: RequirementTrackProgress;
   overall_progress: number;
+  passing_score: number;
   investiture_eligibility: {
     eligible: boolean;
     enabled: boolean;
@@ -71,8 +77,13 @@ const REQUIREMENT_TRACKS: ClassRequirementTrack[] = [
   'EXTRA',
 ];
 
+type ClassSectionRows = Awaited<
+  ReturnType<ClassRequirementEligibilityService['findClassSections']>
+>;
+
 @Injectable()
 export class ClassRequirementEligibilityService {
+  private readonly logger = new Logger(ClassRequirementEligibilityService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   async calculateForEnrollment(
@@ -85,6 +96,7 @@ export class ClassRequirementEligibilityService {
         user_id: true,
         class_id: true,
         ecclesiastical_year_id: true,
+        cross_type_enrollment: true,
         classes: {
           select: {
             class_id: true,
@@ -103,9 +115,7 @@ export class ClassRequirementEligibilityService {
 
     if (!enrollment) return null;
 
-    return this.calculateForEnrollmentRecord(
-      enrollment as EnrollmentForEligibility,
-    );
+    return this.calculateForEnrollmentRecord(enrollment);
   }
 
   async calculateForEnrollmentRecord(
@@ -127,13 +137,220 @@ export class ClassRequirementEligibilityService {
       this.resolveRequirementContext(enrollment),
     ]);
 
+    const passingScore = await this.resolvePassingScore(
+      context.localFieldIds,
+      enrollment.ecclesiastical_year_id,
+    );
+    return this.composeResult(
+      enrollment,
+      sections,
+      progressRows,
+      context,
+      passingScore,
+    );
+  }
+
+  async calculateForEnrollments(
+    enrollmentIds: number[],
+  ): Promise<Map<number, ClassRequirementEligibilityResult>> {
+    const results = new Map<number, ClassRequirementEligibilityResult>();
+    const ids = [...new Set(enrollmentIds)];
+    if (ids.length === 0) return results;
+
+    const enrollments = (await this.prisma.enrollments.findMany({
+      where: { enrollment_id: { in: ids } },
+      select: {
+        enrollment_id: true,
+        user_id: true,
+        class_id: true,
+        ecclesiastical_year_id: true,
+        cross_type_enrollment: true,
+        classes: {
+          select: {
+            class_id: true,
+            club_type_id: true,
+            advanced_enabled: true,
+          },
+        },
+        ecclesiastical_year: {
+          select: {
+            year_id: true,
+            start_date: true,
+          },
+        },
+      },
+    })) as EnrollmentForEligibility[];
+
+    const sectionsByKey = new Map<string, ClassSectionRows>();
+    for (const enrollment of enrollments) {
+      const key = this.sectionGroupKey(enrollment);
+      if (!sectionsByKey.has(key)) {
+        sectionsByKey.set(key, await this.findClassSections(enrollment));
+      }
+    }
+
+    const progressRows = await this.prisma.class_section_progress.findMany({
+      where: {
+        enrollment_id: { in: enrollments.map((row) => row.enrollment_id) },
+        active: true,
+      },
+      select: {
+        enrollment_id: true,
+        section_id: true,
+        status: true,
+        score: true,
+      },
+    });
+    const progressByEnrollment = new Map<
+      number,
+      Array<{ section_id: number; status: string; score: number | null }>
+    >();
+    for (const row of progressRows) {
+      if (row.enrollment_id == null) continue;
+      const enrollmentId = row.enrollment_id;
+      const list = progressByEnrollment.get(enrollmentId) ?? [];
+      list.push({
+        section_id: row.section_id,
+        status: row.status,
+        score: row.score == null ? null : Number(row.score),
+      });
+      progressByEnrollment.set(enrollmentId, list);
+    }
+
+    const userIds = [...new Set(enrollments.map((row) => row.user_id))];
+    const yearIds = [
+      ...new Set(enrollments.map((row) => row.ecclesiastical_year_id)),
+    ];
+    const [profiles, assignments] = await Promise.all([
+      this.prisma.users_pr.findMany({
+        where: { user_id: { in: userIds } },
+        select: { user_id: true, active_club_assignment_id: true },
+      }),
+      userIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.club_role_assignments.findMany({
+            where: {
+              user_id: { in: userIds },
+              ecclesiastical_year_id: { in: yearIds },
+              active: true,
+              status: 'active',
+              club_sections: { active: true },
+            },
+            orderBy: { start_date: 'desc' },
+            select: {
+              assignment_id: true,
+              user_id: true,
+              ecclesiastical_year_id: true,
+              club_sections: {
+                select: {
+                  club_type_id: true,
+                  clubs: {
+                    select: {
+                      local_field_id: true,
+                      local_fields: {
+                        select: {
+                          local_field_id: true,
+                          union_id: true,
+                          unions: {
+                            select: {
+                              union_id: true,
+                              division_id: true,
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          }),
+    ]);
+    const explicitByUser = new Map(
+      profiles.map((profile) => [
+        profile.user_id,
+        profile.active_club_assignment_id,
+      ]),
+    );
+
+    const contexts = new Map<number, RequirementContext>();
+    const scorePairs: Array<{
+      localFieldId: number;
+      ecclesiasticalYearId: number;
+    }> = [];
+    const seenPairs = new Set<string>();
+    for (const enrollment of enrollments) {
+      const context = this.buildRequirementContext(
+        this.rowsForEnrollment(
+          enrollment,
+          assignments,
+          explicitByUser.get(enrollment.user_id) ?? null,
+        ),
+      );
+      contexts.set(enrollment.enrollment_id, context);
+      const localFieldId = [...context.localFieldIds][0];
+      if (localFieldId == null) continue;
+      const pairKey = `${localFieldId}|${enrollment.ecclesiastical_year_id}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+      scorePairs.push({
+        localFieldId,
+        ecclesiasticalYearId: enrollment.ecclesiastical_year_id,
+      });
+    }
+    const scores = await this.resolvePassingScores(scorePairs);
+
+    for (const enrollment of enrollments) {
+      const context = contexts.get(enrollment.enrollment_id) ?? {
+        resolved: false,
+        divisionIds: new Set<number>(),
+        unionIds: new Set<number>(),
+        localFieldIds: new Set<number>(),
+      };
+      const localFieldId = [...context.localFieldIds][0];
+      const passingScore =
+        localFieldId == null
+          ? DEFAULT_CLASS_THRESHOLD_PERCENT
+          : (scores.get(
+              `${localFieldId}|${enrollment.ecclesiastical_year_id}`,
+            ) ?? DEFAULT_CLASS_THRESHOLD_PERCENT);
+      results.set(
+        enrollment.enrollment_id,
+        this.composeResult(
+          enrollment,
+          sectionsByKey.get(this.sectionGroupKey(enrollment)) ?? [],
+          progressByEnrollment.get(enrollment.enrollment_id) ?? [],
+          context,
+          passingScore,
+        ),
+      );
+    }
+    return results;
+  }
+
+  private sectionGroupKey(enrollment: EnrollmentForEligibility): string {
+    return `${enrollment.class_id}|${enrollment.ecclesiastical_year.start_date.toISOString()}`;
+  }
+
+  private composeResult(
+    enrollment: EnrollmentForEligibility,
+    sections: ClassSectionRows,
+    progressRows: Array<{
+      section_id: number;
+      status: string;
+      score: number | null;
+    }>,
+    context: RequirementContext,
+    passingScore: number,
+  ): ClassRequirementEligibilityResult {
     const completedSectionIds = new Set(
       progressRows
-        .filter(
-          (progress) =>
-            progress.status !== evidence_validation_enum.REJECTED &&
-            (progress.status === evidence_validation_enum.VALIDATED ||
-              progress.score >= 70),
+        .filter((progress) =>
+          sectionMeetsThreshold({
+            status: progress.status,
+            score: progress.score,
+            threshold: passingScore,
+          }),
         )
         .map((progress) => progress.section_id),
     );
@@ -145,11 +362,13 @@ export class ClassRequirementEligibilityService {
     );
 
     const applicableSections = sections.filter((section) => {
-      const track = section.requirement_track as ClassRequirementTrack;
+      const track = section.requirement_track;
 
       if (track === 'BASIC') return true;
       if (track === 'ADVANCED') return enrollment.classes.advanced_enabled;
-      if (track === 'EXTRA') return this.isExtraSectionApplicable(section, context);
+      if (track === 'EXTRA') {
+        return this.isExtraSectionApplicable(section, context);
+      }
 
       return false;
     });
@@ -160,7 +379,10 @@ export class ClassRequirementEligibilityService {
         section.required_for_investiture === true,
     );
 
-    const progressByTrack = new Map<ClassRequirementTrack, RequirementTrackProgress>();
+    const progressByTrack = new Map<
+      ClassRequirementTrack,
+      RequirementTrackProgress
+    >();
     for (const track of REQUIREMENT_TRACKS) {
       const trackSections = applicableSections.filter(
         (section) => section.requirement_track === track,
@@ -186,8 +408,8 @@ export class ClassRequirementEligibilityService {
       missingRequiredSections === 0 &&
       !contextBlocksExtraResolution;
 
-    const advancedProgress = progressByTrack.get('ADVANCED') ??
-      this.emptyProgress();
+    const advancedProgress =
+      progressByTrack.get('ADVANCED') ?? this.emptyProgress();
     const advancedEnabled = enrollment.classes.advanced_enabled;
     const advancedEligible =
       advancedEnabled &&
@@ -198,7 +420,9 @@ export class ClassRequirementEligibilityService {
       enrollment_id: enrollment.enrollment_id,
       class_id: enrollment.class_id,
       ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
-      applicable_section_ids: applicableSections.map((section) => section.section_id),
+      applicable_section_ids: applicableSections.map(
+        (section) => section.section_id,
+      ),
       required_investiture_section_ids: requiredInvestitureSections.map(
         (section) => section.section_id,
       ),
@@ -212,6 +436,7 @@ export class ClassRequirementEligibilityService {
       extra_progress: progressByTrack.get('EXTRA') ?? this.emptyProgress(),
       investiture_progress: investitureProgress,
       overall_progress: investitureProgress.percentage,
+      passing_score: passingScore,
       investiture_eligibility: {
         eligible: investitureEligible,
         enabled: true,
@@ -243,6 +468,57 @@ export class ClassRequirementEligibilityService {
         completed: advancedProgress.completed,
       },
     };
+  }
+
+  private async resolvePassingScore(
+    localFieldIds: Set<number>,
+    ecclesiasticalYearId: number,
+  ): Promise<number> {
+    const localFieldId = [...localFieldIds][0];
+    if (localFieldId == null) {
+      return DEFAULT_CLASS_THRESHOLD_PERCENT;
+    }
+    const thresholds = (
+      this.prisma as PrismaService & {
+        local_field_class_thresholds?: {
+          findUnique: (args: {
+            where: {
+              local_field_id_ecclesiastical_year_id: {
+                local_field_id: number;
+                ecclesiastical_year_id: number;
+              };
+            };
+            select: { minimum_percent: true };
+          }) => Promise<{ minimum_percent: number } | null>;
+        };
+      }
+    ).local_field_class_thresholds;
+    if (!thresholds) {
+      return DEFAULT_CLASS_THRESHOLD_PERCENT;
+    }
+    try {
+      const row = await thresholds.findUnique({
+        where: {
+          local_field_id_ecclesiastical_year_id: {
+            local_field_id: localFieldId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+          },
+        },
+        select: { minimum_percent: true },
+      });
+      return row?.minimum_percent ?? DEFAULT_CLASS_THRESHOLD_PERCENT;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2021'
+      ) {
+        this.logger.warn(
+          'local_field_class_thresholds no existe; se usa el 80 por defecto',
+        );
+        return DEFAULT_CLASS_THRESHOLD_PERCENT;
+      }
+      throw error;
+    }
   }
 
   private async findClassSections(enrollment: EnrollmentForEligibility) {
@@ -310,14 +586,18 @@ export class ClassRequirementEligibilityService {
         assignment_id: explicitAssignmentId,
       });
       if (explicitAssignment.length > 0) {
-        return this.buildRequirementContext(explicitAssignment);
+        return this.buildRequirementContext(
+          this.preferCrossTypeHome(enrollment, explicitAssignment),
+        );
       }
     }
 
     const assignments = await this.findContextAssignments(enrollment);
     if (assignments.length === 0) return emptyContext();
 
-    return this.buildRequirementContext(assignments);
+    return this.buildRequirementContext(
+      this.preferCrossTypeHome(enrollment, assignments),
+    );
   }
 
   private async findContextAssignments(
@@ -331,15 +611,18 @@ export class ClassRequirementEligibilityService {
         ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
         active: true,
         status: 'active',
-        club_sections: {
-          active: true,
-          club_type_id: enrollment.classes.club_type_id,
-        },
+        club_sections: enrollment.cross_type_enrollment
+          ? { active: true }
+          : {
+              active: true,
+              club_type_id: enrollment.classes.club_type_id,
+            },
       },
       orderBy: { start_date: 'desc' },
       select: {
         club_sections: {
           select: {
+            club_type_id: true,
             clubs: {
               select: {
                 local_field_id: true,
@@ -361,6 +644,145 @@ export class ClassRequirementEligibilityService {
         },
       },
     });
+  }
+
+  private preferCrossTypeHome<
+    T extends {
+      club_sections?: { club_type_id?: number | null } | null;
+    },
+  >(enrollment: EnrollmentForEligibility, assignments: T[]): T[] {
+    if (!enrollment.cross_type_enrollment) return assignments;
+    const home = assignments.filter(
+      (row) =>
+        typeof row.club_sections?.club_type_id === 'number' &&
+        row.club_sections.club_type_id !== enrollment.classes.club_type_id,
+    );
+    return home.length > 0 ? home : assignments;
+  }
+
+  private rowsForEnrollment<
+    T extends {
+      assignment_id?: string | null;
+      user_id?: string | null;
+      ecclesiastical_year_id?: number | null;
+      club_sections?: { club_type_id?: number | null } | null;
+    },
+  >(
+    enrollment: EnrollmentForEligibility,
+    rows: T[],
+    explicitAssignmentId: string | null,
+  ): T[] {
+    const mine = rows.filter(
+      (row) =>
+        row.user_id === enrollment.user_id &&
+        row.ecclesiastical_year_id === enrollment.ecclesiastical_year_id,
+    );
+    const typed = enrollment.cross_type_enrollment
+      ? mine
+      : mine.filter(
+          (row) =>
+            row.club_sections?.club_type_id === enrollment.classes.club_type_id,
+        );
+    const chosen =
+      explicitAssignmentId == null
+        ? typed
+        : typed.some((row) => row.assignment_id === explicitAssignmentId)
+          ? typed.filter((row) => row.assignment_id === explicitAssignmentId)
+          : typed;
+    return this.preferCrossTypeHome(enrollment, chosen);
+  }
+
+  private async resolvePassingScores(
+    pairs: Array<{ localFieldId: number; ecclesiasticalYearId: number }>,
+  ): Promise<Map<string, number>> {
+    const scores = new Map<string, number>();
+    const keyOf = (localFieldId: number, ecclesiasticalYearId: number) =>
+      `${localFieldId}|${ecclesiasticalYearId}`;
+    if (pairs.length === 0) return scores;
+
+    const thresholds = (
+      this.prisma as PrismaService & {
+        local_field_class_thresholds?: {
+          findMany?: (args: {
+            where: {
+              OR: Array<{
+                local_field_id: number;
+                ecclesiastical_year_id: number;
+              }>;
+            };
+            select: {
+              local_field_id: true;
+              ecclesiastical_year_id: true;
+              minimum_percent: true;
+            };
+          }) => Promise<
+            Array<{
+              local_field_id: number;
+              ecclesiastical_year_id: number;
+              minimum_percent: number;
+            }>
+          >;
+        };
+      }
+    ).local_field_class_thresholds;
+
+    if (!thresholds?.findMany) {
+      for (const pair of pairs) {
+        scores.set(
+          keyOf(pair.localFieldId, pair.ecclesiasticalYearId),
+          await this.resolvePassingScore(
+            new Set([pair.localFieldId]),
+            pair.ecclesiasticalYearId,
+          ),
+        );
+      }
+      return scores;
+    }
+
+    try {
+      const rows = await thresholds.findMany({
+        where: {
+          OR: pairs.map((pair) => ({
+            local_field_id: pair.localFieldId,
+            ecclesiastical_year_id: pair.ecclesiasticalYearId,
+          })),
+        },
+        select: {
+          local_field_id: true,
+          ecclesiastical_year_id: true,
+          minimum_percent: true,
+        },
+      });
+      for (const pair of pairs) {
+        const row = rows.find(
+          (item) =>
+            item.local_field_id === pair.localFieldId &&
+            item.ecclesiastical_year_id === pair.ecclesiasticalYearId,
+        );
+        scores.set(
+          keyOf(pair.localFieldId, pair.ecclesiasticalYearId),
+          row?.minimum_percent ?? DEFAULT_CLASS_THRESHOLD_PERCENT,
+        );
+      }
+      return scores;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2021'
+      ) {
+        this.logger.warn(
+          'local_field_class_thresholds no existe; se usa el 80 por defecto',
+        );
+        for (const pair of pairs) {
+          scores.set(
+            keyOf(pair.localFieldId, pair.ecclesiasticalYearId),
+            DEFAULT_CLASS_THRESHOLD_PERCENT,
+          );
+        }
+        return scores;
+      }
+      throw error;
+    }
   }
 
   private buildRequirementContext(

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -22,6 +22,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { AchievementsService } from '../achievements/achievements.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import { ClassRequirementEligibilityService } from '../classes/class-requirement-eligibility.service';
+import { PosthogService } from '../posthog/posthog.service';
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
 import { ApproveInvestitureDto } from './dto/approve-investiture.dto';
 import { RejectInvestitureDto } from './dto/reject-investiture.dto';
@@ -156,6 +157,7 @@ export class InvestitureService {
     private readonly achievementsService: AchievementsService,
     private readonly coordinationService: CoordinationService,
     private readonly requirementEligibility: ClassRequirementEligibilityService,
+    @Optional() private readonly posthog?: PosthogService,
   ) {}
 
   // ========================================
@@ -579,6 +581,11 @@ export class InvestitureService {
     this.logger.log(
       `Enrollment ${enrollmentId} marked as invested by ${actorId}`,
     );
+
+    this.posthog?.capture('investiture_marked_invested', actorId, {
+      enrollment_id: enrollmentId,
+      class_id: enrollment.class_id,
+    });
 
     // Notify the member that they have been invested
     try {

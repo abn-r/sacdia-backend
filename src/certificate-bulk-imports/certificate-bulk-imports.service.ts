@@ -25,6 +25,10 @@ import {
 } from './ocr/certificate-ocr.queue';
 import { Inject } from '@nestjs/common';
 import { normalizeCertificateImportFileRef } from './certificate-import-file-ref';
+import {
+  assertClassCertificateHistoricalAge,
+  isCertificateHistoricalGateError,
+} from './class-certificate-historical-age';
 
 const INSTITUTIONAL_CLASS_ASSET_CODES = new Set(['GM-02', 'GM-03']);
 
@@ -269,6 +273,7 @@ export class CertificateBulkImportsService {
       this.assertDraftLike(batch.status, 'add item');
       this.assertRevision(batch.revision, dto.expected_revision);
       await this.assertCatalogChoice(tx, dto);
+      await this.assertClassAgeIfReady(tx, batch.user_id, dto);
       const count = await tx.certificate_bulk_import_items.count({
         where: { batch_id: batchId, active: true },
       });
@@ -328,13 +333,25 @@ export class CertificateBulkImportsService {
       this.assertNotFuture(merged.completed_at);
       if (dto.mark_as_ready) {
         await this.assertCatalogChoice(tx, merged);
+        await this.assertClassAgeIfReady(tx, batch.user_id, merged);
       }
 
-      const status = dto.mark_as_ready
+      let status = dto.mark_as_ready
         ? this.isReady(merged)
           ? CertificateBulkImportItemStatus.READY
           : CertificateBulkImportItemStatus.NEEDS_REVIEW
         : existing.status;
+      if (
+        !dto.mark_as_ready &&
+        existing.status === CertificateBulkImportItemStatus.READY &&
+        merged.item_type === CertificateBulkImportItemType.CLASS
+      ) {
+        status = await this.readyStatusAfterClassEdit(
+          tx,
+          batch.user_id,
+          merged,
+        );
+      }
 
       const item = await tx.certificate_bulk_import_items.update({
         where: { item_id: itemId },
@@ -423,6 +440,37 @@ export class CertificateBulkImportsService {
         throw new BadRequestException('CERTIFICATE_IMPORT_ITEMS_INCOMPLETE');
       }
 
+      const readyClassItems = await tx.certificate_bulk_import_items.findMany({
+        where: {
+          batch_id: batch.batch_id,
+          active: true,
+          item_type: CertificateBulkImportItemType.CLASS,
+          item_id: { notIn: institutionalIds },
+          status: {
+            in: [
+              CertificateBulkImportItemStatus.READY,
+              CertificateBulkImportItemStatus.RESUBMITTED,
+            ],
+          },
+        },
+        select: {
+          class_id: true,
+          completed_at: true,
+        },
+      });
+      for (const readyClassItem of readyClassItems) {
+        if (!readyClassItem.class_id) {
+          throw new BadRequestException(
+            'CERTIFICATE_IMPORT_ITEM_MISSING_CLASS',
+          );
+        }
+        await assertClassCertificateHistoricalAge(tx, {
+          userId: batch.user_id,
+          classId: readyClassItem.class_id,
+          completedAt: readyClassItem.completed_at,
+        });
+      }
+
       await tx.certificate_bulk_import_items.updateMany({
         where: {
           batch_id: batch.batch_id,
@@ -472,6 +520,10 @@ export class CertificateBulkImportsService {
         throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_INCOMPLETE');
       }
       await this.assertCatalogChoice(tx, merged);
+      await this.assertClassAgeIfReady(tx, batch.user_id, {
+        ...merged,
+        mark_as_ready: true,
+      });
 
       const item = await tx.certificate_bulk_import_items.update({
         where: { item_id: itemId },
@@ -667,6 +719,58 @@ export class CertificateBulkImportsService {
     if (completedAt > today) {
       throw new BadRequestException('CERTIFICATE_IMPORT_DATE_IN_FUTURE');
     }
+  }
+
+  private async readyStatusAfterClassEdit(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    item: {
+      item_type?: string | null;
+      class_id?: number | null;
+      completed_at?: string | null;
+    },
+  ): Promise<CertificateBulkImportItemStatus> {
+    if (!this.isReady({ ...item, mark_as_ready: true }) || !item.class_id) {
+      return CertificateBulkImportItemStatus.NEEDS_REVIEW;
+    }
+    try {
+      await assertClassCertificateHistoricalAge(tx, {
+        userId,
+        classId: item.class_id,
+        completedAt: item.completed_at,
+      });
+      return CertificateBulkImportItemStatus.READY;
+    } catch (error) {
+      if (!isCertificateHistoricalGateError(error)) throw error;
+      return CertificateBulkImportItemStatus.NEEDS_REVIEW;
+    }
+  }
+
+  private async assertClassAgeIfReady(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    item: {
+      item_type?: string | null;
+      class_id?: number | null;
+      completed_at?: string | null;
+      mark_as_ready?: boolean;
+    },
+  ) {
+    if (
+      item.item_type !== CertificateBulkImportItemType.CLASS ||
+      !item.class_id ||
+      !this.isReady({ ...item, mark_as_ready: true })
+    ) {
+      return;
+    }
+    if (!item.mark_as_ready) {
+      return;
+    }
+    await assertClassCertificateHistoricalAge(tx, {
+      userId,
+      classId: item.class_id,
+      completedAt: item.completed_at,
+    });
   }
 
   private async assertCatalogChoice(
