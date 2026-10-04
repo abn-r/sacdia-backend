@@ -1,231 +1,65 @@
-# Guards Reference
+# Guards de autorización
 
-This directory contains authorization guards for the SACDIA API.
+Guards de la API SACDIA. El modelo es **deny-by-default**: la autenticación y los permisos se aplican de forma global y cada endpoint declara de forma explícita qué necesita.
 
-## Available Guards
+## Guards globales (`APP_GUARD`)
 
-### 1. JwtAuthGuard
-**Purpose**: Authenticate requests using JWT tokens from Supabase
+Registrados en `src/app.module.ts` en este orden:
 
-**Usage**:
-```typescript
-@UseGuards(JwtAuthGuard)
-@Get('profile')
-getProfile() { ... }
-```
+1. **`UserAwareThrottlerGuard`** (`src/config/user-aware-throttler.guard.ts`): rate limiting. Usa `user:{id}` cuando hay JWT y la IP en otro caso.
+2. **`GlobalJwtAuthGuard`** (`global-jwt-auth.guard.ts`): exige JWT válido en todas las rutas salvo las marcadas con `@Public()`. Extiende `JwtAuthGuard`.
+3. **`PermissionsGuard`** (`permissions.guard.ts`): fail-closed. Toda ruta no pública debe declarar `@RequirePermissions(...)` o `@SkipPermissions()`. Si falta la metadata (o falta `@AuthorizationResource`), responde `500 GUARD_RBAC_MISCONFIGURATION`.
 
-**Populates**: `request.user` with `{ sub, userId, user_id, email }`
+Como los dos últimos son globales, `@UseGuards(JwtAuthGuard)` en un controlador es redundante (sigue presente en muchos controladores por historia). Solo tiene efecto propio dentro de un controlador marcado `@Public()` a nivel de clase, porque `JwtAuthGuard` de ruta no respeta `@Public()`.
 
----
+## Decoradores que gobiernan los guards globales
 
-### 2. ClubRolesGuard
-**Purpose**: Authorize based on club-specific roles (director, counselor, etc.)
+Viven en `src/common/decorators/`:
 
-**Usage**:
-```typescript
-@ClubRoles('director', 'deputy-director')
-@UseGuards(JwtAuthGuard, ClubRolesGuard)
-@Post('clubs/:clubId/instances')
-createInstance() { ... }
-```
+| Decorador | Efecto |
+| --- | --- |
+| `@Public()` | Omite JWT y permisos (login, health ping, catálogos públicos, bootstrap RBAC). |
+| `@SkipPermissions()` | Exige JWT pero omite `PermissionsGuard` (listados de post-registro, inbox propio, etc.). |
+| `@RequirePermissions('a:b', ...)` | Permisos requeridos. Modo `all` por defecto; `@RequirePermissions({ permissions, mode: 'any' })` para OR. |
+| `@AuthorizationResource({ type, ... })` | Obligatorio junto a `@RequirePermissions`. Indica qué recurso se evalúa y de dónde leer sus IDs (`param`, `query`, `body`). |
+| `@SensitiveUserSubresource(...)` | Subrecursos sensibles de usuario (salud, contactos de emergencia, representante legal, post-registro). Política en `sensitive-user-subresource-policy.ts`. |
+| `@SkipMfaCheck()` | Exime una ruta de `MfaGuard`. |
 
-**Requires**:
-- `clubId` in route params, query, or body
-- User must have active role assignment in the club
+### Tipos de recurso (`@AuthorizationResource`)
 
-**Roles**:
-- director
-- deputy-director
-- secretary
-- treasurer
-- counselor
-- instructor
-- captain
-- member
+`PermissionsGuard` resuelve el alcance según `type`: `global`, `user`, `active_assignment`, `club`, `club_section`, `camporee`, `union_camporee`, `camporee_event`, `camporee_venue`, `activity`, `activity_series`, `finance`, `inventory_instance`, `inventory_item`, `club_assignment`, `class_counselor_assignment`, `investiture_enrollment`, `monthly_report`, `insurance_member`, `insurance_record`. El `switch` es exhaustivo: un tipo nuevo sin manejar falla en compilación y en runtime.
 
----
+Para `user` (y `active_assignment` con `ownerParam`), el propietario del recurso pasa sin evaluar permisos.
 
-### 3. GlobalRolesGuard ⭐ NEW
-**Purpose**: Authorize based on global administrative roles
+El contexto de autorización (grants globales, de club y territoriales) lo resuelve `AuthorizationContextService` (`src/common/services/authorization-context.service.ts`) y se cachea 5 minutos.
 
-**Usage**:
-```typescript
-@GlobalRoles('admin', 'super-admin')
-@UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@Post('honors/catalog')
-createHonor() { ... }
-```
+En e2e, `E2E_PASSTHROUGH_PERMISSIONS=true` desactiva `PermissionsGuard` (nunca con `NODE_ENV=production`).
 
-**Checks**: `users_roles` table for active global roles
+## Guards de ruta (opt-in con `@UseGuards`)
 
-**Roles**:
-- super-admin: Full system access
-- admin: Local field administration
-- coordinator: Union/association level
-- user: Regular user (default)
+| Guard | Uso |
+| --- | --- |
+| `JwtAuthGuard` | Verificación JWT HS256 (`BETTER_AUTH_SECRET`, `iss`/`aud` de acceso) vía `JwtStrategy`. Rechaza tokens QR y tokens revocados. |
+| `OptionalJwtAuthGuard` | Rutas públicas que adjuntan `request.user` si llega un token válido y siguen como anónimas si no. |
+| `GlobalRolesGuard` + `@GlobalRoles(...)` | Roles globales activos en `users_roles`. `admin` acepta también `assistant-admin`; `super-admin` pasa siempre. |
+| `ClubRolesGuard` + `@ClubRoles(...)` | Rol activo en `club_role_assignments` para el club de la ruta. |
+| `OwnerOrAdminGuard` | Propietario del recurso (`userId` de la ruta) o rol global administrativo. `coordinator` no es atajo. |
+| `MfaGuard` | Rechaza tokens `mfa_pending` (aal1). Se aplica de forma selectiva, no global. |
 
-**Operational requirement (admin user management scope)**:
-- `super-admin`: scope `ALL` (all users)
-- `admin`: scope from actor location. If `union_id` exists => `UNION`; else requires `local_field_id` => `LOCAL_FIELD`
-- `coordinator`: requires `local_field_id` => `LOCAL_FIELD`
-- If scope data is missing for `admin`/`coordinator`, backend must return `403` (misconfigured role assignment)
-
----
-
-### 4. OwnerOrAdminGuard ⭐ NEW
-**Purpose**: Allow access if user owns the resource OR has admin privileges
-
-**Usage**:
-```typescript
-@UseGuards(JwtAuthGuard, OwnerOrAdminGuard)
-@Get('users/:userId/honors')
-getUserHonors(@Param('userId') userId: string) { ... }
-```
-
-**Logic**:
-1. ✅ Allow if `user.sub === params.userId` (owner)
-2. ✅ Allow if user has `admin` / `assistant-admin` / `super-admin`
-3. ❌ Coordinator is **not** an admin shortcut — deny unless they are the owner
-4. ❌ Otherwise deny
-
-**Use Cases**:
-- User profile endpoints
-- User-specific resources (honors, classes, etc.)
-- Personal data access
-
----
-
-## Guard Combinations
-
-### Public Endpoint
-No guards needed:
-```typescript
-@Get('honors')
-findAll() { ... }
-```
-
-### Authenticated Only
-```typescript
-@UseGuards(JwtAuthGuard)
-@Get('profile')
-getProfile() { ... }
-```
-
-### Owner or Admin
-```typescript
-@UseGuards(JwtAuthGuard, OwnerOrAdminGuard)
-@Get('users/:userId/profile')
-getUserProfile() { ... }
-```
-
-### Admin Only
-```typescript
-@GlobalRoles('admin', 'super-admin')
-@UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@Delete('users/:userId')
-deleteUser() { ... }
-```
-
-### Club Role Required
-```typescript
-@ClubRoles('director', 'deputy-director')
-@UseGuards(JwtAuthGuard, ClubRolesGuard)
-@Post('clubs/:clubId/activities')
-createActivity() { ... }
-```
-
-### Multiple Guards (Complex Authorization)
-```typescript
-// Example: Admin can manage any club, directors can manage their own
-@UseGuards(JwtAuthGuard, /* custom logic */)
-@Patch('clubs/:clubId/settings')
-updateSettings() {
-  // Manual check: if not admin, verify user is director of this club
-}
-```
-
----
-
-## Request Flow
-
-1. **JwtAuthGuard**: Validates JWT → Sets `request.user`
-2. **Authorization Guard**: Checks permissions → Allow/Deny
-3. **Controller**: Processes request
-
----
-
-## Error Responses
-
-### 401 Unauthorized
-JwtAuthGuard rejects invalid/missing token
-
-### 403 Forbidden
-Authorization guard rejects insufficient permissions:
-- `"User not authenticated"`
-- `"You need one of these global roles: admin, super-admin"`
-- `"You can only access your own resources unless you have admin privileges"`
-- `"You need one of these club roles: director, deputy-director"`
-
----
-
-## Best Practices
-
-1. **Always use JwtAuthGuard first** when combining guards
-2. **Apply guards at controller level** for common authorization
-3. **Use method-level guards** for specific endpoints
-4. **Combine guards** for complex authorization (AND logic)
-5. **Use decorators** for role requirements (OR logic)
-
----
-
-## Testing Guards
+## Ejemplo
 
 ```typescript
-describe('OwnerOrAdminGuard', () => {
-  it('should allow owner access', async () => {
-    // user.sub === params.userId
-  });
-
-  it('should allow admin access', async () => {
-    // user has admin role
-  });
-
-  it('should deny non-owner non-admin', async () => {
-    // user.sub !== params.userId && !admin
-  });
-});
+@Get(':clubId/sections/:sectionId')
+@RequirePermissions('club_sections:read')
+@AuthorizationResource({
+  type: 'club_section',
+  clubIdParam: 'clubId',
+  idParam: 'sectionId',
+})
+getSection(@Param('sectionId', ParseIntPipe) sectionId: number) { ... }
 ```
 
----
+## Referencias
 
-## Common Patterns
-
-### User Resource Protection
-```typescript
-@Controller('users/:userId')
-@UseGuards(JwtAuthGuard, OwnerOrAdminGuard)
-export class UserResourceController { ... }
-```
-
-### Admin-Only Routes
-```typescript
-@Controller('admin')
-@GlobalRoles('admin', 'super-admin')
-@UseGuards(JwtAuthGuard, GlobalRolesGuard)
-export class AdminController { ... }
-```
-
-### Mixed Authorization
-```typescript
-@Controller('clubs/:clubId')
-@UseGuards(JwtAuthGuard)
-export class ClubsController {
-  @Get() // Public within auth
-  findOne() { ... }
-
-  @ClubRoles('director')
-  @UseGuards(ClubRolesGuard)
-  @Patch() // Director only
-  update() { ... }
-}
-```
+- Contrato de autorización (workspace `sacdia`): `docs/features/auth/AUTHORIZATION-CANONICAL-CONTRACT.md`, `docs/features/auth/RBAC-ENFORCEMENT-MATRIX.md` y `docs/api/SECURITY-GUIDE.md`.
+- Tests: `*.guard.spec.ts` y `permissions-metadata.spec.ts` en esta carpeta.

@@ -1,6 +1,6 @@
 # DB i18n Translation Pattern — Approach X
 
-> Phase A pilot: `honors_categories_translations`. Phase B extends this to 26 remaining catalogs.
+> Phase A pilot: `honors_categories_translations`. Today `prisma/schema.prisma` has 27 `*_translations` models following this pattern.
 
 ## Approach X: Spanish stays in main table
 
