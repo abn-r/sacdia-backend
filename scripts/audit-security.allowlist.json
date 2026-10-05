@@ -6,6 +6,13 @@
       "via": "prisma > @prisma/config",
       "reason": "Prisma CLI merges its own config. Not on the HTTP request path. Do not override Prisma internals without a dedicated Prisma upgrade.",
       "review_by": "2026-11-23"
+    },
+    {
+      "github_advisory_id": "GHSA-vfj7-8cjw-p6xm",
+      "module": "braces",
+      "via": "@types/jest > expect > jest-message-util > micromatch",
+      "reason": "No patched braces release exists (affected <=3.0.3, latest 3.0.3). It only expands glob patterns written in our own tooling config, never request input.",
+      "review_by": "2026-11-23"
     }
   ]
 }
