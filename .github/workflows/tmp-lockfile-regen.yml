@@ -1,0 +1,17 @@
+name: tmp lockfile regen
+on:
+  push:
+    branches: [tmp/lockfile-regen]
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.13.1'
+      - run: pnpm install --lockfile-only
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run audit:security || true
+      - run: echo "LOCKB64_START"; gzip -9c pnpm-lock.yaml | base64 -w0; echo; echo "LOCKB64_END"
