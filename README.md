@@ -2,64 +2,36 @@
 
 API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Neon).
 
-> Documentacion oficial del proyecto: `/Users/abner/Documents/development/sacdia/docs` (repositorio padre).
-> Este README es una vista operativa del backend y debe mantenerse sincronizado con esa fuente.
-
-## Estado actual (2026-03-04)
-
-- Endpoints admin para catálogos habilitados bajo `/api/v1/admin/*`.
-- Endpoints públicos de catálogo de salud habilitados:
-  - `GET /api/v1/catalogs/allergies`
-  - `GET /api/v1/catalogs/diseases`
-- Endpoints de usuario para persistir salud habilitados:
-  - `PUT /api/v1/users/:userId/allergies`
-  - `PUT /api/v1/users/:userId/diseases`
-  - `DELETE /api/v1/users/:userId/allergies/:allergyId` (borrado lógico)
-  - `DELETE /api/v1/users/:userId/diseases/:diseaseId` (borrado lógico)
-- `PATCH /api/v1/users/:userId` ampliado para aceptar también:
-  - `country_id`
-  - `union_id`
-  - `local_field_id`
-- Migración aplicada: `emergency_contacts.relationship_type_id` ahora referencia
-  `relationship_types.relationship_type_id` (UUID).
-- Notificaciones y FCM tokens endurecidos con JWT + roles.
-- Health check extendido con estado de dependencias (`db`, `cache`, `fcm`, `sentry`).
-- Script de verificación de migración FCM disponible (`pnpm run verify:fcm-migration`).
-- Sesiones Auth estabilizadas:
-  - `POST /api/v1/auth/login` retorna `accessToken`, `refreshToken`, `expiresAt`, `tokenType`.
-  - `POST /api/v1/auth/refresh` mantiene `refreshToken` como contrato oficial.
-  - Ventana temporal legacy activa: `refresh_token` permitido del **2026-03-04** al **2026-03-18**.
-  - `POST /api/v1/auth/logout` en modo fail-safe (best effort) para evitar bloqueo con access token expirado.
+> Documentación oficial del proyecto: `../docs` (workspace `sacdia`).
+> Este README es una vista operativa del backend. El contrato de endpoints vive en
+> `../docs/api/ENDPOINTS-LIVE-REFERENCE.md` y el de base de datos en `../docs/database/SCHEMA-REFERENCE.md`.
 
 ## Stack
 
 - NestJS 11
-- Prisma 7.8 (`@prisma/adapter-pg`)
+- Prisma 7.9 (`@prisma/adapter-pg`)
 - PostgreSQL (Neon)
 - Auth JWT con Better Auth (self-hosted)
 - Cache con Redis (fail-fast en producción; fallback a memoria solo en desarrollo/test)
+- BullMQ sobre Redis (colas de email, notificaciones, logros, trabajos de fondo, especialidades de maestría y OCR de certificados)
 - Firebase Admin (FCM)
+- Cloudflare R2 (S3 API) para archivos
+- Resend para email transaccional
 - Sentry
 
 ## Estructura principal
 
-```text
-src/
-├── auth/
-├── users/
-├── catalogs/
-├── clubs/
-├── classes/
-├── honors/
-├── activities/
-├── finances/
-├── notifications/
-├── admin/
-├── rbac/
-├── common/
-├── prisma/
-└── main.ts
-```
+`src/` tiene un módulo NestJS por dominio (unos 70). Agrupados:
+
+- **Plataforma**: `prisma`, `config`, `common` (guards, decoradores, errores, servicios compartidos), `health`, `i18n`, `background-jobs`, `audit-logs`, `system-config`, `data-export`, `support`.
+- **Auth y autorización**: `auth`, `better-auth`, `rbac`, `admin`, `users`, `post-registration`, `emergency-contacts`, `legal-representatives`, `qr`.
+- **Estructura institucional y clubes**: `catalogs`, `clubs`, `units`, `club-enrollments`, `membership-requests`, `annual-membership`, `coordination`, `institutional-history`, `requests`.
+- **Formación**: `classes`, `honors`, `certifications`, `certificate-bulk-imports`, `investiture`, `validation`, `evidence-review`, `materials`, `resources`.
+- **Operación de club**: `activities`, `finances`, `payment-obligations`, `field-payment-orders`, `inventory`, `insurance`, `notifications`, `dashboard`.
+- **Reportes, rankings y cierre de año**: `annual-folders`, `annual-reports`, `monthly-reports`, `quarterly-reports`, `reports`, `rankings`, `ranking-weights`, `scoring-categories`, `member-of-month`, `achievements`, `analytics`, `year-cut`, `year-end`.
+- **Camporees**: `camporees`, `camporee-events`, `camporee-event-templates`, `camporee-orders`, `camporee-scoring`, `camporee-staff`, `camporee-supplies`, `camporee-venues`.
+
+La lista exacta es `ls src/`; el registro de módulos está en `src/app.module.ts`.
 
 ## Requisitos
 
@@ -92,10 +64,17 @@ pnpm run test
 pnpm run test:e2e
 pnpm run test:cov
 
+# Lint y seguridad
+pnpm run lint
+pnpm run audit:security
+
 # Prisma
 pnpm prisma migrate deploy
 pnpm run prisma:seed:core
 pnpm run verify:fcm-migration
+pnpm run verify:iana-timezones
+pnpm run verify:institutional-hierarchy-migration
+pnpm run verify:authorization-p0
 
 # Utilidades
 pnpm run generate:spec
@@ -105,6 +84,11 @@ pnpm run benchmark:baseline
 pnpm run benchmark:stress
 pnpm run benchmark:spike
 pnpm run migrate:storage-urls:r2
+pnpm run import:legacy-catalogs
+pnpm run import:master-honor-rules -- --file <ruta>
+pnpm run audit:master-honor-assignments
+pnpm run backfill:local-field-timezones
+pnpm run reports:backfill-pdfs
 ```
 
 ## Benchmarking
@@ -134,7 +118,7 @@ Ver `docs/BENCHMARKING.md` para perfiles, escenarios y lectura de capacidad esta
 - `FIREBASE_PROJECT_ID` + `FIREBASE_PRIVATE_KEY` + `FIREBASE_CLIENT_EMAIL` (legacy)
 - `SENTRY_DSN`
 - `ALLOWED_ORIGINS`
-- `AUTH_REJECT_SNAKE_CASE` (default general: `true`; ventana temporal: `false`)
+- `AUTH_REJECT_SNAKE_CASE` (default: `false`; ver ADR-0001)
 
 ### Runtime / desarrollo
 
@@ -193,9 +177,10 @@ Notas:
   un usuario ACL único, espera con polling acotado y elimina sus claves y ACL.
   CI lo ejecuta en un job aislado con Redis 7.
 - Si FCM no inicializa correctamente, notificaciones push quedan deshabilitadas.
-- Desde `2026-03-01`, `POST /api/v1/auth/refresh` usa `refreshToken` (camelCase).
-- Ventana de compatibilidad temporal: **2026-03-04 a 2026-03-18** con `AUTH_REJECT_SNAKE_CASE=false`.
-- Fecha objetivo de retorno a estricto: **2026-03-18** (`AUTH_REJECT_SNAKE_CASE=true`).
+- `POST /api/v1/auth/refresh` usa `refreshToken` (camelCase). Mientras
+  `AUTH_REJECT_SNAKE_CASE=false` (valor por defecto) también acepta `refresh_token`;
+  el retorno a modo estricto está pendiente de decidir antes del lanzamiento
+  (`docs/adr/ADR-0001-auth-session-compat-window.md`).
 
 ### Configuración rápida Redis + FCM
 
@@ -222,7 +207,7 @@ Notas:
        `dependencies.database.pool` y `dependencies.cache.catalogs`, y
        `dependencies.fcm.initialized=true`.
 
-### Monitoreo Auth post-cutover (14 días)
+### Eventos de auth para monitoreo
 
 Eventos estructurados emitidos:
 
@@ -235,7 +220,6 @@ Eventos estructurados emitidos:
 - `auth_guard_unauthorized`
 - `auth_jwt_revoked_token`
 - `auth_jwt_user_blacklisted`
-- `mfa_session_bind_failed`
 
 Consultas sugeridas (Sentry/Logs):
 
@@ -261,7 +245,7 @@ Consultas sugeridas (Sentry/Logs):
   ```
 - `POST /api/v1/auth/refresh`
   - Contrato oficial: body con `refreshToken`.
-  - Compatibilidad temporal: acepta `refresh_token` solo mientras `AUTH_REJECT_SNAKE_CASE=false`.
+  - Compatibilidad legacy: acepta `refresh_token` mientras `AUTH_REJECT_SNAKE_CASE=false` (default actual).
 - `POST /api/v1/auth/logout`
   - No bloquea UX por expiración de access token.
   - Acepta `Authorization: Bearer ...` opcional y `refreshToken` opcional.
@@ -278,188 +262,23 @@ Consultas sugeridas (Sentry/Logs):
 ## API
 
 - Base URL: `/api/v1`
-- Swagger: `/api`
+- Swagger: `/api` (opt-in con `SWAGGER_ENABLED=true`; prohibido en producción)
 - Health: `GET /api/v1/health`
 
-### Referencia rápida: catálogos de salud (lectura para app/usuarios)
-
-- `GET /api/v1/catalogs/allergies`
-- `GET /api/v1/catalogs/diseases`
-
-Estructura de respuesta:
-
-```json
-[
-  {
-    "allergy_id": 1,
-    "name": "Polen",
-    "description": "Alergia al polen"
-  }
-]
-```
-
-```json
-[
-  {
-    "disease_id": 10,
-    "name": "Asma",
-    "description": "Asma controlada"
-  }
-]
-```
-
-Estos IDs (`allergy_id`, `disease_id`) se usan para guardar selección de salud del usuario con:
-
-- `PUT /api/v1/users/:userId/allergies`
-- `PUT /api/v1/users/:userId/diseases`
-- `DELETE /api/v1/users/:userId/allergies/:allergyId`
-- `DELETE /api/v1/users/:userId/diseases/:diseaseId`
-
-### Referencia rápida: salud del usuario (escritura en tablas pivote)
-
-- `PUT /api/v1/users/:userId/allergies`
-  - Body:
-  ```json
-  {
-    "allergy_ids": [1, 2, 3]
-  }
-  ```
-- `PUT /api/v1/users/:userId/diseases`
-  - Body:
-  ```json
-  {
-    "disease_ids": [10, 12]
-  }
-  ```
-- `DELETE /api/v1/users/:userId/allergies/:allergyId`
-  - Sin body (desactiva el registro en `users_allergies`).
-- `DELETE /api/v1/users/:userId/diseases/:diseaseId`
-  - Sin body (desactiva el registro en `users_diseases`).
-
-Comportamiento de ambos endpoints:
-
-1. Permiten múltiples IDs en una sola request.
-2. Reemplazan el conjunto activo completo del usuario.
-3. Si un ID ya existe inactivo, se reactiva.
-4. Si un ID no existe para el usuario, se crea.
-5. IDs activos no enviados en la lista se desactivan (`active=false`).
-6. Lista vacía (`[]`) deja al usuario sin registros activos en ese tipo.
-7. Validan que usuario exista y que IDs pertenezcan a catálogos activos.
-8. Para desactivar solo un registro puntual sin reemplazar lista completa, usar `DELETE` por `allergyId` o `diseaseId`.
-
-### Referencia rápida: actualización de perfil de usuario
-
-- `PATCH /api/v1/users/:userId`
-
-Campos soportados:
-
-- `gender`, `birthday`, `baptism`, `baptism_date`, `blood`
-- `country_id`, `union_id`, `local_field_id`
-
-Reglas de validación relevantes:
-
-1. `baptism_date` no puede enviarse si `baptism=false`.
-2. `country_id`, `union_id`, `local_field_id` deben existir y estar activos.
-3. `union_id` debe pertenecer a `country_id`.
-4. `local_field_id` debe pertenecer a `union_id`.
-
-### Referencia rápida: representante legal por usuario
-
-- `GET /api/v1/users/:userId/legal-representative`
-
-Contrato de respuesta:
-
-1. Usuario existente con representante:
-
-```json
-{
-  "status": "success",
-  "data": {
-    "user_id": "uuid-del-usuario",
-    "relationship_type_id": "uuid-relacion"
-  },
-  "hasLegalRepresentative": true
-}
-```
-
-2. Usuario existente sin representante:
-
-```json
-{
-  "status": "success",
-  "data": null,
-  "hasLegalRepresentative": false,
-  "message": "Usuario sin representante legal registrado"
-}
-```
-
-3. Usuario inexistente:
-
-```json
-{
-  "statusCode": 404,
-  "message": "Usuario no encontrado"
-}
-```
+El inventario completo de endpoints, DTOs y permisos está en
+`../docs/api/ENDPOINTS-LIVE-REFERENCE.md`. No se duplica aquí.
 
 ## Seguridad implementada
 
-- `JwtAuthGuard` para endpoints protegidos.
-- `GlobalRolesGuard` para rutas administrativas.
-- `OwnerOrAdminGuard` para recursos por usuario cuando aplica.
-- Hardening de notificaciones:
-  - `/api/v1/notifications/*` requiere JWT.
-  - `/api/v1/fcm-tokens/*` requiere JWT.
-  - `POST /api/v1/notifications/broadcast` restringido a `admin|super_admin`.
-  - `POST /api/v1/notifications/club/:instanceType/:instanceId` restringido a `admin|super_admin`.
-
-## Contrato FCM actualizado
-
-- Registro de token:
-  - `POST /api/v1/fcm-tokens`
-  - El `userId` se toma del JWT autenticado (ya no se envía en body).
-- Listado propio:
-  - `GET /api/v1/fcm-tokens`
-- Desregistro propio:
-  - `DELETE /api/v1/fcm-tokens/:token`
-- Compatibilidad:
-  - `GET /api/v1/fcm-tokens/user/:userId` (owner/admin)
-
-## Endpoints admin (Fase 3 mínima)
-
-Rutas bajo `/api/v1/admin/*` con JWT + roles `admin|super_admin`.
-
-### Geografía
-
-- `GET|POST /countries`
-- `PATCH|DELETE /countries/:countryId`
-- `GET|POST /unions`
-- `PATCH|DELETE /unions/:unionId`
-- `GET|POST /local-fields`
-- `PATCH|DELETE /local-fields/:localFieldId`
-- `GET|POST /districts`
-- `PATCH|DELETE /districts/:districtId`
-- `GET|POST /churches`
-- `PATCH|DELETE /churches/:churchId`
-
-### Referencia
-
-- `GET|POST /relationship-types`
-- `PATCH|DELETE /relationship-types/:relationshipTypeId`
-- `GET|POST /allergies`
-- `PATCH|DELETE /allergies/:allergyId`
-- `GET|POST /diseases`
-- `PATCH|DELETE /diseases/:diseaseId`
-- `GET|POST /ecclesiastical-years`
-- `PATCH|DELETE /ecclesiastical-years/:yearId`
-
-## OAuth
-
-- `POST /api/v1/auth/oauth/google`
-- `POST /api/v1/auth/oauth/apple`
-- `GET /api/v1/auth/oauth/callback`
-- `GET /api/v1/auth/oauth/providers`
-- `DELETE /api/v1/auth/oauth/:provider`
+- `GlobalJwtAuthGuard` y `PermissionsGuard` se registran como `APP_GUARD`
+  (`src/app.module.ts`): toda ruta exige JWT salvo `@Public()`, y debe declarar
+  `@RequirePermissions` + `@AuthorizationResource` o `@SkipPermissions()`.
+  Sin esa metadata la ruta responde `GUARD_RBAC_MISCONFIGURATION`.
+- `UserAwareThrottlerGuard` global (Redis distribuido en producción).
+- Guards de ruta opcionales: `GlobalRolesGuard`, `ClubRolesGuard`,
+  `OwnerOrAdminGuard`, `MfaGuard`, `OptionalJwtAuthGuard`.
+- Detalle: `src/common/guards/README.md`. Estado de hallazgos de seguridad:
+  `docs/security/security-best-practices-report.md`.
 
 ## Verificación recomendada antes de release
 
@@ -559,19 +378,5 @@ JSON puro por stdout y cleanup idempotente.
 ## Documentación del proyecto
 
 - Índice local de documentos: `docs/README.md`
-- Sesión de implementación de salud/geografía de usuario:
-  `docs/IMPLEMENTATION-SESSION-2026-02-21-user-medical-and-geography.md`
-- Sesión de estabilización de sesiones/auth:
-  `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
-- Panorama global del backend:
-  `docs/BACKEND-PANORAMA-2026-03-04.md`
-- Nota de migración UUID en contactos de emergencia:
-  `docs/migrations/2026-02-21-emergency-contacts-relationship-type-uuid.md`
-- Sesión de implementación de admin/notificaciones:
-  `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
-- Histórico de cutover auth del 2026-03-01:
-  `docs/IMPLEMENTATION-SESSION-2026-03-01-auth-cutover-monitoring.md`
-- Referencia histórica de implementación previa: `docs/IMPLEMENTATION-SESSION-2026-02-05.md`
-- Referencia de baseline DB: `docs/migrations/2026-02-05-db-push-sync.md`
-
-Nota: la documentación funcional oficial del producto vive en el repositorio padre (`../../docs`).
+- Documentación funcional del producto: `../docs` (workspace `sacdia`)
+- Bitácoras de sprint archivadas: `../docs/history/implementation/`

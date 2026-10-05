@@ -29,7 +29,7 @@ the box in the Tracking section.
 
 ### 1. `test/users.e2e-spec.ts` — 6 failing tests
 
-**Link:** [`test/users.e2e-spec.ts`](../test/users.e2e-spec.ts)  
+**Link:** [`test/users.e2e-spec.ts`](../../test/users.e2e-spec.ts)  
 **Failing tests:**
 
 - `Users E2E Tests > /api/v1/users/:userId (GET) > should return user info`
@@ -77,7 +77,7 @@ use it as both the JWT sub and the URL param. See Pattern #1 fix pattern below.
 
 ### 2. `test/admin-users.e2e-spec.ts` — 6 failing tests
 
-**Link:** [`test/admin-users.e2e-spec.ts`](../test/admin-users.e2e-spec.ts)  
+**Link:** [`test/admin-users.e2e-spec.ts`](../../test/admin-users.e2e-spec.ts)  
 **Failing tests:**
 
 - `Admin Users Detail E2E > should return only the permitted fine-grained block when using family permissions`
@@ -118,7 +118,7 @@ Then update `makeToken`, `actorRecord.user_id`, and `userDetailRecord.user_id` c
 
 ### 3. `test/insurance.e2e-spec.ts` — 4 failing tests
 
-**Link:** [`test/insurance.e2e-spec.ts`](../test/insurance.e2e-spec.ts)  
+**Link:** [`test/insurance.e2e-spec.ts`](../../test/insurance.e2e-spec.ts)  
 **Failing tests:**
 
 - `Insurance E2E > GET /clubs/:clubId/sections/:sectionId/members/insurance returns the mapped list`
@@ -149,7 +149,7 @@ is already fully mocked, adding a `PermissionsGuard` mock is the minimal change.
 
 ### 4. `test/admin-catalogs.e2e-spec.ts` — 3 failing tests
 
-**Link:** [`test/admin-catalogs.e2e-spec.ts`](../test/admin-catalogs.e2e-spec.ts)  
+**Link:** [`test/admin-catalogs.e2e-spec.ts`](../../test/admin-catalogs.e2e-spec.ts)  
 **Failing tests:**
 
 - `Admin Catalogs E2E > should return 401 when no token is provided`
@@ -180,7 +180,7 @@ or their controllers
 
 ### 5. `test/admin-users-scope.e2e-spec.ts` — 2 failing tests
 
-**Link:** [`test/admin-users-scope.e2e-spec.ts`](../test/admin-users-scope.e2e-spec.ts)  
+**Link:** [`test/admin-users-scope.e2e-spec.ts`](../../test/admin-users-scope.e2e-spec.ts)  
 **Failing tests:**
 
 - `Admin Users Scope E2E > should allow super_admin with ALL scope`
@@ -208,7 +208,7 @@ return the expected fixture objects — just swap the string values consistently
 
 ### 6. `test/classes.e2e-spec.ts` — 2 failing tests
 
-**Link:** [`test/classes.e2e-spec.ts`](../test/classes.e2e-spec.ts)  
+**Link:** [`test/classes.e2e-spec.ts`](../../test/classes.e2e-spec.ts)  
 **Failing tests:**
 
 - `Classes E2E Tests > /api/v1/users/:userId/classes/enroll (POST) > should enroll user in a class`
@@ -239,7 +239,7 @@ to observe the actual error message — it is likely a Prisma transaction mock i
 
 ### 7. `test/evidence-folder.e2e-spec.ts` — 2 failing tests
 
-**Link:** [`test/evidence-folder.e2e-spec.ts`](../test/evidence-folder.e2e-spec.ts)  
+**Link:** [`test/evidence-folder.e2e-spec.ts`](../../test/evidence-folder.e2e-spec.ts)  
 **Failing tests:**
 
 - `Evidence Folder E2E > GET /club-sections/:sectionId/evidence-folder returns the mapped folder structure`
@@ -266,7 +266,7 @@ to the module fixture, and/or replace `TEST_USER_ID` with a valid UUID and mock
 
 ### 8. `test/post-registration.e2e-spec.ts` — 2 failing tests
 
-**Link:** [`test/post-registration.e2e-spec.ts`](../test/post-registration.e2e-spec.ts)  
+**Link:** [`test/post-registration.e2e-spec.ts`](../../test/post-registration.e2e-spec.ts)  
 **Failing tests:**
 
 - `Post-registration step 3 E2E > converges to one active annual enrollment and completes step 3`
@@ -302,7 +302,7 @@ that reference `'owner-user-1'` (e.g., lines 139, 145, 151).
 
 ### 9. `test/investiture.e2e-spec.ts` — 2 failing tests
 
-**Link:** [`test/investiture.e2e-spec.ts`](../test/investiture.e2e-spec.ts)  
+**Link:** [`test/investiture.e2e-spec.ts`](../../test/investiture.e2e-spec.ts)  
 **Failing tests:**
 
 - `Investiture E2E > GET /api/v1/investiture/pending > returns paginated list without filters`
@@ -360,7 +360,7 @@ since no `status` query param is sent).
 
 ### 10. `test/catalogs.e2e-spec.ts` — 1 failing test
 
-**Link:** [`test/catalogs.e2e-spec.ts`](../test/catalogs.e2e-spec.ts)  
+**Link:** [`test/catalogs.e2e-spec.ts`](../../test/catalogs.e2e-spec.ts)  
 **Failing tests:**
 
 - `Catalogs E2E Tests > /api/v1/catalogs/ecclesiastical-years/current (GET) > should return current ecclesiastical year`

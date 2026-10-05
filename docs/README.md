@@ -1,66 +1,36 @@
-# Documentación Local de `sacdia-backend`
+# Documentación local de `sacdia-backend`
 
-Última actualización: **2026-07-30**
+Este directorio contiene documentación técnica local del backend: guías operativas, runbooks, decisiones de arquitectura y migraciones con contrato propio.
 
-Este directorio contiene documentación técnica local del backend (implementaciones, migraciones y revisiones).  
-La documentación funcional oficial del producto está en el repositorio padre: `../../docs`.
+La documentación funcional oficial del producto vive en el workspace `sacdia`, en `../docs` respecto de este repo (API en `docs/api/ENDPOINTS-LIVE-REFERENCE.md`, base de datos en `docs/database/SCHEMA-REFERENCE.md`, features en `docs/features/`). Las bitácoras de sprint y los diseños ya implementados están archivados en `docs/history/` del workspace.
 
-## Documentos vigentes (fuente principal en este repo)
+## Documentos vigentes
 
-- `README.md`
-  - Guía operativa actual del backend (setup, scripts, endpoints críticos, checklist de release).
-- `BENCHMARKING.md`
-  - Guía para ejecutar benchmark baseline, stress y spike de la API con autocannon.
-- `docs/storage/r2-keyprefix-conventions.md`
-  - Convenciones de key-prefix y URL pública para los buckets de Cloudflare R2. Incluye tabla de los 13 aliases, los dos patrones de construcción de URL (bare vs embedded), la lógica de detección `isKeyPrefixInPublicBaseUrl`, el plan de migración al estado objetivo (bare-domain), y las convenciones de scripts one-shot.
-- `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
-  - Implementación del sprint de hardening de notificaciones + habilitación admin.
-- `docs/IMPLEMENTATION-SESSION-2026-02-21-user-medical-and-geography.md`
-  - Endpoints para persistir y desactivar (borrado lógico) alergias/enfermedades por usuario y extensión de PATCH de perfil con geografía.
-- `docs/IMPLEMENTATION-SESSION-2026-03-01-auth-cutover-monitoring.md`
-  - Snapshot histórico del cutover inicial de Auth del 2026-03-01.
-- `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
-  - Estabilización de sesiones/Auth: logout fail-safe, enriquecimiento de observabilidad y ventana temporal de compatibilidad legacy.
-- `docs/BACKEND-PANORAMA-2026-03-04.md`
-  - Barrido consolidado del estado real del backend (módulos, riesgos operativos, documentación vigente e hitos siguientes).
-- `docs/adr/ADR-0001-auth-session-compat-window.md`
-  - Decisión arquitectónica operativa sobre compatibilidad temporal de `refresh_token` y fecha de cutback a contrato estricto.
-- `docs/reviews/security-audit-exceptions-2026-05-08.md`
-  - Excepción temporal para hallazgos `pnpm audit` de `next` transitivo vía Better Auth, con justificación runtime NestJS/no Next.
-- `docs/migrations/2026-02-21-emergency-contacts-relationship-type-uuid.md`
-  - Migración de `emergency_contacts.relationship_type` (int legacy) a `relationship_type_id` (UUID) con FK a `relationship_types`.
-- `docs/migrations/2026-07-30-durable-audit-logs.md`
-  - Contrato persistido de la expansión durable de `audit_logs`: metadata actor/objetivo, correlación, idempotencia, defaults, unicidad e índices.
+| Documento | Contenido |
+| --- | --- |
+| `../README.md` | Guía operativa: setup, scripts, variables de entorno, preflight de autorización P0 y checklist de release. |
+| `BENCHMARKING.md` | Benchmark baseline, stress y spike con autocannon (`pnpm run benchmark:*`). |
+| `architecture/FCM-STRATEGY.md` | Estrategia de notificaciones push con tokens directos y preferencias por categoría. |
+| `architecture/db-i18n-translation-pattern.md` | Patrón Approach X para tablas `*_translations`. |
+| `adr/ADR-0001-auth-session-compat-window.md` | Compatibilidad temporal de `refresh_token` (cutback pendiente). |
+| `storage/r2-keyprefix-conventions.md` | Convenciones de key-prefix y URL pública de los buckets de Cloudflare R2. |
+| `migrations/2026-07-30-durable-audit-logs.md` | Contrato de la expansión durable de `audit_logs`. |
+| `migrations/2026-02-18-legacy-catalog-import.md` | Uso del script `pnpm import:legacy-catalogs`. |
+| `runbooks/iana-timezone-trust-bootstrap.md` | Cadena de confianza de los artefactos IANA tzdb (`pnpm verify:iana-timezones`). |
+| `runbooks/permission-scope-cleanup-phase-3.md` | Runbook de release para retirar permisos legacy (aplica al primer despliegue). |
+| `runbooks/resend-setup.md` | Configuración de Resend para email transaccional. |
+| `testing/e2e-debt.md` | Registro de deuda de pruebas e2e. |
+| `security/security-best-practices-report.md` | Informe de seguridad del 2026-08-23 con tabla de estado de remediación. |
+| `security/sacdia-backend-threat-model.md` | Modelo de amenazas del 2026-08-23 con estado de cada amenaza. |
 
-## Documentos históricos (referencia)
+Otros documentos locales:
 
-- `docs/IMPLEMENTATION-SESSION-2026-02-05.md`
-  - Snapshot de implementación del 2026-02-05. Puede no reflejar el estado actual completo.
-- `docs/migrations/2026-02-05-db-push-sync.md`
-  - Baseline de sincronización DB del 2026-02-05.
-- `docs/reviews/*.md`
-  - Revisiones y reportes puntuales de fechas específicas.
+- `../prisma/seeds/README.md`: orden y alcance de los seeds.
+- `../src/common/guards/README.md`: modelo de guards globales y decoradores de autorización.
 
-## Convención recomendada
+## Convención
 
-Para reducir desactualización:
-
-1. Actualiza `README.md` en cada cambio de contrato público o script operativo.
-2. Para entregas de sprint, crea/actualiza `docs/IMPLEMENTATION-SESSION-YYYY-MM-DD-*.md`.
-3. En documentos históricos, agrega una nota de vigencia al inicio.
-4. Si una decisión impacta producto/arquitectura global, sincroniza también en `../../docs`.
-
-## Estado operativo actual (resumen rápido)
-
-- Auth/sesiones en estabilización:
-  - Contrato oficial de refresh: `refreshToken` (camelCase).
-  - Ventana temporal de compatibilidad legacy activa hasta **2026-03-18**.
-  - `logout` en modo best-effort para evitar bloqueo de UX por expiración de access token.
-- Seguridad runtime:
-  - Rate limiting usa Redis distribuido de forma obligatoria en producción (`REDIS_URL`);
-    en desarrollo/test puede caer a memoria.
-  - IP whitelist/CIDR para endpoints admin sigue **pendiente**: no existe
-    `ip-whitelist.guard.ts` ni decorator runtime activo en este repo.
-- Ver seguimiento en:
-  - `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
-  - `docs/BACKEND-PANORAMA-2026-03-04.md`
+1. Actualiza `../README.md` cuando cambie un script operativo, una variable de entorno o un requisito de setup.
+2. Los contratos de endpoints se documentan en `docs/api/ENDPOINTS-LIVE-REFERENCE.md` del workspace, no aquí.
+3. Si una decisión impacta producto o arquitectura global, sincronízala también en `../docs`.
+4. Las bitácoras de sprint no se guardan en este repo; si tienen valor histórico van a `docs/history/` del workspace.
