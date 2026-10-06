@@ -496,6 +496,7 @@
   "CLUB_NO_ACTIVE_YEAR": "Não há um ano eclesiástico ativo configurado",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role é obrigatório para esta operação",
   "CLUB_ROLE_GUIDE_MAJOR_REQUIRED": "É necessário ser Guia-Mestre em curso ou investido para esta função do clube",
+  "CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION": "Um Guia-Mestre só pode ser membro de uma seção de Guias-Mestres",
   "CLUB_ROLE_NOT_FOUND": "Função não encontrada na categoria CLUB",
   "CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID": "Este ano eclesiástico não é válido para esta operação. A sucessão imediata usa o ano vigente; a pré-eleição é exclusivamente para um ano futuro (cujo início ocorre após o encerramento do ano atual).",
   "CLUB_DIRECTOR_DESIGNATION_EXISTS": "Já existe um diretor designado para esta seção e ano; use a substituição para atualizar",
