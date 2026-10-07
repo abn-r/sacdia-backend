@@ -12,6 +12,16 @@
 --                              GM eligibility. MANUAL REVIEW ONLY, never auto-ended.
 --   UNKNOWN_SECTION_KIND       Active assignment in a section whose club type name
 --                              does not resolve to AV/CQ/GM. Informational.
+--   NO_SECTION                 Active assignment with NULL club_section_id (cannot be
+--                              classified by section). Informational / manual review.
+--
+-- Extra columns (REQ-7.1):
+--   has_enrollment_history     any GM-01 enrollment in ANY status exists for the user
+--   gm_enrollment_statuses     distinct GM-01 investiture statuses (any status)
+--   classification             rule-3 | rule-1 | rule-1-no-history | unknown-section | no-section
+--                              (rule-1-no-history = service role, no GM-01 enrollment at
+--                              all: typical long-tenured legacy staff)
+--   proposed_action            AUTO_END (rule-3, after approval) | MANUAL_REVIEW | NONE_INFO
 --
 -- GM eligibility mirrors src/club-role-eligibility/club-role-eligibility.service.ts:
 --   class asset_code = 'GM-01' AND (
@@ -86,6 +96,14 @@ gm_eligible AS (
     )
   ORDER BY e.user_id, b.prio, e.enrollment_date DESC
 ),
+gm_history AS (
+  SELECT e.user_id,
+         string_agg(DISTINCT e.investiture_status::text, ',' ORDER BY e.investiture_status::text) AS statuses
+  FROM enrollments e
+  JOIN classes c ON c.class_id = e.class_id
+  WHERE c.asset_code = 'GM-01'
+  GROUP BY e.user_id
+),
 active_assignments AS (
   SELECT a.*, r.role_name
   FROM club_role_assignments a
@@ -96,10 +114,13 @@ active_assignments AS (
 classified AS (
   SELECT a.*, sk.section_kind, sk.club_type_name, sk.main_club_id,
          g.basis AS gm_basis, g.enrollment_id AS gm_enrollment_id,
-         (g.user_id IS NOT NULL) AS gm_eligible
+         (g.user_id IS NOT NULL) AS gm_eligible,
+         (h.user_id IS NOT NULL) AS has_enrollment_history,
+         h.statuses AS gm_enrollment_statuses
   FROM active_assignments a
   LEFT JOIN section_kinds sk ON sk.club_section_id = a.club_section_id
   LEFT JOIN gm_eligible g ON g.user_id = a.user_id
+  LEFT JOIN gm_history h ON h.user_id = a.user_id
 ),
 rows_by_category AS (
   SELECT 'RULE_3_GM_MEMBER_IN_AV_CQ' AS cat, c.* FROM classified c
@@ -110,6 +131,9 @@ rows_by_category AS (
   UNION ALL
   SELECT 'UNKNOWN_SECTION_KIND', c.* FROM classified c
    WHERE c.section_kind = 'UNKNOWN'
+  UNION ALL
+  SELECT 'NO_SECTION', c.* FROM classified c
+   WHERE c.club_section_id IS NULL
 )
 SELECT rc.cat AS category,
        count(*) OVER (PARTITION BY rc.cat) AS category_count,
@@ -130,6 +154,21 @@ SELECT rc.cat AS category,
        rc.ecclesiastical_year_id,
        rc.gm_basis,
        rc.gm_enrollment_id,
+       rc.has_enrollment_history,
+       rc.gm_enrollment_statuses,
+       CASE rc.cat
+         WHEN 'RULE_3_GM_MEMBER_IN_AV_CQ' THEN 'rule-3'
+         WHEN 'RULE_1_MANUAL_REVIEW' THEN
+           CASE WHEN rc.has_enrollment_history THEN 'rule-1' ELSE 'rule-1-no-history' END
+         WHEN 'UNKNOWN_SECTION_KIND' THEN 'unknown-section'
+         ELSE 'no-section'
+       END AS classification,
+       CASE rc.cat
+         WHEN 'RULE_3_GM_MEMBER_IN_AV_CQ' THEN 'AUTO_END (only after approval; optional re-home as member in GM section)'
+         WHEN 'RULE_1_MANUAL_REVIEW' THEN 'MANUAL_REVIEW (never auto-ended)'
+         ELSE 'NONE_INFO (fix catalog / assignment data by hand)'
+       END AS proposed_action,
+       rc.modified_at AS snapshot_modified_at,
        (SELECT count(*) FROM section_kinds g2
          WHERE g2.main_club_id = rc.main_club_id AND g2.section_active
            AND g2.section_kind = 'GM'
@@ -175,7 +214,7 @@ gm_eligible AS (
     )
 ),
 classified AS (
-  SELECT a.assignment_id, r.role_name, sk.section_kind,
+  SELECT a.assignment_id, a.club_section_id, r.role_name, sk.section_kind,
          (g.user_id IS NOT NULL) AS gm_eligible
   FROM club_role_assignments a
   JOIN roles r ON r.role_id = a.role_id
@@ -186,13 +225,14 @@ classified AS (
 )
 SELECT cat.category,
        count(c.assignment_id) AS assignments
-FROM (VALUES ('RULE_3_GM_MEMBER_IN_AV_CQ'), ('RULE_1_MANUAL_REVIEW'), ('UNKNOWN_SECTION_KIND')) cat(category)
+FROM (VALUES ('RULE_3_GM_MEMBER_IN_AV_CQ'), ('RULE_1_MANUAL_REVIEW'), ('UNKNOWN_SECTION_KIND'), ('NO_SECTION')) cat(category)
 LEFT JOIN classified c ON
   (cat.category = 'RULE_3_GM_MEMBER_IN_AV_CQ'
      AND c.role_name = 'member' AND c.gm_eligible AND c.section_kind IN ('AV', 'CQ'))
   OR (cat.category = 'RULE_1_MANUAL_REVIEW'
      AND c.role_name <> 'member' AND NOT c.gm_eligible)
   OR (cat.category = 'UNKNOWN_SECTION_KIND' AND c.section_kind = 'UNKNOWN')
+  OR (cat.category = 'NO_SECTION' AND c.club_section_id IS NULL)
 GROUP BY cat.category
 ORDER BY cat.category;
 

@@ -390,13 +390,13 @@ export class YearCutService {
       });
       const clubName = club?.name ?? String(clubId);
       const title = this.i18n.translate(
-        'notifications.year_cut.director_plan_skipped_title',
+        'notifications.notifications.year_cut.director_plan_skipped_title',
         { lang: 'es' },
       );
 
       for (const plan of skipped) {
         const body = this.i18n.translate(
-          'notifications.year_cut.director_plan_skipped_body',
+          'notifications.notifications.year_cut.director_plan_skipped_body',
           {
             lang: 'es',
             args: {

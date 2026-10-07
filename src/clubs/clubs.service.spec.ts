@@ -704,6 +704,7 @@ describe('ClubsService', () => {
         roles: [],
       };
       mockRoleEligibility.listAssignableRoles.mockResolvedValue(payload);
+      mockPrismaService.club_role_assignments.count.mockResolvedValue(1);
 
       await expect(service.getAssignableRoles(10, 7, 'u1')).resolves.toBe(
         payload,
@@ -720,6 +721,29 @@ describe('ClubsService', () => {
       });
       await expect(service.getAssignableRoles(10, 7, 'u1')).rejects.toThrow(
         AppNotFoundException,
+      );
+      expect(mockRoleEligibility.listAssignableRoles).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getAssignableRoles membership guard', () => {
+    it('throws not found when the user has no assignment in the section', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 10,
+      });
+      mockPrismaService.club_role_assignments.count.mockResolvedValue(0);
+      await expect(service.getAssignableRoles(10, 7, 'u1')).rejects.toThrow(
+        AppNotFoundException,
+      );
+      expect(
+        mockPrismaService.club_role_assignments.count,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: 'u1',
+            club_section_id: 7,
+          }),
+        }),
       );
       expect(mockRoleEligibility.listAssignableRoles).not.toHaveBeenCalled();
     });

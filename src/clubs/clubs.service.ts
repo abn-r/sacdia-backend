@@ -439,6 +439,18 @@ export class ClubsService {
     if (!section || section.main_club_id !== clubId) {
       throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
     }
+    // Do not let `club_roles:read` holders probe the GM eligibility of
+    // arbitrary users: the target must hold an assignment in this section.
+    const assignmentCount = await this.prisma.club_role_assignments.count({
+      where: {
+        user_id: userId,
+        club_section_id: sectionId,
+        OR: [{ status: null }, { status: { not: 'deleted' } }],
+      },
+    });
+    if (assignmentCount === 0) {
+      throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
+    }
     return this.roleEligibility.listAssignableRoles({
       userId,
       clubSectionId: sectionId,
