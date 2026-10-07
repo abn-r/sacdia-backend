@@ -51,7 +51,7 @@ describe('club assignment effectivity inventory', () => {
     expect(() =>
       assertAssignmentQueryInventory(findings, ASSIGNMENT_QUERY_INVENTORY),
     ).not.toThrow();
-    expect(findings).toHaveLength(142);
+    expect(findings).toHaveLength(143);
     expect(ASSIGNMENT_QUERY_INVENTORY).toHaveLength(53);
     expect(
       Object.fromEntries(
