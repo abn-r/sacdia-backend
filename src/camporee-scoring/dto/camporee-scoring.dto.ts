@@ -278,6 +278,25 @@ export type CamporeeEventScoreReceiptResponseDto =
     }>;
   };
 
+export type CamporeeOfficialScoreResponseDto = {
+  camporee_event_section_result_id: string;
+  score_status: CamporeeScoreStatus;
+  is_no_show: boolean;
+  total_awarded_points: number;
+  total_max_points: number;
+  raw_awarded_points: number;
+  minimum_adjustment_points: number;
+  notes: string | null;
+  submitted_at: Date;
+  evaluator_name: string;
+  items: Array<{
+    camporee_event_rubric_id: number;
+    title: string;
+    awarded_points: number;
+    max_points: number;
+  }>;
+};
+
 export type CamporeeLeaderboardRowDto = {
   rank: number;
   camporee_club_id: number | null;

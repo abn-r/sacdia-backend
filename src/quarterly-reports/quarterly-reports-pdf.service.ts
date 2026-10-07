@@ -9,6 +9,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import PDFDocument from 'pdfkit';
 import { QuarterlyComputedData } from './quarterly-reports.service';
+import { buildQuarterlyReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
 
 // ============================================================
 // Constants
@@ -149,6 +150,37 @@ export class QuarterlyReportsPdfService {
 
     doc.end();
     return pdfReady;
+  }
+
+  async resolveDownloadFilename(reportId: number): Promise<string> {
+    const report = await this.prisma.quarterly_reports.findUnique({
+      where: { quarterly_report_id: reportId },
+      select: {
+        year: true,
+        quarter: true,
+        club: {
+          select: {
+            name: true,
+            club_sections: {
+              select: { club_types: { select: { name: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!report) {
+      return `informe-trimestral-${reportId}.pdf`;
+    }
+
+    return buildQuarterlyReportDownloadFilename({
+      clubName: report.club?.name,
+      clubTypes: report.club?.club_sections.map(
+        (section) => section.club_types.name,
+      ),
+      quarter: report.quarter,
+      year: report.year,
+    });
   }
 
   // ========================================

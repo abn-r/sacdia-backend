@@ -13,6 +13,7 @@ describe('MonthlyReportsController stored PDF contract', () => {
   };
   let artifactsService: {
     getStoredPdfBuffer: jest.Mock;
+    resolveDownloadFilename: jest.Mock;
   };
 
   beforeEach(() => {
@@ -24,6 +25,11 @@ describe('MonthlyReportsController stored PDF contract', () => {
     };
     artifactsService = {
       getStoredPdfBuffer: jest.fn().mockResolvedValue(PDF),
+      resolveDownloadFilename: jest
+        .fn()
+        .mockResolvedValue(
+          'informe-mensual-Senderos-Conquistadores-agosto-2026.pdf',
+        ),
     };
     controller = new MonthlyReportsController(
       reportsService as any,
@@ -40,9 +46,13 @@ describe('MonthlyReportsController stored PDF contract', () => {
     await controller.downloadPdf(REPORT_ID, response as any);
 
     expect(artifactsService.getStoredPdfBuffer).toHaveBeenCalledWith(REPORT_ID);
+    expect(artifactsService.resolveDownloadFilename).toHaveBeenCalledWith(
+      REPORT_ID,
+    );
     expect(response.set).toHaveBeenCalledWith({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="informe-mensual-${REPORT_ID}.pdf"`,
+      'Content-Disposition':
+        'attachment; filename="informe-mensual-Senderos-Conquistadores-agosto-2026.pdf"; filename*=UTF-8\'\'informe-mensual-Senderos-Conquistadores-agosto-2026.pdf',
       'Content-Length': PDF.length,
     });
     expect(response.end).toHaveBeenCalledWith(PDF);

@@ -26,6 +26,8 @@ describe('CertificateBulkImportsService', () => {
     },
     honors: { findUnique: jest.fn() },
     classes: { findUnique: jest.fn() },
+    users: { findUnique: jest.fn() },
+    ecclesiastical_years: { findMany: jest.fn() },
     certificate_bulk_import_item_events: {
       create: jest.fn(),
     },
@@ -57,7 +59,19 @@ describe('CertificateBulkImportsService', () => {
     tx.classes.findUnique.mockResolvedValue({
       active: true,
       asset_code: 'CQ-01',
+      minimum_age: 10,
     });
+    tx.users.findUnique.mockResolvedValue({
+      birthday: new Date('2000-01-01T00:00:00.000Z'),
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([
+      {
+        year_id: 2026,
+        start_date: new Date('2026-01-01T00:00:00.000Z'),
+        end_date: new Date('2026-12-31T00:00:00.000Z'),
+        active: true,
+      },
+    ]);
     tx.certificate_bulk_import_items.findMany.mockResolvedValue([]);
   });
 
@@ -298,41 +312,54 @@ describe('CertificateBulkImportsService', () => {
     );
   });
 
-  it('does not record a successful read when storage fails', async () => {
-    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
-      batch_id: 'batch-1',
-      user_id: 'user-1',
-      status: 'DRAFT',
-      files: [
+  it.each([
+    'CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE',
+    'CERTIFICATE_IMPORT_OCR_QUOTA',
+    'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+    'CERTIFICATE_IMPORT_OCR_FAILED',
+    'CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES',
+    'CERTIFICATE_IMPORT_PDF_INVALID',
+    'CERTIFICATE_IMPORT_PDF_ENCRYPTED',
+  ])(
+    'does not record a successful read when provider fails with %s',
+    async (code) => {
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+        batch_id: 'batch-1',
+        user_id: 'user-1',
+        status: 'DRAFT',
+        files: [
+          {
+            file_url: 'evidence/cert.jpg',
+            file_name: 'cert.jpg',
+            file_type: 'image/jpeg',
+            upload_status: 'CONFIRMED',
+            object_key: 'batches/batch-1/sealed/cert.jpg',
+            active: true,
+          },
+        ],
+      });
+      tx.certificate_bulk_import_items.findMany.mockResolvedValue([
         {
-          file_url: 'evidence/cert.jpg',
-          file_name: 'cert.jpg',
-          file_type: 'image/jpeg',
-          upload_status: 'CONFIRMED',
-          object_key: 'batches/batch-1/sealed/cert.jpg',
-          active: true,
+          item_id: 'kept',
+          status: 'READY',
+          honor_id: 12,
+          class_id: null,
         },
-      ],
-    });
-    tx.certificate_bulk_import_items.findMany.mockResolvedValue([
-      {
-        item_id: 'kept',
-        status: 'READY',
-        honor_id: 12,
-        class_id: null,
-      },
-    ]);
-    ocrProvider.extract.mockRejectedValue(
-      new BadRequestException('CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE'),
-    );
+      ]);
+      ocrProvider.extract.mockRejectedValue(new BadRequestException(code));
 
-    await expect(service.runQueuedOcr('user-1', 'batch-1')).rejects.toThrow(
-      'CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE',
-    );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(tx.certificate_bulk_import_items.updateMany).not.toHaveBeenCalled();
-    expect(tx.certificate_bulk_import_item_events.create).not.toHaveBeenCalled();
-  });
+      await expect(service.runQueuedOcr('user-1', 'batch-1')).rejects.toThrow(
+        code,
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(
+        tx.certificate_bulk_import_items.updateMany,
+      ).not.toHaveBeenCalled();
+      expect(
+        tx.certificate_bulk_import_item_events.create,
+      ).not.toHaveBeenCalled();
+    },
+  );
 
   it('does not replace a row a person already corrected', async () => {
     tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
@@ -409,6 +436,164 @@ describe('CertificateBulkImportsService', () => {
         data: expect.objectContaining({ status: 'READY' }),
       }),
     );
+  });
+
+  it('does not mark a 2025 Amigo row ready when historical age is below 10', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-2016',
+      status: 'DRAFT',
+    });
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'NEEDS_REVIEW',
+      item_type: CertificateBulkImportItemType.CLASS,
+      class_id: 1,
+    });
+    tx.users.findUnique.mockResolvedValue({
+      birthday: new Date('2016-01-01T00:00:00.000Z'),
+    });
+    tx.classes.findUnique.mockResolvedValue({
+      active: true,
+      asset_code: 'CQ-01',
+      minimum_age: 10,
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([
+      {
+        year_id: 2025,
+        start_date: new Date('2025-01-01T00:00:00.000Z'),
+        end_date: new Date('2025-12-31T00:00:00.000Z'),
+      },
+    ]);
+
+    await expect(
+      service.updateItem('user-2016', 'batch-1', 'item-1', {
+        item_type: CertificateBulkImportItemType.CLASS,
+        class_id: 1,
+        completed_at: '2025-06-01',
+        mark_as_ready: true,
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CERTIFICATE_IMPORT_AGE_BELOW_MINIMUM,
+    });
+    expect(tx.certificate_bulk_import_items.update).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, false])(
+    'returns a READY Amigo row to review when the edited date fails historical age (mark_as_ready=%s)',
+    async (markAsReady) => {
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+        batch_id: 'batch-1',
+        user_id: 'user-2016',
+        status: 'DRAFT',
+      });
+      tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+        item_id: 'item-1',
+        status: 'READY',
+        revision: 0,
+        item_type: CertificateBulkImportItemType.CLASS,
+        class_id: 1,
+        completed_at: new Date('2026-03-01T00:00:00.000Z'),
+      });
+      tx.users.findUnique.mockResolvedValue({
+        birthday: new Date('2016-01-01T00:00:00.000Z'),
+      });
+      tx.classes.findUnique.mockResolvedValue({
+        active: true,
+        asset_code: 'CQ-01',
+        minimum_age: 10,
+      });
+      tx.ecclesiastical_years.findMany.mockResolvedValue([
+        {
+          year_id: 2025,
+          start_date: new Date('2025-01-01T00:00:00.000Z'),
+          end_date: new Date('2025-12-31T00:00:00.000Z'),
+        },
+      ]);
+
+      await service.updateItem('user-2016', 'batch-1', 'item-1', {
+        item_type: CertificateBulkImportItemType.CLASS,
+        class_id: 1,
+        completed_at: '2025-06-01',
+        expected_revision: 0,
+        ...(markAsReady === false ? { mark_as_ready: false } : {}),
+      });
+
+      expect(tx.users.findUnique).toHaveBeenCalled();
+      expect(tx.certificate_bulk_import_items.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'NEEDS_REVIEW' }),
+        }),
+      );
+    },
+  );
+
+  it('does not submit or resubmit that Amigo row', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-2016',
+      status: 'DRAFT',
+      revision: 1,
+    });
+    tx.users.findUnique.mockResolvedValue({
+      birthday: new Date('2016-01-01T00:00:00.000Z'),
+    });
+    tx.classes.findUnique.mockResolvedValue({
+      active: true,
+      asset_code: 'CQ-01',
+      minimum_age: 10,
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([
+      {
+        year_id: 2025,
+        start_date: new Date('2025-01-01T00:00:00.000Z'),
+        end_date: new Date('2025-12-31T00:00:00.000Z'),
+      },
+    ]);
+    tx.certificate_bulk_import_items.findMany.mockImplementation(
+      async (args: { where?: { status?: { in?: string[] }; item_type?: string } }) => {
+        if (args.where?.status?.in) {
+          return [
+            {
+              class_id: 1,
+              completed_at: new Date('2025-06-01T00:00:00.000Z'),
+            },
+          ];
+        }
+        if (args.where?.item_type === CertificateBulkImportItemType.CLASS) {
+          return [{ item_id: 'item-1', class: { asset_code: 'CQ-01' } }];
+        }
+        return [];
+      },
+    );
+
+    await expect(service.submit('user-2016', 'batch-1')).rejects.toMatchObject({
+      code: ErrorCode.CERTIFICATE_IMPORT_AGE_BELOW_MINIMUM,
+    });
+    expect(tx.certificate_bulk_import_items.updateMany).not.toHaveBeenCalled();
+
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-2016',
+      status: 'NEEDS_CORRECTION',
+    });
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'REJECTED',
+      item_type: CertificateBulkImportItemType.CLASS,
+      class_id: 1,
+    });
+    await expect(
+      service.resubmitItem('user-2016', 'batch-1', 'item-1', {
+        item_type: CertificateBulkImportItemType.CLASS,
+        class_id: 1,
+        completed_at: '2025-06-01',
+        mark_as_ready: true,
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CERTIFICATE_IMPORT_AGE_BELOW_MINIMUM,
+    });
+    expect(tx.certificate_bulk_import_items.update).not.toHaveBeenCalled();
   });
 
   it('does not submit a batch while active items are incomplete', async () => {

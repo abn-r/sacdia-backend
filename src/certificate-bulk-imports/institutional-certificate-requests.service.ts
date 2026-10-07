@@ -11,11 +11,19 @@ import {
   classifyCertificateImportYear,
   utcCivilDate,
 } from './certificate-import-year-resolver.service';
+import { assertClassCertificateHistoricalAge } from './class-certificate-historical-age';
 import type { CreateInstitutionalCertificateRequestDto } from './dto/create-institutional-certificate-request.dto';
 import type {
   ApproveInstitutionalCertificateRequestDto,
   RejectInstitutionalCertificateRequestDto,
 } from './dto/review-institutional-certificate-request.dto';
+
+type InstitutionalStore = Pick<
+  Prisma.TransactionClient,
+  | 'institutional_certificate_requests'
+  | 'institutional_certificate_request_events'
+  | '$queryRawUnsafe'
+>;
 
 const INSTITUTIONAL_ASSET_CODES = new Set(['GM-02', 'GM-03']);
 const OPEN_STATUSES = ['PENDING_REVIEW', 'APPROVED'] as const;
@@ -125,10 +133,14 @@ export class InstitutionalCertificateRequestsService {
         orderBy: { created_at: 'desc' },
         select: { request_id: true },
       });
-    const yearId = await this.resolveYearId(dto.completed_at);
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        const age = await assertClassCertificateHistoricalAge(tx, {
+          userId,
+          classId: dto.class_id,
+          completedAt: completedAt,
+        });
         const request = await tx.institutional_certificate_requests.create({
           data: {
             user_id: userId,
@@ -137,7 +149,7 @@ export class InstitutionalCertificateRequestsService {
             batch_id: file.batch.batch_id,
             source: dto.source ?? 'MANUAL',
             completed_at: completedAt,
-            ecclesiastical_year_id: yearId,
+            ecclesiastical_year_id: age.yearId,
             predecessor_request_id: predecessor?.request_id,
           },
           include: REQUEST_INCLUDE,
@@ -247,28 +259,33 @@ export class InstitutionalCertificateRequestsService {
     dto: ApproveInstitutionalCertificateRequestDto,
   ) {
     await this.assertSuperAdmin(reviewerId);
-    const current = await this.findVisible(requestId);
-    if (current.status === 'APPROVED') {
-      return this.toView(current, []);
-    }
-    if (current.status === 'REJECTED') {
-      throw new BadRequestException('CERTIFICATE_IMPORT_DECISION_IMMUTABLE');
-    }
-    const yearId = await this.resolveYearId(
-      civilDateFromDbDate(current.completed_at) ?? '',
-    );
-    if (yearId == null) {
-      const blockers = await this.blockers(current.completed_at);
-      throw new BadRequestException(
-        blockers[0] ?? 'CERTIFICATE_IMPORT_YEAR_NOT_FOUND',
-      );
-    }
-
-    return this.decide(reviewerId, current, dto.expected_revision, {
-      status: 'APPROVED',
-      ecclesiastical_year_id: yearId,
-      decision_reason: dto.comment ?? null,
-      action: 'REQUEST_APPROVED',
+    return this.prisma.$transaction(async (tx) => {
+      if (typeof tx.$queryRawUnsafe === 'function') {
+        await tx.$queryRawUnsafe(
+          `SELECT request_id FROM institutional_certificate_requests
+           WHERE request_id = $1::uuid
+           FOR UPDATE`,
+          requestId,
+        );
+      }
+      const current = await this.findVisible(requestId, tx);
+      if (current.status === 'APPROVED') {
+        return this.toView(current, []);
+      }
+      if (current.status === 'REJECTED') {
+        throw new BadRequestException('CERTIFICATE_IMPORT_DECISION_IMMUTABLE');
+      }
+      const age = await assertClassCertificateHistoricalAge(tx, {
+        userId: current.user_id,
+        classId: current.class_id,
+        completedAt: current.completed_at,
+      });
+      return this.decide(tx, reviewerId, current, dto.expected_revision, {
+        status: 'APPROVED',
+        ecclesiastical_year_id: age.yearId,
+        decision_reason: dto.comment ?? null,
+        action: 'REQUEST_APPROVED',
+      });
     });
   }
 
@@ -289,14 +306,21 @@ export class InstitutionalCertificateRequestsService {
       throw new BadRequestException('CERTIFICATE_IMPORT_REJECTION_REASON_REQUIRED');
     }
 
-    return this.decide(reviewerId, current, dto.expected_revision, {
-      status: 'REJECTED',
-      decision_reason: dto.reason.trim(),
-      action: 'REQUEST_REJECTED',
-    });
+    return this.decide(
+      this.prisma,
+      reviewerId,
+      current,
+      dto.expected_revision,
+      {
+        status: 'REJECTED',
+        decision_reason: dto.reason.trim(),
+        action: 'REQUEST_REJECTED',
+      },
+    );
   }
 
   private async decide(
+    db: InstitutionalStore,
     reviewerId: string,
     current: RequestRow,
     expectedRevision: number,
@@ -311,7 +335,7 @@ export class InstitutionalCertificateRequestsService {
       throw new BadRequestException('CERTIFICATE_IMPORT_REVISION_CONFLICT');
     }
 
-    const updated = await this.prisma.institutional_certificate_requests.updateMany({
+    const updated = await db.institutional_certificate_requests.updateMany({
       where: {
         request_id: current.request_id,
         status: 'PENDING_REVIEW',
@@ -330,7 +354,7 @@ export class InstitutionalCertificateRequestsService {
       throw new BadRequestException('CERTIFICATE_IMPORT_REVISION_CONFLICT');
     }
 
-    await this.prisma.institutional_certificate_request_events.create({
+    await db.institutional_certificate_request_events.create({
       data: {
         request_id: current.request_id,
         action: change.action,
@@ -340,7 +364,7 @@ export class InstitutionalCertificateRequestsService {
       },
     });
 
-    const request = await this.findVisible(current.request_id);
+    const request = await this.findVisible(current.request_id, db);
     return this.toView(request, []);
   }
 
@@ -371,8 +395,11 @@ export class InstitutionalCertificateRequestsService {
     };
   }
 
-  private async findVisible(requestId: string): Promise<RequestRow> {
-    const request = await this.prisma.institutional_certificate_requests.findFirst({
+  private async findVisible(
+    requestId: string,
+    db: InstitutionalStore = this.prisma,
+  ): Promise<RequestRow> {
+    const request = await db.institutional_certificate_requests.findFirst({
       where: { request_id: requestId, active: true },
       include: REQUEST_INCLUDE,
     });

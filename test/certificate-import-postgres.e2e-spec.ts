@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg, { Client } from 'pg';
+import { ErrorCode } from '../src/common/errors/error-codes';
 import { CertificateBulkImportApplicationService } from '../src/certificate-bulk-imports/certificate-bulk-imports-application.service';
+import { InstitutionalCertificateRequestsService } from '../src/certificate-bulk-imports/institutional-certificate-requests.service';
 import {
   prepareAnnualCycleDatabase,
   withClient,
@@ -512,6 +514,178 @@ describe('certificate import enrollment slots', () => {
       expect(rows).toBe(1);
       expect(events).toBe(1);
     } finally {
+      await prisma.$disconnect();
+      await pool.end();
+    }
+  });
+
+  it('keeps institutional approval and the age read in one locked transaction', async () => {
+    const fixture = await seed('iage');
+    const seeded = await withClient(url, async (client) => {
+      await client.query(
+        `INSERT INTO roles (role_name, description, role_category, active)
+         VALUES ('super-admin', 'Super admin', 'GLOBAL', true)
+         ON CONFLICT (role_name) DO NOTHING`,
+      );
+      await client.query(
+        `INSERT INTO ecclesiastical_years (start_date, end_date, active)
+         VALUES (DATE '2008-01-01', DATE '2008-12-31', false)`,
+      );
+      const year = await client.query<{ year_id: number }>(
+        `SELECT year_id FROM ecclesiastical_years
+         WHERE start_date = DATE '2008-01-01' AND end_date = DATE '2008-12-31'`,
+      );
+      await client.query(
+        `UPDATE users SET birthday = DATE '1980-01-01' WHERE user_id = $1`,
+        [fixture.userId],
+      );
+      const reviewer = await client.query<{ user_id: string }>(
+        `INSERT INTO users (email, name, active, approval_status)
+         VALUES ('reviewer-iage@certificate-import.test', 'Revisor', true, 'approved')
+         RETURNING user_id`,
+      );
+      await client.query(
+        `INSERT INTO users_roles (user_id, role_id, active)
+         SELECT $1, role_id, true FROM roles WHERE role_name = 'super-admin'`,
+        [reviewer.rows[0].user_id],
+      );
+      const klass = await client.query<{ class_id: number }>(
+        `INSERT INTO classes (name, active, club_type_id, minimum_age, display_order, asset_code)
+         SELECT 'Avanzado iage', false, club_type_id, 16, 91, 'IAGE'
+         FROM classes
+         WHERE class_id = $1
+         RETURNING class_id`,
+        [fixture.amigoId],
+      );
+      const young = await client.query<{ user_id: string }>(
+        `INSERT INTO users (email, name, active, approval_status, birthday)
+         VALUES (
+           'young-iage@certificate-import.test', 'Menor', true, 'approved', DATE '2010-01-01'
+         )
+         RETURNING user_id`,
+      );
+
+      const requestFor = async (userId: string) => {
+        const batch = await client.query<{ batch_id: string }>(
+          `INSERT INTO certificate_bulk_import_batches (user_id)
+           VALUES ($1)
+           RETURNING batch_id`,
+          [userId],
+        );
+        const file = await client.query<{ file_id: string }>(
+          `INSERT INTO certificate_bulk_import_files (
+             batch_id, file_url, file_name, file_type, uploaded_by_id,
+             upload_status, object_key, jurisdiction
+           ) VALUES (
+             $1, 'sealed', 'cert.pdf', 'application/pdf', $2,
+             'CONFIRMED', 'sealed-key', 'INSTITUTIONAL'
+           )
+           RETURNING file_id`,
+          [batch.rows[0].batch_id, userId],
+        );
+        const request = await client.query<{ request_id: string }>(
+          `INSERT INTO institutional_certificate_requests (
+             user_id, class_id, file_id, batch_id, completed_at
+           ) VALUES ($1, $2, $3, $4, DATE '2008-07-07')
+           RETURNING request_id`,
+          [
+            userId,
+            klass.rows[0].class_id,
+            file.rows[0].file_id,
+            batch.rows[0].batch_id,
+          ],
+        );
+        return request.rows[0].request_id;
+      };
+
+      return {
+        reviewerId: reviewer.rows[0].user_id,
+        yearId: year.rows[0].year_id,
+        classId: klass.rows[0].class_id,
+        youngUserId: young.rows[0].user_id,
+        adultRequestId: await requestFor(fixture.userId),
+        youngRequestId: await requestFor(young.rows[0].user_id),
+      };
+    });
+
+    const pool = new pg.Pool({ connectionString: url });
+    const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
+    const service = new InstitutionalCertificateRequestsService(
+      prisma as never,
+    );
+    const holder = new Client({ connectionString: url });
+    await holder.connect();
+    try {
+      await expect(
+        service.approve(seeded.reviewerId, seeded.youngRequestId, {
+          expected_revision: 0,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CERTIFICATE_IMPORT_AGE_BELOW_MINIMUM,
+      });
+      expect(
+        await prisma.institutional_certificate_requests.findFirst({
+          where: { request_id: seeded.youngRequestId },
+          select: { status: true },
+        }),
+      ).toMatchObject({ status: 'PENDING_REVIEW' });
+      expect(
+        await prisma.institutional_certificate_request_events.count({
+          where: {
+            request_id: seeded.youngRequestId,
+            action: 'REQUEST_APPROVED',
+          },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.enrollments.count({
+          where: { user_id: seeded.youngUserId },
+        }),
+      ).toBe(0);
+
+      await holder.query('BEGIN');
+      await holder.query(
+        'SELECT user_id FROM users WHERE user_id = $1::uuid FOR UPDATE',
+        [fixture.userId],
+      );
+      let settled = false;
+      const approval = service
+        .approve(seeded.reviewerId, seeded.adultRequestId, {
+          expected_revision: 0,
+        })
+        .finally(() => {
+          settled = true;
+        });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const waiting = await pool.query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n
+         FROM pg_stat_activity
+         WHERE state = 'active' AND wait_event_type = 'Lock'`,
+      );
+      expect(settled).toBe(false);
+      expect(waiting.rows[0].n).toBeGreaterThan(0);
+      await holder.query('ROLLBACK');
+      await expect(approval).resolves.toMatchObject({
+        status: 'APPROVED',
+        enrollment_created: false,
+        ecclesiastical_year_id: seeded.yearId,
+      });
+      expect(
+        await prisma.enrollments.count({
+          where: { user_id: fixture.userId, class_id: seeded.classId },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.institutional_certificate_request_events.count({
+          where: {
+            request_id: seeded.adultRequestId,
+            action: 'REQUEST_APPROVED',
+          },
+        }),
+      ).toBe(1);
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      await holder.end();
       await prisma.$disconnect();
       await pool.end();
     }

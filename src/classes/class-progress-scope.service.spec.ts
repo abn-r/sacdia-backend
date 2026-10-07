@@ -4,6 +4,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassProgressScopeService } from './class-progress-scope.service';
+import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
 
 describe('ClassProgressScopeService', () => {
   let service: ClassProgressScopeService;
@@ -43,6 +44,9 @@ describe('ClassProgressScopeService', () => {
   const mockCoordinationService = {
     getEffectiveCoordinatorSectionIds: jest.fn(),
   };
+  const mockEligibility = {
+    calculateForEnrollments: jest.fn(),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -71,6 +75,10 @@ describe('ClassProgressScopeService', () => {
         {
           provide: CoordinationService,
           useValue: mockCoordinationService,
+        },
+        {
+          provide: ClassRequirementEligibilityService,
+          useValue: mockEligibility,
         },
       ],
     }).compile();
@@ -306,11 +314,29 @@ describe('ClassProgressScopeService', () => {
         },
       },
     ]);
-    mockPrisma.class_section_progress.groupBy.mockResolvedValue([
-      { enrollment_id: 101, _count: { section_progress_id: 1 } },
-      { enrollment_id: 102, _count: { section_progress_id: 2 } },
-    ]);
-    mockPrisma.class_sections.count.mockResolvedValue(4);
+    mockEligibility.calculateForEnrollments.mockImplementation(
+      async (enrollmentIds: number[]) => {
+        const summaries = new Map<
+          number,
+          {
+            investiture_progress: { completed: number; total: number };
+            overall_progress: number;
+            passing_score: number;
+          }
+        >();
+        for (const enrollmentId of enrollmentIds) {
+          summaries.set(enrollmentId, {
+            investiture_progress: {
+              completed: enrollmentId === 101 ? 1 : 2,
+              total: 4,
+            },
+            overall_progress: enrollmentId === 101 ? 25 : 50,
+            passing_score: 80,
+          });
+        }
+        return summaries;
+      },
+    );
 
     await expect(
       service.getClassMembersProgress({
@@ -354,6 +380,10 @@ describe('ClassProgressScopeService', () => {
       ],
     });
 
+    expect(mockEligibility.calculateForEnrollments).toHaveBeenCalledTimes(1);
+    expect(mockEligibility.calculateForEnrollments).toHaveBeenCalledWith([
+      101, 102,
+    ]);
     expect(mockPrisma.enrollments.findMany).toHaveBeenCalledWith({
       where: {
         class_id: 7,
@@ -418,8 +448,18 @@ describe('ClassProgressScopeService', () => {
       mockPrisma.classes.findMany.mockResolvedValue([
         { class_id: 7, name: 'Ruta 1', club_type_id: 2, active: true },
       ]);
-      mockPrisma.class_section_progress.groupBy.mockResolvedValue([]);
-      mockPrisma.class_sections.count.mockResolvedValue(4);
+      mockEligibility.calculateForEnrollments.mockResolvedValue(
+        new Map([
+          [
+            201,
+            {
+              investiture_progress: { completed: 0, total: 4 },
+              overall_progress: 0,
+              passing_score: 80,
+            },
+          ],
+        ]),
+      );
     };
 
     it('includes a cross-type GM from another section of the same club', async () => {

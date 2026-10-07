@@ -16,6 +16,7 @@ import {
   MONTHLY_REPORT_PDF_TEMPLATE_VERSION,
   buildMonthlyReportPdfKey,
 } from './monthly-report-artifact.constants';
+import { buildMonthlyReportDownloadFilename } from './monthly-report-download-filename';
 import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
 import type { MonthlyReportSnapshotData } from './monthly-reports-pdf.service';
 
@@ -140,6 +141,37 @@ export class MonthlyReportArtifactsService {
     });
     await this.persistArtifactMetadata(reportId, artifact);
     return artifact;
+  }
+
+  async resolveDownloadFilename(reportId: string): Promise<string> {
+    const report = await this.prisma.monthly_reports.findUnique({
+      where: { monthly_report_id: reportId },
+      select: {
+        month: true,
+        year: true,
+        club_enrollment: {
+          select: {
+            club_section: {
+              select: {
+                clubs: { select: { name: true } },
+                club_types: { select: { name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!report) {
+      return `informe-mensual-${reportId}.pdf`;
+    }
+
+    return buildMonthlyReportDownloadFilename({
+      clubName: report.club_enrollment?.club_section?.clubs?.name,
+      clubType: report.club_enrollment?.club_section?.club_types?.name,
+      month: report.month,
+      year: report.year,
+    });
   }
 
   async getStoredPdfBuffer(reportId: string): Promise<Buffer> {

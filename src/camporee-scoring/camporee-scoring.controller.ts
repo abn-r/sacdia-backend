@@ -53,8 +53,12 @@ export class CamporeeScoringController {
     @Param('eventId', ParseIntPipe) eventId: number,
     @Request() req: any,
   ) {
-    const data = await this.service.getEventRubrics(eventId, req.user.sub);
-    return { status: 'success', data };
+    const sheet = await this.service.getEventRubrics(eventId, req.user.sub);
+    return {
+      status: 'success',
+      data: sheet.rubrics,
+      min_points: sheet.min_points,
+    };
   }
 
   @Put('camporee-events/:eventId/rubrics')
@@ -253,6 +257,26 @@ export class CamporeeScoringController {
     @Request() req: any,
   ) {
     const data = await this.service.getScoringTargets(eventId, req.user.sub);
+    return { status: 'success', data };
+  }
+
+  @Get('camporee-events/:eventId/sections/:clubSectionId/score')
+  @SkipPermissions()
+  @ApiOperation({
+    summary: 'Read the active official score for an event section',
+  })
+  @ApiParam({ name: 'eventId', type: Number })
+  @ApiParam({ name: 'clubSectionId', type: Number })
+  async getOfficialScore(
+    @Param('eventId', ParseIntPipe) eventId: number,
+    @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
+    @Request() req: any,
+  ) {
+    const data = await this.service.getOfficialScore(
+      eventId,
+      clubSectionId,
+      req.user.sub,
+    );
     return { status: 'success', data };
   }
 
