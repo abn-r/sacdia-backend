@@ -3,9 +3,28 @@
 **Date**: 2026-08-23  
 **Repo**: `/Users/abner/Documents/development/sacdia/sacdia-backend`  
 **Branch**: `fix/qr-card-identity-section` @ `e7e9d11`  
-**Companion report**: `security_best_practices_report.md`  
+**Companion report**: `security-best-practices-report.md`  
 **User context**: not yet confirmed — rankings use the assumptions below  
 **Out of scope**: `sacdia-admin` UI, Flutter app, Neon/R2/Render operator consoles, tests as attack surface (except e2e passthrough flags)
+
+> **Estado al 2026-10-04 (rama `development`)**: modelo de amenazas fechado el 2026-08-23. Las brechas que
+> lo motivaron están cerradas en el código actual:
+>
+> | ID | Estado | Referencia |
+> | --- | --- | --- |
+> | TM-001, TM-003 | Corregido | SEC-001/SEC-003 (`aud`/`iss` verificados, QR con secreto propio) |
+> | TM-002 | Mitigado | SEC-002 (recorte territorial en `GET /clubs`; secciones solo con campos de identificación) |
+> | TM-004 | Corregido | SEC-004 |
+> | TM-005, TM-009 | Corregido | SEC-005 (`TRUST_PROXY_HOPS`) |
+> | TM-008 | Corregido | SEC-011 (`trustedOrigins`) |
+> | TM-013 | Corregido | SEC-013 |
+> | TM-014 | Corregido | SEC-014 (`POST /auth/password/reset`) |
+> | TM-015 | Corregido | SEC-015 |
+> | TM-016 | Corregido | SEC-016/SEC-017 |
+> | TM-017 | Corregido | SEC-018 |
+> | TM-006, TM-007, TM-010, TM-011, TM-012 | Vigente (riesgo residual) | Controles operativos; sin cambio de código pendiente |
+>
+> Ver la tabla de verificación con evidencia en `security-best-practices-report.md`.
 
 ## Executive summary
 
