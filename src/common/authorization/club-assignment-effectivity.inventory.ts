@@ -61,7 +61,7 @@ const baseline = {
   'clubs/director-designation.service.ts':
     'workflowWhere|allowlist|2|b32d443733e9',
   'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|32d48d679749',
-  'common/guards/permissions.guard.ts': 'effectiveWhere|T08|3|e8b370c41349',
+  'common/guards/permissions.guard.ts': 'effectiveWhere|T08|3|2bd237ed53eb',
   'common/services/authorization-context.service.ts':
     'effectiveWhere|T08|1|388da81fc937',
   'coordination/coordination.service.ts': 'effectiveWhere|T08|1|9a134e551821',

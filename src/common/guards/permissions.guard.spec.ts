@@ -295,7 +295,7 @@ describe('PermissionsGuard', () => {
       ['post_registration:read', 'users:read_detail', 'read'],
       ['post_registration:update', 'users:update_profile', 'update'],
     ] as const)(
-      'allows fine permission, allows legacy fallback, and rejects club-only third-party access for %s',
+      'allows fine permission, allows legacy fallback, and rejects club-only access to a non-section user for %s',
       async (permission, legacyFallback, mode) => {
         await expectSensitiveUserAccess({
           permission,
@@ -1008,6 +1008,116 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+  });
+
+  describe('club-scoped sensitive subresource read', () => {
+    const mockSensitiveRoute = (
+      family: string,
+      mode: 'read' | 'update',
+    ): void => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY) {
+          return { permissions: [`${family}:${mode}`], mode: 'all' };
+        }
+        if (key === AUTHORIZATION_RESOURCE_KEY) {
+          return { type: 'user', ownerParam: 'userId' };
+        }
+        if (key === SENSITIVE_USER_SUBRESOURCE_KEY) {
+          return { family, mode };
+        }
+        return undefined;
+      });
+    };
+
+    const directorContext = () =>
+      createContext({
+        user: { sub: 'director-1' },
+        params: { userId: 'member-user-1' },
+      });
+
+    it.each([
+      'health',
+      'emergency_contacts',
+      'legal_representative',
+      'post_registration',
+    ])(
+      'allows %s:read from the active club assignment for an active member of the active section',
+      async (family) => {
+        mockSensitiveRoute(family, 'read');
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          createResolved({
+            activeClubPermissions: [`${family}:read`],
+            instanceId: 22,
+          }),
+        );
+        mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+          assignment_id: 'active-assignment-1',
+        });
+
+        await expect(guard.canActivate(directorContext())).resolves.toBe(true);
+
+        expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledWith(
+          {
+            where: {
+              user_id: 'member-user-1',
+              club_section_id: 22,
+              active: true,
+              OR: [{ status: null }, { status: { in: ['active'] } }],
+            },
+            select: { assignment_id: true },
+          },
+        );
+      },
+    );
+
+    it('rejects when the target is not an active member of the active section', async () => {
+      mockSensitiveRoute('health', 'read');
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          activeClubPermissions: ['health:read'],
+          instanceId: 22,
+        }),
+      );
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+
+      await expect(guard.canActivate(directorContext())).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+    });
+
+    it('does not honor the legacy users:read_detail fallback from a club assignment', async () => {
+      mockSensitiveRoute('health', 'read');
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          activeClubPermissions: ['users:read_detail'],
+          instanceId: 22,
+        }),
+      );
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'active-assignment-1',
+      });
+
+      await expect(guard.canActivate(directorContext())).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+    });
+
+    it('does not grant update mode from a club assignment', async () => {
+      mockSensitiveRoute('health', 'update');
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          activeClubPermissions: ['health:update'],
+          instanceId: 22,
+        }),
+      );
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'active-assignment-1',
+      });
+
+      await expect(guard.canActivate(directorContext())).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+    });
   });
 
   it('throws not found when an assignment resource cannot be resolved', async () => {

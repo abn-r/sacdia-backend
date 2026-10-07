@@ -28,7 +28,10 @@ import {
   SENSITIVE_USER_SUBRESOURCE_KEY,
   type SensitiveUserSubresourceMetadata,
 } from '../decorators/sensitive-user-subresource.decorator';
-import { getSensitiveUserSubresourceFallbackPermission } from './sensitive-user-subresource-policy';
+import {
+  getSensitiveUserSubresourceFallbackPermission,
+  getSensitiveUserSubresourcePolicy,
+} from './sensitive-user-subresource-policy';
 
 type AuthorizationSectionType = 'adventurers' | 'pathfinders' | 'master_guilds';
 
@@ -166,6 +169,13 @@ export class PermissionsGuard implements CanActivate {
         userId,
         resolved,
         requirement,
+        resource,
+        sensitiveUserSubresource,
+      )) &&
+      !(await this.canReadSectionMemberSensitiveSubresource(
+        request,
+        userId,
+        resolved,
         resource,
         sensitiveUserSubresource,
       ))
@@ -429,6 +439,62 @@ export class PermissionsGuard implements CanActivate {
       return false;
     }
 
+    return this.isTargetInActiveSection(
+      request,
+      actorUserId,
+      resolved,
+      resource,
+      ['active', 'pending'],
+    );
+  }
+
+  /**
+   * Club-scoped read of a section member's sensitive subresources
+   * (health, emergency contacts, ...). Requires the fine `<family>:read`
+   * permission on the active club assignment — the legacy
+   * `users:read_detail` fallback is intentionally not honored here — and
+   * the target must be an active (not pending) member of the actor's
+   * active section.
+   */
+  private async canReadSectionMemberSensitiveSubresource(
+    request: any,
+    actorUserId: string,
+    resolved: ResolvedAuthorizationProfile,
+    resource: AuthorizationResourceMetadata,
+    sensitiveUserSubresource?: SensitiveUserSubresourceMetadata,
+  ): Promise<boolean> {
+    if (
+      resource.type !== 'user' ||
+      !sensitiveUserSubresource ||
+      sensitiveUserSubresource.mode !== 'read'
+    ) {
+      return false;
+    }
+
+    const finePermission = getSensitiveUserSubresourcePolicy(
+      sensitiveUserSubresource.family,
+      sensitiveUserSubresource.mode,
+    ).finePermission;
+    if (!this.getActiveClubPermissions(resolved).has(finePermission)) {
+      return false;
+    }
+
+    return this.isTargetInActiveSection(
+      request,
+      actorUserId,
+      resolved,
+      resource,
+      ['active'],
+    );
+  }
+
+  private async isTargetInActiveSection(
+    request: any,
+    actorUserId: string,
+    resolved: ResolvedAuthorizationProfile,
+    resource: AuthorizationResourceMetadata,
+    allowedStatuses: string[],
+  ): Promise<boolean> {
     const activeClubScope = resolved.authorization.effective.scope.club;
     const activeSectionId = activeClubScope?.section.club_section_id;
     if (typeof activeSectionId !== 'number') {
@@ -459,7 +525,7 @@ export class PermissionsGuard implements CanActivate {
             { status: null },
             {
               status: {
-                in: ['active', 'pending'],
+                in: allowedStatuses,
               },
             },
           ],
