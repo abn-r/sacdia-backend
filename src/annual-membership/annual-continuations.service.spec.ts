@@ -10,6 +10,7 @@ import { ClassEnrollmentWriter } from '../classes/class-enrollment-writer.servic
 import { AnnualMembershipPolicyService } from './annual-membership-policy.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 const YEAR_ID_CURRENT = 2026;
@@ -137,6 +138,7 @@ describe('AnnualMembershipService', () => {
         { provide: ClassEnrollmentWriter, useValue: classWriter },
         { provide: AnnualMembershipPolicyService, useValue: membershipPolicy },
         { provide: AuditLogsService, useValue: auditLogs },
+        ClubRoleEligibilityService,
       ],
     }).compile();
 
@@ -894,6 +896,270 @@ describe('AnnualMembershipService', () => {
       expect(result.results[0].outcome).toBe('blocked');
       expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
       expect(classWriter.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('role eligibility soft-block (PR3a)', () => {
+    const USER_GM = 'user-gm-eligible-uuid';
+    const USER_PLAIN = 'user-not-gm-uuid';
+
+    // GM-01 lookups (evaluateMany) return a row only for the given users.
+    function stubGmEligible(userIds: string[]) {
+      prisma.enrollments.findMany.mockImplementation(
+        async (args: { where?: { user_id?: { in: string[] } } }) =>
+          (args?.where?.user_id?.in ?? [])
+            .filter((id) => userIds.includes(id))
+            .map((id) => ({
+              enrollment_id: 7,
+              user_id: id,
+              investiture_status: 'INVESTIDO',
+            })),
+      );
+    }
+
+    function stubSection(sectionId: number, typeName: string) {
+      prisma.club_sections.findUnique.mockResolvedValue({
+        club_section_id: sectionId,
+        main_club_id: MAIN_CLUB_ID,
+        active: true,
+        club_types: { name: typeName },
+      });
+    }
+
+    it('blocks a GM-eligible member placed in a CQ section, writes nothing, and the batch continues', async () => {
+      stubSection(CQ_SECTION_ID, 'Conquistadores');
+      stubGmEligible([USER_GM]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      membershipPolicy.resolveBase.mockResolvedValue({
+        clubId: MAIN_CLUB_ID,
+        baseSectionId: CQ_SECTION_ID,
+        clubTypeName: 'Conquistadores',
+      });
+      membershipPolicy.ensureNotEnrolled.mockResolvedValue({
+        assignment_id: 'cq-inactive',
+        created: false,
+      });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'next_class',
+        class_id: CLASS_CQ_AGE,
+        display_order: 1,
+        club_type_id: CQ_TYPE_ID,
+        club_section_id: CQ_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+        crossed_type: false,
+      });
+
+      const result = await service.continueUsers(
+        CQ_SECTION_ID,
+        [USER_GM, USER_PLAIN],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        user_id: USER_GM,
+        outcome: 'blocked',
+        error_code: ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+      });
+      expect(result.results[1]).toMatchObject({
+        user_id: USER_PLAIN,
+        outcome: 'enrolled',
+      });
+      expect(prisma.club_role_assignments.update).toHaveBeenCalledTimes(1);
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+    });
+
+    it('blocks reactivating an inactive member row for a GM-eligible user in a CQ section', async () => {
+      stubSection(CQ_SECTION_ID, 'Conquistadores');
+      stubGmEligible([USER_GM]);
+      prisma.club_role_assignments.findFirst.mockResolvedValueOnce({
+        assignment_id: 'cq-inactive',
+        status: 'inactive',
+        role_id: MEMBER_ROLE_ID,
+      });
+
+      const result = await service.continueUsers(
+        CQ_SECTION_ID,
+        [USER_GM],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        outcome: 'blocked',
+        error_code: ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+      });
+      expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
+    });
+
+    it('regression GM return: GM-eligible member in a GM section still enrolls (c8bf136)', async () => {
+      stubSection(GM_SECTION_ID, 'Guías Mayores');
+      stubGmEligible([USER_RETURNED]);
+      prisma.club_role_assignments.findFirst.mockResolvedValueOnce({
+        assignment_id: 'gm-not-enrolled-2026',
+        status: 'inactive',
+        role_id: MEMBER_ROLE_ID,
+      });
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_RETURNED],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        outcome: 'enrolled',
+        error_code: null,
+      });
+      expect(prisma.club_role_assignments.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { assignment_id: 'gm-not-enrolled-2026' },
+          data: expect.objectContaining({ status: 'active' }),
+        }),
+      );
+    });
+
+    it('regression GM base: inactive placeholder in the GM base section is not blocked', async () => {
+      stubSection(GM_SECTION_ID, 'Guías Mayores');
+      stubGmEligible([USER_RETURNED]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_RETURNED],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0].outcome).toBe('enrolled');
+      expect(prisma.club_role_assignments.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { assignment_id: 'inactive-row' } }),
+      );
+    });
+
+    it('regression type jump AV->CQ: non-GM member still enrolls', async () => {
+      stubSection(CQ_SECTION_ID, 'Conquistadores');
+      stubGmEligible([]);
+      prisma.club_types.findFirst.mockResolvedValue({
+        club_type_id: AV_TYPE_ID,
+      });
+      prisma.club_sections.findFirst.mockResolvedValue({
+        club_section_id: AV_SECTION_ID,
+      });
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      prisma.club_role_assignments.create.mockResolvedValue({
+        assignment_id: 'new',
+      });
+      membershipPolicy.resolveBase.mockResolvedValue({
+        clubId: MAIN_CLUB_ID,
+        baseSectionId: AV_SECTION_ID,
+        clubTypeName: 'Aventureros',
+      });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'next_class',
+        class_id: CLASS_CQ_AGE,
+        display_order: 1,
+        club_type_id: CQ_TYPE_ID,
+        club_section_id: CQ_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+        crossed_type: true,
+      });
+
+      const result = await service.continueUsers(
+        CQ_SECTION_ID,
+        [USER_AV_GRADUATE],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0].outcome).toBe('enrolled');
+      expect(prisma.club_role_assignments.create).toHaveBeenCalled();
+    });
+
+    it('regression type jump CQ->GM: GM-eligible member in the GM section still enrolls', async () => {
+      stubSection(GM_SECTION_ID, 'Guías Mayores');
+      stubGmEligible([USER_GM]);
+      prisma.club_types.findFirst.mockResolvedValue({
+        club_type_id: CQ_TYPE_ID,
+      });
+      prisma.club_sections.findFirst.mockResolvedValue({
+        club_section_id: CQ_SECTION_ID,
+      });
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      prisma.club_role_assignments.create.mockResolvedValue({
+        assignment_id: 'new',
+      });
+      membershipPolicy.resolveBase.mockResolvedValue({
+        clubId: MAIN_CLUB_ID,
+        baseSectionId: CQ_SECTION_ID,
+        clubTypeName: 'Conquistadores',
+      });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'next_class',
+        class_id: 42,
+        display_order: 1,
+        club_type_id: 3,
+        club_section_id: GM_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+        crossed_type: true,
+      });
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_GM],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0].outcome).toBe('enrolled');
+      expect(prisma.club_role_assignments.create).toHaveBeenCalled();
+    });
+
+    describe('writeTypeJumpEnrollment (year-cut path)', () => {
+      const year = CURRENT_YEAR as never;
+
+      it('returns skipped (no throw, no write) for a GM-eligible user into a CQ section', async () => {
+        stubSection(CQ_SECTION_ID, 'Conquistadores');
+        stubGmEligible([USER_GM]);
+        prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+
+        const outcome = await service.writeTypeJumpEnrollment(prisma as never, {
+          userId: USER_GM,
+          destSectionId: CQ_SECTION_ID,
+          year,
+        });
+
+        expect(outcome).toBe('skipped');
+        expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+        expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
+      });
+
+      it('does not interfere for a non-GM user (proceeds past the guard)', async () => {
+        stubSection(CQ_SECTION_ID, 'Conquistadores');
+        stubGmEligible([]);
+        prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+        prisma.club_types.findFirst.mockResolvedValue({
+          club_type_id: AV_TYPE_ID,
+        });
+        prisma.club_sections.findFirst.mockResolvedValue({
+          club_section_id: AV_SECTION_ID,
+        });
+        prisma.club_role_assignments.create.mockResolvedValue({
+          assignment_id: 'new',
+        });
+        nextClassResolver.resolve.mockResolvedValue({
+          kind: 'next_class',
+          class_id: CLASS_CQ_AGE,
+          display_order: 1,
+          club_type_id: CQ_TYPE_ID,
+          club_section_id: CQ_SECTION_ID,
+          ecclesiastical_year_id: YEAR_ID_CURRENT,
+          crossed_type: true,
+        });
+
+        const outcome = await service.writeTypeJumpEnrollment(prisma as never, {
+          userId: USER_AV_GRADUATE,
+          destSectionId: CQ_SECTION_ID,
+          year,
+        });
+
+        expect(outcome).toBe('enrolled');
+      });
     });
   });
 

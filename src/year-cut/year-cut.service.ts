@@ -9,6 +9,7 @@ import { AnnualMembershipService } from '../annual-membership/annual-membership.
 import { NextClassResolver } from '../classes/next-class.resolver';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 const BOARD_ROLE_NAMES = [
   'director',
@@ -98,6 +99,7 @@ export class YearCutService {
     private readonly annualMembershipPolicy: AnnualMembershipPolicyService,
     private readonly nextClassResolver: NextClassResolver,
     private readonly annualMembership: AnnualMembershipService,
+    private readonly roleEligibility: ClubRoleEligibilityService,
   ) {}
 
   async applyCut(now?: Date): Promise<YearCutSummary> {
@@ -469,6 +471,19 @@ export class YearCutService {
       if (existingActive) {
         this.logger.warn(
           `YearCut: section ${plan.club_section_id} already has an active director for year ${currentYear.year_id} — skipping plan ${plan.succession_id}`,
+        );
+        continue;
+      }
+
+      const eligibility = await this.roleEligibility.evaluateAssignment({
+        userId: plan.successor_user_id,
+        roleName: 'director',
+        clubSectionId: plan.club_section_id,
+        db: tx,
+      });
+      if (!eligibility.allowed) {
+        this.logger.warn(
+          `YearCut: successor ${plan.successor_user_id} is not eligible for director in section ${plan.club_section_id} (${eligibility.violation?.code}) — skipping plan ${plan.succession_id}`,
         );
         continue;
       }

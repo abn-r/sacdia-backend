@@ -10,6 +10,7 @@ import { AnnualMembershipPolicyService } from '../annual-membership/annual-membe
 import { AnnualMembershipService } from '../annual-membership/annual-membership.service';
 import { NextClassResolver } from '../classes/next-class.resolver';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 const YEAR_ID_PREV = 2025;
 const YEAR_ID_CURRENT = 2026;
@@ -137,6 +138,7 @@ describe('YearCutService', () => {
   };
   let nextClassResolver: { resolve: jest.Mock };
   let annualMembership: { writeTypeJumpEnrollment: jest.Mock };
+  let roleEligibility: { evaluateAssignment: jest.Mock };
 
   beforeEach(async () => {
     prisma = makePrismaMock();
@@ -164,6 +166,9 @@ describe('YearCutService', () => {
     annualMembership = {
       writeTypeJumpEnrollment: jest.fn().mockResolvedValue('skipped'),
     };
+    roleEligibility = {
+      evaluateAssignment: jest.fn().mockResolvedValue({ allowed: true }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -187,6 +192,7 @@ describe('YearCutService', () => {
         },
         { provide: NextClassResolver, useValue: nextClassResolver },
         { provide: AnnualMembershipService, useValue: annualMembership },
+        { provide: ClubRoleEligibilityService, useValue: roleEligibility },
       ],
     }).compile();
 
@@ -316,6 +322,57 @@ describe('YearCutService', () => {
         prisma.club_role_assignments.updateMany as jest.Mock
       ).mock.calls.some((call) => call[0]?.where?.status === 'designated');
       expect(designatedActivate).toBe(false);
+    });
+
+    it('skips an ineligible successor with a warning and still activates the remaining plans', async () => {
+      const USER_INELIGIBLE = 'user-ineligible-successor-uuid';
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        {
+          ...scheduledCqPlan(),
+          succession_id: 'plan-ineligible',
+          successor_user_id: USER_INELIGIBLE,
+        },
+        scheduledCqPlan(),
+      ]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      roleEligibility.evaluateAssignment.mockImplementation(
+        async ({ userId }: { userId: string }) =>
+          userId === USER_INELIGIBLE
+            ? {
+                allowed: false,
+                violation: { code: ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED },
+              }
+            : { allowed: true },
+      );
+      const warn = jest.spyOn(
+        (service as unknown as { logger: { warn: jest.Mock } }).logger,
+        'warn',
+      );
+
+      const summary = await service.applyCut();
+
+      expect(summary.activated).toBe(1);
+      expect(prisma.club_role_assignments.create).toHaveBeenCalledTimes(1);
+      expect(prisma.club_role_assignments.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ user_id: USER_SUCCESSOR }),
+        }),
+      );
+      const updatedPlanIds =
+        prisma.director_succession_plans.update.mock.calls.map(
+          (c: [{ where: { succession_id: string } }]) =>
+            c[0].where.succession_id,
+        );
+      expect(updatedPlanIds).toEqual([PLAN_CQ_2026]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('plan-ineligible'),
+      );
+      expect(roleEligibility.evaluateAssignment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          roleName: 'director',
+          userId: USER_INELIGIBLE,
+        }),
+      );
     });
 
     it('A01: returning CQ director is not-enrolled via policy; no class; gmMembersCreated absent', async () => {
