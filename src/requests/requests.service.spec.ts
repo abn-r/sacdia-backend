@@ -12,6 +12,9 @@ describe('RequestsService', () => {
     club_role_assignments: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       updateManyAndReturn: jest.fn().mockResolvedValue([{ user_id: 'user-1' }]),
+      findMany: jest
+        .fn()
+        .mockResolvedValue([{ roles: { role_name: 'member' } }]),
       count: jest.fn().mockResolvedValue(0),
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ assignment_id: 'assignment-1' }),
@@ -232,6 +235,48 @@ describe('RequestsService', () => {
       );
     });
 
+    it('asserts every moved active assignment against the destination section', async () => {
+      transactionMock.club_role_assignments.findMany.mockResolvedValueOnce([
+        { roles: { role_name: 'member' } },
+        { roles: { role_name: 'secretary' } },
+      ]);
+
+      await service.reviewTransfer('transfer-1', 'reviewer-1', 'approved');
+
+      expect(roleEligibility.assertAssignment).toHaveBeenCalledTimes(2);
+      expect(roleEligibility.assertAssignment).toHaveBeenCalledWith({
+        userId: 'user-1',
+        roleName: 'secretary',
+        clubSectionId: 20,
+        db: transactionMock,
+      });
+      expect(
+        transactionMock.club_role_assignments.updateManyAndReturn,
+      ).toHaveBeenCalled();
+    });
+
+    it.each([
+      ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED,
+      ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+    ])('hard-fails with %s and moves nothing', async (code) => {
+      roleEligibility.assertAssignment.mockRejectedValueOnce(
+        new AppForbiddenException(code),
+      );
+
+      await expect(
+        service.reviewTransfer('transfer-1', 'reviewer-1', 'approved'),
+      ).rejects.toMatchObject({ code });
+
+      expect(
+        transactionMock.club_role_assignments.updateManyAndReturn,
+      ).not.toHaveBeenCalled();
+      expect(
+        transactionMock.club_transfer_requests.update,
+      ).not.toHaveBeenCalled();
+      expect(authorizationContextVersion.bump).not.toHaveBeenCalled();
+      expect(notifications.notifySafe).not.toHaveBeenCalled();
+    });
+
     it('deduplicates exactly the users returned by transfer assignment writes', async () => {
       transactionMock.club_role_assignments.updateManyAndReturn.mockResolvedValue(
         [{ user_id: 'user-1' }, { user_id: 'user-1' }],
@@ -428,7 +473,9 @@ describe('RequestsService', () => {
         role_id: 'role-secretary',
         role_name: 'secretary',
       });
-      prisma.role_slot_limits.findUnique.mockResolvedValue({ max_per_section: 1 });
+      prisma.role_slot_limits.findUnique.mockResolvedValue({
+        max_per_section: 1,
+      });
       prisma.ecclesiastical_years.findFirst.mockResolvedValue({
         year_id: 2026,
       });

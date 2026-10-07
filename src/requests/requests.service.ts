@@ -248,6 +248,26 @@ export class RequestsService {
       // intentionally preserved; a club transfer must not recalculate the
       // progressive class by age.
       const approved = await this.prisma.$transaction(async (tx) => {
+        // Safety net: a moved assignment must stay valid in the destination
+        // section (e.g. pre-existing violators). Hard-fails, nothing moves.
+        const toMove = await tx.club_role_assignments.findMany({
+          where: {
+            user_id: request.user_id,
+            club_section_id: request.from_section_id,
+            active: true,
+            status: 'active',
+          },
+          select: { roles: { select: { role_name: true } } },
+        });
+        for (const { roles } of toMove) {
+          await this.roleEligibility.assertAssignment({
+            userId: request.user_id,
+            roleName: roles.role_name,
+            clubSectionId: request.to_section_id,
+            db: tx,
+          });
+        }
+
         // Update all active role assignments from old section to new section
         const affectedAssignments =
           await tx.club_role_assignments.updateManyAndReturn({

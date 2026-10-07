@@ -5,6 +5,8 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { AppForbiddenException } from '../common/errors/app.exception';
 
 describe('MembershipRequestsService', () => {
   let service: MembershipRequestsService;
@@ -19,6 +21,7 @@ describe('MembershipRequestsService', () => {
     status: 'pending',
     active: true,
     expires_at: new Date('2026-05-30T00:00:00.000Z'),
+    roles: { role_name: 'member' },
   };
 
   const createTransactionMock = () => ({
@@ -62,8 +65,15 @@ describe('MembershipRequestsService', () => {
     sendToSectionRole: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockRoleEligibility = {
+    assertAssignment: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockRoleEligibility.assertAssignment.mockReset().mockResolvedValue({
+      allowed: true,
+    });
     transactionMock = createTransactionMock();
     mockPrismaService.$transaction.mockImplementation(
       (
@@ -86,6 +96,7 @@ describe('MembershipRequestsService', () => {
           useValue: mockAuthorizationContextVersion,
         },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: ClubRoleEligibilityService, useValue: mockRoleEligibility },
       ],
     }).compile();
 
@@ -125,6 +136,38 @@ describe('MembershipRequestsService', () => {
         transactionMock,
         userId,
       );
+    });
+
+    it('asserts member eligibility in the tx before activating', async () => {
+      await service.approve(10, pendingAssignment.assignment_id, actorId);
+
+      expect(mockRoleEligibility.assertAssignment).toHaveBeenCalledWith({
+        userId,
+        roleName: 'member',
+        clubSectionId: 10,
+        db: transactionMock,
+      });
+    });
+
+    it.each([
+      ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED,
+      ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+    ])('hard-fails with %s and activates nothing', async (code) => {
+      mockRoleEligibility.assertAssignment.mockRejectedValueOnce(
+        new AppForbiddenException(code),
+      );
+
+      await expect(
+        service.approve(10, pendingAssignment.assignment_id, actorId),
+      ).rejects.toMatchObject({ code });
+
+      expect(
+        transactionMock.club_role_assignments.updateMany,
+      ).not.toHaveBeenCalled();
+      expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
     });
 
     it('rejects path/assignment section mismatches as not found', async () => {
