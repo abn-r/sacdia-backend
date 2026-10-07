@@ -7,6 +7,10 @@
       "cron_duration_body": "La dernière exécution a pris {durationMs} ms, dépassant le seuil de {thresholdMs} ms.",
       "cron_failure_rate_title": "Taux d'Échec Élevé pour le Job: {jobName}",
       "cron_failure_rate_body": "Taux d'échec de {rate}% sur les 24 dernières heures ({failed}/{total} exécutions échouées)."
+    },
+    "year_cut": {
+      "director_plan_skipped_title": "Plan de succession de directeur ignoré",
+      "director_plan_skipped_body": "Le successeur du plan de directeur de la section {sectionId} du club {club} n'est pas éligible ({code}). La section commence l'année sans directeur : assignez-en un manuellement."
     }
   }
 }

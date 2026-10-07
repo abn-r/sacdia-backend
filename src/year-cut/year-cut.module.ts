@@ -5,6 +5,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
 import { AnnualMembershipModule } from '../annual-membership/annual-membership.module';
 import { ClassesModule } from '../classes/classes.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-eligibility.module';
 
 /**
@@ -25,6 +26,7 @@ import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-el
     AnnualMembershipModule,
     ClassesModule,
     ClubRoleEligibilityModule,
+    NotificationsModule,
   ],
   providers: [YearCutService, YearCutCronService],
   exports: [YearCutService],

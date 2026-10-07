@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { I18nService } from 'nestjs-i18n';
 import { PrismaService } from '../prisma/prisma.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
@@ -10,6 +11,7 @@ import { NextClassResolver } from '../classes/next-class.resolver';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const BOARD_ROLE_NAMES = [
   'director',
@@ -51,6 +53,12 @@ type ExpiredAssignment = {
     club_type_id: number | null;
     club_types: { name: string } | null;
   } | null;
+};
+
+type SkippedDirectorPlan = {
+  successionId: string;
+  sectionId: number;
+  code?: string;
 };
 
 type CurrentYear = {
@@ -100,6 +108,8 @@ export class YearCutService {
     private readonly nextClassResolver: NextClassResolver,
     private readonly annualMembership: AnnualMembershipService,
     private readonly roleEligibility: ClubRoleEligibilityService,
+    private readonly notifications: NotificationsService,
+    private readonly i18n: I18nService,
   ) {}
 
   async applyCut(now?: Date): Promise<YearCutSummary> {
@@ -210,6 +220,7 @@ export class YearCutService {
   ): Promise<
     Omit<YearCutSummary, 'usersInvalidated'> & { affectedUserIds: string[] }
   > {
+    const skippedPlans: SkippedDirectorPlan[] = [];
     const result = await this.prisma.$transaction(
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(${clubId}, ${currentYear.year_id})`;
@@ -298,6 +309,7 @@ export class YearCutService {
           currentYear,
           plans,
           affectedUserIds,
+          skippedPlans,
         );
 
         const jumpedUserIds = await this.applyTypeGraduates(
@@ -350,7 +362,82 @@ export class YearCutService {
       { timeout: 60_000 },
     );
 
+    // Only after the club transaction committed: a rolled-back cut must not
+    // announce skipped plans. Never throws.
+    await this.notifySkippedDirectorPlans(clubId, skippedPlans);
+
     return result;
+  }
+
+  /**
+   * Fire-and-forget alert for director succession plans skipped because the
+   * successor is not eligible: the section starts the year without a director.
+   * Targets admins and the local field's director-lf / assistant-lf. Any
+   * failure is logged and swallowed so the year-cut batch continues.
+   */
+  private async notifySkippedDirectorPlans(
+    clubId: number,
+    skipped: SkippedDirectorPlan[],
+  ): Promise<void> {
+    if (skipped.length === 0) {
+      return;
+    }
+
+    try {
+      const club = await this.prisma.clubs.findUnique({
+        where: { club_id: clubId },
+        select: { name: true, local_field_id: true },
+      });
+      const clubName = club?.name ?? String(clubId);
+      const title = this.i18n.translate(
+        'notifications.year_cut.director_plan_skipped_title',
+        { lang: 'es' },
+      );
+
+      for (const plan of skipped) {
+        const body = this.i18n.translate(
+          'notifications.year_cut.director_plan_skipped_body',
+          {
+            lang: 'es',
+            args: {
+              club: clubName,
+              sectionId: plan.sectionId,
+              code: plan.code ?? 'unknown',
+            },
+          },
+        );
+        const data = {
+          type: 'director_plan_skipped',
+          clubId: String(clubId),
+          clubSectionId: String(plan.sectionId),
+          successionId: plan.successionId,
+        };
+        const source = 'admin:year_cut_director_plan_skipped';
+
+        await this.notifications.sendToGlobalRole(
+          ['super-admin', 'admin'],
+          title,
+          body,
+          data,
+          undefined,
+          source,
+        );
+        if (club?.local_field_id) {
+          await this.notifications.sendToGlobalRole(
+            ['director-lf', 'assistant-lf'],
+            title,
+            body,
+            data,
+            club.local_field_id,
+            source,
+          );
+        }
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        `YearCut: failed to notify skipped director plans for club ${clubId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private outgoingCloseDate(row: {
@@ -438,6 +525,7 @@ export class YearCutService {
       successor_user_id: string;
     }>,
     affectedUserIds: Set<string>,
+    skipped: SkippedDirectorPlan[],
   ): Promise<number> {
     if (plans.length === 0) {
       return 0;
@@ -485,6 +573,11 @@ export class YearCutService {
         this.logger.warn(
           `YearCut: successor ${plan.successor_user_id} is not eligible for director in section ${plan.club_section_id} (${eligibility.violation?.code}) — skipping plan ${plan.succession_id}`,
         );
+        skipped.push({
+          successionId: plan.succession_id,
+          sectionId: plan.club_section_id,
+          code: eligibility.violation?.code,
+        });
         continue;
       }
 

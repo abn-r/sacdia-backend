@@ -10,6 +10,8 @@ import { AnnualMembershipPolicyService } from '../annual-membership/annual-membe
 import { AnnualMembershipService } from '../annual-membership/annual-membership.service';
 import { NextClassResolver } from '../classes/next-class.resolver';
 import { ErrorCode } from '../common/errors/error-codes';
+import { I18nService } from 'nestjs-i18n';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 const YEAR_ID_PREV = 2025;
@@ -101,6 +103,11 @@ function makePrismaMock() {
       findFirst: jest.fn(),
     },
     club_types: { findMany: jest.fn() },
+    clubs: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ name: 'Club Test', local_field_id: 77 }),
+    },
     club_sections: { findFirst: jest.fn(), findUnique: jest.fn() },
     club_role_assignments: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -139,6 +146,7 @@ describe('YearCutService', () => {
   let nextClassResolver: { resolve: jest.Mock };
   let annualMembership: { writeTypeJumpEnrollment: jest.Mock };
   let roleEligibility: { evaluateAssignment: jest.Mock };
+  let notifications: { sendToGlobalRole: jest.Mock };
 
   beforeEach(async () => {
     prisma = makePrismaMock();
@@ -170,6 +178,10 @@ describe('YearCutService', () => {
       evaluateAssignment: jest.fn().mockResolvedValue({ allowed: true }),
     };
 
+    notifications = {
+      sendToGlobalRole: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         YearCutService,
@@ -193,6 +205,11 @@ describe('YearCutService', () => {
         { provide: NextClassResolver, useValue: nextClassResolver },
         { provide: AnnualMembershipService, useValue: annualMembership },
         { provide: ClubRoleEligibilityService, useValue: roleEligibility },
+        { provide: NotificationsService, useValue: notifications },
+        {
+          provide: I18nService,
+          useValue: { translate: jest.fn((key: string) => key) },
+        },
       ],
     }).compile();
 
@@ -373,6 +390,61 @@ describe('YearCutService', () => {
           userId: USER_INELIGIBLE,
         }),
       );
+    });
+
+    it('notifies admins and the local field when an ineligible plan is skipped', async () => {
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        { ...scheduledCqPlan(), succession_id: 'plan-ineligible' },
+      ]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      roleEligibility.evaluateAssignment.mockResolvedValue({
+        allowed: false,
+        violation: { code: ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED },
+      });
+
+      await service.applyCut();
+
+      expect(notifications.sendToGlobalRole).toHaveBeenCalledTimes(2);
+      expect(notifications.sendToGlobalRole).toHaveBeenNthCalledWith(
+        1,
+        ['super-admin', 'admin'],
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({ successionId: 'plan-ineligible' }),
+        undefined,
+        'admin:year_cut_director_plan_skipped',
+      );
+      expect(notifications.sendToGlobalRole).toHaveBeenNthCalledWith(
+        2,
+        ['director-lf', 'assistant-lf'],
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({ clubId: String(CLUB_ID) }),
+        77,
+        'admin:year_cut_director_plan_skipped',
+      );
+    });
+
+    it('does not notify when no plan is skipped', async () => {
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        scheduledCqPlan(),
+      ]);
+      await service.applyCut();
+      expect(notifications.sendToGlobalRole).not.toHaveBeenCalled();
+    });
+
+    it('does not abort the cut when the notification fails', async () => {
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        { ...scheduledCqPlan(), succession_id: 'plan-ineligible' },
+      ]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      roleEligibility.evaluateAssignment.mockResolvedValue({
+        allowed: false,
+        violation: { code: ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED },
+      });
+      notifications.sendToGlobalRole.mockRejectedValue(new Error('redis down'));
+
+      await expect(service.applyCut()).resolves.toBeDefined();
     });
 
     it('A01: returning CQ director is not-enrolled via policy; no class; gmMembersCreated absent', async () => {
