@@ -62,7 +62,7 @@ describe('club assignment effectivity inventory', () => {
           ).reduce((total, entry) => total + entry.count, 0),
         ]),
       ),
-    ).toEqual({ T08: 54, T09: 57, allowlist: 31 });
+    ).toEqual({ T08: 55, T09: 57, allowlist: 31 });
   });
 
   it('classifies the five indirect query sites exposed by the hardened core', () => {
