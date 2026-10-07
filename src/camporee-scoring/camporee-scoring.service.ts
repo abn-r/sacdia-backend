@@ -31,6 +31,7 @@ import {
   CamporeeJudgeEligibilityReason,
   CamporeeJudgeResponseDto,
   CamporeeLeaderboardResponseDto,
+  CamporeeOfficialScoreResponseDto,
   CamporeeScoreSource,
   CamporeeScopeType,
   ReplaceCamporeeEventRubricsDto,
@@ -886,7 +887,10 @@ export class CamporeeScoringService {
   async getEventRubrics(
     eventId: number,
     actorUserId: string,
-  ): Promise<CamporeeEventRubricResponseDto[]> {
+  ): Promise<{
+    rubrics: CamporeeEventRubricResponseDto[];
+    min_points: number;
+  }> {
     const event = await this.resolveEvent(eventId);
     const canRead = await this.canReadScoring(event, actorUserId);
     const assignedJudge =
@@ -908,7 +912,110 @@ export class CamporeeScoringService {
     }
 
     const rubrics = await this.getActiveRubrics(eventId);
-    return rubrics.map((rubric) => this.mapRubric(rubric));
+    return {
+      rubrics: rubrics.map((rubric) => this.mapRubric(rubric)),
+      min_points: this.round2(this.toNumber(event.min_points ?? 0)),
+    };
+  }
+
+  async getOfficialScore(
+    eventId: number,
+    clubSectionId: number,
+    actorUserId: string,
+  ): Promise<CamporeeOfficialScoreResponseDto | null> {
+    const event = await this.resolveEvent(eventId);
+    const canRead = await this.canReadScoring(event, actorUserId);
+    const assignedJudge =
+      await this.db().camporee_event_judge_assignments.findFirst({
+        where: {
+          camporee_event_id: eventId,
+          active: true,
+          camporee_judge: {
+            user_id: actorUserId,
+            active: true,
+            status: 'active',
+          },
+        },
+        select: { camporee_event_judge_assignment_id: true },
+      });
+
+    if (!canRead && !assignedJudge) {
+      throw new AppForbiddenException(ErrorCode.CAMPOREE_SCORING_FORBIDDEN);
+    }
+
+    const result = await this.db().camporee_event_section_results.findFirst({
+      where: {
+        camporee_event_id: eventId,
+        club_section_id: clubSectionId,
+        active: true,
+      },
+      include: {
+        source_submission: {
+          include: {
+            submitter: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+            items: {
+              include: {
+                rubric: {
+                  select: {
+                    title: true,
+                    max_points: true,
+                    display_order: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!result) return null;
+
+    const submission = result.source_submission;
+    const submitter = submission?.submitter;
+    const items = [...(submission?.items ?? [])].sort(
+      (left: any, right: any) =>
+        (left.rubric?.display_order ?? 0) - (right.rubric?.display_order ?? 0),
+    );
+
+    return {
+      camporee_event_section_result_id: result.camporee_event_section_result_id,
+      score_status:
+        result.score_status === 'no_show' ? 'no_show' : 'scored',
+      is_no_show: result.is_no_show ?? false,
+      total_awarded_points: this.round2(
+        this.toNumber(result.total_awarded_points),
+      ),
+      total_max_points: this.round2(this.toNumber(result.total_max_points)),
+      raw_awarded_points: this.round2(
+        this.toNumber(submission?.raw_awarded_points ?? 0),
+      ),
+      minimum_adjustment_points: this.round2(
+        this.toNumber(submission?.minimum_adjustment_points ?? 0),
+      ),
+      notes: submission?.notes ?? null,
+      submitted_at: submission?.created_at ?? result.finalized_at,
+      evaluator_name: [
+        submitter?.name,
+        submitter?.paternal_last_name,
+        submitter?.maternal_last_name,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .trim(),
+      items: items.map((item: any) => ({
+        camporee_event_rubric_id: item.camporee_event_rubric_id,
+        title: item.rubric?.title ?? '',
+        awarded_points: this.round2(this.toNumber(item.awarded_points)),
+        max_points: this.round2(this.toNumber(item.rubric?.max_points ?? 0)),
+      })),
+    };
   }
 
   async replaceEventRubrics(

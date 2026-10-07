@@ -219,10 +219,12 @@ export const envValidationSchema = Joi.object({
   // Hosts from R2_PUBLIC_URL_* are always included. Loopback/private IPs
   // are dropped even if listed here.
   CERTIFICATE_IMPORT_ALLOWED_FILE_HOSTS: Joi.string().allow('').optional(),
-  // Google Cloud Vision for certificate images. Optional so boot does not
-  // require it. Empty means reading stays manual. Restrict the key to the
-  // Cloud Vision API. PDFs are not sent.
-  GOOGLE_VISION_API_KEY: Joi.string().allow('').optional(),
+  // Vision SDK uses ADC lazily. Local: gcloud application-default login.
+  // Render: secret-file path only; never inline a service-account JSON/key.
+  GOOGLE_APPLICATION_CREDENTIALS: Joi.string().trim().allow('').optional(),
+  GOOGLE_CLOUD_PROJECT: Joi.string().trim().allow('').optional(),
+  // Google Auth reads this standard env var to override ADC quota project.
+  GOOGLE_CLOUD_QUOTA_PROJECT: Joi.string().trim().allow('').optional(),
 
   // Firebase
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow('').optional(),
@@ -245,6 +247,10 @@ export const envValidationSchema = Joi.object({
 
   // Sentry
   SENTRY_DSN: Joi.string().uri().allow('').optional(),
+
+  // PostHog product analytics. Empty token disables the client.
+  POSTHOG_PROJECT_TOKEN: Joi.string().allow('').optional(),
+  POSTHOG_HOST: Joi.string().uri().allow('').optional(),
 
   // Bootstrap admin (one-time setup secret)
   // If not set, POST /api/v1/admin/rbac/bootstrap-admin returns 403 (disabled).

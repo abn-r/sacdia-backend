@@ -16,6 +16,7 @@ import {
   classifyCertificateImportYear,
   utcCivilDate,
 } from './certificate-import-year-resolver.service';
+import { assertClassCertificateHistoricalAge } from './class-certificate-historical-age';
 
 type CertificateImportApplicationTransaction = Pick<
   Prisma.TransactionClient,
@@ -26,6 +27,7 @@ type CertificateImportApplicationTransaction = Pick<
   | 'ecclesiastical_years'
   | 'enrollments'
   | 'classes'
+  | 'users'
   | 'investiture_validation_history'
   | 'certificate_bulk_import_item_events'
 >;
@@ -261,6 +263,12 @@ export class CertificateBulkImportApplicationService {
     if (!item.class_id) {
       throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_MISSING_CLASS');
     }
+
+    await assertClassCertificateHistoricalAge(tx, {
+      userId: item.batch.user_id,
+      classId: item.class_id,
+      completedAt: item.completed_at,
+    });
 
     const civilDate = civilDateFromDbDate(item.completed_at);
     if (!civilDate) {

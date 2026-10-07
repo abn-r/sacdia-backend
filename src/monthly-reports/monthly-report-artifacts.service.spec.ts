@@ -224,4 +224,21 @@ describe('MonthlyReportArtifactsService', () => {
       'https://signed.invalid/monthly-report',
     );
   });
+
+  it('names the download from club, type and period', async () => {
+    findUnique.mockResolvedValueOnce({
+      month: 8,
+      year: 2026,
+      club_enrollment: {
+        club_section: {
+          clubs: { name: 'Senderos del Rey' },
+          club_types: { name: 'Guías Mayores' },
+        },
+      },
+    });
+
+    await expect(service.resolveDownloadFilename(REPORT_ID)).resolves.toBe(
+      'informe-mensual-Senderos-del-Rey-Guias-Mayores-agosto-2026.pdf',
+    );
+  });
 });

@@ -10,9 +10,10 @@ describe('CamporeeScoringController', () => {
 
   beforeEach(() => {
     service = {
-      getEventRubrics: jest
-        .fn()
-        .mockResolvedValue([{ camporee_event_rubric_id: 1 }]),
+      getEventRubrics: jest.fn().mockResolvedValue({
+        rubrics: [{ camporee_event_rubric_id: 1 }],
+        min_points: 20,
+      }),
       replaceEventRubrics: jest
         .fn()
         .mockResolvedValue([{ camporee_event_rubric_id: 1 }]),
@@ -46,6 +47,7 @@ describe('CamporeeScoringController', () => {
       submitScore: jest
         .fn()
         .mockResolvedValue({ camporee_event_section_result_id: 'r1' }),
+      getOfficialScore: jest.fn().mockResolvedValue(null),
       getCamporeeLeaderboard: jest.fn().mockResolvedValue({ rows: [] }),
       getMyJudgeAssignments: jest.fn().mockResolvedValue([]),
     };
@@ -56,14 +58,29 @@ describe('CamporeeScoringController', () => {
     await expect(controller.getEventRubrics(1, req)).resolves.toEqual({
       status: 'success',
       data: [{ camporee_event_rubric_id: 1 }],
+      min_points: 20,
     });
     expect(service.getEventRubrics).toHaveBeenCalledWith(1, req.user.sub);
+  });
+
+  it('returns the official score or null through service authorization', async () => {
+    service.getOfficialScore.mockResolvedValue({
+      evaluator_name: 'Ana López',
+      total_awarded_points: 40,
+    });
+
+    await expect(controller.getOfficialScore(3, 164, req)).resolves.toEqual({
+      status: 'success',
+      data: { evaluator_name: 'Ana López', total_awarded_points: 40 },
+    });
+    expect(service.getOfficialScore).toHaveBeenCalledWith(3, 164, req.user.sub);
   });
 
   it('lets assigned judges reach rubric, target and score handlers without catalog perms', () => {
     for (const handler of [
       CamporeeScoringController.prototype.getEventRubrics,
       CamporeeScoringController.prototype.getScoringTargets,
+      CamporeeScoringController.prototype.getOfficialScore,
       CamporeeScoringController.prototype.submitScore,
     ]) {
       expect(Reflect.getMetadata(SKIP_PERMISSIONS_KEY, handler)).toBe(true);

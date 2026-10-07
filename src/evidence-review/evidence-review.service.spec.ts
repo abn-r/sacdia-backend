@@ -23,6 +23,8 @@ describe('EvidenceReviewService', () => {
     user_honor_requirement_progress: { findMany: jest.fn() },
     validation_logs: { findMany: jest.fn() },
     $queryRawUnsafe: jest.fn(),
+    $transaction: jest.fn(),
+    investiture_authorization_people: { findFirst: jest.fn() },
   };
 
   const mockHonorWorkflow = {
@@ -809,6 +811,42 @@ describe('EvidenceReviewService', () => {
       'reviewer-1',
       'Falta evidencia',
     );
+  });
+
+  it('does not approve or reject class progress while an investiture request is pending', async () => {
+    mockPrisma.class_section_progress.findUnique.mockResolvedValue({
+      section_progress_id: 42,
+      status: 'SUBMITTED',
+      user_id: 'user-1',
+      submitted_by_id: 'user-1',
+      enrollment_id: 901,
+    });
+    const update = jest.fn();
+    mockPrisma.$transaction.mockImplementation(
+      async (fn: (tx: unknown) => unknown) =>
+        fn({
+          $executeRaw: jest.fn().mockResolvedValue(0),
+          investiture_authorization_people: {
+            findFirst: jest.fn().mockResolvedValue({ person_id: 'pending' }),
+          },
+          class_section_progress: { update },
+          validation_logs: { create: jest.fn() },
+        }),
+    );
+
+    await expect(
+      service.approve('class', 42, 'reviewer-1', {}),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+    });
+    await expect(
+      service.reject('class', 42, 'reviewer-1', {
+        reason: 'Evidencia incompleta',
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+    });
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('rejects class evidence only when status is SUBMITTED', async () => {

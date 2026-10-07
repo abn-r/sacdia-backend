@@ -27,6 +27,10 @@ import {
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
 import { CoordinationService } from '../coordination/coordination.service';
+import {
+  assertNoPendingInvestitureAuthorization,
+  lockInvestitureAuthorizationEnrollment,
+} from '../investiture-requests/investiture-request-lock';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
 //
@@ -1093,6 +1097,7 @@ export class EvidenceReviewService {
 
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockClassProgress(tx, record.enrollment_id);
       const result = await tx.class_section_progress.update({
         where: { section_progress_id: id },
         data: {
@@ -1182,6 +1187,7 @@ export class EvidenceReviewService {
 
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockClassProgress(tx, record.enrollment_id);
       const result = await tx.class_section_progress.update({
         where: { section_progress_id: id },
         data: {
@@ -1326,6 +1332,17 @@ export class EvidenceReviewService {
         },
       },
     };
+  }
+
+  private async lockClassProgress(
+    store: Prisma.TransactionClient,
+    enrollmentId: number | null,
+  ): Promise<void> {
+    if (enrollmentId === null) {
+      return;
+    }
+    await lockInvestitureAuthorizationEnrollment(store, enrollmentId);
+    await assertNoPendingInvestitureAuthorization(store, enrollmentId);
   }
 
   private async assertEvidenceInScope(

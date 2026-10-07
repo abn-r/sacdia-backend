@@ -7,6 +7,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { CoordinationService } from '../coordination/coordination.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { StorageBucketAlias } from '../common/services/file-storage.service';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 
 describe('QrService', () => {
   let service: QrService;
@@ -52,6 +53,16 @@ describe('QrService', () => {
     emitEvent: jest.fn(),
   };
 
+  const mockEcclesiasticalYearService = {
+    getCurrentYear: jest.fn().mockResolvedValue({
+      year_id: 1,
+      start_date: new Date('2026-01-01T00:00:00.000Z'),
+      end_date: new Date('2026-12-31T00:00:00.000Z'),
+      active: true,
+      modified_at: null,
+    }),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
@@ -77,6 +88,10 @@ describe('QrService', () => {
         {
           provide: FILE_STORAGE_SERVICE,
           useValue: mockFileStorageService,
+        },
+        {
+          provide: EcclesiasticalYearService,
+          useValue: mockEcclesiasticalYearService,
         },
       ],
     }).compile();
@@ -164,6 +179,9 @@ describe('QrService', () => {
         avatar: 'https://signed.example/avatar.png',
         club_name: 'Club Test',
         section_name: 'Pathfinders',
+        local_field_name: null,
+        union_name: null,
+        ecclesiastical_year: null,
         current_class: null,
         blood_type: null,
         emergency_contact: null,
@@ -219,7 +237,13 @@ describe('QrService', () => {
         assignment_id: 'gm',
         club_sections: {
           club_types: { name: 'Guías Mayores' },
-          clubs: { name: 'Club Test' },
+          clubs: {
+            name: 'Club Test',
+            local_fields: {
+              name: 'Campo Centro',
+              unions: { name: 'Unión Norte' },
+            },
+          },
         },
       },
     ]);
@@ -230,6 +254,9 @@ describe('QrService', () => {
     const result = await service.getMyCard('user-1');
 
     expect(result.member.section_name).toBe('Guías Mayores');
+    expect(result.member.local_field_name).toBe('Campo Centro');
+    expect(result.member.union_name).toBe('Unión Norte');
+    expect(result.member.ecclesiastical_year).toBe('2026');
     expect(result.visual.section_name).toBe('Guías Mayores');
   });
 
@@ -287,6 +314,9 @@ describe('QrService', () => {
         avatar: null,
         club_name: null,
         section_name: null,
+        local_field_name: null,
+        union_name: null,
+        ecclesiastical_year: '2026',
         current_class: 'Conquistador',
         blood_type: 'O+',
         emergency_contact: null,

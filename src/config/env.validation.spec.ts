@@ -280,3 +280,25 @@ describe('timezone bootstrap environment validation', () => {
     }
   });
 });
+
+describe('optional Vision ADC configuration', () => {
+  it('does not require credentials for application boot', () => {
+    expect(validate().error).toBeUndefined();
+  });
+  it('accepts a Render secret path and explicit project/quota', () => {
+    expect(
+      validate({
+        GOOGLE_APPLICATION_CREDENTIALS: '/etc/secrets/vision.json',
+        GOOGLE_CLOUD_PROJECT: 'test-project',
+        GOOGLE_CLOUD_QUOTA_PROJECT: 'test-quota',
+      }).error,
+    ).toBeUndefined();
+  });
+  it.each([
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'GOOGLE_CLOUD_PROJECT',
+    'GOOGLE_CLOUD_QUOTA_PROJECT',
+  ])('rejects non-string %s', (key) => {
+    expect(validate({ [key]: 123 }).error?.message).toContain(key);
+  });
+});

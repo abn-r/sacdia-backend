@@ -11,7 +11,10 @@ import { InstitutionalCertificateRequestsService } from './institutional-certifi
 import { InstitutionalCertificateRequestsController } from './institutional-certificate-requests.controller';
 import { AdminInstitutionalCertificateRequestsController } from './admin-institutional-certificate-requests.controller';
 import { CERTIFICATE_OCR_PROVIDER } from './ocr/certificate-ocr.provider';
-import { GoogleVisionCertificateOcrProvider } from './ocr/google-vision-certificate-ocr.provider';
+import {
+  GoogleVisionCertificateOcrProvider,
+  googleVisionClientFactoryProvider,
+} from './ocr/google-vision-certificate-ocr.provider';
 import {
   CertificateOcrQueueModule,
   isCertificateOcrQueueConfigured,
@@ -33,6 +36,7 @@ import { CertificateOcrProcessor } from './ocr/certificate-ocr.processor';
     CertificateImportYearResolver,
     CertificateImportFilesService,
     InstitutionalCertificateRequestsService,
+    googleVisionClientFactoryProvider,
     {
       provide: CERTIFICATE_OCR_PROVIDER,
       useClass: GoogleVisionCertificateOcrProvider,

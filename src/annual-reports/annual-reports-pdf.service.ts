@@ -9,6 +9,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import PDFDocument from 'pdfkit';
 import { AnnualComputedData } from './annual-reports.service';
+import { buildAnnualReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
 
 // ============================================================
 // Constants
@@ -23,6 +24,25 @@ const BCP47: Record<string, string> = {
 
 const PAGE_MARGIN = 40;
 const CONTENT_WIDTH = 612 - PAGE_MARGIN * 2;
+
+function annualYearLabel(report: {
+  computed_data: unknown;
+  ecclesiastical_year: { start_date: Date; end_date: Date } | null;
+}): string | null {
+  const computed = report.computed_data;
+  if (computed && typeof computed === 'object' && !Array.isArray(computed)) {
+    const label = (computed as { year_label?: unknown }).year_label;
+    if (typeof label === 'string' && label.trim()) return label;
+  }
+
+  const start = report.ecclesiastical_year?.start_date;
+  const end = report.ecclesiastical_year?.end_date;
+  if (!(start instanceof Date) || !(end instanceof Date)) return null;
+
+  const startYear = start.getUTCFullYear();
+  const endYear = end.getUTCFullYear();
+  return startYear === endYear ? String(startYear) : `${startYear}-${endYear}`;
+}
 
 @Injectable()
 export class AnnualReportsPdfService {
@@ -148,6 +168,38 @@ export class AnnualReportsPdfService {
 
     doc.end();
     return pdfReady;
+  }
+
+  async resolveDownloadFilename(reportId: number): Promise<string> {
+    const report = await this.prisma.annual_reports.findUnique({
+      where: { annual_report_id: reportId },
+      select: {
+        computed_data: true,
+        ecclesiastical_year: {
+          select: { start_date: true, end_date: true },
+        },
+        club: {
+          select: {
+            name: true,
+            club_sections: {
+              select: { club_types: { select: { name: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!report) {
+      return `informe-anual-${reportId}.pdf`;
+    }
+
+    return buildAnnualReportDownloadFilename({
+      clubName: report.club?.name,
+      clubTypes: report.club?.club_sections.map(
+        (section) => section.club_types.name,
+      ),
+      yearLabel: annualYearLabel(report),
+    });
   }
 
   // ========================================

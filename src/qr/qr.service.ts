@@ -17,6 +17,7 @@ import {
   type ResolvedAuthorizationProfile,
 } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { clubTypeCycleRank, clubTypeSectionName } from '../clubs/section-display';
 import {
   FILE_STORAGE_SERVICE,
@@ -54,12 +55,33 @@ type QrEmergencyContact = {
   relationship: string;
 };
 
+type CredentialClub = {
+  name: string | null;
+  local_fields?: {
+    name: string | null;
+    unions?: { name: string | null } | null;
+  } | null;
+};
+
+const credentialClubSelect = {
+  name: true,
+  local_fields: {
+    select: {
+      name: true,
+      unions: { select: { name: true } },
+    },
+  },
+} as const;
+
 type QrMemberView = {
   user_id: string;
   full_name: string;
   avatar: string | null;
   club_name: string | null;
   section_name: string | null;
+  local_field_name: string | null;
+  union_name: string | null;
+  ecclesiastical_year: string | null;
   current_class?: string | null;
   blood_type?: string | null;
   emergency_contact?: QrEmergencyContact | null;
@@ -94,7 +116,7 @@ type IdentityClubAssignment = {
   assignment_id: string;
   club_sections?: {
     club_types?: { name: string | null } | null;
-    clubs?: { name: string | null } | null;
+    clubs?: CredentialClub | null;
   } | null;
 };
 
@@ -139,6 +161,7 @@ export class QrService {
     private readonly achievementsService: AchievementsService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
+    private readonly ecclesiasticalYear: EcclesiasticalYearService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
@@ -190,11 +213,29 @@ export class QrService {
       emergency_contact: null,
     };
 
+    const cardMember: QrMemberView = {
+      ...enrichedMember,
+      ecclesiastical_year: await this.resolveEcclesiasticalYearLabel(),
+    };
+
     return {
       ...this.generateMemberToken(userId),
-      member: enrichedMember,
-      visual: this.buildCardVisual(resolved, enrichedMember),
+      member: cardMember,
+      visual: this.buildCardVisual(resolved, cardMember),
     };
+  }
+
+  private async resolveEcclesiasticalYearLabel(): Promise<string | null> {
+    try {
+      const year = await this.ecclesiasticalYear.getCurrentYear();
+      return String(year.start_date.getUTCFullYear());
+    } catch (error) {
+      this.logger.warn(
+        'No se pudo resolver el año eclesiástico de la credencial',
+        error,
+      );
+      return null;
+    }
   }
 
   async generateMyCardPdf(userId: string): Promise<Buffer> {
@@ -348,7 +389,7 @@ export class QrService {
             club_sections: {
               select: {
                 club_types: { select: { name: true } },
-                clubs: { select: { name: true } },
+                clubs: { select: credentialClubSelect },
               },
             },
           },
@@ -666,7 +707,7 @@ export class QrService {
           club_sections: {
             select: {
               club_types: { select: { name: true } },
-              clubs: { select: { name: true } },
+              clubs: { select: credentialClubSelect },
             },
           },
         },
@@ -705,7 +746,7 @@ export class QrService {
     club_role_assignments: Array<{
       club_sections?: {
         club_types?: { name: string | null } | null;
-        clubs?: { name: string | null } | null;
+        clubs?: CredentialClub | null;
       } | null;
     }>;
     email: string | null;
@@ -728,14 +769,17 @@ export class QrService {
     const sectionName = clubTypeSectionName(
       assignment?.club_sections?.club_types?.name,
     );
-    const clubName = assignment?.club_sections?.clubs?.name ?? null;
+    const club = assignment?.club_sections?.clubs;
 
     return {
       user_id: input.user_id,
       full_name: fullName || input.email || input.user_id,
       avatar: input.user_image ?? null,
-      club_name: clubName ?? input.fallback_club_name ?? null,
+      club_name: club?.name ?? input.fallback_club_name ?? null,
       section_name: sectionName ?? input.fallback_section_name ?? null,
+      local_field_name: club?.local_fields?.name ?? null,
+      union_name: club?.local_fields?.unions?.name ?? null,
+      ecclesiastical_year: null,
       current_class: input.current_class ?? null,
       blood_type: input.blood_type ?? null,
       emergency_contact: input.emergency_contact ?? null,
@@ -1038,10 +1082,12 @@ export class QrService {
       value: string;
     }
     const gridItems: GridItem[] = [
-      { label: 'CLUB', value: card.member.club_name ?? 'N/A' },
-      { label: 'SECCIÓN', value: card.member.section_name ?? 'N/A' },
+      { label: 'CLUB', value: card.member.club_name ?? '—' },
+      { label: 'CAMPO', value: card.member.local_field_name ?? '—' },
+      { label: 'UNIÓN', value: card.member.union_name ?? '—' },
+      { label: 'VIGENCIA', value: card.member.ecclesiastical_year ?? '—' },
+      { label: 'SECCIÓN', value: card.member.section_name ?? '—' },
       { label: 'SANGRE', value: card.member.blood_type ?? '—' },
-      { label: 'FOLIO', value: folio },
     ];
 
     for (let i = 0; i < gridItems.length; i += 2) {

@@ -52,7 +52,7 @@ const baseline = {
   'classes/class-progress-scope.service.ts':
     'effectiveWhere|T08|3|4213f4a7f3ae',
   'classes/class-requirement-eligibility.service.ts':
-    'effectiveWhere|T08|1|f0f7540f4594',
+    'effectiveWhere|T08|2|c91bbc988489',
   'club-enrollments/club-enrollments.service.ts':
     'effectiveWhere|T08|1|1f2269db063f',
   'certifications/eligibility/eligibility-rule-handlers.ts':
@@ -93,7 +93,7 @@ const baseline = {
   'notifications/notifications.service.ts': 'effectiveWhere|T09|2|12585f37569f',
   'post-registration/post-registration.service.ts':
     'workflowWhere|allowlist|3|4dfdc41976e6',
-  'qr/qr.service.ts': 'effectiveWhere|T08|3|b777ac09536e',
+  'qr/qr.service.ts': 'effectiveWhere|T08|3|fb413b5f37eb',
   'quarterly-reports/quarterly-reports.service.ts':
     'effectiveWhere|T09|3|1c55ef0ad8fe',
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':

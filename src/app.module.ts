@@ -11,6 +11,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
+import { PosthogModule } from './posthog/posthog.module';
 import { CommonModule } from './common/common.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AuthModule } from './auth/auth.module';
@@ -37,6 +38,7 @@ import { CamporeeOrdersModule } from './camporee-orders/camporee-orders.module';
 import { CamporeeSuppliesModule } from './camporee-supplies/camporee-supplies.module';
 import { PaymentObligationsModule } from './payment-obligations/payment-obligations.module';
 import { InvestitureModule } from './investiture/investiture.module';
+import { InvestitureRequestsModule } from './investiture-requests/investiture-requests.module';
 import { UnitsModule } from './units/units.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ClubEnrollmentsModule } from './club-enrollments/club-enrollments.module';
@@ -204,6 +206,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     // MÓDULOS DE APLICACIÓN
     // ==========================================
     PrismaModule,
+    PosthogModule,
     CommonModule,
     // Registers HttpAuditInterceptor globally via APP_INTERCEPTOR.
     AuditLogsModule,
@@ -230,6 +233,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     CamporeeSuppliesModule,
     PaymentObligationsModule,
     InvestitureModule,
+    InvestitureRequestsModule,
     UnitsModule,
     DashboardModule,
     ClubEnrollmentsModule,
