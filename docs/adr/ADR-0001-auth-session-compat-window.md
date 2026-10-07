@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Accepted — cutback pendiente
+
+> **Estado al 2026-10-04**: la fecha de cutback (2026-03-18) pasó sin ejecutarse. En el código actual
+> `AUTH_REJECT_SNAKE_CASE` vale `false` por defecto (`src/config/env.validation.ts:108`, `.env.example:45`),
+> así que `POST /auth/refresh` sigue aceptando `refresh_token`. Como el producto aún no está en
+> producción, el retorno a modo estricto queda pendiente de decidir antes del lanzamiento.
 
 ## Date
 
@@ -84,6 +89,5 @@ Adoptar **compatibilidad temporal**:
 
 ## Related Documents
 
-- `docs/IMPLEMENTATION-SESSION-2026-03-01-auth-cutover-monitoring.md`
-- `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
+- Bitácoras del cutover (workspace `sacdia`): `docs/history/implementation/IMPLEMENTATION-SESSION-2026-03-01-auth-cutover-monitoring.md` y `docs/history/implementation/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
 - `README.md` (sección de variables/monitoreo auth)

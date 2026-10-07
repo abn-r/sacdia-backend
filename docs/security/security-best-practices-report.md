@@ -8,6 +8,34 @@
 **Skills**: `api-security-best-practices`, `security-best-practices` (Express/Node spec; no Nest-specific reference file)  
 **Prior report**: `security_best_practices_report.md` (2026-03-30) — findings SEC-001..006 of that revision are re-verified below
 
+> **Estado al 2026-10-04 (rama `development`)**: el informe es una foto del 2026-08-23. Todos los hallazgos
+> Critical/High/Medium están corregidos o mitigados en el código actual. Tabla de verificación:
+>
+> | ID | Estado | Evidencia en `development` |
+> | --- | --- | --- |
+> | SEC-001 | Corregido | `JwtStrategy` exige `issuer`/`audience` de acceso y rechaza `aud=sacdia:qr-member` (`src/auth/strategies/jwt.strategy.ts:56-64`); QR firmado con secreto propio (`src/qr/qr.module.ts:19`, `resolveQrJwtSecret`) |
+> | SEC-002 | Mitigado | `GET /clubs` aplica recorte territorial por JWT (`src/clubs/clubs.service.ts:115-117`). `GET /clubs/:clubId/sections` sigue con `@SkipPermissions` para post-registro, pero solo devuelve campos de identificación (riesgo residual aceptado) |
+> | SEC-003 | Corregido | `iss`/`aud` de acceso verificados en `jwt.strategy.ts:56-57` |
+> | SEC-004 | Corregido | `default` exhaustivo que lanza error en `src/common/guards/permissions.guard.ts:303` |
+> | SEC-005 | Corregido | `trust proxy` configurable con `TRUST_PROXY_HOPS` (`src/main.ts:149`, `src/config/trust-proxy.ts`) |
+> | SEC-006 | Mitigado | `/qr/me` no devuelve grants, sangre ni contacto de emergencia; la tarjeta imprimible conserva `blood_type` (`src/qr/qr.service.ts:584-588`) |
+> | SEC-007 | Corregido | `detailedErrors: shouldExposeI18nValidationDetails()` (`src/main.ts:299`) |
+> | SEC-008 | Corregido | Mínimo de 12 caracteres para contraseñas nuevas (`src/auth/password-policy.ts:7`) |
+> | SEC-009, SEC-012 | Corregido | Ya marcados como corregidos en este informe |
+> | SEC-010 | Aceptado | IDs numéricos secuenciales; sin migración a UUID |
+> | SEC-011 | Corregido | `trustedOrigins` en `src/better-auth/better-auth.config.ts:88` |
+> | SEC-013 | Corregido | `resolveRoleId` exige `role_category: 'CLUB'` también por `role_id` (`src/clubs/clubs.service.ts:1779-1784`) |
+> | SEC-014 | Corregido | `POST /auth/password/reset` (`src/auth/auth.controller.ts:223`) |
+> | SEC-015 | Corregido | `@Throttle` 5/min a nivel de controlador OAuth (`src/auth/oauth.controller.ts:54`) |
+> | SEC-016 | Corregido | `createFromUploaded` muestrea magic bytes tras el PUT (`src/resources/resources.service.ts:217`) |
+> | SEC-017 | Corregido | `FileValidationPipe` en comprobante de camporee y badge de logros (`src/camporees/camporees.controller.ts:1166`, `src/achievements/admin/admin-achievements.controller.ts:329`) |
+> | SEC-018 | Corregido | `@IsCertificateImportFileRef()` con allowlist de hosts (`src/certificate-bulk-imports/dto/create-certificate-bulk-import.dto.ts:30`) |
+> | SEC-019 | Corregido | Registro público responde igual que login ante email existente (`src/better-auth/better-auth.service.ts:259`) |
+> | SEC-020 | Corregido | El refresh revoca el access JWT presentado (`src/auth/auth.service.ts:398`) |
+> | SEC-021 | Corregido | IP de auditoría vía `resolveClientIp` (`req.ip`) (`src/audit-logs/http-audit.interceptor.ts:223`) |
+>
+> Las rutas `archivo:línea` del cuerpo del informe corresponden a la rama original y pueden no coincidir con el código actual.
+
 ## Executive summary
 
 The API has a solid deny-by-default perimeter (`GlobalJwtAuthGuard` + fail-closed `PermissionsGuard`), Redis-backed rate limits in production, Helmet, CORS allowlist, upload size + magic-byte checks, parameterized Prisma SQL, and Swagger forced off in production.

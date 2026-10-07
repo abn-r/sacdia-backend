@@ -2,7 +2,7 @@
  * Idempotent seed for the certification:
  * "Capacitación básica para el personal del Club de Conquistadores"
  *
- * Source of truth: docs/plans/2026-08-05-configurable-certifications-engine-implementation-plan.md
+ * Source of truth: docs/history/plans/2026-08-05-configurable-certifications-engine-implementation-plan.md
  * (Task 9, Step 2 — 8 módulos / 19 requisitos principales mapeados del PDF funcional).
  *
  * Design notes:
