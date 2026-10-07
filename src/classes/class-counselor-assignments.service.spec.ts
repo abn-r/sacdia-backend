@@ -1,8 +1,13 @@
 import { ClassCounselorAssignmentsService } from './class-counselor-assignments.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 describe('ClassCounselorAssignmentsService', () => {
   let service: ClassCounselorAssignmentsService;
+
+  const mockRoleEligibility = {
+    evaluateGuideMajor: jest.fn(),
+  };
 
   const mockPrisma = {
     ecclesiastical_years: {
@@ -15,9 +20,6 @@ describe('ClassCounselorAssignmentsService', () => {
       findFirst: jest.fn(),
     },
     club_role_assignments: {
-      findFirst: jest.fn(),
-    },
-    enrollments: {
       findFirst: jest.fn(),
     },
     class_counselor_assignments: {
@@ -62,10 +64,10 @@ describe('ClassCounselorAssignmentsService', () => {
       assignment_id: '33333333-3333-3333-3333-333333333333',
       roles: { role_name: 'counselor' },
     });
-    mockPrisma.enrollments.findFirst.mockResolvedValue({
-      enrollment_id: 55,
-      investiture_status: 'IN_PROGRESS',
-      classes: { name: 'Guía Mayor' },
+    mockRoleEligibility.evaluateGuideMajor.mockResolvedValue({
+      eligible: true,
+      basis: 'ACTIVE_ENROLLMENT',
+      enrollmentId: 55,
     });
     mockPrisma.class_counselor_assignments.count.mockImplementation(
       ({ where }: { where: Record<string, unknown> }) => {
@@ -103,6 +105,7 @@ describe('ClassCounselorAssignmentsService', () => {
 
     service = new ClassCounselorAssignmentsService(
       mockPrisma as unknown as PrismaService,
+      mockRoleEligibility as unknown as ClubRoleEligibilityService,
     );
   });
 
@@ -177,22 +180,33 @@ describe('ClassCounselorAssignmentsService', () => {
   });
 
   it('rejects assigning a responsible person who is not studying or invested as Guía Mayor', async () => {
-    mockPrisma.enrollments.findFirst.mockResolvedValue(null);
+    mockRoleEligibility.evaluateGuideMajor.mockResolvedValue({
+      eligible: false,
+      basis: null,
+      enrollmentId: null,
+    });
 
     await expect(service.createAssignment(baseParams)).rejects.toMatchObject({
       code: 'CLASS_COUNSELOR_GUIDE_MAJOR_REQUIRED',
     });
 
-    expect(mockPrisma.enrollments.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          user_id: baseParams.dto.user_id,
-        }),
-      }),
+    expect(mockRoleEligibility.evaluateGuideMajor).toHaveBeenCalledWith(
+      baseParams.dto.user_id,
     );
     expect(
       mockPrisma.class_counselor_assignments.create,
     ).not.toHaveBeenCalled();
+  });
+
+  it('accepts a responsible person with an APPROVED Guía Mayor enrollment', async () => {
+    mockRoleEligibility.evaluateGuideMajor.mockResolvedValue({
+      eligible: true,
+      basis: 'APPROVED',
+      enrollmentId: 56,
+    });
+
+    await expect(service.createAssignment(baseParams)).resolves.toBeDefined();
+    expect(mockPrisma.class_counselor_assignments.create).toHaveBeenCalled();
   });
 
   it('lists class counselor assignments for a club section and year', async () => {

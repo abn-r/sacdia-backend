@@ -6,6 +6,7 @@ import { AnnualMembershipPolicyService } from './annual-membership-policy.servic
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
 import { ClassesModule } from '../classes/classes.module';
+import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-eligibility.module';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 /**
@@ -17,7 +18,12 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
  *   POST /api/v1/users/:userId/membership/annual-enroll (D01: 403)
  */
 @Module({
-  imports: [PrismaModule, CommonModule, ClassesModule],
+  imports: [
+    PrismaModule,
+    CommonModule,
+    ClassesModule,
+    ClubRoleEligibilityModule,
+  ],
   controllers: [AnnualContinuationsController, AnnualEnrollController],
   providers: [
     AnnualMembershipService,

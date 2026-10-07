@@ -18,6 +18,7 @@ import {
   AppInternalServerErrorException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 export type PostRegistrationActorContext = {
   actorUserId: string;
@@ -56,6 +57,7 @@ export class PostRegistrationService {
     private membershipRequestsService: MembershipRequestsService,
     private authorizationContext: AuthorizationContextService,
     private authorizationContextVersion: AuthorizationContextVersionService,
+    private roleEligibility: ClubRoleEligibilityService,
   ) {}
 
   async getStatus(
@@ -505,6 +507,14 @@ export class PostRegistrationService {
     if (existingConflictingMembership) {
       throw new AppConflictException(ErrorCode.POST_REG_DUPLICATE_MEMBERSHIP);
     }
+
+    // --- Role eligibility (rule 3: GM-eligible user cannot be a member of AV/CQ) ---
+    await this.roleEligibility.assertAssignment({
+      userId: params.userId,
+      roleName: 'member',
+      clubSectionId: params.clubInstanceId,
+      db: tx,
+    });
 
     // --- Create or reactivate assignment with pending status ---
     const expiresAt = new Date();

@@ -8,6 +8,7 @@ import {
   AppConflictException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 const MEMBERSHIP_REQUEST_REVIEWER_ROLES = [
   'director',
@@ -31,6 +32,7 @@ export class MembershipRequestsService {
     private readonly authorizationContext: AuthorizationContextService,
     private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly notificationsService: NotificationsService,
+    private readonly roleEligibility: ClubRoleEligibilityService,
   ) {}
 
   /**
@@ -84,6 +86,23 @@ export class MembershipRequestsService {
   ) {
     const { result, assignment } = await this.prisma.$transaction(
       async (tx) => {
+        const pending = await tx.club_role_assignments.findFirst({
+          where: {
+            assignment_id: assignmentId,
+            club_section_id: clubSectionId,
+            status: 'pending',
+            active: true,
+          },
+          select: { user_id: true, roles: { select: { role_name: true } } },
+        });
+        if (pending) {
+          await this.roleEligibility.assertAssignment({
+            userId: pending.user_id,
+            roleName: pending.roles.role_name,
+            clubSectionId,
+            db: tx,
+          });
+        }
         const result = await tx.club_role_assignments.updateMany({
           where: {
             assignment_id: assignmentId,

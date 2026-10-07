@@ -8,6 +8,8 @@ import { ClassAssignmentResolverService } from '../common/services/class-assignm
 import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { AppForbiddenException } from '../common/errors/app.exception';
 
 describe('PostRegistrationService', () => {
   let service: PostRegistrationService;
@@ -127,8 +129,15 @@ describe('PostRegistrationService', () => {
     bump: jest.fn().mockResolvedValue(1n),
   };
 
+  const mockRoleEligibility = {
+    assertAssignment: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockRoleEligibility.assertAssignment.mockReset().mockResolvedValue({
+      allowed: true,
+    });
 
     transactionMock = createTransactionMock();
 
@@ -159,6 +168,7 @@ describe('PostRegistrationService', () => {
           provide: AuthorizationContextVersionService,
           useValue: mockAuthorizationContextVersionService,
         },
+        { provide: ClubRoleEligibilityService, useValue: mockRoleEligibility },
       ],
     }).compile();
 
@@ -472,6 +482,40 @@ describe('PostRegistrationService', () => {
         },
       });
       expect(transactionMock.users_pr.update).toHaveBeenCalled();
+    });
+
+    it('asserts member eligibility in the selected section before creating the pending member', async () => {
+      await service.completeStep3(userId, dto, ownerActor);
+
+      expect(mockRoleEligibility.assertAssignment).toHaveBeenCalledWith({
+        userId,
+        roleName: 'member',
+        clubSectionId: 10,
+        db: transactionMock,
+      });
+    });
+
+    it('rejects a GM-eligible user picking an AV/CQ section and writes nothing', async () => {
+      mockRoleEligibility.assertAssignment.mockRejectedValueOnce(
+        new AppForbiddenException(
+          ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+        ),
+      );
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+      });
+
+      expect(
+        transactionMock.club_role_assignments.create,
+      ).not.toHaveBeenCalled();
+      expect(
+        transactionMock.club_role_assignments.update,
+      ).not.toHaveBeenCalled();
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
     });
 
     it('should reject a new club selection when the user already has another pending request', async () => {

@@ -496,6 +496,7 @@
   "CLUB_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role est requis pour cette opération",
   "CLUB_ROLE_GUIDE_MAJOR_REQUIRED": "Un Guide supérieur en cours ou investi est requis pour ce rôle de club",
+  "CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION": "Un Guide supérieur ne peut être membre que d'une section de Guides supérieurs",
   "CLUB_ROLE_NOT_FOUND": "Rôle introuvable dans la catégorie CLUB",
   "CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID": "Cette année ecclésiastique n'est pas valide pour cette opération. La succession immédiate utilise l'année en cours ; la présélection est réservée à une année future (dont la date de début est postérieure à la fin de l'année en cours).",
   "CLUB_DIRECTOR_DESIGNATION_EXISTS": "Un directeur est déjà désigné pour cette section et cette année ; utilisez le remplacement pour mettre à jour",

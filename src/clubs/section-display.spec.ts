@@ -1,6 +1,8 @@
 import {
   clubSectionDisplayLabel,
   clubTypeCycleRank,
+  clubTypeSectionKind,
+  isAvCqClubType,
   clubTypeSectionName,
   findMasterGuidesClubTypeId,
   isMasterGuidesClubType,
@@ -34,9 +36,9 @@ describe('club section display', () => {
     expect(isMasterGuidesClubType({ name: 'Master Guides' })).toBe(true);
     expect(isMasterGuidesClubType({ slug: 'master_guides' })).toBe(true);
     expect(isMasterGuidesClubType({ code: 'master_guilds' })).toBe(true);
-    expect(isMasterGuidesClubType({ name: 'Pathfinders', club_type_id: 3 })).toBe(
-      false,
-    );
+    expect(
+      isMasterGuidesClubType({ name: 'Pathfinders', club_type_id: 3 }),
+    ).toBe(false);
     expect(isMasterGuidesClubType({ name: 'Aventureros' })).toBe(false);
     expect(isMasterGuidesClubType({ name: 'Conquistadores' })).toBe(false);
 
@@ -53,5 +55,24 @@ describe('club section display', () => {
         { club_type_id: 3, name: 'Conquistadores' },
       ]),
     ).toBeNull();
+  });
+
+  it('maps club type names to a section kind (accents, case, English)', () => {
+    expect(clubTypeSectionKind('Aventureros')).toBe('AV');
+    expect(clubTypeSectionKind('ADVENTURERS')).toBe('AV');
+    expect(clubTypeSectionKind('Conquistadores')).toBe('CQ');
+    expect(clubTypeSectionKind('pathfinders')).toBe('CQ');
+    expect(clubTypeSectionKind('Guías Mayores')).toBe('GM');
+    expect(clubTypeSectionKind('GUIAS MAYORES')).toBe('GM');
+    expect(clubTypeSectionKind('Master Guide')).toBe('GM');
+    expect(clubTypeSectionKind('Otro')).toBe('UNKNOWN');
+    expect(clubTypeSectionKind(null)).toBe('UNKNOWN');
+  });
+
+  it('flags only Aventureros/Conquistadores as AV/CQ', () => {
+    expect(isAvCqClubType('Aventureros')).toBe(true);
+    expect(isAvCqClubType('Conquistadores')).toBe(true);
+    expect(isAvCqClubType('Guías Mayores')).toBe(false);
+    expect(isAvCqClubType('???')).toBe(false);
   });
 });
