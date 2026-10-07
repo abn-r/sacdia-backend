@@ -49,19 +49,6 @@ import type { AuthorizationSnapshot } from '../common/services/authorization-con
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
-const CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS = [
-  { name: { contains: 'Guía Mayor', mode: 'insensitive' as const } },
-  { name: { contains: 'Guia Mayor', mode: 'insensitive' as const } },
-];
-const CLASS_COUNSELOR_GUIDE_MAJOR_FINISHED_STATUSES = [
-  'APPROVED',
-  'INVESTIDO',
-] as const;
-const CLASS_COUNSELOR_GUIDE_MAJOR_INELIGIBLE_ACTIVE_STATUSES = [
-  'REJECTED',
-  'EXPIRED',
-] as const;
-
 @Injectable()
 export class ClubsService {
   private readonly logger = new Logger(ClubsService.name);
@@ -164,7 +151,9 @@ export class ClubsService {
         districts: true,
         local_fields: true,
         club_sections: {
-          include: { club_types: { select: { club_type_id: true, name: true } } },
+          include: {
+            club_types: { select: { club_type_id: true, name: true } },
+          },
         },
       },
     });
@@ -211,7 +200,10 @@ export class ClubsService {
     }
 
     const masterGuidesTypeId = findMasterGuidesClubTypeId(catalogTypes);
-    if (masterGuidesTypeId != null && !enabledIds.includes(masterGuidesTypeId)) {
+    if (
+      masterGuidesTypeId != null &&
+      !enabledIds.includes(masterGuidesTypeId)
+    ) {
       enabledIds.push(masterGuidesTypeId);
     }
 
@@ -327,10 +319,7 @@ export class ClubsService {
   // SECTIONS (unified club_sections)
   // ========================================
 
-  async getSections(
-    clubId: number,
-    options?: { includeInactive?: boolean },
-  ) {
+  async getSections(clubId: number, options?: { includeInactive?: boolean }) {
     await this.findOne(clubId);
     // Intentionally limited select: this endpoint is called without
     // club_sections:read permission to support the post-registration flow.
@@ -532,46 +521,26 @@ export class ClubsService {
       ),
     ];
 
+    const guideMajorEligibilityByUserId =
+      await this.roleEligibility.evaluateMany(memberUserIds);
+    const guideMajorEnrollmentIds = [...guideMajorEligibilityByUserId.values()]
+      .map((eligibility) => eligibility.enrollmentId)
+      .filter((id): id is number => id !== null);
     const guideMajorEnrollments =
-      memberUserIds.length > 0
+      guideMajorEnrollmentIds.length > 0
         ? await this.prisma.enrollments.findMany({
-            where: {
-              user_id: { in: memberUserIds },
-              classes: {
-                OR: CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS,
-              },
-              OR: [
-                {
-                  active: true,
-                  investiture_status: {
-                    notIn: [
-                      ...CLASS_COUNSELOR_GUIDE_MAJOR_INELIGIBLE_ACTIVE_STATUSES,
-                    ],
-                  },
-                },
-                {
-                  investiture_status: {
-                    in: [...CLASS_COUNSELOR_GUIDE_MAJOR_FINISHED_STATUSES],
-                  },
-                },
-              ],
-            },
+            where: { enrollment_id: { in: guideMajorEnrollmentIds } },
             select: {
               user_id: true,
               enrollment_id: true,
               class_id: true,
               investiture_status: true,
               active: true,
-              classes: {
-                select: {
-                  class_id: true,
-                  name: true,
-                },
-              },
+              classes: { select: { class_id: true, name: true } },
             },
           })
         : [];
-    const guideMajorEligibilityByUserId = new Map(
+    const guideMajorClassByUserId = new Map(
       guideMajorEnrollments.map((enrollment) => [
         enrollment.user_id,
         {
@@ -615,8 +584,14 @@ export class ClubsService {
               investiture_status: currentEnrollment.investiture_status,
             }
           : null;
-        const guideMajorEligibility =
-          guideMajorEligibilityByUserId.get(member.user_id) ?? null;
+        const guideMajorEligibility = guideMajorEligibilityByUserId.get(
+          member.user_id,
+        );
+        const guideMajorEligible = guideMajorEligibility?.eligible ?? false;
+        const guideMajorBasis = guideMajorEligibility?.basis ?? null;
+        const guideMajorClass = guideMajorEligible
+          ? (guideMajorClassByUserId.get(member.user_id) ?? null)
+          : null;
         const userFields = { ...(user ?? {}) };
         delete (userFields as { enrollments?: unknown }).enrollments;
         const resolvedUserImage =
@@ -627,8 +602,10 @@ export class ClubsService {
         return {
           ...member,
           is_enrolled: member.active,
-          class_counselor_eligible: guideMajorEligibility !== null,
-          guide_major_class: guideMajorEligibility,
+          guide_major_eligible: guideMajorEligible,
+          guide_major_basis: guideMajorBasis,
+          class_counselor_eligible: guideMajorEligible,
+          guide_major_class: guideMajorClass,
           current_class: currentClass,
           current_class_id: currentClass?.class_id ?? null,
           current_class_name: currentClass?.name ?? null,
@@ -637,8 +614,10 @@ export class ClubsService {
             ? {
                 ...userFields,
                 user_image: resolvedUserImage,
-                class_counselor_eligible: guideMajorEligibility !== null,
-                guide_major_class: guideMajorEligibility,
+                guide_major_eligible: guideMajorEligible,
+                guide_major_basis: guideMajorBasis,
+                class_counselor_eligible: guideMajorEligible,
+                guide_major_class: guideMajorClass,
                 current_class: currentClass,
               }
             : member.users,
@@ -1474,12 +1453,10 @@ export class ClubsService {
       try {
         activeYear = await this.ecclesiasticalYear.getCurrentYear();
       } catch (err) {
-        if (
-          !(
-            err instanceof AppNotFoundException &&
-            err.code === ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND
-          )
-        ) {
+        if (!(
+          err instanceof AppNotFoundException &&
+          err.code === ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND
+        )) {
           throw err;
         }
       }
