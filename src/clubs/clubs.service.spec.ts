@@ -117,6 +117,7 @@ describe('ClubsService', () => {
   const mockRoleEligibility = {
     assertAssignment: jest.fn(),
     evaluateMany: jest.fn(),
+    listAssignableRoles: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -689,6 +690,38 @@ describe('ClubsService', () => {
         service.updateSection(30, { fee: 15, souls_target: 8 }),
       ).resolves.toMatchObject({ fee: 15 });
       expect(mockPrismaService.club_sections.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getAssignableRoles', () => {
+    it('delegates to the eligibility service when the section belongs to the club', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 10,
+      });
+      const payload = {
+        guide_major_eligible: false,
+        section_kind: 'CQ',
+        roles: [],
+      };
+      mockRoleEligibility.listAssignableRoles.mockResolvedValue(payload);
+
+      await expect(service.getAssignableRoles(10, 7, 'u1')).resolves.toBe(
+        payload,
+      );
+      expect(mockRoleEligibility.listAssignableRoles).toHaveBeenCalledWith({
+        userId: 'u1',
+        clubSectionId: 7,
+      });
+    });
+
+    it('throws not found when the section belongs to another club', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      await expect(service.getAssignableRoles(10, 7, 'u1')).rejects.toThrow(
+        AppNotFoundException,
+      );
+      expect(mockRoleEligibility.listAssignableRoles).not.toHaveBeenCalled();
     });
   });
 

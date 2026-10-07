@@ -371,6 +371,27 @@ export class ClubsController {
     return this.clubsService.getMembers(sectionId);
   }
 
+  @Get(':clubId/sections/:sectionId/members/:userId/assignable-roles')
+  @RequirePermissions('club_roles:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Roles asignables a un usuario en la sección',
+    description:
+      'Evalúa la elegibilidad de Guía Mayor y retorna cada rol de club con allowed y, si no es asignable, el código de violación',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiResponse({ status: 200, description: 'Roles con elegibilidad' })
+  @ApiResponse({ status: 404, description: 'Sección no encontrada' })
+  async getAssignableRoles(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('userId') userId: string,
+  ) {
+    return this.clubsService.getAssignableRoles(clubId, sectionId, userId);
+  }
+
   @Post(':clubId/sections/:sectionId/roles')
   @RequirePermissions('club_roles:assign')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })

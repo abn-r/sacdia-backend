@@ -431,6 +431,20 @@ export class ClubsService {
   // ROLE ASSIGNMENTS
   // ========================================
 
+  async getAssignableRoles(clubId: number, sectionId: number, userId: string) {
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { main_club_id: true },
+    });
+    if (!section || section.main_club_id !== clubId) {
+      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
+    }
+    return this.roleEligibility.listAssignableRoles({
+      userId,
+      clubSectionId: sectionId,
+    });
+  }
+
   async getMembers(sectionId: number) {
     const [section, currentYear] = await Promise.all([
       this.prisma.club_sections.findUnique({

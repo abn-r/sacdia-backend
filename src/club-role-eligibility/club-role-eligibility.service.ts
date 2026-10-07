@@ -173,28 +173,37 @@ export class ClubRoleEligibilityService {
     db = this.prisma,
   }: AssignmentForKindParams): Promise<ClubRoleAssignmentEligibility> {
     const gm = await this.evaluateGuideMajor(userId, db);
-    const isMember = roleName === MEMBER_ROLE_NAME;
-    let violation: RoleViolation | null = null;
+    const violation = this.findViolation(userId, roleName, gm, sectionKind);
 
+    return { ...gm, allowed: violation === null, sectionKind, violation };
+  }
+
+  private findViolation(
+    userId: string,
+    roleName: string,
+    gm: GuideMajorEligibility,
+    sectionKind: SectionKind,
+  ): RoleViolation | null {
+    const isMember = roleName === MEMBER_ROLE_NAME;
     if (!isMember && !gm.eligible) {
-      violation = {
+      return {
         rule: 'RULE_1_MEMBER_ONLY',
         code: ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED,
       };
-    } else if (isMember && gm.eligible) {
+    }
+    if (isMember && gm.eligible) {
       if (sectionKind === 'UNKNOWN') {
         this.logger.warn(
           `Unresolvable section type for user ${userId}; skipping rule 3`,
         );
       } else if (sectionKind !== 'GM') {
-        violation = {
+        return {
           rule: 'RULE_3_GM_MEMBER_IN_AV_CQ',
           code: ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
         };
       }
     }
-
-    return { ...gm, allowed: violation === null, sectionKind, violation };
+    return null;
   }
 
   async assertAssignment(
@@ -218,7 +227,13 @@ export class ClubRoleEligibilityService {
   }): Promise<{
     guide_major_eligible: boolean;
     section_kind: SectionKind;
-    roles: { role_id: string; role_name: string }[];
+    roles: {
+      role_id: string;
+      role_name: string;
+      allowed: boolean;
+      violation_rule: RoleViolation['rule'] | null;
+      violation_code: ErrorCode | null;
+    }[];
   }> {
     const sectionKind = await this.resolveSectionKind(clubSectionId, db);
     const gm = await this.evaluateGuideMajor(userId, db);
@@ -228,13 +243,20 @@ export class ClubRoleEligibilityService {
       orderBy: { role_name: 'asc' },
     });
 
-    const roles = clubRoles.filter((role) =>
-      gm.eligible
-        ? role.role_name !== MEMBER_ROLE_NAME ||
-          sectionKind === 'GM' ||
-          sectionKind === 'UNKNOWN'
-        : role.role_name === MEMBER_ROLE_NAME,
-    );
+    const roles = clubRoles.map((role) => {
+      const violation = this.findViolation(
+        userId,
+        role.role_name,
+        gm,
+        sectionKind,
+      );
+      return {
+        ...role,
+        allowed: violation === null,
+        violation_rule: violation?.rule ?? null,
+        violation_code: violation?.code ?? null,
+      };
+    });
 
     return {
       guide_major_eligible: gm.eligible,

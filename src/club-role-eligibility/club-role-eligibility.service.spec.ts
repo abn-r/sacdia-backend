@@ -267,7 +267,29 @@ describe('ClubRoleEligibilityService', () => {
       ).resolves.toEqual({
         guide_major_eligible: false,
         section_kind: 'CQ',
-        roles: [{ role_id: 'r2', role_name: 'member' }],
+        roles: [
+          {
+            role_id: 'r1',
+            role_name: 'director',
+            allowed: false,
+            violation_rule: 'RULE_1_MEMBER_ONLY',
+            violation_code: ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED,
+          },
+          {
+            role_id: 'r2',
+            role_name: 'member',
+            allowed: true,
+            violation_rule: null,
+            violation_code: null,
+          },
+          {
+            role_id: 'r3',
+            role_name: 'counselor',
+            allowed: false,
+            violation_rule: 'RULE_1_MEMBER_ONLY',
+            violation_code: ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED,
+          },
+        ],
       });
     });
 
@@ -280,10 +302,13 @@ describe('ClubRoleEligibilityService', () => {
         clubSectionId: 7,
       });
       expect(result.guide_major_eligible).toBe(true);
-      expect(result.roles.map((r) => r.role_name)).toEqual([
-        'director',
-        'counselor',
-      ]);
+      expect(
+        result.roles.filter((r) => r.allowed).map((r) => r.role_name),
+      ).toEqual(['director', 'counselor']);
+      expect(result.roles.find((r) => r.role_name === 'member')).toMatchObject({
+        allowed: false,
+        violation_code: ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+      });
     });
 
     it('eligible in GM: member plus service roles', async () => {
@@ -294,7 +319,7 @@ describe('ClubRoleEligibilityService', () => {
         userId,
         clubSectionId: 7,
       });
-      expect(result.roles).toHaveLength(3);
+      expect(result.roles.every((r) => r.allowed)).toBe(true);
       expect(result.section_kind).toBe('GM');
     });
   });
