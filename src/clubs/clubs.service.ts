@@ -47,19 +47,7 @@ import {
 } from '../common/authorization/actor-territory-scope';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
-
-const CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS = [
-  { name: { contains: 'Guía Mayor', mode: 'insensitive' as const } },
-  { name: { contains: 'Guia Mayor', mode: 'insensitive' as const } },
-];
-const CLASS_COUNSELOR_GUIDE_MAJOR_FINISHED_STATUSES = [
-  'APPROVED',
-  'INVESTIDO',
-] as const;
-const CLASS_COUNSELOR_GUIDE_MAJOR_INELIGIBLE_ACTIVE_STATUSES = [
-  'REJECTED',
-  'EXPIRED',
-] as const;
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 @Injectable()
 export class ClubsService {
@@ -85,6 +73,7 @@ export class ClubsService {
     private readonly notificationsService: NotificationsService,
     private readonly auditLogs: AuditLogsService,
     private readonly ecclesiasticalYear: EcclesiasticalYearService,
+    private readonly roleEligibility: ClubRoleEligibilityService,
   ) {}
 
   // ========================================
@@ -162,7 +151,9 @@ export class ClubsService {
         districts: true,
         local_fields: true,
         club_sections: {
-          include: { club_types: { select: { club_type_id: true, name: true } } },
+          include: {
+            club_types: { select: { club_type_id: true, name: true } },
+          },
         },
       },
     });
@@ -209,7 +200,10 @@ export class ClubsService {
     }
 
     const masterGuidesTypeId = findMasterGuidesClubTypeId(catalogTypes);
-    if (masterGuidesTypeId != null && !enabledIds.includes(masterGuidesTypeId)) {
+    if (
+      masterGuidesTypeId != null &&
+      !enabledIds.includes(masterGuidesTypeId)
+    ) {
       enabledIds.push(masterGuidesTypeId);
     }
 
@@ -325,10 +319,7 @@ export class ClubsService {
   // SECTIONS (unified club_sections)
   // ========================================
 
-  async getSections(
-    clubId: number,
-    options?: { includeInactive?: boolean },
-  ) {
+  async getSections(clubId: number, options?: { includeInactive?: boolean }) {
     await this.findOne(clubId);
     // Intentionally limited select: this endpoint is called without
     // club_sections:read permission to support the post-registration flow.
@@ -440,6 +431,32 @@ export class ClubsService {
   // ROLE ASSIGNMENTS
   // ========================================
 
+  async getAssignableRoles(clubId: number, sectionId: number, userId: string) {
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { main_club_id: true },
+    });
+    if (!section || section.main_club_id !== clubId) {
+      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
+    }
+    // Do not let `club_roles:read` holders probe the GM eligibility of
+    // arbitrary users: the target must hold an assignment in this section.
+    const assignmentCount = await this.prisma.club_role_assignments.count({
+      where: {
+        user_id: userId,
+        club_section_id: sectionId,
+        OR: [{ status: null }, { status: { not: 'deleted' } }],
+      },
+    });
+    if (assignmentCount === 0) {
+      throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
+    }
+    return this.roleEligibility.listAssignableRoles({
+      userId,
+      clubSectionId: sectionId,
+    });
+  }
+
   async getMembers(sectionId: number) {
     const [section, currentYear] = await Promise.all([
       this.prisma.club_sections.findUnique({
@@ -530,46 +547,26 @@ export class ClubsService {
       ),
     ];
 
+    const guideMajorEligibilityByUserId =
+      await this.roleEligibility.evaluateMany(memberUserIds);
+    const guideMajorEnrollmentIds = [...guideMajorEligibilityByUserId.values()]
+      .map((eligibility) => eligibility.enrollmentId)
+      .filter((id): id is number => id !== null);
     const guideMajorEnrollments =
-      memberUserIds.length > 0
+      guideMajorEnrollmentIds.length > 0
         ? await this.prisma.enrollments.findMany({
-            where: {
-              user_id: { in: memberUserIds },
-              classes: {
-                OR: CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS,
-              },
-              OR: [
-                {
-                  active: true,
-                  investiture_status: {
-                    notIn: [
-                      ...CLASS_COUNSELOR_GUIDE_MAJOR_INELIGIBLE_ACTIVE_STATUSES,
-                    ],
-                  },
-                },
-                {
-                  investiture_status: {
-                    in: [...CLASS_COUNSELOR_GUIDE_MAJOR_FINISHED_STATUSES],
-                  },
-                },
-              ],
-            },
+            where: { enrollment_id: { in: guideMajorEnrollmentIds } },
             select: {
               user_id: true,
               enrollment_id: true,
               class_id: true,
               investiture_status: true,
               active: true,
-              classes: {
-                select: {
-                  class_id: true,
-                  name: true,
-                },
-              },
+              classes: { select: { class_id: true, name: true } },
             },
           })
         : [];
-    const guideMajorEligibilityByUserId = new Map(
+    const guideMajorClassByUserId = new Map(
       guideMajorEnrollments.map((enrollment) => [
         enrollment.user_id,
         {
@@ -613,8 +610,14 @@ export class ClubsService {
               investiture_status: currentEnrollment.investiture_status,
             }
           : null;
-        const guideMajorEligibility =
-          guideMajorEligibilityByUserId.get(member.user_id) ?? null;
+        const guideMajorEligibility = guideMajorEligibilityByUserId.get(
+          member.user_id,
+        );
+        const guideMajorEligible = guideMajorEligibility?.eligible ?? false;
+        const guideMajorBasis = guideMajorEligibility?.basis ?? null;
+        const guideMajorClass = guideMajorEligible
+          ? (guideMajorClassByUserId.get(member.user_id) ?? null)
+          : null;
         const userFields = { ...(user ?? {}) };
         delete (userFields as { enrollments?: unknown }).enrollments;
         const resolvedUserImage =
@@ -625,8 +628,10 @@ export class ClubsService {
         return {
           ...member,
           is_enrolled: member.active,
-          class_counselor_eligible: guideMajorEligibility !== null,
-          guide_major_class: guideMajorEligibility,
+          guide_major_eligible: guideMajorEligible,
+          guide_major_basis: guideMajorBasis,
+          class_counselor_eligible: guideMajorEligible,
+          guide_major_class: guideMajorClass,
           current_class: currentClass,
           current_class_id: currentClass?.class_id ?? null,
           current_class_name: currentClass?.name ?? null,
@@ -635,8 +640,10 @@ export class ClubsService {
             ? {
                 ...userFields,
                 user_image: resolvedUserImage,
-                class_counselor_eligible: guideMajorEligibility !== null,
-                guide_major_class: guideMajorEligibility,
+                guide_major_eligible: guideMajorEligible,
+                guide_major_basis: guideMajorBasis,
+                class_counselor_eligible: guideMajorEligible,
+                guide_major_class: guideMajorClass,
                 current_class: currentClass,
               }
             : member.users,
@@ -653,6 +660,7 @@ export class ClubsService {
     const startDate = dto.start_date ?? new Date();
     this.assertValidRoleDateRange(startDate, dto.end_date);
     const roleId = await this.resolveRoleId(dto);
+    const targetRoleName = await this.resolveRoleName(roleId);
     const ecclesiasticalYearId =
       dto.ecclesiastical_year_id ??
       (await this.getActiveEcclesiasticalYearId());
@@ -682,6 +690,12 @@ export class ClubsService {
     };
 
     const created = await this.prisma.$transaction(async (tx) => {
+      await this.roleEligibility.assertAssignment({
+        userId: dto.user_id,
+        roleName: targetRoleName,
+        clubSectionId: dto.club_section_id as number,
+        db: tx,
+      });
       const created = await tx.club_role_assignments.create({
         data: assignment,
         include: {
@@ -822,7 +836,24 @@ export class ClubsService {
       updateData.status = dto.status;
     }
 
+    const resultingStatus = dto.status ?? existing.status;
+    const becomesActive =
+      resultingStatus === 'active' &&
+      (targetRoleId !== existing.role_id || existing.status !== 'active');
+    const eligibilityRoleName =
+      becomesActive && existing.club_section_id != null
+        ? await this.resolveRoleName(targetRoleId)
+        : null;
+
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (eligibilityRoleName !== null && existing.club_section_id != null) {
+        await this.roleEligibility.assertAssignment({
+          userId: existing.user_id,
+          roleName: eligibilityRoleName,
+          clubSectionId: existing.club_section_id,
+          db: tx,
+        });
+      }
       const updated = await tx.club_role_assignments.update({
         where: { assignment_id: assignmentId },
         data: updateData,
@@ -941,6 +972,13 @@ export class ClubsService {
         );
       }
 
+      await this.roleEligibility.assertAssignment({
+        userId: dto.successor_user_id,
+        roleName: 'director',
+        clubSectionId: sectionId,
+        db: tx,
+      });
+
       const ended = await tx.club_role_assignments.update({
         where: { assignment_id: dto.current_assignment_id },
         data: {
@@ -1053,6 +1091,13 @@ export class ClubsService {
     const startDate = dto.start_date ?? new Date();
 
     const created = await this.prisma.$transaction(async (tx) => {
+      await this.roleEligibility.assertAssignment({
+        userId: dto.user_id,
+        roleName: 'director',
+        clubSectionId: sectionId,
+        db: tx,
+      });
+
       const existingActiveDirectorCount = await tx.club_role_assignments.count({
         where: {
           club_section_id: sectionId,
@@ -1434,12 +1479,10 @@ export class ClubsService {
       try {
         activeYear = await this.ecclesiasticalYear.getCurrentYear();
       } catch (err) {
-        if (
-          !(
-            err instanceof AppNotFoundException &&
-            err.code === ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND
-          )
-        ) {
+        if (!(
+          err instanceof AppNotFoundException &&
+          err.code === ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND
+        )) {
           throw err;
         }
       }
@@ -1647,6 +1690,17 @@ export class ClubsService {
         }
       }
     }
+  }
+
+  private async resolveRoleName(roleId: string): Promise<string> {
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      select: { role_name: true },
+    });
+    if (!role) {
+      throw new AppBadRequestException(ErrorCode.CLUB_ROLE_NOT_FOUND);
+    }
+    return role.role_name;
   }
 
   private async assertDirectorAssignmentIsCurrentYear(

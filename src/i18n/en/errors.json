@@ -501,6 +501,7 @@
   "CLUB_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id or role is required for this operation",
   "CLUB_ROLE_GUIDE_MAJOR_REQUIRED": "An active or invested Senior Guide is required for this club role",
+  "CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION": "A Senior Guide can only be a member of a Senior Guides section",
   "CLUB_ROLE_NOT_FOUND": "Role not found in CLUB category",
   "CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID": "This ecclesiastical year is not valid for this operation. Immediate succession uses the current year; preselection is only for a future year (one whose start date is after the current year ends).",
   "CLUB_DIRECTOR_DESIGNATION_EXISTS": "A director is already designated for this section and year; use replace to update",

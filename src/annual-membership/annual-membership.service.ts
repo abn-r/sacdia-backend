@@ -15,6 +15,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { Prisma } from '@prisma/client';
 import {
   PaginationDto,
@@ -73,6 +74,7 @@ const CLASS_POLICY_BLOCKED_CODES = new Set<string>([
   ErrorCode.CLASS_GM_INVESTITURE_REQUIRED,
   ErrorCode.CLASS_NOT_AVAILABLE_FOR_YEAR,
   ErrorCode.CLASS_NOT_FOUND,
+  ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
 ]);
 
 type CurrentYear = {
@@ -109,6 +111,7 @@ export class AnnualMembershipService {
     private readonly nextClassResolver: NextClassResolver,
     private readonly classEnrollmentPolicy: ClassEnrollmentPolicyService,
     private readonly classEnrollmentWriter: ClassEnrollmentWriter,
+    private readonly roleEligibility: ClubRoleEligibilityService,
   ) {}
 
   async listContinuations(
@@ -334,6 +337,19 @@ export class AnnualMembershipService {
       return 'already_enrolled';
     }
 
+    const placement = await this.roleEligibility.evaluateAssignment({
+      userId: params.userId,
+      roleName: 'member',
+      clubSectionId: params.destSectionId,
+      db: tx,
+    });
+    if (!placement.allowed) {
+      this.logger.warn(
+        `AnnualMembership: type jump blocked for user ${params.userId} into section ${params.destSectionId} (${placement.violation?.code})`,
+      );
+      return 'skipped';
+    }
+
     const directorRole = await tx.roles.findFirst({
       where: { role_name: 'director', role_category: 'CLUB', active: true },
       select: { role_id: true },
@@ -503,6 +519,7 @@ export class AnnualMembershipService {
     }
 
     if (existingMember?.status === 'inactive') {
+      await this._assertMemberPlacement(tx, params);
       await tx.club_role_assignments.update({
         where: { assignment_id: existingMember.assignment_id },
         data: { status: 'active' },
@@ -541,6 +558,8 @@ export class AnnualMembershipService {
     if (stalledMembership) {
       return this._outcome(params, 'blocked', ErrorCode.MR_ALREADY_PENDING);
     }
+
+    await this._assertMemberPlacement(tx, params);
 
     let base: { baseSectionId: number } | null = null;
     let baseError: ErrorCode | null = null;
@@ -595,6 +614,22 @@ export class AnnualMembershipService {
 
     await this.authorizationContextVersion.bumpMany(tx, [params.userId]);
     return this._afterClass(tx, params);
+  }
+
+  /**
+   * Rule 3 guard: throws inside the per-user tx; the catch in continueUser maps
+   * the code (in CLASS_POLICY_BLOCKED_CODES) to a `blocked` outcome.
+   */
+  private async _assertMemberPlacement(
+    tx: Prisma.TransactionClient,
+    params: { userId: string; sectionId: number },
+  ): Promise<void> {
+    await this.roleEligibility.assertAssignment({
+      userId: params.userId,
+      roleName: 'member',
+      clubSectionId: params.sectionId,
+      db: tx,
+    });
   }
 
   private async _afterClass(

@@ -57,7 +57,7 @@ const baseline = {
     'effectiveWhere|T08|1|1f2269db063f',
   'certifications/eligibility/eligibility-rule-handlers.ts':
     'effectiveWhere|T08|2|9841f0b29dc2',
-  'clubs/clubs.service.ts': 'effectiveWhere|T08|8|d339f433e308',
+  'clubs/clubs.service.ts': 'effectiveWhere|T08|9|59a919b6fc32',
   'clubs/director-designation.service.ts':
     'workflowWhere|allowlist|2|b32d443733e9',
   'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|32d48d679749',
@@ -85,7 +85,7 @@ const baseline = {
   'member-of-month/member-of-month.service.ts':
     'effectiveWhere|T09|2|4a63b7e684b3',
   'membership-requests/membership-requests.service.ts':
-    'workflowWhere|allowlist|6|294fe5001f9d',
+    'workflowWhere|allowlist|7|51039ad29a67',
   'monthly-reports/monthly-reports.service.ts':
     'effectiveWhere|T09|3|b00f9c8d194d',
   'notifications/notifications.processor.ts':
@@ -99,7 +99,7 @@ const baseline = {
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
     'effectiveWhere|T08|1|11a310c43604',
   'rbac/rbac.service.ts': 'effectiveWhere|T08|1|68c2f63166fd',
-  'requests/requests.service.ts': 'effectiveWhere|T08|7|30e5ede30d88',
+  'requests/requests.service.ts': 'effectiveWhere|T08|8|a71623a3306a',
   'scoring-categories/scoring-categories.service.ts':
     'effectiveWhere|T09|2|13fb6223b7d5',
   'support/support.service.ts': 'effectiveWhere|T09|1|1048e37fdce1',

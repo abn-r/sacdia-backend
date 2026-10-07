@@ -19,9 +19,15 @@ import { ClassEnrollmentWriter } from './class-enrollment-writer.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { CoordinationModule } from '../coordination/coordination.module';
+import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-eligibility.module';
 
 @Module({
-  imports: [PrismaModule, AchievementsModule, CoordinationModule],
+  imports: [
+    PrismaModule,
+    AchievementsModule,
+    CoordinationModule,
+    ClubRoleEligibilityModule,
+  ],
   controllers: [
     ClassesController,
     UserClassesController,

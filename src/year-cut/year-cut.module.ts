@@ -5,6 +5,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
 import { AnnualMembershipModule } from '../annual-membership/annual-membership.module';
 import { ClassesModule } from '../classes/classes.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-eligibility.module';
 
 /**
  * YearCutModule — Ecclesiastical year transition for club role assignments.
@@ -18,7 +20,14 @@ import { ClassesModule } from '../classes/classes.module';
  * it must not import YearCutModule.
  */
 @Module({
-  imports: [PrismaModule, CommonModule, AnnualMembershipModule, ClassesModule],
+  imports: [
+    PrismaModule,
+    CommonModule,
+    AnnualMembershipModule,
+    ClassesModule,
+    ClubRoleEligibilityModule,
+    NotificationsModule,
+  ],
   providers: [YearCutService, YearCutCronService],
   exports: [YearCutService],
 })

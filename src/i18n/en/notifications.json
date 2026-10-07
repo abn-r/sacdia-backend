@@ -7,6 +7,10 @@
       "cron_duration_body": "Last run took {durationMs} ms, exceeding the {thresholdMs} ms threshold.",
       "cron_failure_rate_title": "Cron Job High Failure Rate: {jobName}",
       "cron_failure_rate_body": "{rate}% failure rate in the last 24 h ({failed}/{total} runs failed)."
+    },
+    "year_cut": {
+      "director_plan_skipped_title": "Director succession plan skipped",
+      "director_plan_skipped_body": "The successor in the director plan for section {sectionId} of club {club} is not eligible ({code}). The section starts the year without a director: assign one manually."
     }
   }
 }

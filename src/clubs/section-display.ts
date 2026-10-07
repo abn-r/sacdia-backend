@@ -55,13 +55,36 @@ export function clubTypeCycleRank(
   ) {
     return 1;
   }
-  if (
-    normalized.includes('aventurer') ||
-    normalized.includes('adventurer')
-  ) {
+  if (normalized.includes('aventurer') || normalized.includes('adventurer')) {
     return 0;
   }
   return -1;
+}
+
+export type SectionKind = 'AV' | 'CQ' | 'GM' | 'UNKNOWN';
+
+/** Maps a club type name to its JA cycle kind. Unknown names yield UNKNOWN. */
+export function clubTypeSectionKind(
+  clubTypeName: string | null | undefined,
+): SectionKind {
+  switch (clubTypeCycleRank(clubTypeName)) {
+    case 0:
+      return 'AV';
+    case 1:
+      return 'CQ';
+    case 2:
+      return 'GM';
+    default:
+      return 'UNKNOWN';
+  }
+}
+
+/** True for Aventureros or Conquistadores sections. */
+export function isAvCqClubType(
+  clubTypeName: string | null | undefined,
+): boolean {
+  const kind = clubTypeSectionKind(clubTypeName);
+  return kind === 'AV' || kind === 'CQ';
 }
 
 /**

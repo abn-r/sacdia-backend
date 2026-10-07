@@ -7,6 +7,10 @@
       "cron_duration_body": "La última ejecución tardó {durationMs} ms, superando el umbral de {thresholdMs} ms.",
       "cron_failure_rate_title": "Alta Tasa de Fallos en Job: {jobName}",
       "cron_failure_rate_body": "Tasa de fallos del {rate}% en las últimas 24 h ({failed}/{total} ejecuciones fallidas)."
+    },
+    "year_cut": {
+      "director_plan_skipped_title": "Plan de sucesión de director omitido",
+      "director_plan_skipped_body": "El sucesor del plan de director de la sección {sectionId} del club {club} no es elegible ({code}). La sección inicia el año sin director: asigná uno manualmente."
     }
   }
 }
