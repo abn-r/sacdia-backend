@@ -8,7 +8,11 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
-import { AppNotFoundException } from '../common/errors/app.exception';
+import {
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 describe('ClubsService', () => {
   let service: ClubsService;
@@ -110,7 +114,14 @@ describe('ClubsService', () => {
     getCurrentYear: jest.fn(),
   };
 
+  const mockRoleEligibility = {
+    assertAssignment: jest.fn(),
+  };
+
   beforeEach(async () => {
+    mockRoleEligibility.assertAssignment.mockReset().mockResolvedValue({
+      allowed: true,
+    });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClubsService,
@@ -137,6 +148,10 @@ describe('ClubsService', () => {
         {
           provide: EcclesiasticalYearService,
           useValue: mockEcclesiasticalYearService,
+        },
+        {
+          provide: ClubRoleEligibilityService,
+          useValue: mockRoleEligibility,
         },
       ],
     }).compile();
@@ -2177,6 +2192,231 @@ describe('ClubsService', () => {
       expect(result.data.deputies[0].user_id).toBe('u3');
       expect(result.data.secretaries).toHaveLength(1);
       expect(result.data.secretaries[0].user_id).toBe('u4');
+    });
+  });
+  describe('role eligibility enforcement (hard-fail)', () => {
+    const violations = [
+      ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED,
+      ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+    ];
+    const reject = (code: ErrorCode) =>
+      mockRoleEligibility.assertAssignment.mockRejectedValueOnce(
+        new AppForbiddenException(code),
+      );
+
+    describe('assignRole', () => {
+      beforeEach(() => {
+        mockPrismaService.role_slot_limits.findUnique.mockResolvedValue(null);
+        mockPrismaService.club_role_assignments.count.mockResolvedValue(0);
+        mockPrismaService.roles.findFirst.mockResolvedValue({
+          role_id: 'role-1',
+        });
+        mockPrismaService.roles.findUnique.mockResolvedValue({
+          role_name: 'member',
+        });
+        mockPrismaService.roles.findMany.mockResolvedValue([]);
+        mockPrismaService.club_role_assignments.create.mockResolvedValue({
+          assignment_id: 'assignment-1',
+          users: { name: 'Ada', paternal_last_name: 'Lovelace' },
+          roles: { role_name: 'member' },
+        });
+      });
+      const dto = {
+        user_id: 'user-1',
+        role_id: 'role-1',
+        club_section_id: 7,
+        ecclesiastical_year_id: 2026,
+      };
+
+      it('asserts inside the tx and creates when allowed', async () => {
+        await service.assignRole(dto);
+        expect(mockRoleEligibility.assertAssignment).toHaveBeenCalledWith({
+          userId: 'user-1',
+          roleName: 'member',
+          clubSectionId: 7,
+          db: mockPrismaService,
+        });
+        expect(
+          mockPrismaService.club_role_assignments.create,
+        ).toHaveBeenCalled();
+      });
+
+      it.each(violations)('throws %s and creates no row', async (code) => {
+        reject(code);
+        await expect(service.assignRole(dto)).rejects.toMatchObject({ code });
+        expect(
+          mockPrismaService.club_role_assignments.create,
+        ).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('updateRoleAssignment', () => {
+      const existing = {
+        assignment_id: 'assignment-1',
+        user_id: 'user-1',
+        role_id: 'role-member',
+        club_section_id: 7,
+        active: true,
+        status: 'active',
+        start_date: new Date('2027-01-01'),
+        end_date: null,
+        ecclesiastical_year_id: 2026,
+      };
+      beforeEach(() => {
+        mockPrismaService.club_role_assignments.findUnique.mockResolvedValue(
+          existing,
+        );
+        mockPrismaService.club_role_assignments.update.mockResolvedValue({
+          assignment_id: 'assignment-1',
+          user_id: 'user-1',
+          club_section_id: 7,
+        });
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+        mockPrismaService.role_slot_limits.findUnique.mockResolvedValue(null);
+        mockPrismaService.roles.findFirst.mockResolvedValue({
+          role_id: 'role-secretary',
+        });
+        mockPrismaService.roles.findUnique.mockResolvedValue({
+          role_name: 'secretary',
+        });
+        mockPrismaService.roles.findMany.mockResolvedValue([]);
+      });
+
+      it('asserts when the role changes', async () => {
+        await service.updateRoleAssignment('assignment-1', {
+          role_id: 'role-secretary',
+        });
+        expect(mockRoleEligibility.assertAssignment).toHaveBeenCalledWith({
+          userId: 'user-1',
+          roleName: 'secretary',
+          clubSectionId: 7,
+          db: mockPrismaService,
+        });
+      });
+
+      it.each(violations)(
+        'throws %s on role change and does not update',
+        async (code) => {
+          reject(code);
+          await expect(
+            service.updateRoleAssignment('assignment-1', {
+              role_id: 'role-secretary',
+            }),
+          ).rejects.toMatchObject({ code });
+          expect(
+            mockPrismaService.club_role_assignments.update,
+          ).not.toHaveBeenCalled();
+        },
+      );
+
+      it('asserts when reactivating a non-active assignment', async () => {
+        mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+          ...existing,
+          active: false,
+          status: 'inactive',
+        });
+        await service.updateRoleAssignment('assignment-1', {
+          status: 'active',
+        });
+        expect(mockRoleEligibility.assertAssignment).toHaveBeenCalledTimes(1);
+      });
+
+      it('never checks unrelated edits or ending (legacy violators)', async () => {
+        reject(ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED);
+        await service.updateRoleAssignment('assignment-1', {
+          end_date: new Date('2027-06-01'),
+        });
+        await service.updateRoleAssignment('assignment-1', {
+          status: 'ended',
+        });
+        expect(mockRoleEligibility.assertAssignment).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('director paths', () => {
+      const actorUserId = '00000000-0000-0000-0000-000000000001';
+      const directorRoleId = '00000000-0000-0000-0000-000000000006';
+      beforeEach(() => {
+        mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+          year_id: 2026,
+          start_date: new Date('2026-01-01'),
+          end_date: new Date('2026-12-31'),
+          active: true,
+        });
+        mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(
+          true,
+        );
+        mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+        mockPrismaService.club_sections.findUnique.mockResolvedValue({
+          main_club_id: 99,
+        });
+        mockPrismaService.roles.findFirst.mockResolvedValue({
+          role_id: directorRoleId,
+        });
+      });
+
+      it.each(violations)(
+        'assignInitialSectionDirector throws %s and creates nothing',
+        async (code) => {
+          const tx = {
+            club_role_assignments: {
+              count: jest.fn().mockResolvedValue(0),
+              create: jest.fn(),
+            },
+          };
+          mockPrismaService.$transaction = jest.fn((cb) => cb(tx));
+          reject(code);
+          await expect(
+            service.assignInitialSectionDirector(7, actorUserId, {
+              user_id: 'user-2',
+              ecclesiastical_year_id: 2026,
+            }),
+          ).rejects.toMatchObject({ code });
+          expect(mockRoleEligibility.assertAssignment).toHaveBeenCalledWith(
+            expect.objectContaining({
+              userId: 'user-2',
+              roleName: 'director',
+              clubSectionId: 7,
+              db: tx,
+            }),
+          );
+          expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(violations)(
+        'succeedSectionDirector throws %s and neither ends nor creates',
+        async (code) => {
+          const tx = {
+            club_role_assignments: {
+              findUnique: jest.fn().mockResolvedValue({
+                assignment_id: 'cur',
+                user_id: 'old',
+                club_section_id: 7,
+                role_id: directorRoleId,
+                active: true,
+                status: 'active',
+                ecclesiastical_year_id: 2026,
+                roles: { role_name: 'director' },
+              }),
+              count: jest.fn().mockResolvedValue(0),
+              update: jest.fn(),
+              create: jest.fn(),
+            },
+          };
+          mockPrismaService.$transaction = jest.fn((cb) => cb(tx));
+          reject(code);
+          await expect(
+            service.succeedSectionDirector(7, actorUserId, {
+              current_assignment_id: 'cur',
+              successor_user_id: 'successor',
+              ecclesiastical_year_id: 2026,
+            }),
+          ).rejects.toMatchObject({ code });
+          expect(tx.club_role_assignments.update).not.toHaveBeenCalled();
+          expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
+        },
+      );
     });
   });
 });

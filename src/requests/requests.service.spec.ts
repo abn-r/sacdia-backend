@@ -4,6 +4,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 describe('RequestsService', () => {
   const createTransactionMock = () => ({
@@ -124,10 +126,17 @@ describe('RequestsService', () => {
     bump: jest.fn().mockResolvedValue(1n),
   };
 
+  const roleEligibility = {
+    assertAssignment: jest.fn(),
+  };
+
   let service: RequestsService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    roleEligibility.assertAssignment.mockReset().mockResolvedValue({
+      allowed: true,
+    });
     authorizationContext.canManageClub.mockResolvedValue(false);
     transactionMock = createTransactionMock();
     prisma.$transaction.mockImplementation(
@@ -176,6 +185,7 @@ describe('RequestsService', () => {
       notifications as unknown as NotificationsService,
       authorizationContext as unknown as AuthorizationContextService,
       authorizationContextVersion as unknown as AuthorizationContextVersionService,
+      roleEligibility as unknown as ClubRoleEligibilityService,
     );
   });
 
@@ -454,6 +464,56 @@ describe('RequestsService', () => {
     });
   });
 
+  describe('createAssignmentRequest eligibility', () => {
+    beforeEach(() => {
+      prisma.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 20,
+      });
+      prisma.users.findUnique.mockResolvedValue({ user_id: 'user-2' });
+      prisma.roles.findUnique.mockResolvedValue({
+        role_id: 'role-x',
+        role_name: 'secretary',
+      });
+      prisma.role_slot_limits.findUnique.mockResolvedValue(null);
+      prisma.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      prisma.club_role_assignments.count.mockResolvedValue(0);
+      prisma.role_assignment_requests.count.mockResolvedValue(0);
+      prisma.roles.findMany.mockResolvedValue([]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      prisma.role_assignment_requests.findFirst.mockResolvedValue(null);
+      prisma.role_assignment_requests.create.mockResolvedValue({
+        request_id: 'req-new',
+      });
+    });
+
+    it('creates the request when the assignment is allowed', async () => {
+      await service.createAssignmentRequest(20, 'user-2', 'role-x', 'req-1');
+
+      expect(roleEligibility.assertAssignment).toHaveBeenCalledWith({
+        userId: 'user-2',
+        roleName: 'secretary',
+        clubSectionId: 20,
+      });
+      expect(prisma.role_assignment_requests.create).toHaveBeenCalled();
+    });
+
+    it.each([
+      ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED,
+      ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+    ])('rejects before insert with %s', async (code) => {
+      roleEligibility.assertAssignment.mockRejectedValueOnce(
+        new AppForbiddenException(code),
+      );
+
+      await expect(
+        service.createAssignmentRequest(20, 'user-2', 'role-x', 'req-1'),
+      ).rejects.toMatchObject({ code });
+      expect(prisma.role_assignment_requests.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('reviewAssignment', () => {
     beforeEach(() => {
       prisma.role_assignment_requests.findUnique.mockResolvedValue({
@@ -485,6 +545,37 @@ describe('RequestsService', () => {
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith('user-2');
+    });
+
+    it('re-evaluates eligibility in the transaction before creating', async () => {
+      await service.reviewAssignment(
+        'role-request-1',
+        'approver-1',
+        'approved',
+      );
+
+      expect(roleEligibility.assertAssignment).toHaveBeenCalledWith({
+        userId: 'user-2',
+        roleName: 'member',
+        clubSectionId: 20,
+        db: transactionMock,
+      });
+    });
+
+    it.each([
+      ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED,
+      ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+    ])('rejects approval with %s and creates no assignment', async (code) => {
+      roleEligibility.assertAssignment.mockRejectedValueOnce(
+        new AppForbiddenException(code),
+      );
+
+      await expect(
+        service.reviewAssignment('role-request-1', 'approver-1', 'approved'),
+      ).rejects.toMatchObject({ code });
+      expect(
+        transactionMock.club_role_assignments.create,
+      ).not.toHaveBeenCalled();
     });
 
     it('does not version authority for a rejected assignment request', async () => {

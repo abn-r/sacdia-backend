@@ -11,6 +11,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 @Injectable()
 export class RequestsService {
@@ -31,6 +32,7 @@ export class RequestsService {
     private readonly notifications: NotificationsService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly authorizationContextVersion: AuthorizationContextVersionService,
+    private readonly roleEligibility: ClubRoleEligibilityService,
   ) {}
 
   // ========================================
@@ -562,6 +564,13 @@ export class RequestsService {
       throw new AppNotFoundException(ErrorCode.REQUEST_ROLE_NOT_FOUND);
     }
 
+    // Fail fast: the target user must be eligible for this role in this section.
+    await this.roleEligibility.assertAssignment({
+      userId,
+      roleName: role.role_name,
+      clubSectionId: sectionId,
+    });
+
     // Check role_slot_limits before creating request.
     // Resolve year first so the count excludes prior-year or designated directors.
     const createRequestYearId = await this.getActiveEcclesiasticalYearId();
@@ -677,6 +686,14 @@ export class RequestsService {
           request.role_id,
           { client: tx, includePendingRequests: false, ecclesiasticalYearId },
         );
+
+        // Re-evaluate eligibility: GM status may have changed since the request.
+        await this.roleEligibility.assertAssignment({
+          userId: request.user_id,
+          roleName: request.role.role_name,
+          clubSectionId: request.club_section_id,
+          db: tx,
+        });
 
         // Create the club_role_assignment
         const assignment = await tx.club_role_assignments.create({

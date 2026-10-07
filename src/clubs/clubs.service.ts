@@ -47,6 +47,7 @@ import {
 } from '../common/authorization/actor-territory-scope';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 
 const CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS = [
   { name: { contains: 'Guía Mayor', mode: 'insensitive' as const } },
@@ -85,6 +86,7 @@ export class ClubsService {
     private readonly notificationsService: NotificationsService,
     private readonly auditLogs: AuditLogsService,
     private readonly ecclesiasticalYear: EcclesiasticalYearService,
+    private readonly roleEligibility: ClubRoleEligibilityService,
   ) {}
 
   // ========================================
@@ -653,6 +655,7 @@ export class ClubsService {
     const startDate = dto.start_date ?? new Date();
     this.assertValidRoleDateRange(startDate, dto.end_date);
     const roleId = await this.resolveRoleId(dto);
+    const targetRoleName = await this.resolveRoleName(roleId);
     const ecclesiasticalYearId =
       dto.ecclesiastical_year_id ??
       (await this.getActiveEcclesiasticalYearId());
@@ -682,6 +685,12 @@ export class ClubsService {
     };
 
     const created = await this.prisma.$transaction(async (tx) => {
+      await this.roleEligibility.assertAssignment({
+        userId: dto.user_id,
+        roleName: targetRoleName,
+        clubSectionId: dto.club_section_id as number,
+        db: tx,
+      });
       const created = await tx.club_role_assignments.create({
         data: assignment,
         include: {
@@ -822,7 +831,24 @@ export class ClubsService {
       updateData.status = dto.status;
     }
 
+    const resultingStatus = dto.status ?? existing.status;
+    const becomesActive =
+      resultingStatus === 'active' &&
+      (targetRoleId !== existing.role_id || existing.status !== 'active');
+    const eligibilityRoleName =
+      becomesActive && existing.club_section_id != null
+        ? await this.resolveRoleName(targetRoleId)
+        : null;
+
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (eligibilityRoleName !== null && existing.club_section_id != null) {
+        await this.roleEligibility.assertAssignment({
+          userId: existing.user_id,
+          roleName: eligibilityRoleName,
+          clubSectionId: existing.club_section_id,
+          db: tx,
+        });
+      }
       const updated = await tx.club_role_assignments.update({
         where: { assignment_id: assignmentId },
         data: updateData,
@@ -941,6 +967,13 @@ export class ClubsService {
         );
       }
 
+      await this.roleEligibility.assertAssignment({
+        userId: dto.successor_user_id,
+        roleName: 'director',
+        clubSectionId: sectionId,
+        db: tx,
+      });
+
       const ended = await tx.club_role_assignments.update({
         where: { assignment_id: dto.current_assignment_id },
         data: {
@@ -1053,6 +1086,13 @@ export class ClubsService {
     const startDate = dto.start_date ?? new Date();
 
     const created = await this.prisma.$transaction(async (tx) => {
+      await this.roleEligibility.assertAssignment({
+        userId: dto.user_id,
+        roleName: 'director',
+        clubSectionId: sectionId,
+        db: tx,
+      });
+
       const existingActiveDirectorCount = await tx.club_role_assignments.count({
         where: {
           club_section_id: sectionId,
@@ -1647,6 +1687,17 @@ export class ClubsService {
         }
       }
     }
+  }
+
+  private async resolveRoleName(roleId: string): Promise<string> {
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      select: { role_name: true },
+    });
+    if (!role) {
+      throw new AppBadRequestException(ErrorCode.CLUB_ROLE_NOT_FOUND);
+    }
+    return role.role_name;
   }
 
   private async assertDirectorAssignmentIsCurrentYear(
