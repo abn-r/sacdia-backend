@@ -1260,6 +1260,56 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
     expect(resolved.invested).toHaveLength(1);
   });
 
+  it('stops authorizing as pastor once the pastor leaves the district Field, while the Field director still can', async () => {
+    const view = await present();
+    const personId = view.people[0].person_id;
+    const attempt = (authorization: AuthorizationSnapshot) =>
+      service.resolve(
+        authorization,
+        ACTOR,
+        view.request_id,
+        { invest: [{ person_id: personId }] },
+        INSIDE,
+      );
+    await prisma.users.update({
+      where: { user_id: ACTOR },
+      data: { local_field_id: fieldId },
+    });
+    try {
+      await prisma.district_investiture_pastors.create({
+        data: { districlub_type_id: districtId, user_id: ACTOR, active: true },
+      });
+      const listed = await service.listForAuthorizer(
+        globalAuth('pastor'),
+        ACTOR,
+        yearId,
+      );
+      expect(listed.map((row) => row.request_id)).toEqual([view.request_id]);
+
+      await prisma.users.update({
+        where: { user_id: ACTOR },
+        data: { local_field_id: null },
+      });
+
+      await expect(attempt(globalAuth('pastor'))).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+      });
+      await expect(
+        service.listForAuthorizer(globalAuth('pastor'), ACTOR, yearId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+      });
+
+      const asField = await attempt(fieldAuth('director-lf', fieldId));
+      expect(asField.invested).toHaveLength(1);
+    } finally {
+      await prisma.users.update({
+        where: { user_id: ACTOR },
+        data: { local_field_id: null },
+      });
+    }
+  });
+
   it('keeps authorization closed until the window itself is widened', async () => {
     const view = await present();
     const personId = view.people[0].person_id;
