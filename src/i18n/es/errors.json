@@ -363,6 +363,7 @@
   "INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE": "Esta clase institucional no admite solicitudes de investidura",
   "INVESTITURE_REQUEST_ALREADY_INVESTED": "Esa persona ya está investida en esta clase",
   "INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE": "Este enrollment sigue en la validación anterior de investidura",
+  "INVESTITURE_LEGACY_PIPELINE_RETIRED": "La validación anterior de investidura ya no está disponible. La investidura ahora se gestiona con la solicitud de autorización de la directiva de la sección.",
   "INVESTITURE_REQUEST_ACTIVE_EXISTS": "Esa persona ya tiene una solicitud activa incompatible",
   "INVESTITURE_REQUEST_NOT_OPERATIONAL": "Un certificado histórico no entra en esta solicitud",
   "INVESTITURE_REQUEST_NOT_PENDING": "Esa persona ya no está pendiente en la solicitud",

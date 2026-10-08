@@ -363,6 +363,7 @@
   "INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE": "This institutional class does not accept investiture requests",
   "INVESTITURE_REQUEST_ALREADY_INVESTED": "That person is already invested in this class",
   "INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE": "This enrollment is still in the previous investiture validation",
+  "INVESTITURE_LEGACY_PIPELINE_RETIRED": "The previous investiture validation is no longer available. Investiture is now handled through the section board's authorization request.",
   "INVESTITURE_REQUEST_ACTIVE_EXISTS": "That person already has an incompatible active request",
   "INVESTITURE_REQUEST_NOT_OPERATIONAL": "A historical certificate cannot enter this request",
   "INVESTITURE_REQUEST_NOT_PENDING": "That person is no longer pending on the request",
