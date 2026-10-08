@@ -1,14 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import jwt from 'jsonwebtoken';
+import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import { accessJwtClaims } from '../common/constants/jwt-audiences';
 import {
-  BadRequestException,
-  InternalServerErrorException,
-  NotImplementedException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -128,14 +125,13 @@ describe('AuthService', () => {
     sub = 'user-123',
     overrides: Record<string, unknown> = {},
   ) =>
-    jwt.sign(
+    new JwtService({ secret: TEST_ACCESS_SECRET }).sign(
       {
         sub,
         email: 'juan.garcia@example.com',
         ...accessJwtClaims(),
         ...overrides,
       },
-      TEST_ACCESS_SECRET,
       { algorithm: 'HS256', expiresIn: '8h' },
     );
 
@@ -1270,7 +1266,9 @@ describe('AuthService', () => {
         service.setActiveClubContext('user-123', {
           assignment_id: 'designated-assignment',
         }),
-      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH });
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH,
+      });
     });
 
     it('throws AUTH_ASSIGNMENT_YEAR_MISMATCH when assignment is from a past year', async () => {
@@ -1290,7 +1288,9 @@ describe('AuthService', () => {
         service.setActiveClubContext('user-123', {
           assignment_id: 'past-assignment',
         }),
-      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH });
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH,
+      });
     });
 
     it('throws AUTH_ASSIGNMENT_YEAR_MISMATCH for inactive not-enrolled assignment', async () => {
@@ -1310,7 +1310,9 @@ describe('AuthService', () => {
         service.setActiveClubContext('user-123', {
           assignment_id: 'inactive-assignment',
         }),
-      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH });
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH,
+      });
     });
 
     it('throws AUTH_ASSIGNMENT_YEAR_MISMATCH for ended assignment', async () => {
@@ -1330,7 +1332,9 @@ describe('AuthService', () => {
         service.setActiveClubContext('user-123', {
           assignment_id: 'ended-assignment',
         }),
-      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH });
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH,
+      });
     });
 
     it('A06: throws CLUB_CYCLE_NOT_READY when the club cut has not completed', async () => {
@@ -1380,14 +1384,22 @@ describe('AuthService', () => {
           profile: { user_id: 'user-123' },
           post_register_complete: true,
           authorization: {
-            grants: { global_roles: [], club_assignments: [], direct_permissions: [] },
+            grants: {
+              global_roles: [],
+              club_assignments: [],
+              direct_permissions: [],
+            },
             active_assignment: { assignment_id: 'assignment-1' },
             effective: { permissions: [], scope: { global: {}, club: null } },
           },
           legacy: {
             roles: [],
             permissions: [],
-            club: { club_id: 2, club_name: 'Club B', club_type: 'Conquistadores' },
+            club: {
+              club_id: 2,
+              club_name: 'Club B',
+              club_type: 'Conquistadores',
+            },
             club_context: {
               active_assignment_id: 'assignment-1',
               active: { assignment_id: 'assignment-1' },
@@ -1403,7 +1415,9 @@ describe('AuthService', () => {
 
       expect(mockTokenBlacklistService.blacklist).not.toHaveBeenCalled();
       expect(mockTokenBlacklistService.blacklistToken).not.toHaveBeenCalled();
-      expect(mockTokenBlacklistService.blacklistAllUserTokens).not.toHaveBeenCalled();
+      expect(
+        mockTokenBlacklistService.blacklistAllUserTokens,
+      ).not.toHaveBeenCalled();
     });
   });
 
