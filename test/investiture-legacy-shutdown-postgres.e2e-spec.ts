@@ -9,7 +9,9 @@ import { readFileSync, statSync } from 'node:fs';
 import { JwtService } from '@nestjs/jwt';
 import type { Client } from 'pg';
 import request from 'supertest';
+import type { AuthorizationSnapshot } from '../src/common/services/authorization-context.service';
 import { InvestitureService } from '../src/investiture/investiture.service';
+import { InvestitureAuthorizationRequestService } from '../src/investiture-requests/investiture-authorization-requests.service';
 import { ValidationService } from '../src/validation/validation.service';
 import {
   bootstrapAnnualCycleApp,
@@ -45,6 +47,8 @@ type Fixture = {
   certificate: number;
   inProgress: number;
   certificateMember: string;
+  sectionId: number;
+  yearId: number;
 };
 
 const pace = () => new Promise((resolve) => setTimeout(resolve, 550));
@@ -173,6 +177,63 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
       const classId = klass.rows[0].class_id;
       const yearId = year.rows[0].year_id;
 
+      // Sección real del club: el contexto de presentación lee miembros por sección.
+      const country = await client.query<{ country_id: number }>(
+        `INSERT INTO countries (name, abbreviation, active)
+         VALUES ('F8 Pais', 'F8', true) RETURNING country_id`,
+      );
+      const division = await client.query<{ division_id: number }>(
+        `INSERT INTO divisions (code, name, abbreviation, active)
+         VALUES ('F8', 'F8 Division', 'F8', true) RETURNING division_id`,
+      );
+      const union = await client.query<{ union_id: number }>(
+        `INSERT INTO unions (name, abbreviation, active, country_id, division_id)
+         VALUES ('F8 Union', 'F8U', true, $1, $2) RETURNING union_id`,
+        [country.rows[0].country_id, division.rows[0].division_id],
+      );
+      const field = await client.query<{ local_field_id: number }>(
+        `INSERT INTO local_fields (name, abbreviation, active, union_id, timezone)
+         VALUES ('F8 Campo', 'F8F', true, $1, 'America/Mexico_City')
+         RETURNING local_field_id`,
+        [union.rows[0].union_id],
+      );
+      const district = await client.query<{ districlub_type_id: number }>(
+        `INSERT INTO districts (name, active, local_field_id)
+         VALUES ('F8 Distrito', true, $1) RETURNING districlub_type_id`,
+        [field.rows[0].local_field_id],
+      );
+      const church = await client.query<{ church_id: number }>(
+        `INSERT INTO churches (name, active, districlub_type_id)
+         VALUES ('F8 Iglesia', true, $1) RETURNING church_id`,
+        [district.rows[0].districlub_type_id],
+      );
+      const club = await client.query<{ club_id: number }>(
+        `INSERT INTO clubs (name, active, local_field_id, church_id, coordinates, districlub_type_id)
+         VALUES ('F8 Club', true, $1, $2, '{}'::json, $3) RETURNING club_id`,
+        [
+          field.rows[0].local_field_id,
+          church.rows[0].church_id,
+          district.rows[0].districlub_type_id,
+        ],
+      );
+      const section = await client.query<{ club_section_id: number }>(
+        `INSERT INTO club_sections (active, club_type_id, main_club_id)
+         VALUES (true, $1, $2) RETURNING club_section_id`,
+        [clubType.rows[0].club_type_id, club.rows[0].club_id],
+      );
+      const sectionId = section.rows[0].club_section_id;
+      const memberRole = await client.query<{ role_id: string }>(
+        `SELECT role_id FROM roles WHERE role_name = 'member' AND role_category = 'CLUB'`,
+      );
+      const joinSection = (userId: string) =>
+        client.query(
+          `INSERT INTO club_role_assignments (
+             user_id, role_id, ecclesiastical_year_id, start_date, active, status, club_section_id
+           )
+           VALUES ($1, $2, $3, '2026-01-01', true, 'active', $4)`,
+          [userId, memberRole.rows[0].role_id, yearId, sectionId],
+        );
+
       const open = {} as Record<OpenStatus, number>;
       let n = 0;
       for (const status of OPEN) {
@@ -184,6 +245,7 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
           status,
           locked: true,
         });
+        if (status === 'CLUB_APPROVED') await joinSection(member);
         await client.query(
           `INSERT INTO investiture_validation_history (enrollment_id, action, performed_by, comments)
            VALUES ($1, 'SUBMITTED', $2, 'expediente anterior')`,
@@ -198,10 +260,11 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
         status: 'CLUB_APPROVED',
         locked: true,
       });
+      await joinSection(pendingMember);
       const req = await client.query<{ request_id: string }>(
         `INSERT INTO investiture_authorization_requests (club_section_id, ecclesiastical_year_id, created_by_id)
-         VALUES (1, $1, $2) RETURNING request_id`,
-        [yearId, ADMIN],
+         VALUES ($1, $2, $3) RETURNING request_id`,
+        [sectionId, yearId, ADMIN],
       );
       await client.query(
         `INSERT INTO investiture_authorization_people
@@ -242,6 +305,8 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
         certificate,
         inProgress,
         certificateMember,
+        sectionId,
+        yearId,
       };
     });
 
@@ -559,6 +624,51 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
           where: { action: 'LEGACY_LOCK_RELEASED' },
         }),
       ).toBe(OPEN.length);
+    });
+
+    it('una fila liberada entra a la vía nueva y la que sigue bloqueada no (decisión B5)', async () => {
+      const authorization: AuthorizationSnapshot = {
+        grants: {
+          global_roles: [],
+          club_assignments: [
+            {
+              assignment_id: 'grant-f8',
+              role_name: 'director',
+              permissions: [],
+              operational: true,
+              ecclesiastical_year_id: fx.yearId,
+              club: { club_id: 1, club_name: 'F8 Club' },
+              section: { club_section_id: fx.sectionId, club_type_id: 1 },
+              scope: {},
+              status: 'active',
+            },
+          ],
+          direct_permissions: [],
+        },
+        active_assignment: { assignment_id: 'grant-f8' },
+        effective: { permissions: [], scope: { global: {}, club: null } },
+      };
+      const view = await app
+        .get(InvestitureAuthorizationRequestService)
+        .presentationContext(
+          authorization,
+          fx.sectionId,
+          fx.yearId,
+          new Date('2026-11-10T18:00:00.000Z'),
+        );
+      const byEnrollment = new Map(
+        view.candidates.map((row) => [row.enrollment_id, row]),
+      );
+      // fx.open.CLUB_APPROVED ya fue soltada por el caso de liberación.
+      const released = byEnrollment.get(fx.open.CLUB_APPROVED);
+      expect(released).toBeDefined();
+      expect(released?.blocked_code).not.toBe(
+        'INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE',
+      );
+      // Sigue bloqueada y con PENDING: no puede presentarse de nuevo.
+      const stillLocked = byEnrollment.get(fx.pendingLocked);
+      expect(stillLocked).toBeDefined();
+      expect(stillLocked?.eligible).toBe(false);
     });
   });
 

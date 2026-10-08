@@ -117,25 +117,15 @@ export async function assertNoPendingInvestitureAuthorization(
   }
 }
 
-/** Estados que la vía club → coordinación → campo todavía escribe. */
-export const LEGACY_INVESTITURE_PIPELINE_STATUSES = [
-  'SUBMITTED_FOR_VALIDATION',
-  'CLUB_APPROVED',
-  'COORDINATOR_APPROVED',
-  'FIELD_APPROVED',
-  'APPROVED',
-] as const;
-
+/**
+ * Fase 8: la vía anterior ya no escribe; un expediente viejo bloquea la
+ * solicitud nueva solo mientras conserva locked_for_validation.
+ */
 export function enrollmentOnLegacyInvestiturePipeline(enrollment: {
   investiture_status: string;
   locked_for_validation?: boolean | null;
 }): boolean {
-  return (
-    enrollment.locked_for_validation === true ||
-    (LEGACY_INVESTITURE_PIPELINE_STATUSES as readonly string[]).includes(
-      enrollment.investiture_status,
-    )
-  );
+  return enrollment.locked_for_validation === true;
 }
 
 /**
