@@ -291,12 +291,84 @@ function parseXrefStream(
       rows += count;
     }
   }
-  if (
-    rowWidth === 0 ||
-    !Number.isSafeInteger(rows) ||
-    rows <= 0 ||
-    decodePDFRawStream(parsed).decode().length !== rowWidth * rows
-  )
+  if (rowWidth === 0 || !Number.isSafeInteger(rows) || rows <= 0)
     throw new Error('incomplete xref stream entries');
+  const pngPredicted = xrefStreamUsesPngPredictor(dictionary, rowWidth);
+  const stride = rowWidth + (pngPredicted ? 1 : 0);
+  // The only decode of the stream, so the AsyncLocalStorage cap hook sees it.
+  const decoded = decodePDFRawStream(parsed).decode();
+  if (decoded.length !== stride * rows)
+    throw new Error('incomplete xref stream entries');
+  if (pngPredicted) {
+    for (let row = 0; row < rows; row++)
+      if (decoded[row * stride] > 4) throw new Error('invalid PNG row filter');
+  }
   return dictionary;
+}
+
+/**
+ * Structural check of an XRef stream's /DecodeParms. pdf-lib 1.17.1 never
+ * applies predictors, so the decoded bytes stay predicted: PNG predictors
+ * (10-15) prepend one filter-type byte to each row. Returns true for that
+ * layout, false for the plain one, and throws for anything else. Nothing is
+ * reconstructed.
+ */
+function xrefStreamUsesPngPredictor(
+  dictionary: PDFDict,
+  rowWidth: number,
+): boolean {
+  const filter = dictionary.lookup(PDFName.of('Filter'));
+  if (
+    filter !== undefined &&
+    !(filter instanceof PDFName) &&
+    !(filter instanceof PDFArray)
+  )
+    throw new Error('invalid xref filter');
+  const flateDecode = PDFName.of('FlateDecode');
+  const filterCount = filter instanceof PDFArray ? filter.size() : 1;
+  const flate =
+    filter === undefined ||
+    filter === flateDecode ||
+    (filter instanceof PDFArray &&
+      filterCount === 1 &&
+      filter.lookup(0, PDFName) === flateDecode);
+  // /DecodeParms is a dictionary or, aligned with /Filter, an array of them.
+  const entry = dictionary.lookup(PDFName.of('DecodeParms'));
+  if (
+    entry !== undefined &&
+    !(entry instanceof PDFDict) &&
+    !(entry instanceof PDFArray)
+  )
+    throw new Error('invalid xref decode parameters');
+  if (entry instanceof PDFArray && entry.size() > filterCount)
+    throw new Error('invalid xref decode parameters');
+  const all: PDFDict[] = [];
+  if (entry instanceof PDFArray) {
+    for (let n = 0; n < entry.size(); n++) {
+      const item = entry.lookupMaybe(n, PDFDict);
+      if (item) all.push(item);
+    }
+  } else if (entry) {
+    all.push(entry);
+  }
+  const predicted = all
+    .map((item) => ({
+      item,
+      predictor: item.lookupMaybe(PDFName.of('Predictor'), PDFNumber),
+    }))
+    .filter(({ predictor }) => predictor && predictor.asNumber() !== 1);
+  if (predicted.length === 0) return false;
+  const kind = predicted[0].predictor!.asNumber();
+  // Predictors are only resolved for a single FlateDecode filter.
+  if (!flate || !Number.isInteger(kind) || kind < 10 || kind > 15)
+    throw new Error('unsupported xref predictor');
+  const parms = predicted[0].item;
+  const columns = parms.lookupMaybe(PDFName.of('Columns'), PDFNumber);
+  if ((columns?.asNumber() ?? 1) !== rowWidth)
+    throw new Error('xref predictor columns do not match row width');
+  const colors = parms.lookupMaybe(PDFName.of('Colors'), PDFNumber);
+  const bits = parms.lookupMaybe(PDFName.of('BitsPerComponent'), PDFNumber);
+  if ((colors?.asNumber() ?? 1) !== 1 || (bits?.asNumber() ?? 8) !== 8)
+    throw new Error('unsupported xref predictor layout');
+  return true;
 }

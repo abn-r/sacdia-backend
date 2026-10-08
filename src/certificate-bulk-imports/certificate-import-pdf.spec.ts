@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { deflateSync } from 'node:zlib';
 import { Worker } from 'node:worker_threads';
 import { HttpException } from '@nestjs/common';
 import { PDFDocument } from 'pdf-lib';
@@ -43,6 +44,80 @@ async function pdf(pages: number) {
   const document = await PDFDocument.create();
   for (let n = 0; n < pages; n++) document.addPage();
   return Buffer.from(await document.save({ addDefaultPage: false }));
+}
+
+type XrefFixtureOptions = {
+  /** /W entry widths; defaults to pdf-lib's [1 2 2] (rowWidth 5). */
+  widths?: [number, number, number];
+  /** Filter entry text; defaults to `/Filter /FlateDecode`. */
+  filter?: string;
+  /** Text after /DecodeParms, or undefined for none. */
+  decodeParms?: string;
+  /** Builds the stream payload from the plain rows (before deflate). */
+  encode?: (rows: Buffer[]) => Buffer;
+  /** Skips deflate, for a stream without /Filter. */
+  raw?: boolean;
+  /** Replaces deflate with another payload encoding. */
+  wrap?: (plain: Buffer) => Buffer;
+};
+
+const XREF_ROWS = 7;
+
+/** PNG-encodes rows with one filter-type byte per row (2 = Up, computed). */
+function pngRows(rows: Buffer[], filterTypes: number[] = []): Buffer {
+  return Buffer.concat(
+    rows.map((row, index) => {
+      const type = filterTypes[index] ?? 2;
+      const previous = rows[index - 1] ?? Buffer.alloc(row.length);
+      const body =
+        type === 2
+          ? Buffer.from(row.map((byte, at) => (byte - previous[at]) & 0xff))
+          : row;
+      return Buffer.concat([Buffer.from([type]), body]);
+    }),
+  );
+}
+
+/**
+ * Rewrites the final (last-object) XRef stream of a pdf-lib object-stream PDF.
+ * Offsets stay valid because nothing precedes it changes. pdf-lib does not
+ * read the xref on load, so only assertFinalCrossReference sees the payload.
+ */
+async function xrefStreamPdf(
+  options: XrefFixtureOptions = {},
+): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  document.addPage();
+  const base = Buffer.from(await document.save({ useObjectStreams: true }));
+  const text = base.toString('latin1');
+  const offset = Number(text.match(/startxref\s+(\d+)\s+%%EOF/)![1]);
+  const objectNumber = text.slice(offset).match(/^(\d+) 0 obj/)![1];
+  const widths = options.widths ?? [1, 2, 2];
+  const rowWidth = widths[0] + widths[1] + widths[2];
+  const rows = Array.from({ length: XREF_ROWS }, (_, row) =>
+    Buffer.from(
+      Array.from({ length: rowWidth }, (_, at) => (row * 7 + at) % 251),
+    ),
+  );
+  const plain = options.encode ? options.encode(rows) : Buffer.concat(rows);
+  const payload = options.raw ? plain : (options.wrap ?? deflateSync)(plain);
+  const filter = options.raw
+    ? ''
+    : `${options.filter ?? '/Filter /FlateDecode'}\n`;
+  const parms =
+    options.decodeParms === undefined
+      ? ''
+      : `/DecodeParms ${options.decodeParms}\n`;
+  const object =
+    `${objectNumber} 0 obj\n<<\n/Size ${XREF_ROWS}\n/Root 2 0 R\n/Info 3 0 R\n` +
+    `${filter}${parms}/Type /XRef\n/Length ${payload.length}\n` +
+    `/W [ ${widths.join(' ')} ]\n/Index [ 0 ${XREF_ROWS} ]\n>>\nstream\n`;
+  return Buffer.concat([
+    base.subarray(0, offset),
+    Buffer.from(object, 'latin1'),
+    payload,
+    Buffer.from(`\nendstream\nendobj\n\nstartxref\n${offset}\n%%EOF`, 'latin1'),
+  ]);
 }
 
 describe('assertCertificateImportPdf', () => {
@@ -118,6 +193,186 @@ describe('assertCertificateImportPdf', () => {
     await expect(assertCertificateImportPdf(bytes)).rejects.toThrow(
       'CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES',
     );
+  });
+  describe('final xref stream predictors', () => {
+    const parms = (body: string) => `<< ${body} >>`;
+    const accepted = async (options: XrefFixtureOptions) => {
+      const bytes = await xrefStreamPdf(options);
+      await expect(PDFDocument.load(bytes)).resolves.toBeDefined();
+      await expect(assertCertificateImportPdf(bytes)).resolves.toBe(1);
+    };
+    const rejected = async (options: XrefFixtureOptions) => {
+      const bytes = await xrefStreamPdf(options);
+      await expect(assertCertificateImportPdf(bytes)).rejects.toThrow(
+        'CERTIFICATE_IMPORT_PDF_INVALID',
+      );
+    };
+
+    it('accepts the unpredicted baseline (rowWidth * rows)', () =>
+      accepted({}));
+    it.each([12, 10, 11, 13, 14, 15])(
+      'accepts PNG /Predictor %i with /Columns equal to rowWidth',
+      (predictor) =>
+        accepted({
+          decodeParms: parms(`/Predictor ${predictor} /Columns 5`),
+          encode: (rows) => pngRows(rows),
+        }),
+    );
+    it('accepts any valid PNG filter-type byte 0-4 per row', () =>
+      accepted({
+        decodeParms: parms('/Predictor 15 /Columns 5'),
+        encode: (rows) => pngRows(rows, [0, 1, 2, 3, 4, 2, 0]),
+      }));
+    it('accepts explicit /Colors 1 and /BitsPerComponent 8', () =>
+      accepted({
+        decodeParms: parms(
+          '/Predictor 12 /Columns 5 /Colors 1 /BitsPerComponent 8',
+        ),
+        encode: (rows) => pngRows(rows),
+      }));
+    it('accepts /Columns omitted only when rowWidth is 1', () =>
+      accepted({
+        widths: [1, 0, 0],
+        decodeParms: parms('/Predictor 12'),
+        encode: (rows) => pngRows(rows),
+      }));
+    it('accepts a one-element /Filter and /DecodeParms array', () =>
+      accepted({
+        filter: '/Filter [/FlateDecode]',
+        decodeParms: `[${parms('/Predictor 12 /Columns 5')}]`,
+        encode: (rows) => pngRows(rows),
+      }));
+    it('accepts a one-element /DecodeParms array holding null', () =>
+      accepted({
+        filter: '/Filter [/FlateDecode]',
+        decodeParms: '[null]',
+      }));
+    it('accepts a stream without /Filter and the unpredicted rule', () =>
+      accepted({ raw: true }));
+    it('accepts /Predictor 1 with the unpredicted length', () =>
+      accepted({ decodeParms: parms('/Predictor 1 /Columns 5') }));
+    it('accepts /DecodeParms without /Predictor with the unpredicted length', () =>
+      accepted({ decodeParms: parms('/Columns 5') }));
+
+    it('rejects /Predictor 1 with the PNG length', () =>
+      rejected({
+        decodeParms: parms('/Predictor 1'),
+        encode: (rows) => pngRows(rows),
+      }));
+    it('rejects a PNG predictor with the unpredicted length', () =>
+      rejected({ decodeParms: parms('/Predictor 12 /Columns 5') }));
+    it.each([4, 6, 1])(
+      'rejects /Columns %i different from rowWidth',
+      (columns) =>
+        rejected({
+          decodeParms: parms(`/Predictor 12 /Columns ${columns}`),
+          encode: (rows) => pngRows(rows),
+        }),
+    );
+    it('rejects an omitted /Columns (default 1) when rowWidth is not 1', () =>
+      rejected({
+        decodeParms: parms('/Predictor 12'),
+        encode: (rows) => pngRows(rows),
+      }));
+    it.each([
+      '/Colors 3',
+      '/Colors 0',
+      '/BitsPerComponent 16',
+      '/BitsPerComponent 1',
+    ])('rejects %s', (extra) =>
+      rejected({
+        decodeParms: parms(`/Predictor 12 /Columns 5 ${extra}`),
+        encode: (rows) => pngRows(rows),
+      }),
+    );
+    it.each([5, 6, 255])('rejects PNG filter-type byte %i in a row', (type) =>
+      rejected({
+        decodeParms: parms('/Predictor 12 /Columns 5'),
+        encode: (rows) => pngRows(rows, [2, 2, type, 2, 2, 2, 2]),
+      }),
+    );
+    it('rejects an invalid filter-type byte in the first and last row', async () => {
+      await rejected({
+        decodeParms: parms('/Predictor 12 /Columns 5'),
+        encode: (rows) => pngRows(rows, [9]),
+      });
+      await rejected({
+        decodeParms: parms('/Predictor 12 /Columns 5'),
+        encode: (rows) => pngRows(rows, [2, 2, 2, 2, 2, 2, 9]),
+      });
+    });
+    it.each([-1, 1])(
+      'rejects a PNG payload of (rowWidth + 1) * rows %i bytes',
+      (delta) =>
+        rejected({
+          decodeParms: parms('/Predictor 12 /Columns 5'),
+          encode: (rows) => {
+            const png = pngRows(rows);
+            return delta < 0
+              ? png.subarray(0, png.length - 1)
+              : Buffer.concat([png, Buffer.from([2])]);
+          },
+        }),
+    );
+    it.each([-1, 1])(
+      'rejects an unpredicted payload of rowWidth * rows %i bytes',
+      (delta) =>
+        rejected({
+          encode: (rows) => {
+            const plain = Buffer.concat(rows);
+            return delta < 0
+              ? plain.subarray(0, plain.length - 1)
+              : Buffer.concat([plain, Buffer.from([0])]);
+          },
+        }),
+    );
+    it.each([2, 3, 9, 16, 0, 20])('rejects /Predictor %i', (predictor) =>
+      rejected({
+        decodeParms: parms(`/Predictor ${predictor} /Columns 5`),
+        encode: (rows) => pngRows(rows),
+      }),
+    );
+    it('rejects /Predictor 2 even with an unpredicted length', () =>
+      rejected({ decodeParms: parms('/Predictor 2 /Columns 5') }));
+    it('rejects a non-numeric /Predictor', () =>
+      rejected({
+        decodeParms: parms('/Predictor /Up /Columns 5'),
+        encode: (rows) => pngRows(rows),
+      }));
+    it('rejects a predictor combined with several filters', () =>
+      rejected({
+        filter: '/Filter [/FlateDecode /FlateDecode]',
+        decodeParms: `[null ${parms('/Predictor 12 /Columns 5')}]`,
+        encode: (rows) => pngRows(rows),
+        wrap: (plain) => deflateSync(deflateSync(plain)),
+      }));
+    it('rejects a predictor on the first of several filters', () =>
+      rejected({
+        filter: '/Filter [/FlateDecode /FlateDecode]',
+        decodeParms: `[${parms('/Predictor 12 /Columns 5')} null]`,
+        encode: (rows) => pngRows(rows),
+        wrap: (plain) => deflateSync(deflateSync(plain)),
+      }));
+    it('rejects a predictor on a non-Flate filter', () =>
+      rejected({
+        filter: '/Filter /ASCIIHexDecode',
+        decodeParms: parms('/Predictor 12 /Columns 5'),
+        encode: (rows) => pngRows(rows),
+        wrap: (plain) => Buffer.from(`${plain.toString('hex')}>`),
+      }));
+    it('still accepts a non-Flate filter without a predictor', () =>
+      accepted({
+        filter: '/Filter /ASCIIHexDecode',
+        wrap: (plain) => Buffer.from(`${plain.toString('hex')}>`),
+      }));
+    it('rejects a /DecodeParms array longer than /Filter', () =>
+      rejected({
+        filter: '/Filter [/FlateDecode]',
+        decodeParms: `[null ${parms('/Predictor 12 /Columns 5')}]`,
+        encode: (rows) => pngRows(rows),
+      }));
+    it('rejects /DecodeParms that is neither a dictionary nor an array', () =>
+      rejected({ decodeParms: '5', encode: (rows) => pngRows(rows) }));
   });
   it('rejects a PDF truncated before xref even with a forged terminal EOF', async () => {
     const bytes = await traditionalPdf();
