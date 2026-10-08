@@ -3,19 +3,9 @@ import { InvestitureController } from './investiture.controller';
 import { InvestitureService } from './investiture.service';
 import { LegacyInvestitureRetiredController } from './legacy-investiture-retired.controller';
 import { PrismaModule } from '../prisma/prisma.module';
-import { NotificationsModule } from '../notifications/notifications.module';
-import { AchievementsModule } from '../achievements/achievements.module';
-import { CoordinationModule } from '../coordination/coordination.module';
-import { ClassesModule } from '../classes/classes.module';
 
 @Module({
-  imports: [
-    PrismaModule,
-    NotificationsModule,
-    AchievementsModule,
-    CoordinationModule,
-    ClassesModule,
-  ],
+  imports: [PrismaModule],
   controllers: [InvestitureController, LegacyInvestitureRetiredController],
   providers: [InvestitureService],
   exports: [InvestitureService],

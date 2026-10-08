@@ -112,6 +112,37 @@ describe('ValidationService retired class path', () => {
     },
   );
 
+  it('no longer carries the class workflow', () => {
+    const names = Object.getOwnPropertyNames(ValidationService.prototype);
+    expect(names).not.toContain('submitClassForReview');
+    expect(names).not.toContain('reviewClass');
+    expect(names).not.toContain('claimClassStatus');
+  });
+
+  it('lists no class submissions and keeps the response shape', async () => {
+    const reader = {
+      enrollments: { findMany: jest.fn() },
+      users_honors: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const lister = new ValidationService(
+      reader as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      lister.getPendingReviews({ entity_type: 'class' }),
+    ).resolves.toEqual({
+      classes: [],
+      honors: [],
+    });
+    await expect(lister.getPendingReviews()).resolves.toEqual({
+      classes: [],
+      honors: [],
+    });
+    expect(reader.enrollments.findMany).not.toHaveBeenCalled();
+  });
+
   it('keeps honor submit working', async () => {
     honorWorkflow.submitForReview.mockResolvedValue({ user_honor_id: 9 });
     await service.submitForReview('honor', 9, 'member-1');
