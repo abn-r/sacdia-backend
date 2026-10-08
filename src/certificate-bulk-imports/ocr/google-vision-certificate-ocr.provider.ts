@@ -16,7 +16,10 @@ import {
   assertCertificateImportObject,
   CERTIFICATE_IMPORT_MAX_BYTES,
 } from '../certificate-import-files.constants';
-import { assertCertificateImportPdf } from '../certificate-import-pdf';
+import {
+  assertCertificateImportPdf,
+  PDF_OCR_QUEUE_WAIT_MS,
+} from '../certificate-import-pdf';
 import {
   CertificateOcrFileInput,
   CertificateOcrProvider,
@@ -176,7 +179,10 @@ export class GoogleVisionCertificateOcrProvider
     }
     const pageCount =
       file.fileType === 'application/pdf'
-        ? await assertCertificateImportPdf(bytes)
+        ? await assertCertificateImportPdf(bytes, {
+            queueWaitMs: PDF_OCR_QUEUE_WAIT_MS,
+            queueFullCode: 'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+          })
         : undefined;
     try {
       const client = this.getClient();
