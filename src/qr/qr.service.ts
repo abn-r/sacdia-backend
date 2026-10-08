@@ -10,7 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AchievementsService } from '../achievements/achievements.service';
-import PDFDocument from 'pdfkit';
+import { loadPdfKit } from '../common/utils/pdfkit-loader';
 import QRCode from 'qrcode';
 import {
   AuthorizationContextService,
@@ -247,6 +247,7 @@ export class QrService {
       avatarBuffer = await this.fetchAvatarBuffer(card.member.avatar);
     }
 
+    const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
       size: 'A6',
       layout: 'portrait',
@@ -896,7 +897,7 @@ export class QrService {
   }
 
   private async drawCardPdf(
-    doc: InstanceType<typeof PDFDocument>,
+    doc: PDFKit.PDFDocument,
     card: QrCardResponse,
     avatarBuffer: Buffer | null,
   ): Promise<void> {

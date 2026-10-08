@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { I18nService } from 'nestjs-i18n';
-import PDFDocument from 'pdfkit';
+import { loadPdfKit } from '../common/utils/pdfkit-loader';
 import { Prisma } from '@prisma/client';
 import {
   AppBadRequestException,
@@ -262,6 +262,7 @@ export class MonthlyReportsPdfService {
     intlLocale: string,
     t: Translate,
   ): Promise<Buffer> {
+    const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
       size: 'LETTER',
       margin: 0,

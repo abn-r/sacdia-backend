@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import PDFDocument from 'pdfkit';
+import { loadPdfKit } from '../common/utils/pdfkit-loader';
 
 export interface CamporeeOrderPdfModel {
   folio_reference: string;
@@ -66,6 +66,7 @@ function itemLabel(
 @Injectable()
 export class CamporeeOrderPdfService {
   async render(model: CamporeeOrderPdfModel): Promise<Buffer> {
+    const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
       size: 'LETTER',
       margin: PAGE_MARGIN,
