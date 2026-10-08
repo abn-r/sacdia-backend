@@ -2244,6 +2244,58 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
     ).toBe(2);
   });
 
+  it('R6 skips an old result whose request is gone instead of retrying it', async () => {
+    await prisma.investiture_message_dispatches.deleteMany();
+    const pushes: unknown[] = [];
+    const communications = new InvestitureCommunicationsService(
+      prisma as never,
+      {
+        sendInvestitureNotice: async () => undefined,
+        inspectInvestitureJob: async () => 'missing' as const,
+        retryFailedInvestitureJob: async () => undefined,
+      } as never,
+      {
+        pushBestEffort: async (input: unknown) => {
+          pushes.push(input);
+        },
+      } as never,
+      { get: () => '' } as never,
+    );
+    const orphan = await prisma.investiture_message_dispatches.create({
+      data: {
+        kind: 'RESULT',
+        execution_key: 'person-invested:orphan-r6',
+        recipient_user_id: MEMBER,
+        role: 'person',
+        scope_key: `user:${MEMBER}`,
+        status: 'failed',
+        attempts: 1,
+        last_error: 'boom',
+        payload: {
+          channel: 'result',
+          title: 'Investidura autorizada',
+          body: 'texto',
+          source: 'investiture:invested',
+          requestId: randomUUID(),
+        },
+      },
+    });
+    try {
+      await communications.deliverPending();
+      await communications.deliverPending();
+
+      const row = await prisma.investiture_message_dispatches.findUniqueOrThrow(
+        { where: { dispatch_id: orphan.dispatch_id } },
+      );
+      expect(row.status).toBe('skipped');
+      expect(row.last_error).toBe('request_missing');
+      expect(row.attempts).toBe(1);
+      expect(pushes).toEqual([]);
+    } finally {
+      await prisma.investiture_message_dispatches.deleteMany();
+    }
+  });
+
   it('stores a new presentation intent after remove, reject, and an empty header', async () => {
     const communications = new InvestitureCommunicationsService(
       prisma as never,

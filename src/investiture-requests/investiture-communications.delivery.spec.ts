@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { EmailProcessor } from '../common/email/email.processor';
 import { EMAIL_JOB_INVESTITURE_NOTICE } from '../common/email/email.queue';
 import { InvestitureCommunicationsService } from './investiture-communications.service';
@@ -1179,6 +1180,81 @@ describe('investiture communication delivery', () => {
         sectionId: '1',
       },
     ]);
+  });
+
+  it('R6 skips an old result whose request no longer exists with an explicit cause', async () => {
+    const { prisma, dispatches } = world();
+    dispatches.push({
+      dispatch_id: 'orphan-result',
+      kind: 'RESULT',
+      execution_key: 'person-invested:orphan',
+      recipient_user_id: PERSON,
+      role: 'person',
+      scope_key: `user:${PERSON}`,
+      status: 'failed',
+      attempts: 1,
+      payload: {
+        channel: 'result',
+        title: 'Investidura autorizada',
+        body: 'texto',
+        source: 'investiture:invested',
+        requestId: REQUEST,
+      },
+      lease_until: null,
+      claim_token: null,
+      sent_at: null,
+      last_error: 'boom',
+    });
+    let reads = 0;
+    prisma.investiture_authorization_requests.findUnique = async () => {
+      reads += 1;
+      return null;
+    };
+    const pushes: unknown[] = [];
+    const service = new InvestitureCommunicationsService(
+      prisma as never,
+      { sendInvestitureNotice: async () => undefined } as never,
+      {
+        pushBestEffort: async (input: unknown) => {
+          pushes.push(input);
+        },
+      } as never,
+      { get: () => 'https://admin.example.test' } as never,
+    );
+    service.bindClock(() => new Date('2026-10-05T16:00:00.000Z'));
+    const logged = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const errored = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      await service.deliverPending();
+      const row = dispatches.find(
+        (item) => item.dispatch_id === 'orphan-result',
+      );
+      expect(row).toMatchObject({
+        status: 'skipped',
+        last_error: 'request_missing',
+      });
+      expect(pushes).toEqual([]);
+      const readsAfterFirstRun = reads;
+      logged.mockClear();
+
+      await service.deliverPending();
+
+      expect(reads).toBe(readsAfterFirstRun);
+      expect(
+        logged.mock.calls.filter(([message]) =>
+          String(message).includes('orphan-result'),
+        ),
+      ).toEqual([]);
+      expect(errored).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+      errored.mockRestore();
+    }
   });
 
   it('retries a lost inbox without hiding it or duplicating it', async () => {
