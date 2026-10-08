@@ -7,6 +7,7 @@ import {
 import { AppInternalServerErrorException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { StorageBucketAlias } from '../common/services/file-storage.service';
+import { flateObjStmOverCap } from '../../test/certificate-bulk-imports/certificate-import-pdf.attacks';
 import { CertificateImportFilesService } from './certificate-import-files.service';
 import {
   assertCertificateImportPdf,
@@ -76,6 +77,9 @@ describe('CertificateImportFilesService', () => {
       key: 'certificate-imports/batches/batch-1/sealed/file.pdf',
     });
     storage.deleteMany.mockResolvedValue(undefined);
+    prisma.certificate_bulk_import_files.updateMany.mockResolvedValue({
+      count: 1,
+    });
     storage.getSignedDownloadUrl.mockResolvedValue('https://r2.example/get');
   });
 
@@ -167,7 +171,9 @@ describe('CertificateImportFilesService', () => {
     expect(storage.copyObject).toHaveBeenCalledWith(
       StorageBucketAlias.CERTIFICATE_IMPORTS,
       'staging-key',
-      expect.stringMatching(/sealed\/file-1\.jpg$/),
+      expect.stringMatching(
+        /^batches\/batch-1\/sealed\/file-1-[0-9a-f-]{36}\.jpg$/,
+      ),
     );
 
     prisma.certificate_bulk_import_files.findFirst.mockResolvedValueOnce({
@@ -329,13 +335,250 @@ describe('CertificateImportFilesService', () => {
         { contentType: 'application/pdf', overwrite: false },
       );
       expect(storage.copyObject).not.toHaveBeenCalled();
-      expect(prisma.certificate_bulk_import_files.update).toHaveBeenCalledWith(
+      expect(
+        prisma.certificate_bulk_import_files.updateMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ size_bytes: BigInt(bytes.length) }),
         }),
       );
     },
   );
+
+  it('keeps one object key and confirmed_at when two confirms race', async () => {
+    const document = await PDFDocument.create();
+    document.addPage();
+    const bytes = Buffer.from(await document.save({ addDefaultPage: false }));
+    const row = {
+      file_id: 'file-1',
+      file_type: 'application/pdf',
+      upload_status: 'PENDING_UPLOAD' as string,
+      staging_key: 'staging-key' as string | null,
+      object_key: null as string | null,
+      size_bytes: BigInt(bytes.length) as bigint | null,
+      confirmed_at: null as Date | null,
+      jurisdiction: 'CAMPO_LOCAL',
+      batch: { user_id: 'owner-1', local_field_id: 7, status: 'DRAFT' },
+    };
+    const claims: Array<{ object_key: string; confirmed_at: Date }> = [];
+    prisma.certificate_bulk_import_files.findFirst.mockImplementation(
+      async () => ({ ...row }),
+    );
+    prisma.certificate_bulk_import_files.update.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) => {
+        row.upload_status = String(data.upload_status);
+        row.object_key = String(data.object_key);
+        row.confirmed_at = data.confirmed_at as Date;
+        row.size_bytes = data.size_bytes as bigint;
+        claims.push({
+          object_key: row.object_key,
+          confirmed_at: row.confirmed_at,
+        });
+        return { ...row };
+      },
+    );
+    prisma.certificate_bulk_import_files.updateMany.mockImplementation(
+      async ({
+        where,
+        data,
+      }: {
+        where: {
+          file_id?: string;
+          upload_status?: string;
+          object_key?: string | null;
+          confirmed_at?: Date | null;
+        };
+        data: {
+          upload_status: string;
+          object_key: string;
+          confirmed_at: Date;
+          size_bytes: bigint;
+        };
+      }) => {
+        const sameInstant =
+          (where.confirmed_at == null && row.confirmed_at == null) ||
+          (where.confirmed_at instanceof Date &&
+            row.confirmed_at instanceof Date &&
+            where.confirmed_at.getTime() === row.confirmed_at.getTime());
+        if (
+          where.file_id !== row.file_id ||
+          where.upload_status !== row.upload_status ||
+          where.object_key !== row.object_key ||
+          !sameInstant
+        ) {
+          return { count: 0 };
+        }
+        row.upload_status = data.upload_status;
+        row.object_key = data.object_key;
+        row.confirmed_at = data.confirmed_at;
+        row.size_bytes = data.size_bytes;
+        claims.push({
+          object_key: data.object_key,
+          confirmed_at: data.confirmed_at,
+        });
+        return { count: 1 };
+      },
+    );
+    storage.getObjectInfo.mockResolvedValue({
+      size: bytes.length,
+      contentType: 'application/pdf',
+    });
+    storage.getObjectPrefix.mockResolvedValue(bytes.subarray(0, 16));
+    storage.getObject.mockResolvedValue(bytes);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let arrived = 0;
+    const uploaded: string[] = [];
+    storage.upload.mockImplementation(async (_bucket: string, key: string) => {
+      arrived += 1;
+      const storedKey = `certificate-imports/${key}`;
+      uploaded.push(storedKey);
+      if (arrived === 1) await gate;
+      else release();
+      return { key: storedKey };
+    });
+
+    const [first, second] = await Promise.all([
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ]);
+
+    expect(claims).toHaveLength(1);
+    expect(first.object_key).toBe(second.object_key);
+    expect(first.confirmed_at).toEqual(second.confirmed_at);
+    expect(first.object_key).toBe(row.object_key);
+    expect(first.confirmed_at).toEqual(row.confirmed_at);
+    const deleted = storage.deleteMany.mock.calls.flatMap(
+      (call: unknown[]) => call[1] as string[],
+    );
+    const loser = uploaded.find((key) => key !== row.object_key);
+    expect(loser).toBeDefined();
+    expect(deleted).toContain(loser);
+    expect(deleted).not.toContain(row.object_key);
+  });
+
+  it('does not let a losing image confirm overwrite the sealed bytes', async () => {
+    const imageA = Buffer.alloc(1200, 0x11);
+    imageA[0] = 0xff;
+    imageA[1] = 0xd8;
+    imageA[2] = 0xff;
+    const imageB = Buffer.alloc(1200, 0x22);
+    imageB[0] = 0xff;
+    imageB[1] = 0xd8;
+    imageB[2] = 0xff;
+    const objects = new Map<string, Buffer>([
+      ['staging-key', Buffer.from(imageA)],
+    ]);
+    const row = {
+      file_id: 'file-1',
+      file_type: 'image/jpeg',
+      upload_status: 'PENDING_UPLOAD' as string,
+      staging_key: 'staging-key' as string | null,
+      object_key: null as string | null,
+      size_bytes: 1200n as bigint | null,
+      confirmed_at: null as Date | null,
+      jurisdiction: 'CAMPO_LOCAL',
+      batch: { user_id: 'owner-1', local_field_id: 7, status: 'DRAFT' },
+    };
+    const claims: string[] = [];
+    prisma.certificate_bulk_import_files.findFirst.mockImplementation(
+      async () => ({ ...row }),
+    );
+    prisma.certificate_bulk_import_files.updateMany.mockImplementation(
+      async ({
+        where,
+        data,
+      }: {
+        where: {
+          file_id?: string;
+          upload_status?: string;
+          object_key?: string | null;
+          confirmed_at?: Date | null;
+        };
+        data: {
+          upload_status: string;
+          object_key: string;
+          confirmed_at: Date;
+          size_bytes: bigint;
+        };
+      }) => {
+        const sameInstant =
+          (where.confirmed_at == null && row.confirmed_at == null) ||
+          (where.confirmed_at instanceof Date &&
+            row.confirmed_at instanceof Date &&
+            where.confirmed_at.getTime() === row.confirmed_at.getTime());
+        if (
+          where.file_id !== row.file_id ||
+          where.upload_status !== row.upload_status ||
+          where.object_key !== row.object_key ||
+          !sameInstant
+        ) {
+          return { count: 0 };
+        }
+        row.upload_status = data.upload_status;
+        row.object_key = data.object_key;
+        row.confirmed_at = data.confirmed_at;
+        row.size_bytes = data.size_bytes;
+        claims.push(data.object_key);
+        return { count: 1 };
+      },
+    );
+    storage.getObjectInfo.mockImplementation(async () => ({
+      size: objects.get('staging-key')!.length,
+      contentType: 'image/jpeg',
+    }));
+    storage.getObjectPrefix.mockImplementation(async () =>
+      Buffer.from(objects.get('staging-key')!.subarray(0, 16)),
+    );
+    let releaseLateCopy: () => void = () => undefined;
+    const lateCopy = new Promise<void>((resolve) => {
+      releaseLateCopy = resolve;
+    });
+    let copies = 0;
+    const destinations: string[] = [];
+    storage.copyObject.mockImplementation(
+      async (_bucket: string, from: string, to: string) => {
+        copies += 1;
+        destinations.push(to);
+        const key = `certificate-imports/${to}`;
+        if (copies > 1) await lateCopy;
+        objects.set(key, Buffer.from(objects.get(from)!));
+        return { key };
+      },
+    );
+    let recreated = false;
+    storage.deleteMany.mockImplementation(
+      async (_bucket: string, keys: string[]) => {
+        if (!recreated && keys.includes('staging-key')) {
+          recreated = true;
+          objects.set('staging-key', Buffer.from(imageB));
+          releaseLateCopy();
+        }
+        for (const key of keys) {
+          if (key !== 'staging-key') objects.delete(key);
+        }
+      },
+    );
+
+    const [first, second] = await Promise.all([
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ]);
+
+    expect(claims).toHaveLength(1);
+    expect(first.object_key).toBe(second.object_key);
+    expect(first.confirmed_at).toEqual(second.confirmed_at);
+    expect(first.object_key).toBe(row.object_key);
+    expect(objects.get(row.object_key!)).toEqual(imageA);
+    expect(destinations).toHaveLength(2);
+    expect(destinations[0]).not.toBe(destinations[1]);
+    const loser = [...objects.keys()].find(
+      (key) => key !== 'staging-key' && key !== row.object_key,
+    );
+    expect(loser).toBeUndefined();
+  });
 
   it('seals the validated bytes even when staging is subsequently replaced', async () => {
     const validated = await preparePdf(1);
@@ -359,7 +602,9 @@ describe('CertificateImportFilesService', () => {
       allocated.push(key);
       return { key: 'certificate-imports/' + key };
     });
-    prisma.certificate_bulk_import_files.update.mockRejectedValueOnce(failure);
+    prisma.certificate_bulk_import_files.updateMany.mockRejectedValueOnce(
+      failure,
+    );
     await expect(
       service.confirm('owner-1', 'batch-1', 'file-1'),
     ).rejects.toThrow(failure);
@@ -388,7 +633,7 @@ describe('CertificateImportFilesService', () => {
     prisma.certificate_bulk_import_files.findFirst
       .mockImplementationOnce(pending)
       .mockImplementation(async () => ({ object_key: sealKey }));
-    prisma.certificate_bulk_import_files.update.mockRejectedValueOnce(
+    prisma.certificate_bulk_import_files.updateMany.mockRejectedValueOnce(
       new Error('ambiguous commit'),
     );
     await expect(
@@ -404,7 +649,7 @@ describe('CertificateImportFilesService', () => {
     prisma.certificate_bulk_import_files.findFirst
       .mockImplementationOnce(pending)
       .mockRejectedValueOnce(new Error('read unavailable'));
-    prisma.certificate_bulk_import_files.update.mockRejectedValueOnce(
+    prisma.certificate_bulk_import_files.updateMany.mockRejectedValueOnce(
       new Error('ambiguous commit'),
     );
     await expect(
@@ -421,7 +666,9 @@ describe('CertificateImportFilesService', () => {
     await expect(
       service.confirm('owner-1', 'batch-1', 'file-1'),
     ).rejects.toThrow('CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE');
-    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_files.updateMany,
+    ).not.toHaveBeenCalled();
     expect(storage.deleteMany).not.toHaveBeenCalled();
   });
 
@@ -435,8 +682,23 @@ describe('CertificateImportFilesService', () => {
     ).rejects.toThrow(code as string);
     expect(storage.copyObject).not.toHaveBeenCalled();
     expect(storage.upload).not.toHaveBeenCalled();
-    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_files.updateMany,
+    ).not.toHaveBeenCalled();
     expect(storage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('does not seal an ObjStm whose inflate exceeds the stream cap', async () => {
+    const bomb = await flateObjStmOverCap();
+    await preparePdf(1, () => bomb);
+    await expect(
+      service.confirm('owner-1', 'batch-1', 'file-1'),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_PDF_INVALID');
+    expect(storage.upload).not.toHaveBeenCalled();
+    expect(storage.copyObject).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_files.updateMany,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects corrupt PDF bytes before sealing', async () => {
@@ -446,7 +708,9 @@ describe('CertificateImportFilesService', () => {
     ).rejects.toThrow('CERTIFICATE_IMPORT_PDF_INVALID');
     expect(storage.copyObject).not.toHaveBeenCalled();
     expect(storage.upload).not.toHaveBeenCalled();
-    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_files.updateMany,
+    ).not.toHaveBeenCalled();
     expect(storage.deleteMany).not.toHaveBeenCalled();
   });
 
@@ -462,7 +726,9 @@ describe('CertificateImportFilesService', () => {
     ).rejects.toThrow('CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH');
     expect(storage.copyObject).not.toHaveBeenCalled();
     expect(storage.upload).not.toHaveBeenCalled();
-    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_files.updateMany,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects magic bytes that do not match the declared type', async () => {
@@ -483,7 +749,9 @@ describe('CertificateImportFilesService', () => {
     ).rejects.toThrow('CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH');
     expect(storage.copyObject).not.toHaveBeenCalled();
     expect(storage.upload).not.toHaveBeenCalled();
-    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_files.updateMany,
+    ).not.toHaveBeenCalled();
   });
 
   it('returns a recoverable storage error without sealing the file', async () => {
@@ -508,7 +776,9 @@ describe('CertificateImportFilesService', () => {
     await expect(
       service.confirm('owner-1', 'batch-1', 'file-1'),
     ).rejects.toThrow('CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE');
-    expect(prisma.certificate_bulk_import_files.update).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_files.updateMany,
+    ).not.toHaveBeenCalled();
   });
 
   it('signs a download for the owner and hides unsealed or public references', async () => {
