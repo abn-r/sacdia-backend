@@ -24,84 +24,108 @@ const GONE = {
 @Controller()
 export class LegacyInvestitureRetiredController {
   @Post('investiture/enrollments/:enrollmentId/submit')
-  @ApiOperation({ summary: '[RETIRADA] Enviar a la validación anterior' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Enviar a la validación anterior',
+  })
   @ApiResponse(GONE)
   submit(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('investiture/enrollments/:enrollmentId/club-approve')
-  @ApiOperation({ summary: '[RETIRADA] Aprobación del club' })
+  @ApiOperation({ deprecated: true, summary: '[RETIRADA] Aprobación del club' })
   @ApiResponse(GONE)
   clubApprove(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('investiture/enrollments/:enrollmentId/coordinator-approve')
-  @ApiOperation({ summary: '[RETIRADA] Aprobación de coordinación' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Aprobación de coordinación',
+  })
   @ApiResponse(GONE)
   coordinatorApprove(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('investiture/enrollments/:enrollmentId/field-approve')
-  @ApiOperation({ summary: '[RETIRADA] Aprobación del Campo' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Aprobación del Campo',
+  })
   @ApiResponse(GONE)
   fieldApprove(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('investiture/enrollments/:enrollmentId/invest')
-  @ApiOperation({ summary: '[RETIRADA] Investir por la vía anterior' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Investir por la vía anterior',
+  })
   @ApiResponse(GONE)
   invest(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('investiture/enrollments/:enrollmentId/reject')
-  @ApiOperation({ summary: '[RETIRADA] Rechazar en la vía anterior' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Rechazar en la vía anterior',
+  })
   @ApiResponse(GONE)
   reject(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('investiture/enrollments/bulk-approve')
-  @ApiOperation({ summary: '[RETIRADA] Aprobación en bloque' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Aprobación en bloque',
+  })
   @ApiResponse(GONE)
   bulkApprove(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('investiture/enrollments/bulk-reject')
-  @ApiOperation({ summary: '[RETIRADA] Rechazo en bloque' })
+  @ApiOperation({ deprecated: true, summary: '[RETIRADA] Rechazo en bloque' })
   @ApiResponse(GONE)
   bulkReject(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Get('investiture/pending')
-  @ApiOperation({ summary: '[RETIRADA] Pendientes de la vía anterior' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Pendientes de la vía anterior',
+  })
   @ApiResponse(GONE)
   pending(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('enrollments/:enrollmentId/submit-for-validation')
-  @ApiOperation({ summary: '[RETIRADA] Alias de envío a validación' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Alias de envío a validación',
+  })
   @ApiResponse(GONE)
   submitForValidationAlias(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('enrollments/:enrollmentId/validate')
-  @ApiOperation({ summary: '[RETIRADA] Alias de validación' })
+  @ApiOperation({ deprecated: true, summary: '[RETIRADA] Alias de validación' })
   @ApiResponse(GONE)
   validateAlias(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Post('enrollments/:enrollmentId/investiture')
-  @ApiOperation({ summary: '[RETIRADA] Alias de investir' })
+  @ApiOperation({ deprecated: true, summary: '[RETIRADA] Alias de investir' })
   @ApiResponse(GONE)
   investitureAlias(): never {
     return throwLegacyInvestiturePipelineRetired();
@@ -109,6 +133,7 @@ export class LegacyInvestitureRetiredController {
 
   @Get('admin/investiture/config')
   @ApiOperation({
+    deprecated: true,
     summary: '[RETIRADA] Configuraciones de la investidura anterior',
   })
   @ApiResponse(GONE)
@@ -118,6 +143,7 @@ export class LegacyInvestitureRetiredController {
 
   @Get('admin/investiture/config/:configId')
   @ApiOperation({
+    deprecated: true,
     summary: '[RETIRADA] Configuración de la investidura anterior',
   })
   @ApiResponse(GONE)
@@ -126,21 +152,30 @@ export class LegacyInvestitureRetiredController {
   }
 
   @Post('admin/investiture/config')
-  @ApiOperation({ summary: '[RETIRADA] Crear configuración anterior' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Crear configuración anterior',
+  })
   @ApiResponse(GONE)
   createConfig(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Patch('admin/investiture/config/:configId')
-  @ApiOperation({ summary: '[RETIRADA] Editar configuración anterior' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Editar configuración anterior',
+  })
   @ApiResponse(GONE)
   updateConfig(): never {
     return throwLegacyInvestiturePipelineRetired();
   }
 
   @Delete('admin/investiture/config/:configId')
-  @ApiOperation({ summary: '[RETIRADA] Desactivar configuración anterior' })
+  @ApiOperation({
+    deprecated: true,
+    summary: '[RETIRADA] Desactivar configuración anterior',
+  })
   @ApiResponse(GONE)
   deleteConfig(): never {
     return throwLegacyInvestiturePipelineRetired();

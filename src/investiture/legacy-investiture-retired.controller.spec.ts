@@ -1,5 +1,10 @@
 import { HttpStatus, RequestMethod } from '@nestjs/common';
-import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import {
+  METHOD_METADATA,
+  PATH_METADATA,
+  ROUTE_ARGS_METADATA,
+} from '@nestjs/common/constants';
+import { DECORATORS } from '@nestjs/swagger';
 import { SKIP_PERMISSIONS_KEY } from '../common/decorators/skip-permissions.decorator';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -52,6 +57,35 @@ describe('LegacyInvestitureRetiredController', () => {
       expect((thrown as AppException).code).toBe(
         ErrorCode.INVESTITURE_LEGACY_PIPELINE_RETIRED,
       );
+    },
+  );
+
+  it.each(RETIRED_LEGACY_INVESTITURE_ROUTES)(
+    '$method $path takes no @Body, @Param or @Query, so no pipe can answer 400 before the 410',
+    ({ handler }) => {
+      expect(
+        Reflect.getMetadata(
+          ROUTE_ARGS_METADATA,
+          LegacyInvestitureRetiredController,
+          handler,
+        ),
+      ).toBeUndefined();
+    },
+  );
+
+  it.each(RETIRED_LEGACY_INVESTITURE_ROUTES)(
+    '$method $path is documented as deprecated',
+    ({ handler }) => {
+      const operation = Reflect.getMetadata(
+        DECORATORS.API_OPERATION,
+        (
+          LegacyInvestitureRetiredController.prototype as unknown as Record<
+            string,
+            object
+          >
+        )[handler],
+      ) as { deprecated?: boolean } | undefined;
+      expect(operation?.deprecated).toBe(true);
     },
   );
 
