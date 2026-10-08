@@ -125,7 +125,30 @@ export type InvestitureRequestView = {
   request_id: string;
   club_section_id: number;
   ecclesiastical_year_id: number;
+  /** Header data so a list can be drawn without reading every person. */
+  club_id?: number | null;
+  club_name?: string | null;
+  section_name?: string | null;
+  district_name?: string | null;
+  /** People still PENDING in this request. */
+  pending_count?: number;
+  /** Earliest `investiture_date` among the PENDING people, or null. */
+  earliest_investiture_date?: string | null;
+  created_at?: string;
   people: InvestitureRequestPersonView[];
+};
+
+type SectionLabel = {
+  sectionName: string | null;
+  clubId: number | null;
+  clubName: string | null;
+  districtName: string | null;
+};
+
+type RequestLabels = {
+  users: Map<string, string>;
+  classes: Map<number, string>;
+  sections: Map<number, SectionLabel>;
 };
 
 export type InvestitureHistoryEntry = {
@@ -698,13 +721,11 @@ export class InvestitureAuthorizationRequestService {
       select: { request_id: true },
       orderBy: { request_id: 'asc' },
     });
-    const views: InvestitureRequestView[] = [];
-    for (const row of rows) {
-      views.push(
-        await this.readRequest(this.prisma, row.request_id, 'authorizer'),
-      );
-    }
-    return views;
+    return this.readRequests(
+      this.prisma,
+      rows.map((row) => row.request_id),
+      'authorizer',
+    );
   }
 
   async readForAuthorizer(
@@ -2027,6 +2048,7 @@ export class InvestitureAuthorizationRequestService {
         request_id: true,
         club_section_id: true,
         ecclesiastical_year_id: true,
+        created_at: true,
         people: {
           orderBy: { person_id: 'asc' },
         },
@@ -2035,37 +2057,95 @@ export class InvestitureAuthorizationRequestService {
     if (!request) {
       throw new AppNotFoundException(ErrorCode.INVESTITURE_REQUEST_NOT_FOUND);
     }
-    const labels = await this.requestLabels(store, request);
+    const labels = await this.requestLabels(store, [request]);
+    return this.requestView(request, labels, audience);
+  }
+
+  /** Same shape as `readRequest`, with one lookup per table for all requests. */
+  private async readRequests(
+    store: Prisma.TransactionClient | PrismaService,
+    requestIds: string[],
+    audience: 'board' | 'authorizer',
+  ): Promise<InvestitureRequestView[]> {
+    if (requestIds.length === 0) {
+      return [];
+    }
+    const requests = await store.investiture_authorization_requests.findMany({
+      where: { request_id: { in: requestIds } },
+      select: {
+        request_id: true,
+        club_section_id: true,
+        ecclesiastical_year_id: true,
+        created_at: true,
+        people: {
+          orderBy: { person_id: 'asc' },
+        },
+      },
+      orderBy: { request_id: 'asc' },
+    });
+    const labels = await this.requestLabels(store, requests);
+    return requests.map((request) =>
+      this.requestView(request, labels, audience),
+    );
+  }
+
+  private requestView(
+    request: {
+      request_id: string;
+      club_section_id: number;
+      ecclesiastical_year_id: number;
+      created_at: Date;
+      people: Parameters<
+        InvestitureAuthorizationRequestService['personView']
+      >[0][];
+    },
+    labels: RequestLabels,
+    audience: 'board' | 'authorizer',
+  ): InvestitureRequestView {
+    const section = labels.sections.get(request.club_section_id);
+    const personLabels = {
+      users: labels.users,
+      classes: labels.classes,
+      sectionName: section?.sectionName ?? null,
+    };
+    const pendingDates = request.people
+      .filter((person) => person.status === 'PENDING')
+      .map((person) => civilDate(person.investiture_date))
+      .sort();
     return {
       request_id: request.request_id,
       club_section_id: request.club_section_id,
       ecclesiastical_year_id: request.ecclesiastical_year_id,
+      club_id: section?.clubId ?? null,
+      club_name: section?.clubName ?? null,
+      section_name: section?.sectionName ?? null,
+      district_name: section?.districtName ?? null,
+      pending_count: pendingDates.length,
+      earliest_investiture_date: pendingDates[0] ?? null,
+      created_at: request.created_at.toISOString(),
       people: request.people.map((person) =>
-        this.personView(person, audience, labels),
+        this.personView(person, audience, personLabels),
       ),
     };
   }
 
   private async requestLabels(
     store: Prisma.TransactionClient | PrismaService,
-    request: {
+    requests: Array<{
       club_section_id: number;
       people: Array<{
         user_id: string;
         class_id: number;
         resolved_by_id?: string | null;
       }>;
-    },
-  ): Promise<{
-    users: Map<string, string>;
-    classes: Map<number, string>;
-    sectionName: string | null;
-  }> {
+    }>,
+  ): Promise<RequestLabels> {
     const users = new Map<string, string>();
     const classes = new Map<number, string>();
+    const people = requests.flatMap((request) => request.people);
     const userIds = [
       ...new Set(
-        request.people.flatMap((person) =>
+        people.flatMap((person) =>
           person.resolved_by_id
             ? [person.user_id, person.resolved_by_id]
             : [person.user_id],
@@ -2109,9 +2189,7 @@ export class InvestitureAuthorizationRequestService {
         };
       }
     ).classes;
-    const classIds = [
-      ...new Set(request.people.map((person) => person.class_id)),
-    ];
+    const classIds = [...new Set(people.map((person) => person.class_id))];
     if (classesTable?.findMany && classIds.length > 0) {
       const rows = await classesTable.findMany({
         where: { class_id: { in: classIds } },
@@ -2123,12 +2201,33 @@ export class InvestitureAuthorizationRequestService {
         }
       }
     }
-    const section = await store.club_sections.findUnique({
-      where: { club_section_id: request.club_section_id },
-      select: { club_types: { select: { name: true } } },
+    const sections = new Map<number, SectionLabel>();
+    const sectionIds = [
+      ...new Set(requests.map((request) => request.club_section_id)),
+    ];
+    const sectionRows = await store.club_sections.findMany({
+      where: { club_section_id: { in: sectionIds } },
+      select: {
+        club_section_id: true,
+        club_types: { select: { name: true } },
+        clubs: {
+          select: {
+            club_id: true,
+            name: true,
+            churches: { select: { districts: { select: { name: true } } } },
+          },
+        },
+      },
     });
-    const sectionName = section?.club_types?.name ?? null;
-    return { users, classes, sectionName };
+    for (const row of sectionRows) {
+      sections.set(row.club_section_id, {
+        sectionName: row.club_types?.name ?? null,
+        clubId: row.clubs?.club_id ?? null,
+        clubName: row.clubs?.name ?? null,
+        districtName: row.clubs?.churches?.districts?.name ?? null,
+      });
+    }
+    return { users, classes, sections };
   }
 
   private personView(

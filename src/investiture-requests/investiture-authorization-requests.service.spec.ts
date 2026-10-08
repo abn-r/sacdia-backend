@@ -18,6 +18,7 @@ const ACTOR = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const INSIDE = new Date('2026-10-15T18:00:00.000Z');
 const OUTSIDE = new Date('2026-02-15T18:00:00.000Z');
 const DATE = '2026-11-01';
+const OTHER_USER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 type EnrollmentSeed = {
   enrollment_id: number;
@@ -61,7 +62,10 @@ type RequestSeed = {
   club_section_id: number;
   ecclesiastical_year_id: number;
   created_by_id: string;
+  created_at?: Date;
 };
+
+const SEED_CREATED_AT = new Date('2026-10-01T12:00:00.000Z');
 
 function director(
   role = 'director',
@@ -136,9 +140,14 @@ function createWorld(options?: {
     main_club_id: 1,
     club_types: { name: 'Conquistadores' },
     clubs: {
+      club_id: 1,
+      name: 'Club Norte',
       local_field_id: 10,
       local_fields: { timezone: 'America/Mexico_City' },
-      churches: { districlub_type_id: 3 },
+      churches: {
+        districlub_type_id: 3,
+        districts: { name: 'Distrito Sur' },
+      },
     },
   };
   let windowRow: { start_date: Date; end_date: Date } | null = null;
@@ -430,6 +439,7 @@ function createWorld(options?: {
       async ({ data }: { data: Omit<RequestSeed, 'request_id'> }) => {
         const row: RequestSeed = {
           request_id: `22222222-2222-4222-8222-${String(seq).padStart(12, '0')}`,
+          created_at: SEED_CREATED_AT,
           ...data,
         };
         seq += 1;
@@ -453,6 +463,7 @@ function createWorld(options?: {
         }
         if (select?.people) {
           return {
+            created_at: SEED_CREATED_AT,
             ...row,
             people: people
               .filter((person) => person.request_id === row.request_id)
@@ -467,8 +478,11 @@ function createWorld(options?: {
     findMany: jest.fn(
       async ({
         where,
+        select,
       }: {
+        select?: { people?: unknown };
         where?: {
+          request_id?: { in: string[] };
           ecclesiastical_year_id?: number;
           club_section_id?: { in: number[] };
           people?: { some?: { status?: string; resolution_code?: string } };
@@ -483,7 +497,13 @@ function createWorld(options?: {
           }>;
         };
       }) => {
-        return requests.filter((row) => {
+        const matched = requests.filter((row) => {
+          if (
+            where?.request_id?.in &&
+            !where.request_id.in.includes(row.request_id)
+          ) {
+            return false;
+          }
           if (
             where?.ecclesiastical_year_id !== undefined &&
             row.ecclesiastical_year_id !== where.ecclesiastical_year_id
@@ -526,6 +546,18 @@ function createWorld(options?: {
           }
           return true;
         });
+        if (!select?.people) {
+          return matched;
+        }
+        return matched.map((row) => ({
+          created_at: SEED_CREATED_AT,
+          ...row,
+          people: people
+            .filter((person) => person.request_id === row.request_id)
+            .sort((left, right) =>
+              left.person_id.localeCompare(right.person_id),
+            ),
+        }));
       },
     ),
   };
@@ -731,6 +763,7 @@ function createWorld(options?: {
         }: {
           where?: {
             active?: boolean;
+            club_section_id?: { in: number[] };
             clubs?: {
               local_field_id?: number;
               churches?: { districlub_type_id?: { in: number[] } };
@@ -739,6 +772,12 @@ function createWorld(options?: {
         }) => {
           return sections.filter((row) => {
             if (where?.active !== undefined && row.active !== where.active) {
+              return false;
+            }
+            if (
+              where?.club_section_id?.in &&
+              !where.club_section_id.in.includes(row.club_section_id)
+            ) {
               return false;
             }
             const clubs = where?.clubs;
@@ -975,14 +1014,17 @@ function createWorld(options?: {
       club_section_id: number;
       club_type_id: number;
       main_club_id: number;
+      club_types?: { name: string };
+      clubs?: typeof section.clubs;
     }) {
       sections.push({
         club_section_id: row.club_section_id,
         club_type_id: row.club_type_id,
         active: true,
         main_club_id: row.main_club_id,
-        clubs: section.clubs,
-      });
+        clubs: row.clubs ?? section.clubs,
+        ...(row.club_types ? { club_types: row.club_types } : {}),
+      } as (typeof sections)[number]);
     },
     addMember(
       userId = USER,
@@ -3684,7 +3726,7 @@ describe('investiture authorization requests', () => {
         view.request_id,
       );
       expect(read.people[0].section_name).toBe('Conquistadores');
-      const lookup = world.prisma.club_sections.findUnique.mock.calls
+      const lookup = world.prisma.club_sections.findMany.mock.calls
         .map(
           ([args]) =>
             args as {
@@ -3973,6 +4015,182 @@ describe('investiture authorization requests', () => {
       expect(
         world.prisma.investiture_authorization_people.create,
       ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('authorizer reads carry club, section and counts', () => {
+    const SOUTH_USER = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+
+    async function twoClubs() {
+      world.addSection({
+        club_section_id: 8,
+        club_type_id: 1,
+        main_club_id: 2,
+        club_types: { name: 'Conquistadores' },
+        clubs: {
+          club_id: 2,
+          name: 'Club Sur',
+          local_field_id: 10,
+          local_fields: { timezone: 'America/Mexico_City' },
+          churches: {
+            districlub_type_id: 3,
+            districts: { name: 'Distrito Este' },
+          },
+        },
+      });
+      world.addMember(SOUTH_USER, 8);
+      world.addEnrollment({
+        enrollment_id: 960,
+        user_id: SOUTH_USER,
+        class_id: 9,
+      });
+      const north = await present([901], '2026-11-20');
+      const south = await present(
+        [960],
+        '2026-11-05',
+        INSIDE,
+        director('director', 8),
+        8,
+      );
+      return { north, south };
+    }
+
+    it('lists club, section, district, pending count and the earliest date for each request', async () => {
+      const { north, south } = await twoClubs();
+      world.assignPastor();
+
+      const listed = await service.listForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        YEAR_ID,
+      );
+
+      const byId = new Map(listed.map((view) => [view.request_id, view]));
+      expect(byId.get(north.request_id)).toMatchObject({
+        club_section_id: SECTION_ID,
+        club_id: 1,
+        club_name: 'Club Norte',
+        section_name: 'Conquistadores',
+        district_name: 'Distrito Sur',
+        pending_count: 1,
+        earliest_investiture_date: '2026-11-20',
+        created_at: '2026-10-01T12:00:00.000Z',
+      });
+      expect(byId.get(south.request_id)).toMatchObject({
+        club_section_id: 8,
+        club_id: 2,
+        club_name: 'Club Sur',
+        section_name: 'Conquistadores',
+        district_name: 'Distrito Este',
+        pending_count: 1,
+        earliest_investiture_date: '2026-11-05',
+      });
+      expect(byId.get(north.request_id)?.people[0]).toEqual(north.people[0]);
+    });
+
+    it('counts only PENDING people and takes the earliest of those dates', async () => {
+      const { north } = await twoClubs();
+      world.addMember(OTHER_USER);
+      world.addEnrollment({
+        enrollment_id: 962,
+        user_id: OTHER_USER,
+        class_id: 11,
+      });
+      const added = await service.addPeople(
+        director(),
+        ACTOR,
+        north.request_id,
+        '2026-11-03',
+        [962],
+        INSIDE,
+      );
+      const early = added.people.find((p) => p.enrollment_id === 962);
+      expect(early).toBeDefined();
+      world.assignPastor();
+
+      const read = await service.readForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        north.request_id,
+      );
+      expect(read).toMatchObject({
+        pending_count: 2,
+        earliest_investiture_date: '2026-11-03',
+      });
+
+      const row = world.people.find((p) => p.person_id === early?.person_id);
+      if (row) {
+        row.status = 'REMOVED';
+      }
+      const afterRemoval = await service.readForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        north.request_id,
+      );
+      expect(afterRemoval).toMatchObject({
+        pending_count: 1,
+        earliest_investiture_date: '2026-11-20',
+      });
+    });
+
+    it('returns the same header on the detail read and null date without pending', async () => {
+      const view = await present();
+      world.assignPastor();
+      const detail = await service.readForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+      );
+      expect(detail).toMatchObject({
+        club_id: 1,
+        club_name: 'Club Norte',
+        section_name: 'Conquistadores',
+        district_name: 'Distrito Sur',
+        pending_count: 1,
+        earliest_investiture_date: DATE,
+        created_at: '2026-10-01T12:00:00.000Z',
+      });
+
+      world.people[0].status = 'INVESTED';
+      const resolved = await service.readForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+      );
+      expect(resolved).toMatchObject({
+        pending_count: 0,
+        earliest_investiture_date: null,
+      });
+    });
+
+    it('reads the list in batch without per-request lookups', async () => {
+      await twoClubs();
+      world.assignPastor();
+      world.prisma.investiture_authorization_requests.findUnique.mockClear();
+      world.prisma.club_sections.findUnique.mockClear();
+      world.prisma.users.findMany.mockClear();
+      world.prisma.club_sections.findMany.mockClear();
+
+      const listed = await service.listForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        YEAR_ID,
+      );
+
+      expect(listed).toHaveLength(2);
+      expect(
+        world.prisma.investiture_authorization_requests.findUnique,
+      ).not.toHaveBeenCalled();
+      expect(world.prisma.club_sections.findUnique).not.toHaveBeenCalled();
+      expect(world.prisma.users.findMany).toHaveBeenCalledTimes(1);
+      const labelLookups =
+        world.prisma.club_sections.findMany.mock.calls.filter(([args]) =>
+          Boolean(
+            (args as { where?: { club_section_id?: unknown } }).where
+              ?.club_section_id,
+          ),
+        );
+      expect(labelLookups).toHaveLength(1);
     });
   });
 

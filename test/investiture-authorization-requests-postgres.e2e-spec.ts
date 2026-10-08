@@ -5532,7 +5532,16 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
       const byEnrollment = new Map(
         view.candidates.map((row) => [row.enrollment_id, row]),
       );
-      expect(view.candidates).toHaveLength(3);
+      // Earlier tests leave other members in the shared section; assert only
+      // on the enrollments this test seeded.
+      expect(
+        [enrollmentId, legacyEnrollment, sibling.enrollment_id].every((id) =>
+          byEnrollment.has(id),
+        ),
+      ).toBe(true);
+      expect(
+        new Set(view.candidates.map((row) => row.enrollment_id)).size,
+      ).toBe(view.candidates.length);
       expect(byEnrollment.get(enrollmentId)).toMatchObject({
         user_id: MEMBER,
         user_name: 'Miembro',
@@ -5572,14 +5581,151 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
       );
 
       expect(view.open_request_id).toBe(presented.request_id);
-      expect(view.candidates).toEqual([
-        expect.objectContaining({
-          enrollment_id: enrollmentId,
-          eligible: false,
-          blocked_code: 'INVESTITURE_REQUEST_ACTIVE_EXISTS',
-          pending_person_id: presented.people[0].person_id,
-        }),
-      ]);
+      expect(
+        view.candidates.find((row) => row.enrollment_id === enrollmentId),
+      ).toMatchObject({
+        eligible: false,
+        blocked_code: 'INVESTITURE_REQUEST_ACTIVE_EXISTS',
+        pending_person_id: presented.people[0].person_id,
+      });
+    });
+  });
+
+  describe('authorizer header data', () => {
+    const SOUTH_USER = '53000000-0000-4000-8000-000000000001';
+    let southSectionId = 0;
+    let southClubId = 0;
+    let southEnrollmentId = 0;
+
+    beforeEach(async () => {
+      const church = await prisma.churches.findFirstOrThrow({
+        where: { name: 'P4 Iglesia' },
+        select: { church_id: true, districlub_type_id: true },
+      });
+      const seeded = await withClient(url, async (client) => {
+        const club = await client.query<{ club_id: number }>(
+          `INSERT INTO clubs (name, active, local_field_id, church_id, coordinates, districlub_type_id)
+           VALUES ('P4 Club Sur', true, $1, $2, '{}'::json, $3)
+           RETURNING club_id`,
+          [fieldId, church.church_id, church.districlub_type_id],
+        );
+        const section = await client.query<{ club_section_id: number }>(
+          `INSERT INTO club_sections (active, club_type_id, main_club_id)
+           VALUES (true, $1, $2)
+           RETURNING club_section_id`,
+          [clubTypeId, club.rows[0].club_id],
+        );
+        return {
+          clubId: club.rows[0].club_id,
+          sectionId: section.rows[0].club_section_id,
+        };
+      });
+      southClubId = seeded.clubId;
+      southSectionId = seeded.sectionId;
+      await prisma.users.upsert({
+        where: { user_id: SOUTH_USER },
+        update: { active: true },
+        create: {
+          user_id: SOUTH_USER,
+          email: 'south-p4@p4.test',
+          name: 'Sur',
+          active: true,
+        },
+      });
+      await prisma.club_role_assignments.create({
+        data: {
+          user_id: SOUTH_USER,
+          role_id: roleId,
+          ecclesiastical_year_id: yearId,
+          start_date: new Date('2026-01-01T00:00:00.000Z'),
+          active: true,
+          status: 'active',
+          club_section_id: southSectionId,
+        },
+      });
+      const enrollment = await prisma.enrollments.create({
+        data: {
+          user_id: SOUTH_USER,
+          class_id: classId,
+          ecclesiastical_year_id: yearId,
+          investiture_status: 'IN_PROGRESS',
+          record_kind: 'OPERATIONAL',
+          active: true,
+        },
+        select: { enrollment_id: true },
+      });
+      southEnrollmentId = enrollment.enrollment_id;
+    });
+
+    afterEach(async () => {
+      await prisma.investiture_authorization_people.deleteMany();
+      await prisma.investiture_authorization_requests.deleteMany();
+      await prisma.enrollments.deleteMany({ where: { user_id: SOUTH_USER } });
+      await prisma.club_role_assignments.deleteMany({
+        where: { user_id: SOUTH_USER },
+      });
+      await prisma.club_sections.delete({
+        where: { club_section_id: southSectionId },
+      });
+      await prisma.clubs.delete({ where: { club_id: southClubId } });
+    });
+
+    it('reads real club, section and district names with counts for two clubs, in a list and in the detail', async () => {
+      const north = await present();
+      const south = await service.present(
+        marker(southSectionId),
+        ACTOR,
+        southSectionId,
+        yearId,
+        '2026-10-30',
+        [southEnrollmentId],
+        INSIDE,
+      );
+
+      const listed = await service.listForAuthorizer(
+        fieldAuth(),
+        ACTOR,
+        yearId,
+      );
+
+      const byId = new Map(listed.map((view) => [view.request_id, view]));
+      expect(listed).toHaveLength(2);
+      expect(byId.get(north.request_id)).toMatchObject({
+        club_section_id: sectionId,
+        club_id: clubId,
+        club_name: 'P4 Club',
+        section_name: 'Conquistadores',
+        district_name: 'P4 Distrito',
+        pending_count: 1,
+        earliest_investiture_date: DATE,
+        created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      });
+      expect(byId.get(south.request_id)).toMatchObject({
+        club_section_id: southSectionId,
+        club_id: southClubId,
+        club_name: 'P4 Club Sur',
+        section_name: 'Conquistadores',
+        district_name: 'P4 Distrito',
+        pending_count: 1,
+        earliest_investiture_date: '2026-10-30',
+      });
+      expect(byId.get(south.request_id)?.people[0]).toMatchObject({
+        user_name: 'Sur',
+        class_name: 'Amigo P4',
+        section_name: 'Conquistadores',
+      });
+
+      const detail = await service.readForAuthorizer(
+        fieldAuth(),
+        ACTOR,
+        south.request_id,
+      );
+      expect(detail).toMatchObject({
+        club_name: 'P4 Club Sur',
+        district_name: 'P4 Distrito',
+        pending_count: 1,
+        earliest_investiture_date: '2026-10-30',
+      });
     });
   });
 });
