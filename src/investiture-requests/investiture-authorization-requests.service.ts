@@ -29,6 +29,14 @@ import {
   normalizeInvestitureTimeZone,
 } from './ecclesiastical-year-local-day';
 import { InvestitureCommunicationsService } from './investiture-communications.service';
+import {
+  evaluatePresentation,
+  GM_TYPE_NAME,
+  hasCrossTypeHome,
+  type PendingAuthorizationFact,
+  type PresentationFacts,
+  type PresentationVerdict,
+} from './investiture-presentation-rules';
 import { pastorCanAuthorize } from './investiture-pastor-eligibility';
 import {
   crossTypeHomeAssignmentWhere,
@@ -57,7 +65,6 @@ export { INVESTITURE_REQUEST_USER_LOCK_PREFIX } from './investiture-request-lock
 
 const MARK_ROLES = new Set(['director', 'secretary', 'secretary-treasurer']);
 const FIELD_AUTHORIZER_ROLES = new Set(['director-lf', 'assistant-lf']);
-const GM_TYPE_NAME = 'Guías Mayores';
 const COMMENT_MAX = 500;
 const REASON_MAX = 1000;
 
@@ -199,21 +206,11 @@ type SectionContext = {
   districtId: number | null;
 };
 
-type PresentationVerdict =
-  | { eligible: true; singleSlot: boolean }
-  | { eligible: false; code: PresentationBlockedCode };
-
 const PRESENTATION_BAD_REQUEST_CODES = new Set<PresentationBlockedCode>([
   ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
   ErrorCode.INVESTITURE_DURATION_MIN_NOT_MET,
   ErrorCode.INVESTITURE_DURATION_EXPIRED,
 ]);
-
-function blockedPresentation(
-  code: PresentationBlockedCode,
-): PresentationVerdict {
-  return { eligible: false, code };
-}
 
 /** Maps a blocking code back to the exception `present` has always thrown. */
 function presentationException(
@@ -287,7 +284,9 @@ const PRESENTATION_CANDIDATE_SELECT = {
   },
 } satisfies Prisma.enrollmentsSelect;
 
-const PRESENTATION_EVALUATION_CHUNK = 8;
+type PresentationCandidateRow = Prisma.enrollmentsGetPayload<{
+  select: typeof PRESENTATION_CANDIDATE_SELECT;
+}>;
 
 @Injectable()
 export class InvestitureAuthorizationRequestService {
@@ -549,7 +548,8 @@ export class InvestitureAuthorizationRequestService {
       this.prisma,
       { validateTimeZone: false },
     );
-    const enrollments = await this.presentationCandidates(context);
+    const { enrollments, eligibility, verdicts } =
+      await this.evaluatePresentationCandidates(context);
     const pending = await this.prisma.investiture_authorization_people.findMany(
       {
         where: {
@@ -567,48 +567,21 @@ export class InvestitureAuthorizationRequestService {
     const pendingByEnrollment = new Map(
       pending.map((row) => [row.enrollment_id, row.person_id]),
     );
-    const progress =
-      enrollments.length > 0
-        ? await this.eligibility.calculateForEnrollments(
-            enrollments.map((row) => row.enrollment_id),
-          )
-        : new Map<number, ClassRequirementEligibilityResult>();
-    const candidates: PresentationCandidate[] = [];
-    for (
-      let index = 0;
-      index < enrollments.length;
-      index += PRESENTATION_EVALUATION_CHUNK
-    ) {
-      const chunk = enrollments.slice(
-        index,
-        index + PRESENTATION_EVALUATION_CHUNK,
-      );
-      const verdicts = await Promise.all(
-        chunk.map((row) =>
-          this.evaluateEnrollmentForPresentation(
-            this.prisma,
-            context,
-            row,
-            progress,
-          ),
-        ),
-      );
-      chunk.forEach((row, offset) => {
-        const verdict = verdicts[offset];
-        candidates.push({
-          enrollment_id: row.enrollment_id,
-          user_id: row.user_id,
-          user_name: row.users ? displayName(row.users) : null,
-          class_id: row.class_id,
-          class_name: row.classes?.name ?? null,
-          overall_progress:
-            progress.get(row.enrollment_id)?.overall_progress ?? 0,
-          eligible: verdict.eligible,
-          blocked_code: verdict.eligible ? null : verdict.code,
-          pending_person_id: pendingByEnrollment.get(row.enrollment_id) ?? null,
-        });
-      });
-    }
+    const candidates: PresentationCandidate[] = enrollments.map((row) => {
+      const verdict = verdicts.get(row.enrollment_id);
+      return {
+        enrollment_id: row.enrollment_id,
+        user_id: row.user_id,
+        user_name: row.users ? displayName(row.users) : null,
+        class_id: row.class_id,
+        class_name: row.classes?.name ?? null,
+        overall_progress:
+          eligibility.get(row.enrollment_id)?.overall_progress ?? 0,
+        eligible: verdict?.eligible ?? false,
+        blocked_code: verdict && !verdict.eligible ? verdict.code : null,
+        pending_person_id: pendingByEnrollment.get(row.enrollment_id) ?? null,
+      };
+    });
     candidates.sort(
       (left, right) =>
         Number(right.eligible) - Number(left.eligible) ||
@@ -631,10 +604,16 @@ export class InvestitureAuthorizationRequestService {
 
   /**
    * Operational, active, not yet invested enrollments of the club type that
-   * `present` would accept: members of the section for the year, plus the
-   * cross-type rows of a Guía Mayor whose home is another section of the club.
+   * `present` would accept (members of the section for the year, plus the
+   * cross-type rows of a Guía Mayor whose home is another section of the
+   * club), each with the verdict `present` would give it.
+   *
+   * Everything is read in a constant number of queries however many people
+   * there are, and decided in memory by the same rules `present` runs
+   * (`evaluatePresentation`), fed by the batched facts instead of per-person
+   * reads.
    */
-  private async presentationCandidates(context: SectionContext) {
+  private async evaluatePresentationCandidates(context: SectionContext) {
     const base: Prisma.enrollmentsWhereInput = {
       active: true,
       record_kind: 'OPERATIONAL',
@@ -666,17 +645,131 @@ export class InvestitureAuthorizationRequestService {
         select: PRESENTATION_CANDIDATE_SELECT,
       }),
     ]);
-    const seen = new Set(members.map((row) => row.enrollment_id));
-    const accepted = [...members];
-    for (const row of crossType) {
-      if (seen.has(row.enrollment_id)) {
-        continue;
-      }
-      if (await this.hasCrossTypeHome(this.prisma, context, row)) {
-        accepted.push(row);
+    const memberRows = new Set(members.map((row) => row.enrollment_id));
+    const loaded = [
+      ...members,
+      ...crossType.filter((row) => !memberRows.has(row.enrollment_id)),
+    ];
+    const memberUsers = new Set(members.map((row) => row.user_id));
+    const eligibility = new Map<number, ClassRequirementEligibilityResult>();
+    const facts = await this.batchedPresentationFacts(
+      context,
+      loaded,
+      memberUsers,
+      new Set(crossType.map((row) => row.user_id)),
+      eligibility,
+    );
+    const enrollments: typeof loaded = [];
+    for (const row of loaded) {
+      if (
+        memberUsers.has(row.user_id) ||
+        (await hasCrossTypeHome(facts, row))
+      ) {
+        enrollments.push(row);
       }
     }
-    return accepted;
+    if (enrollments.length > 0) {
+      const calculated = await this.eligibility.calculateForEnrollments(
+        enrollments.map((row) => row.enrollment_id),
+      );
+      for (const [enrollmentId, result] of calculated) {
+        eligibility.set(enrollmentId, result);
+      }
+    }
+    const verdicts = new Map<number, PresentationVerdict>();
+    for (const row of enrollments) {
+      verdicts.set(
+        row.enrollment_id,
+        await evaluatePresentation(facts, context.clubTypeId, row),
+      );
+    }
+    return { enrollments, eligibility, verdicts };
+  }
+
+  /**
+   * Reads, once for every candidate, what `evaluatePresentation` otherwise asks
+   * per person: invested rows, PENDING rows and the ecclesiastical years.
+   * Membership and cross-type homes come from the candidate queries, which
+   * already filter on the shared assignment predicates.
+   */
+  private async batchedPresentationFacts(
+    context: SectionContext,
+    rows: PresentationCandidateRow[],
+    memberUsers: ReadonlySet<string>,
+    crossTypeHomeUsers: ReadonlySet<string>,
+    eligibility: ReadonlyMap<number, ClassRequirementEligibilityResult>,
+  ): Promise<PresentationFacts> {
+    const userIds = [...new Set(rows.map((row) => row.user_id))];
+    const yearStarts = rows
+      .map((row) => row.ecclesiastical_year?.start_date)
+      .filter((value): value is Date => Boolean(value));
+    const earliest = yearStarts.reduce<Date | null>(
+      (min, value) => (min === null || value < min ? value : min),
+      null,
+    );
+    const [invested, pending, years] =
+      userIds.length === 0
+        ? [[], [], []]
+        : await Promise.all([
+            this.prisma.enrollments.findMany({
+              where: {
+                user_id: { in: userIds },
+                investiture_status: 'INVESTIDO',
+              },
+              select: {
+                user_id: true,
+                class_id: true,
+                classes: { select: { club_types: { select: { name: true } } } },
+              },
+            }),
+            this.prisma.investiture_authorization_people.findMany({
+              where: { user_id: { in: userIds }, status: 'PENDING' },
+              select: { user_id: true, class_id: true, single_slot: true },
+            }),
+            earliest === null
+              ? Promise.resolve([] as Array<{ start_date: Date }>)
+              : this.prisma.ecclesiastical_years.findMany({
+                  where: {
+                    start_date: {
+                      gte: earliest,
+                      lte: civilDateToUtc(context.yearStart),
+                    },
+                  },
+                  select: { start_date: true },
+                }),
+          ]);
+    const investedClasses = new Set(
+      invested.map((row) => `${row.user_id}:${row.class_id}`),
+    );
+    const investedGuiaMayor = new Set(
+      invested
+        .filter((row) => row.classes?.club_types?.name === GM_TYPE_NAME)
+        .map((row) => row.user_id),
+    );
+    const pendingByUser = new Map<string, PendingAuthorizationFact[]>();
+    for (const row of pending) {
+      pendingByUser.set(row.user_id, [
+        ...(pendingByUser.get(row.user_id) ?? []),
+        { class_id: row.class_id, single_slot: row.single_slot },
+      ]);
+    }
+    const yearEnd = civilDateToUtc(context.yearStart).getTime();
+    return {
+      isSectionMember: async (userId) => memberUsers.has(userId),
+      hasCrossTypeHomeAssignment: async (userId) =>
+        crossTypeHomeUsers.has(userId),
+      hasInvestedGuiaMayor: async (userId) => investedGuiaMayor.has(userId),
+      hasInvestedClass: async (userId, classId) =>
+        investedClasses.has(`${userId}:${classId}`),
+      pendingAuthorizations: async (userId) => pendingByUser.get(userId) ?? [],
+      elapsedYears: async (from) =>
+        years.filter(
+          (row) =>
+            row.start_date.getTime() >= from.getTime() &&
+            row.start_date.getTime() <= yearEnd,
+        ).length,
+      eligibility: async (enrollmentId) => eligibility.get(enrollmentId),
+    };
   }
 
   async listForAuthorizer(
@@ -1569,133 +1662,76 @@ export class InvestitureAuthorizationRequestService {
    * Decides whether an enrollment may be presented for investiture, returning
    * the first blocking code instead of throwing. It never writes and takes no
    * lock; callers that write run it under the section/user/enrollment locks.
+   * The rules live in `evaluatePresentation`; this feeds them with reads from
+   * `store`, one person at a time.
    */
-  private async evaluateEnrollmentForPresentation(
+  private evaluateEnrollmentForPresentation(
     store: DecisionStore,
     context: SectionContext,
     enrollment: EnrollmentRow,
-    eligibilityByEnrollment?: Map<number, ClassRequirementEligibilityResult>,
   ): Promise<PresentationVerdict> {
-    if (isInstitutionalInvestitureClass(enrollment.classes?.asset_code)) {
-      return blockedPresentation(
-        ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
-      );
-    }
-    if (!enrollment.active || enrollment.record_kind !== 'OPERATIONAL') {
-      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_NOT_OPERATIONAL);
-    }
-    if (enrollment.classes?.club_type_id !== context.clubTypeId) {
-      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_OUTSIDE_SECTION);
-    }
-    const member = await store.club_role_assignments.findFirst({
-      where: {
-        user_id: enrollment.user_id,
-        ...sectionMemberAssignmentWhere(context),
-      },
-      select: { assignment_id: true },
-    });
-    if (!member && !(await this.hasCrossTypeHome(store, context, enrollment))) {
-      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_OUTSIDE_SECTION);
-    }
-    if (await this.findSameClassInvested(store, enrollment)) {
-      return blockedPresentation(
-        ErrorCode.INVESTITURE_REQUEST_ALREADY_INVESTED,
-      );
-    }
-    if (enrollmentOnLegacyInvestiturePipeline(enrollment)) {
-      return blockedPresentation(
-        ErrorCode.INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE,
-      );
-    }
-    const pending = await store.investiture_authorization_people.findMany({
-      where: { user_id: enrollment.user_id, status: 'PENDING' },
-      select: { class_id: true, single_slot: true },
-    });
-    const singleSlot = await this.usesSingleSlot(store, enrollment);
-    const blocked =
-      singleSlot || pending.some((row) => row.single_slot)
-        ? pending.length > 0
-        : pending.some((row) => row.class_id === enrollment.class_id);
-    if (blocked) {
-      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_ACTIVE_EXISTS);
-    }
-    const result = eligibilityByEnrollment
-      ? eligibilityByEnrollment.get(enrollment.enrollment_id)
-      : await this.eligibility.calculateForEnrollment(enrollment.enrollment_id);
-    if (!result?.investiture_eligibility.eligible) {
-      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_NOT_ELIGIBLE);
-    }
-    if (!enrollment.classes || !enrollment.ecclesiastical_year) {
-      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_NOT_ELIGIBLE);
-    }
-    if (enrollment.investiture_status === 'EXPIRED') {
-      return blockedPresentation(ErrorCode.INVESTITURE_DURATION_EXPIRED);
-    }
-    const elapsed = await store.ecclesiastical_years.count({
-      where: {
-        start_date: {
-          gte: enrollment.ecclesiastical_year.start_date,
-          lte: civilDateToUtc(context.yearStart),
-        },
-      },
-    });
-    if (elapsed < enrollment.classes.min_duration_years) {
-      return blockedPresentation(ErrorCode.INVESTITURE_DURATION_MIN_NOT_MET);
-    }
-    if (elapsed > enrollment.classes.max_duration_years) {
-      return blockedPresentation(ErrorCode.INVESTITURE_DURATION_EXPIRED);
-    }
-    return { eligible: true, singleSlot };
+    return evaluatePresentation(
+      this.databasePresentationFacts(store, context),
+      context.clubTypeId,
+      enrollment,
+    );
   }
 
-  private async hasCrossTypeHome(
+  private databasePresentationFacts(
     store: DecisionStore,
     context: SectionContext,
-    enrollment: EnrollmentRow,
-  ): Promise<boolean> {
-    if (!enrollment.cross_type_enrollment) {
-      return false;
-    }
-    const home = await store.club_role_assignments.findFirst({
-      where: {
-        user_id: enrollment.user_id,
-        ...crossTypeHomeAssignmentWhere(context),
-      },
-      select: { assignment_id: true },
-    });
-    if (!home) {
-      return false;
-    }
-    const investedGm = await store.enrollments.findFirst({
-      where: {
-        user_id: enrollment.user_id,
-        investiture_status: 'INVESTIDO',
-        classes: { club_types: { name: GM_TYPE_NAME } },
-      },
-      select: { enrollment_id: true },
-    });
-    return Boolean(investedGm);
-  }
-
-  private async usesSingleSlot(
-    store: DecisionStore,
-    enrollment: EnrollmentRow,
-  ): Promise<boolean> {
-    if (enrollment.classes?.club_types?.name === GM_TYPE_NAME) {
-      return false;
-    }
-    if (!enrollment.cross_type_enrollment) {
-      return true;
-    }
-    const investedGm = await store.enrollments.findFirst({
-      where: {
-        user_id: enrollment.user_id,
-        investiture_status: 'INVESTIDO',
-        classes: { club_types: { name: GM_TYPE_NAME } },
-      },
-      select: { enrollment_id: true },
-    });
-    return !investedGm;
+  ): PresentationFacts {
+    return {
+      isSectionMember: async (userId) =>
+        Boolean(
+          await store.club_role_assignments.findFirst({
+            where: {
+              user_id: userId,
+              ...sectionMemberAssignmentWhere(context),
+            },
+            select: { assignment_id: true },
+          }),
+        ),
+      hasCrossTypeHomeAssignment: async (userId) =>
+        Boolean(
+          await store.club_role_assignments.findFirst({
+            where: {
+              user_id: userId,
+              ...crossTypeHomeAssignmentWhere(context),
+            },
+            select: { assignment_id: true },
+          }),
+        ),
+      hasInvestedGuiaMayor: async (userId) =>
+        Boolean(
+          await store.enrollments.findFirst({
+            where: {
+              user_id: userId,
+              investiture_status: 'INVESTIDO',
+              classes: { club_types: { name: GM_TYPE_NAME } },
+            },
+            select: { enrollment_id: true },
+          }),
+        ),
+      hasInvestedClass: (userId, classId) =>
+        this.findSameClassInvested(store, {
+          user_id: userId,
+          class_id: classId,
+        }),
+      pendingAuthorizations: (userId) =>
+        store.investiture_authorization_people.findMany({
+          where: { user_id: userId, status: 'PENDING' },
+          select: { class_id: true, single_slot: true },
+        }),
+      elapsedYears: (from) =>
+        store.ecclesiastical_years.count({
+          where: {
+            start_date: { gte: from, lte: civilDateToUtc(context.yearStart) },
+          },
+        }),
+      eligibility: (enrollmentId) =>
+        this.eligibility.calculateForEnrollment(enrollmentId),
+    };
   }
 
   private legacyBlocksResolution(enrollment: {

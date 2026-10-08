@@ -5570,6 +5570,52 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
       }).toEqual(before);
     });
 
+    it('R1 blocks on the real database with the code present throws', async () => {
+      const legacyEnrollment = await seedMember(
+        LEGACY_USER,
+        'Legado',
+        'SUBMITTED_FOR_VALIDATION',
+      );
+      const priorYear = await pastYear('2019-01-01', '2019-12-31');
+      await seedMember(INVESTED_USER, 'Investido', 'INVESTIDO', priorYear);
+      const sibling = await prisma.enrollments.create({
+        data: {
+          user_id: INVESTED_USER,
+          class_id: classId,
+          ecclesiastical_year_id: yearId,
+          investiture_status: 'IN_PROGRESS',
+          record_kind: 'OPERATIONAL',
+          active: true,
+        },
+        select: { enrollment_id: true },
+      });
+
+      const view = await contextService().presentationContext(
+        marker(),
+        sectionId,
+        yearId,
+        INSIDE,
+      );
+
+      const blocked = view.candidates.filter((row) => !row.eligible);
+      expect(blocked.map((row) => row.enrollment_id)).toEqual(
+        expect.arrayContaining([legacyEnrollment, sibling.enrollment_id]),
+      );
+      for (const candidate of blocked) {
+        await expect(
+          service.present(
+            marker(),
+            ACTOR,
+            sectionId,
+            yearId,
+            DATE,
+            [candidate.enrollment_id],
+            INSIDE,
+          ),
+        ).rejects.toMatchObject({ code: candidate.blocked_code });
+      }
+    });
+
     it('exposes the open request and the pending person of a presented member', async () => {
       const presented = await present();
 
