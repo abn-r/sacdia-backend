@@ -14,6 +14,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { HonorValidationWorkflowService } from '../honors/honor-validation-workflow.service';
 import { rejectLegacyMutationIfAuthorizationPending } from '../investiture-requests/investiture-request-lock';
+import { throwLegacyInvestiturePipelineRetired } from '../investiture/legacy-investiture-pipeline-retired';
 
 type EntityType = 'class' | 'honor';
 
@@ -37,7 +38,7 @@ export class ValidationService {
     userId: string,
   ) {
     if (entityType === 'class') {
-      return this.submitClassForReview(entityId, userId);
+      throwLegacyInvestiturePipelineRetired();
     }
     return this.honorValidationWorkflow.submitForReview(entityId, userId);
   }
@@ -142,14 +143,14 @@ export class ValidationService {
     performedBy: string,
     comment?: string,
   ) {
+    if (entityType === 'class') {
+      throwLegacyInvestiturePipelineRetired();
+    }
+
     if (action === 'rejected' && !comment) {
       throw new AppBadRequestException(
         ErrorCode.VALIDATION_REJECT_COMMENT_REQUIRED,
       );
-    }
-
-    if (entityType === 'class') {
-      return this.reviewClass(entityId, action, performedBy, comment);
     }
 
     if (action === 'approved') {
