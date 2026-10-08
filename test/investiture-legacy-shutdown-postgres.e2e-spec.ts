@@ -9,6 +9,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { JwtService } from '@nestjs/jwt';
 import type { Client } from 'pg';
 import request from 'supertest';
+import { ErrorCode } from '../src/common/errors/error-codes';
 import type { AuthorizationSnapshot } from '../src/common/services/authorization-context.service';
 import { InvestitureService } from '../src/investiture/investiture.service';
 import { InvestitureAuthorizationRequestService } from '../src/investiture-requests/investiture-authorization-requests.service';
@@ -49,9 +50,14 @@ type Fixture = {
   certificateMember: string;
   sectionId: number;
   yearId: number;
+  classId: number;
 };
 
 const pace = () => new Promise((resolve) => setTimeout(resolve, 550));
+
+const PRESENT_DATE = '2026-11-01';
+const PRESENT_AT = new Date('2026-10-15T18:00:00.000Z');
+const RESOLVE_AT = new Date('2026-12-10T18:00:00.000Z');
 
 async function insertUser(client: Client, email: string, userId?: string) {
   const row = await client.query<{ user_id: string }>(
@@ -104,6 +110,7 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
   let fx: Fixture;
   // Posición del log del servidor al empezar: solo se revisa lo que escribió esta suite.
   let serverLog: { path: string; offset: number };
+  let databaseUrl: string;
 
   const bearer = (userId: string) => ({
     Authorization: `Bearer ${createBearerToken(jwt, userId)}`,
@@ -131,8 +138,33 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
     return rows;
   }
 
+  function sectionMarker(): AuthorizationSnapshot {
+    return {
+      grants: {
+        global_roles: [],
+        club_assignments: [
+          {
+            assignment_id: 'grant-f8',
+            role_name: 'director',
+            permissions: [],
+            operational: true,
+            ecclesiastical_year_id: fx.yearId,
+            club: { club_id: 1, club_name: 'F8 Club' },
+            section: { club_section_id: fx.sectionId, club_type_id: 1 },
+            scope: {},
+            status: 'active',
+          },
+        ],
+        direct_permissions: [],
+      },
+      active_assignment: { assignment_id: 'grant-f8' },
+      effective: { permissions: [], scope: { global: {}, club: null } },
+    };
+  }
+
   beforeAll(async () => {
     const url = await prepareAnnualCycleDatabase();
+    databaseUrl = url;
     // Helper existente: falla si SACDIA_POSTGRES_SERVER_LOG falta o si el log no
     // es de este servidor (marcador WARNING). Sin eso un log vacío "pasaría".
     const logPath = requireInvestitureServerLogPath();
@@ -307,6 +339,7 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
         certificateMember,
         sectionId,
         yearId,
+        classId,
       };
     });
 
@@ -627,31 +660,10 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
     });
 
     it('una fila liberada entra a la vía nueva y la que sigue bloqueada no (decisión B5)', async () => {
-      const authorization: AuthorizationSnapshot = {
-        grants: {
-          global_roles: [],
-          club_assignments: [
-            {
-              assignment_id: 'grant-f8',
-              role_name: 'director',
-              permissions: [],
-              operational: true,
-              ecclesiastical_year_id: fx.yearId,
-              club: { club_id: 1, club_name: 'F8 Club' },
-              section: { club_section_id: fx.sectionId, club_type_id: 1 },
-              scope: {},
-              status: 'active',
-            },
-          ],
-          direct_permissions: [],
-        },
-        active_assignment: { assignment_id: 'grant-f8' },
-        effective: { permissions: [], scope: { global: {}, club: null } },
-      };
       const view = await app
         .get(InvestitureAuthorizationRequestService)
         .presentationContext(
-          authorization,
+          sectionMarker(),
           fx.sectionId,
           fx.yearId,
           new Date('2026-11-10T18:00:00.000Z'),
@@ -663,12 +675,184 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
       const released = byEnrollment.get(fx.open.CLUB_APPROVED);
       expect(released).toBeDefined();
       expect(released?.blocked_code).not.toBe(
-        'INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE',
+        ErrorCode.INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE,
       );
       // Sigue bloqueada y con PENDING: no puede presentarse de nuevo.
       const stillLocked = byEnrollment.get(fx.pendingLocked);
       expect(stillLocked).toBeDefined();
       expect(stillLocked?.eligible).toBe(false);
+      expect(stillLocked?.blocked_code).toBe(
+        ErrorCode.INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE,
+      );
+    });
+  });
+
+  describe('expedientes liberados en la vía nueva', () => {
+    const requests = () => app.get(InvestitureAuthorizationRequestService);
+
+    function fieldAuth(localFieldId: number): AuthorizationSnapshot {
+      return {
+        grants: {
+          global_roles: [
+            {
+              role_name: 'director-lf',
+              permissions: [],
+              scope: { local_field: { id: localFieldId, name: 'F8 Campo' } },
+            },
+          ],
+          club_assignments: [],
+          direct_permissions: [],
+        },
+        active_assignment: { assignment_id: null },
+        effective: {
+          permissions: [],
+          scope: {
+            global: { local_field: { id: localFieldId, name: 'F8 Campo' } },
+            club: null,
+          },
+        },
+      };
+    }
+
+    async function joinSection(client: Client, userId: string) {
+      await client.query(
+        `INSERT INTO club_role_assignments (
+           user_id, role_id, ecclesiastical_year_id, start_date, active, status, club_section_id
+         )
+         SELECT $1, role_id, $2, '2026-01-01', true, 'active', $3
+         FROM roles WHERE role_name = 'member' AND role_category = 'CLUB'`,
+        [userId, fx.yearId, fx.sectionId],
+      );
+    }
+
+    // Elegibilidad real: una sección requerida de la clase, validada y con nota.
+    let requirement: { moduleId: number; sectionId: number };
+
+    async function completeRequirement(
+      client: Client,
+      userId: string,
+      enrollmentId: number,
+    ) {
+      await client.query(
+        `INSERT INTO class_section_progress (
+           user_id, class_id, module_id, section_id, score, enrollment_id, status, active
+         )
+         VALUES ($1, $2, $3, $4, 100, $5, 'VALIDATED', true)`,
+        [
+          userId,
+          fx.classId,
+          requirement.moduleId,
+          requirement.sectionId,
+          enrollmentId,
+        ],
+      );
+    }
+
+    async function fieldId() {
+      const field = await prisma.local_fields.findFirstOrThrow({
+        where: { abbreviation: 'F8F' },
+        select: { local_field_id: true },
+      });
+      return field.local_field_id;
+    }
+
+    const classCompleted = (userIds: string[]) =>
+      prisma.achievement_event_log.count({
+        where: { event_type: 'class.completed', user_id: { in: userIds } },
+      });
+
+    beforeAll(async () => {
+      const module = await prisma.class_modules.create({
+        data: { name: 'Módulo F8', class_id: fx.classId, active: true },
+      });
+      const section = await prisma.class_sections.create({
+        data: { name: 'Sección F8', module_id: module.module_id, active: true },
+      });
+      requirement = {
+        moduleId: module.module_id,
+        sectionId: section.section_id,
+      };
+      await prisma.local_field_investiture_windows.create({
+        data: {
+          local_field_id: await fieldId(),
+          ecclesiastical_year_id: fx.yearId,
+          start_date: new Date('2026-10-01T00:00:00.000Z'),
+          end_date: new Date('2026-12-31T00:00:00.000Z'),
+        },
+      });
+    });
+
+    it('B5: las filas abiertas ya liberadas se presentan, se agregan y se resuelven hasta INVESTIDO con un solo class.completed', async () => {
+      const ids = OPEN.map((status) => fx.open[status]);
+      const rows = await prisma.enrollments.findMany({
+        where: { enrollment_id: { in: ids } },
+        select: { enrollment_id: true, user_id: true },
+      });
+      const userIds = rows.map((row) => row.user_id);
+      // Estado de partida: soltadas, con su estado de cadena intacto.
+      expect(
+        (await locks(ids)).map((row) => [
+          row.investiture_status,
+          row.locked_for_validation,
+        ]),
+      ).toEqual(OPEN.map((status) => [status, false]));
+      await withClient(databaseUrl, async (client) => {
+        // Solo CLUB_APPROVED ya era miembro de la sección.
+        for (const row of rows) {
+          if (row.enrollment_id !== fx.open.CLUB_APPROVED) {
+            await joinSection(client, row.user_id);
+          }
+          await completeRequirement(client, row.user_id, row.enrollment_id);
+        }
+      });
+      expect(await classCompleted(userIds)).toBe(0);
+
+      await pace();
+      const presented = await requests().present(
+        sectionMarker(),
+        ADMIN,
+        fx.sectionId,
+        fx.yearId,
+        PRESENT_DATE,
+        [fx.open.CLUB_APPROVED],
+        PRESENT_AT,
+      );
+      await pace();
+      await requests().addPeople(
+        sectionMarker(),
+        ADMIN,
+        presented.request_id,
+        PRESENT_DATE,
+        ids.filter((id) => id !== fx.open.CLUB_APPROVED),
+        PRESENT_AT,
+      );
+      const pending = await prisma.investiture_authorization_people.findMany({
+        where: { enrollment_id: { in: ids }, status: 'PENDING' },
+        select: { person_id: true, enrollment_id: true },
+      });
+      expect(pending.map((row) => row.enrollment_id).sort()).toEqual(
+        [...ids].sort(),
+      );
+
+      await pace();
+      const resolved = await requests().resolve(
+        fieldAuth(await fieldId()),
+        ADMIN,
+        presented.request_id,
+        { invest: pending.map((row) => ({ person_id: row.person_id })) },
+        RESOLVE_AT,
+      );
+      expect(resolved.invested).toHaveLength(OPEN.length);
+      for (const row of await locks(ids)) {
+        expect(row).toMatchObject({
+          investiture_status: 'INVESTIDO',
+          locked_for_validation: false,
+        });
+      }
+      // Exactamente un class.completed por persona.
+      for (const userId of userIds) {
+        expect(await classCompleted([userId])).toBe(1);
+      }
     });
   });
 
