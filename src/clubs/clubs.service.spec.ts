@@ -2118,7 +2118,8 @@ describe('ClubsService', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             ecclesiastical_year_id: 10,
-            investiture_status: 'APPROVED',
+            investiture_status: { in: ['APPROVED', 'INVESTIDO'] },
+            record_kind: 'OPERATIONAL',
             active: true,
           }),
         }),
