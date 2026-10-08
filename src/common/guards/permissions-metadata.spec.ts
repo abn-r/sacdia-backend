@@ -13,6 +13,7 @@ import {
 } from '../decorators/sensitive-user-subresource.decorator';
 import { AUTHORIZATION_RESOURCE_KEY } from '../decorators/authorization-resource.decorator';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SKIP_PERMISSIONS_KEY } from '../decorators/skip-permissions.decorator';
 import { CLUB_ROLES_KEY } from '../guards/club-roles.guard';
 import { AdminUsersController } from '../../admin/admin-users.controller';
 import {
@@ -73,6 +74,15 @@ describe('Permissions metadata', () => {
         InvestitureController.prototype.expireOverdueEnrollments,
       ),
     ).toEqual({ type: 'global' });
+  });
+
+  it('marks the legacy lock release as session-only (exact super-admin in the service)', () => {
+    expect(
+      Reflect.getMetadata(
+        SKIP_PERMISSIONS_KEY,
+        InvestitureController.prototype.releaseLegacyLocks,
+      ),
+    ).toBe(true);
   });
 
   it('marks admin users listing with users:read', () => {
