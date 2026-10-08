@@ -149,6 +149,7 @@ describe('DistrictInvestiturePastorService', () => {
   let users: { findUnique: jest.Mock; findMany: jest.Mock };
   let rolelessUsers: Set<string>;
   let deletedUsers: Set<string>;
+  let userFields: Record<string, number | null>;
   let candidateRows: unknown[];
   let clubs: { findUnique: jest.Mock };
   let service: DistrictInvestiturePastorService;
@@ -225,13 +226,20 @@ describe('DistrictInvestiturePastorService', () => {
     rolelessUsers = new Set([NOT_PASTOR]);
     deletedUsers = new Set();
     candidateRows = [];
+    userFields = {
+      [NOT_PASTOR]: FIELD_ID,
+      [PASTOR_A]: FIELD_ID,
+      [PASTOR_B]: FIELD_ID,
+      [PASTOR_C]: FIELD_ID,
+    };
     users = {
       findUnique: jest.fn(async ({ where }) => {
-        if (where.user_id === NOT_PASTOR || where.user_id === PASTOR_A) {
-          return { user_id: where.user_id, active: true };
-        }
-        if (where.user_id === PASTOR_B || where.user_id === PASTOR_C) {
-          return { user_id: where.user_id, active: true };
+        if (where.user_id in userFields) {
+          return {
+            user_id: where.user_id,
+            active: true,
+            local_field_id: userFields[where.user_id],
+          };
         }
         return null;
       }),
@@ -313,6 +321,8 @@ describe('DistrictInvestiturePastorService', () => {
     ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_PASTOR_QUOTA_FULL });
 
     const union = snapshot({ role: 'assistant-union', unionId: 2 });
+    userFields[PASTOR_B] = OTHER_FIELD_ID;
+    userFields[PASTOR_C] = OTHER_FIELD_ID;
     await service.assign(union, SAME_UNION_DISTRICT_ID, PASTOR_C, 'union-1');
     await expect(
       service.assign(union, SAME_UNION_DISTRICT_ID, PASTOR_B, 'union-1'),
@@ -461,6 +471,7 @@ describe('DistrictInvestiturePastorService', () => {
       scope: {},
     });
 
+    userFields[PASTOR_A] = OTHER_FIELD_ID;
     const saved = await service.assign(
       actor,
       SAME_UNION_DISTRICT_ID,
@@ -469,6 +480,80 @@ describe('DistrictInvestiturePastorService', () => {
     );
     expect(saved.can_authorize).toBe(true);
     expect(rows).toHaveLength(1);
+  });
+
+  describe('same-field rule', () => {
+    const field = () =>
+      snapshot({ role: 'director-lf', localFieldId: FIELD_ID });
+    const union = () => snapshot({ role: 'director-union', unionId: 2 });
+
+    it('rejects a pastor from another Field of the same union', async () => {
+      userFields[PASTOR_A] = OTHER_FIELD_ID;
+      await expect(
+        service.assign(field(), DISTRICT_ID, PASTOR_A, 'user-1'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+      });
+      expect(rows).toHaveLength(0);
+      expect(pastors.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects, even for a union actor, a pastor that is not from the district Field', async () => {
+      await expect(
+        service.assign(union(), SAME_UNION_DISTRICT_ID, PASTOR_A, 'union-1'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+      });
+      expect(rows).toHaveLength(0);
+    });
+
+    it('rejects a pastor without a Field', async () => {
+      userFields[PASTOR_A] = null;
+      await expect(
+        service.assign(field(), DISTRICT_ID, PASTOR_A, 'user-1'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+      });
+      expect(rows).toHaveLength(0);
+    });
+
+    it('rejects reactivating an inactive assignment whose pastor changed Field', async () => {
+      rows.push({
+        districlub_type_id: DISTRICT_ID,
+        user_id: PASTOR_A,
+        active: false,
+        assigned_by_id: 'user-0',
+      });
+      userFields[PASTOR_A] = OTHER_FIELD_ID;
+      await expect(
+        service.assign(field(), DISTRICT_ID, PASTOR_A, 'user-1'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+      });
+      expect(rows[0].active).toBe(false);
+      expect(pastors.update).not.toHaveBeenCalled();
+    });
+
+    it('reactivates an inactive assignment when the pastor is still in the Field', async () => {
+      rows.push({
+        districlub_type_id: DISTRICT_ID,
+        user_id: PASTOR_A,
+        active: false,
+        assigned_by_id: 'user-0',
+      });
+      const saved = await service.assign(field(), DISTRICT_ID, PASTOR_A, 'u1');
+      expect(saved).toMatchObject({ user_id: PASTOR_A, can_authorize: true });
+      expect(rows[0].active).toBe(true);
+    });
+
+    it('checks the role before the Field', async () => {
+      userFields[NOT_PASTOR] = OTHER_FIELD_ID;
+      await expect(
+        service.assign(field(), DISTRICT_ID, NOT_PASTOR, 'user-1'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_PASTOR_ROLE_REQUIRED,
+      });
+    });
   });
 
   it('resolves authorizers from the club church, not the club district or the user', async () => {
@@ -637,6 +722,74 @@ describe('DistrictInvestiturePastorService', () => {
         expect(users.findMany).not.toHaveBeenCalled();
       },
     );
+
+    describe('with districtId', () => {
+      it.each(['director-union', 'assistant-union'])(
+        'limits %s to the Field of that district, not the whole union',
+        async (role) => {
+          await service.searchCandidates(
+            snapshot({ role, unionId: 2 }),
+            'ana',
+            SAME_UNION_DISTRICT_ID,
+          );
+          const and = users.findMany.mock.calls[0][0].where.AND;
+          expect(and).toContainEqual({ local_field_id: OTHER_FIELD_ID });
+          expect(JSON.stringify(and)).not.toContain('union_id');
+          expect(and).toContainEqual(PASTOR_ELIGIBLE_USER_WHERE);
+        },
+      );
+
+      it('limits a Field role to the district Field', async () => {
+        await service.searchCandidates(
+          snapshot({ role: 'director-lf', localFieldId: FIELD_ID }),
+          'ana',
+          DISTRICT_ID,
+        );
+        const and = users.findMany.mock.calls[0][0].where.AND;
+        expect(and).toContainEqual({ local_field_id: FIELD_ID });
+      });
+
+      it('rejects a district outside the actor territory without reading users', async () => {
+        await expect(
+          service.searchCandidates(
+            snapshot({ role: 'director-lf', localFieldId: FIELD_ID }),
+            'ana',
+            SAME_UNION_DISTRICT_ID,
+          ),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+        await expect(
+          service.searchCandidates(
+            snapshot({ role: 'director-union', unionId: 2 }),
+            'ana',
+            OUTSIDE_DISTRICT_ID,
+          ),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+        expect(users.findMany).not.toHaveBeenCalled();
+      });
+
+      it('rejects an unknown district without reading users', async () => {
+        await expect(
+          service.searchCandidates(
+            snapshot({ role: 'director-union', unionId: 2 }),
+            'ana',
+            9999,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_PASTOR_DISTRICT_NOT_FOUND,
+        });
+        expect(users.findMany).not.toHaveBeenCalled();
+      });
+
+      it('authorizes the district even when the query is too short to scan', async () => {
+        await expect(
+          service.searchCandidates(
+            snapshot({ role: 'director-lf', localFieldId: FIELD_ID }),
+            ' a ',
+            OUTSIDE_DISTRICT_ID,
+          ),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      });
+    });
 
     it('escapes LIKE wildcards so "%" and "_" are plain text', async () => {
       await service.searchCandidates(
@@ -887,6 +1040,7 @@ function buildRacing(options: {
     findUnique: jest.fn(async ({ where }) => ({
       user_id: where.user_id,
       active: true,
+      local_field_id: FIELD_ID,
     })),
     findMany: jest.fn(
       async ({ where }: { where: { user_id: { in: string[] } } }) =>

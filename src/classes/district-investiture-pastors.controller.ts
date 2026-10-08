@@ -138,7 +138,7 @@ export class DistrictInvestiturePastorsController {
   @Get('investiture-pastor-candidates')
   @ApiOperation({
     summary:
-      'Buscar candidatos a pastor por nombre o correo (mínimo 3 caracteres y 2 por palabra, hasta 20). Solo quien puede asignar: director y asistente de Campo o de unión. Devuelve únicamente pastores de su Campo (o de los Campos de su unión).',
+      'Buscar candidatos a pastor por nombre o correo (mínimo 3 caracteres y 2 por palabra, hasta 20). Solo quien puede asignar: director y asistente de Campo o de unión. Devuelve únicamente pastores de su Campo (o de los Campos de su unión). Con `districtId` solo devuelve pastores del Campo de ese distrito.',
   })
   async candidates(
     @Request() req: AuthenticatedRequest,
@@ -150,6 +150,7 @@ export class DistrictInvestiturePastorsController {
     const data = await this.pastors.searchCandidates(
       profile.authorization,
       query.q,
+      query.districtId,
     );
     return { status: 'success', data };
   }

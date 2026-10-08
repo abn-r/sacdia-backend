@@ -341,6 +341,7 @@
   "INVESTITURE_PASTOR_QUOTA_FULL": "Esse distrito já tem todas as vagas de pastor",
   "INVESTITURE_PASTOR_ALREADY_ASSIGNED": "Esse pastor já está designado para este distrito",
   "INVESTITURE_PASTOR_ROLE_REQUIRED": "Só é possível designar um usuário com o papel de pastor",
+  "INVESTITURE_PASTOR_FIELD_MISMATCH": "O pastor não pertence ao Campo do distrito.",
   "INVESTITURE_PASTOR_USER_NOT_FOUND": "Pastor não encontrado",
   "INVESTITURE_PASTOR_DISTRICT_NOT_FOUND": "Distrito não encontrado",
   "INVESTITURE_PASTOR_CLUB_NOT_FOUND": "Clube não encontrado",

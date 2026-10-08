@@ -78,6 +78,12 @@ type PastorStore = Pick<
   $executeRaw: PrismaService['$executeRaw'];
 };
 
+/** Lo que `loadDistrict` resuelve: el acceso de quien opera y el Campo del distrito. */
+type LoadedDistrict = {
+  actor: AssignerAccess;
+  localFieldId: number;
+};
+
 type AssignerAccess =
   | { kind: 'super-admin' }
   | { kind: 'union'; unionId: number }
@@ -145,7 +151,11 @@ export class DistrictInvestiturePastorService {
     authorization: AuthorizationSnapshot,
     districtId: number,
   ): Promise<DistrictPastorList> {
-    const actor = await this.loadDistrict(authorization, districtId, 'read');
+    const { actor } = await this.loadDistrict(
+      authorization,
+      districtId,
+      'read',
+    );
     const slots = await this.currentSlots(this.prisma);
     const pastors = await this.activePastors(this.prisma, districtId);
     return {
@@ -162,7 +172,11 @@ export class DistrictInvestiturePastorService {
     userId: string,
     assignedById: string,
   ): Promise<DistrictPastorView> {
-    await this.loadDistrict(authorization, districtId, 'assign');
+    const { localFieldId } = await this.loadDistrict(
+      authorization,
+      districtId,
+      'assign',
+    );
     return this.prisma.$transaction(async (tx) => {
       const store = tx as unknown as PastorStore;
       await this.lockPastorQuota(store);
@@ -172,7 +186,7 @@ export class DistrictInvestiturePastorService {
         WHERE "districlub_type_id" = ${districtId}
         FOR UPDATE
       `);
-      await this.assertPastorUser(store, userId);
+      await this.assertPastorUser(store, userId, localFieldId);
       const existing = await store.district_investiture_pastors.findUnique({
         where: {
           districlub_type_id_user_id: {
@@ -274,16 +288,29 @@ export class DistrictInvestiturePastorService {
    * Candidatos a pastor para quien puede asignar (director y asistente de
    * Campo o de unión). Usa la misma regla de elegibilidad que decide quién
    * puede autorizar: cuenta activa y rol global `pastor`. Solo devuelve
-   * pastores del territorio de quien busca (ver `candidateScopeWhere`).
+   * pastores del territorio de quien busca (ver `candidateScopeWhere`). Con
+   * `districtId` solo devuelve pastores del Campo de ese distrito, que es la
+   * única regla con la que `assign` los acepta.
    */
   async searchCandidates(
     authorization: AuthorizationSnapshot,
     query: string,
+    districtId?: number,
   ): Promise<PastorCandidateView[]> {
     const actor = this.access(authorization, 'assign');
     if (!actor) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
+    // Con `districtId` se autoriza el distrito igual que al asignar, antes de
+    // mirar la búsqueda, y los candidatos se acotan al Campo de ese distrito.
+    const scope: Prisma.usersWhereInput =
+      districtId === undefined
+        ? this.candidateScopeWhere(actor)
+        : {
+            local_field_id: (
+              await this.loadDistrict(authorization, districtId, 'assign')
+            ).localFieldId,
+          };
     const tokens = query
       .trim()
       .split(/\s+/)
@@ -299,7 +326,7 @@ export class DistrictInvestiturePastorService {
       where: {
         AND: [
           PASTOR_ELIGIBLE_USER_WHERE,
-          this.candidateScopeWhere(actor),
+          scope,
           ...patterns.map((token): Prisma.usersWhereInput => ({
             OR: [
               { name: { contains: token, mode: 'insensitive' } },
@@ -383,7 +410,7 @@ export class DistrictInvestiturePastorService {
     authorization: AuthorizationSnapshot,
     districtId: number,
     mode: 'read' | 'assign',
-  ): Promise<AssignerAccess> {
+  ): Promise<LoadedDistrict> {
     const actor = this.access(authorization, mode);
     if (!actor) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
@@ -412,16 +439,17 @@ export class DistrictInvestiturePastorService {
         throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
       }
     }
-    return actor;
+    return { actor, localFieldId: district.local_field_id };
   }
 
   private async assertPastorUser(
     store: PastorStore,
     userId: string,
+    districtLocalFieldId: number,
   ): Promise<void> {
     const user = await store.users.findUnique({
       where: { user_id: userId },
-      select: { active: true },
+      select: { active: true, local_field_id: true },
     });
     if (!user?.active) {
       throw new AppNotFoundException(
@@ -432,6 +460,13 @@ export class DistrictInvestiturePastorService {
     if (eligibility?.roleMissing !== false) {
       throw new AppBadRequestException(
         ErrorCode.INVESTITURE_PASTOR_ROLE_REQUIRED,
+      );
+    }
+    // Un pastor solo se asigna al distrito de su propio Campo. También cubre
+    // reactivar una asignación inactiva, y un pastor sin Campo queda fuera.
+    if (user.local_field_id !== districtLocalFieldId) {
+      throw new AppBadRequestException(
+        ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
       );
     }
   }

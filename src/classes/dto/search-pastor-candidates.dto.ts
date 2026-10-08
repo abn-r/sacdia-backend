@@ -1,6 +1,14 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export const PASTOR_CANDIDATE_QUERY_MIN = 3;
 /** Cada palabra de la búsqueda debe tener al menos estos caracteres. */
@@ -26,4 +34,15 @@ export class SearchPastorCandidatesDto {
   })
   @MaxLength(100)
   q!: string;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    description:
+      'Distrito al que se va a asignar. Si viene, solo devuelve pastores del Campo de ese distrito (la única regla con la que la asignación los acepta) y exige tener alcance sobre él.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  districtId?: number;
 }

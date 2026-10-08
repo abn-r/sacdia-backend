@@ -548,15 +548,172 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
         expect(field).toEqual([]);
       });
 
-      it('leaves the assign endpoint rules untouched', async () => {
+      async function siblingDistrictId(): Promise<number> {
+        const created = await prisma.districts.create({
+          data: {
+            name: 'R5 Distrito hermano',
+            active: true,
+            local_field_id: siblingFieldId,
+          },
+          select: { districlub_type_id: true },
+        });
+        return created.districlub_type_id;
+      }
+
+      it('assigns a pastor of the district Field', async () => {
         await expect(
           service.assign(
             snapshot({ role: 'director-lf', localFieldId }),
             districtId,
-            OTHER_UNION,
+            SAME_FIELD,
             PASTOR_C,
           ),
-        ).resolves.toMatchObject({ user_id: OTHER_UNION });
+        ).resolves.toMatchObject({ user_id: SAME_FIELD, can_authorize: true });
+      });
+
+      it('rejects a pastor of another Field, even of the same union or another union', async () => {
+        for (const user of [SIBLING_FIELD, OTHER_UNION]) {
+          await expect(
+            service.assign(
+              snapshot({ role: 'director-lf', localFieldId }),
+              districtId,
+              user,
+              PASTOR_C,
+            ),
+          ).rejects.toMatchObject({
+            code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+          });
+        }
+        expect(await activeCount()).toBe(0);
+        expect(await prisma.district_investiture_pastors.count()).toBe(0);
+      });
+
+      it('rejects a pastor without a Field', async () => {
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-lf', localFieldId }),
+            districtId,
+            NO_FIELD,
+            PASTOR_C,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+        });
+        expect(await prisma.district_investiture_pastors.count()).toBe(0);
+      });
+
+      it('rejects a union actor assigning a pastor that is not from the district Field', async () => {
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-union', unionId }),
+            districtId,
+            SIBLING_FIELD,
+            PASTOR_C,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+        });
+      });
+
+      it('rejects reactivating an inactive assignment of a pastor from another Field', async () => {
+        await prisma.district_investiture_pastors.create({
+          data: {
+            districlub_type_id: districtId,
+            user_id: SIBLING_FIELD,
+            active: false,
+          },
+        });
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-lf', localFieldId }),
+            districtId,
+            SIBLING_FIELD,
+            PASTOR_C,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+        });
+        const row = await prisma.district_investiture_pastors.findUniqueOrThrow(
+          {
+            where: {
+              districlub_type_id_user_id: {
+                districlub_type_id: districtId,
+                user_id: SIBLING_FIELD,
+              },
+            },
+          },
+        );
+        expect(row.active).toBe(false);
+      });
+
+      it('reactivates an inactive assignment of a pastor still in the Field', async () => {
+        await prisma.district_investiture_pastors.create({
+          data: {
+            districlub_type_id: districtId,
+            user_id: SAME_FIELD,
+            active: false,
+          },
+        });
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-lf', localFieldId }),
+            districtId,
+            SAME_FIELD,
+            PASTOR_C,
+          ),
+        ).resolves.toMatchObject({ user_id: SAME_FIELD });
+        expect(await activeCount()).toBe(1);
+      });
+
+      it('with districtId, a union actor only gets the pastors of that district Field', async () => {
+        const siblingDistrict = await siblingDistrictId();
+        try {
+          const union = snapshot({ role: 'director-union', unionId });
+          const all = await service.searchCandidates(union, 'alcance');
+          expect(ids(all)).toEqual([SAME_FIELD, SIBLING_FIELD].sort());
+
+          const ownDistrict = await service.searchCandidates(
+            union,
+            'alcance',
+            districtId,
+          );
+          expect(ids(ownDistrict)).toEqual([SAME_FIELD]);
+
+          const siblingOnly = await service.searchCandidates(
+            union,
+            'alcance',
+            siblingDistrict,
+          );
+          expect(ids(siblingOnly)).toEqual([SIBLING_FIELD]);
+
+          const noField = await service.searchCandidates(
+            union,
+            'sinfield',
+            districtId,
+          );
+          expect(noField).toEqual([]);
+        } finally {
+          await prisma.districts.deleteMany({
+            where: { districlub_type_id: siblingDistrict },
+          });
+        }
+      });
+
+      it('with districtId, a Field actor cannot search for a district of another Field', async () => {
+        const siblingDistrict = await siblingDistrictId();
+        try {
+          await expect(
+            service.searchCandidates(
+              snapshot({ role: 'director-lf', localFieldId }),
+              'alcance',
+              siblingDistrict,
+            ),
+          ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+        } finally {
+          await prisma.districts.deleteMany({
+            where: { districlub_type_id: siblingDistrict },
+          });
+        }
       });
     });
 
