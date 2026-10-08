@@ -54,14 +54,18 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   // ---------------------------------------------------------------------------
   // approvals — investiture, validation, requests, membership
   // ---------------------------------------------------------------------------
-  // Investiture flow
+  // Investiture flow. submitted, club_approved, coordinator_approved and
+  // field_approved belong to the old pipeline: they stay so inbox notifications
+  // already stored still resolve their category, but nothing emits them since
+  // phase 8. invested and rejected are still emitted by the authorization flow.
   'investiture:submitted': 'approvals',
   'investiture:club_approved': 'approvals',
   'investiture:coordinator_approved': 'approvals',
   'investiture:field_approved': 'approvals',
   'investiture:invested': 'approvals',
   'investiture:rejected': 'approvals',
-  // Validation (class and honor submission review)
+  // Validation (class and honor submission review). The class_* entries are kept
+  // for already stored notifications only; nothing emits them since phase 8.
   'validation:class_submitted': 'approvals',
   'validation:class_approved': 'approvals',
   'validation:class_rejected': 'approvals',
