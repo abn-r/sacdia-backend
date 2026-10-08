@@ -222,20 +222,19 @@ export class CertificateImportFilesService {
         // A connectivity error may occur after commit. Only remove this
         // attempt's seal if a successful reread proves it is unreferenced.
         // Unknown commit state preserves evidence (an orphan is safer).
-        if (pdfBytes) {
-          const current = await this.prisma.certificate_bulk_import_files
-            .findFirst({
-              where: { file_id: existing.file_id },
-              select: { object_key: true },
-            })
-            .catch(() => undefined);
-          if (current !== undefined && current?.object_key !== sealed.key) {
-            await this.callStorage(() =>
-              this.storage.deleteMany(StorageBucketAlias.CERTIFICATE_IMPORTS, [
-                sealed.key,
-              ]),
-            ).catch(() => undefined);
-          }
+        // PDFs and images both seal under a unique `fileId-<uuid>` key.
+        const current = await this.prisma.certificate_bulk_import_files
+          .findFirst({
+            where: { file_id: existing.file_id },
+            select: { object_key: true },
+          })
+          .catch(() => undefined);
+        if (current !== undefined && current?.object_key !== sealed.key) {
+          await this.callStorage(() =>
+            this.storage.deleteMany(StorageBucketAlias.CERTIFICATE_IMPORTS, [
+              sealed.key,
+            ]),
+          ).catch(() => undefined);
         }
         throw error;
       });

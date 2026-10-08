@@ -39,7 +39,12 @@ export function signOcrProxyRequest(input: {
   timestamp: number;
   nonce: string;
   body: Uint8Array;
-  secret: Uint8Array | string;
+  /**
+   * Prefer the Buffer from `decodeOcrProxySecret` (decoded once at startup).
+   * Buffers are used as is: only the minimum length is re-checked, there is
+   * no copy and no base64 decode per request. A string is decoded each call.
+   */
+  secret: Buffer | Uint8Array | string;
 }): OcrProxySignedRequest {
   const secret = ocrProxySecretBytes(input.secret);
   const contentSha256 = createHash('sha256').update(input.body).digest('hex');
@@ -81,11 +86,14 @@ export function signOcrProxyRequest(input: {
   };
 }
 
-function ocrProxySecretBytes(secret: Uint8Array | string): Buffer {
+function ocrProxySecretBytes(secret: Buffer | Uint8Array | string): Buffer {
   const bytes =
     typeof secret === 'string'
       ? decodeOcrProxySecret(secret)
-      : Buffer.from(secret);
+      : Buffer.isBuffer(secret)
+        ? secret
+        : Buffer.from(secret.buffer, secret.byteOffset, secret.byteLength);
+  // Never include key material in the error.
   if (!bytes || bytes.byteLength < OCR_PROXY_SECRET_MIN_BYTES) {
     throw new Error('INVALID_CONTRACT');
   }

@@ -13,6 +13,7 @@ import { BadRequestException } from '@nestjs/common';
 import { MODULE_METADATA } from '@nestjs/common/constants';
 import { PDFDocument } from 'pdf-lib';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
+import * as ocrProxySecret from '../../config/ocr-proxy-secret';
 import { CertificateBulkImportsModule } from '../certificate-bulk-imports.module';
 import { CERTIFICATE_OCR_PROVIDER } from './certificate-ocr.provider';
 import { CloudRunCertificateOcrProvider } from './cloud-run-certificate-ocr.provider';
@@ -99,6 +100,41 @@ describe('signOcrProxyRequest golden vectors', () => {
         secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==',
       }),
     ).toThrow(/^INVALID_CONTRACT$/);
+  });
+
+  it('uses an already decoded Buffer secret without copying or decoding it', () => {
+    const from = jest.spyOn(Buffer, 'from');
+    try {
+      signOcrProxyRequest({
+        ...shared,
+        contentType: 'image/jpeg',
+        pageCount: 1,
+      });
+      expect(from.mock.calls.some(([value]) => value === RUNTIME_SECRET)).toBe(
+        false,
+      );
+    } finally {
+      from.mockRestore();
+    }
+  });
+
+  it.each([
+    ['a 31-byte Buffer', Buffer.alloc(31, 7)],
+    ['a short Uint8Array', new Uint8Array(31).fill(7)],
+    ['an empty Buffer', Buffer.alloc(0)],
+  ])('rejects %s without echoing the secret', (_, secret) => {
+    let message = '';
+    try {
+      signOcrProxyRequest({
+        ...shared,
+        contentType: 'image/jpeg',
+        pageCount: 1,
+        secret,
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe('INVALID_CONTRACT');
   });
 
   it('matches the image/1 vector', () => {
@@ -796,6 +832,37 @@ describe('OCR mode selection', () => {
 
     expect(selected).toBeInstanceOf(CloudRunCertificateOcrProvider);
     expect(visionClientFactory).not.toHaveBeenCalled();
+  });
+
+  it('decodes the HMAC secret once at selection and hands the provider a Buffer', () => {
+    const decode = jest.spyOn(ocrProxySecret, 'decodeOcrProxySecret');
+    try {
+      const selected = selectCertificateOcrProvider({
+        config: {
+          get: (key: string) => {
+            const values: Record<string, string> = {
+              OCR_MODE: 'remote',
+              OCR_PROXY_URL: 'https://ocr.example/v1/ocr',
+              OCR_PROXY_ENV: 'development',
+              OCR_PROXY_KID: 'k-current',
+              OCR_PROXY_SECRET: RUNTIME_SECRET_B64,
+            };
+            return values[key];
+          },
+        },
+        storage: storage as never,
+        visionClientFactory,
+      });
+      const { secret } = (
+        selected as unknown as { options: { secret: unknown } }
+      ).options;
+
+      expect(decode).toHaveBeenCalledTimes(1);
+      expect(Buffer.isBuffer(secret)).toBe(true);
+      expect(secret).toEqual(RUNTIME_SECRET);
+    } finally {
+      decode.mockRestore();
+    }
   });
 
   it('keeps direct mode on the ADC provider', () => {

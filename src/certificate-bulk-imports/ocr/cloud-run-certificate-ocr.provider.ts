@@ -2,13 +2,7 @@ import { randomBytes as nodeRandomBytes } from 'node:crypto';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AppInternalServerErrorException } from '../../common/errors/app.exception';
 import type { FileStorageService } from '../../common/services/file-storage.service';
-import { StorageBucketAlias } from '../../common/services/file-storage.service';
-import {
-  assertCertificateImportObject,
-  CERTIFICATE_IMPORT_MAX_BYTES,
-} from '../certificate-import-files.constants';
 import {
   assertCertificateImportPdf,
   PDF_OCR_QUEUE_WAIT_MS,
@@ -22,20 +16,17 @@ import {
   CertificateOcrParser,
 } from './certificate-ocr.parser';
 import { signOcrProxyRequest } from './ocr-proxy-signer';
+import {
+  clipStoredOcrText,
+  readSealedCertificateObject,
+} from './sealed-certificate-object';
 
-const STORED_TEXT_LIMIT = 20_000;
 const RESPONSE_MAX_BYTES = 16_777_216;
 const DEFAULT_TIMEOUT_MS = 40_000;
 const FILE_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const REQUEST_ID_PATTERN = /^[0-9a-f]{32}$/;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'application/pdf',
-]);
 const ERROR_CODES = [
   'UNAUTHORIZED',
   'FORBIDDEN',
@@ -81,7 +72,8 @@ export type CloudRunCertificateOcrOptions = {
   url: string;
   environment: string;
   kid: string;
-  secret: Uint8Array | string;
+  /** Already decoded HMAC key (see `decodeOcrProxySecret`). */
+  secret: Buffer;
   timeoutMs?: number;
   scheduleDeadline?: (ms: number, onFire: () => void) => { cancel: () => void };
   now?: () => Date;
@@ -138,13 +130,13 @@ export class CloudRunCertificateOcrProvider implements CertificateOcrProvider {
     const rawText = texts.filter((text) => text.trim()).join('\n');
     if (!rawText.trim()) this.fail('CERTIFICATE_IMPORT_OCR_FAILED');
     const parsed = this.parser.parse(rawText);
-    return { ...parsed, rawText: parsed.rawText.slice(0, STORED_TEXT_LIMIT) };
+    return { ...parsed, rawText: clipStoredOcrText(parsed.rawText) };
   }
 
   private async readFile(file: CertificateOcrFileInput): Promise<string> {
     const operation = this.operation(file);
     const url = this.proxyUrl();
-    const bytes = await this.readSealed(file);
+    const bytes = await readSealedCertificateObject(this.storage, file);
     const pageCount = await this.pageCount(file, bytes);
     const nonce = Buffer.from(this.randomBytes(16)).toString('hex');
     const timestamp = Math.floor(this.now().getTime() / 1000);
@@ -198,65 +190,6 @@ export class CloudRunCertificateOcrProvider implements CertificateOcrProvider {
     if (url.protocol === 'https:') return url;
     if (url.protocol === 'http:' && url.hostname === '127.0.0.1') return url;
     this.fail('CERTIFICATE_IMPORT_OCR_FAILED');
-  }
-
-  private async readSealed(file: CertificateOcrFileInput): Promise<Buffer> {
-    if (!MIME_TYPES.has(file.fileType)) {
-      this.fail('CERTIFICATE_IMPORT_OCR_UNSUPPORTED_TYPE');
-    }
-    const objectKey = file.objectKey?.trim() ?? '';
-    if (!objectKey || /^https?:\/\//i.test(objectKey)) {
-      this.fail('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
-    }
-    if (
-      file.sizeBytes != null &&
-      (!Number.isInteger(file.sizeBytes) ||
-        file.sizeBytes <= 0 ||
-        file.sizeBytes > CERTIFICATE_IMPORT_MAX_BYTES)
-    ) {
-      this.fail('CERTIFICATE_IMPORT_OCR_FILE_TOO_LARGE');
-    }
-    const info = await this.readStored(() =>
-      this.storage.getObjectInfo(
-        StorageBucketAlias.CERTIFICATE_IMPORTS,
-        objectKey,
-      ),
-    );
-    if (!info) this.fail('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
-    if (
-      !Number.isInteger(info.size) ||
-      info.size <= 0 ||
-      info.size > CERTIFICATE_IMPORT_MAX_BYTES
-    ) {
-      this.fail('CERTIFICATE_IMPORT_OCR_FILE_TOO_LARGE');
-    }
-    if (info.contentType && info.contentType !== file.fileType) {
-      this.fail('CERTIFICATE_IMPORT_OCR_UNSUPPORTED_TYPE');
-    }
-    const bytes = await this.readStored(() =>
-      this.storage.getObject(
-        StorageBucketAlias.CERTIFICATE_IMPORTS,
-        objectKey,
-        CERTIFICATE_IMPORT_MAX_BYTES,
-      ),
-    );
-    if (!bytes) this.fail('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
-    if (bytes.length > CERTIFICATE_IMPORT_MAX_BYTES) {
-      this.fail('CERTIFICATE_IMPORT_OCR_FILE_TOO_LARGE');
-    }
-    assertCertificateImportObject(
-      { size: bytes.length, contentType: file.fileType },
-      bytes.length,
-      file.fileType,
-      bytes,
-    );
-    if (
-      bytes.length !== info.size ||
-      (file.sizeBytes != null && file.sizeBytes !== bytes.length)
-    ) {
-      this.fail('CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH');
-    }
-    return bytes;
   }
 
   private async pageCount(
@@ -450,17 +383,6 @@ export class CloudRunCertificateOcrProvider implements CertificateOcrProvider {
       }).cancel;
       request.end(body);
     });
-  }
-
-  private async readStored<T>(work: () => Promise<T>): Promise<T> {
-    try {
-      return await work();
-    } catch (error) {
-      if (error instanceof AppInternalServerErrorException) {
-        this.fail('CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE');
-      }
-      throw error;
-    }
   }
 
   private fail(code: string): never {

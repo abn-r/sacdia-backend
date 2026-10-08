@@ -6,16 +6,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ImageAnnotatorClient, protos } from '@google-cloud/vision';
-import { AppInternalServerErrorException } from '../../common/errors/app.exception';
 import type { FileStorageService } from '../../common/services/file-storage.service';
-import {
-  FILE_STORAGE_SERVICE,
-  StorageBucketAlias,
-} from '../../common/services/file-storage.service';
-import {
-  assertCertificateImportObject,
-  CERTIFICATE_IMPORT_MAX_BYTES,
-} from '../certificate-import-files.constants';
+import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import {
   assertCertificateImportPdf,
   PDF_OCR_QUEUE_WAIT_MS,
@@ -28,14 +20,11 @@ import {
   CertificateOcrParseResult,
   CertificateOcrParser,
 } from './certificate-ocr.parser';
+import {
+  clipStoredOcrText,
+  readSealedCertificateObject,
+} from './sealed-certificate-object';
 
-const STORED_TEXT_LIMIT = 20_000;
-const MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'application/pdf',
-]);
 const CALL_OPTIONS = { timeout: 25_000, retry: { retryCodes: [] as number[] } };
 type VisionClient = Pick<
   ImageAnnotatorClient,
@@ -85,7 +74,7 @@ export class GoogleVisionCertificateOcrProvider
     if (!rawText.trim())
       throw new BadRequestException('CERTIFICATE_IMPORT_OCR_FAILED');
     const parsed = this.parser.parse(rawText);
-    return { ...parsed, rawText: parsed.rawText.slice(0, STORED_TEXT_LIMIT) };
+    return { ...parsed, rawText: clipStoredOcrText(parsed.rawText) };
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -125,58 +114,7 @@ export class GoogleVisionCertificateOcrProvider
   }
 
   private async readFile(file: CertificateOcrFileInput): Promise<string> {
-    if (!MIME_TYPES.has(file.fileType))
-      throw new BadRequestException('CERTIFICATE_IMPORT_OCR_UNSUPPORTED_TYPE');
-    const objectKey = file.objectKey?.trim() ?? '';
-    if (!objectKey || /^https?:\/\//i.test(objectKey))
-      throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
-    if (
-      file.sizeBytes != null &&
-      (!Number.isInteger(file.sizeBytes) ||
-        file.sizeBytes <= 0 ||
-        file.sizeBytes > CERTIFICATE_IMPORT_MAX_BYTES)
-    ) {
-      throw new BadRequestException('CERTIFICATE_IMPORT_OCR_FILE_TOO_LARGE');
-    }
-    const info = await this.readStored(() =>
-      this.storage.getObjectInfo(
-        StorageBucketAlias.CERTIFICATE_IMPORTS,
-        objectKey,
-      ),
-    );
-    if (!info)
-      throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
-    if (
-      !Number.isInteger(info.size) ||
-      info.size <= 0 ||
-      info.size > CERTIFICATE_IMPORT_MAX_BYTES
-    )
-      throw new BadRequestException('CERTIFICATE_IMPORT_OCR_FILE_TOO_LARGE');
-    if (info.contentType && info.contentType !== file.fileType)
-      throw new BadRequestException('CERTIFICATE_IMPORT_OCR_UNSUPPORTED_TYPE');
-    const bytes = await this.readStored(() =>
-      this.storage.getObject(
-        StorageBucketAlias.CERTIFICATE_IMPORTS,
-        objectKey,
-        CERTIFICATE_IMPORT_MAX_BYTES,
-      ),
-    );
-    if (!bytes)
-      throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
-    if (bytes.length > CERTIFICATE_IMPORT_MAX_BYTES)
-      throw new BadRequestException('CERTIFICATE_IMPORT_OCR_FILE_TOO_LARGE');
-    assertCertificateImportObject(
-      { size: bytes.length, contentType: file.fileType },
-      bytes.length,
-      file.fileType,
-      bytes,
-    );
-    if (
-      bytes.length !== info.size ||
-      (file.sizeBytes != null && file.sizeBytes !== bytes.length)
-    ) {
-      throw new BadRequestException('CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH');
-    }
+    const bytes = await readSealedCertificateObject(this.storage, file);
     const pageCount =
       file.fileType === 'application/pdf'
         ? await assertCertificateImportPdf(bytes, {
@@ -294,15 +232,5 @@ export class GoogleVisionCertificateOcrProvider
     )
       return new BadRequestException('CERTIFICATE_IMPORT_OCR_UNAVAILABLE');
     return new BadRequestException('CERTIFICATE_IMPORT_OCR_FAILED');
-  }
-
-  private async readStored<T>(work: () => Promise<T>): Promise<T> {
-    try {
-      return await work();
-    } catch (error) {
-      if (error instanceof AppInternalServerErrorException)
-        throw new BadRequestException('CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE');
-      throw error;
-    }
   }
 }

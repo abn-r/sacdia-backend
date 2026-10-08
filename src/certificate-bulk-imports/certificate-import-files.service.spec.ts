@@ -658,6 +658,70 @@ describe('CertificateImportFilesService', () => {
     expect(storage.deleteMany).not.toHaveBeenCalled();
   });
 
+  describe('image seal after a DB failure', () => {
+    const pendingImage = {
+      file_id: 'file-1',
+      file_type: 'image/jpeg',
+      file_url: 'staging-key',
+      upload_status: 'PENDING_UPLOAD',
+      staging_key: 'staging-key',
+      object_key: null,
+      size_bytes: 1200n,
+      confirmed_at: null,
+      jurisdiction: 'CAMPO_LOCAL',
+      batch: { user_id: 'owner-1', local_field_id: 7, status: 'DRAFT' },
+    };
+    const sealKey = 'certificate-imports/batches/batch-1/sealed/image-seal.jpg';
+
+    beforeEach(() => {
+      storage.copyObject.mockResolvedValue({ key: sealKey });
+    });
+
+    it('removes its own copy when the reread proves it is unreferenced', async () => {
+      prisma.certificate_bulk_import_files.findFirst
+        .mockResolvedValueOnce({ ...pendingImage })
+        .mockResolvedValueOnce({ object_key: null });
+      prisma.certificate_bulk_import_files.updateMany.mockRejectedValueOnce(
+        new Error('database unavailable'),
+      );
+      await expect(
+        service.confirm('owner-1', 'batch-1', 'file-1'),
+      ).rejects.toThrow('database unavailable');
+      expect(storage.copyObject).toHaveBeenCalledTimes(1);
+      expect(storage.deleteMany).toHaveBeenCalledTimes(1);
+      expect(storage.deleteMany).toHaveBeenCalledWith(
+        StorageBucketAlias.CERTIFICATE_IMPORTS,
+        [sealKey],
+      );
+    });
+
+    it('preserves the copy when the reread cannot be completed', async () => {
+      prisma.certificate_bulk_import_files.findFirst
+        .mockResolvedValueOnce({ ...pendingImage })
+        .mockRejectedValueOnce(new Error('read unavailable'));
+      prisma.certificate_bulk_import_files.updateMany.mockRejectedValueOnce(
+        new Error('ambiguous commit'),
+      );
+      await expect(
+        service.confirm('owner-1', 'batch-1', 'file-1'),
+      ).rejects.toThrow('ambiguous commit');
+      expect(storage.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('preserves the copy when the commit did land', async () => {
+      prisma.certificate_bulk_import_files.findFirst
+        .mockResolvedValueOnce({ ...pendingImage })
+        .mockResolvedValueOnce({ object_key: sealKey });
+      prisma.certificate_bulk_import_files.updateMany.mockRejectedValueOnce(
+        new Error('ambiguous commit'),
+      );
+      await expect(
+        service.confirm('owner-1', 'batch-1', 'file-1'),
+      ).rejects.toThrow('ambiguous commit');
+      expect(storage.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
   it('maps PDF upload failure safely without confirming or deleting staging', async () => {
     await preparePdf(1);
     storage.upload.mockRejectedValueOnce(
