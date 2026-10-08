@@ -13,6 +13,7 @@ import {
   FileStorageService,
 } from '../../common/services/file-storage.service';
 import { CERTIFICATE_IMPORT_MAX_BYTES } from '../certificate-import-files.constants';
+import { flateObjStmOverCap } from '../../../test/certificate-bulk-imports/certificate-import-pdf.attacks';
 import {
   GoogleVisionCertificateOcrProvider,
   googleVisionClientFactoryProvider,
@@ -222,6 +223,29 @@ describe('GoogleVisionCertificateOcrProvider ADC', () => {
       );
     },
   );
+  it('rejects an expanding ObjStm before constructing a Vision client', async () => {
+    const f = fixture();
+    const bytes = await flateObjStmOverCap();
+    f.storage.getObject.mockResolvedValue(bytes);
+    f.storage.getObjectInfo.mockResolvedValue({
+      size: bytes.length,
+      contentType: 'application/pdf',
+    });
+    await expect(
+      f.ocr.extract([
+        {
+          ...file,
+          fileName: 'cert.pdf',
+          fileType: 'application/pdf',
+          sizeBytes: bytes.length,
+        },
+      ]),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_PDF_INVALID');
+    expect(f.factory).not.toHaveBeenCalled();
+    expect(f.client.batchAnnotateFiles).not.toHaveBeenCalled();
+    expect(f.client.batchAnnotateImages).not.toHaveBeenCalled();
+  });
+
   it.each([6, 0])(
     'rejects legacy confirmed PDF with %i pages before any SDK use',
     async (pages) => {
