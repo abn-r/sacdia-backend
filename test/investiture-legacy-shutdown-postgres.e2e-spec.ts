@@ -9,6 +9,8 @@ import { readFileSync, statSync } from 'node:fs';
 import { JwtService } from '@nestjs/jwt';
 import type { Client } from 'pg';
 import request from 'supertest';
+import { InvestitureService } from '../src/investiture/investiture.service';
+import { ValidationService } from '../src/validation/validation.service';
 import {
   bootstrapAnnualCycleApp,
   prepareAnnualCycleDatabase,
@@ -251,6 +253,225 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
 
   afterAll(async () => {
     if (app) await app.close();
+  });
+
+  const retiredCalls = (id: number) =>
+    [
+      ['post', `/api/v1/investiture/enrollments/${id}/submit`, {}],
+      ['post', `/api/v1/investiture/enrollments/${id}/club-approve`, {}],
+      ['post', `/api/v1/investiture/enrollments/${id}/coordinator-approve`, {}],
+      ['post', `/api/v1/investiture/enrollments/${id}/field-approve`, {}],
+      ['post', `/api/v1/investiture/enrollments/${id}/invest`, {}],
+      [
+        'post',
+        `/api/v1/investiture/enrollments/${id}/reject`,
+        { reason: 'fase 8' },
+      ],
+      [
+        'post',
+        '/api/v1/investiture/enrollments/bulk-approve',
+        { action: 'invest', enrollment_ids: [id] },
+      ],
+      [
+        'post',
+        '/api/v1/investiture/enrollments/bulk-reject',
+        { enrollment_ids: [id], comments: 'fase 8' },
+      ],
+      ['post', `/api/v1/enrollments/${id}/submit-for-validation`, {}],
+      ['post', `/api/v1/enrollments/${id}/validate`, { action: 'APPROVED' }],
+      ['post', `/api/v1/enrollments/${id}/investiture`, {}],
+    ] as const;
+
+  async function callRetired(method: 'post', url: string, body: object) {
+    await pace();
+    return request(app.getHttpServer())
+      [method](url)
+      .set(bearer(ADMIN))
+      .send(body);
+  }
+
+  async function callAnonymous(
+    method: 'get' | 'post',
+    url: string,
+    body: object,
+  ) {
+    await pace();
+    const call = request(app.getHttpServer())[method](url);
+    return method === 'get' ? call : call.send(body);
+  }
+
+  async function legacySnapshot() {
+    const ids = [
+      ...Object.values(fx.open),
+      fx.pendingLocked,
+      fx.legacyInvested,
+      fx.certificate,
+      fx.inProgress,
+    ];
+    return {
+      rows: await locks(ids),
+      history: await prisma.investiture_validation_history.count({
+        where: { enrollment_id: { in: ids } },
+      }),
+      people: await prisma.investiture_authorization_people.findMany({
+        where: { enrollment_id: { in: ids } },
+        select: { enrollment_id: true, status: true },
+        orderBy: { enrollment_id: 'asc' },
+      }),
+      completed: await prisma.achievement_event_log.count({
+        where: { event_type: 'class.completed' },
+      }),
+    };
+  }
+
+  describe('vía retirada', () => {
+    it.each([
+      ['FIELD_APPROVED', () => fx.open.FIELD_APPROVED],
+      ['un enrollment operativo nuevo', () => fx.inProgress],
+    ])(
+      '%s no llega a INVESTIDO por ninguna ruta, alias ni operación masiva',
+      async (_label, pick) => {
+        const id = pick();
+        const before = await legacySnapshot();
+        for (const [method, url, body] of retiredCalls(id)) {
+          const res = await callRetired(method, url, body);
+          expect({ url, status: res.status, code: res.body.code }).toEqual({
+            url,
+            status: 410,
+            code: 'INVESTITURE_LEGACY_PIPELINE_RETIRED',
+          });
+        }
+        expect(await legacySnapshot()).toEqual(before);
+        const row = await prisma.enrollments.findUniqueOrThrow({
+          where: { enrollment_id: id },
+        });
+        expect(row.investiture_status).not.toBe('INVESTIDO');
+      },
+    );
+
+    it('ValidationModule no mueve una clase', async () => {
+      const validation = app.get(ValidationService);
+      const before = await legacySnapshot();
+      await expect(
+        validation.submitForReview('class', fx.inProgress, ADMIN),
+      ).rejects.toMatchObject({ code: 'INVESTITURE_LEGACY_PIPELINE_RETIRED' });
+      await expect(
+        validation.review(
+          'class',
+          fx.open.SUBMITTED_FOR_VALIDATION,
+          'approved',
+          ADMIN,
+        ),
+      ).rejects.toMatchObject({ code: 'INVESTITURE_LEGACY_PIPELINE_RETIRED' });
+      expect(await legacySnapshot()).toEqual(before);
+      expect(
+        await prisma.validation_logs.count({ where: { entity_type: 'class' } }),
+      ).toBe(0);
+    });
+
+    it('ningún expediente abierto se pierde ni se resuelve en silencio', async () => {
+      const before = await legacySnapshot();
+      const all = [...Object.values(fx.open), fx.pendingLocked];
+      for (const [method, url, body] of [
+        [
+          'post',
+          '/api/v1/investiture/enrollments/bulk-approve',
+          { action: 'invest', enrollment_ids: all },
+        ],
+        [
+          'post',
+          '/api/v1/investiture/enrollments/bulk-reject',
+          { enrollment_ids: all, comments: 'fase 8' },
+        ],
+        ...all.map(
+          (id) =>
+            [
+              'post',
+              `/api/v1/enrollments/${id}/validate`,
+              { action: 'REJECTED', comments: 'x' },
+            ] as const,
+        ),
+      ] as const) {
+        expect((await callRetired(method, url, body)).status).toBe(410);
+      }
+      const after = await legacySnapshot();
+      expect(after).toEqual(before);
+      for (const status of OPEN) {
+        expect(
+          after.rows.find((row) => row.enrollment_id === fx.open[status]),
+        ).toMatchObject({
+          investiture_status: status,
+          locked_for_validation: true,
+        });
+      }
+    });
+
+    it('el historial viejo sigue leyéndose', async () => {
+      const history = await app
+        .get(InvestitureService)
+        .getHistory(fx.open.CLUB_APPROVED, ADMIN);
+      expect(history.history).toEqual([
+        expect.objectContaining({
+          action: 'SUBMITTED',
+          comments: 'expediente anterior',
+        }),
+      ]);
+    });
+
+    it('un certificado histórico no se mezcla con la solicitud', async () => {
+      const before = await legacySnapshot();
+      for (const [method, url, body] of retiredCalls(fx.certificate).slice(
+        4,
+        5,
+      )) {
+        expect((await callRetired(method, url, body)).status).toBe(410);
+      }
+      expect(await legacySnapshot()).toEqual(before);
+      expect(
+        await prisma.investiture_authorization_people.count({
+          where: { enrollment_id: fx.certificate },
+        }),
+      ).toBe(0);
+      await pace();
+      const own = await request(app.getHttpServer())
+        .get('/api/v1/investiture-history')
+        .set(bearer(fx.certificateMember));
+      expect(own.status).toBe(200);
+      expect(own.body.data).toEqual([]);
+    });
+
+    it('sin sesión responde 401 y no 410: las rutas retiradas piden el JWT global, no permisos', async () => {
+      const before = await legacySnapshot();
+      const id = fx.open.FIELD_APPROVED;
+      for (const [method, url, body] of [
+        ['post', `/api/v1/investiture/enrollments/${id}/invest`, {}],
+        ['post', `/api/v1/enrollments/${id}/validate`, { action: 'APPROVED' }],
+        ['get', '/api/v1/investiture/pending', {}],
+        ['get', '/api/v1/admin/investiture/config', {}],
+      ] as const) {
+        const res = await callAnonymous(method, url, body);
+        expect({ url, status: res.status }).toEqual({ url, status: 401 });
+      }
+      expect(await legacySnapshot()).toEqual(before);
+    });
+
+    it('las lecturas retiradas también responden 410 con sesión (decisión O1)', async () => {
+      for (const url of [
+        '/api/v1/investiture/pending',
+        '/api/v1/admin/investiture/config',
+        '/api/v1/admin/investiture/config/7',
+      ]) {
+        await pace();
+        const res = await request(app.getHttpServer())
+          .get(url)
+          .set(bearer(ADMIN));
+        expect({ url, status: res.status, code: res.body.code }).toEqual({
+          url,
+          status: 410,
+          code: 'INVESTITURE_LEGACY_PIPELINE_RETIRED',
+        });
+      }
+    });
   });
 
   describe('desbloqueo explícito', () => {
