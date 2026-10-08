@@ -43,8 +43,10 @@ import {
   reminderRunKey,
   reminderRunsDue,
   reminderRetrySkipReason,
+  resultPushData,
   type MailDraft,
   type ReminderRun,
+  type ResultAudience,
   type ResultDraft,
 } from './investiture-communications.rules';
 
@@ -80,6 +82,10 @@ type ResultPayload = {
   body: string;
   source: string;
   requestId: string;
+  /** Ausentes en filas guardadas antes de que el push llevara destino. */
+  audience?: ResultAudience;
+  sectionId?: number;
+  classId?: number;
 };
 
 type StoredDispatch = {
@@ -864,6 +870,7 @@ export class InvestitureCommunicationsService implements InvestitureMailGate {
         body: payload.body,
         source: payload.source,
         requestId: payload.requestId,
+        ...(await this.resultDestination(row, payload)),
       });
     }
     const mapped = toDispatchRow(row);
@@ -1099,6 +1106,9 @@ export class InvestitureCommunicationsService implements InvestitureMailGate {
       body: draft.body,
       source: draft.source,
       requestId: draft.requestId,
+      audience: draft.audience,
+      sectionId: draft.sectionId,
+      ...(draft.classId === undefined ? {} : { classId: draft.classId }),
     };
     return deliverOnce(
       this.store(),
@@ -1118,13 +1128,45 @@ export class InvestitureCommunicationsService implements InvestitureMailGate {
             userId: draft.recipientUserId,
             title: draft.title,
             body: draft.body,
-            data: { requestId: draft.requestId },
+            data: resultPushData(draft),
           },
           draft.source,
         );
         return 'sent';
       },
     );
+  }
+
+  /**
+   * Destino del push al reintentar desde el payload guardado. Las filas
+   * anteriores a este campo no traen sección: se resuelve por la solicitud. No
+   * traen clase y, en ese caso, el push de la persona sale sin `classId`.
+   */
+  private async resultDestination(
+    row: StoredDispatch,
+    payload: ResultPayload,
+  ): Promise<Pick<ResultDraft, 'audience' | 'sectionId' | 'classId'>> {
+    const audience: ResultAudience =
+      payload.audience ?? (row.role === 'person' ? 'person' : 'board');
+    let sectionId = payload.sectionId;
+    if (sectionId === undefined) {
+      const request =
+        await this.prisma.investiture_authorization_requests.findUnique({
+          where: { request_id: payload.requestId },
+          select: { club_section_id: true },
+        });
+      if (!request) {
+        throw new Error(
+          `La solicitud ${payload.requestId} del aviso ya no existe`,
+        );
+      }
+      sectionId = request.club_section_id;
+    }
+    return {
+      audience,
+      sectionId,
+      ...(payload.classId === undefined ? {} : { classId: payload.classId }),
+    };
   }
 
   private async persistInbox(

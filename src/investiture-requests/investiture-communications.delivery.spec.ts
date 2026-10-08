@@ -1030,6 +1030,157 @@ describe('investiture communication delivery', () => {
     }
   });
 
+  it('tags the result push with the app destination and leaves the inbox rows alone', async () => {
+    const { prisma, state, logs } = world();
+    state.personStatus = 'INVESTED';
+    state.pending = true;
+    const pushes: Array<{
+      userId: string;
+      data?: Record<string, string>;
+      source?: string;
+    }> = [];
+    const service = new InvestitureCommunicationsService(
+      prisma as never,
+      { sendInvestitureNotice: async () => undefined } as never,
+      {
+        pushBestEffort: async (
+          input: { userId: string; data?: Record<string, string> },
+          source?: string,
+        ) => {
+          pushes.push({ userId: input.userId, data: input.data, source });
+        },
+      } as never,
+      { get: () => 'https://admin.example.test' } as never,
+    );
+    service.bindClock(() => new Date('2026-10-05T16:00:00.000Z'));
+
+    await service.recordResults({
+      requestId: REQUEST,
+      actorId: ACTOR,
+      investedIds: [PERSON],
+      rejectedPersonIds: [],
+      rejectedSystemIds: [],
+    });
+
+    const person = pushes.find((push) => push.userId === PERSON);
+    expect(person?.data).toEqual({
+      type: 'investiture_result',
+      audience: 'person',
+      requestId: REQUEST,
+      sectionId: '1',
+      classId: '1',
+    });
+    const board = pushes.find((push) => push.userId !== PERSON);
+    expect(board?.data).toEqual({
+      type: 'investiture_result',
+      audience: 'board',
+      requestId: REQUEST,
+      sectionId: '1',
+    });
+    expect(board?.data).not.toHaveProperty('classId');
+    expect(pushes.every((push) => push.source === 'investiture:invested')).toBe(
+      true,
+    );
+    expect(JSON.stringify(logs)).not.toContain('investiture_result');
+  });
+
+  it('keeps the destination when a failed result is recovered from the stored payload', async () => {
+    const { prisma, state, dispatches } = world();
+    state.personStatus = 'INVESTED';
+    state.pending = true;
+    const pushes: Array<{ userId: string; data?: Record<string, string> }> = [];
+    const service = new InvestitureCommunicationsService(
+      prisma as never,
+      { sendInvestitureNotice: async () => undefined } as never,
+      {
+        pushBestEffort: async (input: {
+          userId: string;
+          data?: Record<string, string>;
+        }) => {
+          pushes.push({ userId: input.userId, data: input.data });
+        },
+      } as never,
+      { get: () => 'https://admin.example.test' } as never,
+    );
+    service.bindClock(() => new Date('2026-10-05T16:00:00.000Z'));
+    state.failInbox = true;
+    await service.recordResults({
+      requestId: REQUEST,
+      actorId: ACTOR,
+      investedIds: [PERSON],
+      rejectedPersonIds: [],
+      rejectedSystemIds: [],
+    });
+    expect(pushes).toHaveLength(0);
+    const stored = dispatches.find(
+      (row) => row.kind === 'RESULT' && row.role === 'person',
+    );
+    expect(stored?.payload).toMatchObject({
+      audience: 'person',
+      sectionId: 1,
+      classId: 1,
+    });
+
+    state.failInbox = false;
+    await service.deliverPending();
+
+    expect(pushes.find((push) => push.userId === PERSON)?.data).toEqual({
+      type: 'investiture_result',
+      audience: 'person',
+      requestId: REQUEST,
+      sectionId: '1',
+      classId: '1',
+    });
+  });
+
+  it('recovers a result stored before the push carried a destination', async () => {
+    const { prisma, dispatches } = world();
+    dispatches.push({
+      dispatch_id: 'legacy-result',
+      kind: 'RESULT',
+      execution_key: 'person-invested:legacy',
+      recipient_user_id: PERSON,
+      role: 'person',
+      scope_key: `user:${PERSON}`,
+      status: 'failed',
+      attempts: 1,
+      payload: {
+        channel: 'result',
+        title: 'Investidura autorizada',
+        body: 'texto',
+        source: 'investiture:invested',
+        requestId: REQUEST,
+      },
+      lease_until: null,
+      claim_token: null,
+      sent_at: null,
+      last_error: 'boom',
+    });
+    const pushes: Array<Record<string, string> | undefined> = [];
+    const service = new InvestitureCommunicationsService(
+      prisma as never,
+      { sendInvestitureNotice: async () => undefined } as never,
+      {
+        pushBestEffort: async (input: { data?: Record<string, string> }) => {
+          pushes.push(input.data);
+        },
+      } as never,
+      { get: () => 'https://admin.example.test' } as never,
+    );
+    service.bindClock(() => new Date('2026-10-05T16:00:00.000Z'));
+
+    await service.deliverPending();
+
+    expect(pushes).toEqual([
+      {
+        type: 'investiture_result',
+        audience: 'person',
+        requestId: REQUEST,
+        sectionId: '1',
+      },
+    ]);
+  });
+
   it('retries a lost inbox without hiding it or duplicating it', async () => {
     const { prisma, state, dispatches, deliveries } = world();
     state.personStatus = 'INVESTED';

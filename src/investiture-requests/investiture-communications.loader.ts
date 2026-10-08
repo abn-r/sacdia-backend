@@ -80,6 +80,7 @@ export async function loadResolution(
       personId,
       userId: person?.user_id ?? '',
       name: names.get(person?.user_id ?? '') ?? 'Sin nombre',
+      ...(person ? { classId: person.class_id } : {}),
     };
   };
   const officers = await prisma.club_role_assignments.findMany({

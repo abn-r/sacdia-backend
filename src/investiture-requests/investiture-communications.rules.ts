@@ -66,7 +66,35 @@ export type ResultDraft = {
   body: string;
   source: string;
   requestId: string;
+  /** Destino en la app: la persona abre su clase; la directiva, su sección. */
+  audience: ResultAudience;
+  sectionId: number;
+  /** Solo para `person`. */
+  classId?: number;
 };
+
+export type ResultAudience = 'person' | 'board';
+
+/** Valor de `data.type` que la app enruta hacia el resultado de la investidura. */
+export const INVESTITURE_RESULT_PUSH_TYPE = 'investiture_result';
+
+/**
+ * Datos del push del resultado. FCM solo admite cadenas. La bandeja
+ * (`notification_logs`) no los usa: la app enruta ahí por `source`.
+ */
+export function resultPushData(
+  draft: Pick<ResultDraft, 'requestId' | 'audience' | 'sectionId' | 'classId'>,
+): Record<string, string> {
+  return {
+    type: INVESTITURE_RESULT_PUSH_TYPE,
+    audience: draft.audience,
+    requestId: draft.requestId,
+    sectionId: String(draft.sectionId),
+    ...(draft.audience === 'person' && draft.classId !== undefined
+      ? { classId: String(draft.classId) }
+      : {}),
+  };
+}
 
 export class InvestiturePanelUrlMissingError extends Error {
   constructor() {
@@ -267,18 +295,21 @@ export function resultDrafts(input: {
     personId: string;
     userId: string;
     name: string;
+    classId?: number;
     comment?: string | null;
   }>;
   rejectedByPerson: Array<{
     personId: string;
     userId: string;
     name: string;
+    classId?: number;
     reason?: string | null;
   }>;
   rejectedBySystem: Array<{
     personId: string;
     userId: string;
     name: string;
+    classId?: number;
     systemReason?: string | null;
   }>;
 }): ResultDraft[] {
@@ -308,6 +339,7 @@ export function resultDrafts(input: {
           body,
           INVESTITURE_RESULT_INVESTED_SOURCE,
           input.requestId,
+          input.sectionId,
         ),
       );
     }
@@ -322,6 +354,9 @@ export function resultDrafts(input: {
         body: INVESTITURE_PERSON_INVESTED_TEXT,
         source: INVESTITURE_RESULT_INVESTED_SOURCE,
         requestId: input.requestId,
+        audience: 'person',
+        sectionId: input.sectionId,
+        ...(person.classId === undefined ? {} : { classId: person.classId }),
       });
     }
   }
@@ -350,6 +385,7 @@ export function resultDrafts(input: {
           body,
           INVESTITURE_RESULT_REJECTED_SOURCE,
           input.requestId,
+          input.sectionId,
         ),
       );
     }
@@ -365,6 +401,9 @@ export function resultDrafts(input: {
       body: INVESTITURE_PERSON_REJECTED_TEXT,
       source: INVESTITURE_RESULT_REJECTED_SOURCE,
       requestId: input.requestId,
+      audience: 'person',
+      sectionId: input.sectionId,
+      ...(person.classId === undefined ? {} : { classId: person.classId }),
     });
   }
   return drafts;
@@ -860,6 +899,7 @@ function boardNotice(
   body: string,
   source: string,
   requestId: string,
+  sectionId: number,
 ): ResultDraft {
   return {
     kind: 'RESULT',
@@ -871,5 +911,7 @@ function boardNotice(
     body,
     source,
     requestId,
+    audience: 'board',
+    sectionId,
   };
 }
