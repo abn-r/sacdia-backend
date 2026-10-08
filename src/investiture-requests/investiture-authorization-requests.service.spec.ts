@@ -3722,6 +3722,164 @@ describe('investiture authorization requests', () => {
     });
   });
 
+  describe('evaluateEnrollmentForPresentation', () => {
+    async function evaluate(enrollmentId = 901) {
+      const context = await service['loadContext'](SECTION_ID, YEAR_ID);
+      const enrollment = await service['loadEnrollment'](enrollmentId);
+      return service['evaluateEnrollmentForPresentation'](
+        world.prisma as never,
+        context,
+        enrollment,
+      );
+    }
+
+    const blocked: Array<[string, () => number]> = [
+      [
+        'INVESTITURE_REQUEST_NOT_OPERATIONAL',
+        () => {
+          world.addEnrollment({
+            enrollment_id: 950,
+            record_kind: 'HISTORICAL_CERTIFICATE',
+          });
+          return 950;
+        },
+      ],
+      [
+        'INVESTITURE_REQUEST_OUTSIDE_SECTION',
+        () => {
+          world.clearMembers();
+          return 901;
+        },
+      ],
+      [
+        'INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE',
+        () => {
+          world.addEnrollment({
+            enrollment_id: 951,
+            classes: {
+              min_duration_years: 1,
+              max_duration_years: 1,
+              club_type_id: 1,
+              club_types: { name: 'Conquistadores' },
+              asset_code: 'GM-02',
+            },
+          });
+          return 951;
+        },
+      ],
+      [
+        'INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE',
+        () => {
+          const row = world.addEnrollment({ enrollment_id: 952, class_id: 9 });
+          row.investiture_status = 'FIELD_APPROVED';
+          row.locked_for_validation = true;
+          return 952;
+        },
+      ],
+      [
+        'INVESTITURE_REQUEST_ALREADY_INVESTED',
+        () => {
+          const row = world.addEnrollment({ enrollment_id: 953, class_id: 10 });
+          row.investiture_status = 'INVESTIDO';
+          return 953;
+        },
+      ],
+      [
+        'INVESTITURE_REQUEST_ACTIVE_EXISTS',
+        () => {
+          world.people.push({
+            person_id: '33333333-3333-4333-8333-333333333333',
+            request_id: '44444444-4444-4444-8444-444444444444',
+            user_id: USER,
+            class_id: 7,
+            enrollment_id: 901,
+            investiture_date: new Date(`${DATE}T00:00:00.000Z`),
+            status: 'PENDING',
+            single_slot: true,
+            resolution_code: null,
+            resolved_by_id: null,
+          });
+          return 901;
+        },
+      ],
+      [
+        'INVESTITURE_REQUEST_NOT_ELIGIBLE',
+        () => {
+          eligibility.calculateForEnrollment.mockResolvedValueOnce({
+            investiture_eligibility: { eligible: false },
+          });
+          return 901;
+        },
+      ],
+      [
+        'INVESTITURE_DURATION_MIN_NOT_MET',
+        () => {
+          world.addEnrollment({
+            enrollment_id: 954,
+            class_id: 11,
+            classes: {
+              min_duration_years: 3,
+              max_duration_years: 3,
+              club_type_id: 1,
+              club_types: { name: 'Conquistadores' },
+            },
+          });
+          world.setYearCount(1);
+          return 954;
+        },
+      ],
+      [
+        'INVESTITURE_DURATION_EXPIRED',
+        () => {
+          world.setYearCount(4);
+          return 901;
+        },
+      ],
+    ];
+
+    it.each(blocked)('returns %s without writing', async (code, arrange) => {
+      const enrollmentId = arrange();
+
+      await expect(evaluate(enrollmentId)).resolves.toEqual({
+        eligible: false,
+        code: ErrorCode[code as keyof typeof ErrorCode],
+      });
+
+      expect(
+        world.prisma.investiture_authorization_people.create,
+      ).not.toHaveBeenCalled();
+      expect(
+        world.prisma.investiture_authorization_people.update,
+      ).not.toHaveBeenCalled();
+      expect(
+        world.prisma.investiture_authorization_people.updateMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('returns EXPIRED status as a duration expiry', async () => {
+      world.addEnrollment({
+        enrollment_id: 955,
+        class_id: 12,
+        investiture_status: 'EXPIRED',
+      });
+
+      await expect(evaluate(955)).resolves.toEqual({
+        eligible: false,
+        code: ErrorCode.INVESTITURE_DURATION_EXPIRED,
+      });
+    });
+
+    it('returns eligible with the single-slot flag for a clean enrollment', async () => {
+      await expect(evaluate()).resolves.toEqual({
+        eligible: true,
+        singleSlot: true,
+      });
+      expect(
+        world.prisma.investiture_authorization_people.create,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
   it('BC-13 stores the actor and uses the injected clock', async () => {
     const at = new Date('2026-10-20T15:00:00.000Z');
     const timed = new InvestitureAuthorizationRequestService(

@@ -166,6 +166,37 @@ type SectionContext = {
   districtId: number | null;
 };
 
+type PresentationVerdict =
+  | { eligible: true; singleSlot: boolean }
+  | { eligible: false; code: ErrorCode };
+
+const PRESENTATION_BAD_REQUEST_CODES = new Set<ErrorCode>([
+  ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
+  ErrorCode.INVESTITURE_DURATION_MIN_NOT_MET,
+  ErrorCode.INVESTITURE_DURATION_EXPIRED,
+]);
+
+function blockedPresentation(code: ErrorCode): PresentationVerdict {
+  return { eligible: false, code };
+}
+
+/** Maps a blocking code back to the exception `present` has always thrown. */
+function presentationException(
+  code: ErrorCode,
+  enrollment: { user_id: string; class_id: number },
+): AppBadRequestException | AppConflictException {
+  if (PRESENTATION_BAD_REQUEST_CODES.has(code)) {
+    return new AppBadRequestException(code);
+  }
+  if (code === ErrorCode.INVESTITURE_REQUEST_ALREADY_INVESTED) {
+    return new AppConflictException(code, {
+      userId: enrollment.user_id,
+      classId: enrollment.class_id,
+    });
+  }
+  return new AppConflictException(code);
+}
+
 type EnrollmentRow = {
   enrollment_id: number;
   user_id: string;
@@ -1278,11 +1309,6 @@ export class InvestitureAuthorizationRequestService {
       }
       for (const seeded of loaded) {
         const enrollment = await this.loadEnrollment(seeded.enrollment_id, tx);
-        if (isInstitutionalInvestitureClass(enrollment.classes?.asset_code)) {
-          throw new AppBadRequestException(
-            ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
-          );
-        }
         const singleSlot = await this.acceptEnrollment(tx, fresh, enrollment);
         await tx.investiture_authorization_people.create({
           data: {
@@ -1310,15 +1336,37 @@ export class InvestitureAuthorizationRequestService {
     context: SectionContext,
     enrollment: EnrollmentRow,
   ): Promise<boolean> {
-    if (!enrollment.active || enrollment.record_kind !== 'OPERATIONAL') {
-      throw new AppConflictException(
-        ErrorCode.INVESTITURE_REQUEST_NOT_OPERATIONAL,
+    const verdict = await this.evaluateEnrollmentForPresentation(
+      store,
+      context,
+      enrollment,
+    );
+    if (!verdict.eligible) {
+      throw presentationException(verdict.code, enrollment);
+    }
+    return verdict.singleSlot;
+  }
+
+  /**
+   * Decides whether an enrollment may be presented for investiture, returning
+   * the first blocking code instead of throwing. It never writes and takes no
+   * lock; callers that write run it under the section/user/enrollment locks.
+   */
+  private async evaluateEnrollmentForPresentation(
+    store: Prisma.TransactionClient,
+    context: SectionContext,
+    enrollment: EnrollmentRow,
+  ): Promise<PresentationVerdict> {
+    if (isInstitutionalInvestitureClass(enrollment.classes?.asset_code)) {
+      return blockedPresentation(
+        ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
       );
     }
+    if (!enrollment.active || enrollment.record_kind !== 'OPERATIONAL') {
+      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_NOT_OPERATIONAL);
+    }
     if (enrollment.classes?.club_type_id !== context.clubTypeId) {
-      throw new AppConflictException(
-        ErrorCode.INVESTITURE_REQUEST_OUTSIDE_SECTION,
-      );
+      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_OUTSIDE_SECTION);
     }
     const member = await store.club_role_assignments.findFirst({
       where: {
@@ -1331,21 +1379,15 @@ export class InvestitureAuthorizationRequestService {
       select: { assignment_id: true },
     });
     if (!member && !(await this.hasCrossTypeHome(store, context, enrollment))) {
-      throw new AppConflictException(
-        ErrorCode.INVESTITURE_REQUEST_OUTSIDE_SECTION,
-      );
+      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_OUTSIDE_SECTION);
     }
     if (await this.findSameClassInvested(store, enrollment)) {
-      throw new AppConflictException(
+      return blockedPresentation(
         ErrorCode.INVESTITURE_REQUEST_ALREADY_INVESTED,
-        {
-          userId: enrollment.user_id,
-          classId: enrollment.class_id,
-        },
       );
     }
     if (enrollmentOnLegacyInvestiturePipeline(enrollment)) {
-      throw new AppConflictException(
+      return blockedPresentation(
         ErrorCode.INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE,
       );
     }
@@ -1359,25 +1401,19 @@ export class InvestitureAuthorizationRequestService {
         ? pending.length > 0
         : pending.some((row) => row.class_id === enrollment.class_id);
     if (blocked) {
-      throw new AppConflictException(
-        ErrorCode.INVESTITURE_REQUEST_ACTIVE_EXISTS,
-      );
+      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_ACTIVE_EXISTS);
     }
     const result = await this.eligibility.calculateForEnrollment(
       enrollment.enrollment_id,
     );
     if (!result?.investiture_eligibility.eligible) {
-      throw new AppConflictException(
-        ErrorCode.INVESTITURE_REQUEST_NOT_ELIGIBLE,
-      );
+      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_NOT_ELIGIBLE);
     }
     if (!enrollment.classes || !enrollment.ecclesiastical_year) {
-      throw new AppConflictException(
-        ErrorCode.INVESTITURE_REQUEST_NOT_ELIGIBLE,
-      );
+      return blockedPresentation(ErrorCode.INVESTITURE_REQUEST_NOT_ELIGIBLE);
     }
     if (enrollment.investiture_status === 'EXPIRED') {
-      throw new AppBadRequestException(ErrorCode.INVESTITURE_DURATION_EXPIRED);
+      return blockedPresentation(ErrorCode.INVESTITURE_DURATION_EXPIRED);
     }
     const elapsed = await store.ecclesiastical_years.count({
       where: {
@@ -1388,14 +1424,12 @@ export class InvestitureAuthorizationRequestService {
       },
     });
     if (elapsed < enrollment.classes.min_duration_years) {
-      throw new AppBadRequestException(
-        ErrorCode.INVESTITURE_DURATION_MIN_NOT_MET,
-      );
+      return blockedPresentation(ErrorCode.INVESTITURE_DURATION_MIN_NOT_MET);
     }
     if (elapsed > enrollment.classes.max_duration_years) {
-      throw new AppBadRequestException(ErrorCode.INVESTITURE_DURATION_EXPIRED);
+      return blockedPresentation(ErrorCode.INVESTITURE_DURATION_EXPIRED);
     }
-    return singleSlot;
+    return { eligible: true, singleSlot };
   }
 
   private async hasCrossTypeHome(
