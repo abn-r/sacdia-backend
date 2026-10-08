@@ -1,12 +1,39 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
+import { HttpException } from '@nestjs/common';
 import { PDFDocument } from 'pdf-lib';
 import PDFKit from 'pdfkit';
 import {
   assertCertificateImportPdf,
   CERTIFICATE_IMPORT_MAX_PDF_PAGES,
+  PDF_CONFIRM_QUEUE_WAIT_MS,
+  PDF_OCR_QUEUE_WAIT_MS,
+  PDF_PARSE_DEADLINE_MS,
+  PDF_VALIDATION_RSS_BUDGET_BYTES,
+  PDF_WORKER_BUNDLE_MISSING,
+  PDF_WORKER_EXIT_TIMEOUT,
+  PDF_WORKER_MAX_WAITING,
+  PDF_WORKER_STARTUP_DEADLINE_MS,
+  pdfValidationActiveWorkers,
+  pdfValidationWorkerPeak,
+  resetPdfValidationWorkerPeak,
 } from './certificate-import-pdf';
 import { CERTIFICATE_IMPORT_MAX_BYTES } from './certificate-import-files.constants';
+import {
+  commentBeforeObjKeyword,
+  doubleFlateObjStm,
+  escapedLzwObjStm,
+  hexEscapedFlateObjStm,
+  newlineHeaderAfterTrailer,
+  objStmsAtTotalCap,
+  objStmsOverTotalCap,
+  PDF_BOMB_OUTPUT_BYTES,
+  PDF_STREAM_CAP_BYTES,
+  PDF_TOTAL_CAP_BYTES,
+  xrefHugeFieldWidth,
+} from '../../test/certificate-bulk-imports/certificate-import-pdf.attacks';
 
 async function pdf(pages: number) {
   const document = await PDFDocument.create();
@@ -15,6 +42,13 @@ async function pdf(pages: number) {
 }
 
 describe('assertCertificateImportPdf', () => {
+  afterEach(async () => {
+    const deadline = Date.now() + 3_000;
+    while (pdfValidationActiveWorkers() > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  });
+
   it.each([1, 5])('counts all %i real pages', async (pages) => {
     expect(await assertCertificateImportPdf(await pdf(pages))).toBe(pages);
     expect(CERTIFICATE_IMPORT_MAX_PDF_PAGES).toBe(5);
@@ -193,5 +227,668 @@ describe('assertCertificateImportPdf', () => {
         Buffer.alloc(CERTIFICATE_IMPORT_MAX_BYTES + 1),
       ),
     ).rejects.toThrow('CERTIFICATE_IMPORT_FILE_TOO_LARGE');
+  });
+
+  async function expectDecodeStaysWithinCap(bytes: Buffer) {
+    expect(bytes.length).toBeLessThanOrEqual(CERTIFICATE_IMPORT_MAX_BYTES);
+    expect(bytes.length).toBeLessThan(PDF_BOMB_OUTPUT_BYTES);
+    expect(PDF_BOMB_OUTPUT_BYTES).toBe(64 * 1024 * 1024);
+    expect(PDF_STREAM_CAP_BYTES).toBe(1 * 1024 * 1024);
+    expect(PDF_TOTAL_CAP_BYTES).toBe(2 * 1024 * 1024);
+    const outcome = await assertCertificateImportPdf(bytes).then(
+      (pages) => ({ pages }),
+      (error: unknown) => ({ error }),
+    );
+    expect(outcome).toEqual({
+      error: expect.objectContaining({
+        message: 'CERTIFICATE_IMPORT_PDF_INVALID',
+        pdfDecode: expect.objectContaining({
+          maxBuffer: PDF_STREAM_CAP_BYTES,
+          beyond: 0,
+          exceeded: true,
+        }),
+      }),
+    });
+    const stats = (outcome as { error: { pdfDecode: { maxTotal: number } } })
+      .error.pdfDecode;
+    expect(stats.maxTotal).toBeLessThanOrEqual(PDF_TOTAL_CAP_BYTES);
+    expect(stats.maxTotal).toBeGreaterThan(0);
+  }
+
+  it('rejects a hex-escaped ObjStm FlateDecode without allocating past the cap', async () => {
+    await expectDecodeStaysWithinCap(await hexEscapedFlateObjStm());
+  });
+
+  it('rejects an ObjStm whose header hides obj behind a comment', async () => {
+    await expectDecodeStaysWithinCap(await commentBeforeObjKeyword());
+  });
+
+  it('rejects an ObjStm appended after the trailer with a split header', async () => {
+    await expectDecodeStaysWithinCap(await newlineHeaderAfterTrailer());
+  });
+
+  it('rejects a double FlateDecode chain without allocating past the cap', async () => {
+    await expectDecodeStaysWithinCap(await doubleFlateObjStm());
+  });
+
+  it('rejects an escaped LZW ObjStm without allocating past the cap', async () => {
+    await expectDecodeStaysWithinCap(await escapedLzwObjStm());
+  });
+
+  it('rejects a third ObjStm once the 32 MiB total is already allocated', async () => {
+    const bytes = objStmsOverTotalCap();
+    const error = await assertCertificateImportPdf(bytes).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: 'CERTIFICATE_IMPORT_PDF_INVALID',
+        pdfDecode: expect.objectContaining({
+          maxBuffer: PDF_STREAM_CAP_BYTES,
+          beyond: 0,
+          exceeded: true,
+        }),
+      }),
+    );
+    expect(
+      (error as { pdfDecode: { maxTotal: number } }).pdfDecode.maxTotal,
+    ).toBeLessThanOrEqual(PDF_TOTAL_CAP_BYTES);
+  });
+
+  it('keeps one validation inside the Free-plan RSS budget', () => {
+    const backendRoot = join(__dirname, '../..');
+    const probe = join(
+      backendRoot,
+      'test/certificate-bulk-imports/rss-budget-probe.ts',
+    );
+    const result = spawnSync(
+      process.execPath,
+      ['--expose-gc', '--import', 'tsx', probe],
+      { cwd: backendRoot, encoding: 'utf8', timeout: 120_000 },
+    );
+    expect(result.status).toBe(0);
+    const rows = JSON.parse(result.stdout) as {
+      name: string;
+      rssDelta: number;
+      outcome: string;
+    }[];
+    expect(rows.map((row) => row.name)).toEqual([
+      'pages1',
+      'pages5',
+      'scan9MiB',
+      'xref20M',
+      'inflateBomb',
+      'xref20Mx3',
+    ]);
+    for (const row of rows) {
+      expect(row.rssDelta).toBeLessThanOrEqual(PDF_VALIDATION_RSS_BUDGET_BYTES);
+    }
+    expect(rows.find((row) => row.name === 'pages1')?.outcome).toBe('ok');
+    expect(rows.find((row) => row.name === 'scan9MiB')?.outcome).toBe('ok');
+    expect(rows.find((row) => row.name === 'xref20M')?.outcome).toBe(
+      'CERTIFICATE_IMPORT_PDF_INVALID',
+    );
+    expect(rows.find((row) => row.name === 'inflateBomb')?.outcome).toBe(
+      'CERTIFICATE_IMPORT_PDF_INVALID',
+    );
+  }, 120_000);
+
+  it('does not keep the xref ref pool in the calling process', () => {
+    const backendRoot = join(__dirname, '../..');
+    const probe = join(
+      backendRoot,
+      'test/certificate-bulk-imports/parent-heap-probe.ts',
+    );
+    const result = spawnSync(
+      process.execPath,
+      ['--expose-gc', '--import', 'tsx', probe, '4000000'],
+      { cwd: backendRoot, encoding: 'utf8', timeout: 60_000 },
+    );
+
+    expect(result.status).toBe(0);
+    const measured = JSON.parse(result.stdout) as {
+      rejected: boolean;
+      delta: number;
+      fileBytes: number;
+    };
+    expect(measured.rejected).toBe(true);
+    expect(measured.fileBytes).toBeLessThan(500);
+    expect(measured.delta).toBeLessThan(16 * 1024 * 1024);
+  }, 60_000);
+
+  it('cuts a huge xref field width with one worker and still validates the next PDF', async () => {
+    resetPdfValidationWorkerPeak();
+    const bomb = xrefHugeFieldWidth(1_500_000_000);
+    const normal = await pdf(1);
+    const started = Date.now();
+    const bombDone = assertCertificateImportPdf(bomb).then(
+      () => ({ ok: true as const }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    const normalDone = assertCertificateImportPdf(normal);
+
+    await expect(normalDone).resolves.toBe(1);
+    await expect(bombDone).resolves.toEqual({
+      ok: false,
+      error: expect.objectContaining({
+        message: 'CERTIFICATE_IMPORT_PDF_INVALID',
+      }),
+    });
+    expect(pdfValidationWorkerPeak()).toBe(1);
+    expect(Date.now() - started).toBeLessThan(
+      PDF_WORKER_STARTUP_DEADLINE_MS + PDF_PARSE_DEADLINE_MS,
+    );
+  }, 30_000);
+
+  it('reads the decode-cap patch once after the first successful check', () => {
+    jest.isolateModules(() => {
+      const fs = require('node:fs') as typeof import('node:fs');
+      const read = jest.spyOn(fs, 'readFileSync');
+      try {
+        const loaded =
+          require('./certificate-import-pdf-decode-cap') as typeof import('./certificate-import-pdf-decode-cap');
+        const decodeReads = () =>
+          read.mock.calls.filter((call) =>
+            String(call[0]).includes('DecodeStream.js'),
+          ).length;
+        loaded.assertPdfDecodeCapInstalled();
+        const afterFirst = decodeReads();
+        loaded.assertPdfDecodeCapInstalled();
+        expect(afterFirst).toBeGreaterThan(0);
+        expect(decodeReads()).toBe(afterFirst);
+      } finally {
+        read.mockRestore();
+      }
+    });
+  });
+
+  it('validates concurrent PDFs', async () => {
+    const files = await Promise.all([pdf(1), pdf(2), pdf(1)]);
+    await expect(
+      Promise.all(files.map((file) => assertCertificateImportPdf(file))),
+    ).resolves.toEqual([1, 2, 1]);
+  });
+
+  function manualClock() {
+    let now = 0;
+    const timers: { at: number; fn: () => void; cancelled: boolean }[] = [];
+    return {
+      schedule(ms: number, fn: () => void) {
+        const timer = { at: now + ms, fn, cancelled: false };
+        timers.push(timer);
+        return () => {
+          timer.cancelled = true;
+        };
+      },
+      advance(ms: number) {
+        now += ms;
+        let fired = true;
+        while (fired) {
+          fired = false;
+          for (const timer of [...timers]) {
+            if (!timer.cancelled && timer.at <= now) {
+              timer.cancelled = true;
+              fired = true;
+              timer.fn();
+            }
+          }
+        }
+      },
+    };
+  }
+
+  it('rejects the validation that does not fit behind the single worker', async () => {
+    resetPdfValidationWorkerPeak();
+    const files = await Promise.all(Array.from({ length: 6 }, () => pdf(1)));
+    const results = await Promise.all(
+      files.map((file) =>
+        assertCertificateImportPdf(file).then(
+          (pages) => ({ ok: true as const, pages }),
+          (error: unknown) => ({ ok: false as const, error }),
+        ),
+      ),
+    );
+    const rejected = results.filter((result) => !result.ok);
+    expect(rejected).toEqual([
+      {
+        ok: false,
+        error: expect.objectContaining({
+          message: 'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+        }),
+      },
+    ]);
+    expect((rejected[0] as { error: HttpException }).error.getStatus()).toBe(
+      400,
+    );
+    expect(pdfValidationWorkerPeak()).toBe(1);
+  });
+
+  it('rejects a worker that misses the startup deadline and terminates it', async () => {
+    const clock = manualClock();
+    const terminate = jest.spyOn(Worker.prototype, 'terminate');
+    try {
+      const pending = assertCertificateImportPdf(await pdf(1), {
+        schedule: clock.schedule,
+        startupDeadlineMs: 10_000,
+      });
+      const started = Date.now();
+      clock.advance(10_000);
+      await expect(pending).rejects.toThrow('CERTIFICATE_IMPORT_PDF_INVALID');
+      expect(Date.now() - started).toBeLessThan(500);
+      expect(terminate).toHaveBeenCalled();
+    } finally {
+      terminate.mockRestore();
+    }
+  });
+
+  it('accepts a PDF whose startup is slow but still inside the startup deadline', async () => {
+    const clock = manualClock();
+    const pending = assertCertificateImportPdf(await pdf(1), {
+      schedule: clock.schedule,
+      startupDeadlineMs: 10_000,
+      parseDeadlineMs: 2_000,
+    });
+    clock.advance(9_000);
+    await expect(pending).resolves.toBe(1);
+  });
+
+  it('does not charge queue wait against the parse deadline', async () => {
+    const clock = manualClock();
+    let releaseHold: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    const normal = await pdf(1);
+    resetPdfValidationWorkerPeak();
+    const holder = assertCertificateImportPdf(normal, {
+      schedule: clock.schedule,
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 2_000,
+      queueWaitMs: 30_000,
+      beforeWorker: () => hold,
+    });
+    const waiter = assertCertificateImportPdf(normal, {
+      schedule: clock.schedule,
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 2_000,
+      queueWaitMs: 30_000,
+    });
+    clock.advance(5_000);
+    let waiterSettled = false;
+    void waiter.then(
+      () => {
+        waiterSettled = true;
+      },
+      () => {
+        waiterSettled = true;
+      },
+    );
+    await Promise.resolve();
+    expect(waiterSettled).toBe(false);
+    releaseHold();
+    await expect(waiter).resolves.toBe(1);
+    await expect(holder).resolves.toBe(1);
+    expect(pdfValidationWorkerPeak()).toBe(1);
+  });
+
+  it('fails closed when the compiled worker bundle is missing', async () => {
+    const logs: string[] = [];
+    resetPdfValidationWorkerPeak();
+    await expect(
+      assertCertificateImportPdf(await pdf(1), {
+        moduleFilename: '/srv/dist/certificate-import-pdf.js',
+        workerFileExists: () => false,
+        logError: (message) => logs.push(message),
+      }),
+    ).rejects.toThrow(PDF_WORKER_BUNDLE_MISSING);
+    expect(logs).toEqual(['PDF validation worker bundle is missing']);
+    expect(JSON.stringify(logs)).not.toContain('%PDF');
+    expect(pdfValidationWorkerPeak()).toBe(0);
+  });
+
+  it('does not charge module load against the parse deadline', async () => {
+    const clock = manualClock();
+    let releaseImports: () => void = () => undefined;
+    const importsHeld = new Promise<void>((resolve) => {
+      releaseImports = resolve;
+    });
+    const pending = assertCertificateImportPdf(await pdf(1), {
+      schedule: clock.schedule,
+      startupDeadlineMs: 10_000,
+      parseDeadlineMs: 2_000,
+      holdReady: true,
+      releaseImports: importsHeld,
+    });
+    try {
+      const started = Date.now();
+      while (pdfValidationWorkerPeak() < 1 && Date.now() - started < 2_000) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      clock.advance(5_000);
+      let settled = false;
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      releaseImports();
+      await expect(pending).resolves.toBe(1);
+    } finally {
+      releaseImports();
+    }
+  });
+
+  it('keeps the confirm queue wait under the HTTP receive timeout', () => {
+    expect(PDF_CONFIRM_QUEUE_WAIT_MS).toBeLessThanOrEqual(3_000);
+    expect(PDF_CONFIRM_QUEUE_WAIT_MS).toBeGreaterThan(0);
+    expect(
+      PDF_WORKER_STARTUP_DEADLINE_MS +
+        PDF_PARSE_DEADLINE_MS +
+        PDF_CONFIRM_QUEUE_WAIT_MS,
+    ).toBeLessThan(15_000);
+    expect(PDF_OCR_QUEUE_WAIT_MS).toBeGreaterThan(PDF_CONFIRM_QUEUE_WAIT_MS);
+    expect(PDF_OCR_QUEUE_WAIT_MS).toBe(
+      PDF_WORKER_MAX_WAITING *
+        (PDF_WORKER_STARTUP_DEADLINE_MS + PDF_PARSE_DEADLINE_MS),
+    );
+  });
+
+  it('charges each caller its own queue wait', async () => {
+    const clock = manualClock();
+    let releaseHold: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    const file = await pdf(1);
+    const holder = assertCertificateImportPdf(file, {
+      schedule: clock.schedule,
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 2_000,
+      beforeWorker: () => hold,
+    });
+    const shortWaiter = assertCertificateImportPdf(file, {
+      schedule: clock.schedule,
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 2_000,
+      queueWaitMs: PDF_CONFIRM_QUEUE_WAIT_MS,
+    });
+    const longWaiter = assertCertificateImportPdf(file, {
+      schedule: clock.schedule,
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 2_000,
+      queueWaitMs: PDF_OCR_QUEUE_WAIT_MS,
+      queueFullCode: 'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+    });
+    try {
+      clock.advance(PDF_CONFIRM_QUEUE_WAIT_MS);
+      await expect(shortWaiter).rejects.toThrow();
+      let longSettled = false;
+      void longWaiter.then(
+        () => {
+          longSettled = true;
+        },
+        () => {
+          longSettled = true;
+        },
+      );
+      await Promise.resolve();
+      expect(longSettled).toBe(false);
+      releaseHold();
+      await expect(longWaiter).resolves.toBe(1);
+      await expect(holder).resolves.toBe(1);
+    } finally {
+      releaseHold();
+    }
+  });
+
+  it('does not start the next worker before terminate exits', async () => {
+    const clock = manualClock();
+    const logs: string[] = [];
+    const leaked: Worker[] = [];
+    const terminate = jest
+      .spyOn(Worker.prototype, 'terminate')
+      .mockImplementation(function (this: Worker) {
+        leaked.push(this);
+        return new Promise<number>(() => undefined);
+      });
+    try {
+      resetPdfValidationWorkerPeak();
+      let secondEntered = false;
+      const first = assertCertificateImportPdf(await pdf(1), {
+        schedule: clock.schedule,
+        startupDeadlineMs: 10_000,
+        parseDeadlineMs: 2_000,
+        workerExitWaitMs: 8_000,
+        holdExit: true,
+        logError: (message) => logs.push(message),
+      });
+      await expect(first).resolves.toBe(1);
+      const second = assertCertificateImportPdf(await pdf(1), {
+        schedule: clock.schedule,
+        startupDeadlineMs: 10_000,
+        parseDeadlineMs: 2_000,
+        workerExitWaitMs: 8_000,
+        queueWaitMs: 30_000,
+        holdExit: true,
+        beforeWorker: () => {
+          secondEntered = true;
+        },
+        logError: (message) => logs.push(message),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(secondEntered).toBe(false);
+      expect(pdfValidationActiveWorkers()).toBe(1);
+      expect(pdfValidationWorkerPeak()).toBe(1);
+      let secondSettled = false;
+      void second.then(
+        () => {
+          secondSettled = true;
+        },
+        () => {
+          secondSettled = true;
+        },
+      );
+      await Promise.resolve();
+      expect(secondSettled).toBe(false);
+      leaked[0]?.emit('exit', 0);
+      await expect(second).resolves.toBe(1);
+      expect(pdfValidationWorkerPeak()).toBe(1);
+      expect(logs).toEqual([]);
+    } finally {
+      terminate.mockRestore();
+      await Promise.all(leaked.map((worker) => worker.terminate()));
+    }
+  });
+
+  it('logs and releases the slot when terminate misses its deadline', async () => {
+    const clock = manualClock();
+    const logs: string[] = [];
+    const leaked: Worker[] = [];
+    const terminate = jest
+      .spyOn(Worker.prototype, 'terminate')
+      .mockImplementation(function (this: Worker) {
+        leaked.push(this);
+        return new Promise<number>(() => undefined);
+      });
+    try {
+      resetPdfValidationWorkerPeak();
+      let secondEntered = false;
+      const first = assertCertificateImportPdf(await pdf(1), {
+        schedule: clock.schedule,
+        startupDeadlineMs: 10_000,
+        parseDeadlineMs: 2_000,
+        workerExitWaitMs: 8_000,
+        holdExit: true,
+        logError: (message) => logs.push(message),
+      });
+      await expect(first).resolves.toBe(1);
+      const second = assertCertificateImportPdf(await pdf(1), {
+        schedule: clock.schedule,
+        startupDeadlineMs: 10_000,
+        parseDeadlineMs: 2_000,
+        workerExitWaitMs: 8_000,
+        queueWaitMs: 30_000,
+        holdExit: true,
+        beforeWorker: () => {
+          secondEntered = true;
+        },
+        logError: (message) => logs.push(message),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(secondEntered).toBe(false);
+      expect(pdfValidationActiveWorkers()).toBe(1);
+      expect(pdfValidationWorkerPeak()).toBe(1);
+      clock.advance(8_000);
+      expect(logs).toEqual([PDF_WORKER_EXIT_TIMEOUT]);
+      expect(JSON.stringify(logs)).not.toContain('%PDF');
+      await expect(second).resolves.toBe(1);
+      expect(pdfValidationWorkerPeak()).toBe(1);
+    } finally {
+      terminate.mockRestore();
+      await Promise.all(leaked.map((worker) => worker.terminate()));
+    }
+  });
+
+  it('rejects a full confirm queue with 429 PDF_BUSY and no worker', async () => {
+    const clock = manualClock();
+    let releaseHold: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    const file = await pdf(1);
+    resetPdfValidationWorkerPeak();
+    const holder = assertCertificateImportPdf(file, {
+      schedule: clock.schedule,
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 5_000,
+      beforeWorker: () => hold,
+    });
+    const fillers = Array.from({ length: PDF_WORKER_MAX_WAITING }, () =>
+      assertCertificateImportPdf(file, {
+        schedule: clock.schedule,
+        startupDeadlineMs: 60_000,
+        parseDeadlineMs: 5_000,
+        queueWaitMs: 60_000,
+        queueFullCode: 'CERTIFICATE_IMPORT_PDF_BUSY',
+      }),
+    );
+    try {
+      const error = await assertCertificateImportPdf(file, {
+        queueWaitMs: PDF_CONFIRM_QUEUE_WAIT_MS,
+        queueFullCode: 'CERTIFICATE_IMPORT_PDF_BUSY',
+      }).then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(HttpException);
+      const busy = error as HttpException;
+      expect(busy.getStatus()).toBe(429);
+      expect(busy.message).toBe('CERTIFICATE_IMPORT_PDF_BUSY');
+      expect(pdfValidationWorkerPeak()).toBe(0);
+    } finally {
+      releaseHold();
+      await holder;
+      await Promise.all(fillers);
+    }
+  });
+
+  it('rejects an expired confirm queue wait with 429 PDF_BUSY', async () => {
+    const clock = manualClock();
+    let releaseHold: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    const file = await pdf(1);
+    resetPdfValidationWorkerPeak();
+    const holder = assertCertificateImportPdf(file, {
+      schedule: clock.schedule,
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 5_000,
+      beforeWorker: () => hold,
+    });
+    const waiter = assertCertificateImportPdf(file, {
+      schedule: clock.schedule,
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 5_000,
+      queueWaitMs: PDF_CONFIRM_QUEUE_WAIT_MS,
+      queueFullCode: 'CERTIFICATE_IMPORT_PDF_BUSY',
+    });
+    try {
+      clock.advance(PDF_CONFIRM_QUEUE_WAIT_MS);
+      const error = await waiter.then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(HttpException);
+      const busy = error as HttpException;
+      expect(busy.getStatus()).toBe(429);
+      expect(busy.message).toBe('CERTIFICATE_IMPORT_PDF_BUSY');
+      expect(pdfValidationWorkerPeak()).toBe(0);
+    } finally {
+      releaseHold();
+      await holder;
+    }
+  });
+
+  it('keeps a full OCR queue on OCR_UNAVAILABLE', async () => {
+    const clock = manualClock();
+    let releaseHold: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    const file = await pdf(1);
+    resetPdfValidationWorkerPeak();
+    const holder = assertCertificateImportPdf(file, {
+      schedule: clock.schedule,
+      startupDeadlineMs: 60_000,
+      beforeWorker: () => hold,
+    });
+    try {
+      const error = await assertCertificateImportPdf(file, {
+        maxWaiting: 0,
+        queueFullCode: 'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+      }).then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(HttpException);
+      const unavailable = error as HttpException;
+      expect(unavailable.getStatus()).toBe(400);
+      expect(unavailable.message).toBe('CERTIFICATE_IMPORT_OCR_UNAVAILABLE');
+      expect(pdfValidationWorkerPeak()).toBe(0);
+    } finally {
+      releaseHold();
+      await holder;
+    }
+  });
+
+  it('does not share the decode total across concurrent calls', async () => {
+    const bytes = objStmsAtTotalCap();
+    const results = await Promise.all([
+      assertCertificateImportPdf(bytes).catch((error: unknown) => error),
+      assertCertificateImportPdf(bytes).catch((error: unknown) => error),
+    ]);
+    for (const error of results) {
+      expect(error).toEqual(
+        expect.objectContaining({
+          message: 'CERTIFICATE_IMPORT_PDF_INVALID',
+          pdfDecode: expect.objectContaining({
+            maxBuffer: PDF_STREAM_CAP_BYTES,
+            beyond: 0,
+            exceeded: false,
+          }),
+        }),
+      );
+      expect(
+        (error as { pdfDecode: { maxTotal: number } }).pdfDecode.maxTotal,
+      ).toBeLessThanOrEqual(PDF_TOTAL_CAP_BYTES);
+    }
   });
 });
