@@ -2,14 +2,12 @@ import type { Prisma } from '@prisma/client';
 import { AppConflictException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
-const PROGRESS_MUTATION_BLOCKED_STATUSES = new Set([
-  'SUBMITTED',
-  'CLUB_APPROVED',
-  'COORDINATOR_APPROVED',
-  'FIELD_APPROVED',
-  'INVESTIDO',
-  'EXPIRED',
-]);
+/**
+ * Fase 8: el progreso de clase solo se cierra con `locked_for_validation` o con
+ * un estado terminal. Un expediente de la cadena anterior que ya se soltó
+ * (lock en false) vuelve a ser editable aunque conserve su estado.
+ */
+const PROGRESS_MUTATION_BLOCKED_STATUSES = new Set(['INVESTIDO', 'EXPIRED']);
 
 export function assertClassProgressMutable(enrollment: {
   investitureStatus: string;
