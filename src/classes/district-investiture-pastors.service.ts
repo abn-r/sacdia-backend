@@ -11,10 +11,16 @@ import { ErrorCode } from '../common/errors/error-codes';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { lockInvestitureAuthorizationPastor } from '../investiture-requests/investiture-request-lock';
-import { pastorEligibility } from '../investiture-requests/investiture-pastor-eligibility';
+import { displayName } from '../investiture-requests/investiture-communications.rules';
+import {
+  PASTOR_ELIGIBLE_USER_WHERE,
+  pastorEligibility,
+} from '../investiture-requests/investiture-pastor-eligibility';
+import { PASTOR_CANDIDATE_QUERY_MIN } from './dto/search-pastor-candidates.dto';
 
 const DEFAULT_SLOTS = 2;
 const QUOTA_ID = 1;
+const CANDIDATE_LIMIT = 20;
 
 /** Identidad estable del candado. No depende de que exista la fila de cupo. */
 export const INVESTITURE_PASTOR_QUOTA_LOCK = 'investiture-pastor-quota';
@@ -28,6 +34,9 @@ export type PastorQuotaView = {
 export type DistrictPastorView = {
   districlub_type_id: number;
   user_id: string;
+  /** Nombre armado igual que en las solicitudes. `Sin nombre` si no hay datos. */
+  user_name: string;
+  email: string | null;
   can_authorize: boolean;
   /** Falta el rol global `pastor` activo. La asignación sigue ocupando cupo. */
   role_missing?: boolean;
@@ -40,6 +49,12 @@ export type DistrictPastorList = {
   slots: number;
   can_assign: boolean;
   pastors: DistrictPastorView[];
+};
+
+export type PastorCandidateView = {
+  user_id: string;
+  user_name: string;
+  email: string | null;
 };
 
 export type ClubAuthorizersView = {
@@ -196,7 +211,12 @@ export class DistrictInvestiturePastorService {
           },
         });
       }
-      return this.pastorView(districtId, userId, true);
+      return this.pastorView(
+        districtId,
+        userId,
+        true,
+        (await this.identities(store, [userId])).get(userId),
+      );
     });
   }
 
@@ -238,8 +258,68 @@ export class DistrictInvestiturePastorService {
         },
         data: { active: false },
       });
-      return this.pastorView(districtId, userId, false);
+      return this.pastorView(
+        districtId,
+        userId,
+        false,
+        (await this.identities(store, [userId])).get(userId),
+      );
     });
+  }
+
+  /**
+   * Candidatos a pastor para quien puede asignar (director y asistente de
+   * Campo o de unión). Usa la misma regla de elegibilidad que decide quién
+   * puede autorizar: cuenta activa y rol global `pastor`.
+   */
+  async searchCandidates(
+    authorization: AuthorizationSnapshot,
+    query: string,
+  ): Promise<PastorCandidateView[]> {
+    if (!this.access(authorization, 'assign')) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+    const tokens = query
+      .trim()
+      .split(/\s+/)
+      .filter((token) => token.length > 0);
+    if (tokens.join(' ').length < PASTOR_CANDIDATE_QUERY_MIN) {
+      return [];
+    }
+    const patterns = tokens.map(escapeLikeWildcards);
+    const rows = await this.prisma.users.findMany({
+      where: {
+        AND: [
+          PASTOR_ELIGIBLE_USER_WHERE,
+          ...patterns.map((token): Prisma.usersWhereInput => ({
+            OR: [
+              { name: { contains: token, mode: 'insensitive' } },
+              { paternal_last_name: { contains: token, mode: 'insensitive' } },
+              { maternal_last_name: { contains: token, mode: 'insensitive' } },
+              { email: { contains: token, mode: 'insensitive' } },
+            ],
+          })),
+        ],
+      },
+      select: {
+        user_id: true,
+        email: true,
+        name: true,
+        paternal_last_name: true,
+        maternal_last_name: true,
+      },
+      orderBy: [
+        { name: 'asc' },
+        { paternal_last_name: 'asc' },
+        { user_id: 'asc' },
+      ],
+      take: CANDIDATE_LIMIT,
+    });
+    return rows.map((row) => ({
+      user_id: row.user_id,
+      user_name: displayName(row),
+      email: row.email,
+    }));
   }
 
   async authorizersForClub(
@@ -355,32 +435,65 @@ export class DistrictInvestiturePastorService {
       select: { user_id: true },
       orderBy: { user_id: 'asc' },
     });
-    const eligibility = await pastorEligibility(
-      store,
-      rows.map((row) => row.user_id),
-    );
+    const ids = rows.map((row) => row.user_id);
+    const eligibility = await pastorEligibility(store, ids);
+    const identities = await this.identities(store, ids);
     return rows.map((row) => {
       const state = eligibility.get(row.user_id);
       return this.pastorView(
         districtId,
         row.user_id,
         state?.canAuthorize === true,
+        identities.get(row.user_id),
         state?.roleMissing !== false,
         state?.accountInactive !== false,
       );
     });
   }
 
+  private async identities(
+    store: PastorStore,
+    userIds: string[],
+  ): Promise<Map<string, { user_name: string; email: string | null }>> {
+    const result = new Map<
+      string,
+      { user_name: string; email: string | null }
+    >();
+    if (userIds.length === 0) {
+      return result;
+    }
+    const rows = await store.users.findMany({
+      where: { user_id: { in: userIds } },
+      select: {
+        user_id: true,
+        email: true,
+        name: true,
+        paternal_last_name: true,
+        maternal_last_name: true,
+      },
+    });
+    for (const row of rows) {
+      result.set(row.user_id, {
+        user_name: displayName(row),
+        email: row.email,
+      });
+    }
+    return result;
+  }
+
   private pastorView(
     districtId: number,
     userId: string,
     canAuthorize: boolean,
+    identity: { user_name: string; email: string | null } | undefined,
     roleMissing = false,
     accountInactive = false,
   ): DistrictPastorView {
     return {
       districlub_type_id: districtId,
       user_id: userId,
+      user_name: identity?.user_name ?? displayName({}),
+      email: identity?.email ?? null,
       can_authorize: canAuthorize,
       ...(roleMissing ? { role_missing: true } : {}),
       ...(accountInactive ? { account_inactive: true } : {}),
@@ -429,6 +542,14 @@ export class DistrictInvestiturePastorService {
     }
     return null;
   }
+}
+
+/**
+ * Prisma no escapa `%`, `_` ni `\` en `contains`: sin esto, `%%%` listaría a
+ * todos. PostgreSQL usa la barra invertida como escape por omisión en ILIKE.
+ */
+function escapeLikeWildcards(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 function roleSet(

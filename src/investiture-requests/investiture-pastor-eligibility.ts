@@ -25,6 +25,16 @@ const PASTOR_ROLE_WHERE: Prisma.users_rolesWhereInput = {
   },
 };
 
+/**
+ * Mismo criterio que `pastorEligibility` pero como filtro de consulta: cuenta
+ * activa y rol global `pastor` activo. Lo usa la búsqueda de candidatos, para
+ * que quien se ofrece al asignar sea exactamente quien podría autorizar.
+ */
+export const PASTOR_ELIGIBLE_USER_WHERE: Prisma.usersWhereInput = {
+  active: true,
+  users_roles: { some: PASTOR_ROLE_WHERE },
+};
+
 export type PastorEligibility = {
   canAuthorize: boolean;
   /** La cuenta está eliminada o inactiva. */

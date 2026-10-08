@@ -1,5 +1,9 @@
 import 'reflect-metadata';
-import { type CanActivate, type ExecutionContext } from '@nestjs/common';
+import {
+  type CanActivate,
+  type ExecutionContext,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -45,6 +49,7 @@ class AuthenticatedGuard implements CanActivate {
 describe('investiture pastor HTTP with mocked auth and database', () => {
   let app: INestApplication;
   let quotaUpsert: jest.Mock;
+  let userSearch: jest.Mock;
 
   beforeAll(async () => {
     const rows = [
@@ -62,6 +67,15 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
       },
     ];
     quotaUpsert = jest.fn();
+    userSearch = jest.fn().mockResolvedValue([
+      {
+        user_id: PASTOR_C,
+        name: 'Carlos',
+        paternal_last_name: 'Mena',
+        maternal_last_name: null,
+        email: 'carlos@pastores.test',
+      },
+    ]);
     const prisma = {
       investiture_pastor_quota: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -101,12 +115,14 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
           active: true,
         }),
         findMany: jest.fn(
-          async ({ where }: { where: { user_id: { in: string[] } } }) =>
-            where.user_id.in.map((id) => ({
-              user_id: id,
-              active: true,
-              users_roles: [{ user_role_id: 'role-1' }],
-            })),
+          async (args: { where: { user_id?: { in: string[] } } }) =>
+            args.where.user_id
+              ? args.where.user_id.in.map((id) => ({
+                  user_id: id,
+                  active: true,
+                  users_roles: [{ user_role_id: 'role-1' }],
+                }))
+              : userSearch(args),
         ),
       },
       clubs: { findUnique: jest.fn() },
@@ -137,6 +153,13 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: true,
+      }),
+    );
     await app.init();
   });
 
@@ -164,5 +187,36 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
 
     expect(response.status).toBe(409);
     expect(response.body.code).toBe('INVESTITURE_PASTOR_QUOTA_FULL');
+  });
+
+  it('searches pastor candidates with a trimmed query', async () => {
+    const response = await request(app.getHttpServer()).get(
+      '/investiture-pastor-candidates?q=%20car%20',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: 'success',
+      data: [
+        {
+          user_id: PASTOR_C,
+          user_name: 'Carlos Mena',
+          email: 'carlos@pastores.test',
+        },
+      ],
+    });
+    expect(userSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    '/investiture-pastor-candidates',
+    '/investiture-pastor-candidates?q=ab',
+    '/investiture-pastor-candidates?q=%20a%20',
+  ])('rejects %s with 400 before reading users', async (url) => {
+    userSearch.mockClear();
+    const response = await request(app.getHttpServer()).get(url);
+
+    expect(response.status).toBe(400);
+    expect(userSearch).not.toHaveBeenCalled();
   });
 });

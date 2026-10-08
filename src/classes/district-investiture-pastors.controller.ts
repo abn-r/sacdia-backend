@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import { SkipPermissions } from '../common/decorators/skip-permissions.decorator
 import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AssignDistrictInvestiturePastorDto } from './dto/assign-district-investiture-pastor.dto';
+import { SearchPastorCandidatesDto } from './dto/search-pastor-candidates.dto';
 import { UpdateInvestiturePastorQuotaDto } from './dto/update-investiture-pastor-quota.dto';
 import { DistrictInvestiturePastorService } from './district-investiture-pastors.service';
 
@@ -129,6 +131,25 @@ export class DistrictInvestiturePastorsController {
       profile.authorization,
       districtId,
       userId,
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('investiture-pastor-candidates')
+  @ApiOperation({
+    summary:
+      'Buscar candidatos a pastor por nombre o correo (mínimo 3 caracteres, hasta 20). Solo quien puede asignar: director y asistente de Campo o de unión.',
+  })
+  async candidates(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: SearchPastorCandidatesDto,
+  ) {
+    const profile = await this.authorizationContext.resolveUserAuthorization(
+      req.user.sub,
+    );
+    const data = await this.pastors.searchCandidates(
+      profile.authorization,
+      query.q,
     );
     return { status: 'success', data };
   }
