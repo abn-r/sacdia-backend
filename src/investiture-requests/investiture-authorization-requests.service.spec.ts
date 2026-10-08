@@ -4727,6 +4727,26 @@ describe('investiture authorization requests', () => {
       );
     });
 
+    it.each(['GM-02', 'GM-03'] as const)(
+      'R3 leaves the institutional class %s out of the candidates',
+      async (assetCode) => {
+        world.addEnrollment({
+          enrollment_id: 960,
+          class_id: 60,
+          classes: institutionalClass(assetCode),
+        });
+
+        const view = await context();
+
+        expect(view.candidates.map((row) => row.enrollment_id)).toEqual([901]);
+        expect(eligibility.calculateForEnrollments).toHaveBeenCalledWith([901]);
+        // present keeps refusing it with the same code (IA-62).
+        await expect(present([960])).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
+        });
+      },
+    );
+
     it('R4 shares one membership filter between present and the candidate list', async () => {
       const scope = {
         clubSectionId: SECTION_ID,

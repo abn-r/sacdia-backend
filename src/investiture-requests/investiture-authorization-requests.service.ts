@@ -646,10 +646,14 @@ export class InvestitureAuthorizationRequestService {
       }),
     ]);
     const memberRows = new Set(members.map((row) => row.enrollment_id));
+    // IA-62: GM-02/GM-03 are institutional classes that never have requests,
+    // so they are not candidates at all (`present` still refuses them).
     const loaded = [
       ...members,
       ...crossType.filter((row) => !memberRows.has(row.enrollment_id)),
-    ];
+    ].filter(
+      (row) => !isInstitutionalInvestitureClass(row.classes?.asset_code),
+    );
     const memberUsers = new Set(members.map((row) => row.user_id));
     const eligibility = new Map<number, ClassRequirementEligibilityResult>();
     const facts = await this.batchedPresentationFacts(

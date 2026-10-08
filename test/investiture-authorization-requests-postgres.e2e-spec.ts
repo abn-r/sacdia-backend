@@ -5616,6 +5616,61 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
       }
     });
 
+    it('R3 leaves institutional classes out of the candidates and keeps the rest', async () => {
+      const kept = await seedMember(
+        LEGACY_USER,
+        'Legado',
+        'SUBMITTED_FOR_VALIDATION',
+      );
+      const institutional = await prisma.classes.create({
+        data: {
+          name: 'Institucional P4',
+          active: true,
+          club_type_id: clubTypeId,
+          minimum_age: 10,
+          min_duration_years: 1,
+          max_duration_years: 1,
+          asset_code: 'GM-02',
+        },
+        select: { class_id: true },
+      });
+      const hidden = await prisma.enrollments.create({
+        data: {
+          user_id: LEGACY_USER,
+          class_id: institutional.class_id,
+          ecclesiastical_year_id: yearId,
+          investiture_status: 'IN_PROGRESS',
+          record_kind: 'OPERATIONAL',
+          active: true,
+        },
+        select: { enrollment_id: true },
+      });
+
+      const view = await contextService().presentationContext(
+        marker(),
+        sectionId,
+        yearId,
+        INSIDE,
+      );
+
+      const ids = view.candidates.map((row) => row.enrollment_id);
+      expect(ids).toContain(kept);
+      expect(ids).not.toContain(hidden.enrollment_id);
+      await expect(
+        service.present(
+          marker(),
+          ACTOR,
+          sectionId,
+          yearId,
+          DATE,
+          [hidden.enrollment_id],
+          INSIDE,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
+      });
+    });
+
     it('exposes the open request and the pending person of a presented member', async () => {
       const presented = await present();
 
