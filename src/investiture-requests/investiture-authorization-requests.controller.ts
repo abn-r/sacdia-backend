@@ -83,6 +83,29 @@ export class InvestitureAuthorizationRequestsController {
     return { status: 'success', data };
   }
 
+  // Declared before any `club-sections/:sectionId/investiture-requests/:x`
+  // route so Nest never reads `presentation-context` as a parameter.
+  @Get('club-sections/:sectionId/investiture-requests/presentation-context')
+  @ApiOperation({
+    summary:
+      'Contexto para presentar personas a investidura: candidatos, motivos de bloqueo y ventana. Solo informativo; no escribe.',
+  })
+  async presentationContext(
+    @Request() req: AuthenticatedRequest,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Query('ecclesiastical_year_id', ParseIntPipe) ecclesiasticalYearId: number,
+  ) {
+    const profile = await this.authorizationContext.resolveUserAuthorization(
+      req.user.sub,
+    );
+    const data = await this.requests.presentationContext(
+      profile.authorization,
+      sectionId,
+      ecclesiasticalYearId,
+    );
+    return { status: 'success', data };
+  }
+
   @Post('investiture-requests/:requestId/people')
   @ApiOperation({
     summary:

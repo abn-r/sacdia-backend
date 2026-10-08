@@ -150,6 +150,7 @@ function createWorld(options?: {
   }> = [];
   const deletedAccounts = new Set<string>();
   const sections = [section];
+  const userNames = new Map<string, string>();
   let seq = 1;
   const held = new Map<string, symbol>();
   const queues = new Map<string, Array<() => void>>();
@@ -588,6 +589,90 @@ function createWorld(options?: {
           );
         },
       ),
+      findMany: jest.fn(
+        async ({
+          where,
+        }: {
+          where: {
+            active?: boolean;
+            record_kind?: string;
+            cross_type_enrollment?: boolean;
+            investiture_status?: { not?: string };
+            classes?: { club_type_id?: number };
+            users?: {
+              club_role_assignments?: {
+                some?: {
+                  club_section_id?: number;
+                  ecclesiastical_year_id: number;
+                  active: boolean;
+                  status: string;
+                  club_sections?: {
+                    main_club_id?: number;
+                    club_section_id?: { not: number };
+                    club_type_id?: { not: number };
+                  };
+                };
+              };
+            };
+          };
+        }) => {
+          const some = where.users?.club_role_assignments?.some;
+          return enrollments
+            .filter((row) => {
+              if (where.active !== undefined && row.active !== where.active) {
+                return false;
+              }
+              if (where.record_kind && row.record_kind !== where.record_kind) {
+                return false;
+              }
+              if (
+                where.cross_type_enrollment !== undefined &&
+                row.cross_type_enrollment !== where.cross_type_enrollment
+              ) {
+                return false;
+              }
+              if (
+                where.investiture_status?.not &&
+                row.investiture_status === where.investiture_status.not
+              ) {
+                return false;
+              }
+              if (
+                where.classes?.club_type_id !== undefined &&
+                row.classes?.club_type_id !== where.classes.club_type_id
+              ) {
+                return false;
+              }
+              if (!some) {
+                return true;
+              }
+              return members.some((member) => {
+                const nested = some.club_sections;
+                return (
+                  member.user_id === row.user_id &&
+                  member.ecclesiastical_year_id ===
+                    some.ecclesiastical_year_id &&
+                  member.active === some.active &&
+                  member.status === some.status &&
+                  (some.club_section_id === undefined ||
+                    member.club_section_id === some.club_section_id) &&
+                  (nested?.main_club_id === undefined ||
+                    member.main_club_id === nested.main_club_id) &&
+                  (nested?.club_section_id?.not === undefined ||
+                    member.club_section_id !== nested.club_section_id.not) &&
+                  (nested?.club_type_id?.not === undefined ||
+                    member.club_type_id !== nested.club_type_id.not)
+                );
+              });
+            })
+            .map((row) => ({
+              ...row,
+              users: userNames.has(row.user_id)
+                ? { name: userNames.get(row.user_id), paternal_last_name: null }
+                : null,
+            }));
+        },
+      ),
       updateMany: jest.fn(
         async ({
           where,
@@ -883,6 +968,9 @@ function createWorld(options?: {
     clearMembers() {
       members.length = 0;
     },
+    setUserName(userId: string, name: string) {
+      userNames.set(userId, name);
+    },
     addSection(row: {
       club_section_id: number;
       club_type_id: number;
@@ -966,6 +1054,14 @@ function bind(world: ReturnType<typeof createWorld>) {
     calculateForEnrollment: jest.fn(async () => ({
       investiture_eligibility: { eligible: true },
     })),
+    calculateForEnrollments: jest.fn(async (ids: number[]) => {
+      return new Map(
+        ids.map((id) => [
+          id,
+          { investiture_eligibility: { eligible: true }, overall_progress: 80 },
+        ]),
+      );
+    }),
   };
   const achievements = {
     emitEvent: jest.fn(async () => ({ eventLogId: 1, queued: false })),
@@ -3877,6 +3973,270 @@ describe('investiture authorization requests', () => {
       expect(
         world.prisma.investiture_authorization_people.create,
       ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('presentationContext', () => {
+    const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    function context(authorization = director(), now = INSIDE) {
+      return service.presentationContext(
+        authorization,
+        SECTION_ID,
+        YEAR_ID,
+        now,
+      );
+    }
+
+    function stubNoWrites() {
+      return jest.spyOn(world.prisma, '$transaction');
+    }
+
+    it('lists an eligible member and a PENDING one with its blocked code', async () => {
+      world.setUserName(USER, 'Ana');
+      world.setUserName(OTHER, 'Beto');
+      world.addMember(OTHER);
+      world.addEnrollment({ enrollment_id: 902, user_id: OTHER, class_id: 8 });
+      const opened = await present([902]);
+
+      const view = await context();
+
+      expect(view.open_request_id).toBe(opened.request_id);
+      expect(view.club_section_id).toBe(SECTION_ID);
+      expect(view.ecclesiastical_year_id).toBe(YEAR_ID);
+      expect(view.candidates).toEqual([
+        expect.objectContaining({
+          enrollment_id: 901,
+          user_id: USER,
+          user_name: 'Ana',
+          class_id: 7,
+          overall_progress: 80,
+          eligible: true,
+          blocked_code: null,
+          pending_person_id: null,
+        }),
+        expect.objectContaining({
+          enrollment_id: 902,
+          user_id: OTHER,
+          user_name: 'Beto',
+          eligible: false,
+          blocked_code: 'INVESTITURE_REQUEST_ACTIVE_EXISTS',
+          pending_person_id: opened.people[0].person_id,
+        }),
+      ]);
+    });
+
+    it('reports the window and still lists candidates when it is closed today', async () => {
+      const view = await context(director(), OUTSIDE);
+
+      expect(view.year_open).toBe(true);
+      expect(view.window.open_today).toBe(false);
+      expect(view.window.start_date).toEqual(expect.any(String));
+      expect(view.window.end_date).toEqual(expect.any(String));
+      expect(view.open_request_id).toBeNull();
+      expect(view.candidates).toHaveLength(1);
+      expect((await context()).window.open_today).toBe(true);
+    });
+
+    it('reports year_open false once the year ended', async () => {
+      world.year.active = false;
+
+      const view = await context(director(), new Date('2027-01-02T18:00:00Z'));
+
+      expect(view.year_open).toBe(false);
+    });
+
+    it('forbids the subdirector, a non-member and super-admin without a role', async () => {
+      await expect(context(director('subdirector'))).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+      });
+      await expect(
+        context(director('director', SECTION_ID + 1)),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+      });
+      await expect(
+        context(snapshot([], ['super-admin'])),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+      });
+      expect(eligibility.calculateForEnrollments).not.toHaveBeenCalled();
+    });
+
+    it('allows secretary and secretary-treasurer', async () => {
+      await expect(context(director('secretary'))).resolves.toBeDefined();
+      await expect(
+        context(director('secretary-treasurer')),
+      ).resolves.toBeDefined();
+    });
+
+    it('never writes and takes no lock', async () => {
+      const transaction = stubNoWrites();
+      await present();
+      transaction.mockClear();
+      world.prisma.$executeRaw.mockClear();
+      for (const delegate of [
+        world.prisma.investiture_authorization_people,
+        world.prisma.investiture_authorization_requests,
+        world.prisma.enrollments,
+      ]) {
+        for (const method of ['create', 'update', 'updateMany'] as const) {
+          const fn = (delegate as Record<string, jest.Mock | undefined>)[
+            method
+          ];
+          fn?.mockClear();
+        }
+      }
+
+      await context();
+
+      expect(transaction).not.toHaveBeenCalled();
+      expect(world.prisma.$executeRaw).not.toHaveBeenCalled();
+      expect(
+        world.prisma.investiture_authorization_people.create,
+      ).not.toHaveBeenCalled();
+      expect(
+        world.prisma.investiture_authorization_people.update,
+      ).not.toHaveBeenCalled();
+      expect(
+        world.prisma.investiture_authorization_people.updateMany,
+      ).not.toHaveBeenCalled();
+      expect(
+        world.prisma.investiture_authorization_requests.create,
+      ).not.toHaveBeenCalled();
+      expect(world.prisma.enrollments.update).not.toHaveBeenCalled();
+      expect(world.prisma.enrollments.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('computes progress once in batch and not per candidate', async () => {
+      world.addMember(OTHER);
+      world.addEnrollment({ enrollment_id: 902, user_id: OTHER, class_id: 8 });
+
+      await context();
+
+      expect(eligibility.calculateForEnrollments).toHaveBeenCalledTimes(1);
+      expect(eligibility.calculateForEnrollments).toHaveBeenCalledWith([
+        901, 902,
+      ]);
+      expect(eligibility.calculateForEnrollment).not.toHaveBeenCalled();
+    });
+
+    it('orders eligible first and then by name', async () => {
+      world.setUserName(USER, 'Zoe');
+      world.setUserName(OTHER, 'Ana');
+      world.addMember(OTHER);
+      world.addEnrollment({
+        enrollment_id: 902,
+        user_id: OTHER,
+        class_id: 8,
+        investiture_status: 'FIELD_APPROVED',
+        locked_for_validation: true,
+      });
+      const third = 'cccccccc-cccc-4ccc-8ccc-ccccccccc111';
+      world.addMember(third);
+      world.setUserName(third, 'Mia');
+      world.addEnrollment({ enrollment_id: 903, user_id: third, class_id: 9 });
+
+      const view = await context();
+
+      expect(view.candidates.map((row) => row.user_name)).toEqual([
+        'Mia',
+        'Zoe',
+        'Ana',
+      ]);
+      expect(view.candidates[2]).toMatchObject({
+        eligible: false,
+        blocked_code: 'INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE',
+      });
+    });
+
+    it('skips enrollments that are not operational, inactive, already invested or of another club type', async () => {
+      world.addEnrollment({
+        enrollment_id: 910,
+        class_id: 21,
+        record_kind: 'HISTORICAL_CERTIFICATE',
+      });
+      world.addEnrollment({ enrollment_id: 911, class_id: 22, active: false });
+      world.addEnrollment({
+        enrollment_id: 912,
+        class_id: 23,
+        investiture_status: 'INVESTIDO',
+      });
+      world.addEnrollment({
+        enrollment_id: 913,
+        class_id: 24,
+        classes: {
+          min_duration_years: 1,
+          max_duration_years: 1,
+          club_type_id: 2,
+          club_types: { name: 'Aventureros' },
+        },
+      });
+
+      const view = await context();
+
+      expect(view.candidates.map((row) => row.enrollment_id)).toEqual([901]);
+    });
+
+    it('flags a sibling enrollment of an already invested class', async () => {
+      world.addEnrollment({
+        enrollment_id: 914,
+        class_id: 7,
+        investiture_status: 'INVESTIDO',
+        ecclesiastical_year_id: 2025,
+      });
+
+      const view = await context();
+
+      expect(view.candidates).toEqual([
+        expect.objectContaining({
+          enrollment_id: 901,
+          eligible: false,
+          blocked_code: 'INVESTITURE_REQUEST_ALREADY_INVESTED',
+        }),
+      ]);
+    });
+
+    it('includes a cross-type enrollment only when its home section and invested Guía Mayor hold', async () => {
+      world.addSection({
+        club_section_id: 8,
+        club_type_id: 2,
+        main_club_id: 1,
+      });
+      const crossUser = 'dddddddd-dddd-4ddd-8ddd-ddddddddd222';
+      world.addMember(crossUser, 8, { club_type_id: 2, main_club_id: 1 });
+      world.addEnrollment({
+        enrollment_id: 920,
+        user_id: crossUser,
+        class_id: 7,
+        cross_type_enrollment: true,
+      });
+
+      expect(
+        (await context()).candidates.map((row) => row.enrollment_id),
+      ).toEqual([901]);
+
+      world.addEnrollment({
+        enrollment_id: 921,
+        user_id: crossUser,
+        class_id: 40,
+        investiture_status: 'INVESTIDO',
+        record_kind: 'HISTORICAL_CERTIFICATE',
+        classes: {
+          min_duration_years: 1,
+          max_duration_years: 1,
+          club_type_id: 2,
+          club_types: { name: 'Guías Mayores' },
+        },
+      });
+
+      const view = await context();
+      expect(view.candidates.map((row) => row.enrollment_id).sort()).toEqual([
+        901, 920,
+      ]);
+      expect(
+        view.candidates.find((row) => row.enrollment_id === 920),
+      ).toMatchObject({ eligible: true, user_id: crossUser });
     });
   });
 
