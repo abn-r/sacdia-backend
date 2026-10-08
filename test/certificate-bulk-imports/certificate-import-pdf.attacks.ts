@@ -167,8 +167,7 @@ function compressedRun(bytes: number): Buffer {
   return deflateSync(Buffer.alloc(bytes, 0x20));
 }
 
-/** ObjStm + FlateDecode whose inflate is one byte over the stream cap. */
-export async function flateObjStmOverCap(): Promise<Buffer> {
+async function flateObjStmOfSize(decodedBytes: number): Promise<Buffer> {
   const original = await savedPage();
   const located = locateObjStm(original);
   const inflated = inflateSync(
@@ -176,9 +175,22 @@ export async function flateObjStmOverCap(): Promise<Buffer> {
   );
   const padded = Buffer.concat([
     inflated,
-    Buffer.alloc(PDF_STREAM_CAP_BYTES + 1 - inflated.length, 0x20),
+    Buffer.alloc(decodedBytes - inflated.length, 0x20),
   ]);
   return replaceObjStm(original, '/Filter /FlateDecode', deflateSync(padded));
+}
+
+/** ObjStm + FlateDecode whose inflate is one byte over the stream cap. */
+export async function flateObjStmOverCap(): Promise<Buffer> {
+  return flateObjStmOfSize(PDF_STREAM_CAP_BYTES + 1);
+}
+
+/**
+ * A valid one-page ObjStm that inflates to exactly the stream cap. The buffer
+ * lands on the cap, not past it, so this PDF is accepted.
+ */
+export async function flateObjStmAtCap(): Promise<Buffer> {
+  return flateObjStmOfSize(PDF_STREAM_CAP_BYTES);
 }
 
 /**
@@ -352,6 +364,24 @@ function objStmObject(id: number, decodedBytes: number): Buffer {
     payload,
     Buffer.from('\nendstream\nendobj\n'),
   ]);
+}
+
+/**
+ * `count` ObjStms whose buffers sum to the total cap, each a power of two
+ * well under the stream cap. Many small allocations leave the most freed
+ * ArrayBuffers behind for the garbage collector.
+ */
+export function objStmsSpreadAtTotalCap(count: number): Buffer {
+  const wide = PDF_TOTAL_CAP_BYTES / count / 2 + 1;
+  const bytes = Buffer.concat([
+    Buffer.from('%PDF-1.7\n'),
+    ...Array.from({ length: count }, (_, n) => objStmObject(n + 1, wide)),
+    Buffer.from('startxref\n9\n%%EOF\n'),
+  ]);
+  if (bytes.length > CERTIFICATE_IMPORT_MAX_BYTES) {
+    throw new Error('spread fixture exceeds the 10 MiB file cap');
+  }
+  return bytes;
 }
 
 /** Two ObjStms that each need a full stream-cap buffer, then one more byte. */

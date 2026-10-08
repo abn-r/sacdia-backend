@@ -25,6 +25,8 @@ import {
   commentBeforeObjKeyword,
   doubleFlateObjStm,
   escapedLzwObjStm,
+  flateObjStmAtCap,
+  flateObjStmOverCap,
   hexEscapedFlateObjStm,
   newlineHeaderAfterTrailer,
   objStmsAtTotalCap,
@@ -34,6 +36,8 @@ import {
   PDF_TOTAL_CAP_BYTES,
   xrefHugeFieldWidth,
 } from '../../test/certificate-bulk-imports/certificate-import-pdf.attacks';
+import { heavyLegitPdf } from '../../test/certificate-bulk-imports/certificate-import-pdf.legit';
+import { RSS_PROBE_ROWS } from '../../test/certificate-bulk-imports/rss-budget-probe';
 
 async function pdf(pages: number) {
   const document = await PDFDocument.create();
@@ -233,8 +237,8 @@ describe('assertCertificateImportPdf', () => {
     expect(bytes.length).toBeLessThanOrEqual(CERTIFICATE_IMPORT_MAX_BYTES);
     expect(bytes.length).toBeLessThan(PDF_BOMB_OUTPUT_BYTES);
     expect(PDF_BOMB_OUTPUT_BYTES).toBe(64 * 1024 * 1024);
-    expect(PDF_STREAM_CAP_BYTES).toBe(1 * 1024 * 1024);
-    expect(PDF_TOTAL_CAP_BYTES).toBe(2 * 1024 * 1024);
+    expect(PDF_STREAM_CAP_BYTES).toBe(8 * 1024 * 1024);
+    expect(PDF_TOTAL_CAP_BYTES).toBe(16 * 1024 * 1024);
     const outcome = await assertCertificateImportPdf(bytes).then(
       (pages) => ({ pages }),
       (error: unknown) => ({ error }),
@@ -275,7 +279,7 @@ describe('assertCertificateImportPdf', () => {
     await expectDecodeStaysWithinCap(await escapedLzwObjStm());
   });
 
-  it('rejects a third ObjStm once the 32 MiB total is already allocated', async () => {
+  it('rejects a third ObjStm once the total cap is already allocated', async () => {
     const bytes = objStmsOverTotalCap();
     const error = await assertCertificateImportPdf(bytes).then(
       () => null,
@@ -296,43 +300,110 @@ describe('assertCertificateImportPdf', () => {
     ).toBeLessThanOrEqual(PDF_TOTAL_CAP_BYTES);
   });
 
+  describe('legitimate heavy PDFs', () => {
+    // Measured with test/certificate-bulk-imports/certificate-import-pdf.legit.ts.
+    // Each shape is past the old caps (1 MiB per stream, 2 MiB total) and well
+    // under the current ones (8 MiB, 16 MiB).
+    it('accepts 5 pages of annotations spread over many ObjStms (~3.4 MiB total, past the old 2 MiB total)', async () => {
+      const bytes = await heavyLegitPdf({
+        pages: 5,
+        annotationsPerPage: 2000,
+        objectsPerStream: 100,
+      });
+      expect(bytes.length).toBeLessThan(CERTIFICATE_IMPORT_MAX_BYTES);
+      await expect(assertCertificateImportPdf(bytes)).resolves.toBe(5);
+    }, 30_000);
+
+    it('accepts 5 pages whose objects share one ObjStm (~1.7 MiB decoded in a 2 MiB buffer, past the old 1 MiB stream cap)', async () => {
+      const bytes = await heavyLegitPdf({
+        pages: 5,
+        annotationsPerPage: 2000,
+        objectsPerStream: 1_000_000,
+      });
+      expect(bytes.length).toBeLessThan(CERTIFICATE_IMPORT_MAX_BYTES);
+      await expect(assertCertificateImportPdf(bytes)).resolves.toBe(5);
+    }, 30_000);
+
+    it('accepts an ObjStm that inflates to exactly the stream cap', async () => {
+      await expect(
+        assertCertificateImportPdf(await flateObjStmAtCap()),
+      ).resolves.toBe(1);
+    }, 30_000);
+
+    it('rejects an ObjStm that inflates one byte past the stream cap and allocates nothing beyond it', async () => {
+      const outcome = await assertCertificateImportPdf(
+        await flateObjStmOverCap(),
+      ).then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(outcome).toEqual(
+        expect.objectContaining({
+          message: 'CERTIFICATE_IMPORT_PDF_INVALID',
+          pdfDecode: expect.objectContaining({
+            maxBuffer: PDF_STREAM_CAP_BYTES,
+            beyond: 0,
+            exceeded: true,
+          }),
+        }),
+      );
+    }, 30_000);
+  });
+
   it('keeps one validation inside the Free-plan RSS budget', () => {
     const backendRoot = join(__dirname, '../..');
     const probe = join(
       backendRoot,
       'test/certificate-bulk-imports/rss-budget-probe.ts',
     );
-    const result = spawnSync(
-      process.execPath,
-      ['--expose-gc', '--import', 'tsx', probe],
-      { cwd: backendRoot, encoding: 'utf8', timeout: 120_000 },
-    );
-    expect(result.status).toBe(0);
-    const rows = JSON.parse(result.stdout) as {
-      name: string;
-      rssDelta: number;
-      outcome: string;
-    }[];
-    expect(rows.map((row) => row.name)).toEqual([
-      'pages1',
-      'pages5',
-      'scan9MiB',
-      'xref20M',
-      'inflateBomb',
-      'xref20Mx3',
-    ]);
+    // One process per scenario: pages freed by an earlier scenario would be
+    // reused and hide the next one's growth.
+    const rows = RSS_PROBE_ROWS.map((name) => {
+      const result = spawnSync(
+        process.execPath,
+        ['--expose-gc', '--import', 'tsx', probe, name],
+        { cwd: backendRoot, encoding: 'utf8', timeout: 60_000 },
+      );
+      expect(result.status).toBe(0);
+      const [row] = JSON.parse(result.stdout) as {
+        name: string;
+        rssDelta: number;
+        outcome: string;
+      }[];
+      return row;
+    });
+    expect(rows.map((row) => row.name)).toEqual([...RSS_PROBE_ROWS]);
     for (const row of rows) {
       expect(row.rssDelta).toBeLessThanOrEqual(PDF_VALIDATION_RSS_BUDGET_BYTES);
     }
-    expect(rows.find((row) => row.name === 'pages1')?.outcome).toBe('ok');
-    expect(rows.find((row) => row.name === 'scan9MiB')?.outcome).toBe('ok');
-    expect(rows.find((row) => row.name === 'xref20M')?.outcome).toBe(
-      'CERTIFICATE_IMPORT_PDF_INVALID',
-    );
-    expect(rows.find((row) => row.name === 'inflateBomb')?.outcome).toBe(
-      'CERTIFICATE_IMPORT_PDF_INVALID',
-    );
-  }, 120_000);
+    const outcome = (name: string) =>
+      rows.find((row) => row.name === name)?.outcome;
+    for (const name of [
+      'pages1',
+      'pages5',
+      'scan9MiB',
+      'inflateAtCap',
+      'heavyManyObjStm',
+      'heavyOneObjStm',
+      'inflateAtCapx3',
+      'heavyOneObjStmx3',
+    ]) {
+      expect(outcome(name)).toBe('ok');
+    }
+    for (const name of [
+      'xref20M',
+      'inflateBomb',
+      'inflateOverCap',
+      'totalCapTwoStreams',
+      'totalCapSpread64',
+    ]) {
+      expect(outcome(name)).toBe('CERTIFICATE_IMPORT_PDF_INVALID');
+    }
+    // The x3 rows throw inside the probe unless every caller got the
+    // expected result, so 'ok' means all three agreed.
+    expect(outcome('xref20Mx3')).toBe('ok');
+    expect(outcome('inflateBombx3')).toBe('ok');
+  }, 300_000);
 
   it('does not keep the xref ref pool in the calling process', () => {
     const backendRoot = join(__dirname, '../..');
