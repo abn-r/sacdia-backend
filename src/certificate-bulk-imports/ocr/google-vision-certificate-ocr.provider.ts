@@ -5,7 +5,8 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ImageAnnotatorClient, protos } from '@google-cloud/vision';
+import type { ImageAnnotatorClient, protos } from '@google-cloud/vision';
+import { lazyModule } from '../../common/utils/lazy-module';
 import type { FileStorageService } from '../../common/services/file-storage.service';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import {
@@ -38,12 +39,19 @@ type VisionClientOptions = ConstructorParameters<
 export type GoogleVisionClientFactory = (
   options: VisionClientOptions,
 ) => VisionClient;
+// @google-cloud/vision (+ gRPC) costs ~17 MiB RSS on load: require it on the
+// first real OCR call (OCR_MODE=direct only), never while booting.
+const loadVision = lazyModule(
+  () =>
+    require('@google-cloud/vision') as typeof import('@google-cloud/vision'),
+);
 export const GOOGLE_VISION_CLIENT_FACTORY = Symbol(
   'GOOGLE_VISION_CLIENT_FACTORY',
 );
 export const googleVisionClientFactoryProvider = {
   provide: GOOGLE_VISION_CLIENT_FACTORY,
-  useValue: (options: VisionClientOptions) => new ImageAnnotatorClient(options),
+  useValue: (options: VisionClientOptions) =>
+    new (loadVision().ImageAnnotatorClient)(options),
 };
 type VisionError = {
   code?: number | string | null;
