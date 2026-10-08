@@ -1,9 +1,20 @@
 import { PDFDocument } from 'pdf-lib';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+} from '@nestjs/common';
 import { AppInternalServerErrorException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { StorageBucketAlias } from '../common/services/file-storage.service';
 import { CertificateImportFilesService } from './certificate-import-files.service';
+import {
+  assertCertificateImportPdf,
+  PDF_WORKER_MAX_WAITING,
+  pdfValidationActiveWorkers,
+  pdfValidationWorkerPeak,
+  resetPdfValidationWorkerPeak,
+} from './certificate-import-pdf';
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0x00]);
 
@@ -208,6 +219,93 @@ describe('CertificateImportFilesService', () => {
     });
     return bytes;
   }
+
+  async function waitForIdleValidationWorkers(): Promise<void> {
+    const deadline = Date.now() + 3_000;
+    while (pdfValidationActiveWorkers() > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+
+  it('rejects confirm when the PDF queue is full without sealing', async () => {
+    const bytes = await preparePdf(1);
+    let releaseHold: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    await waitForIdleValidationWorkers();
+    resetPdfValidationWorkerPeak();
+    const holder = assertCertificateImportPdf(bytes, {
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 5_000,
+      beforeWorker: () => hold,
+    });
+    const fillers = Array.from({ length: PDF_WORKER_MAX_WAITING }, () =>
+      assertCertificateImportPdf(bytes, {
+        startupDeadlineMs: 60_000,
+        parseDeadlineMs: 5_000,
+        queueWaitMs: 60_000,
+      }),
+    );
+    try {
+      const error = await service.confirm('owner-1', 'batch-1', 'file-1').then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(HttpException);
+      const busy = error as HttpException;
+      expect(busy.getStatus()).toBe(429);
+      expect(busy.message).toBe('CERTIFICATE_IMPORT_PDF_BUSY');
+      expect(pdfValidationWorkerPeak()).toBe(0);
+      expect(storage.upload).not.toHaveBeenCalled();
+      expect(storage.deleteMany).not.toHaveBeenCalled();
+      expect(storage.copyObject).not.toHaveBeenCalled();
+      expect(
+        prisma.certificate_bulk_import_files.updateMany,
+      ).not.toHaveBeenCalled();
+    } finally {
+      releaseHold();
+      await holder;
+      await Promise.all(fillers);
+    }
+  });
+
+  it('rejects confirm when the PDF queue wait expires without sealing', async () => {
+    const bytes = await preparePdf(1);
+    let releaseHold: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    await waitForIdleValidationWorkers();
+    resetPdfValidationWorkerPeak();
+    const holder = assertCertificateImportPdf(bytes, {
+      startupDeadlineMs: 60_000,
+      parseDeadlineMs: 5_000,
+      beforeWorker: () => hold,
+    });
+    try {
+      const started = Date.now();
+      const error = await service.confirm('owner-1', 'batch-1', 'file-1').then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(Date.now() - started).toBeGreaterThanOrEqual(1_500);
+      expect(error).toBeInstanceOf(HttpException);
+      const busy = error as HttpException;
+      expect(busy.getStatus()).toBe(429);
+      expect(busy.message).toBe('CERTIFICATE_IMPORT_PDF_BUSY');
+      expect(pdfValidationWorkerPeak()).toBe(0);
+      expect(storage.upload).not.toHaveBeenCalled();
+      expect(storage.deleteMany).not.toHaveBeenCalled();
+      expect(storage.copyObject).not.toHaveBeenCalled();
+      expect(
+        prisma.certificate_bulk_import_files.updateMany,
+      ).not.toHaveBeenCalled();
+    } finally {
+      releaseHold();
+      await holder;
+    }
+  }, 15_000);
 
   it.each([1, 5])(
     'parses a complete %i-page PDF before sealing',

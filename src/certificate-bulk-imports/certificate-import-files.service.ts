@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppInternalServerErrorException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -23,7 +24,10 @@ import {
   EDITABLE_CERTIFICATE_IMPORT_BATCH_STATUSES,
   extensionForCertificateMime,
 } from './certificate-import-files.constants';
-import { assertCertificateImportPdf } from './certificate-import-pdf';
+import {
+  assertCertificateImportPdf,
+  PDF_CONFIRM_QUEUE_WAIT_MS,
+} from './certificate-import-pdf';
 import type { PresignCertificateImportFileDto } from './dto/presign-certificate-import-file.dto';
 
 const LOCKED_ITEM_STATUSES = ['SUBMITTED', 'APPROVED', 'RESUBMITTED'] as const;
@@ -169,7 +173,10 @@ export class CertificateImportFilesService {
           'CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH',
         );
       }
-      await assertCertificateImportPdf(downloaded);
+      await assertCertificateImportPdf(downloaded, {
+        queueWaitMs: PDF_CONFIRM_QUEUE_WAIT_MS,
+        queueFullCode: ErrorCode.CERTIFICATE_IMPORT_PDF_BUSY,
+      });
       pdfBytes = downloaded;
     }
     // A signed staging PUT remains mutable. Seal exactly the validated PDF,
