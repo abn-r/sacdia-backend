@@ -30,10 +30,12 @@ import {
 } from './ecclesiastical-year-local-day';
 import { InvestitureCommunicationsService } from './investiture-communications.service';
 import { pastorCanAuthorize } from './investiture-pastor-eligibility';
-import type {
-  PresentationBlockedCode,
-  PresentationCandidate,
-  PresentationContextView,
+import {
+  crossTypeHomeAssignmentWhere,
+  sectionMemberAssignmentWhere,
+  type PresentationBlockedCode,
+  type PresentationCandidate,
+  type PresentationContextView,
 } from './investiture-presentation-context';
 import {
   displayName,
@@ -645,12 +647,7 @@ export class InvestitureAuthorizationRequestService {
           ...base,
           users: {
             club_role_assignments: {
-              some: {
-                club_section_id: context.clubSectionId,
-                ecclesiastical_year_id: context.yearId,
-                active: true,
-                status: 'active',
-              },
+              some: sectionMemberAssignmentWhere(context),
             },
           },
         },
@@ -662,16 +659,7 @@ export class InvestitureAuthorizationRequestService {
           cross_type_enrollment: true,
           users: {
             club_role_assignments: {
-              some: {
-                ecclesiastical_year_id: context.yearId,
-                active: true,
-                status: 'active',
-                club_sections: {
-                  main_club_id: context.mainClubId,
-                  club_section_id: { not: context.clubSectionId },
-                  club_type_id: { not: context.clubTypeId },
-                },
-              },
+              some: crossTypeHomeAssignmentWhere(context),
             },
           },
         },
@@ -1602,10 +1590,7 @@ export class InvestitureAuthorizationRequestService {
     const member = await store.club_role_assignments.findFirst({
       where: {
         user_id: enrollment.user_id,
-        club_section_id: context.clubSectionId,
-        ecclesiastical_year_id: context.yearId,
-        active: true,
-        status: 'active',
+        ...sectionMemberAssignmentWhere(context),
       },
       select: { assignment_id: true },
     });
@@ -1674,14 +1659,7 @@ export class InvestitureAuthorizationRequestService {
     const home = await store.club_role_assignments.findFirst({
       where: {
         user_id: enrollment.user_id,
-        ecclesiastical_year_id: context.yearId,
-        active: true,
-        status: 'active',
-        club_sections: {
-          main_club_id: context.mainClubId,
-          club_section_id: { not: context.clubSectionId },
-          club_type_id: { not: context.clubTypeId },
-        },
+        ...crossTypeHomeAssignmentWhere(context),
       },
       select: { assignment_id: true },
     });

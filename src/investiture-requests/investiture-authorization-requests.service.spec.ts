@@ -9,6 +9,10 @@ import {
   INVESTITURE_SYSTEM_REJECTION_TEXT,
   InvestitureAuthorizationRequestService,
 } from './investiture-authorization-requests.service';
+import {
+  crossTypeHomeAssignmentWhere,
+  sectionMemberAssignmentWhere,
+} from './investiture-presentation-context';
 import { closePendingInvestitureAuthorizations } from './investiture-year-close';
 
 const SECTION_ID = 4;
@@ -4413,6 +4417,32 @@ describe('investiture authorization requests', () => {
           blocked_code: 'INVESTITURE_REQUEST_ALREADY_INVESTED',
         }),
       ]);
+    });
+
+    it('R4 shares one membership filter between present and the candidate list', async () => {
+      const scope = {
+        clubSectionId: SECTION_ID,
+        clubTypeId: 1,
+        mainClubId: 1,
+        yearId: YEAR_ID,
+      };
+      const assignments = world.prisma.club_role_assignments;
+      const enrollmentsDelegate = world.prisma.enrollments;
+      await present();
+      const presentWhere = assignments.findFirst.mock.calls[0][0].where;
+      expect(presentWhere).toEqual({
+        user_id: USER,
+        ...sectionMemberAssignmentWhere(scope),
+      });
+
+      enrollmentsDelegate.findMany.mockClear();
+      assignments.findFirst.mockClear();
+      await context();
+      const filters = enrollmentsDelegate.findMany.mock.calls.map(
+        ([args]) => args.where.users?.club_role_assignments?.some,
+      );
+      expect(filters).toContainEqual(sectionMemberAssignmentWhere(scope));
+      expect(filters).toContainEqual(crossTypeHomeAssignmentWhere(scope));
     });
 
     it('includes a cross-type enrollment only when its home section and invested Guía Mayor hold', async () => {

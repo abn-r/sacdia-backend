@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { ErrorCode } from '../common/errors/error-codes';
 
 /**
@@ -45,3 +46,45 @@ export type PresentationContextView = {
   open_request_id: string | null;
   candidates: PresentationCandidate[];
 };
+
+export type PresentationScope = {
+  clubSectionId: number;
+  clubTypeId: number;
+  mainClubId: number;
+  yearId: number;
+};
+
+/**
+ * R4. The one definition of "member of the section for the year". `present`
+ * (through `evaluateEnrollmentForPresentation`) and the candidate lists of the
+ * presentation context both build their queries from it, so they cannot drift.
+ */
+export function sectionMemberAssignmentWhere(
+  scope: Pick<PresentationScope, 'clubSectionId' | 'yearId'>,
+): Prisma.club_role_assignmentsWhereInput {
+  return {
+    club_section_id: scope.clubSectionId,
+    ecclesiastical_year_id: scope.yearId,
+    active: true,
+    status: 'active',
+  };
+}
+
+/**
+ * R4. A Guía Mayor's home: an active assignment of the same club in another
+ * section of a different club type. Shared by `present` and the context.
+ */
+export function crossTypeHomeAssignmentWhere(
+  scope: PresentationScope,
+): Prisma.club_role_assignmentsWhereInput {
+  return {
+    ecclesiastical_year_id: scope.yearId,
+    active: true,
+    status: 'active',
+    club_sections: {
+      main_club_id: scope.mainClubId,
+      club_section_id: { not: scope.clubSectionId },
+      club_type_id: { not: scope.clubTypeId },
+    },
+  };
+}
