@@ -7,12 +7,13 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { JwtService } from '@nestjs/jwt';
-import type { Client } from 'pg';
+import { Client } from 'pg';
 import request from 'supertest';
 import { ErrorCode } from '../src/common/errors/error-codes';
 import type { AuthorizationSnapshot } from '../src/common/services/authorization-context.service';
 import { InvestitureService } from '../src/investiture/investiture.service';
 import { InvestitureAuthorizationRequestService } from '../src/investiture-requests/investiture-authorization-requests.service';
+import { INVESTITURE_REQUEST_ENROLLMENT_LOCK_PREFIX } from '../src/investiture-requests/investiture-request-lock';
 import { ValidationService } from '../src/validation/validation.service';
 import {
   bootstrapAnnualCycleApp,
@@ -748,12 +749,36 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
       );
     }
 
+    async function seedLockedMember(tag: string) {
+      return withClient(databaseUrl, async (client) => {
+        const userId = await insertUser(client, `${tag}@fase8.test`);
+        const enrollmentId = await insertEnrollment(client, {
+          userId,
+          classId: fx.classId,
+          yearId: fx.yearId,
+          status: 'CLUB_APPROVED',
+          locked: true,
+        });
+        await joinSection(client, userId);
+        await completeRequirement(client, userId, enrollmentId);
+        return { userId, enrollmentId };
+      });
+    }
+
     async function fieldId() {
       const field = await prisma.local_fields.findFirstOrThrow({
         where: { abbreviation: 'F8F' },
         select: { local_field_id: true },
       });
       return field.local_field_id;
+    }
+
+    async function openRequestId() {
+      const person =
+        await prisma.investiture_authorization_people.findFirstOrThrow({
+          where: { enrollment_id: fx.pendingLocked, status: 'PENDING' },
+        });
+      return person.request_id;
     }
 
     const classCompleted = (userIds: string[]) =>
@@ -853,6 +878,240 @@ describe('fase 8: vía anterior de investidura apagada (PostgreSQL + HTTP)', () 
       for (const userId of userIds) {
         expect(await classCompleted([userId])).toBe(1);
       }
+    });
+
+    describe('carrera entre soltar el candado y presentar', () => {
+      type Order = 'release-first' | 'present-first';
+      const ORDERS: Order[] = ['release-first', 'present-first'];
+
+      async function holdEnrollmentLock(enrollmentId: number) {
+        const client = new Client({ connectionString: databaseUrl });
+        await client.connect();
+        await client.query('BEGIN');
+        await client.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          [`${INVESTITURE_REQUEST_ENROLLMENT_LOCK_PREFIX}${enrollmentId}`],
+        );
+        const pid = await client.query<{ pid: number }>(
+          'SELECT pg_backend_pid() AS pid',
+        );
+        return {
+          pid: pid.rows[0].pid,
+          release: async () => {
+            await client.query('COMMIT');
+            await client.end();
+          },
+        };
+      }
+
+      async function waitForWaiters(holderPid: number, count: number) {
+        const deadline = Date.now() + 10000;
+        while (Date.now() < deadline) {
+          const waiting = await withClient(databaseUrl, (client) =>
+            client.query(
+              `SELECT count(DISTINCT pid)::int AS total
+               FROM pg_locks
+               WHERE locktype = 'advisory' AND NOT granted AND pid <> $1`,
+              [holderPid],
+            ),
+          );
+          if (waiting.rows[0].total >= count) return;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        throw new Error(
+          `la operación no quedó esperando ${count} candados advisory en pg_locks`,
+        );
+      }
+
+      /**
+       * Retiene el candado advisory del enrollment, arranca las dos operaciones
+       * en el orden pedido (cada una queda esperando en pg_locks) y suelta. Así
+       * el orden de los candados es el pedido y no depende de la suerte.
+       */
+      async function race<A, B>(
+        enrollmentId: number,
+        order: Order,
+        release: () => Promise<A>,
+        present: () => Promise<B>,
+      ) {
+        const holder = await holdEnrollmentLock(enrollmentId);
+        let released: Promise<A>;
+        let presented: Promise<B>;
+        const outcomes = { release: undefined, present: undefined } as {
+          release?: PromiseSettledResult<A>;
+          present?: PromiseSettledResult<B>;
+        };
+        try {
+          const first = order === 'release-first' ? 'release' : 'present';
+          const start = (which: 'release' | 'present') =>
+            which === 'release'
+              ? (released = release())
+              : (presented = present());
+          // Un rechazo antes de esperar no debe quedar sin atender.
+          const firstPromise = start(first);
+          firstPromise.catch(() => undefined);
+          await waitForWaiters(holder.pid, 1);
+          const secondPromise = start(
+            first === 'release' ? 'present' : 'release',
+          );
+          secondPromise.catch(() => undefined);
+          await waitForWaiters(holder.pid, 2);
+        } finally {
+          await holder.release();
+        }
+        const [r, p] = await Promise.allSettled([released!, presented!]);
+        outcomes.release = r;
+        outcomes.present = p;
+        return outcomes;
+      }
+
+      function assertNoDeadlockSince(offset: number) {
+        const log = readFileSync(serverLog.path)
+          .subarray(offset)
+          .toString('utf8');
+        expect(log).not.toMatch(/deadlock detected/i);
+      }
+
+      it.each(ORDERS)(
+        'fila bloqueada sin PENDING (%s): queda liberada y se presenta solo si el desbloqueo ganó',
+        async (order) => {
+          const offset = statSync(serverLog.path).size;
+          const member = await seedLockedMember(`race-free-${order}`);
+          const done = await race(
+            member.enrollmentId,
+            order,
+            async () => {
+              await pace();
+              return request(app.getHttpServer())
+                .post('/api/v1/admin/investiture/legacy-locks/release')
+                .set(bearer(SUPER_ADMIN))
+                .send({ dry_run: false });
+            },
+            () =>
+              requests().present(
+                sectionMarker(),
+                ADMIN,
+                fx.sectionId,
+                fx.yearId,
+                PRESENT_DATE,
+                [member.enrollmentId],
+                PRESENT_AT,
+              ),
+          );
+
+          expect(done.release?.status).toBe('fulfilled');
+          const body =
+            done.release?.status === 'fulfilled' ? done.release.value : null;
+          expect(body?.status).toBe(200);
+          // Sin PENDING en ningún orden, el desbloqueo siempre suelta la fila.
+          expect(body?.body.data.released).toContain(member.enrollmentId);
+          expect(body?.body.data.skipped_pending).not.toContain(
+            member.enrollmentId,
+          );
+          const [row] = await locks([member.enrollmentId]);
+          expect(row).toMatchObject({
+            investiture_status: 'CLUB_APPROVED',
+            locked_for_validation: false,
+          });
+          expect(
+            await prisma.investiture_validation_history.count({
+              where: {
+                enrollment_id: member.enrollmentId,
+                action: 'LEGACY_LOCK_RELEASED',
+              },
+            }),
+          ).toBe(1);
+          const pending = await prisma.investiture_authorization_people.count({
+            where: { enrollment_id: member.enrollmentId, status: 'PENDING' },
+          });
+          if (order === 'present-first') {
+            // Presentar ganó el candado con la fila aún bloqueada: rechaza y no deja PENDING.
+            expect(done.present?.status).toBe('rejected');
+            expect(
+              done.present?.status === 'rejected' &&
+                (done.present.reason as { code?: string }).code,
+            ).toBe(ErrorCode.INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE);
+            expect(pending).toBe(0);
+          } else {
+            // El desbloqueo ganó: la fila ya estaba libre cuando presentar la leyó.
+            expect(done.present?.status).toBe('fulfilled');
+            expect(pending).toBe(1);
+          }
+          assertNoDeadlockSince(offset);
+        },
+      );
+
+      it.each(ORDERS)(
+        'fila bloqueada con PENDING (%s): sigue bloqueada, el PENDING queda y el desbloqueo la salta',
+        async (order) => {
+          const offset = statSync(serverLog.path).size;
+          const member = await seedLockedMember(`race-pending-${order}`);
+          const requestId = await openRequestId();
+          await prisma.investiture_authorization_people.create({
+            data: {
+              request_id: requestId,
+              user_id: member.userId,
+              class_id: fx.classId,
+              enrollment_id: member.enrollmentId,
+              investiture_date: new Date('2026-11-15T00:00:00.000Z'),
+              status: 'PENDING',
+              single_slot: false,
+            },
+          });
+          const done = await race(
+            member.enrollmentId,
+            order,
+            async () => {
+              await pace();
+              return request(app.getHttpServer())
+                .post('/api/v1/admin/investiture/legacy-locks/release')
+                .set(bearer(SUPER_ADMIN))
+                .send({ dry_run: false });
+            },
+            () =>
+              requests().addPeople(
+                sectionMarker(),
+                ADMIN,
+                requestId,
+                PRESENT_DATE,
+                [member.enrollmentId],
+                PRESENT_AT,
+              ),
+          );
+
+          const body =
+            done.release?.status === 'fulfilled' ? done.release.value : null;
+          expect(body?.status).toBe(200);
+          expect(body?.body.data.skipped_pending).toContain(
+            member.enrollmentId,
+          );
+          expect(body?.body.data.released).not.toContain(member.enrollmentId);
+          expect(done.present?.status).toBe('rejected');
+          expect(
+            done.present?.status === 'rejected' &&
+              (done.present.reason as { code?: string }).code,
+          ).toBe(ErrorCode.INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE);
+          const [row] = await locks([member.enrollmentId]);
+          expect(row).toMatchObject({
+            investiture_status: 'CLUB_APPROVED',
+            locked_for_validation: true,
+          });
+          expect(
+            await prisma.investiture_authorization_people.count({
+              where: { enrollment_id: member.enrollmentId, status: 'PENDING' },
+            }),
+          ).toBe(1);
+          expect(
+            await prisma.investiture_validation_history.count({
+              where: {
+                enrollment_id: member.enrollmentId,
+                action: 'LEGACY_LOCK_RELEASED',
+              },
+            }),
+          ).toBe(0);
+          assertNoDeadlockSince(offset);
+        },
+      );
     });
   });
 
