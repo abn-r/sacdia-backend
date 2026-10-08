@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
+import { Queue, type Job } from 'bullmq';
 import { achievement_type, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { HandlerRegistry } from './handlers/handler.registry';
@@ -29,6 +30,15 @@ const DEFAULT_JOB_OPTIONS = {
   removeOnComplete: { count: 100 },
   removeOnFail: { count: 50 },
 };
+
+/**
+ * BullMQ 5 rechaza un jobId con `:`. La clave persistida puede llevarlo;
+ * el identificador de cola es otro valor, estable y sin ese carácter.
+ */
+export function achievementQueueJobId(idempotencyKey: string): string {
+  const digest = createHash('sha256').update(idempotencyKey).digest('hex');
+  return `achievement-${digest}`;
+}
 
 @Injectable()
 export class AchievementsService {
@@ -61,9 +71,11 @@ export class AchievementsService {
    * Fire-and-forget: errors are logged but never thrown to the caller.
    */
   async emitEvent(
-    dto: EmitEventDto,
+    dto: EmitEventDto & { idempotencyKey?: string },
   ): Promise<{ eventLogId: number; queued: boolean }> {
-    // Always persist the event — this is the source of truth
+    if (dto.idempotencyKey) {
+      return this.emitDurableEvent(dto, dto.idempotencyKey);
+    }
     const eventLog = await this.prisma.achievement_event_log.create({
       data: {
         user_id: dto.userId,
@@ -72,30 +84,149 @@ export class AchievementsService {
         processed: false,
       },
     });
+    return this.enqueueEvaluation(dto, eventLog.event_id);
+  }
 
+  private async emitDurableEvent(
+    dto: EmitEventDto,
+    idempotencyKey: string,
+  ): Promise<{ eventLogId: number; queued: boolean }> {
+    const eventLogId = await this.persistDurableEvent(dto, idempotencyKey);
+    return this.enqueueEvaluation(dto, eventLogId, idempotencyKey);
+  }
+
+  private async persistDurableEvent(
+    dto: EmitEventDto,
+    idempotencyKey: string,
+  ): Promise<number> {
+    const insert = () =>
+      this.prisma.achievement_event_log.create({
+        data: {
+          user_id: dto.userId,
+          event_type: dto.eventType,
+          event_payload: dto.payload as Prisma.InputJsonValue,
+          processed: false,
+          idempotency_key: idempotencyKey,
+        },
+      });
+    if (typeof this.prisma.$transaction !== 'function') {
+      const created = await insert();
+      return created.event_id;
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${idempotencyKey}, 0))`,
+      );
+      const existing = await tx.achievement_event_log.findFirst({
+        where: { idempotency_key: idempotencyKey },
+        select: { event_id: true },
+      });
+      if (existing) {
+        return existing.event_id;
+      }
+      const created = await insert();
+      return created.event_id;
+    });
+  }
+
+  private async enqueueEvaluation(
+    dto: EmitEventDto,
+    eventLogId: number,
+    jobId?: string,
+  ): Promise<{ eventLogId: number; queued: boolean }> {
     if (!this.queue) {
       this.logger.warn(
-        `AchievementsService: no queue available — event ${eventLog.event_id} persisted but not enqueued`,
+        `AchievementsService: no queue available — event ${eventLogId} persisted but not enqueued`,
       );
-      return { eventLogId: eventLog.event_id, queued: false };
+      return { eventLogId, queued: false };
     }
 
     const jobData: EvaluateJobData = {
       userId: dto.userId,
       eventType: dto.eventType,
       payload: dto.payload,
-      eventLogId: eventLog.event_id,
+      eventLogId,
     };
 
+    const queueJobId = jobId ? achievementQueueJobId(jobId) : undefined;
+    const options = queueJobId
+      ? { ...DEFAULT_JOB_OPTIONS, jobId: queueJobId }
+      : DEFAULT_JOB_OPTIONS;
     try {
-      await this.queue.add('evaluate', jobData, DEFAULT_JOB_OPTIONS);
-      return { eventLogId: eventLog.event_id, queued: true };
+      const added = await this.queue.add('evaluate', jobData, options);
+      if (queueJobId && typeof added.getState === 'function') {
+        await this.recoverFailedEvaluation(added, eventLogId);
+      }
+      return { eventLogId, queued: true };
     } catch (err) {
+      const message = (err as Error).message ?? '';
+      if (
+        jobId &&
+        queueJobId &&
+        /already exists|already waiting/i.test(message)
+      ) {
+        const existing = await this.existingJob(queueJobId);
+        if (existing) {
+          await this.recoverFailedEvaluation(existing, eventLogId);
+          if ((await existing.getState()) === 'failed') {
+            throw err;
+          }
+        }
+        return { eventLogId, queued: true };
+      }
+      if (jobId) {
+        throw err;
+      }
       this.logger.warn(
-        `Failed to enqueue achievement evaluation for event ${eventLog.event_id}: ${(err as Error).message}`,
+        `Failed to enqueue achievement evaluation for event ${eventLogId}: ${message}`,
       );
-      return { eventLogId: eventLog.event_id, queued: false };
+      return { eventLogId, queued: false };
     }
+  }
+
+  /**
+   * BullMQ keeps a custom id after its attempts are exhausted. Adding that id
+   * again returns the same job and leaves it failed.
+   */
+  private async recoverFailedEvaluation(
+    added: Job,
+    eventLogId: number,
+  ): Promise<void> {
+    if ((await added.getState()) !== 'failed') {
+      return;
+    }
+    if (await this.eventIsProcessed(eventLogId)) {
+      return;
+    }
+    try {
+      await added.retry('failed', {
+        resetAttemptsMade: true,
+        resetAttemptsStarted: true,
+      });
+      this.logger.warn(
+        `Reactivated failed achievement job ${added.id ?? 'unknown'} for event ${eventLogId}`,
+      );
+    } catch (error) {
+      if ((await added.getState()) !== 'failed') {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private async existingJob(queueJobId: string): Promise<Job | null> {
+    if (!this.queue || typeof this.queue.getJob !== 'function') {
+      return null;
+    }
+    return (await this.queue.getJob(queueJobId)) ?? null;
+  }
+
+  private async eventIsProcessed(eventLogId: number): Promise<boolean> {
+    const stored = await this.prisma.achievement_event_log.findUnique({
+      where: { event_id: eventLogId },
+      select: { processed: true },
+    });
+    return stored?.processed === true;
   }
 
   // ---------------------------------------------------------------------------

@@ -97,6 +97,15 @@ export class AchievementsProcessor
 
   private async handleEvaluate(job: Job<EvaluateJobData>) {
     const { userId, eventType, payload, eventLogId } = job.data;
+    if (eventLogId) {
+      const stored = await this.prisma.achievement_event_log.findUnique({
+        where: { event_id: eventLogId },
+        select: { processed: true },
+      });
+      if (stored?.processed) {
+        return { processed: 0 };
+      }
+    }
 
     this.logger.debug(
       `Processing evaluate job for user=${userId} event=${eventType}`,

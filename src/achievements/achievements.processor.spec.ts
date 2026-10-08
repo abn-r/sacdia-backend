@@ -15,6 +15,7 @@ describe('AchievementsProcessor', () => {
   const mockPrismaService: any = {
     achievement_event_log: {
       findMany: jest.fn(),
+      findUnique: jest.fn().mockResolvedValue({ processed: false }),
       update: jest.fn(),
     },
     achievements: {
