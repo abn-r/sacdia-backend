@@ -23,6 +23,15 @@ describe('ClassInvestitureProgressScoreService.calc', () => {
     await expect(svc.calc('enrollment-id', 1)).resolves.toBe(40);
   });
 
+  it('still counts legacy APPROVED rows next to INVESTIDO as completed', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([{ completed: 1n, total: 2n }]);
+    await svc.calc('enrollment-id', 1);
+    const sql = (
+      prisma.$queryRaw.mock.calls[0][0] as TemplateStringsArray
+    ).join('?');
+    expect(sql).toContain("IN ('APPROVED', 'INVESTIDO')");
+  });
+
   it('returns 0 when there are no active class enrollments', async () => {
     prisma.$queryRaw.mockResolvedValueOnce([{ completed: 0n, total: 0n }]);
 

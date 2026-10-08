@@ -88,6 +88,35 @@ describe('ClubRoleEligibilityService', () => {
       expect(flat).toContain('APPROVED');
       expect(flat).toContain('INVESTIDO');
     });
+
+    it('keeps counting legacy APPROVED and the open chain statuses (phase 8)', async () => {
+      findMany.mockResolvedValue([]);
+      await service.evaluateGuideMajor(userId);
+      const where = findMany.mock.calls[0][0].where;
+      expect(where.OR).toEqual([
+        {
+          investiture_status: {
+            in: [
+              investiture_status_enum.INVESTIDO,
+              investiture_status_enum.APPROVED,
+            ],
+          },
+        },
+        {
+          active: true,
+          investiture_status: {
+            in: [
+              investiture_status_enum.IN_PROGRESS,
+              investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+              investiture_status_enum.CLUB_APPROVED,
+              investiture_status_enum.COORDINATOR_APPROVED,
+              investiture_status_enum.FIELD_APPROVED,
+            ],
+          },
+          classes: { asset_code: 'GM-01', active: true },
+        },
+      ]);
+    });
   });
 
   describe('evaluateMany', () => {

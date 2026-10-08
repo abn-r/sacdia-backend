@@ -149,3 +149,33 @@ describe('ValidationService retired class path', () => {
     expect(honorWorkflow.submitForReview).toHaveBeenCalledWith(9, 'member-1');
   });
 });
+
+describe('ValidationService eligibility keeps legacy APPROVED', () => {
+  it('counts APPROVED and INVESTIDO enrollments as approved', async () => {
+    const prisma = {
+      system_config: { findUnique: jest.fn().mockResolvedValue(null) },
+      enrollments: {
+        findMany: jest.fn().mockResolvedValue([
+          { enrollment_id: 1, investiture_status: 'APPROVED' },
+          { enrollment_id: 2, investiture_status: 'INVESTIDO' },
+          { enrollment_id: 3, investiture_status: 'IN_PROGRESS' },
+        ]),
+      },
+      users_honors: {
+        aggregate: jest
+          .fn()
+          .mockResolvedValue({ _count: { user_honor_id: 0 } }),
+      },
+    };
+    const service = new ValidationService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      service.checkInvestmentEligibility('u1'),
+    ).resolves.toMatchObject({
+      detail: { classes: { total: 3, approved: 2 } },
+    });
+  });
+});
