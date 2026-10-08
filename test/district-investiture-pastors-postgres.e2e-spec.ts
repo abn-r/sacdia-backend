@@ -57,6 +57,7 @@ function scrub(error: unknown): Error {
 function snapshot(options: {
   role: string;
   localFieldId?: number;
+  unionId?: number;
 }): AuthorizationSnapshot {
   return {
     grants: {
@@ -69,6 +70,9 @@ function snapshot(options: {
       permissions: [],
       scope: {
         global: {
+          ...(options.unionId === undefined
+            ? {}
+            : { union: { id: options.unionId, name: 'Unión' } }),
           ...(options.localFieldId === undefined
             ? {}
             : {
@@ -91,6 +95,7 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
   let service: DistrictInvestiturePastorService;
   let districtId: number;
   let localFieldId: number;
+  let unionId: number;
 
   beforeAll(async () => {
     ensureTestDatabaseUrl();
@@ -144,9 +149,9 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
           [PASTOR_C, 'pastor-c@p3.test', 'Carlos', null],
         ] as const) {
           await client.query(
-            `INSERT INTO users (user_id, email, name, paternal_last_name, active)
-             VALUES ($1, $2, $3, $4, true)`,
-            [userId, email, name, paternal],
+            `INSERT INTO users (user_id, email, name, paternal_last_name, active, local_field_id)
+             VALUES ($1, $2, $3, $4, true, $5)`,
+            [userId, email, name, paternal, field.rows[0].local_field_id],
           );
           await client.query(
             `INSERT INTO users_roles (user_id, role_id, active)
@@ -157,10 +162,12 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
         return {
           districtId: district.rows[0].districlub_type_id,
           localFieldId: field.rows[0].local_field_id,
+          unionId: union.rows[0].union_id,
         };
       });
       districtId = seeded.districtId;
       localFieldId = seeded.localFieldId;
+      unionId = seeded.unionId;
       pool = new pg.Pool({ connectionString: url, max: 6 });
       prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
       service = new DistrictInvestiturePastorService(prisma as never);
@@ -326,7 +333,12 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
     async function seedUser(
       id: string,
       name: string,
-      options: { active?: boolean; role?: 'active' | 'inactive' | 'none' } = {},
+      options: {
+        active?: boolean;
+        role?: 'active' | 'inactive' | 'none';
+        /** `undefined` seeds the suite's own Field; `null` leaves it unset. */
+        localFieldId?: number | null;
+      } = {},
     ): Promise<void> {
       await prisma.users.create({
         data: {
@@ -334,6 +346,10 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
           email: `${name.toLowerCase().replace(/\s+/g, '.')}.${id.slice(-4)}@cand.test`,
           name,
           active: options.active ?? true,
+          local_field_id:
+            options.localFieldId === undefined
+              ? localFieldId
+              : options.localFieldId,
         },
       });
       const role = options.role ?? 'active';
@@ -349,6 +365,9 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
     }
 
     afterEach(async () => {
+      await prisma.district_investiture_pastors.deleteMany({
+        where: { users: { email: { endsWith: '@cand.test' } } },
+      });
       const ids = await prisma.users.findMany({
         where: { email: { endsWith: '@cand.test' } },
         select: { user_id: true },
@@ -424,6 +443,121 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
           (row) => row.user_id,
         ),
       ).toEqual([MIXED_CASE]);
+    });
+
+    describe('R5 territory scope', () => {
+      const SAME_FIELD = 'cccc0000-0000-4000-8000-000000000001';
+      const SIBLING_FIELD = 'cccc0000-0000-4000-8000-000000000002';
+      const OTHER_UNION = 'cccc0000-0000-4000-8000-000000000003';
+      const NO_FIELD = 'cccc0000-0000-4000-8000-000000000004';
+      let siblingFieldId = 0;
+      let otherFieldId = 0;
+
+      beforeEach(async () => {
+        const seeded = await withClient(url, async (client) => {
+          const country = await client.query<{ country_id: number }>(
+            `SELECT country_id FROM countries WHERE abbreviation = 'P3'`,
+          );
+          const division = await client.query<{ division_id: number }>(
+            `SELECT division_id FROM divisions WHERE code = 'P3'`,
+          );
+          const otherUnion = await client.query<{ union_id: number }>(
+            `INSERT INTO unions (name, abbreviation, active, country_id, division_id)
+             VALUES ('R5 Union', 'R5U', true, $1, $2)
+             RETURNING union_id`,
+            [country.rows[0].country_id, division.rows[0].division_id],
+          );
+          const sibling = await client.query<{ local_field_id: number }>(
+            `INSERT INTO local_fields (name, abbreviation, active, union_id)
+             VALUES ('R5 Campo hermano', 'R5H', true, $1)
+             RETURNING local_field_id`,
+            [unionId],
+          );
+          const other = await client.query<{ local_field_id: number }>(
+            `INSERT INTO local_fields (name, abbreviation, active, union_id)
+             VALUES ('R5 Campo ajeno', 'R5A', true, $1)
+             RETURNING local_field_id`,
+            [otherUnion.rows[0].union_id],
+          );
+          return {
+            sibling: sibling.rows[0].local_field_id,
+            other: other.rows[0].local_field_id,
+          };
+        });
+        siblingFieldId = seeded.sibling;
+        otherFieldId = seeded.other;
+        await seedUser(SAME_FIELD, 'Alcance Propio');
+        await seedUser(SIBLING_FIELD, 'Alcance Hermano', {
+          localFieldId: siblingFieldId,
+        });
+        await seedUser(OTHER_UNION, 'Alcance Ajeno', {
+          localFieldId: otherFieldId,
+        });
+        await seedUser(NO_FIELD, 'Alcance Sinfield', { localFieldId: null });
+      });
+
+      afterEach(async () => {
+        await prisma.users.updateMany({
+          where: { email: { endsWith: '@cand.test' } },
+          data: { local_field_id: null },
+        });
+        await prisma.local_fields.deleteMany({
+          where: { abbreviation: { in: ['R5H', 'R5A'] } },
+        });
+        await prisma.unions.deleteMany({ where: { abbreviation: 'R5U' } });
+      });
+
+      const ids = (rows: Array<{ user_id: string }>) =>
+        rows.map((row) => row.user_id).sort();
+
+      it('shows a director-lf only the pastors of its own Field', async () => {
+        for (const role of ['director-lf', 'assistant-lf']) {
+          const found = await service.searchCandidates(
+            snapshot({ role, localFieldId }),
+            'alcance',
+          );
+          expect(ids(found)).toEqual([SAME_FIELD]);
+        }
+        const sibling = await service.searchCandidates(
+          snapshot({ role: 'director-lf', localFieldId: siblingFieldId }),
+          'alcance',
+        );
+        expect(ids(sibling)).toEqual([SIBLING_FIELD]);
+      });
+
+      it('shows a director-union the pastors of the Fields of its union only', async () => {
+        for (const role of ['director-union', 'assistant-union']) {
+          const found = await service.searchCandidates(
+            snapshot({ role, unionId }),
+            'alcance',
+          );
+          expect(ids(found)).toEqual([SAME_FIELD, SIBLING_FIELD].sort());
+        }
+      });
+
+      it('never returns a pastor without a Field, even when the name matches', async () => {
+        const union = await service.searchCandidates(
+          snapshot({ role: 'director-union', unionId }),
+          'sinfield',
+        );
+        const field = await service.searchCandidates(
+          snapshot({ role: 'director-lf', localFieldId }),
+          'sinfield',
+        );
+        expect(union).toEqual([]);
+        expect(field).toEqual([]);
+      });
+
+      it('leaves the assign endpoint rules untouched', async () => {
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-lf', localFieldId }),
+            districtId,
+            OTHER_UNION,
+            PASTOR_C,
+          ),
+        ).resolves.toMatchObject({ user_id: OTHER_UNION });
+      });
     });
 
     it('rejects roles that cannot assign', async () => {

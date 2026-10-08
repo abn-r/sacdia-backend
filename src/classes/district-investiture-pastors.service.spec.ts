@@ -603,13 +603,48 @@ describe('DistrictInvestiturePastorService', () => {
       );
     });
 
+    it.each([
+      ['director-lf', { localFieldId: FIELD_ID }],
+      ['assistant-lf', { localFieldId: FIELD_ID }],
+    ])(
+      'R5 limits %s to pastors whose local field is its own',
+      async (role, scope) => {
+        await service.searchCandidates(snapshot({ role, ...scope }), 'ana');
+        const and = users.findMany.mock.calls[0][0].where.AND;
+        expect(and).toContainEqual({ local_field_id: FIELD_ID });
+        expect(JSON.stringify(and)).not.toContain('union_id');
+      },
+    );
+
+    it.each(['director-union', 'assistant-union'])(
+      'R5 limits %s to pastors in the local fields of its union',
+      async (role) => {
+        await service.searchCandidates(snapshot({ role, unionId: 2 }), 'ana');
+        const and = users.findMany.mock.calls[0][0].where.AND;
+        expect(and).toContainEqual({ local_fields: { union_id: 2 } });
+        expect(and).not.toContainEqual({ local_field_id: expect.anything() });
+      },
+    );
+
+    it.each(['a b', 'ana b', 'a bc', 'ab c d'])(
+      'R5 never scans users when a token of "%s" has fewer than 2 characters',
+      async (query) => {
+        const found = await service.searchCandidates(
+          snapshot({ role: 'director-lf', localFieldId: FIELD_ID }),
+          query,
+        );
+        expect(found).toEqual([]);
+        expect(users.findMany).not.toHaveBeenCalled();
+      },
+    );
+
     it('escapes LIKE wildcards so "%" and "_" are plain text', async () => {
       await service.searchCandidates(
         snapshot({ role: 'director-lf', localFieldId: FIELD_ID }),
         'a_%\\b',
       );
       const args = users.findMany.mock.calls[0][0];
-      expect(args.where.AND[1].OR[0]).toEqual({
+      expect(args.where.AND[2].OR[0]).toEqual({
         name: { contains: 'a\\_\\%\\\\b', mode: 'insensitive' },
       });
     });

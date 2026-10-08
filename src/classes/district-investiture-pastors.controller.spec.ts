@@ -212,6 +212,9 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
     '/investiture-pastor-candidates',
     '/investiture-pastor-candidates?q=ab',
     '/investiture-pastor-candidates?q=%20a%20',
+    '/investiture-pastor-candidates?q=a%20b',
+    '/investiture-pastor-candidates?q=ana%20b',
+    '/investiture-pastor-candidates?q=a%20bc',
   ])('rejects %s with 400 before reading users', async (url) => {
     userSearch.mockClear();
     const response = await request(app.getHttpServer()).get(url);

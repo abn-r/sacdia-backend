@@ -16,7 +16,10 @@ import {
   PASTOR_ELIGIBLE_USER_WHERE,
   pastorEligibility,
 } from '../investiture-requests/investiture-pastor-eligibility';
-import { PASTOR_CANDIDATE_QUERY_MIN } from './dto/search-pastor-candidates.dto';
+import {
+  PASTOR_CANDIDATE_QUERY_MIN,
+  PASTOR_CANDIDATE_TOKEN_MIN,
+} from './dto/search-pastor-candidates.dto';
 
 const DEFAULT_SLOTS = 2;
 const QUOTA_ID = 1;
@@ -270,20 +273,25 @@ export class DistrictInvestiturePastorService {
   /**
    * Candidatos a pastor para quien puede asignar (director y asistente de
    * Campo o de unión). Usa la misma regla de elegibilidad que decide quién
-   * puede autorizar: cuenta activa y rol global `pastor`.
+   * puede autorizar: cuenta activa y rol global `pastor`. Solo devuelve
+   * pastores del territorio de quien busca (ver `candidateScopeWhere`).
    */
   async searchCandidates(
     authorization: AuthorizationSnapshot,
     query: string,
   ): Promise<PastorCandidateView[]> {
-    if (!this.access(authorization, 'assign')) {
+    const actor = this.access(authorization, 'assign');
+    if (!actor) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
     const tokens = query
       .trim()
       .split(/\s+/)
       .filter((token) => token.length > 0);
-    if (tokens.join(' ').length < PASTOR_CANDIDATE_QUERY_MIN) {
+    if (
+      tokens.join(' ').length < PASTOR_CANDIDATE_QUERY_MIN ||
+      tokens.some((token) => token.length < PASTOR_CANDIDATE_TOKEN_MIN)
+    ) {
       return [];
     }
     const patterns = tokens.map(escapeLikeWildcards);
@@ -291,6 +299,7 @@ export class DistrictInvestiturePastorService {
       where: {
         AND: [
           PASTOR_ELIGIBLE_USER_WHERE,
+          this.candidateScopeWhere(actor),
           ...patterns.map((token): Prisma.usersWhereInput => ({
             OR: [
               { name: { contains: token, mode: 'insensitive' } },
@@ -320,6 +329,21 @@ export class DistrictInvestiturePastorService {
       user_name: displayName(row),
       email: row.email,
     }));
+  }
+
+  /**
+   * Quien busca solo ve pastores de su territorio: su Campo, o los Campos de
+   * su unión. Es la misma frontera que `loadDistrict` aplica al asignar. Un
+   * pastor sin Campo (`users.local_field_id` nulo) queda fuera.
+   */
+  private candidateScopeWhere(actor: AssignerAccess): Prisma.usersWhereInput {
+    if (actor.kind === 'field') {
+      return { local_field_id: actor.localFieldId };
+    }
+    if (actor.kind === 'union') {
+      return { local_fields: { union_id: actor.unionId } };
+    }
+    throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
 
   async authorizersForClub(
