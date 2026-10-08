@@ -29,6 +29,11 @@ overrides:
   proxy-addr: '>=2.0.8 <3'
   source-map-js: '>=1.2.2 <2'
 
+patchedDependencies:
+  pdf-lib@1.17.1:
+    hash: b5c79dca333c6b9a599e84ca8c8b589919947847ef4f35109ba4ced52a78a387
+    path: patches/pdf-lib@1.17.1.patch
+
 importers:
 
   .:
@@ -154,8 +159,8 @@ importers:
         specifier: ^4.0.1
         version: 4.0.1
       pdf-lib:
-        specifier: ^1.17.1
-        version: 1.17.1
+        specifier: 1.17.1
+        version: 1.17.1(patch_hash=b5c79dca333c6b9a599e84ca8c8b589919947847ef4f35109ba4ced52a78a387)
       pdfkit:
         specifier: ^0.19.1
         version: 0.19.1
@@ -11521,7 +11526,7 @@ snapshots:
 
   pause@0.0.1: {}
 
-  pdf-lib@1.17.1:
+  pdf-lib@1.17.1(patch_hash=b5c79dca333c6b9a599e84ca8c8b589919947847ef4f35109ba4ced52a78a387):
     dependencies:
       '@pdf-lib/standard-fonts': 1.0.0
       '@pdf-lib/upng': 1.0.1
