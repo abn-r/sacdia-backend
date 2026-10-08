@@ -12,6 +12,7 @@ import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { closePendingInvestitureAuthorizations } from '../investiture-requests/investiture-year-close';
 
 const BOARD_ROLE_NAMES = [
   'director',
@@ -75,6 +76,7 @@ export interface YearCutSummary {
   returnedNotEnrolled: number;
   typeGraduatesEnrolled: number;
   usersInvalidated: number;
+  investiturePendingClosed: number;
 }
 
 const EMPTY_SUMMARY: YearCutSummary = {
@@ -83,6 +85,7 @@ const EMPTY_SUMMARY: YearCutSummary = {
   returnedNotEnrolled: 0,
   typeGraduatesEnrolled: 0,
   usersInvalidated: 0,
+  investiturePendingClosed: 0,
 };
 
 /**
@@ -116,10 +119,19 @@ export class YearCutService {
     const currentYear = await this.ecclesiasticalYear.getCurrentYear(now);
     const avCqTypeIds = await this.loadAvCqTypeIds();
     const clubIds = await this.collectClubIds(currentYear);
+    const swept = await this.sweepEndedInvestiturePending(currentYear);
 
     if (clubIds.length === 0) {
-      this.logger.log('YearCut: nothing to process — already applied or no data.');
-      return { ...EMPTY_SUMMARY };
+      if (swept === 0) {
+        this.logger.log(
+          'YearCut: nothing to process — already applied or no data.',
+        );
+      } else {
+        this.logger.log(
+          `YearCut: closed ${swept} investiture authorizations of ended years.`,
+        );
+      }
+      return { ...EMPTY_SUMMARY, investiturePendingClosed: swept };
     }
 
     const totals: YearCutSummary = { ...EMPTY_SUMMARY };
@@ -131,11 +143,13 @@ export class YearCutService {
       totals.activated += part.activated;
       totals.returnedNotEnrolled += part.returnedNotEnrolled;
       totals.typeGraduatesEnrolled += part.typeGraduatesEnrolled;
+      totals.investiturePendingClosed += part.investiturePendingClosed;
       for (const userId of part.affectedUserIds) {
         allAffected.add(userId);
       }
       await this.invalidateQuietly(part.affectedUserIds);
     }
+    totals.investiturePendingClosed += swept;
 
     totals.usersInvalidated = allAffected.size;
 
@@ -144,6 +158,7 @@ export class YearCutService {
         `ended=${totals.ended}, activated=${totals.activated}, ` +
         `returnedNotEnrolled=${totals.returnedNotEnrolled}, ` +
         `typeGraduatesEnrolled=${totals.typeGraduatesEnrolled}, ` +
+        `investiturePendingClosed=${totals.investiturePendingClosed}, ` +
         `usersInvalidated=${totals.usersInvalidated}`,
     );
 
@@ -164,9 +179,7 @@ export class YearCutService {
       ecclesiastical_year: {
         end_date: { lt: currentYear.start_date },
       },
-      ...(clubId != null
-        ? { club_sections: { main_club_id: clubId } }
-        : {}),
+      ...(clubId != null ? { club_sections: { main_club_id: clubId } } : {}),
     };
   }
 
@@ -210,7 +223,65 @@ export class YearCutService {
       clubIds.add(row.club_id);
     }
 
+    const endedYears = await this.prisma.ecclesiastical_years.findMany({
+      where: { end_date: { lt: currentYear.start_date } },
+      select: { year_id: true },
+    });
+    if (endedYears.length > 0) {
+      const pendingInvestiture =
+        await this.prisma.investiture_authorization_people.findMany({
+          where: {
+            status: 'PENDING',
+            request: {
+              ecclesiastical_year_id: {
+                in: endedYears.map((year) => year.year_id),
+              },
+            },
+          },
+          select: {
+            request: { select: { club_section_id: true } },
+          },
+        });
+      const sectionIds = [
+        ...new Set(
+          pendingInvestiture.map((person) => person.request.club_section_id),
+        ),
+      ];
+      if (sectionIds.length > 0) {
+        const sections = await this.prisma.club_sections.findMany({
+          where: { club_section_id: { in: sectionIds } },
+          select: { main_club_id: true },
+        });
+        for (const section of sections) {
+          if (section.main_club_id != null) {
+            clubIds.add(section.main_club_id);
+          }
+        }
+      }
+    }
+
     return [...clubIds].sort((a, b) => a - b);
+  }
+
+  private async sweepEndedInvestiturePending(
+    currentYear: CurrentYear,
+  ): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const endedYears = await tx.ecclesiastical_years.findMany({
+        where: { end_date: { lt: currentYear.start_date } },
+        select: { year_id: true },
+        orderBy: { year_id: 'asc' },
+      });
+      const yearIds = endedYears.map((year) => year.year_id);
+      if (yearIds.length === 0) {
+        return 0;
+      }
+      return closePendingInvestitureAuthorizations(
+        tx,
+        { ecclesiastical_year_id: { in: yearIds } },
+        yearIds,
+      );
+    });
   }
 
   private async cutClub(
@@ -224,6 +295,11 @@ export class YearCutService {
     const result = await this.prisma.$transaction(
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(${clubId}, ${currentYear.year_id})`;
+        const investiturePendingClosed = await this.closeEndedInvestiture(
+          tx,
+          clubId,
+          currentYear,
+        );
 
         const existing = await tx.club_year_transitions.findUnique({
           where: {
@@ -242,6 +318,7 @@ export class YearCutService {
             returnedNotEnrolled: 0,
             typeGraduatesEnrolled: 0,
             affectedUserIds: [] as string[],
+            investiturePendingClosed,
           };
         }
 
@@ -302,7 +379,9 @@ export class YearCutService {
         });
         await this.closeCounselorsAtOutgoingEnd(tx, counselors);
 
-        const affectedUserIds = new Set<string>(expired.map((row) => row.user_id));
+        const affectedUserIds = new Set<string>(
+          expired.map((row) => row.user_id),
+        );
         const activated = await this.activateScheduledPlans(
           tx,
           clubId,
@@ -357,6 +436,7 @@ export class YearCutService {
           returnedNotEnrolled,
           typeGraduatesEnrolled: jumpedUserIds.size,
           affectedUserIds: Array.from(affectedUserIds),
+          investiturePendingClosed,
         };
       },
       { timeout: 60_000 },
@@ -440,6 +520,37 @@ export class YearCutService {
     }
   }
 
+  private async closeEndedInvestiture(
+    tx: DbClient,
+    clubId: number,
+    currentYear: CurrentYear,
+  ): Promise<number> {
+    const endedYears = await tx.ecclesiastical_years.findMany({
+      where: { end_date: { lt: currentYear.start_date } },
+      select: { year_id: true },
+    });
+    const sections = await tx.club_sections.findMany({
+      where: { main_club_id: clubId },
+      select: { club_section_id: true },
+    });
+    if (endedYears.length === 0 || sections.length === 0) {
+      return 0;
+    }
+    const yearIds = endedYears
+      .map((year) => year.year_id)
+      .sort((left, right) => left - right);
+    return closePendingInvestitureAuthorizations(
+      tx,
+      {
+        ecclesiastical_year_id: { in: yearIds },
+        club_section_id: {
+          in: sections.map((section) => section.club_section_id),
+        },
+      },
+      yearIds,
+    );
+  }
+
   private outgoingCloseDate(row: {
     end_date: Date | null;
     ecclesiastical_year: { end_date: Date };
@@ -451,11 +562,13 @@ export class YearCutService {
     return outgoingEnd;
   }
 
-  private groupIdsByCloseDate<T extends {
-    assignment_id: string;
-    end_date: Date | null;
-    ecclesiastical_year: { end_date: Date };
-  }>(rows: T[]): Map<number, string[]> {
+  private groupIdsByCloseDate<
+    T extends {
+      assignment_id: string;
+      end_date: Date | null;
+      ecclesiastical_year: { end_date: Date };
+    },
+  >(rows: T[]): Map<number, string[]> {
     const groups = new Map<number, string[]>();
     for (const row of rows) {
       const key = this.outgoingCloseDate(row).getTime();
@@ -622,8 +735,13 @@ export class YearCutService {
     for (const assignment of expired) {
       if (assignment.club_section_id == null) continue;
       const roleName = assignment.roles?.role_name?.toLowerCase() ?? '';
-      const isBoard = (BOARD_ROLE_NAMES as readonly string[]).includes(roleName);
-      if (isBoard && this.isAvCqSection(assignment.club_sections, avCqTypeIds)) {
+      const isBoard = (BOARD_ROLE_NAMES as readonly string[]).includes(
+        roleName,
+      );
+      if (
+        isBoard &&
+        this.isAvCqSection(assignment.club_sections, avCqTypeIds)
+      ) {
         continue;
       }
 
@@ -781,13 +899,17 @@ export class YearCutService {
     if (typeName) {
       return (AV_CQ_TYPE_NAMES as readonly string[]).includes(typeName);
     }
-    return section?.club_type_id != null && avCqTypeIds.has(section.club_type_id);
+    return (
+      section?.club_type_id != null && avCqTypeIds.has(section.club_type_id)
+    );
   }
 
   private async invalidateQuietly(userIds: string[]): Promise<void> {
     for (const userId of userIds) {
       try {
-        await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+        await this.authorizationContext.invalidateUserAuthorizationCache(
+          userId,
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(

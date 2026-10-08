@@ -25,6 +25,7 @@ describe('EvidenceReviewService', () => {
     $queryRawUnsafe: jest.fn(),
     $transaction: jest.fn(),
     investiture_authorization_people: { findFirst: jest.fn() },
+    enrollments: { findUnique: jest.fn() },
   };
 
   const mockHonorWorkflow = {
@@ -864,5 +865,112 @@ describe('EvidenceReviewService', () => {
     ).rejects.toMatchObject({
       code: ErrorCode.EVIDENCE_REVIEW_RECORD_NOT_PENDING,
     });
+  });
+
+  describe('BC-11 / BCR-2 guarda de estado en la transaccion de escritura', () => {
+    const submittedRecord = {
+      section_progress_id: 42,
+      status: 'SUBMITTED',
+      user_id: 'user-1',
+      submitted_by_id: 'user-1',
+      enrollment_id: 901,
+    };
+
+    function stubTransaction(enrollment: {
+      investiture_status: string;
+      locked_for_validation: boolean;
+    }) {
+      const tx = {
+        $executeRaw: jest.fn().mockResolvedValue(0),
+        investiture_authorization_people: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        enrollments: {
+          findUnique: jest.fn().mockResolvedValue(enrollment),
+        },
+        class_section_progress: {
+          update: jest.fn().mockResolvedValue({
+            section_progress_id: 42,
+            status: 'WRITTEN',
+          }),
+        },
+        validation_logs: { create: jest.fn().mockResolvedValue({}) },
+      };
+      // Lectura fuera de la transaccion: solo la usaria una guarda previa.
+      mockPrisma.enrollments.findUnique.mockResolvedValue(enrollment);
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (store: unknown) => unknown) => fn(tx),
+      );
+      return tx;
+    }
+
+    beforeEach(() => {
+      mockPrisma.class_section_progress.findUnique.mockResolvedValue(
+        submittedRecord,
+      );
+    });
+
+    it.each(['INVESTIDO', 'EXPIRED'])(
+      'does not approve or reject class evidence on %s and writes nothing',
+      async (investiture_status) => {
+        const tx = stubTransaction({
+          investiture_status,
+          locked_for_validation: false,
+        });
+
+        await expect(
+          service.approve('class', 42, 'reviewer-1', {}),
+        ).rejects.toMatchObject({ code: ErrorCode.CLASS_PROGRESS_LOCKED });
+        await expect(
+          service.reject('class', 42, 'reviewer-1', { reason: 'No' }),
+        ).rejects.toMatchObject({ code: ErrorCode.CLASS_PROGRESS_LOCKED });
+
+        expect(tx.class_section_progress.update).not.toHaveBeenCalled();
+        expect(tx.validation_logs.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('reads the enrollment status inside the transaction, after the enrollment lock', async () => {
+      const tx = stubTransaction({
+        investiture_status: 'INVESTIDO',
+        locked_for_validation: false,
+      });
+
+      await expect(
+        service.approve('class', 42, 'reviewer-1', {}),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_PROGRESS_LOCKED });
+
+      expect(mockPrisma.enrollments.findUnique).not.toHaveBeenCalled();
+      expect(tx.enrollments.findUnique).toHaveBeenCalledTimes(1);
+      expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.enrollments.findUnique.mock.invocationCallOrder[0],
+      );
+    });
+
+    it.each([
+      ['SUBMITTED_FOR_VALIDATION', false],
+      ['CLUB_APPROVED', false],
+      ['COORDINATOR_APPROVED', false],
+      ['FIELD_APPROVED', false],
+      ['IN_PROGRESS', true],
+    ])(
+      'keeps 113d8ba behavior: approves and rejects on legacy state %s (locked_for_validation=%s)',
+      async (investiture_status, locked_for_validation) => {
+        const tx = stubTransaction({
+          investiture_status,
+          locked_for_validation,
+        });
+
+        await expect(
+          service.approve('class', 42, 'reviewer-1', {}),
+        ).resolves.toMatchObject({ id: 42, type: 'class' });
+        await expect(
+          service.reject('class', 42, 'reviewer-1', { reason: 'No' }),
+        ).resolves.toMatchObject({ id: 42, type: 'class' });
+
+        expect(tx.class_section_progress.update).toHaveBeenCalledTimes(2);
+        expect(tx.validation_logs.create).toHaveBeenCalledTimes(2);
+      },
+    );
   });
 });

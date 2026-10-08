@@ -6,6 +6,7 @@ import {
   EMAIL_JOB_EMAIL_VERIFICATION,
   EMAIL_JOB_PASSWORD_RESET,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
+  EMAIL_JOB_INVESTITURE_NOTICE,
 } from './email.queue';
 
 const mockEnqueue = jest.fn().mockResolvedValue(undefined);
@@ -153,6 +154,50 @@ describe('EmailService', () => {
         }),
       );
     });
+  });
+
+  describe('sendInvestitureNotice', () => {
+    it('enqueues one required job for the dispatch id', async () => {
+      await service.sendInvestitureNotice({
+        dispatchId: '11111111-1111-4111-8111-111111111111',
+      });
+
+      expect(mockEnqueue).toHaveBeenCalledWith(
+        EMAIL_JOB_INVESTITURE_NOTICE,
+        { dispatchId: '11111111-1111-4111-8111-111111111111' },
+        {
+          required: true,
+          jobId: 'investiture-mail-11111111-1111-4111-8111-111111111111',
+        },
+      );
+    });
+  });
+
+  describe('BCR33-N4 sendInvestitureNotice job attempts', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+
+    it('hands a REMINDER to the queue as a single provider attempt', async () => {
+      await service.sendInvestitureNotice({ dispatchId: id, kind: 'REMINDER' });
+
+      expect(mockEnqueue).toHaveBeenCalledWith(
+        EMAIL_JOB_INVESTITURE_NOTICE,
+        { dispatchId: id },
+        { required: true, jobId: `investiture-mail-${id}`, attempts: 1 },
+      );
+    });
+
+    it.each(['PRESENTATION', 'RESULT'] as const)(
+      'keeps the default queue retries for %s',
+      async (kind) => {
+        await service.sendInvestitureNotice({ dispatchId: id, kind });
+
+        expect(mockEnqueue).toHaveBeenCalledWith(
+          EMAIL_JOB_INVESTITURE_NOTICE,
+          { dispatchId: id },
+          { required: true, jobId: `investiture-mail-${id}` },
+        );
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------

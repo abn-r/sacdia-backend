@@ -1,6 +1,7 @@
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
+import { lockInvestitureAuthorizationYear } from '../investiture-requests/investiture-request-lock';
 import {
   CertificateImportYearRow,
   civilDateFromDbDate,
@@ -138,6 +139,50 @@ export function isCertificateHistoricalGateError(error: unknown): boolean {
   );
 }
 
+export type CertificateYearLockOptions = {
+  /** El llamador ya tomó estos años en orden ascendente. */
+  skipYearAdvisory?: boolean;
+};
+
+export async function ecclesiasticalYearIdsCovering(
+  db: HistoricalAgeDb,
+  dates: ReadonlyArray<Date | string | null | undefined>,
+): Promise<number[]> {
+  const yearIds = new Set<number>();
+  for (const completedAt of dates) {
+    const civilDate = civilDateFromDbDate(completedAt);
+    if (!civilDate) continue;
+    const rows = await db.ecclesiastical_years.findMany({
+      where: {
+        start_date: { lte: utcCivilDate(civilDate) },
+        end_date: { gte: utcCivilDate(civilDate) },
+      },
+      select: {
+        year_id: true,
+        start_date: true,
+        end_date: true,
+        active: true,
+      },
+    });
+    for (const row of rows) yearIds.add(row.year_id);
+  }
+  return [...yearIds].sort((left, right) => left - right);
+}
+
+export async function lockInvestitureYearsAscending(
+  db: HistoricalAgeDb,
+  yearIds: readonly number[],
+): Promise<void> {
+  const executeRaw = (
+    db as { $executeRaw?: (...args: unknown[]) => Promise<unknown> }
+  ).$executeRaw;
+  if (typeof executeRaw !== 'function') return;
+  const sorted = [...new Set(yearIds)].sort((left, right) => left - right);
+  for (const yearId of sorted) {
+    await lockInvestitureAuthorizationYear(db as never, yearId);
+  }
+}
+
 export async function assertClassCertificateHistoricalAge(
   db: HistoricalAgeDb,
   params: {
@@ -145,22 +190,29 @@ export async function assertClassCertificateHistoricalAge(
     classId: number;
     completedAt: Date | string | null | undefined;
   },
+  options?: CertificateYearLockOptions,
 ): Promise<HistoricalAgeSuccess> {
   const civilDate = civilDateFromDbDate(params.completedAt);
+  if (!options?.skipYearAdvisory) {
+    await lockInvestitureYearsAscending(
+      db,
+      await ecclesiasticalYearIdsCovering(db, [params.completedAt]),
+    );
+  }
   if (typeof db.$queryRawUnsafe === 'function') {
     await db.$queryRawUnsafe(
-      'SELECT user_id FROM users WHERE user_id = $1::uuid FOR UPDATE',
+      'SELECT user_id FROM users WHERE user_id = $1::uuid FOR SHARE',
       params.userId,
     );
     await db.$queryRawUnsafe(
-      'SELECT class_id FROM classes WHERE class_id = $1 FOR UPDATE',
+      'SELECT class_id FROM classes WHERE class_id = $1 FOR SHARE',
       params.classId,
     );
     if (civilDate) {
       await db.$queryRawUnsafe(
         `SELECT year_id FROM ecclesiastical_years
          WHERE start_date <= $1::date AND end_date >= $1::date
-         FOR UPDATE`,
+         FOR SHARE`,
         civilDate,
       );
     }

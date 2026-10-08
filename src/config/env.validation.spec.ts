@@ -42,6 +42,42 @@ describe('envValidationSchema email configuration', () => {
       RESEND_FROM_EMAIL: 'SACDIA <contacto@sacdia.com>',
       RESEND_REPLY_TO: 'contacto@sacdia.com',
       REDIS_URL: 'rediss://default:test-password@redis.example.com:6379',
+      ADMIN_PANEL_URL: 'https://admin.example.com',
+    });
+
+    expect(error).toBeUndefined();
+  });
+
+  it('allows global email without the admin panel URL while investiture email is off', () => {
+    const { error } = validate({
+      EMAIL_ENABLED: 'true',
+      INVESTITURE_EMAIL_ENABLED: 'false',
+      RESEND_API_KEY: 're_test_backend_key',
+      RESEND_FROM_EMAIL: 'SACDIA <contacto@sacdia.com>',
+      REDIS_URL: 'rediss://default:test-password@redis.example.com:6379',
+    });
+
+    expect(error).toBeUndefined();
+  });
+
+  it('requires the admin panel URL only when investiture email is on', () => {
+    const { error } = validate({
+      EMAIL_ENABLED: 'true',
+      INVESTITURE_EMAIL_ENABLED: 'true',
+      RESEND_API_KEY: 're_test_backend_key',
+      RESEND_FROM_EMAIL: 'SACDIA <contacto@sacdia.com>',
+      REDIS_URL: 'rediss://default:test-password@redis.example.com:6379',
+    });
+
+    expect(error?.message).toContain('ADMIN_PANEL_URL');
+  });
+
+  it('does not require the admin panel URL for global email alone', () => {
+    const { error } = validate({
+      EMAIL_ENABLED: 'true',
+      RESEND_API_KEY: 're_test_backend_key',
+      RESEND_FROM_EMAIL: 'SACDIA <contacto@sacdia.com>',
+      REDIS_URL: 'rediss://default:test-password@redis.example.com:6379',
     });
 
     expect(error).toBeUndefined();

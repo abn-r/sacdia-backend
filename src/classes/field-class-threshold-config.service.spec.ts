@@ -310,4 +310,22 @@ describe('FieldClassThresholdConfigService', () => {
       service.update(actor, FIELD_ID, YEAR_ID, 100, 'user-1'),
     ).resolves.toMatchObject({ minimum_percent: 100 });
   });
+
+  it('BC-12 rejects an inactive year even when today is inside its dates', async () => {
+    prisma.ecclesiastical_years.findUnique.mockResolvedValue({
+      ...year,
+      active: false,
+    });
+    await expect(
+      service.update(
+        snapshot({ role: 'super-admin' }),
+        FIELD_ID,
+        YEAR_ID,
+        90,
+        'root-1',
+        new Date('2026-06-15T18:00:00.000Z'),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.CLASS_THRESHOLD_EDIT_CLOSED });
+    expect(thresholds.upsert).not.toHaveBeenCalled();
+  });
 });

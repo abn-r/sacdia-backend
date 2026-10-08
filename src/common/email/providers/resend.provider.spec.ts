@@ -45,14 +45,17 @@ describe('ResendEmailProvider', () => {
     await provider.send(payload);
 
     expect(Resend).toHaveBeenCalledWith('re_test_backend_key');
-    expect(mockSend).toHaveBeenCalledWith({
-      from: 'SACDIA <contacto@sacdia.com>',
-      to: 'recipient@example.com',
-      reply_to: 'contacto@sacdia.com',
-      subject: 'Test subject',
-      html: '<p>Test</p>',
-      text: 'Test',
-    });
+    expect(mockSend).toHaveBeenCalledWith(
+      {
+        from: 'SACDIA <contacto@sacdia.com>',
+        to: 'recipient@example.com',
+        reply_to: 'contacto@sacdia.com',
+        subject: 'Test subject',
+        html: '<p>Test</p>',
+        text: 'Test',
+      },
+      undefined,
+    );
   });
 
   it('honors sender and Reply-To overrides from the payload', async () => {
@@ -72,6 +75,25 @@ describe('ResendEmailProvider', () => {
         from: 'Soporte SACDIA <soporte@sacdia.com>',
         reply_to: 'ayuda@sacdia.com',
       }),
+      undefined,
+    );
+  });
+
+  it('forwards the idempotency key to the Resend SDK', async () => {
+    const provider = createProvider({
+      RESEND_FROM_EMAIL: 'SACDIA <contacto@sacdia.com>',
+    });
+
+    await provider.send({
+      ...payload,
+      idempotencyKey: 'investiture-mail-dispatch-1',
+    });
+
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'recipient@example.com',
+      }),
+      { idempotencyKey: 'investiture-mail-dispatch-1' },
     );
   });
 

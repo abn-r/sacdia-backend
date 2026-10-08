@@ -1,3 +1,5 @@
+import { Job } from 'bullmq';
+import { AchievementsService } from '../achievements/achievements.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import type {
   AuthorizationSnapshot,
@@ -7,6 +9,7 @@ import {
   INVESTITURE_SYSTEM_REJECTION_TEXT,
   InvestitureAuthorizationRequestService,
 } from './investiture-authorization-requests.service';
+import { closePendingInvestitureAuthorizations } from './investiture-year-close';
 
 const SECTION_ID = 4;
 const YEAR_ID = 2026;
@@ -22,6 +25,7 @@ type EnrollmentSeed = {
   class_id: number;
   ecclesiastical_year_id: number;
   investiture_status: string;
+  locked_for_validation: boolean;
   record_kind: string;
   cross_type_enrollment: boolean;
   active: boolean;
@@ -30,6 +34,7 @@ type EnrollmentSeed = {
     max_duration_years: number;
     club_type_id: number;
     club_types: { name: string } | null;
+    asset_code?: string | null;
   } | null;
   ecclesiastical_year: { start_date: Date } | null;
 };
@@ -48,6 +53,7 @@ type PersonSeed = {
   authorization_comment?: string | null;
   rejection_reason?: string | null;
   system_reason?: string | null;
+  achievement_intent_key?: string | null;
 };
 
 type RequestSeed = {
@@ -102,6 +108,7 @@ function snapshot(
 function createWorld(options?: {
   pauseOnPendingRead?: boolean;
   pauseOnRemove?: boolean;
+  beforeFirstLock?: () => void;
 }) {
   const enrollments: EnrollmentSeed[] = [];
   const requests: RequestSeed[] = [];
@@ -127,6 +134,7 @@ function createWorld(options?: {
     club_type_id: 1,
     active: true,
     main_club_id: 1,
+    club_types: { name: 'Conquistadores' },
     clubs: {
       local_field_id: 10,
       local_fields: { timezone: 'America/Mexico_City' },
@@ -140,11 +148,15 @@ function createWorld(options?: {
     districlub_type_id: number;
     active: boolean;
   }> = [];
+  const deletedAccounts = new Set<string>();
   const sections = [section];
   let seq = 1;
   const held = new Map<string, symbol>();
   const queues = new Map<string, Array<() => void>>();
   let didPause = false;
+  let lockHookArmed = false;
+  let lockHookUsed = false;
+  let lockHook = options?.beforeFirstLock;
   let markEntered: () => void = () => undefined;
   const entered = new Promise<void>((resolve) => {
     markEntered = resolve;
@@ -192,10 +204,16 @@ function createWorld(options?: {
       person_id?: string | { in: string[] };
       user_id?: string;
       class_id?: number;
-      status?: string;
+      status?: string | { in: string[] };
+      resolution_code?: string;
+      system_reason?: string;
       request_id?: string;
       enrollment_id?: number | { in: number[] };
-      request?: { club_section_id?: number; ecclesiastical_year_id?: number };
+      request?: {
+        request_id?: string;
+        club_section_id?: number;
+        ecclesiastical_year_id?: number;
+      };
     } = {},
   ) => {
     if (
@@ -217,7 +235,28 @@ function createWorld(options?: {
     if (where.class_id !== undefined && row.class_id !== where.class_id) {
       return false;
     }
-    if (where.status && row.status !== where.status) {
+    if (
+      where.status &&
+      typeof where.status === 'object' &&
+      'in' in where.status
+    ) {
+      if (!where.status.in.includes(row.status)) {
+        return false;
+      }
+    } else if (where.status && row.status !== where.status) {
+      return false;
+    }
+    if (
+      where.resolution_code &&
+      row.resolution_code !== where.resolution_code
+    ) {
+      return false;
+    }
+    if (
+      'system_reason' in where &&
+      where.system_reason !== undefined &&
+      row.system_reason !== where.system_reason
+    ) {
       return false;
     }
     if (where.request_id && row.request_id !== where.request_id) {
@@ -244,6 +283,12 @@ function createWorld(options?: {
         return false;
       }
       if (
+        where.request.request_id &&
+        request.request_id !== where.request.request_id
+      ) {
+        return false;
+      }
+      if (
         where.request.club_section_id !== undefined &&
         request.club_section_id !== where.request.club_section_id
       ) {
@@ -263,24 +308,65 @@ function createWorld(options?: {
     findUnique: jest.fn(async ({ where }: { where: { person_id: string } }) => {
       return people.find((row) => row.person_id === where.person_id) ?? null;
     }),
-    findFirst: jest.fn(async ({ where }: { where?: object }) => {
-      return people.find((row) => matchesPerson(row, where ?? {})) ?? null;
-    }),
-    findMany: jest.fn(async ({ where }: { where?: object }) => {
-      const matched = people.filter((row) => matchesPerson(row, where ?? {}));
-      const pendingRead =
-        where &&
-        typeof where === 'object' &&
-        'user_id' in where &&
-        'status' in where &&
-        (where as { status?: string }).status === 'PENDING';
-      if (options?.pauseOnPendingRead && pendingRead && !didPause) {
-        didPause = true;
-        markEntered();
-        await paused;
-      }
-      return matched;
-    }),
+    findFirst: jest.fn(
+      async ({
+        where,
+        orderBy,
+      }: {
+        where?: object;
+        orderBy?: Array<Record<string, 'asc' | 'desc'>>;
+      }) => {
+        const matched = people.filter((row) => matchesPerson(row, where ?? {}));
+        if (orderBy?.length) {
+          matched.sort((left, right) => {
+            for (const key of orderBy) {
+              const field = Object.keys(key)[0] as keyof PersonSeed;
+              const direction = key[field] === 'desc' ? -1 : 1;
+              const compared = String(left[field] ?? '').localeCompare(
+                String(right[field] ?? ''),
+              );
+              if (compared !== 0) {
+                return compared * direction;
+              }
+            }
+            return 0;
+          });
+        }
+        return matched[0] ?? null;
+      },
+    ),
+    findMany: jest.fn(
+      async ({
+        where,
+        select,
+        include,
+      }: {
+        where?: object;
+        select?: { request?: unknown };
+        include?: { request?: unknown };
+      }) => {
+        const matched = people.filter((row) => matchesPerson(row, where ?? {}));
+        const pendingRead =
+          where &&
+          typeof where === 'object' &&
+          'user_id' in where &&
+          'status' in where &&
+          (where as { status?: string }).status === 'PENDING';
+        if (options?.pauseOnPendingRead && pendingRead && !didPause) {
+          didPause = true;
+          markEntered();
+          await paused;
+        }
+        if (!select?.request && !include?.request) {
+          return matched;
+        }
+        return matched.map((row) => ({
+          ...row,
+          request:
+            requests.find((item) => item.request_id === row.request_id) ?? null,
+        }));
+      },
+    ),
     create: jest.fn(
       async ({
         data,
@@ -297,7 +383,9 @@ function createWorld(options?: {
           authorization_comment: null,
           rejection_reason: null,
           system_reason: null,
+          achievement_intent_key: null,
           ...data,
+          achievement_intent_key: data.achievement_intent_key ?? null,
         };
         seq += 1;
         people.push(row);
@@ -382,7 +470,16 @@ function createWorld(options?: {
         where?: {
           ecclesiastical_year_id?: number;
           club_section_id?: { in: number[] };
-          people?: { some?: { status?: string } };
+          people?: { some?: { status?: string; resolution_code?: string } };
+          OR?: Array<{
+            people?: {
+              some?: {
+                status?: string;
+                resolution_code?: string;
+                system_reason?: string;
+              };
+            };
+          }>;
         };
       }) => {
         return requests.filter((row) => {
@@ -398,16 +495,33 @@ function createWorld(options?: {
           ) {
             return false;
           }
-          if (where?.people?.some?.status) {
-            const status = where.people.some.status;
-            const has = people.some(
-              (person) =>
-                person.request_id === row.request_id &&
-                person.status === status,
-            );
-            if (!has) {
-              return false;
-            }
+          const clauses =
+            where?.OR ?? (where?.people ? [{ people: where.people }] : []);
+          if (clauses.length > 0) {
+            const matches = clauses.some((clause) => {
+              const some = clause.people?.some;
+              if (!some) return false;
+              return people.some((person) => {
+                if (person.request_id !== row.request_id) return false;
+                if (some.status && person.status !== some.status) return false;
+                if (
+                  some.resolution_code &&
+                  person.resolution_code !== some.resolution_code
+                ) {
+                  return false;
+                }
+                if (
+                  some.system_reason &&
+                  person.system_reason !== some.system_reason
+                ) {
+                  return false;
+                }
+                return Boolean(
+                  some.status || some.resolution_code || some.system_reason,
+                );
+              });
+            });
+            if (!matches) return false;
           }
           return true;
         });
@@ -430,16 +544,80 @@ function createWorld(options?: {
         async ({
           where,
         }: {
-          where: { user_id: string; investiture_status: string };
+          where: {
+            user_id?: string;
+            class_id?: number;
+            enrollment_id?: number;
+            investiture_status?: string;
+            record_kind?: string;
+            classes?: { club_types?: { name?: string } };
+          };
         }) => {
+          const typeName = where.classes?.club_types?.name;
           return (
-            enrollments.find(
-              (row) =>
-                row.user_id === where.user_id &&
-                row.investiture_status === where.investiture_status &&
-                row.classes?.club_types?.name === 'Guías Mayores',
-            ) ?? null
+            enrollments.find((row) => {
+              if (where.user_id && row.user_id !== where.user_id) {
+                return false;
+              }
+              if (
+                where.investiture_status &&
+                row.investiture_status !== where.investiture_status
+              ) {
+                return false;
+              }
+              if (
+                where.class_id !== undefined &&
+                row.class_id !== where.class_id
+              ) {
+                return false;
+              }
+              if (
+                where.enrollment_id !== undefined &&
+                row.enrollment_id !== where.enrollment_id
+              ) {
+                return false;
+              }
+              if (where.record_kind && row.record_kind !== where.record_kind) {
+                return false;
+              }
+              if (typeName && row.classes?.club_types?.name !== typeName) {
+                return false;
+              }
+              return true;
+            }) ?? null
           );
+        },
+      ),
+      updateMany: jest.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: {
+            enrollment_id?: number;
+            investiture_status?: string;
+          };
+          data: Partial<EnrollmentSeed>;
+        }) => {
+          const rows = enrollments.filter((row) => {
+            if (
+              where.enrollment_id !== undefined &&
+              row.enrollment_id !== where.enrollment_id
+            ) {
+              return false;
+            }
+            if (
+              where.investiture_status &&
+              row.investiture_status !== where.investiture_status
+            ) {
+              return false;
+            }
+            return true;
+          });
+          for (const row of rows) {
+            Object.assign(row, data);
+          }
+          return { count: rows.length };
         },
       ),
       update: jest.fn(
@@ -499,13 +677,39 @@ function createWorld(options?: {
           });
         },
       ),
+      // Models the real Prisma delegate: club_sections has no `name` column and
+      // `club_types` is a relation, present only when the query selects or
+      // includes it (BCR-1).
       findUnique: jest.fn(
-        async ({ where }: { where: { club_section_id: number } }) => {
-          return (
-            sections.find(
-              (row) => row.club_section_id === where.club_section_id,
-            ) ?? null
-          );
+        async ({
+          where,
+          select,
+          include,
+        }: {
+          where: { club_section_id: number };
+          select?: Record<string, unknown>;
+          include?: Record<string, unknown>;
+        }) => {
+          const row = sections.find(
+            (item) => item.club_section_id === where.club_section_id,
+          ) as Record<string, unknown> | undefined;
+          if (!row) {
+            return null;
+          }
+          const { club_types: relation, ...columns } = row;
+          if (select) {
+            const picked: Record<string, unknown> = {};
+            for (const key of Object.keys(select)) {
+              if (!select[key]) {
+                continue;
+              }
+              picked[key] = key === 'club_types' ? relation : columns[key];
+            }
+            return picked;
+          }
+          return include?.club_types
+            ? { ...columns, club_types: relation }
+            : columns;
         },
       ),
     },
@@ -583,6 +787,16 @@ function createWorld(options?: {
     },
     investiture_authorization_people: peopleDelegate,
     investiture_authorization_requests: requestsDelegate,
+    users: {
+      findMany: jest.fn(
+        async ({ where }: { where: { user_id: { in: string[] } } }) =>
+          where.user_id.in.map((id) => ({
+            user_id: id,
+            active: !deletedAccounts.has(id),
+            users_roles: [{ user_role_id: 'role-pastor' }],
+          })),
+      ),
+    },
     district_investiture_pastors: {
       findFirst: jest.fn(
         async ({
@@ -613,6 +827,9 @@ function createWorld(options?: {
         },
       ),
     },
+    achievement_event_log: {
+      findMany: jest.fn(async () => []),
+    },
   };
 
   const prisma = {
@@ -631,6 +848,10 @@ function createWorld(options?: {
             ? record.strings.join('?')
             : String(sql);
           if (text.includes('pg_advisory_xact_lock')) {
+            if (lockHookArmed && !lockHookUsed && lockHook) {
+              lockHookUsed = true;
+              lockHook();
+            }
             await acquire(token, JSON.stringify(record.values ?? []));
           }
           return 0;
@@ -699,6 +920,21 @@ function createWorld(options?: {
         active: true,
       });
     },
+    deleteAccount(userId = ACTOR) {
+      deletedAccounts.add(userId);
+    },
+    deactivatePastor() {
+      for (const row of pastors) {
+        row.active = false;
+      }
+    },
+    armLockHook(hook?: () => void) {
+      if (hook) {
+        lockHook = hook;
+      }
+      lockHookArmed = true;
+      lockHookUsed = false;
+    },
     addEnrollment(overrides: Partial<EnrollmentSeed> = {}): EnrollmentSeed {
       const row: EnrollmentSeed = {
         enrollment_id: overrides.enrollment_id ?? enrollments.length + 901,
@@ -706,6 +942,7 @@ function createWorld(options?: {
         class_id: 7,
         ecclesiastical_year_id: YEAR_ID,
         investiture_status: 'IN_PROGRESS',
+        locked_for_validation: false,
         record_kind: 'OPERATIONAL',
         cross_type_enrollment: false,
         active: true,
@@ -771,6 +1008,250 @@ describe('investiture authorization requests', () => {
       now,
     );
   }
+
+  function institutionalClass(assetCode: 'GM-02' | 'GM-03') {
+    return {
+      min_duration_years: 1,
+      max_duration_years: 1,
+      club_type_id: 1,
+      club_types: { name: 'Conquistadores' },
+      asset_code: assetCode,
+    };
+  }
+
+  it('IA-62 rejects presenting GM-02 without creating a person', async () => {
+    world.addEnrollment({
+      enrollment_id: 977,
+      classes: institutionalClass('GM-02'),
+    });
+
+    await expect(present([977])).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
+    });
+
+    expect(world.people).toHaveLength(0);
+  });
+
+  it('IA-62 rejects adding GM-03 without creating a person', async () => {
+    world.addEnrollment({
+      enrollment_id: 978,
+      classes: institutionalClass('GM-03'),
+    });
+    const request =
+      await world.prisma.investiture_authorization_requests.create({
+        data: {
+          club_section_id: SECTION_ID,
+          ecclesiastical_year_id: YEAR_ID,
+          created_by_id: ACTOR,
+        },
+      });
+
+    await expect(
+      service.addPeople(
+        director(),
+        ACTOR,
+        request.request_id,
+        DATE,
+        [978],
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
+    });
+
+    expect(world.people).toHaveLength(0);
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('IA61-H4 retires a prior GM-02 person without investing or a requirements reason', async () => {
+    world.addEnrollment({
+      enrollment_id: 979,
+      classes: institutionalClass('GM-02'),
+    });
+    const request =
+      await world.prisma.investiture_authorization_requests.create({
+        data: {
+          club_section_id: SECTION_ID,
+          ecclesiastical_year_id: YEAR_ID,
+          created_by_id: ACTOR,
+        },
+      });
+    const person = await world.prisma.investiture_authorization_people.create({
+      data: {
+        request_id: request.request_id,
+        user_id: USER,
+        class_id: 7,
+        enrollment_id: 979,
+        investiture_date: new Date(`${DATE}T00:00:00.000Z`),
+        status: 'PENDING',
+        single_slot: false,
+      },
+    });
+
+    await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      request.request_id,
+      { invest: [{ person_id: person.person_id }] },
+      INSIDE,
+    );
+
+    expect(person.status).toBe('REMOVED');
+    expect(person.resolution_code).toBe('CLASS_NOT_ELIGIBLE');
+    expect(person.system_reason ?? '').not.toContain('requisitos');
+    expect(person.rejection_reason ?? '').not.toContain('requisitos');
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('IA61-H4 retires a prior GM-02 person and still resolves the eligible person', async () => {
+    const institutionalEnrollment = world.addEnrollment({
+      enrollment_id: 979,
+      classes: institutionalClass('GM-02'),
+    });
+    const eligibleEnrollment = world.addEnrollment({
+      enrollment_id: 980,
+      class_id: 8,
+    });
+    world.addMember('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    const request =
+      await world.prisma.investiture_authorization_requests.create({
+        data: {
+          club_section_id: SECTION_ID,
+          ecclesiastical_year_id: YEAR_ID,
+          created_by_id: ACTOR,
+        },
+      });
+    const institutional =
+      await world.prisma.investiture_authorization_people.create({
+        data: {
+          request_id: request.request_id,
+          user_id: USER,
+          class_id: 7,
+          enrollment_id: 979,
+          investiture_date: new Date(`${DATE}T00:00:00.000Z`),
+          status: 'PENDING',
+          single_slot: false,
+        },
+      });
+    const eligible = await world.prisma.investiture_authorization_people.create(
+      {
+        data: {
+          request_id: request.request_id,
+          user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          class_id: 8,
+          enrollment_id: 980,
+          investiture_date: new Date(`${DATE}T00:00:00.000Z`),
+          status: 'PENDING',
+          single_slot: false,
+        },
+      },
+    );
+
+    await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      request.request_id,
+      {
+        invest: [
+          { person_id: institutional.person_id },
+          { person_id: eligible.person_id },
+        ],
+      },
+      INSIDE,
+    );
+
+    expect(institutional.status).toBe('REMOVED');
+    expect(institutional.resolution_code).toBe('CLASS_NOT_ELIGIBLE');
+    expect(institutional.system_reason ?? '').not.toContain('requisitos');
+    expect(institutional.rejection_reason ?? '').not.toContain('requisitos');
+    expect(eligible.status).toBe('INVESTED');
+    expect(institutionalEnrollment.investiture_status).not.toBe('INVESTIDO');
+    expect(eligibleEnrollment.investiture_status).toBe('INVESTIDO');
+  });
+
+  it.each([
+    ['America/Tijuana', '2026-01-01T07:30:00.000Z', false],
+    ['America/Tijuana', '2026-01-01T08:30:00.000Z', true],
+    ['America/Bogota', '2026-01-01T04:30:00.000Z', false],
+    ['America/Bogota', '2026-01-01T05:30:00.000Z', true],
+  ] as const)(
+    'C1RR-2 pastor authorization treats an active year in %s at %s as ended=%s',
+    async (timeZone, instant, ended) => {
+      world.year.start_date = new Date('2025-01-01T00:00:00.000Z');
+      world.year.end_date = new Date('2025-12-31T00:00:00.000Z');
+      world.year.active = true;
+      world.section.clubs.local_fields.timezone = timeZone;
+      world.setWindow('2025-10-01', '2025-12-31');
+      const action = service.present(
+        director(),
+        ACTOR,
+        SECTION_ID,
+        YEAR_ID,
+        '2025-11-01',
+        [901],
+        new Date(instant),
+      );
+      if (ended) {
+        await expect(action).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_REQUEST_YEAR_CLOSED,
+        });
+      } else {
+        await expect(action).resolves.toEqual(
+          expect.objectContaining({ request_id: expect.any(String) }),
+        );
+      }
+    },
+  );
+
+  it('IA-61 shows the later certificate note on the section request', async () => {
+    const view = await present();
+    const person = world.people.find(
+      (row) => row.person_id === view.people[0].person_id,
+    );
+    if (!person) {
+      throw new Error('person missing');
+    }
+    person.status = 'CLOSED_YEAR';
+    person.resolution_code = 'CLOSED_YEAR';
+    person.system_reason =
+      'Investidura acreditada posteriormente mediante certificado validado';
+
+    const listed = await service.list(director(), SECTION_ID, YEAR_ID);
+
+    expect(listed?.people[0]).toMatchObject({
+      status: 'CLOSED_YEAR',
+      resolution_code: 'CLOSED_YEAR',
+      system_reason:
+        'Investidura acreditada posteriormente mediante certificado validado',
+    });
+  });
+
+  it('IA-61 shows the later certificate note to the field authorizer', async () => {
+    const note =
+      'Investidura acreditada posteriormente mediante certificado validado';
+    const view = await present();
+    const person = world.people.find(
+      (row) => row.person_id === view.people[0].person_id,
+    );
+    if (!person) {
+      throw new Error('person missing');
+    }
+    person.status = 'CLOSED_YEAR';
+    person.resolution_code = 'CLOSED_YEAR';
+    person.system_reason = note;
+
+    const listed = await service.listForAuthorizer(
+      fieldDirector(),
+      ACTOR,
+      YEAR_ID,
+    );
+
+    expect(listed).toHaveLength(1);
+    expect(listed[0].people[0]).toMatchObject({
+      status: 'CLOSED_YEAR',
+      system_reason: note,
+    });
+  });
 
   it('marks one section request and keeps can_authorize while pending', async () => {
     const view = await present();
@@ -1190,6 +1671,7 @@ describe('investiture authorization requests', () => {
     });
     world.addEnrollment({
       enrollment_id: 980,
+      class_id: 30,
       investiture_status: 'INVESTIDO',
       record_kind: 'HISTORICAL_CERTIFICATE',
       classes: {
@@ -1276,6 +1758,53 @@ describe('investiture authorization requests', () => {
     await expect(present([crossType.enrollment_id])).rejects.toMatchObject({
       code: ErrorCode.INVESTITURE_REQUEST_OUTSIDE_SECTION,
     });
+  });
+
+  it('C1-H5 lists the informative request with the smallest request id', async () => {
+    const later = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const earlier = '11111111-1111-4111-8111-111111111111';
+    world.requests.push(
+      {
+        request_id: later,
+        club_section_id: SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID,
+        created_by_id: ACTOR,
+      },
+      {
+        request_id: earlier,
+        club_section_id: SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID,
+        created_by_id: ACTOR,
+      },
+    );
+    const informed = (
+      requestId: string,
+      personId: string,
+      enrollmentId: number,
+    ) => ({
+      person_id: personId,
+      request_id: requestId,
+      user_id: USER,
+      class_id: 4,
+      enrollment_id: enrollmentId,
+      investiture_date: new Date('2026-11-01T00:00:00.000Z'),
+      status: 'REMOVED',
+      single_slot: true,
+      resolution_code: 'HISTORICAL_CERTIFICATE_APPLIED',
+      resolved_by_id: null,
+      authorization_comment: null,
+      rejection_reason: null,
+      system_reason: 'Investidura aplicada por certificado de un año anterior',
+      achievement_intent_key: null,
+    });
+    world.people.push(
+      informed(later, 'ffffffff-ffff-4fff-8fff-fffffffffff1', 801),
+      informed(earlier, '11111111-1111-4111-8111-111111111101', 802),
+    );
+
+    const listed = await service.list(director(), SECTION_ID, YEAR_ID);
+
+    expect(listed?.request_id).toBe(earlier);
   });
 
   it('keeps one section request when two different people are presented together', async () => {
@@ -1583,6 +2112,219 @@ describe('investiture authorization requests', () => {
     });
   });
 
+  it('rejects a presentation while the old pipeline still holds the enrollment', async () => {
+    const enrollment = await world.prisma.enrollments.findUnique({
+      where: { enrollment_id: 901 },
+    });
+    if (!enrollment) {
+      throw new Error('enrollment missing');
+    }
+    enrollment.investiture_status = 'FIELD_APPROVED';
+    enrollment.locked_for_validation = true;
+
+    await expect(present()).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE,
+    });
+    expect(world.people).toHaveLength(0);
+  });
+
+  it('rejects adding a person locked by the old pipeline', async () => {
+    world.addEnrollment({ enrollment_id: 901 });
+    world.addEnrollment({
+      enrollment_id: 902,
+      class_id: 8,
+      investiture_status: 'CLUB_APPROVED',
+    });
+    const view = await present();
+
+    await expect(
+      service.addPeople(
+        director(),
+        ACTOR,
+        view.request_id,
+        '2026-11-15',
+        [902],
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE,
+    });
+    expect(
+      world.people.filter((row) => row.enrollment_id === 902),
+    ).toHaveLength(0);
+  });
+
+  it('retires a pending person instead of investing when the old pipeline is still open', async () => {
+    const view = await present();
+    const enrollment = await world.prisma.enrollments.findUnique({
+      where: { enrollment_id: 901 },
+    });
+    if (!enrollment) {
+      throw new Error('enrollment missing');
+    }
+    enrollment.investiture_status = 'SUBMITTED_FOR_VALIDATION';
+    enrollment.locked_for_validation = true;
+
+    const resolved = await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      { invest: [{ person_id: view.people[0].person_id }] },
+      INSIDE,
+    );
+
+    expect(resolved.invested).toHaveLength(0);
+    expect(resolved.retired[0].status).toBe('REMOVED');
+    expect(world.people[0]).toMatchObject({
+      status: 'REMOVED',
+      resolution_code: 'LEGACY_PIPELINE_ACTIVE',
+    });
+    expect(enrollment.investiture_status).toBe('SUBMITTED_FOR_VALIDATION');
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+    expect(world.people[0].rejection_reason ?? null).toBeNull();
+    expect(world.people[0].system_reason ?? null).toBeNull();
+  });
+
+  it('keeps the other person invested when one enrollment no longer matches', async () => {
+    const other = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    world.addEnrollment({
+      enrollment_id: 902,
+      class_id: 8,
+      user_id: other,
+    });
+    world.addMember(other);
+    const view = await present([901, 902]);
+    const updateMany =
+      world.prisma.enrollments.updateMany.getMockImplementation();
+    world.prisma.enrollments.updateMany.mockImplementation(async (args) => {
+      if (args.where?.enrollment_id === 902) {
+        const row = await world.prisma.enrollments.findUnique({
+          where: { enrollment_id: 902 },
+        });
+        if (row) {
+          row.investiture_status = 'INVESTIDO';
+        }
+        return { count: 0 };
+      }
+      return updateMany?.(args);
+    });
+
+    const resolved = await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      {
+        invest: view.people.map((person) => ({ person_id: person.person_id })),
+      },
+      INSIDE,
+    );
+
+    expect(resolved.invested).toHaveLength(1);
+    expect(achievements.emitEvent).toHaveBeenCalledTimes(1);
+    expect(world.people.find((row) => row.enrollment_id === 902)).toMatchObject(
+      {
+        status: 'REMOVED',
+        resolution_code: 'ALREADY_INVESTED',
+      },
+    );
+    expect(world.people.find((row) => row.enrollment_id === 901)?.status).toBe(
+      'INVESTED',
+    );
+  });
+
+  it('invests once from FIELD_APPROVED when that confirm races the old invest', async () => {
+    const view = await present();
+    const enrollment = await world.prisma.enrollments.findUnique({
+      where: { enrollment_id: 901 },
+    });
+    if (!enrollment) {
+      throw new Error('enrollment missing');
+    }
+    enrollment.investiture_status = 'FIELD_APPROVED';
+    enrollment.locked_for_validation = true;
+
+    const resolved = await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      { invest: [{ person_id: view.people[0].person_id }] },
+      INSIDE,
+    );
+
+    expect(resolved.invested).toHaveLength(1);
+    expect(enrollment.investiture_status).toBe('INVESTIDO');
+    expect(achievements.emitEvent).toHaveBeenCalledTimes(1);
+    expect(world.people.filter((row) => row.status === 'PENDING')).toHaveLength(
+      0,
+    );
+  });
+
+  it('rejects presentation when another enrollment of the same class is invested', async () => {
+    world.addEnrollment({
+      enrollment_id: 904,
+      investiture_status: 'INVESTIDO',
+      record_kind: 'HISTORICAL_CERTIFICATE',
+    });
+
+    await expect(present()).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_ALREADY_INVESTED,
+    });
+    expect(world.people).toHaveLength(0);
+  });
+
+  it('rejects adding a class that already has an invested certificate', async () => {
+    world.addEnrollment({ enrollment_id: 902, class_id: 8 });
+    world.addEnrollment({
+      enrollment_id: 905,
+      class_id: 8,
+      investiture_status: 'INVESTIDO',
+      record_kind: 'HISTORICAL_CERTIFICATE',
+    });
+    const view = await present();
+
+    await expect(
+      service.addPeople(
+        director(),
+        ACTOR,
+        view.request_id,
+        '2026-11-15',
+        [902],
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_ALREADY_INVESTED,
+    });
+  });
+
+  it('removes a pending person when another enrollment of the class is invested', async () => {
+    const view = await present();
+    world.addEnrollment({
+      enrollment_id: 906,
+      investiture_status: 'INVESTIDO',
+      record_kind: 'HISTORICAL_CERTIFICATE',
+    });
+
+    const resolved = await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      { invest: [{ person_id: view.people[0].person_id }] },
+      INSIDE,
+    );
+
+    expect(resolved.invested).toHaveLength(0);
+    expect(resolved.retired[0].status).toBe('REMOVED');
+    expect(world.people[0]).toMatchObject({
+      status: 'REMOVED',
+      resolution_code: 'ALREADY_INVESTED',
+    });
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+    const operational = await world.prisma.enrollments.findUnique({
+      where: { enrollment_id: 901 },
+    });
+    expect(operational?.investiture_status).toBe('IN_PROGRESS');
+  });
+
   it('returns null from list without inserting when nobody is pending', async () => {
     await expect(
       service.list(director(), SECTION_ID, YEAR_ID),
@@ -1739,7 +2481,384 @@ describe('investiture authorization requests', () => {
     ).rejects.toMatchObject({
       code: ErrorCode.INVESTITURE_REQUEST_ALREADY_RESOLVED,
     });
+    expect(achievements.emitEvent).toHaveBeenCalledTimes(2);
+    const firstCall = achievements.emitEvent.mock.calls[0][0] as {
+      idempotencyKey?: string;
+    };
+    const secondCall = achievements.emitEvent.mock.calls[1][0] as {
+      idempotencyKey?: string;
+    };
+    expect(firstCall.idempotencyKey).toBe(
+      `investiture-authorization:${personId}`,
+    );
+    expect(secondCall.idempotencyKey).toBe(firstCall.idempotencyKey);
+  });
+
+  it('rejects a year closed while the authorization waits on its lock', async () => {
+    const view = await present();
+    world.armLockHook(() => {
+      world.year.active = false;
+    });
+
+    await expect(
+      service.resolve(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+        { invest: [{ person_id: view.people[0].person_id }] },
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_YEAR_CLOSED,
+    });
+    expect(world.people[0].status).toBe('PENDING');
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('authorizes on the last local day of the window', async () => {
+    world.setWindow('2026-10-01', '2026-10-15');
+    const view = await present([901], '2026-10-15');
+    const resolved = await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      { invest: [{ person_id: view.people[0].person_id }] },
+      INSIDE,
+    );
+    expect(resolved.invested).toHaveLength(1);
+  });
+
+  it('rejects a window closed while the authorization waits on its lock', async () => {
+    const view = await present();
+    world.armLockHook(() => {
+      world.setWindow('2026-10-01', '2026-10-14');
+    });
+    await expect(
+      service.resolve(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+        { invest: [{ person_id: view.people[0].person_id }] },
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_WINDOW_CLOSED,
+    });
+    expect(world.people[0].status).toBe('PENDING');
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects a pastor removed while the authorization waits on its lock', async () => {
+    world.assignPastor();
+    const view = await present();
+    world.armLockHook(() => {
+      world.deactivatePastor();
+    });
+
+    await expect(
+      service.resolve(
+        snapshot([], ['pastor']),
+        ACTOR,
+        view.request_id,
+        { invest: [{ person_id: view.people[0].person_id }] },
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+    });
+    expect(world.people[0].status).toBe('PENDING');
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('BCR-6 rejects and lists nothing for an assigned pastor whose account was deleted', async () => {
+    world.assignPastor();
+    const view = await present();
+    world.deleteAccount();
+
+    await expect(
+      service.resolve(
+        snapshot([], ['pastor']),
+        ACTOR,
+        view.request_id,
+        { invest: [{ person_id: view.people[0].person_id }] },
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+    });
+    await expect(
+      service.listForAuthorizer(snapshot([], ['pastor']), ACTOR, YEAR_ID),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+    });
+    expect(world.people[0].status).toBe('PENDING');
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the wait crosses midnight at the end of the window', async () => {
+    let current = new Date('2026-12-21T05:59:59.000Z');
+    const local = new InvestitureAuthorizationRequestService(
+      world.prisma as never,
+      eligibility as never,
+      achievements as never,
+      { now: () => current },
+    );
+    const view = await present();
+    world.armLockHook(() => {
+      current = new Date('2026-12-21T06:00:01.000Z');
+    });
+
+    await expect(
+      local.resolve(fieldDirector(), ACTOR, view.request_id, {
+        invest: [{ person_id: view.people[0].person_id }],
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_WINDOW_CLOSED,
+    });
+    const stored = await world.prisma.enrollments.findUnique({
+      where: { enrollment_id: 901 },
+    });
+    expect(world.people[0].status).toBe('PENDING');
+    expect(world.people[0].achievement_intent_key).toBeNull();
+    expect(stored?.investiture_status).not.toBe('INVESTIDO');
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the wait crosses midnight at the end of the year', async () => {
+    world.setWindow('2026-10-01', '2026-12-31');
+    let current = new Date('2027-01-01T05:59:59.000Z');
+    const local = new InvestitureAuthorizationRequestService(
+      world.prisma as never,
+      eligibility as never,
+      achievements as never,
+      { now: () => current },
+    );
+    const view = await present();
+    world.armLockHook(() => {
+      current = new Date('2027-01-01T06:00:01.000Z');
+    });
+
+    await expect(
+      local.resolve(fieldDirector(), ACTOR, view.request_id, {
+        invest: [{ person_id: view.people[0].person_id }],
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_YEAR_CLOSED,
+    });
+    const stored = await world.prisma.enrollments.findUnique({
+      where: { enrollment_id: 901 },
+    });
+    expect(world.people[0].status).toBe('PENDING');
+    expect(stored?.investiture_status).not.toBe('INVESTIDO');
+    expect(achievements.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('recovers one class.completed after the first insert fails', async () => {
+    const view = await present();
+    const personId = view.people[0].person_id;
+    let failed = false;
+    achievements.emitEvent.mockImplementation(async () => {
+      if (!failed) {
+        failed = true;
+        throw new Error('insert failed');
+      }
+      return { eventLogId: 1, queued: false };
+    });
+
+    const resolved = await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      { invest: [{ person_id: personId }] },
+      INSIDE,
+    );
+    expect(resolved.invested).toHaveLength(1);
+    expect(world.people[0].achievement_intent_key).toBe(
+      `investiture-authorization:${personId}`,
+    );
+
+    await expect(
+      service.resolve(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+        { invest: [{ person_id: personId }] },
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_ALREADY_RESOLVED,
+    });
+    expect(achievements.emitEvent).toHaveBeenCalledTimes(2);
+
+    achievements.emitEvent.mockImplementation(async () => {
+      throw new Error('insert failed');
+    });
+    await expect(
+      service.resolve(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+        { invest: [{ person_id: personId }] },
+        INSIDE,
+      ),
+    ).rejects.toThrow('insert failed');
+  });
+
+  it('delivers a confirmed intent after the year closes without resolving again', async () => {
+    const view = await present();
+    const personId = view.people[0].person_id;
+    let failed = false;
+    achievements.emitEvent.mockImplementation(async () => {
+      if (!failed) {
+        failed = true;
+        throw new Error('insert failed');
+      }
+      return { eventLogId: 1, queued: true };
+    });
+    await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      { invest: [{ person_id: personId }] },
+      INSIDE,
+    );
+    world.year.active = false;
+    world.deactivatePastor();
+
+    await expect(
+      service.resolve(fieldDirector(), ACTOR, view.request_id, {
+        invest: [{ person_id: personId }],
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_YEAR_CLOSED,
+    });
     expect(achievements.emitEvent).toHaveBeenCalledTimes(1);
+
+    await expect(service.reconcileConfirmedAchievementIntents()).resolves.toBe(
+      1,
+    );
+    expect(achievements.emitEvent).toHaveBeenCalledTimes(2);
+    expect(world.people[0].status).toBe('INVESTED');
+    const stored = await world.prisma.enrollments.findUnique({
+      where: { enrollment_id: 901 },
+    });
+    expect(stored?.investiture_status).toBe('INVESTIDO');
+  });
+
+  it('reactivates one failed evaluation after the year closes', async () => {
+    const rows: Array<{
+      event_id: number;
+      idempotency_key?: string;
+      processed: boolean;
+    }> = [];
+    const eventStore = {
+      achievement_event_log: {
+        create: async (args: {
+          data: { idempotency_key?: string; processed?: boolean };
+        }) => {
+          const row = {
+            event_id: rows.length + 1,
+            processed: false,
+            ...args.data,
+          };
+          rows.push(row);
+          return row;
+        },
+        findFirst: async (args: { where: { idempotency_key: string } }) =>
+          rows.find(
+            (row) => row.idempotency_key === args.where.idempotency_key,
+          ) ?? null,
+        findUnique: async (args: { where: { event_id: number } }) =>
+          rows.find((row) => row.event_id === args.where.event_id) ?? null,
+        findMany: async () => rows.filter((row) => row.processed),
+      },
+      $executeRaw: async () => 0,
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn(eventStore),
+    };
+    let state = 'waiting';
+    let retries = 0;
+    const queued = {
+      id: '',
+      attemptsMade: 3,
+      getState: async () => state,
+      retry: async (
+        from: string,
+        opts: { resetAttemptsMade?: boolean; resetAttemptsStarted?: boolean },
+      ) => {
+        if (state !== 'failed') {
+          throw new Error(`Job ${queued.id} is not in the failed state.`);
+        }
+        expect(from).toBe('failed');
+        expect(opts.resetAttemptsMade).toBe(true);
+        expect(opts.resetAttemptsStarted).toBe(true);
+        retries += 1;
+        queued.attemptsMade = 0;
+        state = 'waiting';
+      },
+    };
+    const queue = {
+      add: async (
+        name: string,
+        data: unknown,
+        opts: { jobId?: string } = {},
+      ) => {
+        const probe = Object.create(Job.prototype) as {
+          opts: { jobId?: string };
+          name: string;
+          validateOptions: (jobData: { data: string }) => void;
+        };
+        probe.opts = opts;
+        probe.name = name;
+        probe.validateOptions({ data: JSON.stringify(data ?? {}) });
+        queued.id = opts.jobId ?? '';
+        return queued;
+      },
+    };
+    const durable = new AchievementsService(
+      eventStore as never,
+      {} as never,
+      {} as never,
+      queue as never,
+    );
+    const local = new InvestitureAuthorizationRequestService(
+      world.prisma as never,
+      eligibility as never,
+      durable,
+    );
+    const view = await present();
+    const personId = view.people[0].person_id;
+    await local.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      { invest: [{ person_id: personId }] },
+      INSIDE,
+    );
+    expect(rows).toHaveLength(1);
+    expect(retries).toBe(0);
+    state = 'failed';
+    world.year.active = false;
+
+    await expect(
+      local.resolve(fieldDirector(), ACTOR, view.request_id, {
+        invest: [{ person_id: personId }],
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_YEAR_CLOSED,
+    });
+    expect(retries).toBe(0);
+    expect(rows).toHaveLength(1);
+
+    await Promise.all([
+      local.reconcileConfirmedAchievementIntents(),
+      local.reconcileConfirmedAchievementIntents(),
+    ]);
+    expect(retries).toBe(1);
+    expect(state).toBe('waiting');
+    expect(queued.attemptsMade).toBe(0);
+    expect(rows).toHaveLength(1);
+    expect(world.people[0].status).toBe('INVESTED');
   });
 
   it('rejects authorizers outside the territory and roles that do not authorize', async () => {
@@ -1848,8 +2967,9 @@ describe('investiture authorization requests', () => {
     );
     expect(rejected.rejected_by_person[0]).toMatchObject({
       status: 'REJECTED_BY_PERSON',
-      rejection_reason: 'Faltan evidencias',
+      rejection_reason: null,
     });
+    expect(world.people[0].rejection_reason).toBe('Faltan evidencias');
     const stored = await world.prisma.enrollments.findUnique({
       where: { enrollment_id: 901 },
     });
@@ -2041,7 +3161,13 @@ describe('investiture authorization requests', () => {
     });
     if (world.people[0].status === 'INVESTED') {
       expect(stored?.investiture_status).toBe('INVESTIDO');
-      expect(achievements.emitEvent).toHaveBeenCalledTimes(1);
+      expect(achievements.emitEvent.mock.calls.length).toBeGreaterThan(0);
+      expect(
+        achievements.emitEvent.mock.calls.every(
+          (call) =>
+            call[0].idempotencyKey === `investiture-authorization:${personId}`,
+        ),
+      ).toBe(true);
     } else {
       expect(world.people[0].status).toBe('REJECTED_BY_PERSON');
       expect(stored?.investiture_status).toBe('IN_PROGRESS');
@@ -2090,7 +3216,11 @@ describe('investiture authorization requests', () => {
         { invest: [{ person_id: again.people[0].person_id }] },
         INSIDE,
       ),
-      service.closePendingByYearEnd(again.people[0].person_id),
+      world.prisma.$transaction((tx) =>
+        closePendingInvestitureAuthorizations(tx as never, {
+          request_id: again.request_id,
+        }),
+      ),
     ]);
     const person = world.people.find(
       (row) => row.person_id === again.people[0].person_id,
@@ -2102,7 +3232,7 @@ describe('investiture authorization requests', () => {
       expect(enrollment?.investiture_status).toBe('INVESTIDO');
       expect(
         closing.some(
-          (result) => result.status === 'fulfilled' && result.value === false,
+          (result) => result.status === 'fulfilled' && result.value === 0,
         ),
       ).toBe(true);
     } else {
@@ -2143,5 +3273,493 @@ describe('investiture authorization requests', () => {
   it('does not emit class.completed when presenting', async () => {
     await present();
     expect(achievements.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('records the confirmed group once and does not mail a removal', async () => {
+    const communications = {
+      stagePresentation: jest.fn(async () => undefined),
+      stageResults: jest.fn(async () => undefined),
+      recordPresentation: jest.fn(async () => undefined),
+      recordResults: jest.fn(async () => undefined),
+      dispatchReminders: jest.fn(async () => 0),
+      deliverPending: jest.fn(async () => 0),
+    };
+    const hooked = new InvestitureAuthorizationRequestService(
+      world.prisma as never,
+      eligibility as never,
+      achievements as never,
+      undefined,
+      communications as never,
+    );
+    world.addEnrollment({
+      enrollment_id: 902,
+      class_id: 8,
+      user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    });
+    world.addMember('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    const view = await hooked.present(
+      director(),
+      ACTOR,
+      SECTION_ID,
+      YEAR_ID,
+      DATE,
+      [901],
+      INSIDE,
+    );
+    await hooked.addPeople(
+      director(),
+      ACTOR,
+      view.request_id,
+      DATE,
+      [902],
+      INSIDE,
+    );
+    await hooked.remove(
+      director(),
+      ACTOR,
+      view.request_id,
+      view.people[0].person_id,
+      INSIDE,
+    );
+
+    const firstStage = communications.stagePresentation.mock.calls[0][1] as {
+      requestId: string;
+      enrollmentIds: number[];
+      operationId: string;
+    };
+    const secondStage = communications.stagePresentation.mock.calls[1][1] as {
+      operationId: string;
+      enrollmentIds: number[];
+    };
+    expect(firstStage).toMatchObject({
+      requestId: view.request_id,
+      enrollmentIds: [901],
+    });
+    expect(firstStage.operationId).toEqual(expect.any(String));
+    expect(secondStage.enrollmentIds).toEqual([902]);
+    expect(secondStage.operationId).not.toEqual(firstStage.operationId);
+    expect(
+      communications.stagePresentation.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      communications.recordPresentation.mock.invocationCallOrder[0],
+    );
+    expect(communications.recordPresentation).toHaveBeenNthCalledWith(1, {
+      requestId: view.request_id,
+      enrollmentIds: [901],
+      operationId: firstStage.operationId,
+    });
+    expect(communications.recordPresentation).toHaveBeenNthCalledWith(2, {
+      requestId: view.request_id,
+      enrollmentIds: [902],
+      operationId: secondStage.operationId,
+    });
+    expect(communications.recordPresentation).toHaveBeenCalledTimes(2);
+    expect(communications.recordResults).not.toHaveBeenCalled();
+  });
+
+  it('records a confirmed resolution and not the retry of that decision', async () => {
+    const communications = {
+      stagePresentation: jest.fn(async () => undefined),
+      stageResults: jest.fn(async () => undefined),
+      recordPresentation: jest.fn(async () => undefined),
+      recordResults: jest.fn(async () => undefined),
+      dispatchReminders: jest.fn(async () => 0),
+      deliverPending: jest.fn(async () => 0),
+    };
+    const hooked = new InvestitureAuthorizationRequestService(
+      world.prisma as never,
+      eligibility as never,
+      achievements as never,
+      undefined,
+      communications as never,
+    );
+    const view = await hooked.present(
+      director(),
+      ACTOR,
+      SECTION_ID,
+      YEAR_ID,
+      DATE,
+      [901],
+      INSIDE,
+    );
+    await hooked.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      { invest: [{ person_id: view.people[0].person_id, comment: 'privado' }] },
+      INSIDE,
+    );
+    await expect(
+      hooked.resolve(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+        { invest: [{ person_id: view.people[0].person_id }] },
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_ALREADY_RESOLVED,
+    });
+
+    expect(communications.stageResults).toHaveBeenCalledTimes(1);
+    expect(
+      communications.stageResults.mock.invocationCallOrder[0],
+    ).toBeLessThan(communications.recordResults.mock.invocationCallOrder[0]);
+    expect(communications.recordResults).toHaveBeenCalledTimes(1);
+    expect(communications.recordResults).toHaveBeenCalledWith({
+      requestId: view.request_id,
+      actorId: ACTOR,
+      investedIds: [view.people[0].person_id],
+      rejectedPersonIds: [],
+      rejectedSystemIds: [],
+    });
+  });
+
+  it('BC-2 accepts a blank or spaced zone and rejects an invalid one', async () => {
+    world.section.clubs.local_fields.timezone = '   ';
+    await expect(present()).resolves.toMatchObject({
+      people: [expect.objectContaining({ user_id: USER })],
+    });
+  });
+
+  it('BC-2 accepts a timezone surrounded by spaces', async () => {
+    world.section.clubs.local_fields.timezone = '  America/Mexico_City  ';
+    await expect(present()).resolves.toMatchObject({
+      people: [expect.objectContaining({ class_id: 7 })],
+    });
+  });
+
+  it('BC-2 rejects an invalid timezone with the same controlled error', async () => {
+    world.section.clubs.local_fields.timezone = 'Not/AZone';
+    await expect(present()).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_TIME_ZONE_INVALID,
+    });
+  });
+
+  it('BC-4 names people for the board and hides the human reason from the authorizer', async () => {
+    const prisma = world.prisma as typeof world.prisma & {
+      users: { findMany: () => Promise<unknown[]> };
+      classes: { findMany: () => Promise<unknown[]> };
+    };
+    prisma.users = {
+      findMany: async () => [
+        {
+          user_id: USER,
+          name: 'Ana',
+          paternal_last_name: 'Ruiz',
+          maternal_last_name: null,
+        },
+        {
+          user_id: ACTOR,
+          name: 'Pastor',
+          paternal_last_name: 'Luis',
+          maternal_last_name: null,
+        },
+      ],
+    };
+    prisma.classes = {
+      findMany: async () => [{ class_id: 7, name: 'Amigo' }],
+    };
+    (world.section as { club_types?: { name: string } }).club_types = {
+      name: 'Conquistadores',
+    };
+    const view = await present();
+    expect(view.people[0]).toMatchObject({
+      user_name: 'Ana Ruiz',
+      class_name: 'Amigo',
+      section_name: 'Conquistadores',
+    });
+    world.assignPastor();
+    const decided = await service.resolve(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+      {
+        reject: [
+          { person_id: view.people[0].person_id, reason: 'motivo-humano' },
+        ],
+      },
+      INSIDE,
+    );
+    expect(decided.rejected_by_person[0].rejection_reason).toBeNull();
+    expect(world.people[0].rejection_reason).toBe('motivo-humano');
+    const boardHistory = await service.sectionHistory(director(), SECTION_ID);
+    expect(boardHistory[0]).toMatchObject({
+      rejection_reason: 'motivo-humano',
+      status: 'REJECTED_BY_PERSON',
+    });
+    const authorizer = await service.readForAuthorizer(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+    );
+    expect(authorizer.people[0]).toMatchObject({
+      user_name: 'Ana Ruiz',
+      class_name: 'Amigo',
+      rejection_reason: null,
+    });
+    world.people[0].status = 'REJECTED_BY_SYSTEM';
+    world.people[0].system_reason = 'texto largo del sistema';
+    world.people[0].resolved_by_id = null;
+    const systemView = await service.readForAuthorizer(
+      fieldDirector(),
+      ACTOR,
+      view.request_id,
+    );
+    expect(systemView.people[0]).toMatchObject({
+      resolved_by_name: 'Sistema',
+      system_reason: 'texto largo del sistema',
+      rejection_reason: null,
+    });
+  });
+
+  it('BC-5 lets super-admin read the request and forbids present and resolve', async () => {
+    const view = await present();
+    const root = {
+      grants: {
+        global_roles: [
+          { role_name: 'super-admin', permissions: [], scope: {} },
+        ],
+        club_assignments: [],
+        direct_permissions: [],
+      },
+      active_assignment: { assignment_id: null },
+      effective: { permissions: [], scope: { global: {}, club: null } },
+    } as AuthorizationSnapshot;
+    const read = await service.readForAuthorizer(
+      root,
+      'root-1',
+      view.request_id,
+    );
+    expect(read.people[0].person_id).toBe(view.people[0].person_id);
+    await expect(
+      service.present(root, 'root-1', SECTION_ID, YEAR_ID, DATE, [901], INSIDE),
+    ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN });
+    await expect(
+      service.resolve(
+        root,
+        'root-1',
+        view.request_id,
+        { invest: [{ person_id: view.people[0].person_id }] },
+        INSIDE,
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN });
+  });
+
+  describe('BCR-1, BCR-7 and BCR-8 read paths', () => {
+    function rootSnapshot(): AuthorizationSnapshot {
+      return {
+        grants: {
+          global_roles: [
+            { role_name: 'super-admin', permissions: [], scope: {} },
+          ],
+          club_assignments: [],
+          direct_permissions: [],
+        },
+        active_assignment: { assignment_id: null },
+        effective: { permissions: [], scope: { global: {}, club: null } },
+      };
+    }
+
+    async function rejectedByHuman() {
+      const view = await present();
+      world.assignPastor();
+      await service.resolve(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+        {
+          reject: [
+            { person_id: view.people[0].person_id, reason: 'motivo-humano' },
+          ],
+        },
+        INSIDE,
+      );
+      return view;
+    }
+
+    it('BCR-1 resolves section_name from the club type for board and authorizer reads', async () => {
+      const view = await present();
+      expect(view.people[0].section_name).toBe('Conquistadores');
+      world.assignPastor();
+      const read = await service.readForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+      );
+      expect(read.people[0].section_name).toBe('Conquistadores');
+      const lookup = world.prisma.club_sections.findUnique.mock.calls
+        .map(
+          ([args]) =>
+            args as {
+              select?: { club_types?: unknown };
+              include?: { club_types?: unknown };
+            },
+        )
+        .filter((args) => args.select?.club_types ?? args.include?.club_types);
+      expect(lookup.length).toBeGreaterThan(0);
+    });
+
+    it('BCR-7 gives super-admin the authorizer shape without the human reason', async () => {
+      const view = await rejectedByHuman();
+      expect(world.people[0].rejection_reason).toBe('motivo-humano');
+      const read = await service.readForAuthorizer(
+        rootSnapshot(),
+        'root-1',
+        view.request_id,
+      );
+      expect(read.people[0]).toMatchObject({
+        status: 'REJECTED_BY_PERSON',
+        rejection_reason: null,
+      });
+      expect(JSON.stringify(read)).not.toContain('motivo-humano');
+    });
+
+    async function twoPeopleOneRejectedByHuman() {
+      world.addEnrollment({
+        enrollment_id: 902,
+        class_id: 8,
+        user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      });
+      world.addMember('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+      const view = await present([901, 902]);
+      world.assignPastor();
+      await service.resolve(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+        {
+          reject: [
+            { person_id: view.people[0].person_id, reason: 'motivo-humano' },
+          ],
+        },
+        INSIDE,
+      );
+      return view;
+    }
+
+    it('BCR33-N1 changeDates by super-admin returns the authorizer shape without the human reason', async () => {
+      const view = await twoPeopleOneRejectedByHuman();
+      expect(world.people[0].rejection_reason).toBe('motivo-humano');
+      const changed = await service.changeDates(
+        rootSnapshot(),
+        'root-1',
+        view.request_id,
+        '2026-11-20',
+        [view.people[1].person_id],
+        INSIDE,
+      );
+      expect(changed.people.map((p) => p.status)).toContain(
+        'REJECTED_BY_PERSON',
+      );
+      expect(JSON.stringify(changed)).not.toContain('motivo-humano');
+      expect(
+        changed.people.find((p) => p.person_id === view.people[0].person_id),
+      ).toMatchObject({ rejection_reason: null });
+    });
+
+    it('BCR33-N1 changeDates by the section directiva keeps the board shape with the human reason', async () => {
+      const view = await twoPeopleOneRejectedByHuman();
+      const changed = await service.changeDates(
+        director(),
+        ACTOR,
+        view.request_id,
+        '2026-11-20',
+        [view.people[1].person_id],
+        INSIDE,
+      );
+      expect(
+        changed.people.find((p) => p.person_id === view.people[0].person_id),
+      ).toMatchObject({ rejection_reason: 'motivo-humano' });
+    });
+
+    it('BCR-8 reads with an invalid stored zone for authorizer and super-admin', async () => {
+      const view = await present();
+      world.assignPastor();
+      world.section.clubs.local_fields.timezone = 'Not/AZone';
+      const asAuthorizer = await service.readForAuthorizer(
+        fieldDirector(),
+        ACTOR,
+        view.request_id,
+      );
+      expect(asAuthorizer.people[0].person_id).toBe(view.people[0].person_id);
+      const asRoot = await service.readForAuthorizer(
+        rootSnapshot(),
+        'root-1',
+        view.request_id,
+      );
+      expect(asRoot.people[0].person_id).toBe(view.people[0].person_id);
+    });
+
+    it('BCR-8 keeps rejecting present and resolve with an invalid stored zone', async () => {
+      const view = await present();
+      world.assignPastor();
+      world.section.clubs.local_fields.timezone = 'Not/AZone';
+      await expect(present()).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_TIME_ZONE_INVALID,
+      });
+      await expect(
+        service.resolve(
+          fieldDirector(),
+          ACTOR,
+          view.request_id,
+          { invest: [{ person_id: view.people[0].person_id }] },
+          INSIDE,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_TIME_ZONE_INVALID,
+      });
+    });
+
+    it('BCR-8 still denies a non-authorizer on a read with an invalid zone', async () => {
+      const view = await present();
+      world.section.clubs.local_fields.timezone = 'Not/AZone';
+      await expect(
+        service.readForAuthorizer(director(), ACTOR, view.request_id),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+      });
+    });
+  });
+
+  it('BC-13 stores the actor and uses the injected clock', async () => {
+    const at = new Date('2026-10-20T15:00:00.000Z');
+    const timed = new InvestitureAuthorizationRequestService(
+      world.prisma as never,
+      eligibility as never,
+      achievements as never,
+      { now: () => at },
+    );
+    const view = await timed.present(
+      director(),
+      ACTOR,
+      SECTION_ID,
+      YEAR_ID,
+      DATE,
+      [901],
+      INSIDE,
+    );
+    const changed = await timed.changeDates(
+      director(),
+      ACTOR,
+      view.request_id,
+      '2026-11-02',
+      [view.people[0].person_id],
+    );
+    expect(changed.people[0]).toMatchObject({
+      date_changed_by_id: ACTOR,
+      date_changed_at: at.toISOString(),
+    });
+    const late = new InvestitureAuthorizationRequestService(
+      world.prisma as never,
+      eligibility as never,
+      achievements as never,
+      { now: () => new Date('2027-01-02T18:00:00.000Z') },
+    );
+    await expect(
+      late.remove(director(), ACTOR, view.request_id, view.people[0].person_id),
+    ).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_REQUEST_YEAR_CLOSED,
+    });
   });
 });

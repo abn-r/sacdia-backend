@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Prisma, investiture_status_enum } from '@prisma/client';
 import { AchievementsService } from '../achievements/achievements.service';
+import { CLOCK, type Clock } from '../common/clock/clock';
 import { toTerritoryId } from '../common/authorization/actor-territory-scope';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import {
@@ -10,6 +12,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { isInstitutionalInvestitureClass } from '../certificate-bulk-imports/institutional-class-codes';
 import { ClassRequirementEligibilityService } from '../classes/class-requirement-eligibility.service';
 import {
   defaultInvestitureWindow,
@@ -17,9 +20,30 @@ import {
 } from '../classes/field-investiture-window';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  INVESTITURE_REQUEST_SECTION_LOCK_PREFIX,
+  INVESTITURE_REQUEST_TIME_ZONE_FALLBACK,
+  investitureRequestYearEnded,
+  localCivilDay,
+  normalizeInvestitureTimeZone,
+} from './ecclesiastical-year-local-day';
+import { InvestitureCommunicationsService } from './investiture-communications.service';
+import { pastorCanAuthorize } from './investiture-pastor-eligibility';
+import {
+  displayName,
+  INVESTITURE_PERSON_PENDING_TEXT,
+  INVESTITURE_PERSON_REJECTED_TEXT,
+} from './investiture-communications.rules';
+import {
+  enrollmentOnLegacyInvestiturePipeline,
+  HISTORICAL_CERTIFICATE_APPLIED_REASON,
+  LATER_CERTIFICATE_ACCREDITATION_REASON,
+  lockInvestitureAuthorizationCalendar,
   lockInvestitureAuthorizationEnrollment,
+  lockInvestitureAuthorizationPastor,
+  lockInvestitureAuthorizationSection,
+  lockInvestitureAuthorizationUser,
+  lockInvestitureAuthorizationYear,
 } from './investiture-request-lock';
+export { INVESTITURE_REQUEST_USER_LOCK_PREFIX } from './investiture-request-lock';
 
 const MARK_ROLES = new Set(['director', 'secretary', 'secretary-treasurer']);
 const FIELD_AUTHORIZER_ROLES = new Set(['director-lf', 'assistant-lf']);
@@ -27,11 +51,23 @@ const GM_TYPE_NAME = 'Guías Mayores';
 const COMMENT_MAX = 500;
 const REASON_MAX = 1000;
 
+type DecisionStore = PrismaService | Prisma.TransactionClient;
+
+function achievementIntentKey(personId: string): string {
+  return `investiture-authorization:${personId}`;
+}
+
+type ClassCompletedDelivery = {
+  personId: string;
+  userId: string;
+  classId: number;
+  className: string | null;
+  clubTypeId: number | null;
+  intentKey?: string;
+};
+
 export const INVESTITURE_SYSTEM_REJECTION_TEXT =
   'Al comprobar el avance, esta persona no cubría los requisitos mínimos. Revisar sus evidencias de avance.';
-
-export const INVESTITURE_REQUEST_USER_LOCK_PREFIX =
-  'investiture-authorization-user:';
 
 type PersonStatus =
   | 'PENDING'
@@ -44,7 +80,10 @@ type PersonStatus =
 export type InvestitureRequestPersonView = {
   person_id: string;
   user_id: string;
+  user_name: string | null;
   class_id: number;
+  class_name: string | null;
+  section_name: string | null;
   enrollment_id: number;
   investiture_date: string;
   status: PersonStatus;
@@ -52,7 +91,11 @@ export type InvestitureRequestPersonView = {
   authorization_comment: string | null;
   rejection_reason: string | null;
   system_reason: string | null;
+  resolution_code: string | null;
   resolved_by_id: string | null;
+  resolved_by_name: string | null;
+  date_changed_by_id: string | null;
+  date_changed_at: string | null;
 };
 
 export type InvestitureResolutionInput = {
@@ -77,6 +120,36 @@ export type InvestitureRequestView = {
   people: InvestitureRequestPersonView[];
 };
 
+export type InvestitureHistoryEntry = {
+  person_id: string;
+  user_id: string;
+  class_id: number;
+  class_name?: string | null;
+  club_section_id: number;
+  ecclesiastical_year_id: number;
+  investiture_date: string;
+  status: PersonStatus | 'REJECTED';
+  rejection_reason?: string | null;
+  system_reason?: string | null;
+  person_text: string | null;
+  authorization_comment?: string | null;
+};
+
+export type InvestitureYearbookEntry = {
+  enrollment_id: number;
+  user_id: string;
+  class_id: number;
+  class_name: string | null;
+  ecclesiastical_year_id: number;
+};
+
+const HISTORY_STATUSES: PersonStatus[] = [
+  'INVESTED',
+  'REJECTED_BY_PERSON',
+  'REJECTED_BY_SYSTEM',
+  'CLOSED_YEAR',
+];
+
 type WindowRange = { start_date: string; end_date: string };
 
 type SectionContext = {
@@ -99,6 +172,7 @@ type EnrollmentRow = {
   class_id: number;
   ecclesiastical_year_id: number;
   investiture_status: string;
+  locked_for_validation: boolean;
   record_kind: string;
   cross_type_enrollment: boolean;
   active: boolean;
@@ -108,6 +182,7 @@ type EnrollmentRow = {
     max_duration_years: number;
     club_type_id: number;
     club_types: { name: string } | null;
+    asset_code?: string | null;
   } | null;
   ecclesiastical_year: { start_date: Date } | null;
 };
@@ -117,12 +192,18 @@ export class InvestitureAuthorizationRequestService {
   private readonly logger = new Logger(
     InvestitureAuthorizationRequestService.name,
   );
+  private readonly clock: Clock;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly eligibility: ClassRequirementEligibilityService,
     private readonly achievements: AchievementsService,
-  ) {}
+    @Optional() @Inject(CLOCK) clock?: Clock,
+    @Optional()
+    private readonly communications?: InvestitureCommunicationsService,
+  ) {
+    this.clock = clock ?? { now: () => new Date() };
+  }
 
   async present(
     authorization: AuthorizationSnapshot,
@@ -131,15 +212,23 @@ export class InvestitureAuthorizationRequestService {
     ecclesiasticalYearId: number,
     investitureDate: string,
     enrollmentIds: number[],
-    now = new Date(),
+    now?: Date,
   ): Promise<InvestitureRequestView> {
+    const enteredAt = this.decisionInstant(now);
     this.assertMarker(authorization, clubSectionId, ecclesiasticalYearId);
     this.assertSelection(enrollmentIds, investitureDate);
     const context = await this.loadContext(clubSectionId, ecclesiasticalYearId);
-    this.assertYearOpen(context, now);
-    this.assertTodayAllowsPresentation(context, now);
+    this.assertYearOpen(context, enteredAt);
+    this.assertTodayAllowsPresentation(context, enteredAt);
     this.assertDateInside(context, investitureDate);
-    return this.append(actorId, context, null, investitureDate, enrollmentIds);
+    return this.append(
+      actorId,
+      context,
+      null,
+      investitureDate,
+      enrollmentIds,
+      now,
+    );
   }
 
   async addPeople(
@@ -148,8 +237,9 @@ export class InvestitureAuthorizationRequestService {
     requestId: string,
     investitureDate: string,
     enrollmentIds: number[],
-    now = new Date(),
+    now?: Date,
   ): Promise<InvestitureRequestView> {
+    const enteredAt = this.decisionInstant(now);
     this.assertSelection(enrollmentIds, investitureDate);
     const request = await this.requireRequest(requestId);
     this.assertMarker(
@@ -161,8 +251,8 @@ export class InvestitureAuthorizationRequestService {
       request.club_section_id,
       request.ecclesiastical_year_id,
     );
-    this.assertYearOpen(context, now);
-    this.assertTodayAllowsPresentation(context, now);
+    this.assertYearOpen(context, enteredAt);
+    this.assertTodayAllowsPresentation(context, enteredAt);
     this.assertDateInside(context, investitureDate);
     return this.append(
       actorId,
@@ -170,6 +260,7 @@ export class InvestitureAuthorizationRequestService {
       requestId,
       investitureDate,
       enrollmentIds,
+      now,
     );
   }
 
@@ -178,7 +269,7 @@ export class InvestitureAuthorizationRequestService {
     actorId: string,
     requestId: string,
     personId: string,
-    now = new Date(),
+    now?: Date,
   ): Promise<InvestitureRequestPersonView> {
     const request = await this.requireRequest(requestId);
     this.assertMarker(
@@ -190,7 +281,8 @@ export class InvestitureAuthorizationRequestService {
       request.club_section_id,
       request.ecclesiastical_year_id,
     );
-    this.assertYearOpen(context, now);
+    const at = this.decisionInstant(now);
+    this.assertYearOpen(context, at);
     return this.prisma.$transaction(async (tx) => {
       const person = await tx.investiture_authorization_people.findUnique({
         where: { person_id: personId },
@@ -222,11 +314,11 @@ export class InvestitureAuthorizationRequestService {
 
   async changeDates(
     authorization: AuthorizationSnapshot,
-    _actorId: string,
+    actorId: string,
     requestId: string,
     investitureDate: string,
     personIds: string[],
-    now = new Date(),
+    now?: Date,
   ): Promise<InvestitureRequestView> {
     if (personIds.length === 0) {
       throw new AppBadRequestException(ErrorCode.INVESTITURE_REQUEST_EMPTY);
@@ -245,7 +337,8 @@ export class InvestitureAuthorizationRequestService {
       request.club_section_id,
       request.ecclesiastical_year_id,
     );
-    this.assertYearOpen(context, now);
+    const at = this.decisionInstant(now);
+    this.assertYearOpen(context, at);
     this.assertDateInside(context, investitureDate);
     const uniqueIds = [...new Set(personIds)].sort();
     return this.prisma.$transaction(async (tx) => {
@@ -269,9 +362,15 @@ export class InvestitureAuthorizationRequestService {
       }
       await tx.investiture_authorization_people.updateMany({
         where: { person_id: { in: uniqueIds }, status: 'PENDING' },
-        data: { investiture_date: civilDateToUtc(investitureDate) },
+        data: {
+          investiture_date: civilDateToUtc(investitureDate),
+          date_changed_by_id: actorId,
+          date_changed_at: at,
+        },
       });
-      return this.readRequest(tx, requestId);
+      // BCR33-N1: the section directiva keeps the board shape; super-admin
+      // (no section marker) never receives another person's human reason.
+      return this.readRequest(tx, requestId, marker ? 'board' : 'authorizer');
     });
   }
 
@@ -292,10 +391,41 @@ export class InvestitureAuthorizationRequestService {
         },
         select: { request_id: true },
       });
-    if (!pending) {
+    if (pending) {
+      return this.readRequest(this.prisma, pending.request_id);
+    }
+    const informed =
+      await this.prisma.investiture_authorization_people.findFirst({
+        where: {
+          resolution_code: 'HISTORICAL_CERTIFICATE_APPLIED',
+          request: {
+            club_section_id: clubSectionId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+          },
+        },
+        select: { request_id: true, person_id: true },
+        orderBy: [{ request_id: 'asc' }, { person_id: 'asc' }],
+      });
+    const laterCertificate =
+      await this.prisma.investiture_authorization_people.findFirst({
+        where: {
+          status: 'CLOSED_YEAR',
+          system_reason: LATER_CERTIFICATE_ACCREDITATION_REASON,
+          request: {
+            club_section_id: clubSectionId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+          },
+        },
+        select: { request_id: true, person_id: true },
+        orderBy: [{ request_id: 'asc' }, { person_id: 'asc' }],
+      });
+    if (laterCertificate) {
+      return this.readRequest(this.prisma, laterCertificate.request_id);
+    }
+    if (!informed) {
       return null;
     }
-    return this.readRequest(this.prisma, pending.request_id);
+    return this.readRequest(this.prisma, informed.request_id);
   }
 
   async listForAuthorizer(
@@ -308,14 +438,31 @@ export class InvestitureAuthorizationRequestService {
       where: {
         ecclesiastical_year_id: ecclesiasticalYearId,
         club_section_id: { in: [...sectionIds] },
-        people: { some: { status: 'PENDING' } },
+        OR: [
+          { people: { some: { status: 'PENDING' } } },
+          {
+            people: {
+              some: { resolution_code: 'HISTORICAL_CERTIFICATE_APPLIED' },
+            },
+          },
+          {
+            people: {
+              some: {
+                status: 'CLOSED_YEAR',
+                system_reason: LATER_CERTIFICATE_ACCREDITATION_REASON,
+              },
+            },
+          },
+        ],
       },
       select: { request_id: true },
       orderBy: { request_id: 'asc' },
     });
     const views: InvestitureRequestView[] = [];
     for (const row of rows) {
-      views.push(await this.readRequest(this.prisma, row.request_id));
+      views.push(
+        await this.readRequest(this.prisma, row.request_id, 'authorizer'),
+      );
     }
     return views;
   }
@@ -326,12 +473,159 @@ export class InvestitureAuthorizationRequestService {
     requestId: string,
   ): Promise<InvestitureRequestView> {
     const request = await this.requireRequest(requestId);
+    // BCR-8: a read never depends on the stored field time zone being valid;
+    // only writes (present, resolve, ...) reject an invalid zone.
     const context = await this.loadContext(
       request.club_section_id,
       request.ecclesiastical_year_id,
+      this.prisma,
+      { validateTimeZone: false },
     );
-    await this.assertAuthorizer(authorization, actorId, context);
-    return this.readRequest(this.prisma, requestId);
+    if (!this.isSuperAdmin(authorization)) {
+      await this.assertAuthorizer(authorization, actorId, context);
+    }
+    // BCR-7: super-admin gets the authorizer shape (no human rejection reason).
+    return this.readRequest(this.prisma, requestId, 'authorizer');
+  }
+
+  async ownHistory(actorId: string): Promise<InvestitureHistoryEntry[]> {
+    const rows = await this.prisma.investiture_authorization_people.findMany({
+      where: {
+        user_id: actorId,
+        OR: [
+          { status: { in: [...HISTORY_STATUSES, 'PENDING'] } },
+          {
+            status: 'REMOVED',
+            system_reason: HISTORICAL_CERTIFICATE_APPLIED_REASON,
+          },
+        ],
+      },
+      include: {
+        request: {
+          select: {
+            club_section_id: true,
+            ecclesiastical_year_id: true,
+          },
+        },
+      },
+      orderBy: { person_id: 'asc' },
+    });
+    const classNames = await this.classNames(
+      this.prisma,
+      rows.map((row) => row.class_id),
+    );
+    return rows.map((row) =>
+      this.historyEntry(row, 'person', classNames.get(row.class_id) ?? null),
+    );
+  }
+
+  async sectionHistory(
+    authorization: AuthorizationSnapshot,
+    clubSectionId: number,
+  ): Promise<InvestitureHistoryEntry[]> {
+    this.assertSectionBoard(authorization, clubSectionId);
+    const rows = await this.prisma.investiture_authorization_people.findMany({
+      where: {
+        status: { in: HISTORY_STATUSES },
+        request: { club_section_id: clubSectionId },
+      },
+      include: {
+        request: {
+          select: {
+            club_section_id: true,
+            ecclesiastical_year_id: true,
+          },
+        },
+      },
+      orderBy: { person_id: 'asc' },
+    });
+    const classNames = await this.classNames(
+      this.prisma,
+      rows.map((row) => row.class_id),
+    );
+    return rows.map((row) =>
+      this.historyEntry(row, 'section', classNames.get(row.class_id) ?? null),
+    );
+  }
+
+  async yearbook(
+    authorization: AuthorizationSnapshot,
+    clubSectionId: number,
+  ): Promise<{
+    club_section_id: number;
+    entries: InvestitureYearbookEntry[];
+  }> {
+    this.assertSectionBoard(authorization, clubSectionId);
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: clubSectionId },
+      select: {
+        club_type_id: true,
+        main_club_id: true,
+      },
+    });
+    if (!section?.club_type_id || section.main_club_id == null) {
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_REQUEST_SECTION_NOT_FOUND,
+      );
+    }
+    const siblings = await this.prisma.club_sections.findMany({
+      where: { main_club_id: section.main_club_id },
+      select: { club_section_id: true },
+    });
+    const assignments = await this.prisma.club_role_assignments.findMany({
+      where: {
+        club_section_id: {
+          in: siblings.map((sibling) => sibling.club_section_id),
+        },
+        status: { in: ['active', 'inactive', 'ended'] },
+      },
+      select: { user_id: true, ecclesiastical_year_id: true },
+    });
+    if (assignments.length === 0) {
+      return { club_section_id: clubSectionId, entries: [] };
+    }
+    const pairs = new Map<
+      string,
+      { user_id: string; ecclesiastical_year_id: number }
+    >();
+    for (const assignment of assignments) {
+      pairs.set(
+        `${assignment.user_id}:${assignment.ecclesiastical_year_id}`,
+        assignment,
+      );
+    }
+    const enrollments = await this.prisma.enrollments.findMany({
+      where: {
+        record_kind: 'OPERATIONAL',
+        classes: { club_type_id: section.club_type_id },
+        OR: [...pairs.values()].map((assignment) => ({
+          user_id: assignment.user_id,
+          ecclesiastical_year_id: assignment.ecclesiastical_year_id,
+        })),
+      },
+      select: {
+        enrollment_id: true,
+        user_id: true,
+        class_id: true,
+        ecclesiastical_year_id: true,
+        classes: { select: { name: true } },
+      },
+      orderBy: [
+        { ecclesiastical_year_id: 'asc' },
+        { class_id: 'asc' },
+        { user_id: 'asc' },
+      ],
+    });
+    return {
+      club_section_id: clubSectionId,
+      entries: enrollments.map((enrollment) => ({
+        enrollment_id: enrollment.enrollment_id,
+        user_id: enrollment.user_id,
+        class_id: enrollment.class_id,
+        class_name: enrollment.classes?.name ?? null,
+        ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
+      })),
+    };
   }
 
   async resolve(
@@ -339,7 +633,7 @@ export class InvestitureAuthorizationRequestService {
     actorId: string,
     requestId: string,
     input: InvestitureResolutionInput,
-    now = new Date(),
+    now?: Date,
   ): Promise<InvestitureResolutionView> {
     const invest = input.invest ?? [];
     const reject = input.reject ?? [];
@@ -382,8 +676,9 @@ export class InvestitureAuthorizationRequestService {
       request.ecclesiastical_year_id,
     );
     await this.assertAuthorizer(authorization, actorId, context);
-    this.assertYearOpen(context, now);
-    this.assertTodayAllowsPresentation(context, now);
+    const enteredAt = this.decisionInstant(now);
+    this.assertYearOpen(context, enteredAt);
+    this.assertTodayAllowsPresentation(context, enteredAt);
     const rejectIds = new Set(reject.map((item) => item.person_id));
     const outcome = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.investiture_authorization_people.findMany({
@@ -391,6 +686,22 @@ export class InvestitureAuthorizationRequestService {
       });
       if (rows.length !== ids.length) {
         throw new AppNotFoundException(ErrorCode.INVESTITURE_REQUEST_NOT_FOUND);
+      }
+      await lockInvestitureAuthorizationYear(tx, context.yearId);
+      await lockInvestitureAuthorizationCalendar(
+        tx,
+        context.localFieldId,
+        context.yearId,
+      );
+      if (
+        !this.fieldAuthorizesSection(authorization, context) &&
+        context.districtId
+      ) {
+        await lockInvestitureAuthorizationPastor(
+          tx,
+          context.districtId,
+          actorId,
+        );
       }
       await this.lockSection(tx, context.clubSectionId, context.yearId);
       await this.lockUsers(
@@ -401,6 +712,15 @@ export class InvestitureAuthorizationRequestService {
         tx,
         rows.map((row) => row.enrollment_id),
       );
+      const decision = await this.loadContext(
+        request.club_section_id,
+        request.ecclesiastical_year_id,
+        tx,
+      );
+      await this.assertAuthorizer(authorization, actorId, decision, tx);
+      const decidedAt = this.decisionInstant(now);
+      this.assertYearOpen(decision, decidedAt);
+      this.assertTodayAllowsPresentation(decision, decidedAt);
       const current = await tx.investiture_authorization_people.findMany({
         where: { request_id: requestId, person_id: { in: ids } },
       });
@@ -413,12 +733,8 @@ export class InvestitureAuthorizationRequestService {
         person_id: string;
         status: PersonStatus;
       }> = [];
-      const emit: Array<{
-        userId: string;
-        classId: number;
-        className: string | null;
-        clubTypeId: number | null;
-      }> = [];
+      const emit: ClassCompletedDelivery[] = [];
+      const recover: ClassCompletedDelivery[] = [];
       for (const personId of ids) {
         const person = current.find((row) => row.person_id === personId);
         if (!person) {
@@ -427,6 +743,19 @@ export class InvestitureAuthorizationRequestService {
           );
         }
         if (person.status !== 'PENDING') {
+          if (person.status === 'INVESTED' && person.achievement_intent_key) {
+            const enrollment = await this.loadEnrollment(
+              person.enrollment_id,
+              tx,
+            );
+            recover.push({
+              personId: person.person_id,
+              userId: enrollment.user_id,
+              classId: enrollment.class_id,
+              className: enrollment.classes?.name ?? null,
+              clubTypeId: enrollment.classes?.club_type_id ?? null,
+            });
+          }
           alreadyResolved.push({
             person_id: person.person_id,
             status: person.status,
@@ -434,36 +763,12 @@ export class InvestitureAuthorizationRequestService {
           continue;
         }
         const enrollment = await this.loadEnrollment(person.enrollment_id, tx);
-        const date = civilDate(person.investiture_date);
-        if (
-          date < context.yearStart ||
-          date > context.yearEnd ||
-          !context.window ||
-          date < context.window.start_date ||
-          date > context.window.end_date
-        ) {
-          blocked.push({
-            person_id: person.person_id,
-            code:
-              date < context.yearStart || date > context.yearEnd
-                ? ErrorCode.INVESTITURE_REQUEST_DATE_OUTSIDE_YEAR
-                : ErrorCode.INVESTITURE_REQUEST_DATE_OUTSIDE_WINDOW,
-          });
-          continue;
-        }
-        if (!enrollment.active || enrollment.record_kind !== 'OPERATIONAL') {
-          blocked.push({
-            person_id: person.person_id,
-            code: ErrorCode.INVESTITURE_REQUEST_NOT_OPERATIONAL,
-          });
-          continue;
-        }
-        if (enrollment.investiture_status === 'INVESTIDO') {
+        if (isInstitutionalInvestitureClass(enrollment.classes?.asset_code)) {
           const updated = await tx.investiture_authorization_people.updateMany({
             where: { person_id: person.person_id, status: 'PENDING' },
             data: {
               status: 'REMOVED',
-              resolution_code: 'ALREADY_INVESTED',
+              resolution_code: 'CLASS_NOT_ELIGIBLE',
             },
           });
           if (updated.count !== 1) {
@@ -477,7 +782,62 @@ export class InvestitureAuthorizationRequestService {
             this.personView({
               ...person,
               status: 'REMOVED',
-              resolution_code: 'ALREADY_INVESTED',
+              resolution_code: 'CLASS_NOT_ELIGIBLE',
+            }),
+          );
+          continue;
+        }
+        const date = civilDate(person.investiture_date);
+        if (
+          date < decision.yearStart ||
+          date > decision.yearEnd ||
+          !decision.window ||
+          date < decision.window.start_date ||
+          date > decision.window.end_date
+        ) {
+          blocked.push({
+            person_id: person.person_id,
+            code:
+              date < decision.yearStart || date > decision.yearEnd
+                ? ErrorCode.INVESTITURE_REQUEST_DATE_OUTSIDE_YEAR
+                : ErrorCode.INVESTITURE_REQUEST_DATE_OUTSIDE_WINDOW,
+          });
+          continue;
+        }
+        if (!enrollment.active || enrollment.record_kind !== 'OPERATIONAL') {
+          blocked.push({
+            person_id: person.person_id,
+            code: ErrorCode.INVESTITURE_REQUEST_NOT_OPERATIONAL,
+          });
+          continue;
+        }
+        const sameClassInvested = await this.findSameClassInvested(
+          tx,
+          enrollment,
+        );
+        if (sameClassInvested || this.legacyBlocksResolution(enrollment)) {
+          const resolutionCode = sameClassInvested
+            ? 'ALREADY_INVESTED'
+            : 'LEGACY_PIPELINE_ACTIVE';
+          const updated = await tx.investiture_authorization_people.updateMany({
+            where: { person_id: person.person_id, status: 'PENDING' },
+            data: {
+              status: 'REMOVED',
+              resolution_code: resolutionCode,
+            },
+          });
+          if (updated.count !== 1) {
+            alreadyResolved.push({
+              person_id: person.person_id,
+              status: 'REMOVED',
+            });
+            continue;
+          }
+          retired.push(
+            this.personView({
+              ...person,
+              status: 'REMOVED',
+              resolution_code: resolutionCode,
             }),
           );
           continue;
@@ -513,7 +873,7 @@ export class InvestitureAuthorizationRequestService {
           );
           continue;
         }
-        const failed = await this.failsRequirements(tx, context, enrollment);
+        const failed = await this.failsRequirements(tx, decision, enrollment);
         if (failed) {
           const updated = await tx.investiture_authorization_people.updateMany({
             where: { person_id: person.person_id, status: 'PENDING' },
@@ -543,6 +903,56 @@ export class InvestitureAuthorizationRequestService {
           invest
             .find((item) => item.person_id === person.person_id)
             ?.comment?.trim() || null;
+        const marked = await tx.enrollments.updateMany({
+          where: {
+            enrollment_id: person.enrollment_id,
+            investiture_status:
+              enrollment.investiture_status as investiture_status_enum,
+          },
+          data: {
+            investiture_status: 'INVESTIDO',
+            investiture_date: person.investiture_date,
+            locked_for_validation: false,
+          },
+        });
+        if (marked.count !== 1) {
+          const current = await tx.enrollments.findUnique({
+            where: { enrollment_id: person.enrollment_id },
+            select: {
+              investiture_status: true,
+              locked_for_validation: true,
+            },
+          });
+          const resolutionCode =
+            current?.investiture_status === 'INVESTIDO'
+              ? 'ALREADY_INVESTED'
+              : current && this.legacyBlocksResolution(current)
+                ? 'LEGACY_PIPELINE_ACTIVE'
+                : 'CONCURRENT_STATUS';
+          const retiredRow =
+            await tx.investiture_authorization_people.updateMany({
+              where: { person_id: person.person_id, status: 'PENDING' },
+              data: {
+                status: 'REMOVED',
+                resolution_code: resolutionCode,
+              },
+            });
+          if (retiredRow.count === 1) {
+            retired.push(
+              this.personView({
+                ...person,
+                status: 'REMOVED',
+                resolution_code: resolutionCode,
+              }),
+            );
+          } else {
+            alreadyResolved.push({
+              person_id: person.person_id,
+              status: 'REMOVED',
+            });
+          }
+          continue;
+        }
         const updated = await tx.investiture_authorization_people.updateMany({
           where: { person_id: person.person_id, status: 'PENDING' },
           data: {
@@ -550,6 +960,7 @@ export class InvestitureAuthorizationRequestService {
             resolution_code: 'INVESTED',
             authorization_comment: comment,
             resolved_by_id: actorId,
+            achievement_intent_key: achievementIntentKey(person.person_id),
           },
         });
         if (updated.count !== 1) {
@@ -559,13 +970,6 @@ export class InvestitureAuthorizationRequestService {
           });
           continue;
         }
-        await tx.enrollments.update({
-          where: { enrollment_id: person.enrollment_id },
-          data: {
-            investiture_status: 'INVESTIDO',
-            investiture_date: person.investiture_date,
-          },
-        });
         invested.push(
           this.personView({
             ...person,
@@ -575,6 +979,7 @@ export class InvestitureAuthorizationRequestService {
           }),
         );
         emit.push({
+          personId: person.person_id,
           userId: enrollment.user_id,
           classId: enrollment.class_id,
           className: enrollment.classes?.name ?? null,
@@ -586,10 +991,19 @@ export class InvestitureAuthorizationRequestService {
         rejectedByPerson.length +
         rejectedBySystem.length +
         retired.length;
-      if (wrote === 0 && blocked.length > 0) {
+      if (wrote > 0) {
+        await this.communications?.stageResults?.(tx, {
+          requestId,
+          actorId,
+          investedIds: invested.map((person) => person.person_id),
+          rejectedPersonIds: rejectedByPerson.map((person) => person.person_id),
+          rejectedSystemIds: rejectedBySystem.map((person) => person.person_id),
+        });
+      }
+      if (wrote === 0 && blocked.length > 0 && recover.length === 0) {
         throw new AppBadRequestException(blocked[0].code as ErrorCode);
       }
-      if (wrote === 0) {
+      if (wrote === 0 && recover.length === 0) {
         throw new AppConflictException(
           ErrorCode.INVESTITURE_REQUEST_ALREADY_RESOLVED,
         );
@@ -605,9 +1019,114 @@ export class InvestitureAuthorizationRequestService {
           already_resolved: alreadyResolved,
         },
         emit,
+        recover,
+        conflictOnly: wrote === 0,
       };
     });
-    for (const item of outcome.emit) {
+    if (outcome.conflictOnly) {
+      await this.deliverClassCompleted(outcome.recover);
+      throw new AppConflictException(
+        ErrorCode.INVESTITURE_REQUEST_ALREADY_RESOLVED,
+      );
+    }
+    await this.deliverClassCompleted(outcome.emit, { swallow: true });
+    await this.communications?.recordResults({
+      requestId,
+      actorId,
+      investedIds: outcome.view.invested.map((person) => person.person_id),
+      rejectedPersonIds: outcome.view.rejected_by_person.map(
+        (person) => person.person_id,
+      ),
+      rejectedSystemIds: outcome.view.rejected_by_system.map(
+        (person) => person.person_id,
+      ),
+    });
+    return {
+      ...outcome.view,
+      invested: outcome.view.invested.map((person) => ({
+        ...person,
+        rejection_reason: null,
+      })),
+      rejected_by_person: outcome.view.rejected_by_person.map((person) => ({
+        ...person,
+        rejection_reason: null,
+      })),
+      rejected_by_system: outcome.view.rejected_by_system.map((person) => ({
+        ...person,
+        rejection_reason: null,
+      })),
+      retired: outcome.view.retired.map((person) => ({
+        ...person,
+        rejection_reason: null,
+      })),
+    };
+  }
+
+  /**
+   * Entrega intenciones ya confirmadas. No comprueba año, ventana ni asignación:
+   * eso solo aplica a una decisión nueva.
+   */
+  async reconcileConfirmedAchievementIntents(): Promise<number> {
+    const people = await this.prisma.investiture_authorization_people.findMany({
+      where: {
+        status: 'INVESTED',
+        achievement_intent_key: { not: null },
+      },
+    });
+    const keys = people.flatMap((person) =>
+      person.achievement_intent_key ? [person.achievement_intent_key] : [],
+    );
+    if (keys.length === 0) {
+      return 0;
+    }
+    const finished = await this.prisma.achievement_event_log.findMany({
+      where: { idempotency_key: { in: keys }, processed: true },
+      select: { idempotency_key: true },
+    });
+    const done = new Set(
+      finished.flatMap((row) =>
+        row.idempotency_key ? [row.idempotency_key] : [],
+      ),
+    );
+    let delivered = 0;
+    for (const person of people) {
+      const intentKey = person.achievement_intent_key;
+      if (!intentKey || done.has(intentKey)) {
+        continue;
+      }
+      try {
+        const enrollment = await this.loadEnrollment(person.enrollment_id);
+        await this.deliverClassCompleted([
+          {
+            personId: person.person_id,
+            userId: enrollment.user_id,
+            classId: enrollment.class_id,
+            className: enrollment.classes?.name ?? null,
+            clubTypeId: enrollment.classes?.club_type_id ?? null,
+            intentKey,
+          },
+        ]);
+        delivered += 1;
+      } catch (error) {
+        this.logger.warn(
+          `No se pudo reconciliar class.completed de ${person.person_id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    return delivered;
+  }
+
+  private decisionInstant(explicit?: Date): Date {
+    return explicit ?? this.clock.now();
+  }
+
+  private async deliverClassCompleted(
+    items: ClassCompletedDelivery[],
+    options?: { swallow?: boolean },
+  ): Promise<void> {
+    for (const item of items) {
       try {
         await this.achievements.emitEvent({
           userId: item.userId,
@@ -617,8 +1136,12 @@ export class InvestitureAuthorizationRequestService {
             class_name: item.className,
             club_type_id: item.clubTypeId,
           },
+          idempotencyKey: item.intentKey ?? achievementIntentKey(item.personId),
         });
       } catch (error) {
+        if (!options?.swallow) {
+          throw error;
+        }
         this.logger.warn(
           `No se pudo emitir class.completed para ${item.userId}: ${
             error instanceof Error ? error.message : String(error)
@@ -626,40 +1149,6 @@ export class InvestitureAuthorizationRequestService {
         );
       }
     }
-    return outcome.view;
-  }
-
-  async closePendingByYearEnd(personId: string): Promise<boolean> {
-    return this.prisma.$transaction(async (tx) => {
-      const person = await tx.investiture_authorization_people.findUnique({
-        where: { person_id: personId },
-      });
-      if (!person || person.status !== 'PENDING') {
-        return false;
-      }
-      const request = await tx.investiture_authorization_requests.findUnique({
-        where: { request_id: person.request_id },
-        select: { club_section_id: true, ecclesiastical_year_id: true },
-      });
-      if (!request) {
-        return false;
-      }
-      await this.lockSection(
-        tx,
-        request.club_section_id,
-        request.ecclesiastical_year_id,
-      );
-      await this.lockUsers(tx, [person.user_id]);
-      await this.lockEnrollments(tx, [person.enrollment_id]);
-      const updated = await tx.investiture_authorization_people.updateMany({
-        where: { person_id: personId, status: 'PENDING' },
-        data: {
-          status: 'CLOSED_YEAR',
-          resolution_code: 'CLOSED_YEAR',
-        },
-      });
-      return updated.count === 1;
-    });
   }
 
   private async append(
@@ -668,18 +1157,21 @@ export class InvestitureAuthorizationRequestService {
     requestId: string | null,
     investitureDate: string,
     enrollmentIds: number[],
+    now?: Date,
   ): Promise<InvestitureRequestView> {
     const uniqueIds = [...new Set(enrollmentIds)];
     const loaded = await Promise.all(
       uniqueIds.map((enrollmentId) => this.loadEnrollment(enrollmentId)),
     );
+    let operationId: string | undefined;
     try {
-      await this.writePeople(
+      operationId = await this.writePeople(
         actorId,
         context,
         requestId,
         investitureDate,
         loaded,
+        now,
       );
     } catch (error) {
       const invested = investedTarget(error);
@@ -715,6 +1207,11 @@ export class InvestitureAuthorizationRequestService {
     if (!saved) {
       throw new AppNotFoundException(ErrorCode.INVESTITURE_REQUEST_NOT_FOUND);
     }
+    await this.communications?.recordPresentation({
+      requestId: saved.request_id,
+      enrollmentIds: uniqueIds,
+      operationId,
+    });
     return this.readRequest(this.prisma, saved.request_id);
   }
 
@@ -724,8 +1221,16 @@ export class InvestitureAuthorizationRequestService {
     requestId: string | null,
     investitureDate: string,
     loaded: EnrollmentRow[],
-  ): Promise<void> {
+    now?: Date,
+  ): Promise<string> {
+    const operationId = randomUUID();
     await this.prisma.$transaction(async (tx) => {
+      await lockInvestitureAuthorizationYear(tx, context.yearId);
+      await lockInvestitureAuthorizationCalendar(
+        tx,
+        context.localFieldId,
+        context.yearId,
+      );
       await this.lockSection(tx, context.clubSectionId, context.yearId);
       await this.lockUsers(
         tx,
@@ -735,12 +1240,21 @@ export class InvestitureAuthorizationRequestService {
         tx,
         loaded.map((enrollment) => enrollment.enrollment_id),
       );
+      const fresh = await this.loadContext(
+        context.clubSectionId,
+        context.yearId,
+        tx,
+      );
+      const effective = this.decisionInstant(now);
+      this.assertYearOpen(fresh, effective);
+      this.assertTodayAllowsPresentation(fresh, effective);
+      this.assertDateInside(fresh, investitureDate);
       const open = await tx.investiture_authorization_people.findFirst({
         where: {
           status: 'PENDING',
           request: {
-            club_section_id: context.clubSectionId,
-            ecclesiastical_year_id: context.yearId,
+            club_section_id: fresh.clubSectionId,
+            ecclesiastical_year_id: fresh.yearId,
           },
         },
         select: { request_id: true },
@@ -752,8 +1266,8 @@ export class InvestitureAuthorizationRequestService {
         } else {
           const created = await tx.investiture_authorization_requests.create({
             data: {
-              club_section_id: context.clubSectionId,
-              ecclesiastical_year_id: context.yearId,
+              club_section_id: fresh.clubSectionId,
+              ecclesiastical_year_id: fresh.yearId,
               created_by_id: actorId,
             },
           });
@@ -764,7 +1278,12 @@ export class InvestitureAuthorizationRequestService {
       }
       for (const seeded of loaded) {
         const enrollment = await this.loadEnrollment(seeded.enrollment_id, tx);
-        const singleSlot = await this.acceptEnrollment(tx, context, enrollment);
+        if (isInstitutionalInvestitureClass(enrollment.classes?.asset_code)) {
+          throw new AppBadRequestException(
+            ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
+          );
+        }
+        const singleSlot = await this.acceptEnrollment(tx, fresh, enrollment);
         await tx.investiture_authorization_people.create({
           data: {
             request_id: targetId,
@@ -777,7 +1296,13 @@ export class InvestitureAuthorizationRequestService {
           },
         });
       }
+      await this.communications?.stagePresentation?.(tx, {
+        requestId: targetId,
+        enrollmentIds: loaded.map((enrollment) => enrollment.enrollment_id),
+        operationId,
+      });
     });
+    return operationId;
   }
 
   private async acceptEnrollment(
@@ -810,13 +1335,18 @@ export class InvestitureAuthorizationRequestService {
         ErrorCode.INVESTITURE_REQUEST_OUTSIDE_SECTION,
       );
     }
-    if (enrollment.investiture_status === 'INVESTIDO') {
+    if (await this.findSameClassInvested(store, enrollment)) {
       throw new AppConflictException(
         ErrorCode.INVESTITURE_REQUEST_ALREADY_INVESTED,
         {
           userId: enrollment.user_id,
           classId: enrollment.class_id,
         },
+      );
+    }
+    if (enrollmentOnLegacyInvestiturePipeline(enrollment)) {
+      throw new AppConflictException(
+        ErrorCode.INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE,
       );
     }
     const pending = await store.investiture_authorization_people.findMany({
@@ -925,6 +1455,31 @@ export class InvestitureAuthorizationRequestService {
     return !investedGm;
   }
 
+  private legacyBlocksResolution(enrollment: {
+    investiture_status: string;
+    locked_for_validation?: boolean | null;
+  }): boolean {
+    if (enrollment.investiture_status === 'FIELD_APPROVED') {
+      return false;
+    }
+    return enrollmentOnLegacyInvestiturePipeline(enrollment);
+  }
+
+  private async findSameClassInvested(
+    store: Prisma.TransactionClient,
+    enrollment: { user_id: string; class_id: number },
+  ): Promise<boolean> {
+    const invested = await store.enrollments.findFirst({
+      where: {
+        user_id: enrollment.user_id,
+        class_id: enrollment.class_id,
+        investiture_status: 'INVESTIDO',
+      },
+      select: { enrollment_id: true },
+    });
+    return Boolean(invested);
+  }
+
   private async loadEnrollment(
     enrollmentId: number,
     store: Prisma.TransactionClient | PrismaService = this.prisma,
@@ -937,6 +1492,7 @@ export class InvestitureAuthorizationRequestService {
         class_id: true,
         ecclesiastical_year_id: true,
         investiture_status: true,
+        locked_for_validation: true,
         record_kind: true,
         cross_type_enrollment: true,
         active: true,
@@ -946,6 +1502,7 @@ export class InvestitureAuthorizationRequestService {
             min_duration_years: true,
             max_duration_years: true,
             club_type_id: true,
+            asset_code: true,
             club_types: { select: { name: true } },
           },
         },
@@ -961,8 +1518,10 @@ export class InvestitureAuthorizationRequestService {
   private async loadContext(
     clubSectionId: number,
     ecclesiasticalYearId: number,
+    store: DecisionStore = this.prisma,
+    options: { validateTimeZone?: boolean } = {},
   ): Promise<SectionContext> {
-    const section = await this.prisma.club_sections.findUnique({
+    const section = await store.club_sections.findUnique({
       where: { club_section_id: clubSectionId },
       select: {
         club_section_id: true,
@@ -987,7 +1546,7 @@ export class InvestitureAuthorizationRequestService {
         ErrorCode.INVESTITURE_REQUEST_SECTION_NOT_FOUND,
       );
     }
-    const year = await this.prisma.ecclesiastical_years.findUnique({
+    const year = await store.ecclesiastical_years.findUnique({
       where: { year_id: ecclesiasticalYearId },
       select: { start_date: true, end_date: true, active: true },
     });
@@ -998,17 +1557,15 @@ export class InvestitureAuthorizationRequestService {
     }
     const yearStart = civilDate(year.start_date);
     const yearEnd = civilDate(year.end_date);
-    const stored = await this.prisma.local_field_investiture_windows.findUnique(
-      {
-        where: {
-          local_field_id_ecclesiastical_year_id: {
-            local_field_id: section.clubs.local_field_id,
-            ecclesiastical_year_id: ecclesiasticalYearId,
-          },
+    const stored = await store.local_field_investiture_windows.findUnique({
+      where: {
+        local_field_id_ecclesiastical_year_id: {
+          local_field_id: section.clubs.local_field_id,
+          ecclesiastical_year_id: ecclesiasticalYearId,
         },
-        select: { start_date: true, end_date: true },
       },
-    );
+      select: { start_date: true, end_date: true },
+    });
     const explicit = stored
       ? explicitWindow(
           civilDate(stored.start_date),
@@ -1022,7 +1579,10 @@ export class InvestitureAuthorizationRequestService {
       clubTypeId: section.club_type_id,
       mainClubId: section.main_club_id,
       localFieldId: section.clubs.local_field_id,
-      timeZone: section.clubs.local_fields?.timezone || 'America/Mexico_City',
+      timeZone:
+        options.validateTimeZone === false
+          ? this.readTimeZone(section.clubs.local_fields?.timezone)
+          : normalizeInvestitureTimeZone(section.clubs.local_fields?.timezone),
       yearId: ecclesiasticalYearId,
       yearStart,
       yearEnd,
@@ -1032,12 +1592,40 @@ export class InvestitureAuthorizationRequestService {
     };
   }
 
+  private readTimeZone(value: string | null | undefined): string {
+    try {
+      return normalizeInvestitureTimeZone(value);
+    } catch {
+      return INVESTITURE_REQUEST_TIME_ZONE_FALLBACK;
+    }
+  }
+
   private assertMarker(
     authorization: AuthorizationSnapshot,
     clubSectionId: number,
     ecclesiasticalYearId: number,
   ): void {
     if (!this.sectionRole(authorization, clubSectionId, ecclesiasticalYearId)) {
+      throw new AppForbiddenException(ErrorCode.INVESTITURE_REQUEST_FORBIDDEN);
+    }
+  }
+
+  private assertSectionBoard(
+    authorization: AuthorizationSnapshot,
+    clubSectionId: number,
+  ): void {
+    const allowed = (authorization.grants?.club_assignments ?? []).some(
+      (grant) => {
+        if (!grant.operational || grant.status !== 'active') {
+          return false;
+        }
+        if (grant.section.club_section_id !== clubSectionId) {
+          return false;
+        }
+        return MARK_ROLES.has(grant.role_name.trim().toLowerCase());
+      },
+    );
+    if (!allowed) {
       throw new AppForbiddenException(ErrorCode.INVESTITURE_REQUEST_FORBIDDEN);
     }
   }
@@ -1092,9 +1680,13 @@ export class InvestitureAuthorizationRequestService {
   private assertYearOpen(context: SectionContext, now: Date): void {
     const day = localDay(now, context.timeZone);
     if (
-      !context.yearActive ||
-      day < context.yearStart ||
-      day > context.yearEnd
+      investitureRequestYearEnded({
+        active: context.yearActive,
+        endDate: context.yearEnd,
+        now,
+        timeZone: context.timeZone,
+      }) ||
+      day < context.yearStart
     ) {
       throw new AppConflictException(ErrorCode.INVESTITURE_REQUEST_YEAR_CLOSED);
     }
@@ -1149,8 +1741,10 @@ export class InvestitureAuthorizationRequestService {
     clubSectionId: number,
     ecclesiasticalYearId: number,
   ): Promise<void> {
-    await store.$executeRaw(
-      Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${INVESTITURE_REQUEST_SECTION_LOCK_PREFIX}${clubSectionId}:${ecclesiasticalYearId}`}, 0))`,
+    await lockInvestitureAuthorizationSection(
+      store,
+      clubSectionId,
+      ecclesiasticalYearId,
     );
   }
 
@@ -1159,9 +1753,7 @@ export class InvestitureAuthorizationRequestService {
     userIds: string[],
   ): Promise<void> {
     for (const userId of [...new Set(userIds)].sort()) {
-      await store.$executeRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${INVESTITURE_REQUEST_USER_LOCK_PREFIX}${userId}`}, 0))`,
-      );
+      await lockInvestitureAuthorizationUser(store, userId);
     }
   }
 
@@ -1199,6 +1791,7 @@ export class InvestitureAuthorizationRequestService {
   private async readRequest(
     store: Prisma.TransactionClient | PrismaService,
     requestId: string,
+    audience: 'board' | 'authorizer' = 'board',
   ): Promise<InvestitureRequestView> {
     const request = await store.investiture_authorization_requests.findUnique({
       where: { request_id: requestId },
@@ -1214,39 +1807,249 @@ export class InvestitureAuthorizationRequestService {
     if (!request) {
       throw new AppNotFoundException(ErrorCode.INVESTITURE_REQUEST_NOT_FOUND);
     }
+    const labels = await this.requestLabels(store, request);
     return {
       request_id: request.request_id,
       club_section_id: request.club_section_id,
       ecclesiastical_year_id: request.ecclesiastical_year_id,
-      people: request.people.map((person) => this.personView(person)),
+      people: request.people.map((person) =>
+        this.personView(person, audience, labels),
+      ),
     };
   }
 
-  private personView(person: {
-    person_id: string;
-    user_id: string;
-    class_id: number;
-    enrollment_id: number;
-    investiture_date: Date;
-    status: PersonStatus;
-    resolution_code?: string | null;
-    authorization_comment?: string | null;
-    rejection_reason?: string | null;
-    system_reason?: string | null;
-    resolved_by_id?: string | null;
-  }): InvestitureRequestPersonView {
+  private async requestLabels(
+    store: Prisma.TransactionClient | PrismaService,
+    request: {
+      club_section_id: number;
+      people: Array<{
+        user_id: string;
+        class_id: number;
+        resolved_by_id?: string | null;
+      }>;
+    },
+  ): Promise<{
+    users: Map<string, string>;
+    classes: Map<number, string>;
+    sectionName: string | null;
+  }> {
+    const users = new Map<string, string>();
+    const classes = new Map<number, string>();
+    const userIds = [
+      ...new Set(
+        request.people.flatMap((person) =>
+          person.resolved_by_id
+            ? [person.user_id, person.resolved_by_id]
+            : [person.user_id],
+        ),
+      ),
+    ];
+    const usersTable = (
+      store as {
+        users?: {
+          findMany?: (args: unknown) => Promise<
+            Array<{
+              user_id: string;
+              name?: string | null;
+              paternal_last_name?: string | null;
+              maternal_last_name?: string | null;
+            }>
+          >;
+        };
+      }
+    ).users;
+    if (usersTable?.findMany && userIds.length > 0) {
+      const rows = await usersTable.findMany({
+        where: { user_id: { in: userIds } },
+        select: {
+          user_id: true,
+          name: true,
+          paternal_last_name: true,
+          maternal_last_name: true,
+        },
+      });
+      for (const row of rows) {
+        users.set(row.user_id, displayName(row));
+      }
+    }
+    const classesTable = (
+      store as {
+        classes?: {
+          findMany?: (
+            args: unknown,
+          ) => Promise<Array<{ class_id: number; name?: string | null }>>;
+        };
+      }
+    ).classes;
+    const classIds = [
+      ...new Set(request.people.map((person) => person.class_id)),
+    ];
+    if (classesTable?.findMany && classIds.length > 0) {
+      const rows = await classesTable.findMany({
+        where: { class_id: { in: classIds } },
+        select: { class_id: true, name: true },
+      });
+      for (const row of rows) {
+        if (row.name) {
+          classes.set(row.class_id, row.name);
+        }
+      }
+    }
+    const section = await store.club_sections.findUnique({
+      where: { club_section_id: request.club_section_id },
+      select: { club_types: { select: { name: true } } },
+    });
+    const sectionName = section?.club_types?.name ?? null;
+    return { users, classes, sectionName };
+  }
+
+  private personView(
+    person: {
+      person_id: string;
+      user_id: string;
+      class_id: number;
+      enrollment_id: number;
+      investiture_date: Date;
+      status: PersonStatus;
+      resolution_code?: string | null;
+      authorization_comment?: string | null;
+      rejection_reason?: string | null;
+      system_reason?: string | null;
+      resolved_by_id?: string | null;
+      date_changed_by_id?: string | null;
+      date_changed_at?: Date | null;
+    },
+    audience: 'board' | 'authorizer' = 'board',
+    labels?: {
+      users: Map<string, string>;
+      classes: Map<number, string>;
+      sectionName: string | null;
+    },
+  ): InvestitureRequestPersonView {
+    const changedAt = person.date_changed_at;
     return {
       person_id: person.person_id,
       user_id: person.user_id,
+      user_name: labels?.users.get(person.user_id) ?? null,
       class_id: person.class_id,
+      class_name: labels?.classes.get(person.class_id) ?? null,
+      section_name: labels?.sectionName ?? null,
       enrollment_id: person.enrollment_id,
       investiture_date: civilDate(person.investiture_date),
       status: person.status,
       can_authorize: person.status === 'PENDING',
       authorization_comment: person.authorization_comment ?? null,
-      rejection_reason: person.rejection_reason ?? null,
+      rejection_reason:
+        audience === 'authorizer' ? null : (person.rejection_reason ?? null),
       system_reason: person.system_reason ?? null,
+      resolution_code: person.resolution_code ?? null,
       resolved_by_id: person.resolved_by_id ?? null,
+      resolved_by_name:
+        person.status === 'REJECTED_BY_SYSTEM'
+          ? 'Sistema'
+          : (labels?.users.get(person.resolved_by_id ?? '') ?? null),
+      date_changed_by_id: person.date_changed_by_id ?? null,
+      date_changed_at:
+        changedAt instanceof Date ? changedAt.toISOString() : null,
+    };
+  }
+
+  private async classNames(
+    store: Prisma.TransactionClient | PrismaService,
+    classIds: number[],
+  ): Promise<Map<number, string>> {
+    const names = new Map<number, string>();
+    const classes = (
+      store as {
+        classes?: {
+          findMany?: (
+            args: unknown,
+          ) => Promise<Array<{ class_id: number; name?: string | null }>>;
+        };
+      }
+    ).classes;
+    const unique = [...new Set(classIds)];
+    if (!classes?.findMany || unique.length === 0) {
+      return names;
+    }
+    const rows = await classes.findMany({
+      where: { class_id: { in: unique } },
+      select: { class_id: true, name: true },
+    });
+    for (const row of rows) {
+      if (row.name) {
+        names.set(row.class_id, row.name);
+      }
+    }
+    return names;
+  }
+
+  private historyEntry(
+    person: {
+      person_id: string;
+      user_id: string;
+      class_id: number;
+      investiture_date: Date;
+      status: PersonStatus;
+      authorization_comment?: string | null;
+      rejection_reason?: string | null;
+      system_reason?: string | null;
+      classes?: { name?: string | null } | null;
+      request: {
+        club_section_id: number;
+        ecclesiastical_year_id: number;
+      };
+    },
+    audience: 'person' | 'section',
+    className: string | null = person.classes?.name ?? null,
+  ): InvestitureHistoryEntry {
+    const closedYear = person.status === 'CLOSED_YEAR';
+    const laterCertificate =
+      person.system_reason === LATER_CERTIFICATE_ACCREDITATION_REASON;
+    const historical =
+      person.system_reason === HISTORICAL_CERTIFICATE_APPLIED_REASON;
+    const rejected =
+      person.status === 'REJECTED_BY_PERSON' ||
+      person.status === 'REJECTED_BY_SYSTEM';
+    const base = {
+      person_id: person.person_id,
+      user_id: person.user_id,
+      class_id: person.class_id,
+      class_name: className ?? person.classes?.name ?? null,
+      club_section_id: person.request.club_section_id,
+      ecclesiastical_year_id: person.request.ecclesiastical_year_id,
+      investiture_date: civilDate(person.investiture_date),
+    };
+    if (audience === 'person') {
+      const informative = laterCertificate || historical;
+      return {
+        ...base,
+        status: rejected ? 'REJECTED' : person.status,
+        person_text:
+          person.status === 'PENDING'
+            ? INVESTITURE_PERSON_PENDING_TEXT
+            : rejected
+              ? INVESTITURE_PERSON_REJECTED_TEXT
+              : informative
+                ? (person.system_reason ?? null)
+                : null,
+        ...(person.status === 'INVESTED'
+          ? { authorization_comment: person.authorization_comment ?? null }
+          : {}),
+      };
+    }
+    return {
+      ...base,
+      status: person.status,
+      rejection_reason: closedYear ? null : (person.rejection_reason ?? null),
+      system_reason:
+        laterCertificate ||
+        (!closedYear && person.status === 'REJECTED_BY_SYSTEM')
+          ? (person.system_reason ?? null)
+          : closedYear
+            ? null
+            : (person.system_reason ?? null),
+      person_text: null,
     };
   }
 
@@ -1285,40 +2088,53 @@ export class InvestitureAuthorizationRequestService {
     authorization: AuthorizationSnapshot,
     actorId: string,
     context: SectionContext,
+    store: DecisionStore = this.prisma,
   ): Promise<void> {
     const allowed = await this.authorizerMatches(
       authorization,
       actorId,
       context,
+      store,
     );
     if (!allowed) {
       throw new AppForbiddenException(ErrorCode.INVESTITURE_REQUEST_FORBIDDEN);
     }
   }
 
+  private fieldAuthorizesSection(
+    authorization: AuthorizationSnapshot,
+    context: SectionContext,
+  ): boolean {
+    const fieldId = this.fieldAuthorizerFieldId(authorization);
+    return fieldId != null && fieldId === context.localFieldId;
+  }
+
   private async authorizerMatches(
     authorization: AuthorizationSnapshot,
     actorId: string,
     context: SectionContext,
+    store: DecisionStore = this.prisma,
   ): Promise<boolean> {
-    const fieldId = this.fieldAuthorizerFieldId(authorization);
-    if (fieldId != null && fieldId === context.localFieldId) {
+    if (this.fieldAuthorizesSection(authorization, context)) {
       return true;
     }
     if (!this.hasGlobalRole(authorization, 'pastor') || !context.districtId) {
       return false;
     }
-    const assignment = await this.prisma.district_investiture_pastors.findFirst(
-      {
-        where: {
-          user_id: actorId,
-          districlub_type_id: context.districtId,
-          active: true,
-        },
-        select: { user_id: true },
+    const assignment = await store.district_investiture_pastors.findFirst({
+      where: {
+        user_id: actorId,
+        districlub_type_id: context.districtId,
+        active: true,
       },
-    );
-    return assignment != null;
+      select: { user_id: true },
+    });
+    if (assignment == null) {
+      return false;
+    }
+    // BCR-6: el rol del token puede estar vencido; la cuenta y el rol vigentes
+    // se comprueban con la misma regla del listado y de los correos.
+    return pastorCanAuthorize(store, actorId);
   }
 
   private async authorizerSectionIds(
@@ -1368,6 +2184,12 @@ export class InvestitureAuthorizationRequestService {
       where: { user_id: actorId, active: true },
       select: { districlub_type_id: true },
     });
+    if (
+      rows.length === 0 ||
+      !(await pastorCanAuthorize(this.prisma, actorId))
+    ) {
+      return [];
+    }
     return rows.map((row) => row.districlub_type_id);
   }
 
@@ -1433,12 +2255,7 @@ function civilDateToUtc(value: string): Date {
 }
 
 function localDay(now: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
+  return localCivilDay(now, timeZone);
 }
 
 function investedTarget(

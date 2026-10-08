@@ -80,6 +80,10 @@ describe('FieldInvestitureWindowConfigService', () => {
       ecclesiastical_years: { findUnique: jest.fn().mockResolvedValue(year) },
       local_field_investiture_windows: windows,
       local_field_class_thresholds: thresholds,
+      $executeRaw: jest.fn().mockResolvedValue(0),
+      $transaction: jest.fn((fn: (tx: typeof prisma) => Promise<unknown>) =>
+        fn(prisma),
+      ),
     };
     service = new FieldInvestitureWindowConfigService(
       prisma as never,

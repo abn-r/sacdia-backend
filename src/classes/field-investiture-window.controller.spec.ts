@@ -75,7 +75,12 @@ describe('GET investiture window without an October–December intersection', ()
         }),
       },
       local_field_investiture_windows: windows,
+      $executeRaw: jest.fn().mockResolvedValue(0),
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation(
+      (fn: (tx: typeof prisma) => unknown) => fn(prisma),
+    );
     const moduleRef = await Test.createTestingModule({
       controllers: [FieldInvestitureWindowController],
       providers: [

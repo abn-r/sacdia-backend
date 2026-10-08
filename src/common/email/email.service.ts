@@ -7,6 +7,7 @@ import {
   EMAIL_JOB_PASSWORD_RESET,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_CRON_ALERT,
+  EMAIL_JOB_INVESTITURE_NOTICE,
 } from './email.queue';
 import type {
   CronAlertCondition,
@@ -137,5 +138,37 @@ export class EmailService {
       recentFailures,
       locale,
     });
+  }
+
+  async sendInvestitureNotice(params: {
+    dispatchId: string;
+    /** Dispatch kind: 'PRESENTATION' | 'REMINDER' | 'RESULT'. */
+    kind?: string;
+  }): Promise<void> {
+    this.logger.log(
+      `Enqueuing investiture notice: dispatch=${params.dispatchId}`,
+    );
+    await this.queue.enqueue(
+      EMAIL_JOB_INVESTITURE_NOTICE,
+      { dispatchId: params.dispatchId },
+      {
+        required: true,
+        jobId: `investiture-mail-${params.dispatchId}`,
+        // BCR33-N4: the reminder cap (5 provider attempts) is counted per
+        // hand-off by the communications service, so BullMQ must not retry
+        // inside a hand-off. PRESENTATION and RESULT keep the queue default.
+        ...(params.kind === 'REMINDER' ? { attempts: 1 } : {}),
+      },
+    );
+  }
+
+  inspectInvestitureJob(
+    jobId: string,
+  ): Promise<'unsupported' | 'missing' | 'failed' | 'done' | 'busy'> {
+    return this.queue.inspectJob(jobId);
+  }
+
+  retryFailedInvestitureJob(jobId: string): Promise<void> {
+    return this.queue.retryFailedJob(jobId);
   }
 }

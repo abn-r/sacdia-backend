@@ -91,6 +91,13 @@ export const envValidationSchema = Joi.object({
     .when('NODE_ENV', { is: 'production', then: Joi.forbidden() })
     .optional(),
   FRONTEND_URL: Joi.string().uri().optional(),
+  ADMIN_PANEL_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .when('INVESTITURE_EMAIL_ENABLED', {
+      is: 'true',
+      then: Joi.required(),
+      otherwise: Joi.optional().allow(''),
+    }),
   // CORS allowlist. Mandatory in production: without it the API would either
   // reject the real admin/app origins or silently run with a localhost list.
   ALLOWED_ORIGINS: Joi.string()
@@ -120,6 +127,12 @@ export const envValidationSchema = Joi.object({
   // Email feature flag — defaults to false (fail-safe: emails OFF unless explicitly enabled).
   // Checked as process.env.EMAIL_ENABLED === 'true' in auth.service.ts and better-auth.service.ts.
   EMAIL_ENABLED: Joi.string().valid('true', 'false').default('false'),
+  // Investiture presentation and reminder mail. Off until the admin panel
+  // route /investiture-requests/[requestId] exists. Does not gate auth mail
+  // or the in-app result inbox.
+  INVESTITURE_EMAIL_ENABLED: Joi.string()
+    .valid('true', 'false')
+    .default('false'),
 
   // Resend (transactional email transport)
   // API key and sender are required only while email delivery is enabled.

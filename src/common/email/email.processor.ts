@@ -1,5 +1,11 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Inject, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Inject,
+  Logger,
+  OnApplicationBootstrap,
+  Optional,
+} from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
 import { render } from '@react-email/render';
@@ -14,15 +20,24 @@ import {
   EMAIL_JOB_PASSWORD_RESET,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_CRON_ALERT,
+  EMAIL_JOB_INVESTITURE_NOTICE,
   EMAIL_WORKER_OPTIONS,
   DataExportReadyJobPayload,
   EmailVerificationJobPayload,
   PasswordResetJobPayload,
   AccountDeletionConfirmedJobPayload,
   CronAlertJobPayload,
+  InvestitureNoticeJobPayload,
   EmailJobPayload,
   SupportedEmailLocale,
 } from './email.queue';
+import {
+  INVESTITURE_MAIL_GATE,
+  INVESTITURE_PROVIDER_IDEMPOTENCY_HORIZON_MS,
+  investitureMailDeliveryEnabled,
+  type InvestitureMailGate,
+  type InvestitureProviderMessage,
+} from './investiture-mail.gate';
 import { EMAIL_PROVIDER } from './providers/email-provider.interface';
 import type { IEmailProvider } from './providers/email-provider.interface';
 import { DataExportReadyEmail } from './templates/data-export-ready';
@@ -30,6 +45,8 @@ import { EmailVerificationEmail } from './templates/email-verification';
 import { PasswordResetEmail } from './templates/password-reset';
 import { AccountDeletionConfirmedEmail } from './templates/account-deletion-confirmed';
 import { CronAlertEmail } from './templates/cron-alert';
+import { InvestitureNoticeEmail } from './templates/investiture-notice';
+import { assertNoRelativeInvestitureLink } from '../../investiture-requests/investiture-communications.rules';
 import type { CronAlertCondition } from './templates/cron-alert';
 
 interface RenderedEmail {
@@ -72,6 +89,7 @@ export class EmailProcessor
     @Inject(EMAIL_PROVIDER) private readonly provider: IEmailProvider,
     private readonly configService: ConfigService,
     private readonly i18n: I18nService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {
     super();
     this.fromEmail =
@@ -102,10 +120,67 @@ export class EmailProcessor
           },
         });
       }
+      this.noteExhaustedInvestitureFailure(job, err);
     });
   }
 
+  private noteExhaustedInvestitureFailure(
+    job: Job | undefined,
+    err: Error,
+  ): void {
+    if (!job || job.name !== EMAIL_JOB_INVESTITURE_NOTICE) {
+      return;
+    }
+    const attempts = job.opts.attempts ?? 1;
+    if (job.attemptsMade < attempts) {
+      return;
+    }
+    const dispatchId = (job.data as InvestitureNoticeJobPayload).dispatchId;
+    const gate = this.mailGate();
+    if (!dispatchId || !gate) {
+      return;
+    }
+    void gate.markFailed(dispatchId, err.message).catch((error: Error) => {
+      this.logger.error(
+        `No se pudo marcar el correo de investidura ${dispatchId}: ${error.message}`,
+      );
+    });
+  }
+
+  private async investitureDeliveryOpen(
+    gate: InvestitureMailGate,
+    dispatchId: string,
+    providerAlreadyAttempted: boolean,
+  ): Promise<boolean> {
+    if (investitureMailDeliveryEnabled()) {
+      return true;
+    }
+    if (providerAlreadyAttempted) {
+      await gate.markUncertain(dispatchId);
+    } else {
+      await gate.skipDisabled(dispatchId);
+    }
+    return false;
+  }
+
+  private mailGate(): InvestitureMailGate | null {
+    if (!this.moduleRef) {
+      return null;
+    }
+    try {
+      return this.moduleRef.get<InvestitureMailGate>(INVESTITURE_MAIL_GATE, {
+        strict: false,
+      });
+    } catch {
+      return null;
+    }
+  }
+
   async process(job: Job<EmailJobPayload>): Promise<void> {
+    if (job.name === EMAIL_JOB_INVESTITURE_NOTICE) {
+      await this.processInvestiture(job as Job<InvestitureNoticeJobPayload>);
+      return;
+    }
     if (process.env.EMAIL_ENABLED !== 'true') {
       this.logger.warn(
         `[EMAIL_DISABLED] Skipping email job type=${job.name} id=${job.id}`,
@@ -115,7 +190,7 @@ export class EmailProcessor
 
     const rendered = await this.renderTemplate(job.name, job.data);
 
-    const payload = job.data;
+    const payload = job.data as EmailJobPayload & { to: string };
     await this.provider.send({
       to: payload.to,
       from: this.fromEmail,
@@ -127,6 +202,81 @@ export class EmailProcessor
     this.logger.log(
       `Email sent: type=${job.name} id=${job.id} attempt=${job.attemptsMade + 1}`,
     );
+  }
+
+  private async processInvestiture(
+    job: Job<InvestitureNoticeJobPayload>,
+  ): Promise<void> {
+    const gate = this.mailGate();
+    if (!gate) {
+      throw new Error('investiture mail gate unavailable');
+    }
+    const dispatchId = job.data.dispatchId;
+    const existing = await gate.providerAttempt(dispatchId);
+    if (
+      !(await this.investitureDeliveryOpen(gate, dispatchId, existing != null))
+    ) {
+      return;
+    }
+    if (existing) {
+      const allowed = await gate.deliveryStillAllowed(dispatchId);
+      if (!allowed) {
+        return;
+      }
+      const age = Date.now() - new Date(existing.at).getTime();
+      if (age >= INVESTITURE_PROVIDER_IDEMPOTENCY_HORIZON_MS) {
+        await gate.markUncertain(dispatchId);
+        return;
+      }
+      const message = JSON.parse(existing.body) as InvestitureProviderMessage;
+      assertNoRelativeInvestitureLink(message.html);
+      assertNoRelativeInvestitureLink(message.text);
+      if (!(await this.investitureDeliveryOpen(gate, dispatchId, true))) {
+        return;
+      }
+      const result = await this.provider.send(message);
+      await gate.acknowledge(dispatchId, result.messageId);
+      return;
+    }
+    const fresh = await gate.prepare(dispatchId);
+    if (!fresh) {
+      return;
+    }
+    const snapshot = {
+      to: fresh.to,
+      subject: fresh.subject,
+      paragraphs: [...fresh.paragraphs],
+      link: fresh.link,
+    };
+    if (snapshot.link) {
+      assertNoRelativeInvestitureLink(snapshot.link);
+    }
+    for (const paragraph of snapshot.paragraphs) {
+      assertNoRelativeInvestitureLink(paragraph);
+    }
+    const rendered = await this.renderTemplate(job.name, {
+      dispatchId,
+      subject: snapshot.subject,
+      paragraphs: snapshot.paragraphs,
+      link: snapshot.link,
+    });
+    const message: InvestitureProviderMessage = {
+      to: snapshot.to,
+      from: this.fromEmail,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+      idempotencyKey: `investiture-mail-${dispatchId}`,
+    };
+    await gate.recordProviderAttempt(dispatchId, message, {
+      to: snapshot.to,
+      paragraphs: snapshot.paragraphs,
+    });
+    if (!(await this.investitureDeliveryOpen(gate, dispatchId, false))) {
+      return;
+    }
+    const result = await this.provider.send(message);
+    await gate.acknowledge(dispatchId, result.messageId);
   }
 
   // ---------------------------------------------------------------------------
@@ -226,6 +376,22 @@ export class EmailProcessor
         });
         return {
           subject,
+          html: await render(element),
+          text: await render(element, { plainText: true }),
+        };
+      }
+
+      case EMAIL_JOB_INVESTITURE_NOTICE: {
+        const notice = data as InvestitureNoticeJobPayload;
+        if (!notice.subject || !notice.paragraphs) {
+          throw new Error('investiture notice has no fresh content');
+        }
+        const element = React.createElement(InvestitureNoticeEmail, {
+          paragraphs: notice.paragraphs,
+          link: notice.link ?? null,
+        });
+        return {
+          subject: notice.subject,
           html: await render(element),
           text: await render(element, { plainText: true }),
         };

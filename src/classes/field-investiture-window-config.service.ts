@@ -15,6 +15,10 @@ import { ErrorCode } from '../common/errors/error-codes';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  lockInvestitureAuthorizationCalendar,
+  lockInvestitureAuthorizationYear,
+} from '../investiture-requests/investiture-request-lock';
+import {
   canEditInvestitureWindow,
   defaultInvestitureWindow,
   investitureWindowAllowsOperation,
@@ -93,25 +97,33 @@ export class FieldInvestitureWindowConfigService {
     }
     this.assertDates(dates, context.yearStart, context.yearEnd);
 
-    await this.prisma.local_field_investiture_windows.upsert({
-      where: {
-        local_field_id_ecclesiastical_year_id: {
+    await this.prisma.$transaction(async (tx) => {
+      await lockInvestitureAuthorizationYear(tx, ecclesiasticalYearId);
+      await lockInvestitureAuthorizationCalendar(
+        tx,
+        localFieldId,
+        ecclesiasticalYearId,
+      );
+      await tx.local_field_investiture_windows.upsert({
+        where: {
+          local_field_id_ecclesiastical_year_id: {
+            local_field_id: localFieldId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+          },
+        },
+        create: {
           local_field_id: localFieldId,
           ecclesiastical_year_id: ecclesiasticalYearId,
+          start_date: civilDateToUtc(dates.start_date),
+          end_date: civilDateToUtc(dates.end_date),
+          updated_by_id: updatedById,
         },
-      },
-      create: {
-        local_field_id: localFieldId,
-        ecclesiastical_year_id: ecclesiasticalYearId,
-        start_date: civilDateToUtc(dates.start_date),
-        end_date: civilDateToUtc(dates.end_date),
-        updated_by_id: updatedById,
-      },
-      update: {
-        start_date: civilDateToUtc(dates.start_date),
-        end_date: civilDateToUtc(dates.end_date),
-        updated_by_id: updatedById,
-      },
+        update: {
+          start_date: civilDateToUtc(dates.start_date),
+          end_date: civilDateToUtc(dates.end_date),
+          updated_by_id: updatedById,
+        },
+      });
     });
 
     return this.view(

@@ -49,10 +49,11 @@ export class YearCutCronService implements OnModuleInit {
     );
 
     if (!acquired) {
-      this.logger.debug(
-        'Another instance is handling the year cut — skipping',
+      this.logger.debug('Another instance is handling the year cut — skipping');
+      await this.cronLogger.trackSkipped(
+        YEAR_CUT_JOB_NAME,
+        'lock_not_acquired',
       );
-      await this.cronLogger.trackSkipped(YEAR_CUT_JOB_NAME, 'lock_not_acquired');
       return;
     }
 
@@ -62,7 +63,8 @@ export class YearCutCronService implements OnModuleInit {
 
         this.logger.log(
           `Year cut finished: ended=${summary.ended}, activated=${summary.activated}, ` +
-            `returnedNotEnrolled=${summary.returnedNotEnrolled}, typeGraduatesEnrolled=${summary.typeGraduatesEnrolled}, usersInvalidated=${summary.usersInvalidated}`,
+            `returnedNotEnrolled=${summary.returnedNotEnrolled}, typeGraduatesEnrolled=${summary.typeGraduatesEnrolled}, ` +
+            `investiturePendingClosed=${summary.investiturePendingClosed}, usersInvalidated=${summary.usersInvalidated}`,
         );
 
         return {

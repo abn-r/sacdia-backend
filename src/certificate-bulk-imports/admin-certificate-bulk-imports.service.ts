@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { CertificateBulkImportApplicationService } from './certificate-bulk-imports-application.service';
+import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
 import {
   CertificateImportYearResolver,
   civilDateFromDbDate,
@@ -28,8 +29,6 @@ const REVIEWABLE_ITEM_STATUSES = [
   CertificateBulkImportItemStatus.SUBMITTED,
   CertificateBulkImportItemStatus.RESUBMITTED,
 ];
-
-const INSTITUTIONAL_CLASS_ASSET_CODES = new Set(['GM-02', 'GM-03']);
 
 const REVIEWABLE_BATCH_STATUSES = [
   CertificateBulkImportBatchStatus.SUBMITTED,
@@ -169,7 +168,9 @@ export class AdminCertificateBulkImportsService {
         throw new NotFoundException('CERTIFICATE_IMPORT_ITEM_NOT_FOUND');
       }
       if (
-        INSTITUTIONAL_CLASS_ASSET_CODES.has(existingItem.class?.asset_code ?? '')
+        INSTITUTIONAL_CLASS_ASSET_CODES.has(
+          existingItem.class?.asset_code ?? '',
+        )
       ) {
         if (!access.superAdmin) {
           throw new NotFoundException('CERTIFICATE_IMPORT_ITEM_NOT_FOUND');
@@ -429,7 +430,9 @@ export class AdminCertificateBulkImportsService {
         class_id: {
           in: classItems
             .map((item) => item.class_id)
-            .filter((classId): classId is number => typeof classId === 'number'),
+            .filter(
+              (classId): classId is number => typeof classId === 'number',
+            ),
         },
         record_kind: 'OPERATIONAL',
         investiture_status: { not: 'INVESTIDO' },
@@ -449,7 +452,11 @@ export class AdminCertificateBulkImportsService {
     return {
       ...batch,
       items: items.map((item) => {
-        if (!classItems.includes(item) || !item.class_id || !item.completed_at) {
+        if (
+          !classItems.includes(item) ||
+          !item.class_id ||
+          !item.completed_at
+        ) {
           return item;
         }
         const civilDate = civilDateFromDbDate(item.completed_at);

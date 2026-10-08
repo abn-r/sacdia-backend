@@ -37,3 +37,8 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: INVESTITURE_EMAIL_ENABLED
+        value: "false"
+      # Presentation and reminder mail also stays off unless EMAIL_ENABLED=true.
+      # A queued job is skipped (investiture_email_disabled) if either switch
+      # is off before the provider is called. Skipped rows are not flushed later.

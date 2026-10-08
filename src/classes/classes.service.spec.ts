@@ -21,6 +21,7 @@ describe('ClassesService', () => {
       findFirst: (...args: unknown[]) =>
         mockPrismaService.investiture_authorization_people.findFirst(...args),
     },
+    enrollments: { findUnique: jest.fn() },
     class_section_progress: mockPrismaService.class_section_progress,
     class_module_progress: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -45,7 +46,11 @@ describe('ClassesService', () => {
     certificate_bulk_import_items: {
       findMany: jest.fn().mockResolvedValue([]),
     },
-    class_sections: { findFirst: jest.fn(), findMany: jest.fn(), groupBy: jest.fn() },
+    class_sections: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      groupBy: jest.fn(),
+    },
     class_modules: { findMany: jest.fn() },
     class_honors: { findMany: jest.fn() },
     users_honors: { findMany: jest.fn() },
@@ -85,7 +90,9 @@ describe('ClassesService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockPrismaService.certificate_bulk_import_items.findMany.mockResolvedValue([]);
+    mockPrismaService.certificate_bulk_import_items.findMany.mockResolvedValue(
+      [],
+    );
     mockPrismaService.class_sections.findMany.mockResolvedValue([]);
     mockClassProgressAccessService.assertCanAccessProgress.mockResolvedValue(
       undefined,
@@ -321,14 +328,16 @@ describe('ClassesService', () => {
           },
         },
       ]);
-      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValueOnce({
-        overall_progress: 100,
-        basic_progress: { total: 2, completed: 2, percentage: 100 },
-        advanced_progress: { total: 0, completed: 0, percentage: 0 },
-        extra_progress: { total: 0, completed: 0, percentage: 0 },
-        investiture_eligibility: { eligible: true },
-        advanced_eligibility: { enabled: false, eligible: false },
-      });
+      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValueOnce(
+        {
+          overall_progress: 100,
+          basic_progress: { total: 2, completed: 2, percentage: 100 },
+          advanced_progress: { total: 0, completed: 0, percentage: 0 },
+          extra_progress: { total: 0, completed: 0, percentage: 0 },
+          investiture_eligibility: { eligible: true },
+          advanced_eligibility: { enabled: false, eligible: false },
+        },
+      );
 
       const result = await service.getUserEnrollments('user-1');
 
@@ -377,13 +386,15 @@ describe('ClassesService', () => {
           },
         },
       ]);
-      mockPrismaService.certificate_bulk_import_items.findMany.mockResolvedValue([
-        {
-          applied_entity_id: 80,
-          batch_id: 'batch-gm',
-          batch: { files: [{ file_id: 'file-gm' }] },
-        },
-      ]);
+      mockPrismaService.certificate_bulk_import_items.findMany.mockResolvedValue(
+        [
+          {
+            applied_entity_id: 80,
+            batch_id: 'batch-gm',
+            batch: { files: [{ file_id: 'file-gm' }] },
+          },
+        ],
+      );
       mockPrismaService.class_section_progress.findMany.mockResolvedValue([
         {
           enrollment_id: 80,
@@ -905,7 +916,15 @@ describe('ClassesService', () => {
       mockPrismaService.class_sections.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.updateSectionProgress('user-1', 7, 999, 101, 80, undefined, 901),
+        service.updateSectionProgress(
+          'user-1',
+          7,
+          999,
+          101,
+          80,
+          undefined,
+          901,
+        ),
       ).rejects.toMatchObject({
         code: ErrorCode.CLASS_SECTION_NOT_FOUND,
       });
@@ -971,7 +990,9 @@ describe('ClassesService', () => {
         locked_for_validation: false,
       });
       mockClassEnrollmentPolicyService.assertOperationalYearWrite.mockRejectedValue(
-        new AppForbiddenException(ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL),
+        new AppForbiddenException(
+          ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL,
+        ),
       );
 
       await expect(
@@ -982,8 +1003,12 @@ describe('ClassesService', () => {
       expect(
         mockClassEnrollmentPolicyService.assertOperationalYearWrite,
       ).toHaveBeenCalledWith(2025);
-      expect(transactionMock.class_section_progress.create).not.toHaveBeenCalled();
-      expect(transactionMock.class_section_progress.update).not.toHaveBeenCalled();
+      expect(
+        transactionMock.class_section_progress.create,
+      ).not.toHaveBeenCalled();
+      expect(
+        transactionMock.class_section_progress.update,
+      ).not.toHaveBeenCalled();
     });
 
     it('A13 rejects evidence upload when the enrollment year is not operational', async () => {
@@ -1000,7 +1025,9 @@ describe('ClassesService', () => {
         module_id: 11,
       });
       mockClassEnrollmentPolicyService.assertOperationalYearWrite.mockRejectedValue(
-        new AppForbiddenException(ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL),
+        new AppForbiddenException(
+          ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL,
+        ),
       );
 
       await expect(
@@ -1031,7 +1058,9 @@ describe('ClassesService', () => {
         locked_for_validation: false,
       });
       mockClassEnrollmentPolicyService.assertOperationalYearWrite.mockRejectedValue(
-        new AppForbiddenException(ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL),
+        new AppForbiddenException(
+          ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL,
+        ),
       );
 
       await expect(
@@ -1039,6 +1068,87 @@ describe('ClassesService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL,
       });
+    });
+
+    describe('BC-11 / BCR-2 submitSection guard', () => {
+      const pendingProgress = {
+        section_progress_id: 123,
+        section_id: 101,
+        status: 'PENDING',
+        evidence_files: [{ evidence_file_id: 55 }],
+      };
+
+      function enrollment(
+        investiture_status: string,
+        locked_for_validation = false,
+      ) {
+        return {
+          enrollment_id: 901,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          investiture_status,
+          locked_for_validation,
+          record_kind: 'OPERATIONAL',
+        };
+      }
+
+      it.each(['INVESTIDO', 'EXPIRED'])(
+        'rejects section submit on %s inside the transaction without writing',
+        async (investiture_status) => {
+          // La lectura previa a la transaccion todavia ve un estado abierto:
+          // el INVESTIDO llega despues, bajo el candado del enrollment.
+          mockPrismaService.enrollments.findUnique.mockResolvedValue(
+            enrollment('IN_PROGRESS'),
+          );
+          mockPrismaService.class_section_progress.findFirst.mockResolvedValue(
+            pendingProgress,
+          );
+          transactionMock.enrollments.findUnique.mockResolvedValue({
+            investiture_status,
+          });
+
+          await expect(
+            (service as any).submitSection('user-1', 'user-1', 7, 101, 901),
+          ).rejects.toMatchObject({ code: ErrorCode.CLASS_PROGRESS_LOCKED });
+
+          expect(transactionMock.$executeRaw).toHaveBeenCalled();
+          expect(transactionMock.enrollments.findUnique).toHaveBeenCalledTimes(
+            1,
+          );
+          expect(
+            mockPrismaService.class_section_progress.update,
+          ).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each([
+        ['SUBMITTED_FOR_VALIDATION', false],
+        ['SUBMITTED', false],
+        ['CLUB_APPROVED', false],
+        ['COORDINATOR_APPROVED', false],
+        ['FIELD_APPROVED', false],
+        ['IN_PROGRESS', true],
+      ])(
+        'keeps 113d8ba behavior: submits on legacy state %s (locked_for_validation=%s)',
+        async (investiture_status, locked_for_validation) => {
+          mockPrismaService.enrollments.findUnique.mockResolvedValue(
+            enrollment(investiture_status, locked_for_validation),
+          );
+          mockPrismaService.class_section_progress.findFirst.mockResolvedValue(
+            pendingProgress,
+          );
+          transactionMock.enrollments.findUnique.mockResolvedValue({
+            investiture_status,
+          });
+
+          await (service as any).submitSection('user-1', 'user-1', 7, 101, 901);
+
+          expect(
+            mockPrismaService.class_section_progress.update,
+          ).toHaveBeenCalledTimes(1);
+        },
+      );
     });
   });
 
@@ -1072,7 +1182,9 @@ describe('ClassesService', () => {
         901,
       );
 
-      expect(mockPrismaService.class_section_progress.create).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.class_section_progress.create,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             user_id: 'member-1',
@@ -1121,7 +1233,9 @@ describe('ClassesService', () => {
         901,
       );
 
-      expect(mockPrismaService.class_section_progress.update).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.class_section_progress.update,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             submitted_by_id: 'counselor-1',
@@ -1401,14 +1515,7 @@ describe('ClassesService', () => {
       });
 
       await expect(
-        (service as any).deleteSectionFile(
-          'user-1',
-          'user-1',
-          7,
-          101,
-          55,
-          901,
-        ),
+        (service as any).deleteSectionFile('user-1', 'user-1', 7, 101, 55, 901),
       ).rejects.toMatchObject({
         code: ErrorCode.CLASS_PROGRESS_LOCKED,
       });
@@ -1527,9 +1634,7 @@ describe('ClassesService', () => {
 
       const result = await service.findOne(7);
 
-      expect(result.prerequisites).toEqual([
-        { class_id: 5, name: 'Amigo' },
-      ]);
+      expect(result.prerequisites).toEqual([{ class_id: 5, name: 'Amigo' }]);
       expect(mockPrismaService.classes.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
           include: expect.objectContaining({
@@ -1707,9 +1812,7 @@ describe('ClassesService', () => {
           findUnique: jest.fn().mockResolvedValue(mocks.targetClass ?? null),
         },
         class_prerequisites: {
-          findMany: jest
-            .fn()
-            .mockResolvedValue(mocks.prerequisites ?? []),
+          findMany: jest.fn().mockResolvedValue(mocks.prerequisites ?? []),
         },
         enrollments: {
           findFirst: findFirstFn,
@@ -1735,14 +1838,12 @@ describe('ClassesService', () => {
             .mockResolvedValue(mocks.updateResult ?? { enrollment_id: 1 }),
         },
         ecclesiastical_years: {
-          findUnique: jest
-            .fn()
-            .mockResolvedValue(
-              mocks.ecclesiasticalYear ?? {
-                start_date: new Date('2099-01-01'),
-                end_date: new Date('2099-12-31'),
-              },
-            ),
+          findUnique: jest.fn().mockResolvedValue(
+            mocks.ecclesiasticalYear ?? {
+              start_date: new Date('2099-01-01'),
+              end_date: new Date('2099-12-31'),
+            },
+          ),
         },
       };
 

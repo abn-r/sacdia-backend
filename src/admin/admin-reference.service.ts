@@ -34,6 +34,7 @@ import {
   UpdateRelationshipTypeDto,
 } from './dto';
 import { TranslationService } from '../common/services/translation.service';
+import { lockInvestitureAuthorizationYear } from '../investiture-requests/investiture-request-lock';
 
 type HonorCategoryRecord = Prisma.honors_categoriesGetPayload<{
   include: { _count: { select: { honors: true } } };
@@ -1039,6 +1040,33 @@ export class AdminReferenceService {
     return entity;
   }
 
+  private async activeYearIds(
+    tx: Prisma.TransactionClient,
+    exceptYearId?: number,
+  ): Promise<number[]> {
+    const rows = await tx.ecclesiastical_years.findMany({
+      where: {
+        active: true,
+        ...(exceptYearId === undefined
+          ? {}
+          : { NOT: { year_id: exceptYearId } }),
+      },
+      select: { year_id: true },
+    });
+    return Array.isArray(rows) ? rows.map((row) => row.year_id) : [];
+  }
+
+  private async lockEcclesiasticalYears(
+    tx: Prisma.TransactionClient,
+    yearIds: number[],
+  ): Promise<void> {
+    for (const yearId of [...new Set(yearIds)].sort(
+      (left, right) => left - right,
+    )) {
+      await lockInvestitureAuthorizationYear(tx, yearId);
+    }
+  }
+
   async createEcclesiasticalYear(
     dto: CreateEcclesiasticalYearDto,
     actorId: string,
@@ -1057,6 +1085,7 @@ export class AdminReferenceService {
       this.prisma.$transaction(async (tx) => {
         await this.assertNoEcclesiasticalYearOverlap(tx, startDate, endDate);
         if (data.active) {
+          await this.lockEcclesiasticalYears(tx, await this.activeYearIds(tx));
           await tx.ecclesiastical_years.updateMany({
             where: { active: true },
             data: { active: false, modified_at: new Date() },
@@ -1100,6 +1129,11 @@ export class AdminReferenceService {
           endDate,
           yearId,
         );
+        const closing = [yearId];
+        if (dto.active === true) {
+          closing.push(...(await this.activeYearIds(tx, yearId)));
+        }
+        await this.lockEcclesiasticalYears(tx, closing);
         if (dto.active === true) {
           await tx.ecclesiastical_years.updateMany({
             where: { active: true, NOT: { year_id: yearId } },
@@ -1108,14 +1142,14 @@ export class AdminReferenceService {
         }
 
         return tx.ecclesiastical_years.update({
-        where: { year_id: yearId },
-        data: {
-          ...(dto.start_date ? { start_date: startDate } : {}),
-          ...(dto.end_date ? { end_date: endDate } : {}),
-          ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
-          modified_at: new Date(),
-        },
-      });
+          where: { year_id: yearId },
+          data: {
+            ...(dto.start_date ? { start_date: startDate } : {}),
+            ...(dto.end_date ? { end_date: endDate } : {}),
+            ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+            modified_at: new Date(),
+          },
+        });
       }),
     );
 
@@ -1146,12 +1180,15 @@ export class AdminReferenceService {
       );
     }
 
-    const year = await this.prisma.ecclesiastical_years.update({
-      where: { year_id: yearId },
-      data: {
-        active: false,
-        modified_at: new Date(),
-      },
+    const year = await this.prisma.$transaction(async (tx) => {
+      await lockInvestitureAuthorizationYear(tx, yearId);
+      return tx.ecclesiastical_years.update({
+        where: { year_id: yearId },
+        data: {
+          active: false,
+          modified_at: new Date(),
+        },
+      });
     });
 
     this.logMutation('delete', 'ecclesiastical_years', yearId, actorId);

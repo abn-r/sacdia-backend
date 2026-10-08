@@ -112,8 +112,9 @@ describe('DistrictInvestiturePastorService', () => {
     groupBy: jest.Mock;
   };
   let quotaDelegate: { findUnique: jest.Mock; upsert: jest.Mock };
-  let users: { findUnique: jest.Mock };
-  let usersRoles: { findFirst: jest.Mock };
+  let users: { findUnique: jest.Mock; findMany: jest.Mock };
+  let rolelessUsers: Set<string>;
+  let deletedUsers: Set<string>;
   let clubs: { findUnique: jest.Mock };
   let service: DistrictInvestiturePastorService;
 
@@ -186,6 +187,8 @@ describe('DistrictInvestiturePastorService', () => {
         return quota;
       }),
     };
+    rolelessUsers = new Set([NOT_PASTOR]);
+    deletedUsers = new Set();
     users = {
       findUnique: jest.fn(async ({ where }) => {
         if (where.user_id === NOT_PASTOR || where.user_id === PASTOR_A) {
@@ -196,12 +199,15 @@ describe('DistrictInvestiturePastorService', () => {
         }
         return null;
       }),
-    };
-    usersRoles = {
-      findFirst: jest.fn(async ({ where }) =>
-        where.user_id === NOT_PASTOR
-          ? null
-          : { user_id: where.user_id, active: true },
+      findMany: jest.fn(
+        async ({ where }: { where: { user_id: { in: string[] } } }) =>
+          where.user_id.in.map((id) => ({
+            user_id: id,
+            active: !deletedUsers.has(id),
+            users_roles: rolelessUsers.has(id)
+              ? []
+              : [{ user_role_id: 'role-1' }],
+          })),
       ),
     };
     clubs = {
@@ -227,7 +233,6 @@ describe('DistrictInvestiturePastorService', () => {
         ),
       },
       users,
-      users_roles: usersRoles,
       clubs,
       churches: {
         findUnique: jest.fn(async () => ({
@@ -466,6 +471,57 @@ describe('DistrictInvestiturePastorService', () => {
       PASTOR_C,
     ]);
   });
+
+  it('BC-6 keeps the quota when the global pastor role is gone', async () => {
+    const field = snapshot({ role: 'director-lf', localFieldId: FIELD_ID });
+    await service.updateQuota(snapshot({ role: 'super-admin' }), 1, 'root-1');
+    await service.assign(field, DISTRICT_ID, PASTOR_A, 'user-1');
+    rolelessUsers.add(PASTOR_A);
+    const listed = await service.list(field, DISTRICT_ID);
+    expect(listed.pastors).toEqual([
+      {
+        districlub_type_id: DISTRICT_ID,
+        user_id: PASTOR_A,
+        can_authorize: false,
+        role_missing: true,
+      },
+    ]);
+    expect(listed.slots).toBe(1);
+    const authorizers = await service.authorizersForClub(field, CLUB_ID);
+    expect(authorizers.authorizers).toEqual([]);
+    await expect(
+      service.assign(field, DISTRICT_ID, PASTOR_B, 'user-1'),
+    ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_PASTOR_QUOTA_FULL });
+  });
+
+  it('BCR-6 keeps the quota, marks account_inactive and drops a deleted account from the authorizers', async () => {
+    const field = snapshot({ role: 'director-lf', localFieldId: FIELD_ID });
+    await service.assign(field, DISTRICT_ID, PASTOR_A, 'user-1');
+    await service.assign(field, DISTRICT_ID, PASTOR_B, 'user-1');
+    deletedUsers.add(PASTOR_A);
+    const listed = await service.list(field, DISTRICT_ID);
+    expect(listed.pastors).toEqual([
+      {
+        districlub_type_id: DISTRICT_ID,
+        user_id: PASTOR_A,
+        can_authorize: false,
+        account_inactive: true,
+      },
+      {
+        districlub_type_id: DISTRICT_ID,
+        user_id: PASTOR_B,
+        can_authorize: true,
+      },
+    ]);
+    expect(listed.can_assign).toBe(false);
+    const authorizers = await service.authorizersForClub(field, CLUB_ID);
+    expect(authorizers.authorizers.map((item) => item.user_id)).toEqual([
+      PASTOR_B,
+    ]);
+    await expect(
+      service.assign(field, DISTRICT_ID, PASTOR_C, 'user-1'),
+    ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_PASTOR_QUOTA_FULL });
+  });
 });
 
 type RacingRow = {
@@ -624,9 +680,14 @@ function buildRacing(options: {
       user_id: where.user_id,
       active: true,
     })),
-  };
-  const usersRoles = {
-    findFirst: jest.fn(async () => ({ user_role_id: 'role-1' })),
+    findMany: jest.fn(
+      async ({ where }: { where: { user_id: { in: string[] } } }) =>
+        where.user_id.in.map((id) => ({
+          user_id: id,
+          active: true,
+          users_roles: [{ user_role_id: 'role-1' }],
+        })),
+    ),
   };
   const shared = {
     investiture_pastor_quota: quotaDelegate,
@@ -638,7 +699,6 @@ function buildRacing(options: {
       findUnique: jest.fn(async () => ({ union_id: 2 })),
     },
     users,
-    users_roles: usersRoles,
   };
 
   const prisma = {

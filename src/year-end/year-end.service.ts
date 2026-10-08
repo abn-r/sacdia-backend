@@ -7,12 +7,15 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { MonthlyReportsService } from '../monthly-reports/monthly-reports.service';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import { lockInvestitureAuthorizationYear } from '../investiture-requests/investiture-request-lock';
+import { closePendingInvestitureAuthorizations } from '../investiture-requests/investiture-year-close';
 
 export interface YearClosureSummary {
   yearId: number;
   enrollmentsClosed: number;
   foldersClosed: number;
   reportsGenerated: number;
+  investiturePendingClosed: number;
 }
 
 export interface YearClosurePreview {
@@ -170,6 +173,13 @@ export class YearEndService {
 
     // Now run the bulk status updates in a transaction
     const result = await this.prisma.$transaction(async (tx) => {
+      await lockInvestitureAuthorizationYear(tx, yearId);
+      const investiturePendingClosed =
+        await closePendingInvestitureAuthorizations(
+          tx,
+          { ecclesiastical_year_id: yearId },
+          [yearId],
+        );
       // 1. Mark ecclesiastical year as inactive
       await tx.ecclesiastical_years.update({
         where: { year_id: yearId },
@@ -226,6 +236,7 @@ export class YearEndService {
       return {
         enrollmentsClosed: enrollmentsResult.count,
         foldersClosed,
+        investiturePendingClosed,
       };
     });
 
@@ -234,13 +245,15 @@ export class YearEndService {
       enrollmentsClosed: result.enrollmentsClosed,
       foldersClosed: result.foldersClosed,
       reportsGenerated: generatedReportIds.length,
+      investiturePendingClosed: result.investiturePendingClosed,
     };
 
     this.logger.log(
       `Year-end closure complete for year ${yearId}: ` +
         `${summary.enrollmentsClosed} enrollments closed, ` +
         `${summary.foldersClosed} folders closed, ` +
-        `${summary.reportsGenerated} reports auto-generated`,
+        `${summary.reportsGenerated} reports auto-generated, ` +
+        `${summary.investiturePendingClosed} investiture pendings closed`,
     );
 
     return summary;

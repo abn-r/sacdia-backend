@@ -97,7 +97,10 @@ describe('certificate import enrollment slots', () => {
       const amigoCode = `A${label}`;
       const companeroCode = `C${label}`;
       const exploradorCode = `E${label}`;
-      const classes = await client.query<{ class_id: number; asset_code: string }>(
+      const classes = await client.query<{
+        class_id: number;
+        asset_code: string;
+      }>(
         `INSERT INTO classes (name, active, club_type_id, minimum_age, display_order, asset_code)
          VALUES
            ($2, true, $1, 10, 1, $3),
@@ -135,8 +138,8 @@ describe('certificate import enrollment slots', () => {
         classes.rows.map((row) => [row.asset_code, row.class_id]),
       );
       const user = await client.query<{ user_id: string }>(
-        `INSERT INTO users (email, name, active, approval_status)
-         VALUES ($1, $2, true, 'approved')
+        `INSERT INTO users (email, name, active, approval_status, birthday)
+         VALUES ($1, $2, true, 'approved', '1990-01-01')
          RETURNING user_id`,
         [`${label}@certificate-import.test`, label],
       );
@@ -497,14 +500,28 @@ describe('certificate import enrollment slots', () => {
 
     const pool = new pg.Pool({ connectionString: url });
     const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
-    const service = new CertificateBulkImportApplicationService(prisma as never);
+    const service = new CertificateBulkImportApplicationService(
+      prisma as never,
+    );
     try {
       const results = await Promise.allSettled([
-        service.approveItem(reviewer.reviewerId, reviewer.batchId, reviewer.itemId, {}),
-        service.approveItem(reviewer.reviewerId, reviewer.batchId, reviewer.itemId, {}),
+        service.approveItem(
+          reviewer.reviewerId,
+          reviewer.batchId,
+          reviewer.itemId,
+          {},
+        ),
+        service.approveItem(
+          reviewer.reviewerId,
+          reviewer.batchId,
+          reviewer.itemId,
+          {},
+        ),
       ]);
 
-      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2);
+      expect(
+        results.filter((result) => result.status === 'fulfilled'),
+      ).toHaveLength(2);
       const rows = await prisma.enrollments.count({
         where: { user_id: fixture.userId, class_id: fixture.amigoId },
       });
