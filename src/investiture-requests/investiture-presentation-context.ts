@@ -40,6 +40,11 @@ export type PresentationContextView = {
     end_date: string | null;
     /** `investitureWindowAllowsOperation` with the Field's local day. */
     open_today: boolean;
+    /**
+     * The Field's stored time zone is invalid: `open_today` is false and
+     * `present` answers INVESTITURE_REQUEST_TIME_ZONE_INVALID until fixed.
+     */
+    time_zone_invalid: boolean;
   };
   year_open: boolean;
   /** The request holding PENDING people for this section and year, if any. */

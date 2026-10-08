@@ -4296,6 +4296,24 @@ describe('investiture authorization requests', () => {
       expect((await context()).window.open_today).toBe(true);
     });
 
+    it('R2 reports an invalid Field time zone instead of a window open today', async () => {
+      expect((await context()).window).toMatchObject({
+        open_today: true,
+        time_zone_invalid: false,
+      });
+      world.section.clubs.local_fields.timezone = 'Mars/Olympus';
+
+      const view = await context();
+
+      expect(view.window.open_today).toBe(false);
+      expect(view.window.time_zone_invalid).toBe(true);
+      expect(view.window.start_date).toEqual(expect.any(String));
+      expect(view.candidates).toHaveLength(1);
+      await expect(present()).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_TIME_ZONE_INVALID,
+      });
+    });
+
     it('reports year_open false once the year ended', async () => {
       world.year.active = false;
 

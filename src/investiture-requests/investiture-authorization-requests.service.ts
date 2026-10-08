@@ -198,6 +198,8 @@ type SectionContext = {
   mainClubId: number;
   localFieldId: number;
   timeZone: string;
+  /** Set only by reads: the Field's stored zone is invalid and `timeZone` is the fallback. */
+  timeZoneInvalid?: boolean;
   yearId: number;
   yearStart: string;
   yearEnd: string;
@@ -594,7 +596,11 @@ export class InvestitureAuthorizationRequestService {
       window: {
         start_date: context.window?.start_date ?? null,
         end_date: context.window?.end_date ?? null,
-        open_today: this.windowOpenToday(context, at),
+        // `present` refuses with INVESTITURE_REQUEST_TIME_ZONE_INVALID while
+        // the Field's zone is invalid, so the board must not say it is open.
+        open_today:
+          context.timeZoneInvalid !== true && this.windowOpenToday(context, at),
+        time_zone_invalid: context.timeZoneInvalid === true,
       },
       year_open: this.isYearOpen(context, at),
       open_request_id: openRequestId,
@@ -1841,10 +1847,13 @@ export class InvestitureAuthorizationRequestService {
       clubTypeId: section.club_type_id,
       mainClubId: section.main_club_id,
       localFieldId: section.clubs.local_field_id,
-      timeZone:
-        options.validateTimeZone === false
-          ? this.readTimeZone(section.clubs.local_fields?.timezone)
-          : normalizeInvestitureTimeZone(section.clubs.local_fields?.timezone),
+      ...(options.validateTimeZone === false
+        ? this.readTimeZone(section.clubs.local_fields?.timezone)
+        : {
+            timeZone: normalizeInvestitureTimeZone(
+              section.clubs.local_fields?.timezone,
+            ),
+          }),
       yearId: ecclesiasticalYearId,
       yearStart,
       yearEnd,
@@ -1854,11 +1863,21 @@ export class InvestitureAuthorizationRequestService {
     };
   }
 
-  private readTimeZone(value: string | null | undefined): string {
+  /**
+   * Zone for read-only views: an invalid stored zone must not break the read,
+   * so it falls back and is flagged for the caller to report.
+   */
+  private readTimeZone(value: string | null | undefined): {
+    timeZone: string;
+    timeZoneInvalid?: true;
+  } {
     try {
-      return normalizeInvestitureTimeZone(value);
+      return { timeZone: normalizeInvestitureTimeZone(value) };
     } catch {
-      return INVESTITURE_REQUEST_TIME_ZONE_FALLBACK;
+      return {
+        timeZone: INVESTITURE_REQUEST_TIME_ZONE_FALLBACK,
+        timeZoneInvalid: true,
+      };
     }
   }
 

@@ -5671,6 +5671,55 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
       });
     });
 
+    it('R2 flags an invalid Field time zone and keeps the read working', async () => {
+      const field = await prisma.local_fields.findUniqueOrThrow({
+        where: { local_field_id: fieldId },
+        select: { timezone: true },
+      });
+      await prisma.local_fields.update({
+        where: { local_field_id: fieldId },
+        data: { timezone: 'Not/AZone' },
+      });
+      try {
+        const view = await contextService().presentationContext(
+          marker(),
+          sectionId,
+          yearId,
+          INSIDE,
+        );
+
+        expect(view.window.open_today).toBe(false);
+        expect(view.window.time_zone_invalid).toBe(true);
+        expect(view.candidates.length).toBeGreaterThan(0);
+        await expect(
+          service.present(
+            marker(),
+            ACTOR,
+            sectionId,
+            yearId,
+            DATE,
+            [enrollmentId],
+            INSIDE,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_REQUEST_TIME_ZONE_INVALID,
+        });
+      } finally {
+        await prisma.local_fields.update({
+          where: { local_field_id: fieldId },
+          data: { timezone: field.timezone },
+        });
+      }
+      const healthy = await contextService().presentationContext(
+        marker(),
+        sectionId,
+        yearId,
+        INSIDE,
+      );
+      expect(healthy.window.time_zone_invalid).toBe(false);
+      expect(healthy.window.open_today).toBe(true);
+    });
+
     it('exposes the open request and the pending person of a presented member', async () => {
       const presented = await present();
 
