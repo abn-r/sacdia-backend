@@ -3764,6 +3764,7 @@ enum investiture_action_enum {
   REINVESTITURE_REQUESTED
   INVESTIDO
   EXPIRED
+  LEGACY_LOCK_RELEASED
 }
 
 enum insurance_type_enum {
