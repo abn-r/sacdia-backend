@@ -79,7 +79,7 @@ const baseline = {
     'effectiveWhere|T08|2|637369e238ef',
   'honors/master-honors.service.ts': 'effectiveWhere|T08|2|2741ba22d4d7',
   'insurance/insurance.service.ts': 'effectiveWhere|T09|3|d2a51bca41f2',
-  'investiture/investiture.service.ts': 'effectiveWhere|T08|7|659426390804',
+  'investiture/investiture.service.ts': 'effectiveWhere|T08|2|47c100be2ca8',
   'investiture-requests/investiture-authorization-requests.service.ts':
     'historicalWhere|allowlist|5|619bfde7ccc3',
   'investiture-requests/investiture-communications.loader.ts':
@@ -108,7 +108,7 @@ const baseline = {
     'effectiveWhere|T09|2|13fb6223b7d5',
   'support/support.service.ts': 'effectiveWhere|T09|1|1048e37fdce1',
   'units/units.service.ts': 'effectiveWhere|T08|1|46d392950956',
-  'validation/validation.service.ts': 'effectiveWhere|T09|3|af6362f7dd6f',
+  'validation/validation.service.ts': 'effectiveWhere|T09|1|eda675bb9c5c',
   'year-cut/year-cut.service.ts': 'workflowWhere|allowlist|5|6bd1f33a51dc',
 } as const;
 
