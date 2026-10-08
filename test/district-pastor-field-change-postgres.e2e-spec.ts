@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import pg from 'pg';
+import pg, { Client } from 'pg';
 import type { AuthorizationSnapshot } from '../src/common/services/authorization-context.service';
 import { ErrorCode } from '../src/common/errors/error-codes';
 import { DistrictInvestiturePastorService } from '../src/classes/district-investiture-pastors.service';
@@ -344,5 +344,133 @@ describe('district pastor assignments follow the Field on isolated PostgreSQL', 
 
     await withClient(url, (client) => client.query(sql));
     expect(await activeIds()).toEqual([PASTOR_C]);
+  });
+  describe('against a concurrent Field change', () => {
+    const sleep = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function openHolder(): Promise<Client> {
+      const client = new Client({ connectionString: url });
+      await client.connect();
+      await client.query('BEGIN');
+      return client;
+    }
+
+    async function closeHolder(client: Client, action: 'COMMIT' | 'ROLLBACK') {
+      try {
+        await client.query(action);
+      } finally {
+        await client.end();
+      }
+    }
+
+    function track<T>(promise: Promise<T>) {
+      const state = { settled: false };
+      const outcome = promise.then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      void outcome.then(() => {
+        state.settled = true;
+      });
+      return { state, outcome };
+    }
+
+    async function crossedActiveRows(): Promise<number> {
+      const result = await withClient(url, (client) =>
+        client.query<{ n: string }>(
+          `SELECT count(*) AS n
+           FROM district_investiture_pastors dip
+           JOIN districts d ON d.districlub_type_id = dip.districlub_type_id
+           JOIN users u ON u.user_id = dip.user_id
+           WHERE dip.active
+             AND u.local_field_id IS DISTINCT FROM d.local_field_id`,
+        ),
+      );
+      return Number(result.rows[0].n);
+    }
+
+    it('update-first: assign waits for the Field change and is rejected', async () => {
+      const holder = await openHolder();
+      let assigning: ReturnType<typeof track> | undefined;
+      try {
+        await holder.query(
+          `UPDATE users SET local_field_id = $1 WHERE user_id = $2`,
+          [otherFieldId, PASTOR_A],
+        );
+        assigning = track(
+          service.assign(fieldActor(fieldId), districtId, PASTOR_A, PASTOR_D),
+        );
+        await sleep(400);
+        expect(assigning.state.settled).toBe(false);
+      } finally {
+        await closeHolder(holder, 'COMMIT');
+      }
+      const result = await assigning.outcome;
+      expect(result.ok).toBe(false);
+      expect(result).toMatchObject({
+        error: { code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH },
+      });
+      expect(await activeIds()).toEqual([]);
+      expect(await crossedActiveRows()).toBe(0);
+    });
+
+    it('assign-first: the Field change waits for the assignment and then drops it', async () => {
+      // Hold the quota table so assign stops after taking its row locks and
+      // before it writes the assignment.
+      const holder = await openHolder();
+      let assigning: ReturnType<typeof track> | undefined;
+      let changing: ReturnType<typeof track> | undefined;
+      try {
+        await holder.query(
+          'LOCK TABLE investiture_pastor_quota IN ACCESS EXCLUSIVE MODE',
+        );
+        assigning = track(
+          service.assign(fieldActor(fieldId), districtId, PASTOR_A, PASTOR_D),
+        );
+        await sleep(400);
+        expect(assigning.state.settled).toBe(false);
+        changing = track(
+          withClient(url, (client) =>
+            client.query(
+              `UPDATE users SET local_field_id = $1 WHERE user_id = $2`,
+              [otherFieldId, PASTOR_A],
+            ),
+          ),
+        );
+        await sleep(400);
+        expect(changing.state.settled).toBe(false);
+      } finally {
+        await closeHolder(holder, 'COMMIT');
+      }
+      expect((await assigning.outcome).ok).toBe(true);
+      expect((await changing.outcome).ok).toBe(true);
+      expect(await activeIds()).toEqual([]);
+      expect(await crossedActiveRows()).toBe(0);
+    });
+
+    it('district-move-first: assign re-reads the district Field and is rejected', async () => {
+      const holder = await openHolder();
+      let assigning: ReturnType<typeof track> | undefined;
+      try {
+        await holder.query(
+          `UPDATE districts SET local_field_id = $1 WHERE districlub_type_id = $2`,
+          [otherFieldId, districtId],
+        );
+        assigning = track(
+          service.assign(fieldActor(fieldId), districtId, PASTOR_A, PASTOR_D),
+        );
+        await sleep(400);
+        expect(assigning.state.settled).toBe(false);
+      } finally {
+        await closeHolder(holder, 'COMMIT');
+      }
+      const result = await assigning.outcome;
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH },
+      });
+      expect(await crossedActiveRows()).toBe(0);
+    });
   });
 });

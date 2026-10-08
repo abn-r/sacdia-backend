@@ -180,13 +180,26 @@ export class DistrictInvestiturePastorService {
     return this.prisma.$transaction(async (tx) => {
       const store = tx as unknown as PastorStore;
       await this.lockPastorQuota(store);
-      await store.$queryRaw(Prisma.sql`
-        SELECT "districlub_type_id"
+      const locked = await store.$queryRaw<
+        Array<{ local_field_id: number }>
+      >(Prisma.sql`
+        SELECT "local_field_id"
         FROM "districts"
         WHERE "districlub_type_id" = ${districtId}
         FOR UPDATE
       `);
-      await this.assertPastorUser(store, userId, localFieldId);
+      // El Campo del distrito se relee con el candado: un cambio confirmado
+      // mientras esperábamos no puede dejar pasar un pastor de otro Campo.
+      const districtLocalFieldId = locked?.[0]?.local_field_id ?? localFieldId;
+      // FOR SHARE choca con el UPDATE de users: si el Campo del pastor cambia
+      // en paralelo, uno espera al otro y el trigger ve la fila confirmada.
+      await store.$queryRaw(Prisma.sql`
+        SELECT "user_id"
+        FROM "users"
+        WHERE "user_id" = ${userId}::uuid
+        FOR SHARE
+      `);
+      await this.assertPastorUser(store, userId, districtLocalFieldId);
       const existing = await store.district_investiture_pastors.findUnique({
         where: {
           districlub_type_id_user_id: {
