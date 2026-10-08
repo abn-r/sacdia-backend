@@ -81,9 +81,11 @@ const baseline = {
   'insurance/insurance.service.ts': 'effectiveWhere|T09|3|d2a51bca41f2',
   'investiture/investiture.service.ts': 'effectiveWhere|T08|7|659426390804',
   'investiture-requests/investiture-authorization-requests.service.ts':
-    'historicalWhere|allowlist|1|c1ad58990f7d',
+    'historicalWhere|allowlist|5|619bfde7ccc3',
   'investiture-requests/investiture-communications.loader.ts':
     'effectiveWhere|T09|1|75a40441727f',
+  'investiture-requests/investiture-presentation-context.ts':
+    'historicalWhere|allowlist|2|aaf0b4f4e058',
   'member-of-month/member-of-month.service.ts':
     'effectiveWhere|T09|2|4a63b7e684b3',
   'membership-requests/membership-requests.service.ts':

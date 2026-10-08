@@ -107,4 +107,100 @@ describe('club assignment Prisma query scanner', () => {
       expect.objectContaining({ kind: 'prisma', line: 4 }),
     ]);
   });
+
+  it('recognizes a `store` transaction handle as a Prisma client root', () => {
+    const findings = scanAssignmentQuerySource(
+      'store-root.ts',
+      `function check(store: DecisionStore) {
+         return store.club_role_assignments.findFirst({
+           where: { active: true },
+         });
+       }`,
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'prisma', line: 2 }),
+    ]);
+  });
+
+  it('fails closed on a spread helper call inside an assignment where', () => {
+    const findings = scanAssignmentQuerySource(
+      'spread-call.ts',
+      `prisma.club_role_assignments.findFirst({
+         where: { user_id: userId, ...memberWhere(context) },
+       });
+       prisma.club_role_assignments.findFirst({
+         where: { AND: [{ user_id: userId, ...memberWhere(context) }] },
+       });
+       const inner = { ...memberWhere(context) };
+       prisma.club_role_assignments.findFirst({
+         where: { user_id: userId, ...inner },
+       });`,
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'prisma', line: 1 }),
+      expect.objectContaining({ kind: 'prisma', line: 4 }),
+      expect.objectContaining({ kind: 'prisma', line: 8 }),
+    ]);
+  });
+
+  it('keeps a spread of an inspectable object without predicates clean', () => {
+    const findings = scanAssignmentQuerySource(
+      'spread-object.ts',
+      `const base = { user_id: userId };
+       prisma.club_role_assignments.findFirst({
+         where: { ...base, club_section_id: sectionId },
+       });`,
+    );
+    expect(findings).toEqual([]);
+  });
+
+  it('fails closed on a relation operator fed by a helper call', () => {
+    const findings = scanAssignmentQuerySource(
+      'relation-call.ts',
+      `prisma.enrollments.findMany({
+         where: {
+           users: {
+             club_role_assignments: { some: memberWhere(context) },
+           },
+         },
+       });
+       prisma.enrollments.findMany({
+         where: {
+           users: {
+             club_role_assignments: { none: { user_id: userId } },
+           },
+         },
+       });`,
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'relation', line: 4 }),
+    ]);
+  });
+
+  it('flags functions declared to return an assignment where input', () => {
+    const findings = scanAssignmentQuerySource(
+      'where-input-return.ts',
+      `export function memberWhere(
+         scope: Scope,
+       ): Prisma.club_role_assignmentsWhereInput {
+         return { club_section_id: scope.id, active: true };
+       }
+       const arrowWhere = (scope: Scope): Prisma.club_role_assignmentsWhereInput =>
+         ({ club_section_id: scope.id });
+       class Policy {
+         build(): Prisma.club_role_assignmentsWhereInput {
+           return build();
+         }
+       }
+       type Builder = () => Prisma.club_role_assignmentsWhereInput;
+       function unrelated(): Prisma.usersWhereInput {
+         return { active: true };
+       }`,
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'where-input', line: 1 }),
+      expect.objectContaining({ kind: 'where-input', line: 6 }),
+      expect.objectContaining({ kind: 'where-input', line: 9 }),
+    ]);
+  });
 });
