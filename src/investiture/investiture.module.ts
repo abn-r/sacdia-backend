@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { InvestitureController } from './investiture.controller';
 import { InvestitureService } from './investiture.service';
+import { LegacyInvestitureRetiredController } from './legacy-investiture-retired.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AchievementsModule } from '../achievements/achievements.module';
@@ -15,7 +16,7 @@ import { ClassesModule } from '../classes/classes.module';
     CoordinationModule,
     ClassesModule,
   ],
-  controllers: [InvestitureController],
+  controllers: [InvestitureController, LegacyInvestitureRetiredController],
   providers: [InvestitureService],
   exports: [InvestitureService],
 })

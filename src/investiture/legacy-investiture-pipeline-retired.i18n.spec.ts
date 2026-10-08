@@ -12,7 +12,9 @@ describe('legacy investiture pipeline retirement i18n', () => {
           'utf8',
         ),
       ) as Record<string, string>;
-      expect(errors[ErrorCode.INVESTITURE_LEGACY_PIPELINE_RETIRED]).toBeTruthy();
+      expect(
+        errors[ErrorCode.INVESTITURE_LEGACY_PIPELINE_RETIRED],
+      ).toBeTruthy();
     },
   );
 });
