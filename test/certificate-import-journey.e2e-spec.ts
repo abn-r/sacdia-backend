@@ -1105,14 +1105,7 @@ describe('certificate import journey', () => {
       },
     });
 
-    const investiture = new InvestitureService(
-      prisma as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
+    const investiture = new InvestitureService(prisma as never, {} as never);
     const expired = await investiture.expireOverdueEnrollments(reviewer.user_id, {
       ecclesiastical_year_id: laterYear.year_id,
     });
