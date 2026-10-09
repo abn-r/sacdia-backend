@@ -1,5 +1,9 @@
 import 'reflect-metadata';
-import { type CanActivate, type ExecutionContext } from '@nestjs/common';
+import {
+  type CanActivate,
+  type ExecutionContext,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -45,6 +49,8 @@ class AuthenticatedGuard implements CanActivate {
 describe('investiture pastor HTTP with mocked auth and database', () => {
   let app: INestApplication;
   let quotaUpsert: jest.Mock;
+  let userSearch: jest.Mock;
+  let districtLookup: jest.Mock;
 
   beforeAll(async () => {
     const rows = [
@@ -62,6 +68,19 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
       },
     ];
     quotaUpsert = jest.fn();
+    userSearch = jest.fn().mockResolvedValue([
+      {
+        user_id: PASTOR_C,
+        name: 'Carlos',
+        paternal_last_name: 'Mena',
+        maternal_last_name: null,
+        email: 'carlos@pastores.test',
+      },
+    ]);
+    districtLookup = jest.fn().mockResolvedValue({
+      districlub_type_id: DISTRICT_ID,
+      local_field_id: FIELD_ID,
+    });
     const prisma = {
       investiture_pastor_quota: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -88,25 +107,23 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
         update: jest.fn(),
         groupBy: jest.fn().mockResolvedValue([]),
       },
-      districts: {
-        findUnique: jest.fn().mockResolvedValue({
-          districlub_type_id: DISTRICT_ID,
-          local_field_id: FIELD_ID,
-        }),
-      },
+      districts: { findUnique: districtLookup },
       local_fields: { findUnique: jest.fn() },
       users: {
         findUnique: jest.fn().mockResolvedValue({
           user_id: PASTOR_C,
           active: true,
+          local_field_id: FIELD_ID,
         }),
         findMany: jest.fn(
-          async ({ where }: { where: { user_id: { in: string[] } } }) =>
-            where.user_id.in.map((id) => ({
-              user_id: id,
-              active: true,
-              users_roles: [{ user_role_id: 'role-1' }],
-            })),
+          async (args: { where: { user_id?: { in: string[] } } }) =>
+            args.where.user_id
+              ? args.where.user_id.in.map((id) => ({
+                  user_id: id,
+                  active: true,
+                  users_roles: [{ user_role_id: 'role-1' }],
+                }))
+              : userSearch(args),
         ),
       },
       clubs: { findUnique: jest.fn() },
@@ -137,6 +154,13 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: true,
+      }),
+    );
     await app.init();
   });
 
@@ -164,5 +188,81 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
 
     expect(response.status).toBe(409);
     expect(response.body.code).toBe('INVESTITURE_PASTOR_QUOTA_FULL');
+  });
+
+  it('searches pastor candidates with a trimmed query', async () => {
+    const response = await request(app.getHttpServer()).get(
+      '/investiture-pastor-candidates?q=%20car%20',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: 'success',
+      data: [
+        {
+          user_id: PASTOR_C,
+          user_name: 'Carlos Mena',
+          email: 'carlos@pastores.test',
+        },
+      ],
+    });
+    expect(userSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it('scopes the candidate search to the districtId query param', async () => {
+    districtLookup.mockClear();
+    userSearch.mockClear();
+    const response = await request(app.getHttpServer()).get(
+      `/investiture-pastor-candidates?q=car&districtId=${DISTRICT_ID}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(districtLookup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { districlub_type_id: DISTRICT_ID },
+      }),
+    );
+    expect(userSearch).toHaveBeenCalledTimes(1);
+    expect(userSearch.mock.calls[0][0].where.AND).toContainEqual({
+      local_field_id: FIELD_ID,
+    });
+  });
+
+  it('keeps the search working without districtId and never reads the district', async () => {
+    districtLookup.mockClear();
+    const response = await request(app.getHttpServer()).get(
+      '/investiture-pastor-candidates?q=car',
+    );
+
+    expect(response.status).toBe(200);
+    expect(districtLookup).not.toHaveBeenCalled();
+  });
+
+  it.each(['0', '-3', 'abc', '1.5', ''])(
+    'rejects districtId=%s with 400 before reading users',
+    async (value) => {
+      userSearch.mockClear();
+      const response = await request(app.getHttpServer()).get(
+        `/investiture-pastor-candidates?q=car&districtId=${value}`,
+      );
+
+      expect(response.status).toBe(400);
+      expect(userSearch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    '/investiture-pastor-candidates',
+    '/investiture-pastor-candidates?q=ab',
+    '/investiture-pastor-candidates?q=%20a%20',
+    '/investiture-pastor-candidates?q=a%20b',
+    '/investiture-pastor-candidates?q=ana%20b',
+    '/investiture-pastor-candidates?q=a%20bc',
+  ])('rejects %s with 400 before reading users', async (url) => {
+    userSearch.mockClear();
+    const response = await request(app.getHttpServer()).get(url);
+
+    expect(response.status).toBe(400);
+    expect(userSearch).not.toHaveBeenCalled();
   });
 });

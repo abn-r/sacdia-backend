@@ -301,11 +301,20 @@ async function applySqlOnlyGuarantees(url: string): Promise<void> {
     'utf8',
   );
 
+  const districtPastorFieldChange = readFileSync(
+    join(
+      BACKEND_ROOT,
+      'prisma/migrations/20261008120000_district_pastor_field_change/migration.sql',
+    ),
+    'utf8',
+  );
+
   await withClient(url, async (client) => {
     await client.query(extractDoBlock(directorSlots));
     await client.query(extractTriggerSql(directorSlots));
     await client.query(extractDoBlock(annualCycle));
     await client.query(successionOpen);
+    await client.query(districtPastorFieldChange);
   });
 }
 

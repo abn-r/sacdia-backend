@@ -1260,6 +1260,56 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
     expect(resolved.invested).toHaveLength(1);
   });
 
+  it('stops authorizing as pastor once the pastor leaves the district Field, while the Field director still can', async () => {
+    const view = await present();
+    const personId = view.people[0].person_id;
+    const attempt = (authorization: AuthorizationSnapshot) =>
+      service.resolve(
+        authorization,
+        ACTOR,
+        view.request_id,
+        { invest: [{ person_id: personId }] },
+        INSIDE,
+      );
+    await prisma.users.update({
+      where: { user_id: ACTOR },
+      data: { local_field_id: fieldId },
+    });
+    try {
+      await prisma.district_investiture_pastors.create({
+        data: { districlub_type_id: districtId, user_id: ACTOR, active: true },
+      });
+      const listed = await service.listForAuthorizer(
+        globalAuth('pastor'),
+        ACTOR,
+        yearId,
+      );
+      expect(listed.map((row) => row.request_id)).toEqual([view.request_id]);
+
+      await prisma.users.update({
+        where: { user_id: ACTOR },
+        data: { local_field_id: null },
+      });
+
+      await expect(attempt(globalAuth('pastor'))).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+      });
+      await expect(
+        service.listForAuthorizer(globalAuth('pastor'), ACTOR, yearId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN,
+      });
+
+      const asField = await attempt(fieldAuth('director-lf', fieldId));
+      expect(asField.invested).toHaveLength(1);
+    } finally {
+      await prisma.users.update({
+        where: { user_id: ACTOR },
+        data: { local_field_id: null },
+      });
+    }
+  });
+
   it('keeps authorization closed until the window itself is widened', async () => {
     const view = await present();
     const personId = view.people[0].person_id;
@@ -2242,6 +2292,58 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
         where: { execution_key: '2026-10-05', recipient_user_id: MEMBER },
       }),
     ).toBe(2);
+  });
+
+  it('R6 skips an old result whose request is gone instead of retrying it', async () => {
+    await prisma.investiture_message_dispatches.deleteMany();
+    const pushes: unknown[] = [];
+    const communications = new InvestitureCommunicationsService(
+      prisma as never,
+      {
+        sendInvestitureNotice: async () => undefined,
+        inspectInvestitureJob: async () => 'missing' as const,
+        retryFailedInvestitureJob: async () => undefined,
+      } as never,
+      {
+        pushBestEffort: async (input: unknown) => {
+          pushes.push(input);
+        },
+      } as never,
+      { get: () => '' } as never,
+    );
+    const orphan = await prisma.investiture_message_dispatches.create({
+      data: {
+        kind: 'RESULT',
+        execution_key: 'person-invested:orphan-r6',
+        recipient_user_id: MEMBER,
+        role: 'person',
+        scope_key: `user:${MEMBER}`,
+        status: 'failed',
+        attempts: 1,
+        last_error: 'boom',
+        payload: {
+          channel: 'result',
+          title: 'Investidura autorizada',
+          body: 'texto',
+          source: 'investiture:invested',
+          requestId: randomUUID(),
+        },
+      },
+    });
+    try {
+      await communications.deliverPending();
+      await communications.deliverPending();
+
+      const row = await prisma.investiture_message_dispatches.findUniqueOrThrow(
+        { where: { dispatch_id: orphan.dispatch_id } },
+      );
+      expect(row.status).toBe('skipped');
+      expect(row.last_error).toBe('request_missing');
+      expect(row.attempts).toBe(1);
+      expect(pushes).toEqual([]);
+    } finally {
+      await prisma.investiture_message_dispatches.deleteMany();
+    }
   });
 
   it('stores a new presentation intent after remove, reject, and an empty header', async () => {
@@ -5407,6 +5509,476 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
         { get: () => panelUrl } as never,
       );
     }
+  });
+
+  describe('presentation context', () => {
+    const LEGACY_USER = '52000000-0000-4000-8000-000000000001';
+    const INVESTED_USER = '52000000-0000-4000-8000-000000000002';
+    const extraUsers = [LEGACY_USER, INVESTED_USER];
+
+    function contextService(): InvestitureAuthorizationRequestService {
+      return new InvestitureAuthorizationRequestService(
+        prisma as never,
+        {
+          calculateForEnrollment: async () => ({
+            investiture_eligibility: { eligible: true },
+          }),
+          calculateForEnrollments: async (ids: number[]) =>
+            new Map(
+              ids.map((id) => [
+                id,
+                {
+                  investiture_eligibility: { eligible: true },
+                  overall_progress: 55,
+                },
+              ]),
+            ),
+        } as never,
+        { emitEvent: async () => ({ eventLogId: 1, queued: false }) } as never,
+      );
+    }
+
+    async function seedMember(
+      userId: string,
+      name: string,
+      status: 'SUBMITTED_FOR_VALIDATION' | 'INVESTIDO' | 'IN_PROGRESS',
+      year: number = yearId,
+    ): Promise<number> {
+      await prisma.users.upsert({
+        where: { user_id: userId },
+        update: { active: true, name },
+        create: {
+          user_id: userId,
+          email: `${userId}@p4.test`,
+          name,
+          active: true,
+        },
+      });
+      const assignment = await prisma.club_role_assignments.findFirst({
+        where: {
+          user_id: userId,
+          club_section_id: sectionId,
+          ecclesiastical_year_id: yearId,
+        },
+      });
+      if (!assignment) {
+        await prisma.club_role_assignments.create({
+          data: {
+            user_id: userId,
+            role_id: roleId,
+            ecclesiastical_year_id: yearId,
+            start_date: new Date('2026-01-01T00:00:00.000Z'),
+            active: true,
+            status: 'active',
+            club_section_id: sectionId,
+          },
+        });
+      }
+      const created = await prisma.enrollments.create({
+        data: {
+          user_id: userId,
+          class_id: classId,
+          ecclesiastical_year_id: year,
+          investiture_status: status,
+          record_kind: 'OPERATIONAL',
+          active: true,
+        },
+        select: { enrollment_id: true },
+      });
+      return created.enrollment_id;
+    }
+
+    afterEach(async () => {
+      await prisma.enrollments.deleteMany({
+        where: { user_id: { in: extraUsers } },
+      });
+      await prisma.club_role_assignments.deleteMany({
+        where: { user_id: { in: extraUsers } },
+      });
+    });
+
+    it('reports eligible, old-pipeline and already-invested members with real names and writes nothing', async () => {
+      const legacyEnrollment = await seedMember(
+        LEGACY_USER,
+        'Legado',
+        'SUBMITTED_FOR_VALIDATION',
+      );
+      const priorYear = await pastYear('2019-01-01', '2019-12-31');
+      await seedMember(INVESTED_USER, 'Investido', 'INVESTIDO', priorYear);
+      const sibling = await prisma.enrollments.create({
+        data: {
+          user_id: INVESTED_USER,
+          class_id: classId,
+          ecclesiastical_year_id: yearId,
+          investiture_status: 'IN_PROGRESS',
+          record_kind: 'OPERATIONAL',
+          active: true,
+        },
+        select: { enrollment_id: true },
+      });
+      const before = {
+        people: await prisma.investiture_authorization_people.count(),
+        requests: await prisma.investiture_authorization_requests.count(),
+      };
+
+      const view = await contextService().presentationContext(
+        marker(),
+        sectionId,
+        yearId,
+        INSIDE,
+      );
+
+      expect(view.open_request_id).toBeNull();
+      expect(view.year_open).toBe(true);
+      expect(view.window.open_today).toBe(true);
+      const byEnrollment = new Map(
+        view.candidates.map((row) => [row.enrollment_id, row]),
+      );
+      // Earlier tests leave other members in the shared section; assert only
+      // on the enrollments this test seeded.
+      expect(
+        [enrollmentId, legacyEnrollment, sibling.enrollment_id].every((id) =>
+          byEnrollment.has(id),
+        ),
+      ).toBe(true);
+      expect(
+        new Set(view.candidates.map((row) => row.enrollment_id)).size,
+      ).toBe(view.candidates.length);
+      expect(byEnrollment.get(enrollmentId)).toMatchObject({
+        user_id: MEMBER,
+        user_name: 'Miembro',
+        class_id: classId,
+        class_name: 'Amigo P4',
+        overall_progress: 55,
+        eligible: true,
+        blocked_code: null,
+        pending_person_id: null,
+      });
+      expect(byEnrollment.get(legacyEnrollment)).toMatchObject({
+        user_name: 'Legado',
+        eligible: false,
+        blocked_code: 'INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE',
+      });
+      expect(byEnrollment.get(sibling.enrollment_id)).toMatchObject({
+        user_name: 'Investido',
+        class_name: 'Amigo P4',
+        eligible: false,
+        blocked_code: 'INVESTITURE_REQUEST_ALREADY_INVESTED',
+      });
+      expect(view.candidates[0].eligible).toBe(true);
+      expect({
+        people: await prisma.investiture_authorization_people.count(),
+        requests: await prisma.investiture_authorization_requests.count(),
+      }).toEqual(before);
+    });
+
+    it('R1 blocks on the real database with the code present throws', async () => {
+      const legacyEnrollment = await seedMember(
+        LEGACY_USER,
+        'Legado',
+        'SUBMITTED_FOR_VALIDATION',
+      );
+      const priorYear = await pastYear('2019-01-01', '2019-12-31');
+      await seedMember(INVESTED_USER, 'Investido', 'INVESTIDO', priorYear);
+      const sibling = await prisma.enrollments.create({
+        data: {
+          user_id: INVESTED_USER,
+          class_id: classId,
+          ecclesiastical_year_id: yearId,
+          investiture_status: 'IN_PROGRESS',
+          record_kind: 'OPERATIONAL',
+          active: true,
+        },
+        select: { enrollment_id: true },
+      });
+
+      const view = await contextService().presentationContext(
+        marker(),
+        sectionId,
+        yearId,
+        INSIDE,
+      );
+
+      const blocked = view.candidates.filter((row) => !row.eligible);
+      expect(blocked.map((row) => row.enrollment_id)).toEqual(
+        expect.arrayContaining([legacyEnrollment, sibling.enrollment_id]),
+      );
+      for (const candidate of blocked) {
+        await expect(
+          service.present(
+            marker(),
+            ACTOR,
+            sectionId,
+            yearId,
+            DATE,
+            [candidate.enrollment_id],
+            INSIDE,
+          ),
+        ).rejects.toMatchObject({ code: candidate.blocked_code });
+      }
+    });
+
+    it('R3 leaves institutional classes out of the candidates and keeps the rest', async () => {
+      const kept = await seedMember(
+        LEGACY_USER,
+        'Legado',
+        'SUBMITTED_FOR_VALIDATION',
+      );
+      const institutional = await prisma.classes.create({
+        data: {
+          name: 'Institucional P4',
+          active: true,
+          club_type_id: clubTypeId,
+          minimum_age: 10,
+          min_duration_years: 1,
+          max_duration_years: 1,
+          asset_code: 'GM-02',
+        },
+        select: { class_id: true },
+      });
+      const hidden = await prisma.enrollments.create({
+        data: {
+          user_id: LEGACY_USER,
+          class_id: institutional.class_id,
+          ecclesiastical_year_id: yearId,
+          investiture_status: 'IN_PROGRESS',
+          record_kind: 'OPERATIONAL',
+          active: true,
+        },
+        select: { enrollment_id: true },
+      });
+
+      const view = await contextService().presentationContext(
+        marker(),
+        sectionId,
+        yearId,
+        INSIDE,
+      );
+
+      const ids = view.candidates.map((row) => row.enrollment_id);
+      expect(ids).toContain(kept);
+      expect(ids).not.toContain(hidden.enrollment_id);
+      await expect(
+        service.present(
+          marker(),
+          ACTOR,
+          sectionId,
+          yearId,
+          DATE,
+          [hidden.enrollment_id],
+          INSIDE,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE,
+      });
+    });
+
+    it('R2 flags an invalid Field time zone and keeps the read working', async () => {
+      const field = await prisma.local_fields.findUniqueOrThrow({
+        where: { local_field_id: fieldId },
+        select: { timezone: true },
+      });
+      await prisma.local_fields.update({
+        where: { local_field_id: fieldId },
+        data: { timezone: 'Not/AZone' },
+      });
+      try {
+        const view = await contextService().presentationContext(
+          marker(),
+          sectionId,
+          yearId,
+          INSIDE,
+        );
+
+        expect(view.window.open_today).toBe(false);
+        expect(view.window.time_zone_invalid).toBe(true);
+        expect(view.candidates.length).toBeGreaterThan(0);
+        await expect(
+          service.present(
+            marker(),
+            ACTOR,
+            sectionId,
+            yearId,
+            DATE,
+            [enrollmentId],
+            INSIDE,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_REQUEST_TIME_ZONE_INVALID,
+        });
+      } finally {
+        await prisma.local_fields.update({
+          where: { local_field_id: fieldId },
+          data: { timezone: field.timezone },
+        });
+      }
+      const healthy = await contextService().presentationContext(
+        marker(),
+        sectionId,
+        yearId,
+        INSIDE,
+      );
+      expect(healthy.window.time_zone_invalid).toBe(false);
+      expect(healthy.window.open_today).toBe(true);
+    });
+
+    it('exposes the open request and the pending person of a presented member', async () => {
+      const presented = await present();
+
+      const view = await contextService().presentationContext(
+        marker(),
+        sectionId,
+        yearId,
+        INSIDE,
+      );
+
+      expect(view.open_request_id).toBe(presented.request_id);
+      expect(
+        view.candidates.find((row) => row.enrollment_id === enrollmentId),
+      ).toMatchObject({
+        eligible: false,
+        blocked_code: 'INVESTITURE_REQUEST_ACTIVE_EXISTS',
+        pending_person_id: presented.people[0].person_id,
+      });
+    });
+  });
+
+  describe('authorizer header data', () => {
+    const SOUTH_USER = '53000000-0000-4000-8000-000000000001';
+    let southSectionId = 0;
+    let southClubId = 0;
+    let southEnrollmentId = 0;
+
+    beforeEach(async () => {
+      const church = await prisma.churches.findFirstOrThrow({
+        where: { name: 'P4 Iglesia' },
+        select: { church_id: true, districlub_type_id: true },
+      });
+      const seeded = await withClient(url, async (client) => {
+        const club = await client.query<{ club_id: number }>(
+          `INSERT INTO clubs (name, active, local_field_id, church_id, coordinates, districlub_type_id)
+           VALUES ('P4 Club Sur', true, $1, $2, '{}'::json, $3)
+           RETURNING club_id`,
+          [fieldId, church.church_id, church.districlub_type_id],
+        );
+        const section = await client.query<{ club_section_id: number }>(
+          `INSERT INTO club_sections (active, club_type_id, main_club_id)
+           VALUES (true, $1, $2)
+           RETURNING club_section_id`,
+          [clubTypeId, club.rows[0].club_id],
+        );
+        return {
+          clubId: club.rows[0].club_id,
+          sectionId: section.rows[0].club_section_id,
+        };
+      });
+      southClubId = seeded.clubId;
+      southSectionId = seeded.sectionId;
+      await prisma.users.upsert({
+        where: { user_id: SOUTH_USER },
+        update: { active: true },
+        create: {
+          user_id: SOUTH_USER,
+          email: 'south-p4@p4.test',
+          name: 'Sur',
+          active: true,
+        },
+      });
+      await prisma.club_role_assignments.create({
+        data: {
+          user_id: SOUTH_USER,
+          role_id: roleId,
+          ecclesiastical_year_id: yearId,
+          start_date: new Date('2026-01-01T00:00:00.000Z'),
+          active: true,
+          status: 'active',
+          club_section_id: southSectionId,
+        },
+      });
+      const enrollment = await prisma.enrollments.create({
+        data: {
+          user_id: SOUTH_USER,
+          class_id: classId,
+          ecclesiastical_year_id: yearId,
+          investiture_status: 'IN_PROGRESS',
+          record_kind: 'OPERATIONAL',
+          active: true,
+        },
+        select: { enrollment_id: true },
+      });
+      southEnrollmentId = enrollment.enrollment_id;
+    });
+
+    afterEach(async () => {
+      await prisma.investiture_authorization_people.deleteMany();
+      await prisma.investiture_authorization_requests.deleteMany();
+      await prisma.enrollments.deleteMany({ where: { user_id: SOUTH_USER } });
+      await prisma.club_role_assignments.deleteMany({
+        where: { user_id: SOUTH_USER },
+      });
+      await prisma.club_sections.delete({
+        where: { club_section_id: southSectionId },
+      });
+      await prisma.clubs.delete({ where: { club_id: southClubId } });
+    });
+
+    it('reads real club, section and district names with counts for two clubs, in a list and in the detail', async () => {
+      const north = await present();
+      const south = await service.present(
+        marker(southSectionId),
+        ACTOR,
+        southSectionId,
+        yearId,
+        '2026-10-30',
+        [southEnrollmentId],
+        INSIDE,
+      );
+
+      const listed = await service.listForAuthorizer(
+        fieldAuth(),
+        ACTOR,
+        yearId,
+      );
+
+      const byId = new Map(listed.map((view) => [view.request_id, view]));
+      expect(listed).toHaveLength(2);
+      expect(byId.get(north.request_id)).toMatchObject({
+        club_section_id: sectionId,
+        club_id: clubId,
+        club_name: 'P4 Club',
+        section_name: 'Conquistadores',
+        district_name: 'P4 Distrito',
+        pending_count: 1,
+        earliest_investiture_date: DATE,
+        created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      });
+      expect(byId.get(south.request_id)).toMatchObject({
+        club_section_id: southSectionId,
+        club_id: southClubId,
+        club_name: 'P4 Club Sur',
+        section_name: 'Conquistadores',
+        district_name: 'P4 Distrito',
+        pending_count: 1,
+        earliest_investiture_date: '2026-10-30',
+      });
+      expect(byId.get(south.request_id)?.people[0]).toMatchObject({
+        user_name: 'Sur',
+        class_name: 'Amigo P4',
+        section_name: 'Conquistadores',
+      });
+
+      const detail = await service.readForAuthorizer(
+        fieldAuth(),
+        ACTOR,
+        south.request_id,
+      );
+      expect(detail).toMatchObject({
+        club_name: 'P4 Club Sur',
+        district_name: 'P4 Distrito',
+        pending_count: 1,
+        earliest_investiture_date: '2026-10-30',
+      });
+    });
   });
 });
 

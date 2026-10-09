@@ -162,6 +162,24 @@ export function scanAssignmentQuerySource(
       .filter((property) => propertyName(property) === name)
       .map(initializer)
       .filter((entry): entry is ts.Expression => entry !== null);
+  /**
+   * A spread whose value is a call (`...helper(ctx)`) hides arbitrary keys, so
+   * the surrounding object cannot be inspected. Nested object spreads are
+   * followed so the call cannot be hidden behind an alias.
+   */
+  const hasOpaqueSpread = (
+    value: ts.Expression,
+    seen = new Set<ts.Expression>(),
+  ): boolean => {
+    const node = resolve(value);
+    if (!ts.isObjectLiteralExpression(node) || seen.has(node)) return false;
+    seen.add(node);
+    return node.properties.some((property) => {
+      if (!ts.isSpreadAssignment(property)) return false;
+      const spread = resolve(property.expression);
+      return ts.isCallExpression(spread) || hasOpaqueSpread(spread, seen);
+    });
+  };
   const isInspectableObject = (
     value: ts.Expression,
     seen = new Set<ts.Expression>(),
@@ -175,6 +193,7 @@ export function scanAssignmentQuerySource(
       );
     }
     if (!ts.isObjectLiteralExpression(node)) return false;
+    if (hasOpaqueSpread(node)) return false;
     return properties(node).every((property) => {
       const next = initializer(property);
       if (!next) return ts.isShorthandPropertyAssignment(property);
@@ -236,7 +255,7 @@ export function scanAssignmentQuerySource(
     if (seen.has(node)) return false;
     seen.add(node);
     if (ts.isIdentifier(node)) {
-      return /^(?:prisma|db|tx|client|transaction)(?:[A-Z_].*)?$/i.test(
+      return /^(?:prisma|db|tx|client|transaction|store)(?:[A-Z_].*)?$/i.test(
         node.text,
       );
     }
@@ -247,7 +266,7 @@ export function scanAssignmentQuerySource(
       );
     if (!ts.isPropertyAccessExpression(node)) return false;
     if (node.expression.kind === ts.SyntaxKind.ThisKeyword) {
-      return /^(?:prisma|db|tx|client|transaction)(?:[A-Z_].*)?$/i.test(
+      return /^(?:prisma|db|tx|client|transaction|store)(?:[A-Z_].*)?$/i.test(
         node.name.text,
       );
     }
@@ -307,8 +326,9 @@ export function scanAssignmentQuerySource(
       if (
         name === 'club_role_assignments' &&
         RELATION_OPERATORS.some((operator) =>
-          values(next, operator).some((filter) =>
-            hasAssignmentPredicate(filter),
+          values(next, operator).some(
+            (filter) =>
+              !isInspectableObject(filter) || hasAssignmentPredicate(filter),
           ),
         )
       )
@@ -361,6 +381,18 @@ export function scanAssignmentQuerySource(
       node.initializer &&
       typeTargetsAssignments(node.type) &&
       hasAssignmentPredicate(node.initializer)
+    ) {
+      add(node, 'where-input');
+    }
+    if (
+      (ts.isFunctionDeclaration(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isArrowFunction(node) ||
+        ts.isMethodDeclaration(node) ||
+        ts.isGetAccessorDeclaration(node)) &&
+      node.body &&
+      node.type &&
+      typeTargetsAssignments(node.type)
     ) {
       add(node, 'where-input');
     }

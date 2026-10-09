@@ -162,4 +162,19 @@ describe('investiture request HTTP with mocked auth and database', () => {
     expect(response.body).toEqual({ status: 'success', data: null });
     expect(createRequest).not.toHaveBeenCalled();
   });
+
+  it('returns 403 on the presentation context for a deputy and 400 without a year', async () => {
+    const denied = await request(app.getHttpServer()).get(
+      '/club-sections/4/investiture-requests/presentation-context?ecclesiastical_year_id=2026',
+    );
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe('INVESTITURE_REQUEST_FORBIDDEN');
+
+    role = 'director';
+    const invalid = await request(app.getHttpServer()).get(
+      '/club-sections/4/investiture-requests/presentation-context',
+    );
+    expect(invalid.status).toBe(400);
+    expect(createRequest).not.toHaveBeenCalled();
+  });
 });

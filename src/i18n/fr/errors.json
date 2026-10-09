@@ -341,6 +341,7 @@
   "INVESTITURE_PASTOR_QUOTA_FULL": "Ce district a déjà toutes ses places de pasteur",
   "INVESTITURE_PASTOR_ALREADY_ASSIGNED": "Ce pasteur est déjà assigné à ce district",
   "INVESTITURE_PASTOR_ROLE_REQUIRED": "Seul un utilisateur avec le rôle de pasteur peut être assigné",
+  "INVESTITURE_PASTOR_FIELD_MISMATCH": "Le pasteur n'appartient pas au champ du district.",
   "INVESTITURE_PASTOR_USER_NOT_FOUND": "Pasteur introuvable",
   "INVESTITURE_PASTOR_DISTRICT_NOT_FOUND": "District introuvable",
   "INVESTITURE_PASTOR_CLUB_NOT_FOUND": "Club introuvable",

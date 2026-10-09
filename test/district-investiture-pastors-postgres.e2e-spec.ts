@@ -57,6 +57,7 @@ function scrub(error: unknown): Error {
 function snapshot(options: {
   role: string;
   localFieldId?: number;
+  unionId?: number;
 }): AuthorizationSnapshot {
   return {
     grants: {
@@ -69,6 +70,9 @@ function snapshot(options: {
       permissions: [],
       scope: {
         global: {
+          ...(options.unionId === undefined
+            ? {}
+            : { union: { id: options.unionId, name: 'Unión' } }),
           ...(options.localFieldId === undefined
             ? {}
             : {
@@ -91,6 +95,7 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
   let service: DistrictInvestiturePastorService;
   let districtId: number;
   let localFieldId: number;
+  let unionId: number;
 
   beforeAll(async () => {
     ensureTestDatabaseUrl();
@@ -138,15 +143,15 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
           `SELECT role_id FROM roles
            WHERE role_name = 'pastor' AND role_category = 'GLOBAL'`,
         );
-        for (const [userId, email] of [
-          [PASTOR_A, 'pastor-a@p3.test'],
-          [PASTOR_B, 'pastor-b@p3.test'],
-          [PASTOR_C, 'pastor-c@p3.test'],
+        for (const [userId, email, name, paternal] of [
+          [PASTOR_A, 'pastor-a@p3.test', 'Ana', 'Pérez'],
+          [PASTOR_B, 'pastor-b@p3.test', 'Beto', 'Lara'],
+          [PASTOR_C, 'pastor-c@p3.test', 'Carlos', null],
         ] as const) {
           await client.query(
-            `INSERT INTO users (user_id, email, name, active)
-             VALUES ($1, $2, 'Pastor', true)`,
-            [userId, email],
+            `INSERT INTO users (user_id, email, name, paternal_last_name, active, local_field_id)
+             VALUES ($1, $2, $3, $4, true, $5)`,
+            [userId, email, name, paternal, field.rows[0].local_field_id],
           );
           await client.query(
             `INSERT INTO users_roles (user_id, role_id, active)
@@ -157,10 +162,12 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
         return {
           districtId: district.rows[0].districlub_type_id,
           localFieldId: field.rows[0].local_field_id,
+          unionId: union.rows[0].union_id,
         };
       });
       districtId = seeded.districtId;
       localFieldId = seeded.localFieldId;
+      unionId = seeded.unionId;
       pool = new pg.Pool({ connectionString: url, max: 6 });
       prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
       service = new DistrictInvestiturePastorService(prisma as never);
@@ -285,6 +292,437 @@ describe('district investiture pastors on isolated PostgreSQL', () => {
       throw scrub(error);
     }
   }
+
+  it('lists the pastors with their real name and email', async () => {
+    await service.assign(fieldActor(), districtId, PASTOR_A, PASTOR_C);
+    await service.assign(fieldActor(), districtId, PASTOR_C, PASTOR_A);
+
+    const listed = await service.list(fieldActor(), districtId);
+
+    expect(listed.pastors).toEqual([
+      expect.objectContaining({
+        user_id: PASTOR_A,
+        user_name: 'Ana Pérez',
+        email: 'pastor-a@p3.test',
+        can_authorize: true,
+      }),
+      expect.objectContaining({
+        user_id: PASTOR_C,
+        user_name: 'Carlos',
+        email: 'pastor-c@p3.test',
+        can_authorize: true,
+      }),
+    ]);
+  });
+
+  describe('candidate search', () => {
+    const EXTRA_PREFIX = 'aaaa0000-0000-4000-8000-0000000000';
+    const INACTIVE = 'bbbb0000-0000-4000-8000-000000000001';
+    const NO_ROLE = 'bbbb0000-0000-4000-8000-000000000002';
+    const INACTIVE_ROLE = 'bbbb0000-0000-4000-8000-000000000003';
+    const MIXED_CASE = 'bbbb0000-0000-4000-8000-000000000004';
+
+    async function pastorRoleId(): Promise<string> {
+      const role = await prisma.roles.findFirstOrThrow({
+        where: { role_name: 'pastor', role_category: 'GLOBAL' },
+        select: { role_id: true },
+      });
+      return role.role_id;
+    }
+
+    async function seedUser(
+      id: string,
+      name: string,
+      options: {
+        active?: boolean;
+        role?: 'active' | 'inactive' | 'none';
+        /** `undefined` seeds the suite's own Field; `null` leaves it unset. */
+        localFieldId?: number | null;
+      } = {},
+    ): Promise<void> {
+      await prisma.users.create({
+        data: {
+          user_id: id,
+          email: `${name.toLowerCase().replace(/\s+/g, '.')}.${id.slice(-4)}@cand.test`,
+          name,
+          active: options.active ?? true,
+          local_field_id:
+            options.localFieldId === undefined
+              ? localFieldId
+              : options.localFieldId,
+        },
+      });
+      const role = options.role ?? 'active';
+      if (role !== 'none') {
+        await prisma.users_roles.create({
+          data: {
+            user_id: id,
+            role_id: await pastorRoleId(),
+            active: role === 'active',
+          },
+        });
+      }
+    }
+
+    afterEach(async () => {
+      await prisma.district_investiture_pastors.deleteMany({
+        where: { users: { email: { endsWith: '@cand.test' } } },
+      });
+      const ids = await prisma.users.findMany({
+        where: { email: { endsWith: '@cand.test' } },
+        select: { user_id: true },
+      });
+      const list = ids.map((row) => row.user_id);
+      await prisma.users_roles.deleteMany({ where: { user_id: { in: list } } });
+      await prisma.users.deleteMany({ where: { user_id: { in: list } } });
+    });
+
+    it('finds only active accounts with the active pastor role, ignoring case, by name, surname or email', async () => {
+      await seedUser(MIXED_CASE, 'ANA Mayúscula');
+      await seedUser(INACTIVE, 'Ana Cuenta Inactiva', { active: false });
+      await seedUser(NO_ROLE, 'Ana Sin Rol', { role: 'none' });
+      await seedUser(INACTIVE_ROLE, 'Ana Rol Inactivo', { role: 'inactive' });
+
+      const byName = await service.searchCandidates(fieldActor(), 'aNa');
+      expect(byName.map((row) => row.user_id).sort()).toEqual(
+        [PASTOR_A, MIXED_CASE].sort(),
+      );
+      expect(byName.find((row) => row.user_id === PASTOR_A)).toEqual({
+        user_id: PASTOR_A,
+        user_name: 'Ana Pérez',
+        email: 'pastor-a@p3.test',
+      });
+
+      const bySurname = await service.searchCandidates(fieldActor(), 'pérez');
+      expect(bySurname.map((row) => row.user_id)).toEqual([PASTOR_A]);
+
+      const byFullName = await service.searchCandidates(
+        fieldActor(),
+        'ana pérez',
+      );
+      expect(byFullName.map((row) => row.user_id)).toEqual([PASTOR_A]);
+
+      const byEmail = await service.searchCandidates(
+        fieldActor(),
+        'PASTOR-B@P3',
+      );
+      expect(byEmail.map((row) => row.user_id)).toEqual([PASTOR_B]);
+    });
+
+    it('applies the same rule that decides who can authorize', async () => {
+      await seedUser(INACTIVE, 'Zeta Inactiva', { active: false });
+      await seedUser(NO_ROLE, 'Zeta Sin Rol', { role: 'none' });
+      await seedUser(INACTIVE_ROLE, 'Zeta Rol Inactivo', { role: 'inactive' });
+      expect(await service.searchCandidates(fieldActor(), 'zeta')).toEqual([]);
+    });
+
+    it('caps the result at 20 and treats % and _ as plain text', async () => {
+      for (let index = 0; index < 25; index += 1) {
+        await seedUser(
+          EXTRA_PREFIX + String(index).padStart(2, '0'),
+          'Lote Masivo ' + String(index).padStart(2, '0'),
+        );
+      }
+      expect(
+        await service.searchCandidates(fieldActor(), 'masivo'),
+      ).toHaveLength(20);
+      expect(await service.searchCandidates(fieldActor(), '%%%')).toEqual([]);
+      expect(await service.searchCandidates(fieldActor(), '___')).toEqual([]);
+      expect(await service.searchCandidates(fieldActor(), '\\\\\\')).toEqual(
+        [],
+      );
+      await seedUser(MIXED_CASE, 'Sub_rayado 100%');
+      await seedUser(INACTIVE, 'Subxrayado 1000');
+      expect(
+        (await service.searchCandidates(fieldActor(), 'sub_rayado')).map(
+          (row) => row.user_id,
+        ),
+      ).toEqual([MIXED_CASE]);
+      expect(
+        (await service.searchCandidates(fieldActor(), '100%')).map(
+          (row) => row.user_id,
+        ),
+      ).toEqual([MIXED_CASE]);
+    });
+
+    describe('R5 territory scope', () => {
+      const SAME_FIELD = 'cccc0000-0000-4000-8000-000000000001';
+      const SIBLING_FIELD = 'cccc0000-0000-4000-8000-000000000002';
+      const OTHER_UNION = 'cccc0000-0000-4000-8000-000000000003';
+      const NO_FIELD = 'cccc0000-0000-4000-8000-000000000004';
+      let siblingFieldId = 0;
+      let otherFieldId = 0;
+
+      beforeEach(async () => {
+        const seeded = await withClient(url, async (client) => {
+          const country = await client.query<{ country_id: number }>(
+            `SELECT country_id FROM countries WHERE abbreviation = 'P3'`,
+          );
+          const division = await client.query<{ division_id: number }>(
+            `SELECT division_id FROM divisions WHERE code = 'P3'`,
+          );
+          const otherUnion = await client.query<{ union_id: number }>(
+            `INSERT INTO unions (name, abbreviation, active, country_id, division_id)
+             VALUES ('R5 Union', 'R5U', true, $1, $2)
+             RETURNING union_id`,
+            [country.rows[0].country_id, division.rows[0].division_id],
+          );
+          const sibling = await client.query<{ local_field_id: number }>(
+            `INSERT INTO local_fields (name, abbreviation, active, union_id)
+             VALUES ('R5 Campo hermano', 'R5H', true, $1)
+             RETURNING local_field_id`,
+            [unionId],
+          );
+          const other = await client.query<{ local_field_id: number }>(
+            `INSERT INTO local_fields (name, abbreviation, active, union_id)
+             VALUES ('R5 Campo ajeno', 'R5A', true, $1)
+             RETURNING local_field_id`,
+            [otherUnion.rows[0].union_id],
+          );
+          return {
+            sibling: sibling.rows[0].local_field_id,
+            other: other.rows[0].local_field_id,
+          };
+        });
+        siblingFieldId = seeded.sibling;
+        otherFieldId = seeded.other;
+        await seedUser(SAME_FIELD, 'Alcance Propio');
+        await seedUser(SIBLING_FIELD, 'Alcance Hermano', {
+          localFieldId: siblingFieldId,
+        });
+        await seedUser(OTHER_UNION, 'Alcance Ajeno', {
+          localFieldId: otherFieldId,
+        });
+        await seedUser(NO_FIELD, 'Alcance Sinfield', { localFieldId: null });
+      });
+
+      afterEach(async () => {
+        await prisma.users.updateMany({
+          where: { email: { endsWith: '@cand.test' } },
+          data: { local_field_id: null },
+        });
+        await prisma.local_fields.deleteMany({
+          where: { abbreviation: { in: ['R5H', 'R5A'] } },
+        });
+        await prisma.unions.deleteMany({ where: { abbreviation: 'R5U' } });
+      });
+
+      const ids = (rows: Array<{ user_id: string }>) =>
+        rows.map((row) => row.user_id).sort();
+
+      it('shows a director-lf only the pastors of its own Field', async () => {
+        for (const role of ['director-lf', 'assistant-lf']) {
+          const found = await service.searchCandidates(
+            snapshot({ role, localFieldId }),
+            'alcance',
+          );
+          expect(ids(found)).toEqual([SAME_FIELD]);
+        }
+        const sibling = await service.searchCandidates(
+          snapshot({ role: 'director-lf', localFieldId: siblingFieldId }),
+          'alcance',
+        );
+        expect(ids(sibling)).toEqual([SIBLING_FIELD]);
+      });
+
+      it('shows a director-union the pastors of the Fields of its union only', async () => {
+        for (const role of ['director-union', 'assistant-union']) {
+          const found = await service.searchCandidates(
+            snapshot({ role, unionId }),
+            'alcance',
+          );
+          expect(ids(found)).toEqual([SAME_FIELD, SIBLING_FIELD].sort());
+        }
+      });
+
+      it('never returns a pastor without a Field, even when the name matches', async () => {
+        const union = await service.searchCandidates(
+          snapshot({ role: 'director-union', unionId }),
+          'sinfield',
+        );
+        const field = await service.searchCandidates(
+          snapshot({ role: 'director-lf', localFieldId }),
+          'sinfield',
+        );
+        expect(union).toEqual([]);
+        expect(field).toEqual([]);
+      });
+
+      async function siblingDistrictId(): Promise<number> {
+        const created = await prisma.districts.create({
+          data: {
+            name: 'R5 Distrito hermano',
+            active: true,
+            local_field_id: siblingFieldId,
+          },
+          select: { districlub_type_id: true },
+        });
+        return created.districlub_type_id;
+      }
+
+      it('assigns a pastor of the district Field', async () => {
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-lf', localFieldId }),
+            districtId,
+            SAME_FIELD,
+            PASTOR_C,
+          ),
+        ).resolves.toMatchObject({ user_id: SAME_FIELD, can_authorize: true });
+      });
+
+      it('rejects a pastor of another Field, even of the same union or another union', async () => {
+        for (const user of [SIBLING_FIELD, OTHER_UNION]) {
+          await expect(
+            service.assign(
+              snapshot({ role: 'director-lf', localFieldId }),
+              districtId,
+              user,
+              PASTOR_C,
+            ),
+          ).rejects.toMatchObject({
+            code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+          });
+        }
+        expect(await activeCount()).toBe(0);
+        expect(await prisma.district_investiture_pastors.count()).toBe(0);
+      });
+
+      it('rejects a pastor without a Field', async () => {
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-lf', localFieldId }),
+            districtId,
+            NO_FIELD,
+            PASTOR_C,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+        });
+        expect(await prisma.district_investiture_pastors.count()).toBe(0);
+      });
+
+      it('rejects a union actor assigning a pastor that is not from the district Field', async () => {
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-union', unionId }),
+            districtId,
+            SIBLING_FIELD,
+            PASTOR_C,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+        });
+      });
+
+      it('rejects reactivating an inactive assignment of a pastor from another Field', async () => {
+        await prisma.district_investiture_pastors.create({
+          data: {
+            districlub_type_id: districtId,
+            user_id: SIBLING_FIELD,
+            active: false,
+          },
+        });
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-lf', localFieldId }),
+            districtId,
+            SIBLING_FIELD,
+            PASTOR_C,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
+        });
+        const row = await prisma.district_investiture_pastors.findUniqueOrThrow(
+          {
+            where: {
+              districlub_type_id_user_id: {
+                districlub_type_id: districtId,
+                user_id: SIBLING_FIELD,
+              },
+            },
+          },
+        );
+        expect(row.active).toBe(false);
+      });
+
+      it('reactivates an inactive assignment of a pastor still in the Field', async () => {
+        await prisma.district_investiture_pastors.create({
+          data: {
+            districlub_type_id: districtId,
+            user_id: SAME_FIELD,
+            active: false,
+          },
+        });
+        await expect(
+          service.assign(
+            snapshot({ role: 'director-lf', localFieldId }),
+            districtId,
+            SAME_FIELD,
+            PASTOR_C,
+          ),
+        ).resolves.toMatchObject({ user_id: SAME_FIELD });
+        expect(await activeCount()).toBe(1);
+      });
+
+      it('with districtId, a union actor only gets the pastors of that district Field', async () => {
+        const siblingDistrict = await siblingDistrictId();
+        try {
+          const union = snapshot({ role: 'director-union', unionId });
+          const all = await service.searchCandidates(union, 'alcance');
+          expect(ids(all)).toEqual([SAME_FIELD, SIBLING_FIELD].sort());
+
+          const ownDistrict = await service.searchCandidates(
+            union,
+            'alcance',
+            districtId,
+          );
+          expect(ids(ownDistrict)).toEqual([SAME_FIELD]);
+
+          const siblingOnly = await service.searchCandidates(
+            union,
+            'alcance',
+            siblingDistrict,
+          );
+          expect(ids(siblingOnly)).toEqual([SIBLING_FIELD]);
+
+          const noField = await service.searchCandidates(
+            union,
+            'sinfield',
+            districtId,
+          );
+          expect(noField).toEqual([]);
+        } finally {
+          await prisma.districts.deleteMany({
+            where: { districlub_type_id: siblingDistrict },
+          });
+        }
+      });
+
+      it('with districtId, a Field actor cannot search for a district of another Field', async () => {
+        const siblingDistrict = await siblingDistrictId();
+        try {
+          await expect(
+            service.searchCandidates(
+              snapshot({ role: 'director-lf', localFieldId }),
+              'alcance',
+              siblingDistrict,
+            ),
+          ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+        } finally {
+          await prisma.districts.deleteMany({
+            where: { districlub_type_id: siblingDistrict },
+          });
+        }
+      });
+    });
+
+    it('rejects roles that cannot assign', async () => {
+      await expect(
+        service.searchCandidates(snapshot({ role: 'admin' }), 'ana'),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+    });
+  });
 
   it('reads the default cap without inserting a row', async () => {
     const view = await service.getQuota(fieldActor());

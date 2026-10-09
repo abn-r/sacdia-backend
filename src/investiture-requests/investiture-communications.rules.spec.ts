@@ -325,6 +325,47 @@ describe('investiture result notices', () => {
     expect(drafts.filter((draft) => draft.role !== 'person')).toHaveLength(6);
   });
 
+  it('tags each result with the app destination: board by section, person by class', () => {
+    const drafts = resultDrafts({
+      requestId: REQUEST,
+      sectionId: 4,
+      yearId: 2026,
+      actorName: 'Pastor Luis',
+      officers: officers.filter((officer) => officer.userId === DIRECTOR),
+      invested: [{ personId: 'p-ana', userId: ANA, name: 'Ana', classId: 7 }],
+      rejectedByPerson: [
+        { personId: 'p-bruno', userId: BRUNO, name: 'Bruno', classId: 8 },
+      ],
+      rejectedBySystem: [
+        { personId: 'p-cara', userId: 'cara', name: 'Cara', classId: 9 },
+      ],
+    });
+    const board = drafts.filter((draft) => draft.role !== 'person');
+    const people = drafts.filter((draft) => draft.role === 'person');
+
+    expect(board).toHaveLength(2);
+    for (const draft of board) {
+      expect(draft).toMatchObject({
+        audience: 'board',
+        sectionId: 4,
+        requestId: REQUEST,
+      });
+      expect(draft.classId).toBeUndefined();
+    }
+    expect(
+      people.map((draft) => [
+        draft.recipientUserId,
+        draft.audience,
+        draft.sectionId,
+        draft.classId,
+      ]),
+    ).toEqual([
+      [ANA, 'person', 4, 7],
+      [BRUNO, 'person', 4, 8],
+      ['cara', 'person', 4, 9],
+    ]);
+  });
+
   it('tells the board the system decided and gives the person only the short text', () => {
     const drafts = resultDrafts({
       requestId: REQUEST,

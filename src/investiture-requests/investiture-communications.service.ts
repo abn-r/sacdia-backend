@@ -43,14 +43,19 @@ import {
   reminderRunKey,
   reminderRunsDue,
   reminderRetrySkipReason,
+  resultPushData,
   type MailDraft,
   type ReminderRun,
+  type ResultAudience,
   type ResultDraft,
 } from './investiture-communications.rules';
 
 export const INTENT_RECIPIENT_ID = '00000000-0000-4000-8000-000000000000';
 export const INTENT_ROLE = 'intent';
 export const INTENT_SCOPE = 'intent';
+
+/** `last_error` of a result skipped because its request no longer exists. */
+export const REQUEST_MISSING_CAUSE = 'request_missing';
 
 type IntentDb = PrismaService | Prisma.TransactionClient;
 
@@ -80,6 +85,10 @@ type ResultPayload = {
   body: string;
   source: string;
   requestId: string;
+  /** Ausentes en filas guardadas antes de que el push llevara destino. */
+  audience?: ResultAudience;
+  sectionId?: number;
+  classId?: number;
 };
 
 type StoredDispatch = {
@@ -854,6 +863,13 @@ export class InvestitureCommunicationsService implements InvestitureMailGate {
   ): Promise<'sent' | 'queued' | 'duplicate' | 'failed' | 'skipped'> {
     const payload = row.payload as MailPayload | ResultPayload;
     if (payload.channel === 'result') {
+      const destination = await this.resultDestination(row, payload);
+      if (!destination) {
+        // The request is gone and the stored payload predates the section id:
+        // there is nowhere to point the push. Retrying cannot fix that.
+        await skipDispatch(this.store(), keyOf(row), REQUEST_MISSING_CAUSE);
+        return 'skipped';
+      }
       return this.sendResult({
         kind: 'RESULT',
         executionKey: row.execution_key,
@@ -864,6 +880,7 @@ export class InvestitureCommunicationsService implements InvestitureMailGate {
         body: payload.body,
         source: payload.source,
         requestId: payload.requestId,
+        ...destination,
       });
     }
     const mapped = toDispatchRow(row);
@@ -1099,6 +1116,9 @@ export class InvestitureCommunicationsService implements InvestitureMailGate {
       body: draft.body,
       source: draft.source,
       requestId: draft.requestId,
+      audience: draft.audience,
+      sectionId: draft.sectionId,
+      ...(draft.classId === undefined ? {} : { classId: draft.classId }),
     };
     return deliverOnce(
       this.store(),
@@ -1118,13 +1138,45 @@ export class InvestitureCommunicationsService implements InvestitureMailGate {
             userId: draft.recipientUserId,
             title: draft.title,
             body: draft.body,
-            data: { requestId: draft.requestId },
+            data: resultPushData(draft),
           },
           draft.source,
         );
         return 'sent';
       },
     );
+  }
+
+  /**
+   * Destino del push al reintentar desde el payload guardado. Las filas
+   * anteriores a este campo no traen sección: se resuelve por la solicitud. No
+   * traen clase y, en ese caso, el push de la persona sale sin `classId`.
+   * Devuelve `null` si la solicitud ya no existe: no hay a dónde apuntar y
+   * reintentar no lo arregla, así que el llamador omite la fila.
+   */
+  private async resultDestination(
+    row: StoredDispatch,
+    payload: ResultPayload,
+  ): Promise<Pick<ResultDraft, 'audience' | 'sectionId' | 'classId'> | null> {
+    const audience: ResultAudience =
+      payload.audience ?? (row.role === 'person' ? 'person' : 'board');
+    let sectionId = payload.sectionId;
+    if (sectionId === undefined) {
+      const request =
+        await this.prisma.investiture_authorization_requests.findUnique({
+          where: { request_id: payload.requestId },
+          select: { club_section_id: true },
+        });
+      if (!request) {
+        return null;
+      }
+      sectionId = request.club_section_id;
+    }
+    return {
+      audience,
+      sectionId,
+      ...(payload.classId === undefined ? {} : { classId: payload.classId }),
+    };
   }
 
   private async persistInbox(

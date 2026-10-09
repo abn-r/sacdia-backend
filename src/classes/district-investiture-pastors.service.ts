@@ -11,10 +11,19 @@ import { ErrorCode } from '../common/errors/error-codes';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { lockInvestitureAuthorizationPastor } from '../investiture-requests/investiture-request-lock';
-import { pastorEligibility } from '../investiture-requests/investiture-pastor-eligibility';
+import { displayName } from '../investiture-requests/investiture-communications.rules';
+import {
+  PASTOR_ELIGIBLE_USER_WHERE,
+  pastorEligibility,
+} from '../investiture-requests/investiture-pastor-eligibility';
+import {
+  PASTOR_CANDIDATE_QUERY_MIN,
+  PASTOR_CANDIDATE_TOKEN_MIN,
+} from './dto/search-pastor-candidates.dto';
 
 const DEFAULT_SLOTS = 2;
 const QUOTA_ID = 1;
+const CANDIDATE_LIMIT = 20;
 
 /** Identidad estable del candado. No depende de que exista la fila de cupo. */
 export const INVESTITURE_PASTOR_QUOTA_LOCK = 'investiture-pastor-quota';
@@ -28,6 +37,9 @@ export type PastorQuotaView = {
 export type DistrictPastorView = {
   districlub_type_id: number;
   user_id: string;
+  /** Nombre armado igual que en las solicitudes. `Sin nombre` si no hay datos. */
+  user_name: string;
+  email: string | null;
   can_authorize: boolean;
   /** Falta el rol global `pastor` activo. La asignación sigue ocupando cupo. */
   role_missing?: boolean;
@@ -40,6 +52,12 @@ export type DistrictPastorList = {
   slots: number;
   can_assign: boolean;
   pastors: DistrictPastorView[];
+};
+
+export type PastorCandidateView = {
+  user_id: string;
+  user_name: string;
+  email: string | null;
 };
 
 export type ClubAuthorizersView = {
@@ -58,6 +76,12 @@ type PastorStore = Pick<
 > & {
   $queryRaw: PrismaService['$queryRaw'];
   $executeRaw: PrismaService['$executeRaw'];
+};
+
+/** Lo que `loadDistrict` resuelve: el acceso de quien opera y el Campo del distrito. */
+type LoadedDistrict = {
+  actor: AssignerAccess;
+  localFieldId: number;
 };
 
 type AssignerAccess =
@@ -127,7 +151,11 @@ export class DistrictInvestiturePastorService {
     authorization: AuthorizationSnapshot,
     districtId: number,
   ): Promise<DistrictPastorList> {
-    const actor = await this.loadDistrict(authorization, districtId, 'read');
+    const { actor } = await this.loadDistrict(
+      authorization,
+      districtId,
+      'read',
+    );
     const slots = await this.currentSlots(this.prisma);
     const pastors = await this.activePastors(this.prisma, districtId);
     return {
@@ -144,17 +172,34 @@ export class DistrictInvestiturePastorService {
     userId: string,
     assignedById: string,
   ): Promise<DistrictPastorView> {
-    await this.loadDistrict(authorization, districtId, 'assign');
+    const { localFieldId } = await this.loadDistrict(
+      authorization,
+      districtId,
+      'assign',
+    );
     return this.prisma.$transaction(async (tx) => {
       const store = tx as unknown as PastorStore;
       await this.lockPastorQuota(store);
-      await store.$queryRaw(Prisma.sql`
-        SELECT "districlub_type_id"
+      const locked = await store.$queryRaw<
+        Array<{ local_field_id: number }>
+      >(Prisma.sql`
+        SELECT "local_field_id"
         FROM "districts"
         WHERE "districlub_type_id" = ${districtId}
         FOR UPDATE
       `);
-      await this.assertPastorUser(store, userId);
+      // El Campo del distrito se relee con el candado: un cambio confirmado
+      // mientras esperábamos no puede dejar pasar un pastor de otro Campo.
+      const districtLocalFieldId = locked?.[0]?.local_field_id ?? localFieldId;
+      // FOR SHARE choca con el UPDATE de users: si el Campo del pastor cambia
+      // en paralelo, uno espera al otro y el trigger ve la fila confirmada.
+      await store.$queryRaw(Prisma.sql`
+        SELECT "user_id"
+        FROM "users"
+        WHERE "user_id" = ${userId}::uuid
+        FOR SHARE
+      `);
+      await this.assertPastorUser(store, userId, districtLocalFieldId);
       const existing = await store.district_investiture_pastors.findUnique({
         where: {
           districlub_type_id_user_id: {
@@ -196,7 +241,12 @@ export class DistrictInvestiturePastorService {
           },
         });
       }
-      return this.pastorView(districtId, userId, true);
+      return this.pastorView(
+        districtId,
+        userId,
+        true,
+        (await this.identities(store, [userId])).get(userId),
+      );
     });
   }
 
@@ -238,8 +288,102 @@ export class DistrictInvestiturePastorService {
         },
         data: { active: false },
       });
-      return this.pastorView(districtId, userId, false);
+      return this.pastorView(
+        districtId,
+        userId,
+        false,
+        (await this.identities(store, [userId])).get(userId),
+      );
     });
+  }
+
+  /**
+   * Candidatos a pastor para quien puede asignar (director y asistente de
+   * Campo o de unión). Usa la misma regla de elegibilidad que decide quién
+   * puede autorizar: cuenta activa y rol global `pastor`. Solo devuelve
+   * pastores del territorio de quien busca (ver `candidateScopeWhere`). Con
+   * `districtId` solo devuelve pastores del Campo de ese distrito, que es la
+   * única regla con la que `assign` los acepta.
+   */
+  async searchCandidates(
+    authorization: AuthorizationSnapshot,
+    query: string,
+    districtId?: number,
+  ): Promise<PastorCandidateView[]> {
+    const actor = this.access(authorization, 'assign');
+    if (!actor) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+    // Con `districtId` se autoriza el distrito igual que al asignar, antes de
+    // mirar la búsqueda, y los candidatos se acotan al Campo de ese distrito.
+    const scope: Prisma.usersWhereInput =
+      districtId === undefined
+        ? this.candidateScopeWhere(actor)
+        : {
+            local_field_id: (
+              await this.loadDistrict(authorization, districtId, 'assign')
+            ).localFieldId,
+          };
+    const tokens = query
+      .trim()
+      .split(/\s+/)
+      .filter((token) => token.length > 0);
+    if (
+      tokens.join(' ').length < PASTOR_CANDIDATE_QUERY_MIN ||
+      tokens.some((token) => token.length < PASTOR_CANDIDATE_TOKEN_MIN)
+    ) {
+      return [];
+    }
+    const patterns = tokens.map(escapeLikeWildcards);
+    const rows = await this.prisma.users.findMany({
+      where: {
+        AND: [
+          PASTOR_ELIGIBLE_USER_WHERE,
+          scope,
+          ...patterns.map((token): Prisma.usersWhereInput => ({
+            OR: [
+              { name: { contains: token, mode: 'insensitive' } },
+              { paternal_last_name: { contains: token, mode: 'insensitive' } },
+              { maternal_last_name: { contains: token, mode: 'insensitive' } },
+              { email: { contains: token, mode: 'insensitive' } },
+            ],
+          })),
+        ],
+      },
+      select: {
+        user_id: true,
+        email: true,
+        name: true,
+        paternal_last_name: true,
+        maternal_last_name: true,
+      },
+      orderBy: [
+        { name: 'asc' },
+        { paternal_last_name: 'asc' },
+        { user_id: 'asc' },
+      ],
+      take: CANDIDATE_LIMIT,
+    });
+    return rows.map((row) => ({
+      user_id: row.user_id,
+      user_name: displayName(row),
+      email: row.email,
+    }));
+  }
+
+  /**
+   * Quien busca solo ve pastores de su territorio: su Campo, o los Campos de
+   * su unión. Es la misma frontera que `loadDistrict` aplica al asignar. Un
+   * pastor sin Campo (`users.local_field_id` nulo) queda fuera.
+   */
+  private candidateScopeWhere(actor: AssignerAccess): Prisma.usersWhereInput {
+    if (actor.kind === 'field') {
+      return { local_field_id: actor.localFieldId };
+    }
+    if (actor.kind === 'union') {
+      return { local_fields: { union_id: actor.unionId } };
+    }
+    throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
 
   async authorizersForClub(
@@ -279,7 +423,7 @@ export class DistrictInvestiturePastorService {
     authorization: AuthorizationSnapshot,
     districtId: number,
     mode: 'read' | 'assign',
-  ): Promise<AssignerAccess> {
+  ): Promise<LoadedDistrict> {
     const actor = this.access(authorization, mode);
     if (!actor) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
@@ -308,16 +452,17 @@ export class DistrictInvestiturePastorService {
         throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
       }
     }
-    return actor;
+    return { actor, localFieldId: district.local_field_id };
   }
 
   private async assertPastorUser(
     store: PastorStore,
     userId: string,
+    districtLocalFieldId: number,
   ): Promise<void> {
     const user = await store.users.findUnique({
       where: { user_id: userId },
-      select: { active: true },
+      select: { active: true, local_field_id: true },
     });
     if (!user?.active) {
       throw new AppNotFoundException(
@@ -328,6 +473,13 @@ export class DistrictInvestiturePastorService {
     if (eligibility?.roleMissing !== false) {
       throw new AppBadRequestException(
         ErrorCode.INVESTITURE_PASTOR_ROLE_REQUIRED,
+      );
+    }
+    // Un pastor solo se asigna al distrito de su propio Campo. También cubre
+    // reactivar una asignación inactiva, y un pastor sin Campo queda fuera.
+    if (user.local_field_id !== districtLocalFieldId) {
+      throw new AppBadRequestException(
+        ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
       );
     }
   }
@@ -355,32 +507,65 @@ export class DistrictInvestiturePastorService {
       select: { user_id: true },
       orderBy: { user_id: 'asc' },
     });
-    const eligibility = await pastorEligibility(
-      store,
-      rows.map((row) => row.user_id),
-    );
+    const ids = rows.map((row) => row.user_id);
+    const eligibility = await pastorEligibility(store, ids);
+    const identities = await this.identities(store, ids);
     return rows.map((row) => {
       const state = eligibility.get(row.user_id);
       return this.pastorView(
         districtId,
         row.user_id,
         state?.canAuthorize === true,
+        identities.get(row.user_id),
         state?.roleMissing !== false,
         state?.accountInactive !== false,
       );
     });
   }
 
+  private async identities(
+    store: PastorStore,
+    userIds: string[],
+  ): Promise<Map<string, { user_name: string; email: string | null }>> {
+    const result = new Map<
+      string,
+      { user_name: string; email: string | null }
+    >();
+    if (userIds.length === 0) {
+      return result;
+    }
+    const rows = await store.users.findMany({
+      where: { user_id: { in: userIds } },
+      select: {
+        user_id: true,
+        email: true,
+        name: true,
+        paternal_last_name: true,
+        maternal_last_name: true,
+      },
+    });
+    for (const row of rows) {
+      result.set(row.user_id, {
+        user_name: displayName(row),
+        email: row.email,
+      });
+    }
+    return result;
+  }
+
   private pastorView(
     districtId: number,
     userId: string,
     canAuthorize: boolean,
+    identity: { user_name: string; email: string | null } | undefined,
     roleMissing = false,
     accountInactive = false,
   ): DistrictPastorView {
     return {
       districlub_type_id: districtId,
       user_id: userId,
+      user_name: identity?.user_name ?? displayName({}),
+      email: identity?.email ?? null,
       can_authorize: canAuthorize,
       ...(roleMissing ? { role_missing: true } : {}),
       ...(accountInactive ? { account_inactive: true } : {}),
@@ -429,6 +614,14 @@ export class DistrictInvestiturePastorService {
     }
     return null;
   }
+}
+
+/**
+ * Prisma no escapa `%`, `_` ni `\` en `contains`: sin esto, `%%%` listaría a
+ * todos. PostgreSQL usa la barra invertida como escape por omisión en ILIKE.
+ */
+function escapeLikeWildcards(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 function roleSet(
