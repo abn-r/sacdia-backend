@@ -5288,6 +5288,7 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
           class_id: classId,
           ecclesiastical_year_id: year,
           investiture_status: status,
+          locked_for_validation: status === 'SUBMITTED_FOR_VALIDATION',
           record_kind: 'OPERATIONAL',
           active: true,
         },

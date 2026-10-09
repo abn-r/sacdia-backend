@@ -822,14 +822,7 @@ describe('ClassesService', () => {
       ).resolves.toBeDefined();
     });
 
-    it.each([
-      'SUBMITTED',
-      'CLUB_APPROVED',
-      'COORDINATOR_APPROVED',
-      'FIELD_APPROVED',
-      'INVESTIDO',
-      'EXPIRED',
-    ])(
+    it.each(['INVESTIDO', 'EXPIRED'])(
       'throws CLASS_PROGRESS_LOCKED when investiture_status is %s',
       async (investitureStatus) => {
         mockPrismaService.enrollments.findUnique.mockResolvedValue({
@@ -857,7 +850,17 @@ describe('ClassesService', () => {
       },
     );
 
-    it.each(['IN_PROGRESS', 'REJECTED'])(
+    // Un expediente de la cadena anterior ya liberado (locked_for_validation=false)
+    // sigue siendo editable: solo bloquean el candado y los estados terminales.
+    it.each([
+      'IN_PROGRESS',
+      'REJECTED',
+      'SUBMITTED_FOR_VALIDATION',
+      'CLUB_APPROVED',
+      'COORDINATOR_APPROVED',
+      'FIELD_APPROVED',
+      'APPROVED',
+    ])(
       'allows updateSectionProgress when investiture_status is %s',
       async (investitureStatus) => {
         mockPrismaService.enrollments.findUnique.mockResolvedValue({
@@ -1364,14 +1367,7 @@ describe('ClassesService', () => {
       });
     });
 
-    it.each([
-      'SUBMITTED',
-      'CLUB_APPROVED',
-      'COORDINATOR_APPROVED',
-      'FIELD_APPROVED',
-      'INVESTIDO',
-      'EXPIRED',
-    ])(
+    it.each(['INVESTIDO', 'EXPIRED'])(
       'throws CLASS_PROGRESS_LOCKED on upload when investiture_status is %s',
       async (investitureStatus) => {
         mockPrismaService.enrollments.findUnique.mockResolvedValue({
@@ -1402,7 +1398,17 @@ describe('ClassesService', () => {
       },
     );
 
-    it.each(['IN_PROGRESS', 'REJECTED'])(
+    // Un expediente de la cadena anterior ya liberado (locked_for_validation=false)
+    // sigue siendo editable: solo bloquean el candado y los estados terminales.
+    it.each([
+      'IN_PROGRESS',
+      'REJECTED',
+      'SUBMITTED_FOR_VALIDATION',
+      'CLUB_APPROVED',
+      'COORDINATOR_APPROVED',
+      'FIELD_APPROVED',
+      'APPROVED',
+    ])(
       'allows upload when investiture_status is %s',
       async (investitureStatus) => {
         mockPrismaService.enrollments.findUnique.mockResolvedValue({
@@ -1521,14 +1527,7 @@ describe('ClassesService', () => {
       });
     });
 
-    it.each([
-      'SUBMITTED',
-      'CLUB_APPROVED',
-      'COORDINATOR_APPROVED',
-      'FIELD_APPROVED',
-      'INVESTIDO',
-      'EXPIRED',
-    ])(
+    it.each(['INVESTIDO', 'EXPIRED'])(
       'throws CLASS_PROGRESS_LOCKED on delete when investiture_status is %s',
       async (investitureStatus) => {
         mockPrismaService.enrollments.findUnique.mockResolvedValue({
@@ -1555,7 +1554,17 @@ describe('ClassesService', () => {
       },
     );
 
-    it.each(['IN_PROGRESS', 'REJECTED'])(
+    // Un expediente de la cadena anterior ya liberado (locked_for_validation=false)
+    // sigue siendo editable: solo bloquean el candado y los estados terminales.
+    it.each([
+      'IN_PROGRESS',
+      'REJECTED',
+      'SUBMITTED_FOR_VALIDATION',
+      'CLUB_APPROVED',
+      'COORDINATOR_APPROVED',
+      'FIELD_APPROVED',
+      'APPROVED',
+    ])(
       'allows delete when investiture_status is %s',
       async (investitureStatus) => {
         mockPrismaService.enrollments.findUnique.mockResolvedValue({

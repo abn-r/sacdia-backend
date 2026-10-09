@@ -16,12 +16,6 @@ const FORBIDDEN = [
 /** Solo lectura: el tablero SLA filtra la historia ya grabada (`where: { action: FIELD_APPROVED }`). */
 const READ_ONLY_ALLOWLIST = new Set(['analytics/analytics.service.ts']);
 
-/**
- * TEMPORAL: `investidos_year` todavía cuenta `investiture_status: 'APPROVED'`
- * hasta la Task B4.1. B4.1 borra esta constante y su uso.
- */
-const UNTIL_B4_1 = new Set(['clubs/clubs.service.ts']);
-
 function sources(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
@@ -61,7 +55,7 @@ describe('legacy investiture pipeline stays off', () => {
     const offenders: string[] = [];
     for (const path of sources(SRC)) {
       const file = relative(SRC, path).split(sep).join('/');
-      if (READ_ONLY_ALLOWLIST.has(file) || UNTIL_B4_1.has(file)) continue;
+      if (READ_ONLY_ALLOWLIST.has(file)) continue;
       const text = readFileSync(path, 'utf8');
       for (const match of matches(text)) {
         const line = text.slice(0, match.index).split('\n').length;

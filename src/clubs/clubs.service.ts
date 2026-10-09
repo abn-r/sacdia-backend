@@ -1470,8 +1470,9 @@ export class ClubsService {
       section_name: clubTypeSectionName(a.club_sections?.club_types?.name),
     }));
 
-    // 6. Count members with investiture_status=APPROVED in the active
-    //    ecclesiastical year, scoped to this club via:
+    // 6. Count members whose class is completed (legacy APPROVED or INVESTIDO,
+    //    operational records only) in the active ecclesiastical year, scoped
+    //    to this club via:
     //    unit_members → units.club_section_id → club_sections.main_club_id
     let investidos_year = 0;
     if (sectionIds.length > 0) {
@@ -1504,7 +1505,8 @@ export class ClubsService {
             where: {
               user_id: { in: userIds },
               ecclesiastical_year_id: activeYear.year_id,
-              investiture_status: 'APPROVED',
+              investiture_status: { in: ['APPROVED', 'INVESTIDO'] },
+              record_kind: 'OPERATIONAL',
               active: true,
             },
           });

@@ -2312,6 +2312,7 @@ describe('investiture authorization requests', () => {
       enrollment_id: 902,
       class_id: 8,
       investiture_status: 'CLUB_APPROVED',
+      locked_for_validation: true,
     });
     const view = await present();
 
@@ -2330,6 +2331,32 @@ describe('investiture authorization requests', () => {
     expect(
       world.people.filter((row) => row.enrollment_id === 902),
     ).toHaveLength(0);
+  });
+
+  it('adds a CLUB_APPROVED person once the legacy lock was released (phase 8)', async () => {
+    world.addEnrollment({ enrollment_id: 901 });
+    world.addEnrollment({
+      enrollment_id: 902,
+      class_id: 8,
+      user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      investiture_status: 'CLUB_APPROVED',
+      locked_for_validation: false,
+    });
+    world.addMember('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    const view = await present();
+
+    const added = await service.addPeople(
+      director(),
+      ACTOR,
+      view.request_id,
+      '2026-11-15',
+      [902],
+      INSIDE,
+    );
+
+    expect(
+      added.people.find((person) => person.enrollment_id === 902),
+    ).toBeDefined();
   });
 
   it('retires a pending person instead of investing when the old pipeline is still open', async () => {

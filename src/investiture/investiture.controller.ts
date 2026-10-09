@@ -18,7 +18,8 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { InvestitureService } from './investiture.service';
-import { ExpireOverdueEnrollmentsDto } from './dto';
+import { ExpireOverdueEnrollmentsDto, ReleaseLegacyLocksDto } from './dto';
+import { LegacyLockReleaseService } from './legacy-lock-release.service';
 import {
   JwtAuthGuard,
   GlobalRolesGuard,
@@ -29,12 +30,16 @@ import {
   AuthorizationResource,
   RequirePermissions,
 } from '../common/decorators';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 
 @ApiTags('investiture')
 @ApiBearerAuth()
 @Controller()
 export class InvestitureController {
-  constructor(private readonly investitureService: InvestitureService) {}
+  constructor(
+    private readonly investitureService: InvestitureService,
+    private readonly legacyLockRelease: LegacyLockReleaseService,
+  ) {}
 
   @Post('admin/classes/enrollments/expire-overdue')
   @HttpCode(HttpStatus.OK)
@@ -58,6 +63,23 @@ export class InvestitureController {
       actorId,
       dto,
     );
+    return { status: 'success', data };
+  }
+
+  @Post('admin/investiture/legacy-locks/release')
+  @HttpCode(HttpStatus.OK)
+  @SkipPermissions()
+  @ApiOperation({
+    summary:
+      'Soltar locked_for_validation de expedientes de la vía anterior (solo super-admin; dry_run por defecto)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Candidatos, omitidos por PENDING y liberados',
+  })
+  @ApiResponse({ status: 403, description: 'SUPER_ADMIN_WRITE_REQUIRED' })
+  async releaseLegacyLocks(@Body() dto: ReleaseLegacyLocksDto, @Request() req) {
+    const data = await this.legacyLockRelease.release(req.user.sub, dto);
     return { status: 'success', data };
   }
 
