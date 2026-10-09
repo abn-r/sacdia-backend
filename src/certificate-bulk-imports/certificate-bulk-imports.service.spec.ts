@@ -419,6 +419,51 @@ describe('CertificateBulkImportsService', () => {
     ]);
   });
 
+  it('passes the sealed file id and confirmed_at into extraction', async () => {
+    const confirmedAt = new Date('2026-10-02T15:04:05.006Z');
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      files: [
+        {
+          file_id: '11111111-1111-4111-8111-111111111111',
+          file_url: 'evidence/cert.jpg',
+          file_name: 'cert.jpg',
+          file_type: 'image/jpeg',
+          upload_status: 'CONFIRMED',
+          object_key: 'batches/batch-1/sealed/cert.jpg',
+          confirmed_at: confirmedAt,
+          active: true,
+        },
+      ],
+    });
+    ocrProvider.extract.mockResolvedValue({ rawText: '', items: [] });
+    tx.certificate_bulk_import_batches.update.mockResolvedValue({
+      batch_id: 'batch-1',
+    });
+
+    await service.runQueuedOcr('user-1', 'batch-1');
+
+    expect(ocrProvider.extract).toHaveBeenCalledWith([
+      expect.objectContaining({
+        fileId: '11111111-1111-4111-8111-111111111111',
+        confirmedAt,
+      }),
+    ]);
+    const payload = JSON.stringify(ocrProvider.extract.mock.calls[0][0]);
+    expect(payload).not.toContain('user-1');
+  });
+
+  it('rejects another owner before storage or HTTP extraction', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(null);
+
+    await expect(service.runQueuedOcr('user-2', 'batch-1')).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(ocrProvider.extract).not.toHaveBeenCalled();
+  });
+
   it('moves an item to READY when required fields are corrected', async () => {
     tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
       batch_id: 'batch-1',

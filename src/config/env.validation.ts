@@ -1,5 +1,34 @@
 import * as Joi from 'joi';
 import { isPlaceholderUrl } from './bullmq.config';
+import { decodeOcrProxySecret } from './ocr-proxy-secret';
+
+const OCR_PROXY_ENV_PATTERN = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
+const OCR_PROXY_KID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+function assertRemoteOcrProxyUrl(value: string, helpers: Joi.CustomHelpers) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return helpers.error('any.invalid');
+  }
+  if (url.protocol === 'https:') return value;
+  const parent = helpers.state.ancestors[0] as
+    { NODE_ENV?: unknown } | undefined;
+  if (
+    parent?.NODE_ENV !== 'production' &&
+    url.protocol === 'http:' &&
+    url.hostname === '127.0.0.1'
+  ) {
+    return value;
+  }
+  return helpers.error('any.invalid');
+}
+
+function assertOcrProxySecret(value: string, helpers: Joi.CustomHelpers) {
+  if (!decodeOcrProxySecret(value)) return helpers.error('any.invalid');
+  return value.trim();
+}
 
 const RESEND_API_KEY_PLACEHOLDER = 're_<api-key>';
 const FROM_ADDRESS_PATTERN =
@@ -238,6 +267,39 @@ export const envValidationSchema = Joi.object({
   GOOGLE_CLOUD_PROJECT: Joi.string().trim().allow('').optional(),
   // Google Auth reads this standard env var to override ADC quota project.
   GOOGLE_CLOUD_QUOTA_PROJECT: Joi.string().trim().allow('').optional(),
+  // direct: ADC on the Mac. remote: signed HTTPS to the OCR proxy.
+  // Incomplete remote fails at boot and does not fall back to ADC.
+  OCR_MODE: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().valid('direct', 'remote').required().messages({
+      'any.required': 'OCR_MODE is required',
+    }),
+    otherwise: Joi.string().valid('direct', 'remote').default('direct'),
+  }),
+  OCR_PROXY_URL: Joi.string().when('OCR_MODE', {
+    is: 'remote',
+    then: Joi.string().required().custom(assertRemoteOcrProxyUrl),
+    otherwise: Joi.string().allow('').optional(),
+  }),
+  OCR_PROXY_ENV: Joi.string().when('OCR_MODE', {
+    is: 'remote',
+    then: Joi.string().pattern(OCR_PROXY_ENV_PATTERN).required(),
+    otherwise: Joi.string().allow('').optional(),
+  }),
+  OCR_PROXY_KID: Joi.string().when('OCR_MODE', {
+    is: 'remote',
+    then: Joi.string().pattern(OCR_PROXY_KID_PATTERN).required(),
+    otherwise: Joi.string().allow('').optional(),
+  }),
+  OCR_PROXY_SECRET: Joi.string().when('OCR_MODE', {
+    is: 'remote',
+    then: Joi.string().required().custom(assertOcrProxySecret).messages({
+      'any.required': 'OCR_PROXY_SECRET is required',
+      'string.empty': 'OCR_PROXY_SECRET is required',
+      'any.invalid': 'OCR_PROXY_SECRET is invalid',
+    }),
+    otherwise: Joi.string().allow('').optional(),
+  }),
 
   // Firebase
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow('').optional(),
@@ -269,3 +331,30 @@ export const envValidationSchema = Joi.object({
   // If not set, POST /api/v1/admin/rbac/bootstrap-admin returns 403 (disabled).
   BOOTSTRAP_SECRET: Joi.string().trim().min(32).optional(),
 });
+
+const validateEnvSchema =
+  envValidationSchema.validate.bind(envValidationSchema);
+envValidationSchema.validate = ((
+  value: unknown,
+  options?: Joi.ValidationOptions,
+) => {
+  const result = validateEnvSchema(value, options);
+  redactOcrProxySecret(result.error);
+  return result;
+}) as typeof envValidationSchema.validate;
+
+function redactOcrProxySecret(error: Joi.ValidationError | undefined): void {
+  if (!error) return;
+  const original = error._original as
+    { OCR_PROXY_SECRET?: unknown } | undefined;
+  const secret = original?.OCR_PROXY_SECRET;
+  if (typeof secret !== 'string' || secret.length === 0 || !original) return;
+  delete original.OCR_PROXY_SECRET;
+  error.message = error.message.split(secret).join('OCR_PROXY_SECRET');
+  for (const detail of error.details) {
+    detail.message = detail.message.split(secret).join('OCR_PROXY_SECRET');
+    if (detail.context && detail.context.value === secret) {
+      delete detail.context.value;
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CertificateBulkImportsService } from './certificate-bulk-imports.service';
 import { CertificateBulkImportsController } from './certificate-bulk-imports.controller';
@@ -10,10 +11,14 @@ import { CertificateImportFilesService } from './certificate-import-files.servic
 import { InstitutionalCertificateRequestsService } from './institutional-certificate-requests.service';
 import { InstitutionalCertificateRequestsController } from './institutional-certificate-requests.controller';
 import { AdminInstitutionalCertificateRequestsController } from './admin-institutional-certificate-requests.controller';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 import { CERTIFICATE_OCR_PROVIDER } from './ocr/certificate-ocr.provider';
+import { selectCertificateOcrProvider } from './ocr/certificate-ocr-mode';
 import {
-  GoogleVisionCertificateOcrProvider,
+  GOOGLE_VISION_CLIENT_FACTORY,
   googleVisionClientFactoryProvider,
+  type GoogleVisionClientFactory,
 } from './ocr/google-vision-certificate-ocr.provider';
 import {
   CertificateOcrQueueModule,
@@ -39,7 +44,21 @@ import { CertificateOcrProcessor } from './ocr/certificate-ocr.processor';
     googleVisionClientFactoryProvider,
     {
       provide: CERTIFICATE_OCR_PROVIDER,
-      useClass: GoogleVisionCertificateOcrProvider,
+      useFactory: (
+        config: ConfigService,
+        storage: FileStorageService,
+        visionClientFactory: GoogleVisionClientFactory,
+      ) =>
+        selectCertificateOcrProvider({
+          config,
+          storage,
+          visionClientFactory,
+        }),
+      inject: [
+        ConfigService,
+        FILE_STORAGE_SERVICE,
+        GOOGLE_VISION_CLIENT_FACTORY,
+      ],
     },
     ...(isCertificateOcrQueueConfigured() ? [CertificateOcrProcessor] : []),
   ],
