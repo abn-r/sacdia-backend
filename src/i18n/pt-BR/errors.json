@@ -360,6 +360,7 @@
   "INVESTITURE_REQUEST_CLASS_NOT_ELIGIBLE": "Esta classe institucional não aceita solicitações de investidura",
   "INVESTITURE_REQUEST_ALREADY_INVESTED": "Essa pessoa já está investida nesta classe",
   "INVESTITURE_REQUEST_LEGACY_PIPELINE_ACTIVE": "Esta matrícula ainda está na validação anterior de investidura",
+  "INVESTITURE_LEGACY_PIPELINE_RETIRED": "A validação anterior de investidura não está mais disponível. A investidura agora é feita pela solicitação de autorização da diretoria da seção.",
   "INVESTITURE_REQUEST_ACTIVE_EXISTS": "Essa pessoa já tem uma solicitação ativa incompatível",
   "INVESTITURE_REQUEST_NOT_OPERATIONAL": "Um certificado histórico não entra nesta solicitação",
   "INVESTITURE_REQUEST_NOT_PENDING": "Essa pessoa já não está pendente na solicitação",

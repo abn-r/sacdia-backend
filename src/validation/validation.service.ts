@@ -1,26 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import {
-  Prisma,
-  investiture_status_enum,
-  investiture_action_enum,
-} from '@prisma/client';
-import {
-  AppBadRequestException,
-  AppConflictException,
-  AppNotFoundException,
-} from '../common/errors/app.exception';
+import { investiture_status_enum } from '@prisma/client';
+import { AppBadRequestException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { HonorValidationWorkflowService } from '../honors/honor-validation-workflow.service';
-import { rejectLegacyMutationIfAuthorizationPending } from '../investiture-requests/investiture-request-lock';
+import { throwLegacyInvestiturePipelineRetired } from '../investiture/legacy-investiture-pipeline-retired';
 
 type EntityType = 'class' | 'honor';
 
 @Injectable()
 export class ValidationService {
-  private readonly logger = new Logger(ValidationService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
@@ -37,98 +27,9 @@ export class ValidationService {
     userId: string,
   ) {
     if (entityType === 'class') {
-      return this.submitClassForReview(entityId, userId);
+      throwLegacyInvestiturePipelineRetired();
     }
     return this.honorValidationWorkflow.submitForReview(entityId, userId);
-  }
-
-  private async submitClassForReview(enrollmentId: number, userId: string) {
-    const enrollment = await this.prisma.enrollments.findUnique({
-      where: { enrollment_id: enrollmentId },
-    });
-
-    if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.VALIDATION_ENROLLMENT_NOT_FOUND);
-    }
-
-    if (enrollment.user_id !== userId) {
-      throw new AppBadRequestException(
-        ErrorCode.VALIDATION_ENROLLMENT_NOT_OWNED,
-      );
-    }
-
-    if (enrollment.investiture_status !== investiture_status_enum.IN_PROGRESS) {
-      throw new AppBadRequestException(
-        ErrorCode.VALIDATION_ENROLLMENT_NOT_IN_PROGRESS,
-      );
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
-      const updated = await this.claimClassStatus(
-        tx,
-        enrollmentId,
-        investiture_status_enum.IN_PROGRESS,
-        {
-          investiture_status: investiture_status_enum.SUBMITTED_FOR_VALIDATION,
-          submitted_for_validation: true,
-          submitted_at: new Date(),
-          locked_for_validation: true,
-        },
-      );
-
-      await tx.investiture_validation_history.create({
-        data: {
-          enrollment_id: enrollmentId,
-          action: investiture_action_enum.SUBMITTED,
-          performed_by: userId,
-          comments: 'Enviado a revision por el miembro',
-        },
-      });
-
-      // Generic validation log
-      await tx.validation_logs.create({
-        data: {
-          entity_type: 'class',
-          entity_id: String(enrollmentId),
-          user_id: userId,
-          action: 'submitted',
-          performed_by: userId,
-          comment: 'Enviado a revision por el miembro',
-        },
-      });
-
-      return updated;
-    });
-
-    // Notify coordinators/directors of the member's section
-    try {
-      const memberSection = await this.prisma.club_role_assignments.findFirst({
-        where: { user_id: userId, active: true },
-        select: { club_section_id: true },
-      });
-
-      if (memberSection?.club_section_id) {
-        void this.notifications.sendToSectionRole(
-          memberSection.club_section_id,
-          ['coordinator', 'director'],
-          'Clase lista para revisar',
-          'Un miembro completó una clase y espera revisión',
-          {
-            type: 'validation',
-            entity_type: 'class',
-            entity_id: String(enrollmentId),
-          },
-          'validation:class_submitted',
-        );
-      }
-    } catch (error: unknown) {
-      this.logger.warn(
-        `Notification failed for class submission ${enrollmentId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-
-    return result;
   }
 
   // ========================================
@@ -142,14 +43,14 @@ export class ValidationService {
     performedBy: string,
     comment?: string,
   ) {
+    if (entityType === 'class') {
+      throwLegacyInvestiturePipelineRetired();
+    }
+
     if (action === 'rejected' && !comment) {
       throw new AppBadRequestException(
         ErrorCode.VALIDATION_REJECT_COMMENT_REQUIRED,
       );
-    }
-
-    if (entityType === 'class') {
-      return this.reviewClass(entityId, action, performedBy, comment);
     }
 
     if (action === 'approved') {
@@ -163,111 +64,6 @@ export class ValidationService {
     return this.honorValidationWorkflow.reject(entityId, performedBy, comment!);
   }
 
-  private async reviewClass(
-    enrollmentId: number,
-    action: 'approved' | 'rejected',
-    performedBy: string,
-    comment?: string,
-  ) {
-    const enrollment = await this.prisma.enrollments.findUnique({
-      where: { enrollment_id: enrollmentId },
-    });
-
-    if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.VALIDATION_ENROLLMENT_NOT_FOUND);
-    }
-
-    if (
-      enrollment.investiture_status !==
-      investiture_status_enum.SUBMITTED_FOR_VALIDATION
-    ) {
-      throw new AppBadRequestException(
-        ErrorCode.VALIDATION_ENROLLMENT_NOT_SUBMITTED,
-      );
-    }
-
-    const newStatus =
-      action === 'approved'
-        ? investiture_status_enum.APPROVED
-        : investiture_status_enum.IN_PROGRESS;
-
-    const historyAction =
-      action === 'approved'
-        ? investiture_action_enum.APPROVED
-        : investiture_action_enum.REJECTED;
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
-      const updated = await this.claimClassStatus(
-        tx,
-        enrollmentId,
-        investiture_status_enum.SUBMITTED_FOR_VALIDATION,
-        {
-          investiture_status: newStatus,
-          validated_by: performedBy,
-          validated_at: new Date(),
-          rejection_reason: action === 'rejected' ? comment : null,
-          locked_for_validation: action === 'approved',
-          submitted_for_validation: action === 'rejected' ? false : true,
-        },
-      );
-
-      await tx.investiture_validation_history.create({
-        data: {
-          enrollment_id: enrollmentId,
-          action: historyAction,
-          performed_by: performedBy,
-          comments: comment ?? null,
-        },
-      });
-
-      // Generic validation log
-      await tx.validation_logs.create({
-        data: {
-          entity_type: 'class',
-          entity_id: String(enrollmentId),
-          user_id: enrollment.user_id,
-          action,
-          performed_by: performedBy,
-          comment: comment ?? null,
-        },
-      });
-
-      return updated;
-    });
-
-    // Notify the member about approval/rejection
-    try {
-      const title =
-        action === 'approved'
-          ? '¡Tu clase fue aprobada!'
-          : 'Tu clase necesita ajustes';
-      const body =
-        action === 'approved'
-          ? 'Tu avance ya quedó validado. ¡Buen trabajo!'
-          : `Tu clase necesita ajustes${comment ? ': ' + comment : '.'}`;
-
-      void this.notifications.notifySafe(
-        enrollment.user_id,
-        title,
-        body,
-        {
-          type: 'validation',
-          entity_type: 'class',
-          entity_id: String(enrollmentId),
-          action,
-        },
-        `validation:class_${action}`,
-      );
-    } catch (error: unknown) {
-      this.logger.warn(
-        `Notification failed for class review ${enrollmentId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-
-    return result;
-  }
-
   // ========================================
   // PENDING REVIEWS
   // ========================================
@@ -276,56 +72,12 @@ export class ValidationService {
     club_section_id?: number;
     entity_type?: EntityType;
   }) {
-    const results: {
-      classes: unknown[];
-      honors: unknown[];
-    } = { classes: [], honors: [] };
-
-    const shouldIncludeClasses =
-      !filters?.entity_type || filters.entity_type === 'class';
+    const results: { classes: unknown[]; honors: unknown[] } = {
+      classes: [],
+      honors: [],
+    };
     const shouldIncludeHonors =
       !filters?.entity_type || filters.entity_type === 'honor';
-
-    if (shouldIncludeClasses) {
-      results.classes = await this.prisma.enrollments.findMany({
-        where: {
-          investiture_status: investiture_status_enum.SUBMITTED_FOR_VALIDATION,
-          active: true,
-          record_kind: 'OPERATIONAL',
-          ...(filters?.club_section_id
-            ? {
-                users: {
-                  club_role_assignments: {
-                    some: {
-                      club_section_id: filters.club_section_id,
-                      active: true,
-                    },
-                  },
-                },
-              }
-            : {}),
-        },
-        include: {
-          users: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-              maternal_last_name: true,
-              email: true,
-            },
-          },
-          classes: {
-            select: {
-              class_id: true,
-              name: true,
-              club_type_id: true,
-            },
-          },
-        },
-        orderBy: { submitted_at: 'asc' },
-      });
-    }
 
     if (shouldIncludeHonors) {
       results.honors = await this.prisma.users_honors.findMany({
@@ -462,30 +214,5 @@ export class ValidationService {
         },
       },
     };
-  }
-
-  private async claimClassStatus(
-    tx: Prisma.TransactionClient,
-    enrollmentId: number,
-    expected: investiture_status_enum,
-    data: Prisma.enrollmentsUncheckedUpdateManyInput,
-  ) {
-    const marked = await tx.enrollments.updateMany({
-      where: {
-        enrollment_id: enrollmentId,
-        investiture_status: expected,
-      },
-      data,
-    });
-    if (marked.count !== 1) {
-      throw new AppConflictException(ErrorCode.INVESTITURE_CONCURRENT_UPDATE);
-    }
-    const updated = await tx.enrollments.findUnique({
-      where: { enrollment_id: enrollmentId },
-    });
-    if (!updated) {
-      throw new AppNotFoundException(ErrorCode.VALIDATION_ENROLLMENT_NOT_FOUND);
-    }
-    return updated;
   }
 }

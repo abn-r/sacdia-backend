@@ -1,3 +1,5 @@
+import { HttpStatus } from '@nestjs/common';
+import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ValidationService } from './validation.service';
 
@@ -64,88 +66,86 @@ describe('ValidationService honor workflow delegation', () => {
   });
 });
 
-describe('ValidationService class pipeline', () => {
-  const tx = {
-    $executeRaw: jest.fn().mockResolvedValue(0),
-    enrollments: { update: jest.fn() },
-    investiture_authorization_people: {
-      findFirst: jest.fn(),
-    },
-    investiture_validation_history: { create: jest.fn() },
-    validation_logs: { create: jest.fn() },
-  };
+describe('ValidationService retired class path', () => {
   const prisma = {
+    $transaction: jest.fn(),
     enrollments: { findUnique: jest.fn() },
-    $transaction: jest.fn(async (fn: (client: typeof tx) => Promise<unknown>) =>
-      fn(tx),
-    ),
-    club_role_assignments: { findFirst: jest.fn() },
-  };
-  const notifications = {
-    sendToSectionRole: jest.fn(),
-    notifySafe: jest.fn(),
   };
   const honorWorkflow = {
     submitForReview: jest.fn(),
     approve: jest.fn(),
     reject: jest.fn(),
   };
-  let service: ValidationService;
+  const service = new ValidationService(
+    prisma as never,
+    { notifySafe: jest.fn(), sendToSectionRole: jest.fn() } as never,
+    honorWorkflow as never,
+  );
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    tx.investiture_authorization_people.findFirst.mockResolvedValue({
-      person_id: 'person-1',
-    });
-    prisma.enrollments.findUnique.mockResolvedValue({
-      enrollment_id: 4,
-      user_id: 'member-1',
-      investiture_status: 'IN_PROGRESS',
-    });
-    service = new ValidationService(
-      prisma as never,
-      notifications as never,
-      honorWorkflow as never,
+  async function expectGone(promise: Promise<unknown>) {
+    const error = await promise.then(
+      () => null,
+      (reason: unknown) => reason,
     );
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).getStatus()).toBe(HttpStatus.GONE);
+    expect((error as AppException).code).toBe(
+      ErrorCode.INVESTITURE_LEGACY_PIPELINE_RETIRED,
+    );
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('answers 410 to a class submit without reading or writing', async () => {
+    await expectGone(service.submitForReview('class', 7, 'member-1'));
+    expect(prisma.enrollments.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('does not submit a class enrollment that has a pending authorization', async () => {
-    await expect(
-      service.submitForReview('class', 4, 'member-1'),
-    ).rejects.toMatchObject({
-      code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
-    });
-    expect(tx.enrollments.update).not.toHaveBeenCalled();
-    expect(honorWorkflow.submitForReview).not.toHaveBeenCalled();
+  it.each(['approved', 'rejected'] as const)(
+    'answers 410 to a class review (%s), even without a comment',
+    async (action) => {
+      await expectGone(service.review('class', 7, action, 'reviewer-1'));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(honorWorkflow.approve).not.toHaveBeenCalled();
+      expect(honorWorkflow.reject).not.toHaveBeenCalled();
+    },
+  );
+
+  it('no longer carries the class workflow', () => {
+    const names = Object.getOwnPropertyNames(ValidationService.prototype);
+    expect(names).not.toContain('submitClassForReview');
+    expect(names).not.toContain('reviewClass');
+    expect(names).not.toContain('claimClassStatus');
   });
 
-  it('does not review a class enrollment that has a pending authorization', async () => {
-    prisma.enrollments.findUnique.mockResolvedValue({
-      enrollment_id: 4,
-      user_id: 'member-1',
-      investiture_status: 'SUBMITTED_FOR_VALIDATION',
-    });
+  it('lists no class submissions and keeps the response shape', async () => {
+    const reader = {
+      enrollments: { findMany: jest.fn() },
+      users_honors: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const lister = new ValidationService(
+      reader as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(
-      service.review('class', 4, 'approved', 'reviewer-1'),
-    ).rejects.toMatchObject({
-      code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      lister.getPendingReviews({ entity_type: 'class' }),
+    ).resolves.toEqual({
+      classes: [],
+      honors: [],
     });
-    expect(tx.enrollments.update).not.toHaveBeenCalled();
-    expect(honorWorkflow.approve).not.toHaveBeenCalled();
+    await expect(lister.getPendingReviews()).resolves.toEqual({
+      classes: [],
+      honors: [],
+    });
+    expect(reader.enrollments.findMany).not.toHaveBeenCalled();
   });
 
-  it('does not submit a class when the status changed under the lock', async () => {
-    tx.investiture_authorization_people.findFirst.mockResolvedValue(null);
-    tx.enrollments.updateMany = jest.fn().mockResolvedValue({ count: 0 });
-
-    await expect(
-      service.submitForReview('class', 4, 'member-1'),
-    ).rejects.toMatchObject({
-      code: ErrorCode.INVESTITURE_CONCURRENT_UPDATE,
-    });
-    expect(tx.investiture_validation_history.create).not.toHaveBeenCalled();
-    expect(notifications.notifySafe).not.toHaveBeenCalled();
-    expect(notifications.sendToSectionRole).not.toHaveBeenCalled();
+  it('keeps honor submit working', async () => {
+    honorWorkflow.submitForReview.mockResolvedValue({ user_honor_id: 9 });
+    await service.submitForReview('honor', 9, 'member-1');
+    expect(honorWorkflow.submitForReview).toHaveBeenCalledWith(9, 'member-1');
   });
 });
