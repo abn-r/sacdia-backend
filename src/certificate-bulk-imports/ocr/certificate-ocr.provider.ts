@@ -7,6 +7,10 @@ export interface CertificateOcrFileInput {
   rawText?: string;
   objectKey?: string | null;
   sizeBytes?: number | null;
+  /** Persisted file_id. Stable operationId for the OCR proxy. */
+  fileId?: string | null;
+  /** Persisted confirmed_at. Canonical issuedAt; null fails closed. */
+  confirmedAt?: Date | null;
 }
 
 export interface CertificateOcrProvider {

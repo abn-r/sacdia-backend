@@ -155,6 +155,8 @@ export class CertificateBulkImportsService {
         fileType: file.file_type,
         objectKey: file.object_key,
         sizeBytes: file.size_bytes == null ? null : Number(file.size_bytes),
+        fileId: file.file_id,
+        confirmedAt: file.confirmed_at,
       })),
     );
 
