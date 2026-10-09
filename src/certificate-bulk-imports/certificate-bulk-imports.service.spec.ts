@@ -837,6 +837,130 @@ describe('CertificateBulkImportsService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  describe('JSON-safe batch responses (BigInt size_bytes)', () => {
+    // Prisma returns certificate_bulk_import_files.size_bytes as bigint and
+    // Express res.json cannot serialize it. Every member response that
+    // carries a file row must survive JSON.stringify.
+    const presignedFile = () => ({
+      file_id: 'file-1',
+      batch_id: 'batch-1',
+      file_url: 'batches/batch-1/staging/file-1.pdf',
+      file_name: 'cert.pdf',
+      file_type: 'application/pdf',
+      uploaded_by_id: 'user-1',
+      ocr_raw_text: null,
+      active: true,
+      uploaded_at: new Date('2026-10-01T00:00:00.000Z'),
+      upload_status: 'PENDING_UPLOAD',
+      staging_key: 'batches/batch-1/staging/file-1.pdf',
+      object_key: null,
+      size_bytes: BigInt(2_048_576),
+      confirmed_at: null,
+      jurisdiction: 'CAMPO_LOCAL',
+    });
+    const batchWithFile = () => ({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+      files: [presignedFile()],
+      items: [],
+      events: [],
+    });
+
+    function expectJsonSafeFile(result: { files: Array<Record<string, any>> }) {
+      const json = JSON.parse(JSON.stringify(result));
+      expect(json.files).toHaveLength(1);
+      expect(json.files[0]).toMatchObject({
+        file_id: 'file-1',
+        batch_id: 'batch-1',
+        file_url: 'batches/batch-1/staging/file-1.pdf',
+        file_name: 'cert.pdf',
+        file_type: 'application/pdf',
+        upload_status: 'PENDING_UPLOAD',
+        size_bytes: 2_048_576,
+        jurisdiction: 'CAMPO_LOCAL',
+      });
+      expect(json.files[0]).not.toHaveProperty('staging_key');
+    }
+
+    it('getBatch serializes a presigned file size as a number', async () => {
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        batchWithFile(),
+      );
+
+      const result = await service.getBatch('user-1', 'batch-1');
+
+      expectJsonSafeFile(result);
+    });
+
+    it('createDraft serializes file sizes as numbers', async () => {
+      tx.certificate_bulk_import_batches.create.mockResolvedValue(
+        batchWithFile(),
+      );
+
+      const result = await service.createDraft('user-1', {});
+
+      expectJsonSafeFile(result);
+    });
+
+    it('submit serializes file sizes as numbers', async () => {
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+        batch_id: 'batch-1',
+        user_id: 'user-1',
+        status: 'DRAFT',
+      });
+      tx.certificate_bulk_import_items.findMany.mockResolvedValue([]);
+      tx.certificate_bulk_import_items.updateMany.mockResolvedValue({
+        count: 1,
+      });
+      tx.certificate_bulk_import_batches.update.mockResolvedValue({
+        ...batchWithFile(),
+        status: 'SUBMITTED',
+      });
+
+      const result = await service.submit('user-1', 'batch-1');
+
+      expectJsonSafeFile(result);
+    });
+
+    it('processOcr serializes file sizes as numbers when it returns the batch', async () => {
+      const queue = { add: jest.fn().mockResolvedValue({ id: 'job-1' }) };
+      const queued = new CertificateBulkImportsService(
+        prisma as never,
+        ocrProvider,
+        queue,
+      );
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+        ...batchWithFile(),
+        files: [
+          {
+            ...presignedFile(),
+            upload_status: 'CONFIRMED',
+            object_key: 'batches/batch-1/sealed/file-1.pdf',
+          },
+        ],
+      });
+
+      const result = await queued.processOcr('user-1', 'batch-1');
+
+      const json = JSON.parse(JSON.stringify(result));
+      expect(json.files[0].size_bytes).toBe(2_048_576);
+      expect(json.files[0]).not.toHaveProperty('staging_key');
+    });
+
+    it('keeps the file size null when the row has none', async () => {
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+        ...batchWithFile(),
+        files: [{ ...presignedFile(), size_bytes: null }],
+      });
+
+      const result = await service.getBatch('user-1', 'batch-1');
+
+      expect(JSON.parse(JSON.stringify(result)).files[0].size_bytes).toBeNull();
+    });
+  });
+
   function sameYearPending() {
     tx.enrollments.findMany.mockResolvedValue([
       {

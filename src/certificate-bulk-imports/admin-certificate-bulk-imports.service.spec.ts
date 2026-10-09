@@ -312,4 +312,78 @@ describe('AdminCertificateBulkImportsService', () => {
     expect(detail.files).toEqual([{ file_id: 'file-1' }]);
     expect(detail.status).toBe('SUBMITTED');
   });
+  describe('JSON-safe reviewer responses (BigInt size_bytes)', () => {
+    const reviewerFile = () => ({
+      file_id: 'file-1',
+      batch_id: 'batch-1',
+      file_url: 'batches/batch-1/sealed/file-1.pdf',
+      file_name: 'cert.pdf',
+      file_type: 'application/pdf',
+      uploaded_by_id: 'user-1',
+      ocr_raw_text: null,
+      active: true,
+      uploaded_at: new Date('2026-10-01T00:00:00.000Z'),
+      upload_status: 'CONFIRMED',
+      staging_key: null,
+      object_key: 'batches/batch-1/sealed/file-1.pdf',
+      size_bytes: BigInt(2_048_576),
+      confirmed_at: new Date('2026-10-01T00:01:00.000Z'),
+      jurisdiction: 'CAMPO_LOCAL',
+    });
+    const reviewerBatch = () => ({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      local_field_id: 7,
+      status: 'SUBMITTED',
+      files: [reviewerFile()],
+      items: [],
+      events: [],
+    });
+
+    beforeEach(() => {
+      prisma.users.findUnique.mockResolvedValue({
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
+      });
+    });
+
+    it('getDetail serializes file sizes as numbers and keeps the viewer fields', async () => {
+      prisma.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        reviewerBatch(),
+      );
+
+      const detail = await service.getDetail('reviewer-1', 'batch-1');
+
+      const json = JSON.parse(JSON.stringify(detail));
+      expect(json.files[0]).toMatchObject({
+        file_id: 'file-1',
+        batch_id: 'batch-1',
+        file_url: 'batches/batch-1/sealed/file-1.pdf',
+        file_name: 'cert.pdf',
+        file_type: 'application/pdf',
+        ocr_raw_text: null,
+        jurisdiction: 'CAMPO_LOCAL',
+        size_bytes: 2_048_576,
+      });
+      expect(json.files[0]).toHaveProperty('uploaded_at');
+      expect(json.files[0]).not.toHaveProperty('staging_key');
+    });
+
+    it('listPending serializes file sizes as numbers', async () => {
+      prisma.certificate_bulk_import_batches.findMany.mockResolvedValue([
+        reviewerBatch(),
+      ]);
+      prisma.certificate_bulk_import_batches.count.mockResolvedValue(1);
+
+      const result = await service.listPending('reviewer-1', {
+        page: 1,
+        limit: 20,
+      });
+
+      const json = JSON.parse(JSON.stringify(result));
+      expect(json.items[0].files[0].size_bytes).toBe(2_048_576);
+      expect(json.items[0].files[0]).not.toHaveProperty('staging_key');
+      expect(json.total).toBe(1);
+    });
+  });
 });
