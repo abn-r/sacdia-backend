@@ -9,6 +9,10 @@ import { Prisma } from '@prisma/client';
 import { CertificateBulkImportApplicationService } from './certificate-bulk-imports-application.service';
 import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
 import {
+  toPublicImportFile,
+  type PublicImportFile,
+} from './certificate-import-response.mapper';
+import {
   CertificateImportYearResolver,
   civilDateFromDbDate,
   classifyCertificateImportYear,
@@ -332,14 +336,22 @@ export class AdminCertificateBulkImportsService {
 
   private presentForReviewer<
     T extends {
-      files?: { jurisdiction?: string | null }[];
+      files?: {
+        jurisdiction?: string | null;
+        size_bytes?: bigint | null;
+        staging_key?: unknown;
+      }[];
       items?: {
         item_id?: string;
         class?: { asset_code?: string | null } | null;
       }[];
       events?: { item_id?: string | null }[];
     },
-  >(batch: T): T {
+  >(
+    batch: T,
+  ): Omit<T, 'files'> & {
+    files: Array<PublicImportFile<NonNullable<T['files']>[number]>>;
+  } {
     const items = (batch.items ?? []).filter(
       (item) =>
         !INSTITUTIONAL_CLASS_ASSET_CODES.has(item.class?.asset_code ?? ''),
@@ -352,9 +364,9 @@ export class AdminCertificateBulkImportsService {
 
     return {
       ...batch,
-      files: (batch.files ?? []).filter(
-        (file) => file.jurisdiction !== 'INSTITUTIONAL',
-      ),
+      files: (batch.files ?? [])
+        .filter((file) => file.jurisdiction !== 'INSTITUTIONAL')
+        .map((file) => toPublicImportFile(file)),
       items,
       events: (batch.events ?? []).filter(
         (event) => event.item_id == null || visibleIds.has(event.item_id),

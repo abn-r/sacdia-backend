@@ -41,6 +41,7 @@ import {
   rejectSameYearLiveAuthorization,
 } from './class-certificate-live-authorization';
 import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
+import { toPublicImportBatch } from './certificate-import-response.mapper';
 
 @Injectable()
 export class CertificateBulkImportsService {
@@ -105,7 +106,7 @@ export class CertificateBulkImportsService {
 
       await this.recordEvent(tx, batch.batch_id, null, 'DRAFT_CREATED', userId);
 
-      return batch;
+      return toPublicImportBatch(batch);
     });
   }
 
@@ -248,12 +249,14 @@ export class CertificateBulkImportsService {
   }
 
   async getBatch(userId: string, batchId: string) {
-    return this.findOwnedBatch(
-      this.prisma,
-      userId,
-      batchId,
-      this.batchInclude(),
-    );
+    const batch = await this.prisma.certificate_bulk_import_batches.findFirst({
+      where: { batch_id: batchId, user_id: userId, active: true },
+      include: this.batchInclude(),
+    });
+    if (!batch) {
+      throw new NotFoundException('CERTIFICATE_IMPORT_BATCH_NOT_FOUND');
+    }
+    return toPublicImportBatch(batch);
   }
 
   async listMine(userId: string, page = 1, limit = 20) {
@@ -540,7 +543,7 @@ export class CertificateBulkImportsService {
 
       await this.recordEvent(tx, batchId, null, 'BATCH_SUBMITTED', userId);
 
-      return tx.certificate_bulk_import_batches.update({
+      const submitted = await tx.certificate_bulk_import_batches.update({
         where: { batch_id: batch.batch_id },
         data: {
           status: 'SUBMITTED',
@@ -549,6 +552,7 @@ export class CertificateBulkImportsService {
         },
         include: this.batchInclude(),
       });
+      return toPublicImportBatch(submitted);
     });
   }
 
@@ -614,11 +618,9 @@ export class CertificateBulkImportsService {
     >,
     userId: string,
     batchId: string,
-    include?: Prisma.certificate_bulk_import_batchesInclude,
   ) {
     const batch = await tx.certificate_bulk_import_batches.findFirst({
       where: { batch_id: batchId, user_id: userId, active: true },
-      ...(include ? { include } : {}),
     });
 
     if (!batch) {

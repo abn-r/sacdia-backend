@@ -113,10 +113,11 @@ describe('certificate import HTTP', () => {
       await client.query(
         `INSERT INTO certificate_bulk_import_files (
            batch_id, file_url, file_name, file_type, uploaded_by_id,
-           upload_status, object_key, confirmed_at
+           upload_status, staging_key, object_key, size_bytes, confirmed_at
          ) VALUES (
            $1, 'batches/sealed/cert.jpg', 'cert.jpg', 'image/jpeg', $2,
-           'CONFIRMED', 'batches/sealed/cert.jpg', now()
+           'CONFIRMED', 'batches/staging/cert.jpg', 'batches/sealed/cert.jpg',
+           2097152, now()
          )`,
         [batchId, ownerId],
       );
@@ -212,5 +213,59 @@ describe('certificate import HTTP', () => {
     expect(JSON.stringify(commonInbox.body)).toContain(
       'CERTIFICATE_IMPORT_REVIEWER_SCOPE_REQUIRED',
     );
+  });
+  describe('batch responses with a presigned file (BigInt size_bytes)', () => {
+    // size_bytes is BigInt in Prisma. These GETs used to answer 500
+    // "Do not know how to serialize a BigInt" as soon as a batch had a file.
+    const expectFileView = (file: Record<string, unknown>) => {
+      expect(file).toMatchObject({
+        batch_id: batchId,
+        file_url: 'batches/sealed/cert.jpg',
+        file_name: 'cert.jpg',
+        file_type: 'image/jpeg',
+        upload_status: 'CONFIRMED',
+        object_key: 'batches/sealed/cert.jpg',
+        size_bytes: 2097152,
+      });
+      expect(typeof file.file_id).toBe('string');
+      expect(typeof file.uploaded_at).toBe('string');
+      expect(file).not.toHaveProperty('staging_key');
+    };
+
+    it('lets the owner read the batch with its file size as a number', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/certificate-bulk-imports/${batchId}`)
+        .set(bearer(ownerId))
+        .expect(200);
+
+      expect(response.body.status).toBe('success');
+      expect(response.body.data.batch_id).toBe(batchId);
+      expect(response.body.data.files).toHaveLength(1);
+      expectFileView(response.body.data.files[0]);
+    });
+
+    it('lists the owner batches with their files', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/certificate-bulk-imports')
+        .set(bearer(ownerId))
+        .expect(200);
+
+      const listed = response.body.data.items.find(
+        (item: { batch_id: string }) => item.batch_id === batchId,
+      );
+      expect(listed.files).toHaveLength(1);
+      expect(listed.files[0]).toHaveProperty('upload_status', 'CONFIRMED');
+    });
+
+    it('lets a global reviewer read the batch detail with the file size as a number', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/admin/certificate-bulk-imports/${batchId}`)
+        .set(bearer(genericAdminId))
+        .expect(200);
+
+      expect(response.body.data.batch_id).toBe(batchId);
+      expect(response.body.data.files).toHaveLength(1);
+      expectFileView(response.body.data.files[0]);
+    });
   });
 });
