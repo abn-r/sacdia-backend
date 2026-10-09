@@ -1,7 +1,10 @@
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
-import { lockInvestitureAuthorizationYear } from '../investiture-requests/investiture-request-lock';
+import {
+  canTakeAdvisoryLocks,
+  lockInvestitureAuthorizationYear,
+} from '../investiture-requests/investiture-request-lock';
 import {
   CertificateImportYearRow,
   civilDateFromDbDate,
@@ -173,13 +176,10 @@ export async function lockInvestitureYearsAscending(
   db: HistoricalAgeDb,
   yearIds: readonly number[],
 ): Promise<void> {
-  const executeRaw = (
-    db as { $executeRaw?: (...args: unknown[]) => Promise<unknown> }
-  ).$executeRaw;
-  if (typeof executeRaw !== 'function') return;
+  if (!canTakeAdvisoryLocks(db)) return;
   const sorted = [...new Set(yearIds)].sort((left, right) => left - right);
   for (const yearId of sorted) {
-    await lockInvestitureAuthorizationYear(db as never, yearId);
+    await lockInvestitureAuthorizationYear(db, yearId);
   }
 }
 
