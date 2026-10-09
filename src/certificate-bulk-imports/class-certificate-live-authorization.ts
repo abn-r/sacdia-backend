@@ -8,6 +8,7 @@ import {
 import {
   HISTORICAL_CERTIFICATE_APPLIED,
   HISTORICAL_CERTIFICATE_APPLIED_REASON,
+  canTakeAdvisoryLocks,
   lockInvestitureAuthorizationEnrollment,
   lockInvestitureAuthorizationUser,
 } from '../investiture-requests/investiture-request-lock';
@@ -248,11 +249,11 @@ async function lockEnrollments(
   db: LiveAuthorizationStore,
   enrollmentIds: number[],
 ): Promise<void> {
-  if (typeof db.$executeRaw !== 'function') return;
+  if (!canTakeAdvisoryLocks(db)) return;
   for (const enrollmentId of [...new Set(enrollmentIds)].sort(
     (left, right) => left - right,
   )) {
-    await lockInvestitureAuthorizationEnrollment(db as never, enrollmentId);
+    await lockInvestitureAuthorizationEnrollment(db, enrollmentId);
   }
 }
 
@@ -511,8 +512,8 @@ export async function guardCertificateApprovalAuthorization(
     now?: Date;
   },
 ): Promise<EnrollmentRow[]> {
-  if (typeof db.$executeRaw === 'function') {
-    await lockInvestitureAuthorizationUser(db as never, params.userId);
+  if (canTakeAdvisoryLocks(db)) {
+    await lockInvestitureAuthorizationUser(db, params.userId);
   }
   const firstRows = await readEnrollments(db, params.userId, params.classId);
   const firstPending = withEnrollmentYears(

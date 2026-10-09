@@ -31,8 +31,24 @@ export const LATER_CERTIFICATE_ACCREDITATION_REASON =
 
 type AuthorizationStore = PrismaService | Prisma.TransactionClient;
 
+/**
+ * Un candado advisory solo necesita ejecutar SQL crudo. Los stores reducidos
+ * de certificados lo cumplen sin cast (un cast `as never` lo borra
+ * `eslint --fix` cuando el cliente de Prisma todavía no está generado).
+ */
+export type AdvisoryLockStore = {
+  $executeRaw: (query: Prisma.Sql) => Promise<unknown>;
+};
+
+/** El store puede tomar candados advisory (los dobles de prueba a veces no). */
+export function canTakeAdvisoryLocks<T extends object>(
+  store: T,
+): store is T & AdvisoryLockStore {
+  return '$executeRaw' in store && typeof store.$executeRaw === 'function';
+}
+
 async function lockAuthorizationKey(
-  store: AuthorizationStore,
+  store: AdvisoryLockStore,
   key: string,
 ): Promise<void> {
   await store.$executeRaw(
@@ -41,7 +57,7 @@ async function lockAuthorizationKey(
 }
 
 export async function lockInvestitureAuthorizationYear(
-  store: AuthorizationStore,
+  store: AdvisoryLockStore,
   ecclesiasticalYearId: number,
 ): Promise<void> {
   await lockAuthorizationKey(
@@ -51,7 +67,7 @@ export async function lockInvestitureAuthorizationYear(
 }
 
 export async function lockInvestitureAuthorizationCalendar(
-  store: AuthorizationStore,
+  store: AdvisoryLockStore,
   localFieldId: number,
   ecclesiasticalYearId: number,
 ): Promise<void> {
@@ -62,7 +78,7 @@ export async function lockInvestitureAuthorizationCalendar(
 }
 
 export async function lockInvestitureAuthorizationPastor(
-  store: AuthorizationStore,
+  store: AdvisoryLockStore,
   districtId: number,
   userId: string,
 ): Promise<void> {
@@ -73,7 +89,7 @@ export async function lockInvestitureAuthorizationPastor(
 }
 
 export async function lockInvestitureAuthorizationSection(
-  store: AuthorizationStore,
+  store: AdvisoryLockStore,
   clubSectionId: number,
   ecclesiasticalYearId: number,
 ): Promise<void> {
@@ -84,7 +100,7 @@ export async function lockInvestitureAuthorizationSection(
 }
 
 export async function lockInvestitureAuthorizationUser(
-  store: AuthorizationStore,
+  store: AdvisoryLockStore,
   userId: string,
 ): Promise<void> {
   await lockAuthorizationKey(
@@ -94,7 +110,7 @@ export async function lockInvestitureAuthorizationUser(
 }
 
 export async function lockInvestitureAuthorizationEnrollment(
-  store: AuthorizationStore,
+  store: AdvisoryLockStore,
   enrollmentId: number,
 ): Promise<void> {
   await store.$executeRaw(
