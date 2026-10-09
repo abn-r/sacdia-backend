@@ -1,0 +1,44 @@
+diff --git a/cjs/core/streams/DecodeStream.js b/cjs/core/streams/DecodeStream.js
+index b5472a747b3e4106cad9adfc0cbc87bf01e8530d..ea39bfbf4f0aedb79c7d2a88f54287966541e34d 100644
+--- a/cjs/core/streams/DecodeStream.js
++++ b/cjs/core/streams/DecodeStream.js
+@@ -131,6 +131,9 @@ var DecodeStream = /** @class */ (function () {
+         throw new errors_1.MethodNotImplementedError(this.constructor.name, 'readBlock');
+     };
+     DecodeStream.prototype.ensureBuffer = function (requested) {
++        var hook = globalThis[Symbol.for('sacdia.pdf-lib.decode-cap')];
++        if (typeof hook === 'function')
++            return hook(this, requested);
+         var buffer = this.buffer;
+         if (requested <= buffer.byteLength) {
+             return buffer;
+@@ -143,6 +146,7 @@ var DecodeStream = /** @class */ (function () {
+         buffer2.set(buffer);
+         return (this.buffer = buffer2);
+     };
++    DecodeStream.prototype.ensureBuffer.sacdiaPdfDecodeCap = true;
+     return DecodeStream;
+ }());
+ exports.default = DecodeStream;
+diff --git a/es/core/streams/DecodeStream.js b/es/core/streams/DecodeStream.js
+index 27ffc3268f09d0ec5b7e06ed9971a5b8090d9a6e..9c939e0b58bc6852f6bbd4d7bcefb57e174d6407 100644
+--- a/es/core/streams/DecodeStream.js
++++ b/es/core/streams/DecodeStream.js
+@@ -128,6 +128,9 @@ var DecodeStream = /** @class */ (function () {
+         throw new MethodNotImplementedError(this.constructor.name, 'readBlock');
+     };
+     DecodeStream.prototype.ensureBuffer = function (requested) {
++        var hook = globalThis[Symbol.for('sacdia.pdf-lib.decode-cap')];
++        if (typeof hook === 'function')
++            return hook(this, requested);
+         var buffer = this.buffer;
+         if (requested <= buffer.byteLength) {
+             return buffer;
+@@ -140,6 +143,7 @@ var DecodeStream = /** @class */ (function () {
+         buffer2.set(buffer);
+         return (this.buffer = buffer2);
+     };
++    DecodeStream.prototype.ensureBuffer.sacdiaPdfDecodeCap = true;
+     return DecodeStream;
+ }());
+ export default DecodeStream;

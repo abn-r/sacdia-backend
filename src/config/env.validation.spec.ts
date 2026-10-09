@@ -219,6 +219,7 @@ describe('production hardening validation', () => {
   const productionEnv = {
     NODE_ENV: 'production',
     ALLOWED_ORIGINS: 'https://app.sacdia.app,https://admin.sacdia.app',
+    OCR_MODE: 'direct',
   };
 
   it('requires ALLOWED_ORIGINS in production', () => {
@@ -336,5 +337,116 @@ describe('optional Vision ADC configuration', () => {
     'GOOGLE_CLOUD_QUOTA_PROJECT',
   ])('rejects non-string %s', (key) => {
     expect(validate({ [key]: 123 }).error?.message).toContain(key);
+  });
+});
+
+describe('OCR proxy mode', () => {
+  const remote = {
+    OCR_MODE: 'remote',
+    OCR_PROXY_URL: 'https://ocr.example/v1/ocr',
+    OCR_PROXY_ENV: 'development',
+    OCR_PROXY_KID: 'k-current',
+    OCR_PROXY_SECRET: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+  };
+
+  it('requires OCR_MODE in production and keeps direct as the other default', () => {
+    expect(
+      validate({
+        NODE_ENV: 'production',
+        ALLOWED_ORIGINS: 'https://admin.example.com',
+      }).error?.message,
+    ).toContain('OCR_MODE');
+    expect(validate({ NODE_ENV: 'test' }).value.OCR_MODE).toBe('direct');
+    expect(validate({ NODE_ENV: 'development' }).value.OCR_MODE).toBe('direct');
+  });
+
+  it('allows loopback HTTP only outside production', () => {
+    const loopback = {
+      ...remote,
+      OCR_PROXY_URL: 'http://127.0.0.1:18080/v1/ocr',
+    };
+    expect(validate(loopback).error).toBeUndefined();
+    const production = {
+      ...loopback,
+      NODE_ENV: 'production',
+      ALLOWED_ORIGINS: 'https://admin.example.com',
+      OCR_MODE: 'remote',
+    };
+    expect(validate(production).error).toBeDefined();
+    expect(JSON.stringify(validate(production).error)).not.toContain(
+      remote.OCR_PROXY_SECRET,
+    );
+    expect(
+      validate({
+        ...production,
+        OCR_PROXY_URL: 'https://ocr.example/v1/ocr',
+      }).error,
+    ).toBeUndefined();
+  });
+
+  it('keeps direct mode valid when the proxy settings are omitted', () => {
+    const result = validate();
+
+    expect(result.error).toBeUndefined();
+    expect(result.value.OCR_MODE).toBe('direct');
+  });
+
+  it('accepts a complete remote https configuration', () => {
+    expect(validate(remote).error).toBeUndefined();
+    expect(
+      validate({
+        ...remote,
+        OCR_PROXY_SECRET: `${remote.OCR_PROXY_SECRET}\n`,
+      }).value.OCR_PROXY_SECRET,
+    ).toBe(remote.OCR_PROXY_SECRET);
+    expect(
+      validate({
+        ...remote,
+        OCR_PROXY_URL: 'http://127.0.0.1:18080/v1/ocr',
+      }).error,
+    ).toBeUndefined();
+  });
+
+  it('fails closed when remote mode is incomplete', () => {
+    const secret = 'super-secret-hmac-value';
+    for (const key of [
+      'OCR_PROXY_URL',
+      'OCR_PROXY_ENV',
+      'OCR_PROXY_KID',
+      'OCR_PROXY_SECRET',
+    ]) {
+      const input = { ...remote, OCR_PROXY_SECRET: secret };
+      delete input[key as keyof typeof input];
+      const { error } = validate(input);
+      expect(error).toBeDefined();
+      expect(JSON.stringify(error)).not.toContain(secret);
+    }
+  });
+
+  it('rejects a non-loopback http proxy URL', () => {
+    const { error } = validate({
+      ...remote,
+      OCR_PROXY_URL: 'http://evil.test/v1/ocr',
+    });
+
+    expect(error).toBeDefined();
+    expect(JSON.stringify(error)).not.toContain(remote.OCR_PROXY_SECRET);
+  });
+
+  it('rejects a decoded secret shorter than 32 bytes without echoing it', () => {
+    const short = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+    const { error } = validate({ ...remote, OCR_PROXY_SECRET: short });
+
+    expect(error?.message).toContain('OCR_PROXY_SECRET');
+    expect(JSON.stringify(error)).not.toContain(short);
+  });
+
+  it('rejects an invalid environment or kid', () => {
+    expect(
+      validate({ ...remote, OCR_PROXY_ENV: 'Bad Env' }).error,
+    ).toBeDefined();
+    expect(
+      validate({ ...remote, OCR_PROXY_KID: 'bad kid' }).error,
+    ).toBeDefined();
   });
 });

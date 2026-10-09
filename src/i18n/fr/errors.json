@@ -762,5 +762,6 @@
   "CAMPOREE_SUPPLIES_LINE_NOT_FOUND": "Ligne de fourniture introuvable",
   "CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES": "Le PDF doit contenir au maximum 5 pages",
   "CERTIFICATE_IMPORT_PDF_INVALID": "Le PDF est invalide ou illisible",
-  "CERTIFICATE_IMPORT_PDF_ENCRYPTED": "Les PDF chiffrés ne sont pas pris en charge ; importez une copie sans mot de passe"
+  "CERTIFICATE_IMPORT_PDF_ENCRYPTED": "Les PDF chiffrés ne sont pas pris en charge ; importez une copie sans mot de passe",
+  "CERTIFICATE_IMPORT_PDF_BUSY": "D'autres fichiers sont en cours de traitement. Réessayez dans quelques secondes."
 }

@@ -6,9 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { certificate_import_file_status_enum, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppInternalServerErrorException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -23,7 +24,10 @@ import {
   EDITABLE_CERTIFICATE_IMPORT_BATCH_STATUSES,
   extensionForCertificateMime,
 } from './certificate-import-files.constants';
-import { assertCertificateImportPdf } from './certificate-import-pdf';
+import {
+  assertCertificateImportPdf,
+  PDF_CONFIRM_QUEUE_WAIT_MS,
+} from './certificate-import-pdf';
 import type { PresignCertificateImportFileDto } from './dto/presign-certificate-import-file.dto';
 
 const LOCKED_ITEM_STATUSES = ['SUBMITTED', 'APPROVED', 'RESUBMITTED'] as const;
@@ -34,7 +38,7 @@ type FileRow = {
   file_name: string;
   file_type: string;
   file_url: string;
-  upload_status: string;
+  upload_status: certificate_import_file_status_enum;
   staging_key: string | null;
   object_key: string | null;
   size_bytes: bigint | null;
@@ -141,10 +145,7 @@ export class CertificateImportFilesService {
     );
 
     const extension = extensionForCertificateMime(existing.file_type);
-    const sealId =
-      existing.file_type === 'application/pdf'
-        ? `${fileId}-${randomUUID()}`
-        : fileId;
+    const sealId = `${fileId}-${randomUUID()}`;
     const destination = `batches/${batchId}/sealed/${sealId}${extension}`;
     let pdfBytes: Buffer | undefined;
     if (existing.file_type === 'application/pdf') {
@@ -169,11 +170,15 @@ export class CertificateImportFilesService {
           'CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH',
         );
       }
-      await assertCertificateImportPdf(downloaded);
+      await assertCertificateImportPdf(downloaded, {
+        queueWaitMs: PDF_CONFIRM_QUEUE_WAIT_MS,
+        queueFullCode: ErrorCode.CERTIFICATE_IMPORT_PDF_BUSY,
+      });
       pdfBytes = downloaded;
     }
-    // A signed staging PUT remains mutable. Seal exactly the validated PDF,
-    // never a later copy of the staging key.
+    // A signed staging PUT remains mutable. PDF seals the validated bytes.
+    // Every attempt, including images, writes a distinct object key so a
+    // later copy cannot replace the object the winning claim stored.
     const sealed = await this.callStorage(() =>
       pdfBytes
         ? this.storage.upload(
@@ -192,38 +197,88 @@ export class CertificateImportFilesService {
           ),
     );
 
-    const confirmed = await this.prisma.certificate_bulk_import_files
-      .update({
-        where: { file_id: existing.file_id },
+    // Both callers can observe PENDING. Claim the snapshot once; the loser
+    // returns the committed seal instead of replacing object_key or confirmed_at.
+    const claimedAt = existing.confirmed_at ?? new Date();
+    const claim = await this.prisma.certificate_bulk_import_files
+      .updateMany({
+        where: {
+          file_id: existing.file_id,
+          upload_status: existing.upload_status,
+          object_key: existing.object_key,
+          confirmed_at: existing.confirmed_at,
+          staging_key: existing.staging_key,
+          size_bytes: existing.size_bytes,
+        },
         data: {
           upload_status: 'CONFIRMED',
           object_key: sealed.key,
           file_url: sealed.key,
           size_bytes: BigInt(stored!.size),
-          confirmed_at: existing.confirmed_at ?? new Date(),
+          confirmed_at: claimedAt,
         },
       })
       .catch(async (error: unknown) => {
         // A connectivity error may occur after commit. Only remove this
         // attempt's seal if a successful reread proves it is unreferenced.
         // Unknown commit state preserves evidence (an orphan is safer).
-        if (pdfBytes) {
-          const current = await this.prisma.certificate_bulk_import_files
-            .findFirst({
-              where: { file_id: existing.file_id },
-              select: { object_key: true },
-            })
-            .catch(() => undefined);
-          if (current !== undefined && current?.object_key !== sealed.key) {
-            await this.callStorage(() =>
-              this.storage.deleteMany(StorageBucketAlias.CERTIFICATE_IMPORTS, [
-                sealed.key,
-              ]),
-            ).catch(() => undefined);
-          }
+        // PDFs and images both seal under a unique `fileId-<uuid>` key.
+        const current = await this.prisma.certificate_bulk_import_files
+          .findFirst({
+            where: { file_id: existing.file_id },
+            select: { object_key: true },
+          })
+          .catch(() => undefined);
+        if (current !== undefined && current?.object_key !== sealed.key) {
+          await this.callStorage(() =>
+            this.storage.deleteMany(StorageBucketAlias.CERTIFICATE_IMPORTS, [
+              sealed.key,
+            ]),
+          ).catch(() => undefined);
         }
         throw error;
       });
+
+    if (claim.count !== 1) {
+      const current = await this.prisma.certificate_bulk_import_files
+        .findFirst({
+          where: { file_id: existing.file_id },
+          select: {
+            object_key: true,
+            upload_status: true,
+            size_bytes: true,
+            confirmed_at: true,
+          },
+        })
+        .catch(() => undefined);
+      if (current != null && current.object_key !== sealed.key) {
+        await this.callStorage(() =>
+          this.storage.deleteMany(StorageBucketAlias.CERTIFICATE_IMPORTS, [
+            sealed.key,
+          ]),
+        ).catch(() => undefined);
+      }
+      if (
+        current?.upload_status === 'CONFIRMED' &&
+        current.object_key &&
+        current.size_bytes != null &&
+        current.confirmed_at
+      ) {
+        await this.callStorage(() =>
+          this.storage.deleteMany(StorageBucketAlias.CERTIFICATE_IMPORTS, [
+            existing.staging_key!,
+          ]),
+        ).catch(() => undefined);
+        return this.confirmedView({
+          file_id: existing.file_id,
+          object_key: current.object_key,
+          size_bytes: current.size_bytes,
+          file_type: existing.file_type,
+          confirmed_at: current.confirmed_at,
+        });
+      }
+      throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
+    }
 
     await this.callStorage(() =>
       this.storage.deleteMany(StorageBucketAlias.CERTIFICATE_IMPORTS, [
@@ -232,9 +287,11 @@ export class CertificateImportFilesService {
     ).catch(() => undefined);
 
     return this.confirmedView({
-      ...existing,
-      ...confirmed,
-      size_bytes: confirmed.size_bytes,
+      file_id: existing.file_id,
+      object_key: sealed.key,
+      size_bytes: BigInt(stored!.size),
+      file_type: existing.file_type,
+      confirmed_at: claimedAt,
     });
   }
 
