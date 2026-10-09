@@ -774,5 +774,6 @@
   "CAMPOREE_SUPPLIES_LINE_NOT_FOUND": "Supply line not found",
   "CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES": "The PDF must contain no more than 5 pages",
   "CERTIFICATE_IMPORT_PDF_INVALID": "The PDF is invalid or cannot be read",
-  "CERTIFICATE_IMPORT_PDF_ENCRYPTED": "Encrypted PDFs are not supported; upload an unencrypted copy"
+  "CERTIFICATE_IMPORT_PDF_ENCRYPTED": "Encrypted PDFs are not supported; upload an unencrypted copy",
+  "CERTIFICATE_IMPORT_PDF_BUSY": "Other files are being processed. Try again in a few seconds."
 }

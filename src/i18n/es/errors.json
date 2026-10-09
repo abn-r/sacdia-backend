@@ -774,5 +774,6 @@
   "CAMPOREE_SUPPLIES_LINE_NOT_FOUND": "Línea de insumo no encontrada",
   "CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES": "El PDF debe contener un máximo de 5 páginas",
   "CERTIFICATE_IMPORT_PDF_INVALID": "El PDF es inválido o no se puede leer",
-  "CERTIFICATE_IMPORT_PDF_ENCRYPTED": "No se admiten PDF cifrados; sube una copia sin contraseña"
+  "CERTIFICATE_IMPORT_PDF_ENCRYPTED": "No se admiten PDF cifrados; sube una copia sin contraseña",
+  "CERTIFICATE_IMPORT_PDF_BUSY": "Estamos procesando otros archivos. Intenta de nuevo en unos segundos."
 }
