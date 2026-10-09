@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
-  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import {
@@ -11,6 +10,7 @@ import {
   honor_validation_status_enum,
 } from '@prisma/client';
 import { ErrorCode } from '../common/errors/error-codes';
+import { assertEnrollmentNotTerminalInTransaction } from '../classes/class-progress-mutable';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApproveEvidenceDto } from './dto/approve-evidence.dto';
 import { RejectEvidenceDto } from './dto/reject-evidence.dto';
@@ -216,11 +216,7 @@ export class EvidenceReviewService {
     }
 
     const [identifiers, total] = await Promise.all([
-      this.getCombinedPendingIdentifiers(
-        scopedClubSectionIds,
-        skip,
-        limit,
-      ),
+      this.getCombinedPendingIdentifiers(scopedClubSectionIds, skip, limit),
       this.getCombinedPendingCount(scopedClubSectionIds),
     ]);
 
@@ -1343,6 +1339,10 @@ export class EvidenceReviewService {
     }
     await lockInvestitureAuthorizationEnrollment(store, enrollmentId);
     await assertNoPendingInvestitureAuthorization(store, enrollmentId);
+    // BC-11 / BCR-2: solo INVESTIDO y EXPIRED; bajo el candado, en la misma
+    // transacción que escribe. Los estados del flujo anterior y
+    // locked_for_validation no bloquean (igual que en 113d8ba).
+    await assertEnrollmentNotTerminalInTransaction(store, enrollmentId);
   }
 
   private async assertEvidenceInScope(

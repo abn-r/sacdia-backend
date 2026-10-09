@@ -16,6 +16,8 @@ export interface SendEmailPayload {
   html: string;
   /** Plain-text fallback (from @react-email/render with plainText option) */
   text: string;
+  /** Same key retries the provider acceptance without a second message. */
+  idempotencyKey?: string;
 }
 
 export interface SendResult {

@@ -10,6 +10,10 @@ import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
+  AppBadRequestException,
+  AppConflictException,
+} from '../common/errors/app.exception';
+import {
   CreateCertificateBulkImportDto,
   UpdateCertificateImportItemDto,
 } from './dto';
@@ -27,10 +31,16 @@ import { Inject } from '@nestjs/common';
 import { normalizeCertificateImportFileRef } from './certificate-import-file-ref';
 import {
   assertClassCertificateHistoricalAge,
+  ecclesiasticalYearIdsCovering,
   isCertificateHistoricalGateError,
+  lockInvestitureYearsAscending,
+  type CertificateYearLockOptions,
 } from './class-certificate-historical-age';
-
-const INSTITUTIONAL_CLASS_ASSET_CODES = new Set(['GM-02', 'GM-03']);
+import {
+  isCertificateAuthorizationPending,
+  rejectSameYearLiveAuthorization,
+} from './class-certificate-live-authorization';
+import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
 
 @Injectable()
 export class CertificateBulkImportsService {
@@ -90,6 +100,7 @@ export class CertificateBulkImportsService {
             this.toItemCreateData(batch.batch_id, item),
           ),
         });
+        await this.downgradeInvalidReadyItems(tx, userId, batch.batch_id);
       }
 
       await this.recordEvent(tx, batch.batch_id, null, 'DRAFT_CREATED', userId);
@@ -256,8 +267,14 @@ export class CertificateBulkImportsService {
         skip,
         take,
         include: {
-          files: { where: { active: true }, select: { file_id: true, upload_status: true } },
-          items: { where: { active: true }, select: { item_id: true, status: true } },
+          files: {
+            where: { active: true },
+            select: { file_id: true, upload_status: true },
+          },
+          items: {
+            where: { active: true },
+            select: { item_id: true, status: true },
+          },
         },
       }),
       this.prisma.certificate_bulk_import_batches.count({ where }),
@@ -274,16 +291,36 @@ export class CertificateBulkImportsService {
       const batch = await this.findOwnedBatch(tx, userId, batchId);
       this.assertDraftLike(batch.status, 'add item');
       this.assertRevision(batch.revision, dto.expected_revision);
-      await this.assertCatalogChoice(tx, dto);
-      await this.assertClassAgeIfReady(tx, batch.user_id, dto);
+      // BC-9 / BCR-9 / BCR33-N5: at creation (addItem, createDraft items[])
+      // per-item validation never fails the call: the item is born NEEDS_REVIEW
+      // with the code as rejection_reason, whether or not mark_as_ready is set.
+      // updateItem is the explicit edit path and keeps answering 400 for the
+      // same future date or invalid catalog on purpose.
+      let reviewReason: string | null = this.futureDateReason(dto.completed_at);
+      if (!reviewReason) {
+        try {
+          await this.assertCatalogChoice(tx, dto);
+          await this.assertClassAgeIfReady(tx, batch.user_id, dto);
+        } catch (error) {
+          reviewReason = this.reviewReason(error);
+          if (!reviewReason) {
+            throw error;
+          }
+        }
+      }
       const count = await tx.certificate_bulk_import_items.count({
         where: { batch_id: batchId, active: true },
       });
       if (count >= 100) {
         throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_LIMIT');
       }
+      const data = this.toItemCreateData(batchId, dto);
+      if (reviewReason) {
+        data.status = CertificateBulkImportItemStatus.NEEDS_REVIEW;
+        data.rejection_reason = reviewReason;
+      }
       const item = await tx.certificate_bulk_import_items.create({
-        data: this.toItemCreateData(batchId, dto),
+        data,
       });
       await tx.certificate_bulk_import_batches.update({
         where: { batch_id: batchId },
@@ -359,7 +396,9 @@ export class CertificateBulkImportsService {
         where: { item_id: itemId },
         data: {
           ...this.toItemUpdateData(dto),
-          ...(dto.mark_as_ready ? { status, rejection_reason: null } : { status }),
+          ...(dto.mark_as_ready
+            ? { status, rejection_reason: null }
+            : { status }),
           revision: (existing.revision ?? 0) + 1,
         },
       });
@@ -460,17 +499,28 @@ export class CertificateBulkImportsService {
           completed_at: true,
         },
       });
+      await lockInvestitureYearsAscending(
+        tx,
+        await ecclesiasticalYearIdsCovering(
+          tx,
+          readyClassItems.map((item) => item.completed_at),
+        ),
+      );
       for (const readyClassItem of readyClassItems) {
         if (!readyClassItem.class_id) {
           throw new BadRequestException(
             'CERTIFICATE_IMPORT_ITEM_MISSING_CLASS',
           );
         }
-        await assertClassCertificateHistoricalAge(tx, {
-          userId: batch.user_id,
-          classId: readyClassItem.class_id,
-          completedAt: readyClassItem.completed_at,
-        });
+        await this.assertClassCertificateMayProceed(
+          tx,
+          {
+            userId: batch.user_id,
+            classId: readyClassItem.class_id,
+            completedAt: readyClassItem.completed_at,
+          },
+          { skipYearAdvisory: true },
+        );
       }
 
       await tx.certificate_bulk_import_items.updateMany({
@@ -522,10 +572,19 @@ export class CertificateBulkImportsService {
         throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_INCOMPLETE');
       }
       await this.assertCatalogChoice(tx, merged);
-      await this.assertClassAgeIfReady(tx, batch.user_id, {
-        ...merged,
-        mark_as_ready: true,
-      });
+      await lockInvestitureYearsAscending(
+        tx,
+        await ecclesiasticalYearIdsCovering(tx, [merged.completed_at]),
+      );
+      await this.assertClassAgeIfReady(
+        tx,
+        batch.user_id,
+        {
+          ...merged,
+          mark_as_ready: true,
+        },
+        { skipYearAdvisory: true },
+      );
 
       const item = await tx.certificate_bulk_import_items.update({
         where: { item_id: itemId },
@@ -610,6 +669,75 @@ export class CertificateBulkImportsService {
       throw new BadRequestException(
         `CERTIFICATE_IMPORT_CANNOT_${action.toUpperCase().replaceAll(' ', '_')}`,
       );
+    }
+  }
+
+  private reviewReason(error: unknown): string | null {
+    if (
+      error instanceof AppBadRequestException ||
+      error instanceof AppConflictException
+    ) {
+      return error.code;
+    }
+    if (error instanceof BadRequestException) {
+      // BCR33-N3: Nest 11 builds `{ message, error, statusCode }` for
+      // `new BadRequestException('CODE')`; older shapes returned the string.
+      const response = error.getResponse();
+      if (typeof response === 'string') {
+        return response;
+      }
+      const message = (response as { message?: unknown }).message;
+      if (typeof message === 'string' && /^[A-Z][A-Z0-9_]+$/.test(message)) {
+        return message;
+      }
+    }
+    return null;
+  }
+
+  private async downgradeInvalidReadyItems(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    batchId: string,
+  ): Promise<void> {
+    const ready = await tx.certificate_bulk_import_items.findMany({
+      where: { batch_id: batchId, status: 'READY' },
+    });
+    for (const item of ready) {
+      const futureReason = this.futureDateReason(
+        this.civilDate(item.completed_at),
+      );
+      if (futureReason) {
+        await tx.certificate_bulk_import_items.update({
+          where: { item_id: item.item_id },
+          data: {
+            status: CertificateBulkImportItemStatus.NEEDS_REVIEW,
+            rejection_reason: futureReason,
+          },
+        });
+        continue;
+      }
+      try {
+        await this.assertCatalogChoice(tx, item);
+        if (item.class_id) {
+          await this.assertClassCertificateMayProceed(tx, {
+            userId,
+            classId: item.class_id,
+            completedAt: item.completed_at,
+          });
+        }
+      } catch (error) {
+        const reason = this.reviewReason(error);
+        if (!reason) {
+          throw error;
+        }
+        await tx.certificate_bulk_import_items.update({
+          where: { item_id: item.item_id },
+          data: {
+            status: CertificateBulkImportItemStatus.NEEDS_REVIEW,
+            rejection_reason: reason,
+          },
+        });
+      }
     }
   }
 
@@ -708,7 +836,10 @@ export class CertificateBulkImportsService {
     };
   }
 
-  private assertRevision(current: number | null | undefined, expected?: number) {
+  private assertRevision(
+    current: number | null | undefined,
+    expected?: number,
+  ) {
     if (expected === undefined) return;
     if (expected !== (current ?? 0)) {
       throw new BadRequestException('CERTIFICATE_IMPORT_REVISION_CONFLICT');
@@ -720,6 +851,18 @@ export class CertificateBulkImportsService {
     const today = new Date().toISOString().slice(0, 10);
     if (completedAt > today) {
       throw new BadRequestException('CERTIFICATE_IMPORT_DATE_IN_FUTURE');
+    }
+  }
+
+  private futureDateReason(completedAt?: string): string | null {
+    try {
+      this.assertNotFuture(completedAt);
+      return null;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        return error.message;
+      }
+      throw error;
     }
   }
 
@@ -736,14 +879,19 @@ export class CertificateBulkImportsService {
       return CertificateBulkImportItemStatus.NEEDS_REVIEW;
     }
     try {
-      await assertClassCertificateHistoricalAge(tx, {
+      await this.assertClassCertificateMayProceed(tx, {
         userId,
         classId: item.class_id,
         completedAt: item.completed_at,
       });
       return CertificateBulkImportItemStatus.READY;
     } catch (error) {
-      if (!isCertificateHistoricalGateError(error)) throw error;
+      if (
+        !isCertificateHistoricalGateError(error) &&
+        !isCertificateAuthorizationPending(error)
+      ) {
+        throw error;
+      }
       return CertificateBulkImportItemStatus.NEEDS_REVIEW;
     }
   }
@@ -757,6 +905,7 @@ export class CertificateBulkImportsService {
       completed_at?: string | null;
       mark_as_ready?: boolean;
     },
+    locks?: CertificateYearLockOptions,
   ) {
     if (
       item.item_type !== CertificateBulkImportItemType.CLASS ||
@@ -768,10 +917,31 @@ export class CertificateBulkImportsService {
     if (!item.mark_as_ready) {
       return;
     }
-    await assertClassCertificateHistoricalAge(tx, {
-      userId,
-      classId: item.class_id,
-      completedAt: item.completed_at,
+    await this.assertClassCertificateMayProceed(
+      tx,
+      {
+        userId,
+        classId: item.class_id,
+        completedAt: item.completed_at,
+      },
+      locks,
+    );
+  }
+
+  private async assertClassCertificateMayProceed(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      classId: number;
+      completedAt: Date | string | null | undefined;
+    },
+    locks?: CertificateYearLockOptions,
+  ) {
+    const age = await assertClassCertificateHistoricalAge(tx, params, locks);
+    await rejectSameYearLiveAuthorization(tx as never, {
+      userId: params.userId,
+      classId: params.classId,
+      certificateYearId: age.yearId,
     });
   }
 

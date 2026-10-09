@@ -100,9 +100,14 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
           user_id: PASTOR_C,
           active: true,
         }),
-      },
-      users_roles: {
-        findFirst: jest.fn().mockResolvedValue({ user_role_id: 'role-1' }),
+        findMany: jest.fn(
+          async ({ where }: { where: { user_id: { in: string[] } } }) =>
+            where.user_id.in.map((id) => ({
+              user_id: id,
+              active: true,
+              users_roles: [{ user_role_id: 'role-1' }],
+            })),
+        ),
       },
       clubs: { findUnique: jest.fn() },
       churches: { findUnique: jest.fn() },

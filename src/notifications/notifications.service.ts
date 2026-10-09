@@ -162,6 +162,43 @@ export class NotificationsService {
     return this.sendToUserSync(dto, sentBy, source);
   }
 
+  /**
+   * Push only. The caller persists the inbox and treats a push failure as
+   * non-blocking.
+   */
+  async pushBestEffort(
+    dto: SendNotificationDto,
+    source?: string,
+  ): Promise<void> {
+    try {
+      const allowed = await this.preferencesService.isAllowedForUser(
+        dto.userId,
+        source,
+      );
+      if (!allowed || !this.isFcmConfigured()) {
+        return;
+      }
+      const tokens = await this.prisma.user_fcm_tokens.findMany({
+        where: { user_id: dto.userId, active: true },
+        select: { token: true },
+      });
+      if (tokens.length === 0) {
+        return;
+      }
+      await this.sendMulticastDirect(
+        tokens.map((token) => token.token),
+        dto.title,
+        dto.body,
+        dto.data,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `pushBestEffort failed for user ${dto.userId}: ${message}`,
+      );
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // broadcast
   // ---------------------------------------------------------------------------

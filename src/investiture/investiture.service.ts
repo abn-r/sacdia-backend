@@ -20,6 +20,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import {
+  pendingInvestitureAuthorization,
+  rejectLegacyMutationIfAuthorizationPending,
+} from '../investiture-requests/investiture-request-lock';
 import { CoordinationService } from '../coordination/coordination.service';
 import { ClassRequirementEligibilityService } from '../classes/class-requirement-eligibility.service';
 import { PosthogService } from '../posthog/posthog.service';
@@ -130,7 +134,7 @@ type PendingMemberAssignment = {
   user_id: string;
   ecclesiastical_year_id: number;
   club_section_id: number | null;
-    club_sections: {
+  club_sections: {
     club_section_id: number;
     main_club_id: number | null;
     club_type_id: number;
@@ -239,28 +243,32 @@ export class InvestitureService {
     const now = new Date();
     const is_late = config.submission_deadline < now;
 
-    // Step 6: Atomic transaction using array syntax
+    // Step 6: Same transaction as the enrollment lock. A pending authorization blocks the write.
     const submittedAt = now;
-    const [updatedEnrollment] = await this.prisma.$transaction([
-      this.prisma.enrollments.update({
-        where: { enrollment_id: enrollmentId },
-        data: {
+    const updatedEnrollment = await this.prisma.$transaction(async (tx) => {
+      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
+      const updated = await this.claimEnrollmentStatus(
+        tx,
+        enrollmentId,
+        enrollment.investiture_status,
+        {
           investiture_status: investiture_status_enum.SUBMITTED_FOR_VALIDATION,
           submitted_for_validation: true,
           submitted_at: submittedAt,
           locked_for_validation: true,
           rejection_reason: null,
         },
-      }),
-      this.prisma.investiture_validation_history.create({
+      );
+      await tx.investiture_validation_history.create({
         data: {
           enrollment_id: enrollmentId,
           action: investiture_action_enum.SUBMITTED,
           performed_by: actorId,
           comments: dto.comments ?? null,
         },
-      }),
-    ]);
+      });
+      return updated;
+    });
 
     this.logger.log(
       `Enrollment ${enrollmentId} submitted for validation by ${actorId}`,
@@ -421,9 +429,12 @@ export class InvestitureService {
     // 3. Transaction: update status + create history
     const now = new Date();
     const updatedEnrollment = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.enrollments.update({
-        where: { enrollment_id: enrollmentId },
-        data: {
+      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
+      const updated = await this.claimEnrollmentStatus(
+        tx,
+        enrollmentId,
+        enrollment.investiture_status,
+        {
           investiture_status: investiture_status_enum.REJECTED,
           validated_by: actorId,
           validated_at: now,
@@ -431,7 +442,7 @@ export class InvestitureService {
           locked_for_validation: false,
           submitted_for_validation: false,
         },
-      });
+      );
 
       await tx.investiture_validation_history.create({
         data: {
@@ -556,14 +567,28 @@ export class InvestitureService {
 
     // Step 5: Interactive transaction — three operations in sequence
     const updated = await this.prisma.$transaction(async (tx) => {
-      // 5a. Update enrollment: investiture_status = INVESTIDO, investiture_date from config
-      const updatedEnrollment = await tx.enrollments.update({
-        where: { enrollment_id: enrollmentId },
+      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
+      const marked = await tx.enrollments.updateMany({
+        where: {
+          enrollment_id: enrollmentId,
+          investiture_status: investiture_status_enum.FIELD_APPROVED,
+        },
         data: {
           investiture_status: investiture_status_enum.INVESTIDO,
           investiture_date: investitureConfig.investiture_date,
         },
       });
+      if (marked.count !== 1) {
+        throw new AppConflictException(ErrorCode.INVESTITURE_CONCURRENT_UPDATE);
+      }
+      const updatedEnrollment = await tx.enrollments.findUnique({
+        where: { enrollment_id: enrollmentId },
+      });
+      if (!updatedEnrollment) {
+        throw new AppNotFoundException(
+          ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+        );
+      }
 
       // 5b. Create history entry
       await tx.investiture_validation_history.create({
@@ -1206,24 +1231,20 @@ export class InvestitureService {
     const now = new Date();
 
     const updatedEnrollment = await this.prisma.$transaction(async (tx) => {
+      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
       if (dto.action === 'APPROVED') {
-        const updated = await tx.enrollments.update({
-          where: { enrollment_id: enrollmentId },
-          data: {
+        const updated = await this.claimEnrollmentStatus(
+          tx,
+          enrollmentId,
+          investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+          {
             investiture_status: investiture_status_enum.CLUB_APPROVED,
             validated_by: actorId,
             validated_at: now,
             rejection_reason: null,
             locked_for_validation: true,
           },
-          select: {
-            enrollment_id: true,
-            investiture_status: true,
-            validated_by: true,
-            validated_at: true,
-            rejection_reason: true,
-          },
-        });
+        );
 
         await tx.investiture_validation_history.create({
           data: {
@@ -1237,9 +1258,11 @@ export class InvestitureService {
         return updated;
       } else {
         // REJECTED
-        const updated = await tx.enrollments.update({
-          where: { enrollment_id: enrollmentId },
-          data: {
+        const updated = await this.claimEnrollmentStatus(
+          tx,
+          enrollmentId,
+          investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+          {
             investiture_status: investiture_status_enum.REJECTED,
             validated_by: actorId,
             validated_at: now,
@@ -1247,14 +1270,7 @@ export class InvestitureService {
             locked_for_validation: false,
             submitted_for_validation: false,
           },
-          select: {
-            enrollment_id: true,
-            investiture_status: true,
-            validated_by: true,
-            validated_at: true,
-            rejection_reason: true,
-          },
-        });
+        );
 
         await tx.investiture_validation_history.create({
           data: {
@@ -1404,8 +1420,7 @@ export class InvestitureService {
       // C2 — Pre-resolve investiture_config for each enrollment before the transaction
       //      to avoid I/O-heavy work inside the transaction loop (keeps the transaction short).
       type ConfigResult =
-        | { status: 'ok'; investiture_date: Date }
-        | { status: 'missing' };
+        { status: 'ok'; investiture_date: Date } | { status: 'missing' };
 
       const configResults = new Map<number, ConfigResult>();
       await Promise.all(
@@ -1445,14 +1460,21 @@ export class InvestitureService {
       );
 
       if (investable.length > 0) {
-        await this.prisma.$transaction(async (tx) => {
-          // W3 — Per-row updateMany with status re-check for atomicity
-          for (const enrollmentId of investable) {
+        const investedIds = await this.prisma.$transaction(async (tx) => {
+          const writable: number[] = [];
+          for (const enrollmentId of [...investable].sort((a, b) => a - b)) {
+            if (await pendingInvestitureAuthorization(tx, enrollmentId)) {
+              failed.push({
+                id: enrollmentId,
+                reason: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+              });
+              continue;
+            }
             const cfg = configResults.get(enrollmentId) as {
               status: 'ok';
               investiture_date: Date;
             };
-            await tx.enrollments.updateMany({
+            const marked = await tx.enrollments.updateMany({
               where: {
                 enrollment_id: enrollmentId,
                 investiture_status: investiture_status_enum.FIELD_APPROVED,
@@ -1464,61 +1486,87 @@ export class InvestitureService {
                 validated_at: now,
               },
             });
+            if (marked.count === 1) {
+              writable.push(enrollmentId);
+            } else {
+              failed.push({
+                id: enrollmentId,
+                reason: ErrorCode.INVESTITURE_CONCURRENT_UPDATE,
+              });
+            }
           }
 
-          await tx.investiture_validation_history.createMany({
-            data: investable.map((enrollmentId) => ({
-              enrollment_id: enrollmentId,
-              action: investiture_action_enum.INVESTIDO,
-              performed_by: actorId,
-              comments: dto.comments ?? null,
-            })),
-          });
+          if (writable.length > 0) {
+            await tx.investiture_validation_history.createMany({
+              data: writable.map((enrollmentId) => ({
+                enrollment_id: enrollmentId,
+                action: investiture_action_enum.INVESTIDO,
+                performed_by: actorId,
+                comments: dto.comments ?? null,
+              })),
+            });
+          }
+          return writable;
         });
+        investable.length = 0;
+        investable.push(...investedIds);
       }
 
       // Reflect final invest-eligible IDs in succeeded
       succeeded.length = 0;
       succeeded.push(...investable);
     } else {
-      // Efficient batch path for coordinator-approve and field-approve
+      // Per item: a lost race fails only that enrollment.
       const transition = APPROVAL_TRANSITIONS[expectedSourceStatus];
       const targetStatus = transition.target;
       const historyAction = transition.action;
 
-      await this.prisma.$transaction(async (tx) => {
-        // W3 — Add expectedSourceStatus to WHERE clause to re-check atomically
-        const updateResult = await tx.enrollments.updateMany({
-          where: {
-            enrollment_id: { in: succeeded },
-            investiture_status: expectedSourceStatus,
-          },
-          data: {
-            investiture_status: targetStatus,
-            validated_by: actorId,
-            validated_at: now,
-            rejection_reason: null,
-            locked_for_validation: true,
-          },
-        });
-
-        // Detect concurrent modifications
-        if (updateResult.count !== succeeded.length) {
-          this.logger.warn(
-            `Bulk ${dto.action}: expected to update ${succeeded.length} rows but updated ${updateResult.count}. ` +
-              `Possible concurrent modification.`,
-          );
+      const writable = await this.prisma.$transaction(async (tx) => {
+        const allowed: number[] = [];
+        for (const enrollmentId of [...succeeded].sort((a, b) => a - b)) {
+          if (await pendingInvestitureAuthorization(tx, enrollmentId)) {
+            failed.push({
+              id: enrollmentId,
+              reason: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+            });
+            continue;
+          }
+          const marked = await tx.enrollments.updateMany({
+            where: {
+              enrollment_id: enrollmentId,
+              investiture_status: expectedSourceStatus,
+            },
+            data: {
+              investiture_status: targetStatus,
+              validated_by: actorId,
+              validated_at: now,
+              rejection_reason: null,
+              locked_for_validation: true,
+            },
+          });
+          if (marked.count !== 1) {
+            failed.push({
+              id: enrollmentId,
+              reason: ErrorCode.INVESTITURE_CONCURRENT_UPDATE,
+            });
+            continue;
+          }
+          allowed.push(enrollmentId);
         }
-
-        await tx.investiture_validation_history.createMany({
-          data: succeeded.map((enrollmentId) => ({
-            enrollment_id: enrollmentId,
-            action: historyAction,
-            performed_by: actorId,
-            comments: dto.comments ?? null,
-          })),
-        });
+        if (allowed.length > 0) {
+          await tx.investiture_validation_history.createMany({
+            data: allowed.map((enrollmentId) => ({
+              enrollment_id: enrollmentId,
+              action: historyAction,
+              performed_by: actorId,
+              comments: dto.comments ?? null,
+            })),
+          });
+        }
+        return allowed;
       });
+      succeeded.length = 0;
+      succeeded.push(...writable);
     }
 
     this.logger.log(
@@ -1682,41 +1730,57 @@ export class InvestitureService {
 
     const now = new Date();
 
-    // 5. Atomic transaction
-    await this.prisma.$transaction(async (tx) => {
-      // W3 — Re-check eligible statuses atomically to guard against concurrent modifications.
-      //      updateMany only touches rows still in a rejectable status.
-      const updateResult = await tx.enrollments.updateMany({
-        where: {
-          enrollment_id: { in: succeeded },
-          investiture_status: { in: REJECTABLE_STATUSES },
-        },
-        data: {
-          investiture_status: investiture_status_enum.REJECTED,
-          validated_by: actorId,
-          validated_at: now,
-          rejection_reason: dto.comments,
-          locked_for_validation: false,
-          submitted_for_validation: false,
-        },
-      });
-
-      if (updateResult.count !== succeeded.length) {
-        this.logger.warn(
-          `Bulk reject: expected to update ${succeeded.length} rows but updated ${updateResult.count}. ` +
-            `Possible concurrent modification.`,
-        );
+    // 5. Atomic transaction. A pending authorization fails only that item.
+    const rejectedIds = await this.prisma.$transaction(async (tx) => {
+      const allowed: number[] = [];
+      for (const enrollmentId of [...succeeded].sort((a, b) => a - b)) {
+        if (await pendingInvestitureAuthorization(tx, enrollmentId)) {
+          failed.push({
+            id: enrollmentId,
+            reason: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+          });
+          continue;
+        }
+        const marked = await tx.enrollments.updateMany({
+          where: {
+            enrollment_id: enrollmentId,
+            investiture_status:
+              enrollmentMap.get(enrollmentId)!.investiture_status,
+          },
+          data: {
+            investiture_status: investiture_status_enum.REJECTED,
+            validated_by: actorId,
+            validated_at: now,
+            rejection_reason: dto.comments,
+            locked_for_validation: false,
+            submitted_for_validation: false,
+          },
+        });
+        if (marked.count !== 1) {
+          failed.push({
+            id: enrollmentId,
+            reason: ErrorCode.INVESTITURE_CONCURRENT_UPDATE,
+          });
+          continue;
+        }
+        allowed.push(enrollmentId);
+      }
+      if (allowed.length === 0) {
+        return allowed;
       }
 
       await tx.investiture_validation_history.createMany({
-        data: succeeded.map((enrollmentId) => ({
+        data: allowed.map((enrollmentId) => ({
           enrollment_id: enrollmentId,
           action: investiture_action_enum.REJECTED,
           performed_by: actorId,
           comments: dto.comments,
         })),
       });
+      return allowed;
     });
+    succeeded.length = 0;
+    succeeded.push(...rejectedIds);
 
     this.logger.log(
       `Bulk reject by ${actorId}: ${succeeded.length} succeeded, ${failed.length} failed`,
@@ -1801,9 +1865,17 @@ export class InvestitureService {
           },
           select: { enrollment_id: true },
         });
-        const revalidatedIds = stillExpirable.map(
-          (enrollment) => enrollment.enrollment_id,
-        );
+        const revalidatedIds: number[] = [];
+        for (const enrollment of [...stillExpirable].sort(
+          (left, right) => left.enrollment_id - right.enrollment_id,
+        )) {
+          if (
+            await pendingInvestitureAuthorization(tx, enrollment.enrollment_id)
+          ) {
+            continue;
+          }
+          revalidatedIds.push(enrollment.enrollment_id);
+        }
 
         if (revalidatedIds.length === 0) {
           return [];
@@ -2185,8 +2257,7 @@ export class InvestitureService {
       throw new AppBadRequestException(
         ErrorCode.INVESTITURE_REQUIREMENTS_INCOMPLETE,
         {
-          requiredSections:
-            eligibility?.investiture_eligibility.total ?? null,
+          requiredSections: eligibility?.investiture_eligibility.total ?? null,
           completedSections:
             eligibility?.investiture_eligibility.completed ?? null,
           missingRequiredSections:
@@ -2198,12 +2269,40 @@ export class InvestitureService {
     }
   }
 
+  private async claimEnrollmentStatus(
+    tx: Prisma.TransactionClient,
+    enrollmentId: number,
+    expected: investiture_status_enum,
+    data: Prisma.enrollmentsUncheckedUpdateManyInput,
+  ) {
+    const marked = await tx.enrollments.updateMany({
+      where: {
+        enrollment_id: enrollmentId,
+        investiture_status: expected,
+      },
+      data,
+    });
+    if (marked.count !== 1) {
+      throw new AppConflictException(ErrorCode.INVESTITURE_CONCURRENT_UPDATE);
+    }
+    const updated = await tx.enrollments.findUnique({
+      where: { enrollment_id: enrollmentId },
+    });
+    if (!updated) {
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      );
+    }
+    return updated;
+  }
+
   private async expireEnrollment(
     enrollmentId: number,
     actorId: string,
   ): Promise<void> {
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
+      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
       const updateResult = await tx.enrollments.updateMany({
         where: {
           enrollment_id: enrollmentId,
@@ -2221,9 +2320,7 @@ export class InvestitureService {
       });
 
       if (updateResult.count !== 1) {
-        throw new AppConflictException(
-          ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
-        );
+        throw new AppConflictException(ErrorCode.INVESTITURE_CONCURRENT_UPDATE);
       }
 
       await tx.investiture_validation_history.create({
@@ -2394,6 +2491,7 @@ export class InvestitureService {
     // status between our read (step 1) and this write, count will be 0.
     const now = new Date();
     const updatedEnrollment = await this.prisma.$transaction(async (tx) => {
+      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
       const updateResult = await tx.enrollments.updateMany({
         where: {
           enrollment_id: enrollmentId,

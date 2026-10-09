@@ -186,6 +186,7 @@ describe('AdminReferenceService', () => {
       club_types: prismaMock.club_types,
       club_ideals: prismaMock.club_ideals,
       ecclesiastical_years: prismaMock.ecclesiastical_years,
+      $executeRaw: jest.fn().mockResolvedValue(0),
       honors_categories: prismaMock.honors_categories,
       allergies_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
       diseases_translations: { upsert: jest.fn(), deleteMany: jest.fn() },

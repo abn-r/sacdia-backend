@@ -1,5 +1,8 @@
 import { ErrorCode } from '../common/errors/error-codes';
-import { evaluateClassCertificateHistoricalAge } from './class-certificate-historical-age';
+import {
+  assertClassCertificateHistoricalAge,
+  evaluateClassCertificateHistoricalAge,
+} from './class-certificate-historical-age';
 
 function year(yearId: number, start: string, end: string) {
   return {
@@ -153,5 +156,129 @@ describe('evaluateClassCertificateHistoricalAge', () => {
         code: ErrorCode.CERTIFICATE_IMPORT_YEAR_AMBIGUOUS,
       }),
     );
+  });
+});
+
+describe('assertClassCertificateHistoricalAge locks', () => {
+  it('C-1 shares the birthday, class and year rows instead of locking them for update', async () => {
+    const queries: string[] = [];
+    await assertClassCertificateHistoricalAge(
+      {
+        $queryRawUnsafe: async (query: string) => {
+          queries.push(query);
+          return [];
+        },
+        users: {
+          findUnique: async () => ({
+            birthday: new Date('1990-01-01T00:00:00.000Z'),
+          }),
+        },
+        classes: {
+          findUnique: async () => ({ minimum_age: 10 }),
+        },
+        ecclesiastical_years: {
+          findMany: async () => [
+            {
+              year_id: 2026,
+              start_date: new Date('2026-01-01T00:00:00.000Z'),
+              end_date: new Date('2026-12-31T00:00:00.000Z'),
+              active: true,
+            },
+          ],
+        },
+      },
+      {
+        userId: 'member-1',
+        classId: 4,
+        completedAt: '2026-06-01',
+      },
+    );
+
+    expect(queries.length).toBeGreaterThan(0);
+    expect(queries.join('\n')).toContain('FOR SHARE');
+    expect(queries.join('\n')).not.toContain('FOR UPDATE');
+  });
+
+  it('C1-H2 takes the year advisory before sharing the year row', async () => {
+    const order: string[] = [];
+    await assertClassCertificateHistoricalAge(
+      {
+        $executeRaw: async () => {
+          order.push('advisory');
+          return 1;
+        },
+        $queryRawUnsafe: async (query: string) => {
+          order.push(
+            query.includes('ecclesiastical_years') ? 'share-year' : 'share',
+          );
+          return [];
+        },
+        users: {
+          findUnique: async () => ({
+            birthday: new Date('1990-01-01T00:00:00.000Z'),
+          }),
+        },
+        classes: {
+          findUnique: async () => ({ minimum_age: 10 }),
+        },
+        ecclesiastical_years: {
+          findMany: async () => [
+            {
+              year_id: 2026,
+              start_date: new Date('2026-01-01T00:00:00.000Z'),
+              end_date: new Date('2026-12-31T00:00:00.000Z'),
+              active: true,
+            },
+          ],
+        },
+      },
+      {
+        userId: 'member-1',
+        classId: 4,
+        completedAt: '2026-06-01',
+      },
+    );
+
+    expect(order.indexOf('advisory')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('advisory')).toBeLessThan(order.indexOf('share-year'));
+  });
+
+  it('C1R-N1 does not take a year advisory when the caller already locked the years', async () => {
+    const order: string[] = [];
+    await assertClassCertificateHistoricalAge(
+      {
+        $executeRaw: async () => {
+          order.push('advisory');
+          return 1;
+        },
+        $queryRawUnsafe: async () => [],
+        users: {
+          findUnique: async () => ({
+            birthday: new Date('1990-01-01T00:00:00.000Z'),
+          }),
+        },
+        classes: {
+          findUnique: async () => ({ minimum_age: 10 }),
+        },
+        ecclesiastical_years: {
+          findMany: async () => [
+            {
+              year_id: 2026,
+              start_date: new Date('2026-01-01T00:00:00.000Z'),
+              end_date: new Date('2026-12-31T00:00:00.000Z'),
+              active: true,
+            },
+          ],
+        },
+      },
+      {
+        userId: 'member-1',
+        classId: 4,
+        completedAt: '2026-06-01',
+      },
+      { skipYearAdvisory: true },
+    );
+
+    expect(order).not.toContain('advisory');
   });
 });

@@ -10,6 +10,8 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { lockInvestitureAuthorizationPastor } from '../investiture-requests/investiture-request-lock';
+import { pastorEligibility } from '../investiture-requests/investiture-pastor-eligibility';
 
 const DEFAULT_SLOTS = 2;
 const QUOTA_ID = 1;
@@ -27,6 +29,10 @@ export type DistrictPastorView = {
   districlub_type_id: number;
   user_id: string;
   can_authorize: boolean;
+  /** Falta el rol global `pastor` activo. La asignación sigue ocupando cupo. */
+  role_missing?: boolean;
+  /** La cuenta está eliminada o inactiva (BCR-6). La asignación sigue ocupando cupo. */
+  account_inactive?: boolean;
 };
 
 export type DistrictPastorList = {
@@ -201,6 +207,7 @@ export class DistrictInvestiturePastorService {
   ): Promise<DistrictPastorView> {
     await this.loadDistrict(authorization, districtId, 'assign');
     return this.prisma.$transaction(async (tx) => {
+      await lockInvestitureAuthorizationPastor(tx, districtId, userId);
       const store = tx as unknown as PastorStore;
       await store.$queryRaw(Prisma.sql`
         SELECT "districlub_type_id"
@@ -262,10 +269,9 @@ export class DistrictInvestiturePastorService {
       club_id: club.club_id,
       districlub_type_id: church.districlub_type_id,
       resolved_from: 'church',
-      authorizers: await this.activePastors(
-        this.prisma,
-        church.districlub_type_id,
-      ),
+      authorizers: (
+        await this.activePastors(this.prisma, church.districlub_type_id)
+      ).filter((pastor) => pastor.can_authorize),
     };
   }
 
@@ -318,19 +324,8 @@ export class DistrictInvestiturePastorService {
         ErrorCode.INVESTITURE_PASTOR_USER_NOT_FOUND,
       );
     }
-    const role = await store.users_roles.findFirst({
-      where: {
-        user_id: userId,
-        active: true,
-        roles: {
-          role_name: { equals: 'pastor', mode: 'insensitive' },
-          active: true,
-          role_category: 'GLOBAL',
-        },
-      },
-      select: { user_role_id: true },
-    });
-    if (!role) {
+    const eligibility = (await pastorEligibility(store, [userId])).get(userId);
+    if (eligibility?.roleMissing !== false) {
       throw new AppBadRequestException(
         ErrorCode.INVESTITURE_PASTOR_ROLE_REQUIRED,
       );
@@ -360,18 +355,35 @@ export class DistrictInvestiturePastorService {
       select: { user_id: true },
       orderBy: { user_id: 'asc' },
     });
-    return rows.map((row) => this.pastorView(districtId, row.user_id, true));
+    const eligibility = await pastorEligibility(
+      store,
+      rows.map((row) => row.user_id),
+    );
+    return rows.map((row) => {
+      const state = eligibility.get(row.user_id);
+      return this.pastorView(
+        districtId,
+        row.user_id,
+        state?.canAuthorize === true,
+        state?.roleMissing !== false,
+        state?.accountInactive !== false,
+      );
+    });
   }
 
   private pastorView(
     districtId: number,
     userId: string,
     canAuthorize: boolean,
+    roleMissing = false,
+    accountInactive = false,
   ): DistrictPastorView {
     return {
       districlub_type_id: districtId,
       user_id: userId,
       can_authorize: canAuthorize,
+      ...(roleMissing ? { role_missing: true } : {}),
+      ...(accountInactive ? { account_inactive: true } : {}),
     };
   }
 

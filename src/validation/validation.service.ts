@@ -2,15 +2,18 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
+  Prisma,
   investiture_status_enum,
   investiture_action_enum,
 } from '@prisma/client';
 import {
   AppBadRequestException,
+  AppConflictException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { HonorValidationWorkflowService } from '../honors/honor-validation-workflow.service';
+import { rejectLegacyMutationIfAuthorizationPending } from '../investiture-requests/investiture-request-lock';
 
 type EntityType = 'class' | 'honor';
 
@@ -61,15 +64,18 @@ export class ValidationService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.enrollments.update({
-        where: { enrollment_id: enrollmentId },
-        data: {
+      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
+      const updated = await this.claimClassStatus(
+        tx,
+        enrollmentId,
+        investiture_status_enum.IN_PROGRESS,
+        {
           investiture_status: investiture_status_enum.SUBMITTED_FOR_VALIDATION,
           submitted_for_validation: true,
           submitted_at: new Date(),
           locked_for_validation: true,
         },
-      });
+      );
 
       await tx.investiture_validation_history.create({
         data: {
@@ -191,9 +197,12 @@ export class ValidationService {
         : investiture_action_enum.REJECTED;
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.enrollments.update({
-        where: { enrollment_id: enrollmentId },
-        data: {
+      await rejectLegacyMutationIfAuthorizationPending(tx, enrollmentId);
+      const updated = await this.claimClassStatus(
+        tx,
+        enrollmentId,
+        investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+        {
           investiture_status: newStatus,
           validated_by: performedBy,
           validated_at: new Date(),
@@ -201,7 +210,7 @@ export class ValidationService {
           locked_for_validation: action === 'approved',
           submitted_for_validation: action === 'rejected' ? false : true,
         },
-      });
+      );
 
       await tx.investiture_validation_history.create({
         data: {
@@ -230,7 +239,9 @@ export class ValidationService {
     // Notify the member about approval/rejection
     try {
       const title =
-        action === 'approved' ? '¡Tu clase fue aprobada!' : 'Tu clase necesita ajustes';
+        action === 'approved'
+          ? '¡Tu clase fue aprobada!'
+          : 'Tu clase necesita ajustes';
       const body =
         action === 'approved'
           ? 'Tu avance ya quedó validado. ¡Buen trabajo!'
@@ -451,5 +462,30 @@ export class ValidationService {
         },
       },
     };
+  }
+
+  private async claimClassStatus(
+    tx: Prisma.TransactionClient,
+    enrollmentId: number,
+    expected: investiture_status_enum,
+    data: Prisma.enrollmentsUncheckedUpdateManyInput,
+  ) {
+    const marked = await tx.enrollments.updateMany({
+      where: {
+        enrollment_id: enrollmentId,
+        investiture_status: expected,
+      },
+      data,
+    });
+    if (marked.count !== 1) {
+      throw new AppConflictException(ErrorCode.INVESTITURE_CONCURRENT_UPDATE);
+    }
+    const updated = await tx.enrollments.findUnique({
+      where: { enrollment_id: enrollmentId },
+    });
+    if (!updated) {
+      throw new AppNotFoundException(ErrorCode.VALIDATION_ENROLLMENT_NOT_FOUND);
+    }
+    return updated;
   }
 }

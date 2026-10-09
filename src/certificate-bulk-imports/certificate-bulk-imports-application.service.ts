@@ -3,6 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { ApproveCertificateImportDto } from './dto';
@@ -16,7 +18,18 @@ import {
   classifyCertificateImportYear,
   utcCivilDate,
 } from './certificate-import-year-resolver.service';
-import { assertClassCertificateHistoricalAge } from './class-certificate-historical-age';
+import {
+  assertClassCertificateHistoricalAge,
+  ecclesiasticalYearIdsCovering,
+  lockInvestitureYearsAscending,
+} from './class-certificate-historical-age';
+import {
+  findEndedSameYearCertificatePeople,
+  guardCertificateApprovalAuthorization,
+  pendingAuthorizationYearIds,
+} from './class-certificate-live-authorization';
+import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
+import { LATER_CERTIFICATE_ACCREDITATION_REASON } from '../investiture-requests/investiture-request-lock';
 
 type CertificateImportApplicationTransaction = Pick<
   Prisma.TransactionClient,
@@ -30,10 +43,12 @@ type CertificateImportApplicationTransaction = Pick<
   | 'users'
   | 'investiture_validation_history'
   | 'certificate_bulk_import_item_events'
->;
+  | 'investiture_authorization_people'
+> & {
+  $executeRaw?: Prisma.TransactionClient['$executeRaw'];
+};
 
 const GUIDE_MAJOR_ASSET_CODE = 'GM-01';
-const INSTITUTIONAL_CLASS_ASSET_CODES = new Set(['GM-02', 'GM-03']);
 
 const REVIEWABLE_ITEM_STATUSES = [
   CertificateBulkImportItemStatus.SUBMITTED,
@@ -264,11 +279,25 @@ export class CertificateBulkImportApplicationService {
       throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_MISSING_CLASS');
     }
 
-    await assertClassCertificateHistoricalAge(tx, {
-      userId: item.batch.user_id,
-      classId: item.class_id,
-      completedAt: item.completed_at,
-    });
+    const coveredYears = await ecclesiasticalYearIdsCovering(tx, [
+      item.completed_at,
+    ]);
+    const pendingYears = await pendingAuthorizationYearIds(
+      tx as never,
+      item.batch.user_id,
+      item.class_id,
+    );
+    const heldYearIds = new Set([...coveredYears, ...pendingYears]);
+    await lockInvestitureYearsAscending(tx, [...heldYearIds]);
+    await assertClassCertificateHistoricalAge(
+      tx,
+      {
+        userId: item.batch.user_id,
+        classId: item.class_id,
+        completedAt: item.completed_at,
+      },
+      { skipYearAdvisory: true },
+    );
 
     const civilDate = civilDateFromDbDate(item.completed_at);
     if (!civilDate) {
@@ -306,19 +335,28 @@ export class CertificateBulkImportApplicationService {
     }
 
     const now = new Date();
-    const rows = await tx.enrollments.findMany({
-      where: {
-        user_id: item.batch.user_id,
-        class_id: item.class_id,
+    const endedSameYear = await findEndedSameYearCertificatePeople(
+      tx as never,
+      {
+        userId: item.batch.user_id,
+        classId: item.class_id,
+        certificateYearId: year.year_id,
+        now,
       },
-      select: {
-        enrollment_id: true,
-        ecclesiastical_year_id: true,
-        investiture_status: true,
-        investiture_date: true,
-        record_kind: true,
-        modified_at: true,
-      },
+    );
+    if (endedSameYear.length > 0) {
+      await this.assertEndedYearCertificateReviewer(
+        tx,
+        reviewerId,
+        endedSameYear.map((person) => person.local_field_id),
+      );
+    }
+    const rows = await guardCertificateApprovalAuthorization(tx as never, {
+      userId: item.batch.user_id,
+      classId: item.class_id,
+      certificateYearId: year.year_id,
+      heldYearIds,
+      now,
     });
     const reconciliation: EnrollmentReconciliation = {
       enrollmentId: dto.reconcile_enrollment_id,
@@ -342,6 +380,16 @@ export class CertificateBulkImportApplicationService {
             rows,
             reconciliation,
           });
+
+    if (endedSameYear.length > 0) {
+      await tx.investiture_authorization_people.updateMany({
+        where: {
+          person_id: { in: endedSameYear.map((person) => person.person_id) },
+          status: 'CLOSED_YEAR',
+        },
+        data: { system_reason: LATER_CERTIFICATE_ACCREDITATION_REASON },
+      });
+    }
 
     if (accredited.recordHistory) {
       await tx.investiture_validation_history.create({
@@ -379,6 +427,51 @@ export class CertificateBulkImportApplicationService {
     );
 
     return updatedItem;
+  }
+
+  private async assertEndedYearCertificateReviewer(
+    tx: CertificateImportApplicationTransaction,
+    reviewerId: string,
+    fieldIds: Array<number | null>,
+  ) {
+    const reviewer = await tx.users.findUnique({
+      where: { user_id: reviewerId },
+      select: {
+        local_field_id: true,
+        users_roles: {
+          where: { active: true },
+          select: { roles: { select: { role_name: true } } },
+        },
+      },
+    });
+    const roles = new Set(
+      (reviewer?.users_roles ?? []).map((entry) =>
+        entry.roles.role_name.toLowerCase(),
+      ),
+    );
+    if (roles.has('super-admin')) return;
+    if (
+      (roles.has('admin') || roles.has('assistant-admin')) &&
+      reviewer?.local_field_id == null
+    ) {
+      return;
+    }
+    const fieldId = reviewer?.local_field_id ?? null;
+    const fieldRole =
+      roles.has('director-lf') ||
+      roles.has('assistant-lf') ||
+      roles.has('admin') ||
+      roles.has('assistant-admin');
+    if (
+      fieldId != null &&
+      fieldRole &&
+      fieldIds.every((id) => id === fieldId)
+    ) {
+      return;
+    }
+    throw new AppForbiddenException(
+      ErrorCode.CERTIFICATE_IMPORT_ENDED_YEAR_FIELD_FORBIDDEN,
+    );
   }
 
   private async accreditHistoricalClass(
@@ -569,10 +662,7 @@ export class CertificateBulkImportApplicationService {
     const sameDate =
       civilDateFromDbDate(existing.investiture_date) ===
       civilDateFromDbDate(completedAt);
-    if (
-      existing.investiture_status === 'INVESTIDO' &&
-      sameDate
-    ) {
+    if (existing.investiture_status === 'INVESTIDO' && sameDate) {
       return { enrollmentId: existing.enrollment_id, recordHistory: false };
     }
     if (existing.investiture_status === 'INVESTIDO') {

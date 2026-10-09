@@ -12,6 +12,10 @@ import {
   lockInvestitureAuthorizationEnrollment,
 } from '../investiture-requests/investiture-request-lock';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  assertClassProgressMutable,
+  assertEnrollmentNotTerminalInTransaction,
+} from './class-progress-mutable';
 import { Prisma, evidence_validation_enum } from '@prisma/client';
 import { TranslationService } from '../common/services/translation.service';
 import { AchievementsService } from '../achievements/achievements.service';
@@ -67,15 +71,6 @@ export class ClassesService {
     private readonly classEnrollmentPolicy: ClassEnrollmentPolicyService,
   ) {}
 
-  private static readonly PROGRESS_MUTATION_BLOCKED_STATUSES = new Set([
-    'SUBMITTED',
-    'CLUB_APPROVED',
-    'COORDINATOR_APPROVED',
-    'FIELD_APPROVED',
-    'INVESTIDO',
-    'EXPIRED',
-  ]);
-
   private async lockPendingInvestitureProgress(
     store: Prisma.TransactionClient,
     enrollmentId: number,
@@ -88,14 +83,7 @@ export class ClassesService {
     investitureStatus: string;
     lockedForValidation: boolean;
   }) {
-    if (
-      enrollment.lockedForValidation ||
-      ClassesService.PROGRESS_MUTATION_BLOCKED_STATUSES.has(
-        enrollment.investitureStatus,
-      )
-    ) {
-      throw new AppConflictException(ErrorCode.CLASS_PROGRESS_LOCKED);
-    }
+    assertClassProgressMutable(enrollment);
   }
 
   private async assertOperationalProgressWrite(
@@ -504,14 +492,15 @@ export class ClassesService {
       }
     }
 
-    const prerequisites = (
-      (translatedClass as any).prerequisites as
-        | Array<{ prerequisite: { class_id: number; name: string } }>
-        | undefined
-    )?.map((row) => ({
-      class_id: row.prerequisite.class_id,
-      name: row.prerequisite.name,
-    })) ?? [];
+    const prerequisites =
+      (
+        (translatedClass as any).prerequisites as
+          | Array<{ prerequisite: { class_id: number; name: string } }>
+          | undefined
+      )?.map((row) => ({
+        class_id: row.prerequisite.class_id,
+        name: row.prerequisite.name,
+      })) ?? [];
 
     const { prerequisites: _rawPrerequisites, ...rest } =
       translatedClass as typeof translatedClass & {
@@ -690,9 +679,7 @@ export class ClassesService {
         );
 
         if (missing.length > 0) {
-          throw new AppForbiddenException(
-            ErrorCode.CLASS_PREREQUISITE_NOT_MET,
-          );
+          throw new AppForbiddenException(ErrorCode.CLASS_PREREQUISITE_NOT_MET);
         }
       }
 
@@ -916,10 +903,14 @@ export class ClassesService {
     }
 
     const operationalIds = enrollments
-      .filter((enrollment) => enrollment.record_kind !== 'HISTORICAL_CERTIFICATE')
+      .filter(
+        (enrollment) => enrollment.record_kind !== 'HISTORICAL_CERTIFICATE',
+      )
       .map((enrollment) => enrollment.enrollment_id);
     const historicalIds = enrollments
-      .filter((enrollment) => enrollment.record_kind === 'HISTORICAL_CERTIFICATE')
+      .filter(
+        (enrollment) => enrollment.record_kind === 'HISTORICAL_CERTIFICATE',
+      )
       .map((enrollment) => enrollment.enrollment_id);
     const [eligibilityEntries, proofs, archivedSections] = await Promise.all([
       Promise.all(
@@ -928,7 +919,9 @@ export class ClassesService {
             enrollmentId,
           ): Promise<[number, ClassRequirementEligibilityResult | null]> => [
             enrollmentId,
-            await this.requirementEligibility.calculateForEnrollment(enrollmentId),
+            await this.requirementEligibility.calculateForEnrollment(
+              enrollmentId,
+            ),
           ],
         ),
       ),
@@ -937,7 +930,9 @@ export class ClassesService {
           active: true,
           status: 'APPROVED',
           applied_entity_type: 'ENROLLMENT',
-          applied_entity_id: { in: enrollments.map((row) => row.enrollment_id) },
+          applied_entity_id: {
+            in: enrollments.map((row) => row.enrollment_id),
+          },
         },
         select: {
           applied_entity_id: true,
@@ -971,9 +966,7 @@ export class ClassesService {
       ClassRequirementEligibilityResult
     >(
       eligibilityEntries.filter(
-        (
-          entry,
-        ): entry is [number, ClassRequirementEligibilityResult] =>
+        (entry): entry is [number, ClassRequirementEligibilityResult] =>
           entry[1] !== null,
       ),
     );
@@ -1029,7 +1022,8 @@ export class ClassesService {
       return {
         ...enrollment,
         course_open: !historical,
-        certificate_proof: proofByEnrollment.get(enrollment.enrollment_id) ?? null,
+        certificate_proof:
+          proofByEnrollment.get(enrollment.enrollment_id) ?? null,
         progress_archive: historical ? archive : null,
         overall_progress: historical
           ? null
@@ -1040,7 +1034,9 @@ export class ClassesService {
         investiture_eligibility: historical
           ? null
           : eligibility?.investiture_eligibility,
-        advanced_eligibility: historical ? null : eligibility?.advanced_eligibility,
+        advanced_eligibility: historical
+          ? null
+          : eligibility?.advanced_eligibility,
       };
     });
   }
@@ -1061,7 +1057,9 @@ export class ClassesService {
       enrollmentId,
     });
     if (resolvedEnrollment.recordKind === 'HISTORICAL_CERTIFICATE') {
-      return this.readCertificateProgressArchive(resolvedEnrollment.enrollmentId);
+      return this.readCertificateProgressArchive(
+        resolvedEnrollment.enrollmentId,
+      );
     }
     await this.classProgressAccess.assertCanAccessProgress({
       actorUserId,
@@ -1157,9 +1155,9 @@ export class ClassesService {
     ) =>
       Boolean(
         progress &&
-          progress.status !== evidence_validation_enum.REJECTED &&
-          (progress.status === evidence_validation_enum.VALIDATED ||
-            progress.score >= (eligibility?.passing_score ?? 80)),
+        progress.status !== evidence_validation_enum.REJECTED &&
+        (progress.status === evidence_validation_enum.VALIDATED ||
+          progress.score >= (eligibility?.passing_score ?? 80)),
       );
 
     const modulesProgress = classData.class_modules
@@ -1193,15 +1191,17 @@ export class ClassesService {
             const progress = sectionProgress.find(
               (sp) => sp.section_id === section.section_id,
             );
-            const evidenceFiles = (progress?.evidence_files ?? []).map((ef) => ({
-              id: String(ef.evidence_file_id),
-              file_id: ef.evidence_file_id,
-              file_name: ef.file_name,
-              file_type: ef.file_type,
-              file_url: signedUrlMap.get(ef.evidence_file_id) ?? ef.file_url,
-              uploaded_at: ef.uploaded_at.toISOString(),
-              uploaded_by_name: this.formatUserName(ef.uploaded_by ?? null),
-            }));
+            const evidenceFiles = (progress?.evidence_files ?? []).map(
+              (ef) => ({
+                id: String(ef.evidence_file_id),
+                file_id: ef.evidence_file_id,
+                file_name: ef.file_name,
+                file_type: ef.file_type,
+                file_url: signedUrlMap.get(ef.evidence_file_id) ?? ef.file_url,
+                uploaded_at: ef.uploaded_at.toISOString(),
+                uploaded_by_name: this.formatUserName(ef.uploaded_by ?? null),
+              }),
+            );
             return {
               section_id: section.section_id,
               id: section.section_id,
@@ -1263,7 +1263,8 @@ export class ClassesService {
       max_duration_years: classData.max_duration_years,
       total_sections: totalSections,
       completed_sections: completedSections,
-      overall_progress: eligibility?.overall_progress ?? fallbackOverallProgress,
+      overall_progress:
+        eligibility?.overall_progress ?? fallbackOverallProgress,
       percentage: eligibility?.overall_progress ?? fallbackOverallProgress,
       basic_progress: eligibility?.basic_progress,
       advanced_progress: eligibility?.advanced_progress,
@@ -1605,6 +1606,10 @@ export class ClassesService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.lockPendingInvestitureProgress(tx, resolved.enrollmentId);
+      // BC-11 / BCR-2: solo INVESTIDO y EXPIRED bloquean el envio, y se leen
+      // aqui, bajo el candado del enrollment. locked_for_validation y los
+      // estados del flujo anterior no bloquean (igual que en 113d8ba).
+      await assertEnrollmentNotTerminalInTransaction(tx, resolved.enrollmentId);
       return tx.class_section_progress.update({
         where: {
           section_progress_id: sectionProgress.section_progress_id,

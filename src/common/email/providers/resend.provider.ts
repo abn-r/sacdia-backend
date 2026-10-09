@@ -42,14 +42,19 @@ export class ResendEmailProvider implements IEmailProvider {
     );
 
     try {
-      const { data, error } = await this.client.emails.send({
-        from,
-        to: payload.to,
-        ...(replyTo ? { reply_to: replyTo } : {}),
-        subject: payload.subject,
-        html: payload.html,
-        text: payload.text,
-      });
+      const { data, error } = await this.client.emails.send(
+        {
+          from,
+          to: payload.to,
+          ...(replyTo ? { reply_to: replyTo } : {}),
+          subject: payload.subject,
+          html: payload.html,
+          text: payload.text,
+        },
+        payload.idempotencyKey
+          ? { idempotencyKey: payload.idempotencyKey }
+          : undefined,
+      );
 
       if (error || !data) {
         throw new Error('Resend API returned an unsuccessful response');

@@ -11,12 +11,22 @@ import {
   classifyCertificateImportYear,
   utcCivilDate,
 } from './certificate-import-year-resolver.service';
-import { assertClassCertificateHistoricalAge } from './class-certificate-historical-age';
+import {
+  assertClassCertificateHistoricalAge,
+  ecclesiasticalYearIdsCovering,
+  lockInvestitureYearsAscending,
+} from './class-certificate-historical-age';
+import {
+  guardCertificateApprovalAuthorization,
+  pendingAuthorizationYearIds,
+  rejectSameYearLiveAuthorization,
+} from './class-certificate-live-authorization';
 import type { CreateInstitutionalCertificateRequestDto } from './dto/create-institutional-certificate-request.dto';
 import type {
   ApproveInstitutionalCertificateRequestDto,
   RejectInstitutionalCertificateRequestDto,
 } from './dto/review-institutional-certificate-request.dto';
+import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
 
 type InstitutionalStore = Pick<
   Prisma.TransactionClient,
@@ -25,7 +35,6 @@ type InstitutionalStore = Pick<
   | '$queryRawUnsafe'
 >;
 
-const INSTITUTIONAL_ASSET_CODES = new Set(['GM-02', 'GM-03']);
 const OPEN_STATUSES = ['PENDING_REVIEW', 'APPROVED'] as const;
 
 type RequestRow = {
@@ -84,7 +93,7 @@ export class InstitutionalCertificateRequestsService {
       where: { class_id: dto.class_id },
       select: { class_id: true, asset_code: true, name: true, active: true },
     });
-    if (!INSTITUTIONAL_ASSET_CODES.has(klass?.asset_code ?? '')) {
+    if (!INSTITUTIONAL_CLASS_ASSET_CODES.has(klass?.asset_code ?? '')) {
       throw new BadRequestException(
         'CERTIFICATE_IMPORT_CLASS_NOT_INSTITUTIONAL',
       );
@@ -106,17 +115,18 @@ export class InstitutionalCertificateRequestsService {
       throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
     }
 
-    const existing = await this.prisma.institutional_certificate_requests.findFirst({
-      where: {
-        user_id: userId,
-        class_id: dto.class_id,
-        file_id: dto.file_id,
-        completed_at: completedAt,
-        active: true,
-        status: { in: [...OPEN_STATUSES] },
-      },
-      include: REQUEST_INCLUDE,
-    });
+    const existing =
+      await this.prisma.institutional_certificate_requests.findFirst({
+        where: {
+          user_id: userId,
+          class_id: dto.class_id,
+          file_id: dto.file_id,
+          completed_at: completedAt,
+          active: true,
+          status: { in: [...OPEN_STATUSES] },
+        },
+        include: REQUEST_INCLUDE,
+      });
     if (existing) {
       return this.toView(existing, await this.blockers(existing.completed_at));
     }
@@ -136,10 +146,21 @@ export class InstitutionalCertificateRequestsService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
-        const age = await assertClassCertificateHistoricalAge(tx, {
+        const yearIds = await ecclesiasticalYearIdsCovering(tx, [completedAt]);
+        await lockInvestitureYearsAscending(tx, yearIds);
+        const age = await assertClassCertificateHistoricalAge(
+          tx,
+          {
+            userId,
+            classId: dto.class_id,
+            completedAt: completedAt,
+          },
+          { skipYearAdvisory: true },
+        );
+        await rejectSameYearLiveAuthorization(tx as never, {
           userId,
           classId: dto.class_id,
-          completedAt: completedAt,
+          certificateYearId: age.yearId,
         });
         const request = await tx.institutional_certificate_requests.create({
           data: {
@@ -218,7 +239,9 @@ export class InstitutionalCertificateRequestsService {
     const q = filters.q?.trim();
     return this.list(
       {
-        ...(filters.status ? { status: filters.status as 'PENDING_REVIEW' } : {}),
+        ...(filters.status
+          ? { status: filters.status as 'PENDING_REVIEW' }
+          : {}),
         ...(filters.classId ? { class_id: filters.classId } : {}),
         ...(q
           ? {
@@ -275,10 +298,30 @@ export class InstitutionalCertificateRequestsService {
       if (current.status === 'REJECTED') {
         throw new BadRequestException('CERTIFICATE_IMPORT_DECISION_IMMUTABLE');
       }
-      const age = await assertClassCertificateHistoricalAge(tx, {
+      const coveredYears = await ecclesiasticalYearIdsCovering(tx, [
+        current.completed_at,
+      ]);
+      const pendingYears = await pendingAuthorizationYearIds(
+        tx as never,
+        current.user_id,
+        current.class_id,
+      );
+      const heldYearIds = new Set([...coveredYears, ...pendingYears]);
+      await lockInvestitureYearsAscending(tx, [...heldYearIds]);
+      const age = await assertClassCertificateHistoricalAge(
+        tx,
+        {
+          userId: current.user_id,
+          classId: current.class_id,
+          completedAt: current.completed_at,
+        },
+        { skipYearAdvisory: true },
+      );
+      await guardCertificateApprovalAuthorization(tx as never, {
         userId: current.user_id,
         classId: current.class_id,
-        completedAt: current.completed_at,
+        certificateYearId: age.yearId,
+        heldYearIds,
       });
       return this.decide(tx, reviewerId, current, dto.expected_revision, {
         status: 'APPROVED',
@@ -303,7 +346,9 @@ export class InstitutionalCertificateRequestsService {
       throw new BadRequestException('CERTIFICATE_IMPORT_DECISION_IMMUTABLE');
     }
     if (!dto.reason?.trim()) {
-      throw new BadRequestException('CERTIFICATE_IMPORT_REJECTION_REASON_REQUIRED');
+      throw new BadRequestException(
+        'CERTIFICATE_IMPORT_REJECTION_REASON_REQUIRED',
+      );
     }
 
     return this.decide(
@@ -425,7 +470,9 @@ export class InstitutionalCertificateRequestsService {
       ),
     );
     if (!roles.has('super-admin')) {
-      throw new ForbiddenException('CERTIFICATE_IMPORT_INSTITUTIONAL_FORBIDDEN');
+      throw new ForbiddenException(
+        'CERTIFICATE_IMPORT_INSTITUTIONAL_FORBIDDEN',
+      );
     }
   }
 

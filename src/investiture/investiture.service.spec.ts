@@ -26,14 +26,22 @@ describe('InvestitureService', () => {
   // ---- transaction mock helpers ----
 
   const createTxMock = () => ({
+    $executeRaw: jest.fn().mockResolvedValue(0),
     enrollments: {
-      update: jest.fn(),
+      update: jest.fn().mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'SUBMITTED_FOR_VALIDATION',
+        submitted_at: new Date('2026-06-01T00:00:00.000Z'),
+      }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUnique: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    investiture_authorization_people: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     investiture_validation_history: {
-      create: jest.fn(),
+      create: jest.fn().mockResolvedValue({ history_id: 1 }),
       createMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
   });
@@ -86,6 +94,10 @@ describe('InvestitureService', () => {
     calculateForEnrollment: jest.fn(),
   };
 
+  const mockAchievements = {
+    emitEvent: jest.fn().mockResolvedValue({ eventLogId: 1, queued: true }),
+  };
+
   const mockNotificationsService = {
     sendToSectionRole: jest.fn().mockResolvedValue(undefined),
     sendToGlobalRole: jest.fn().mockResolvedValue(undefined),
@@ -121,6 +133,21 @@ describe('InvestitureService', () => {
     jest.clearAllMocks();
 
     txMock = createTxMock();
+    txMock.enrollments.findUnique.mockImplementation(async () => {
+      const calls = txMock.enrollments.updateMany.mock.calls;
+      const last = calls[calls.length - 1]?.[0] as
+        { data?: Record<string, unknown> } | undefined;
+      return {
+        enrollment_id: 1,
+        investiture_status:
+          last?.data?.investiture_status ?? 'SUBMITTED_FOR_VALIDATION',
+        submitted_at:
+          last?.data?.submitted_at ?? new Date('2026-06-01T00:00:00.000Z'),
+        rejection_reason: last?.data?.rejection_reason ?? null,
+        validated_by: last?.data?.validated_by ?? null,
+        validated_at: last?.data?.validated_at ?? null,
+      };
+    });
 
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
       authorization: {
@@ -186,11 +213,7 @@ describe('InvestitureService', () => {
         },
         {
           provide: AchievementsService,
-          useValue: {
-            emitEvent: jest
-              .fn()
-              .mockResolvedValue({ eventLogId: 1, queued: true }),
-          },
+          useValue: mockAchievements,
         },
         {
           provide: CoordinationService,
@@ -307,15 +330,17 @@ describe('InvestitureService', () => {
         ...baseEnrollment,
         investiture_status: 'IN_PROGRESS',
       });
-      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue({
-        investiture_eligibility: {
-          eligible: false,
-          total: 4,
-          completed: 3,
-          missing_required_sections: 1,
-          reason: 'REQUIRED_SECTIONS_INCOMPLETE',
+      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+        {
+          investiture_eligibility: {
+            eligible: false,
+            total: 4,
+            completed: 3,
+            missing_required_sections: 1,
+            reason: 'REQUIRED_SECTIONS_INCOMPLETE',
+          },
         },
-      });
+      );
 
       await expect(
         service.submitForValidation(1, 'user-abc', dto),
@@ -323,7 +348,9 @@ describe('InvestitureService', () => {
         code: ErrorCode.INVESTITURE_REQUIREMENTS_INCOMPLETE,
       });
 
-      expect(mockPrismaService.investiture_config.findFirst).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.investiture_config.findFirst,
+      ).not.toHaveBeenCalled();
       expect(mockPrismaService.enrollments.update).not.toHaveBeenCalled();
     });
 
@@ -772,7 +799,7 @@ describe('InvestitureService', () => {
 
       await service.reject(1, 'admin-xyz', dto);
 
-      const updateCall = txMock.enrollments.update.mock.calls[0][0] as {
+      const updateCall = txMock.enrollments.updateMany.mock.calls[0][0] as {
         data: {
           locked_for_validation: boolean;
           submitted_for_validation: boolean;
@@ -808,7 +835,8 @@ describe('InvestitureService', () => {
       mockPrismaService.investiture_config.findFirst.mockResolvedValue(
         baseConfig,
       );
-      txMock.enrollments.update.mockResolvedValue(investidoResult);
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+      txMock.enrollments.findUnique.mockResolvedValue(investidoResult);
       txMock.investiture_validation_history.create.mockResolvedValue({});
 
       const result = await service.markInvestido(1, 'admin-xyz', dto);
@@ -1583,7 +1611,8 @@ describe('InvestitureService', () => {
       mockPrismaService.investiture_config.findFirst.mockResolvedValue(
         baseConfig,
       );
-      txMock.enrollments.update.mockResolvedValue({
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+      txMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'INVESTIDO',
         investiture_date: baseConfig.investiture_date,
@@ -1591,6 +1620,340 @@ describe('InvestitureService', () => {
 
       const investResult = await service.markInvestido(1, 'admin-xyz', {});
       expect(investResult.investiture_status).toBe('INVESTIDO');
+    });
+  });
+
+  describe('pending authorization blocks the old pipeline', () => {
+    const pending = { person_id: 'person-1' };
+
+    it('does not submit an enrollment that already has a pending request', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'IN_PROGRESS',
+      });
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(
+        baseConfig,
+      );
+      txMock.investiture_authorization_people.findFirst.mockResolvedValue(
+        pending,
+      );
+
+      await expect(
+        service.submitForValidation(1, 'user-abc', {}),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+      expect(txMock.enrollments.update).not.toHaveBeenCalled();
+    });
+
+    it('does not approve an enrollment that already has a pending request', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'SUBMITTED_FOR_VALIDATION',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
+        users: { local_field_id: 3 },
+      });
+      txMock.investiture_authorization_people.findFirst.mockResolvedValue(
+        pending,
+      );
+
+      await expect(
+        service.clubApprove(1, 'director-123', {}),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+      expect(txMock.enrollments.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not reject an enrollment that already has a pending request', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'CLUB_APPROVED',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
+      });
+      txMock.investiture_authorization_people.findFirst.mockResolvedValue(
+        pending,
+      );
+
+      await expect(
+        service.reject(1, 'admin-xyz', { reason: 'ajuste' }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+      expect(txMock.enrollments.update).not.toHaveBeenCalled();
+    });
+
+    it('does not invest or emit class.completed when a request is pending', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'FIELD_APPROVED',
+      });
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(
+        baseConfig,
+      );
+      txMock.investiture_authorization_people.findFirst.mockResolvedValue(
+        pending,
+      );
+
+      await expect(
+        service.markInvestido(1, 'admin-xyz', {}),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+      expect(txMock.enrollments.updateMany).not.toHaveBeenCalled();
+      expect(mockAchievements.emitEvent).not.toHaveBeenCalled();
+    });
+
+    it('fails only the pending item of a bulk invest', async () => {
+      mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValue(true);
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 1,
+          investiture_status: 'FIELD_APPROVED',
+          user_id: 'user-abc',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          users: { local_field_id: 3 },
+          classes: { name: 'Amigo', club_type_id: 2 },
+        },
+        {
+          enrollment_id: 2,
+          investiture_status: 'FIELD_APPROVED',
+          user_id: 'user-def',
+          class_id: 8,
+          ecclesiastical_year_id: 2026,
+          users: { local_field_id: 3 },
+          classes: { name: 'Compañero', club_type_id: 2 },
+        },
+      ]);
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(
+        baseConfig,
+      );
+      txMock.investiture_authorization_people.findFirst.mockImplementation(
+        async ({ where }: { where: { enrollment_id: number } }) =>
+          where.enrollment_id === 1 ? pending : null,
+      );
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.bulkApproveEnrollments('admin-xyz', {
+        enrollmentIds: [1, 2],
+        action: 'invest',
+      });
+
+      expect(result.failed).toEqual([
+        {
+          id: 1,
+          reason: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+        },
+      ]);
+      expect(result.succeeded).toEqual([2]);
+      expect(mockAchievements.emitEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not coordinator-approve or field-approve a pending request', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'CLUB_APPROVED',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
+        users: { local_field_id: 3 },
+      });
+      txMock.investiture_authorization_people.findFirst.mockResolvedValue(
+        pending,
+      );
+
+      await expect(
+        service.coordinatorApprove(1, 'coordinator-1', {}),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'COORDINATOR_APPROVED',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
+        users: { local_field_id: 3 },
+      });
+      await expect(
+        service.fieldApprove(1, 'field-1', {}),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+      expect(txMock.enrollments.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('fails only the pending item of a bulk reject', async () => {
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 1,
+          investiture_status: 'CLUB_APPROVED',
+          user_id: 'user-abc',
+          ecclesiastical_year_id: 2026,
+          classes: { club_type_id: 2 },
+        },
+        {
+          enrollment_id: 2,
+          investiture_status: 'CLUB_APPROVED',
+          user_id: 'user-def',
+          ecclesiastical_year_id: 2026,
+          classes: { club_type_id: 2 },
+        },
+      ]);
+      txMock.investiture_authorization_people.findFirst.mockImplementation(
+        async ({ where }: { where: { enrollment_id: number } }) =>
+          where.enrollment_id === 2 ? pending : null,
+      );
+
+      const result = await service.bulkRejectEnrollments('admin-xyz', {
+        enrollmentIds: [1, 2],
+        comments: 'ajuste',
+      });
+
+      expect(result.succeeded).toEqual([1]);
+      expect(result.failed).toEqual([
+        {
+          id: 2,
+          reason: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+        },
+      ]);
+    });
+
+    it('does not expire an enrollment with a pending request', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+      });
+      mockPrismaService.ecclesiastical_years.count.mockResolvedValue(3);
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 11,
+          investiture_status: 'IN_PROGRESS',
+          ecclesiastical_year: { start_date: new Date('2024-01-01') },
+          classes: { max_duration_years: 2 },
+        },
+      ]);
+      txMock.enrollments.findMany.mockResolvedValue([{ enrollment_id: 11 }]);
+      txMock.investiture_authorization_people.findFirst.mockResolvedValue(
+        pending,
+      );
+
+      const result = await service.expireOverdueEnrollments('admin-1', {
+        ecclesiastical_year_id: 2026,
+      });
+
+      expect(result.expired_count).toBe(0);
+      expect(result.enrollment_ids).toEqual([]);
+      expect(txMock.enrollments.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy validate alias from writing when a request is pending', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'SUBMITTED_FOR_VALIDATION',
+      });
+      txMock.investiture_authorization_people.findFirst.mockResolvedValue(
+        pending,
+      );
+
+      await expect(
+        service.validateEnrollment(1, 'admin-xyz', {
+          action: InvestitureValidationAction.APPROVED,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUEST_PROGRESS_LOCKED,
+      });
+      expect(txMock.enrollments.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('legacy writes keep the status they read', () => {
+    it('locks the enrollment before the conditional submit write', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'IN_PROGRESS',
+      });
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(
+        baseConfig,
+      );
+      const order: string[] = [];
+      txMock.$executeRaw.mockImplementation(
+        async (query: { values?: unknown[] }) => {
+          order.push(`lock:${(query.values ?? []).join(',')}`);
+          return 0;
+        },
+      );
+      txMock.enrollments.updateMany.mockImplementation(
+        async (args: { where?: { investiture_status?: string } }) => {
+          order.push(`write:${String(args.where?.investiture_status ?? '')}`);
+          return { count: 1 };
+        },
+      );
+      txMock.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'SUBMITTED_FOR_VALIDATION',
+        submitted_at: new Date('2026-06-01T00:00:00.000Z'),
+      });
+
+      await service.submitForValidation(1, 'user-abc', {});
+
+      const lockAt = order.findIndex((item) =>
+        item.includes('investiture-authorization-enrollment:1'),
+      );
+      const writeAt = order.findIndex((item) =>
+        item.startsWith('write:IN_PROGRESS'),
+      );
+      expect(lockAt).toBeGreaterThanOrEqual(0);
+      expect(writeAt).toBeGreaterThan(lockAt);
+    });
+
+    it('does not submit when the enrollment left IN_PROGRESS under the lock', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'IN_PROGRESS',
+      });
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(
+        baseConfig,
+      );
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.submitForValidation(1, 'user-abc', {}),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_CONCURRENT_UPDATE,
+      });
+      expect(
+        txMock.investiture_validation_history.create,
+      ).not.toHaveBeenCalled();
+      expect(mockNotificationsService.sendToSectionRole).not.toHaveBeenCalled();
+    });
+
+    it('does not reject when FIELD_APPROVED changed under the lock', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'FIELD_APPROVED',
+        classes: { club_type_id: 2 },
+        users: { local_field_id: 3 },
+      });
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.reject(1, 'admin-xyz', { reason: 'ajuste' }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_CONCURRENT_UPDATE,
+      });
+      expect(
+        txMock.investiture_validation_history.create,
+      ).not.toHaveBeenCalled();
+      expect(mockNotificationsService.notifySafe).not.toHaveBeenCalled();
     });
   });
 });

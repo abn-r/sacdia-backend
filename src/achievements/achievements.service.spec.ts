@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AchievementsService } from './achievements.service';
+import { Job } from 'bullmq';
+import { AchievementsProcessor } from './achievements.processor';
+import {
+  AchievementsService,
+  achievementQueueJobId,
+} from './achievements.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HandlerRegistry } from './handlers/handler.registry';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
@@ -11,7 +16,12 @@ describe('AchievementsService', () => {
   const mockPrismaService: any = {
     achievement_event_log: {
       create: jest.fn(),
+      findFirst: jest.fn(),
     },
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $transaction: jest.fn((fn: (tx: typeof mockPrismaService) => unknown) =>
+      fn(mockPrismaService),
+    ),
     achievements: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -204,6 +214,206 @@ describe('AchievementsService', () => {
       // Event was persisted but enqueue failed gracefully
       expect(result.eventLogId).toBe(4);
       expect(result.queued).toBe(false);
+    });
+
+    it('stores one event row when the same authorization key is retried', async () => {
+      mockPrismaService.achievement_event_log.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ event_id: 9 });
+      mockPrismaService.achievement_event_log.create.mockResolvedValue({
+        event_id: 9,
+      });
+      const dto = {
+        userId: 'user-1',
+        eventType: 'class.completed',
+        payload: { class_id: 7 },
+        idempotencyKey: 'investiture-authorization:person-1',
+      };
+
+      const first = await service.emitEvent(dto);
+      const second = await service.emitEvent(dto);
+
+      expect(first.eventLogId).toBe(9);
+      expect(second.eventLogId).toBe(9);
+      expect(
+        mockPrismaService.achievement_event_log.create,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('enqueues one evaluation when BullMQ validates the queue id', async () => {
+      const key = 'investiture-authorization:person-1';
+      const rejected = Object.create(Job.prototype) as {
+        opts: { jobId: string };
+        validateOptions: (jobData: { data: string }) => void;
+      };
+      rejected.opts = { jobId: key };
+      expect(() => rejected.validateOptions({ data: '{}' })).toThrow(
+        'Custom Id cannot contain :',
+      );
+
+      const rows: Array<{
+        event_id: number;
+        idempotency_key?: string;
+        processed: boolean;
+      }> = [];
+      const store = {
+        achievement_event_log: {
+          create: async (args: {
+            data: { idempotency_key?: string; processed?: boolean };
+          }) => {
+            const row = {
+              event_id: rows.length + 1,
+              processed: false,
+              ...args.data,
+            };
+            rows.push(row);
+            return row;
+          },
+          findFirst: async (args: { where: { idempotency_key: string } }) =>
+            rows.find(
+              (row) => row.idempotency_key === args.where.idempotency_key,
+            ) ?? null,
+          findUnique: async (args: { where: { event_id: number } }) =>
+            rows.find((row) => row.event_id === args.where.event_id) ?? null,
+          update: async (args: {
+            where: { event_id: number };
+            data: { processed: boolean };
+          }) => {
+            const row = rows.find(
+              (item) => item.event_id === args.where.event_id,
+            );
+            if (!row) {
+              throw new Error('event missing');
+            }
+            row.processed = args.data.processed;
+            return row;
+          },
+        },
+        achievements: { findMany: async () => [] },
+        $queryRaw: async () => [],
+        $executeRaw: async () => 0,
+        $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn(store),
+      };
+      const jobs = new Map<
+        string,
+        { name: string; data: { eventLogId: number } }
+      >();
+      let failures = 1;
+      const queue = {
+        add: async (
+          name: string,
+          data: { eventLogId: number },
+          opts: { jobId?: string } = {},
+        ) => {
+          const probe = Object.create(Job.prototype) as {
+            opts: { jobId?: string };
+            name: string;
+            validateOptions: (jobData: { data: string }) => void;
+          };
+          probe.opts = opts;
+          probe.name = name;
+          probe.validateOptions({ data: JSON.stringify(data ?? {}) });
+          if (failures > 0) {
+            failures -= 1;
+            throw new Error('redis down');
+          }
+          const id = opts.jobId ?? '';
+          if (jobs.has(id)) {
+            throw new Error(`Job ${id} already exists`);
+          }
+          jobs.set(id, { name, data });
+          return { id };
+        },
+      };
+      const durable = new AchievementsService(
+        store as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+      const dto = {
+        userId: 'user-1',
+        eventType: 'class.completed',
+        payload: { class_id: 7 },
+        idempotencyKey: key,
+      };
+
+      await expect(durable.emitEvent(dto)).rejects.toThrow('redis down');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].idempotency_key).toBe(key);
+      expect(rows[0].processed).toBe(false);
+      expect(jobs.size).toBe(0);
+
+      await expect(durable.emitEvent(dto)).resolves.toMatchObject({
+        queued: true,
+      });
+      await expect(durable.emitEvent(dto)).resolves.toMatchObject({
+        queued: true,
+      });
+      expect(rows).toHaveLength(1);
+      expect(jobs.size).toBe(1);
+      const queued = [...jobs.entries()][0];
+      expect(queued[0]).toBe(achievementQueueJobId(key));
+      expect(queued[0].includes(':')).toBe(false);
+      expect(queued[1].name).toBe('evaluate');
+
+      const processor = new AchievementsProcessor(
+        store as never,
+        {} as never,
+        { notifySafe: async () => undefined } as never,
+      );
+      await processor.process({
+        name: 'evaluate',
+        data: queued[1].data,
+      } as never);
+      expect(rows[0].processed).toBe(true);
+      await expect(
+        processor.process({
+          name: 'evaluate',
+          data: queued[1].data,
+        } as never),
+      ).resolves.toEqual({ processed: 0 });
+      expect(rows).toHaveLength(1);
+    });
+
+    it('recovers the injected create when the client has no transaction', async () => {
+      let attempts = 0;
+      const rows: Array<{ event_id: number; idempotency_key?: string }> = [];
+      const stub = {
+        achievement_event_log: {
+          create: async (args: { data: { idempotency_key?: string } }) => {
+            attempts += 1;
+            if (attempts === 1) {
+              throw new Error('INJECTED_EVENT_INSERT_FAILURE');
+            }
+            const row = { event_id: 1, ...args.data };
+            rows.push(row);
+            return row;
+          },
+        },
+      };
+      const local = new AchievementsService(
+        stub as never,
+        {} as never,
+        {} as never,
+        undefined,
+      );
+      const dto = {
+        userId: 'user-1',
+        eventType: 'class.completed',
+        payload: { class_id: 7 },
+        idempotencyKey: 'investiture-authorization:person-1',
+      };
+
+      await expect(local.emitEvent(dto)).rejects.toThrow(
+        'INJECTED_EVENT_INSERT_FAILURE',
+      );
+      const recovered = await local.emitEvent(dto);
+
+      expect(recovered.eventLogId).toBe(1);
+      expect(attempts).toBe(2);
+      expect(rows).toHaveLength(1);
     });
   });
 

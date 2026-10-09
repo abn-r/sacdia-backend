@@ -153,6 +153,51 @@ export class InvestitureAuthorizationRequestsController {
     return { status: 'success', data };
   }
 
+  @Get('investiture-history')
+  @ApiOperation({
+    summary:
+      'Historial de investidura de quien consulta. Un cierre de año no usa el texto de falta de requisitos.',
+  })
+  async ownHistory(@Request() req: AuthenticatedRequest) {
+    const data = await this.requests.ownHistory(req.user.sub);
+    return { status: 'success', data };
+  }
+
+  @Get('club-sections/:sectionId/investiture-history')
+  @ApiOperation({
+    summary:
+      'Historial de investidura de la sección para su directiva. No incluye otras secciones.',
+  })
+  async sectionHistory(
+    @Request() req: AuthenticatedRequest,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+  ) {
+    const profile = await this.authorizationContext.resolveUserAuthorization(
+      req.user.sub,
+    );
+    const data = await this.requests.sectionHistory(
+      profile.authorization,
+      sectionId,
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('club-sections/:sectionId/investiture-yearbook')
+  @ApiOperation({
+    summary:
+      'Anuario de inscripciones por clase y año de esa sección. No es un aviso.',
+  })
+  async yearbook(
+    @Request() req: AuthenticatedRequest,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+  ) {
+    const profile = await this.authorizationContext.resolveUserAuthorization(
+      req.user.sub,
+    );
+    const data = await this.requests.yearbook(profile.authorization, sectionId);
+    return { status: 'success', data };
+  }
+
   @Get('investiture-requests')
   @ApiOperation({
     summary:

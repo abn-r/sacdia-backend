@@ -90,17 +90,21 @@ For each Render service, go to **Environment > Environment Variables** and add:
 
 ```
 EMAIL_ENABLED=false
+INVESTITURE_EMAIL_ENABLED=false
 RESEND_API_KEY=re_dev_xxx
 RESEND_FROM_EMAIL=SACDIA Dev <noreply@dev.sacdia.app>
 RESEND_REPLY_TO=hola@sacdia.app
 ```
 
-Keep `EMAIL_ENABLED=false` until DNS is verified for `dev.sacdia.app`.
+Keep `EMAIL_ENABLED=false` until DNS is verified for `dev.sacdia.app`. Keep `INVESTITURE_EMAIL_ENABLED=false` until the admin panel serves `/investiture-requests/[requestId]`. `EMAIL_ENABLED=true` does not require `ADMIN_PANEL_URL`. That URL is required only when `INVESTITURE_EMAIL_ENABLED=true`.
+
+Presentation and reminder mail is delivered only when both `INVESTITURE_EMAIL_ENABLED` and `EMAIL_ENABLED` are `true`. If either is off, those rows are stored as `skipped` with `last_error=investiture_email_disabled`. A job already queued is checked again before the provider is called and is skipped the same way. Turning either switch on later does not send that backlog. The in-app result inbox does not use these switches.
 
 ### sacdia-backend-staging
 
 ```
 EMAIL_ENABLED=true
+INVESTITURE_EMAIL_ENABLED=false
 RESEND_API_KEY=re_staging_xxx
 RESEND_FROM_EMAIL=SACDIA Staging <noreply@staging.sacdia.app>
 RESEND_REPLY_TO=hola@sacdia.app
@@ -110,6 +114,7 @@ RESEND_REPLY_TO=hola@sacdia.app
 
 ```
 EMAIL_ENABLED=true
+INVESTITURE_EMAIL_ENABLED=false
 RESEND_API_KEY=re_prod_xxx
 RESEND_FROM_EMAIL=SACDIA <noreply@sacdia.app>
 RESEND_REPLY_TO=hola@sacdia.app

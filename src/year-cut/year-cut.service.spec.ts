@@ -108,7 +108,21 @@ function makePrismaMock() {
         .fn()
         .mockResolvedValue({ name: 'Club Test', local_field_id: 77 }),
     },
-    club_sections: { findFirst: jest.fn(), findUnique: jest.fn() },
+    club_sections: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    ecclesiastical_years: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    investiture_authorization_people: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    investiture_authorization_requests: {
+      create: jest.fn(),
+    },
     club_role_assignments: {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(null),
@@ -188,7 +202,9 @@ describe('YearCutService', () => {
         { provide: PrismaService, useValue: prisma },
         {
           provide: EcclesiasticalYearService,
-          useValue: { getCurrentYear: jest.fn().mockResolvedValue(CURRENT_YEAR) },
+          useValue: {
+            getCurrentYear: jest.fn().mockResolvedValue(CURRENT_YEAR),
+          },
         },
         {
           provide: AuthorizationContextVersionService,
@@ -271,7 +287,8 @@ describe('YearCutService', () => {
       const yearIdNotFilter = (
         prisma.club_role_assignments.findMany as jest.Mock
       ).mock.calls.some(
-        (call) => call[0]?.where?.ecclesiastical_year_id?.not === YEAR_ID_CURRENT,
+        (call) =>
+          call[0]?.where?.ecclesiastical_year_id?.not === YEAR_ID_CURRENT,
       );
       expect(yearIdNotFilter).toBe(false);
     });
@@ -619,7 +636,9 @@ describe('YearCutService', () => {
       });
 
       const summary = await service.applyCut();
-      expect(prisma.class_counselor_assignments.updateMany).toHaveBeenCalledWith(
+      expect(
+        prisma.class_counselor_assignments.updateMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             active: false,
@@ -791,7 +810,9 @@ describe('YearCutService', () => {
     }
 
     it('B04 enrolls last AV member into CQ and skips origin inactive', async () => {
-      prisma.club_role_assignments.findMany.mockResolvedValue([expiredAvMember()]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        expiredAvMember(),
+      ]);
       prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
       nextClassResolver.resolve.mockResolvedValue({
         kind: 'next_class',
@@ -824,7 +845,9 @@ describe('YearCutService', () => {
     });
 
     it('B05 still enrolls when the last AV class is in progress', async () => {
-      prisma.club_role_assignments.findMany.mockResolvedValue([expiredAvMember()]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        expiredAvMember(),
+      ]);
       prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
       nextClassResolver.resolve.mockResolvedValue({
         kind: 'next_class',
@@ -842,7 +865,9 @@ describe('YearCutService', () => {
     });
 
     it('B06 age short does not enroll CQ', async () => {
-      prisma.club_role_assignments.findMany.mockResolvedValue([expiredAvMember()]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        expiredAvMember(),
+      ]);
       prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
       nextClassResolver.resolve.mockResolvedValue({
         kind: 'configuration_error',
@@ -855,7 +880,9 @@ describe('YearCutService', () => {
     });
 
     it('B07 missing dest section does not enroll CQ', async () => {
-      prisma.club_role_assignments.findMany.mockResolvedValue([expiredAvMember()]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        expiredAvMember(),
+      ]);
       prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
       nextClassResolver.resolve.mockResolvedValue({
         kind: 'configuration_error',
@@ -909,7 +936,9 @@ describe('YearCutService', () => {
     });
 
     it('B11 board CQ return does not use the type-jump path', async () => {
-      prisma.club_role_assignments.findMany.mockResolvedValue([expiredCqDirector()]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        expiredCqDirector(),
+      ]);
       prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
       nextClassResolver.resolve.mockResolvedValue({
         kind: 'next_class',
@@ -926,6 +955,157 @@ describe('YearCutService', () => {
       expect(policy.ensureNotEnrolled).toHaveBeenCalled();
       expect(summary.returnedNotEnrolled).toBe(1);
       expect(summary.typeGraduatesEnrolled).toBe(0);
+    });
+  });
+
+  describe('investiture year close', () => {
+    const pendingPerson = {
+      person_id: 'pending-person',
+      user_id: USER_MEMBER,
+      enrollment_id: 4,
+      request: {
+        club_section_id: CQ_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_PREV,
+      },
+    };
+
+    function endedYearFixture() {
+      let open = true;
+      prisma.ecclesiastical_years.findMany.mockResolvedValue([
+        { year_id: YEAR_ID_PREV },
+      ]);
+      prisma.club_sections.findMany.mockResolvedValue([
+        { club_section_id: CQ_SECTION_ID, main_club_id: CLUB_ID },
+      ]);
+      prisma.investiture_authorization_people.findMany.mockImplementation(
+        async () => (open ? [pendingPerson] : []),
+      );
+      prisma.investiture_authorization_people.updateMany.mockImplementation(
+        async () => {
+          if (!open) {
+            return { count: 0 };
+          }
+          open = false;
+          return { count: 1 };
+        },
+      );
+    }
+
+    it('closes pending people of the ended year and still applies annual continuity', async () => {
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        expiredCqDirector(),
+      ]);
+      prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
+      endedYearFixture();
+
+      const summary = await service.applyCut();
+
+      expect(summary.investiturePendingClosed).toBe(1);
+      expect(policy.ensureNotEnrolled).toHaveBeenCalled();
+      expect(
+        prisma.investiture_authorization_people.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: 'PENDING',
+            request: {
+              ecclesiastical_year_id: { in: [YEAR_ID_PREV] },
+              club_section_id: { in: [CQ_SECTION_ID] },
+            },
+          },
+        }),
+      );
+      expect(
+        prisma.investiture_authorization_people.updateMany,
+      ).toHaveBeenCalledWith({
+        where: {
+          person_id: { in: ['pending-person'] },
+          status: 'PENDING',
+        },
+        data: {
+          status: 'CLOSED_YEAR',
+          resolution_code: 'CLOSED_YEAR',
+        },
+      });
+      expect(
+        prisma.investiture_authorization_requests.create,
+      ).not.toHaveBeenCalled();
+      expect(
+        JSON.stringify(
+          prisma.investiture_authorization_people.updateMany.mock.calls,
+        ),
+      ).not.toContain('Falta de requisitos para investidura');
+    });
+
+    it('closes leftovers on an already completed cut without enrolling again', async () => {
+      prisma.club_year_transitions.findMany.mockResolvedValue([
+        { club_id: CLUB_ID, status: 'completed' },
+      ]);
+      prisma.club_year_transitions.findUnique.mockResolvedValue({
+        transition_id: 't1',
+        status: 'completed',
+      });
+      endedYearFixture();
+
+      const summary = await service.applyCut();
+
+      expect(summary.ended).toBe(0);
+      expect(summary.investiturePendingClosed).toBe(1);
+      expect(policy.ensureNotEnrolled).not.toHaveBeenCalled();
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+      expect(
+        prisma.investiture_authorization_people.updateMany,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes a club whose only pending work is an ended-year investiture', async () => {
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+      prisma.director_succession_plans.findMany.mockResolvedValue([]);
+      prisma.club_year_transitions.findMany.mockResolvedValue([]);
+      prisma.club_year_transitions.findUnique.mockResolvedValue({
+        transition_id: 't-done',
+        status: 'completed',
+      });
+      endedYearFixture();
+
+      const summary = await service.applyCut();
+
+      expect(summary.investiturePendingClosed).toBe(1);
+      expect(summary.ended).toBe(0);
+      expect(summary.activated).toBe(0);
+      expect(policy.ensureNotEnrolled).not.toHaveBeenCalled();
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+      expect(
+        prisma.investiture_authorization_requests.create,
+      ).not.toHaveBeenCalled();
+      expect(prisma.club_year_transitions.upsert).not.toHaveBeenCalled();
+      expect(prisma.club_year_transitions.findUnique).toHaveBeenCalled();
+
+      const again = await service.applyCut();
+      expect(again.investiturePendingClosed).toBe(0);
+      expect(again.ended).toBe(0);
+      expect(policy.ensureNotEnrolled).not.toHaveBeenCalled();
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+      expect(
+        prisma.investiture_authorization_requests.create,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('closes investiture pending when the club has no transition and no cargos', async () => {
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+      prisma.director_succession_plans.findMany.mockResolvedValue([]);
+      prisma.club_year_transitions.findMany.mockResolvedValue([]);
+      prisma.club_year_transitions.findUnique.mockResolvedValue(null);
+      endedYearFixture();
+
+      const summary = await service.applyCut();
+
+      expect(summary.investiturePendingClosed).toBe(1);
+      expect(policy.ensureNotEnrolled).not.toHaveBeenCalled();
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+      expect(
+        prisma.investiture_authorization_requests.create,
+      ).not.toHaveBeenCalled();
     });
   });
 });

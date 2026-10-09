@@ -28,6 +28,11 @@ describe('CertificateBulkImportsService', () => {
     classes: { findUnique: jest.fn() },
     users: { findUnique: jest.fn() },
     ecclesiastical_years: { findMany: jest.fn() },
+    enrollments: { findMany: jest.fn() },
+    investiture_authorization_people: {
+      findMany: jest.fn(),
+      updateMany: jest.fn(),
+    },
     certificate_bulk_import_item_events: {
       create: jest.fn(),
     },
@@ -73,6 +78,11 @@ describe('CertificateBulkImportsService', () => {
       },
     ]);
     tx.certificate_bulk_import_items.findMany.mockResolvedValue([]);
+    tx.enrollments.findMany.mockResolvedValue([]);
+    tx.investiture_authorization_people.findMany.mockResolvedValue([]);
+    tx.investiture_authorization_people.updateMany.mockResolvedValue({
+      count: 0,
+    });
   });
 
   it('creates a draft batch for the owner and stores proof files', async () => {
@@ -596,7 +606,9 @@ describe('CertificateBulkImportsService', () => {
       },
     ]);
     tx.certificate_bulk_import_items.findMany.mockImplementation(
-      async (args: { where?: { status?: { in?: string[] }; item_type?: string } }) => {
+      async (args: {
+        where?: { status?: { in?: string[] }; item_type?: string };
+      }) => {
         if (args.where?.status?.in) {
           return [
             {
@@ -823,5 +835,473 @@ describe('CertificateBulkImportsService', () => {
     await expect(
       service.getBatch('user-1', 'batch-404'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  function sameYearPending() {
+    tx.enrollments.findMany.mockResolvedValue([
+      {
+        enrollment_id: 40,
+        ecclesiastical_year_id: 2026,
+        record_kind: 'OPERATIONAL',
+      },
+    ]);
+    tx.investiture_authorization_people.findMany.mockResolvedValue([
+      {
+        person_id: 'person-pedro',
+        enrollment_id: 40,
+        request: { ecclesiastical_year_id: 2026 },
+        enrollment: {
+          ecclesiastical_year_id: 2026,
+          record_kind: 'OPERATIONAL',
+        },
+      },
+    ]);
+  }
+
+  it('C1-H1 warns when the certificate year is the request year of a multi-year enrollment', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+    });
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'NEEDS_REVIEW',
+      revision: 0,
+      item_type: CertificateBulkImportItemType.CLASS,
+      class_id: 4,
+    });
+    tx.ecclesiastical_years.findMany.mockResolvedValue([
+      {
+        year_id: 2026,
+        start_date: new Date('2026-01-01T00:00:00.000Z'),
+        end_date: new Date('2026-12-31T00:00:00.000Z'),
+        active: true,
+      },
+    ]);
+    tx.enrollments.findMany.mockResolvedValue([
+      {
+        enrollment_id: 40,
+        ecclesiastical_year_id: 2025,
+        record_kind: 'OPERATIONAL',
+      },
+    ]);
+    tx.investiture_authorization_people.findMany.mockResolvedValue([
+      {
+        person_id: 'person-pedro',
+        enrollment_id: 40,
+        request: { ecclesiastical_year_id: 2026 },
+        enrollment: {
+          ecclesiastical_year_id: 2025,
+          record_kind: 'OPERATIONAL',
+        },
+      },
+    ]);
+
+    await expect(
+      service.updateItem('user-1', 'batch-1', 'item-1', {
+        item_type: CertificateBulkImportItemType.CLASS,
+        class_id: 4,
+        completed_at: '2026-04-12',
+        mark_as_ready: true,
+        expected_revision: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: 'CERTIFICATE_IMPORT_AUTHORIZATION_PENDING',
+    });
+  });
+
+  it('C-1 warns before marking a same-year certificate ready', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+    });
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'NEEDS_REVIEW',
+      revision: 0,
+      item_type: CertificateBulkImportItemType.CLASS,
+      class_id: 4,
+    });
+    sameYearPending();
+
+    await expect(
+      service.updateItem('user-1', 'batch-1', 'item-1', {
+        item_type: CertificateBulkImportItemType.CLASS,
+        class_id: 4,
+        completed_at: '2026-04-12',
+        mark_as_ready: true,
+        expected_revision: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: 'CERTIFICATE_IMPORT_AUTHORIZATION_PENDING',
+    });
+    expect(tx.certificate_bulk_import_items.update).not.toHaveBeenCalled();
+  });
+
+  it('C-1 warns before submitting a same-year certificate', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 1,
+    });
+    tx.certificate_bulk_import_items.findMany.mockImplementation(
+      async (args: {
+        where?: { status?: { in?: string[] }; item_type?: string };
+      }) => {
+        if (args.where?.status?.in) {
+          return [
+            {
+              class_id: 4,
+              completed_at: new Date('2026-04-12T00:00:00.000Z'),
+            },
+          ];
+        }
+        if (args.where?.item_type === CertificateBulkImportItemType.CLASS) {
+          return [{ item_id: 'item-1', class: { asset_code: 'CQ-01' } }];
+        }
+        return [];
+      },
+    );
+    sameYearPending();
+
+    await expect(service.submit('user-1', 'batch-1')).rejects.toMatchObject({
+      code: 'CERTIFICATE_IMPORT_AUTHORIZATION_PENDING',
+    });
+    expect(tx.certificate_bulk_import_items.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('C-1 warns before resubmitting a same-year certificate', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'NEEDS_CORRECTION',
+    });
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'REJECTED',
+      item_type: CertificateBulkImportItemType.CLASS,
+      class_id: 4,
+    });
+    sameYearPending();
+
+    await expect(
+      service.resubmitItem('user-1', 'batch-1', 'item-1', {
+        item_type: CertificateBulkImportItemType.CLASS,
+        class_id: 4,
+        completed_at: '2026-04-12',
+        mark_as_ready: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'CERTIFICATE_IMPORT_AUTHORIZATION_PENDING',
+    });
+    expect(tx.certificate_bulk_import_items.update).not.toHaveBeenCalled();
+  });
+
+  it('BC-9 keeps a valid ready item and sends an invalid age to review', async () => {
+    tx.certificate_bulk_import_batches.create.mockResolvedValue({
+      batch_id: 'batch-1',
+      status: 'DRAFT',
+      user_id: 'user-1',
+    });
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([
+      {
+        item_id: 'item-valid',
+        item_type: 'CLASS',
+        class_id: 4,
+        completed_at: new Date('2026-06-01T00:00:00.000Z'),
+        status: 'READY',
+      },
+    ]);
+    await service.createDraft('user-1', {
+      items: [
+        {
+          item_type: CertificateBulkImportItemType.CLASS,
+          class_id: 4,
+          completed_at: '2026-06-01',
+          mark_as_ready: true,
+        },
+      ],
+    });
+    expect(tx.certificate_bulk_import_items.update).not.toHaveBeenCalled();
+
+    tx.certificate_bulk_import_items.update.mockClear();
+    tx.users.findUnique.mockResolvedValue({
+      birthday: new Date('2018-01-01T00:00:00.000Z'),
+    });
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([
+      {
+        item_id: 'item-young',
+        item_type: 'CLASS',
+        class_id: 4,
+        completed_at: new Date('2026-06-01T00:00:00.000Z'),
+        status: 'READY',
+      },
+    ]);
+    await service.createDraft('user-1', {
+      items: [
+        {
+          item_type: CertificateBulkImportItemType.CLASS,
+          class_id: 4,
+          completed_at: '2026-06-01',
+          mark_as_ready: true,
+        },
+      ],
+    });
+    expect(tx.certificate_bulk_import_items.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { item_id: 'item-young' },
+        data: expect.objectContaining({ status: 'NEEDS_REVIEW' }),
+      }),
+    );
+  });
+
+  it('BCR-9 sends a ready item with a future completed_at to review on draft creation', async () => {
+    tx.certificate_bulk_import_batches.create.mockResolvedValue({
+      batch_id: 'batch-1',
+      status: 'DRAFT',
+      user_id: 'user-1',
+    });
+    const future = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([
+      {
+        item_id: 'item-future',
+        item_type: 'CLASS',
+        class_id: 4,
+        completed_at: future,
+        status: 'READY',
+      },
+    ]);
+
+    await service.createDraft('user-1', {
+      items: [
+        {
+          item_type: CertificateBulkImportItemType.CLASS,
+          class_id: 4,
+          completed_at: future.toISOString().slice(0, 10),
+          mark_as_ready: true,
+        },
+      ],
+    });
+
+    expect(tx.certificate_bulk_import_items.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { item_id: 'item-future' },
+        data: expect.objectContaining({
+          status: 'NEEDS_REVIEW',
+          rejection_reason: 'CERTIFICATE_IMPORT_DATE_IN_FUTURE',
+        }),
+      }),
+    );
+  });
+
+  it('BCR-9 sends an added ready item with a future completed_at to review', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+    });
+    tx.certificate_bulk_import_items.create.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) => ({
+        item_id: 'item-new',
+        ...data,
+      }),
+    );
+    const future = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    const item = await service.addItem('user-1', 'batch-1', {
+      item_type: CertificateBulkImportItemType.CLASS,
+      class_id: 4,
+      completed_at: future,
+      mark_as_ready: true,
+    });
+
+    expect(item).toMatchObject({
+      status: 'NEEDS_REVIEW',
+      rejection_reason: 'CERTIFICATE_IMPORT_DATE_IN_FUTURE',
+    });
+  });
+
+  it('BCR33-N3 sends a ready item with an invalid catalog to review on draft creation instead of failing the batch', async () => {
+    tx.certificate_bulk_import_batches.create.mockResolvedValue({
+      batch_id: 'batch-1',
+      status: 'DRAFT',
+      user_id: 'user-1',
+    });
+    tx.honors.findUnique.mockResolvedValue({ active: false });
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([
+      {
+        item_id: 'item-honor',
+        item_type: 'HONOR',
+        honor_id: 99,
+        completed_at: new Date('2026-06-01T00:00:00.000Z'),
+        status: 'READY',
+      },
+    ]);
+
+    await expect(
+      service.createDraft('user-1', {
+        items: [
+          {
+            item_type: CertificateBulkImportItemType.HONOR,
+            honor_id: 99,
+            completed_at: '2026-06-01',
+            mark_as_ready: true,
+          },
+        ],
+      }),
+    ).resolves.toBeDefined();
+
+    expect(tx.certificate_bulk_import_items.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { item_id: 'item-honor' },
+        data: expect.objectContaining({
+          status: 'NEEDS_REVIEW',
+          rejection_reason: 'CERTIFICATE_IMPORT_CATALOG_NOT_FOUND',
+        }),
+      }),
+    );
+  });
+
+  it('BCR33-N3 adds a ready item with an unknown class as NEEDS_REVIEW with the catalog code', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+    });
+    tx.classes.findUnique.mockResolvedValue(null);
+    tx.certificate_bulk_import_items.create.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) => ({
+        item_id: 'item-new',
+        ...data,
+      }),
+    );
+
+    const item = await service.addItem('user-1', 'batch-1', {
+      item_type: CertificateBulkImportItemType.CLASS,
+      class_id: 404,
+      completed_at: '2026-06-01',
+      mark_as_ready: true,
+    });
+
+    expect(item).toMatchObject({
+      status: 'NEEDS_REVIEW',
+      rejection_reason: 'CERTIFICATE_IMPORT_CATALOG_NOT_FOUND',
+    });
+  });
+
+  it('BCR33-N5 documents that a future date is born NEEDS_REVIEW on creation but is a 400 on updateItem', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+    });
+    tx.certificate_bulk_import_items.create.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) => ({
+        item_id: 'item-new',
+        ...data,
+      }),
+    );
+    const future = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    const created = await service.addItem('user-1', 'batch-1', {
+      item_type: CertificateBulkImportItemType.CLASS,
+      class_id: 4,
+      completed_at: future,
+      mark_as_ready: false,
+    });
+    expect(created).toMatchObject({
+      status: 'NEEDS_REVIEW',
+      rejection_reason: 'CERTIFICATE_IMPORT_DATE_IN_FUTURE',
+    });
+
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      batch_id: 'batch-1',
+      item_type: 'CLASS',
+      class_id: 4,
+      completed_at: new Date('2026-06-01T00:00:00.000Z'),
+      status: 'NEEDS_REVIEW',
+      revision: 0,
+    });
+    await expect(
+      service.updateItem('user-1', 'batch-1', 'item-1', {
+        completed_at: future,
+        mark_as_ready: false,
+      }),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_DATE_IN_FUTURE');
+  });
+
+  it('BCR33-N3 keeps updateItem mark_as_ready returning 400 for an invalid catalog', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      revision: 0,
+    });
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      batch_id: 'batch-1',
+      item_type: 'HONOR',
+      honor_id: 99,
+      detected_name: 'Nudos',
+      completed_at: new Date('2026-06-01T00:00:00.000Z'),
+      status: 'NEEDS_REVIEW',
+      revision: 0,
+    });
+    tx.honors.findUnique.mockResolvedValue({ active: false });
+
+    await expect(
+      service.updateItem('user-1', 'batch-1', 'item-1', {
+        item_type: CertificateBulkImportItemType.HONOR,
+        honor_id: 99,
+        completed_at: '2026-06-01',
+        mark_as_ready: true,
+      }),
+    ).rejects.toMatchObject({
+      message: 'CERTIFICATE_IMPORT_CATALOG_NOT_FOUND',
+    });
+    expect(tx.certificate_bulk_import_items.update).not.toHaveBeenCalled();
+  });
+
+  it('BCR-9 keeps a ready item with a past completed_at as READY on creation', async () => {
+    tx.certificate_bulk_import_batches.create.mockResolvedValue({
+      batch_id: 'batch-1',
+      status: 'DRAFT',
+      user_id: 'user-1',
+    });
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([
+      {
+        item_id: 'item-past',
+        item_type: 'CLASS',
+        class_id: 4,
+        completed_at: new Date('2026-06-01T00:00:00.000Z'),
+        status: 'READY',
+      },
+    ]);
+
+    await service.createDraft('user-1', {
+      items: [
+        {
+          item_type: CertificateBulkImportItemType.CLASS,
+          class_id: 4,
+          completed_at: '2026-06-01',
+          mark_as_ready: true,
+        },
+      ],
+    });
+
+    expect(tx.certificate_bulk_import_items.update).not.toHaveBeenCalled();
   });
 });

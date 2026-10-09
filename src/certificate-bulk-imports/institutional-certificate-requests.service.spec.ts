@@ -28,6 +28,11 @@ describe('InstitutionalCertificateRequestsService', () => {
     users: { findUnique: jest.fn() },
     classes: { findUnique: jest.fn() },
     ecclesiastical_years: { findMany: jest.fn() },
+    enrollments: { findMany: jest.fn() },
+    investiture_authorization_people: {
+      findMany: jest.fn(),
+      updateMany: jest.fn(),
+    },
   };
 
   const prisma = {
@@ -43,7 +48,12 @@ describe('InstitutionalCertificateRequestsService', () => {
     institutional_certificate_request_events: { create: jest.fn() },
     ecclesiastical_years: { findMany: jest.fn() },
     users: { findUnique: jest.fn() },
-    enrollments: { create: jest.fn() },
+    enrollments: { create: jest.fn(), findMany: jest.fn() },
+    investiture_authorization_people: {
+      findMany: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    $executeRaw: jest.fn(),
     $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) =>
       callback(tx),
     ),
@@ -87,6 +97,17 @@ describe('InstitutionalCertificateRequestsService', () => {
       birthday: new Date('1980-01-01T00:00:00.000Z'),
     });
     tx.classes.findUnique.mockResolvedValue({ minimum_age: 16 });
+    tx.enrollments.findMany.mockResolvedValue([]);
+    tx.investiture_authorization_people.findMany.mockResolvedValue([]);
+    tx.investiture_authorization_people.updateMany.mockResolvedValue({
+      count: 0,
+    });
+    prisma.enrollments.findMany.mockResolvedValue([]);
+    prisma.investiture_authorization_people.findMany.mockResolvedValue([]);
+    prisma.investiture_authorization_people.updateMany.mockResolvedValue({
+      count: 1,
+    });
+    prisma.$executeRaw.mockResolvedValue(0);
     tx.ecclesiastical_years.findMany.mockResolvedValue([
       {
         year_id: 2008,
@@ -203,7 +224,9 @@ describe('InstitutionalCertificateRequestsService', () => {
     });
 
     expect(view.request_id).toBe('request-1');
-    expect(tx.institutional_certificate_request_events.create).not.toHaveBeenCalled();
+    expect(
+      tx.institutional_certificate_request_events.create,
+    ).not.toHaveBeenCalled();
     expect(prisma.enrollments.create).not.toHaveBeenCalled();
   });
 
@@ -290,7 +313,11 @@ describe('InstitutionalCertificateRequestsService', () => {
     prisma.institutional_certificate_requests.findFirst
       .mockResolvedValueOnce(requestRow())
       .mockResolvedValueOnce(
-        requestRow({ status: 'APPROVED', ecclesiastical_year_id: 2008, revision: 1 }),
+        requestRow({
+          status: 'APPROVED',
+          ecclesiastical_year_id: 2008,
+          revision: 1,
+        }),
       );
     prisma.institutional_certificate_requests.updateMany.mockResolvedValue({
       count: 1,
@@ -399,7 +426,11 @@ describe('InstitutionalCertificateRequestsService', () => {
     prisma.institutional_certificate_requests.findFirst
       .mockResolvedValueOnce(requestRow())
       .mockResolvedValueOnce(
-        requestRow({ status: 'APPROVED', ecclesiastical_year_id: 2008, revision: 1 }),
+        requestRow({
+          status: 'APPROVED',
+          ecclesiastical_year_id: 2008,
+          revision: 1,
+        }),
       );
     prisma.institutional_certificate_requests.updateMany.mockResolvedValue({
       count: 1,
@@ -443,5 +474,127 @@ describe('InstitutionalCertificateRequestsService', () => {
     expect(
       prisma.institutional_certificate_requests.updateMany,
     ).not.toHaveBeenCalled();
+  });
+
+  it('C-1 rejects an institutional same-year approval while the request is pending', async () => {
+    approveOnPrisma();
+    prisma.ecclesiastical_years.findMany.mockResolvedValue([
+      {
+        year_id: 2008,
+        start_date: new Date('2008-01-01T00:00:00.000Z'),
+        end_date: new Date('2099-12-31T00:00:00.000Z'),
+        active: true,
+      },
+    ]);
+    prisma.institutional_certificate_requests.findFirst.mockResolvedValue(
+      requestRow(),
+    );
+    prisma.enrollments.findMany.mockResolvedValue([
+      {
+        enrollment_id: 15,
+        ecclesiastical_year_id: 2008,
+        record_kind: 'OPERATIONAL',
+      },
+    ]);
+    prisma.investiture_authorization_people.findMany.mockResolvedValue([
+      {
+        person_id: 'person-ana',
+        enrollment_id: 15,
+        request: { ecclesiastical_year_id: 2008 },
+        enrollment: {
+          ecclesiastical_year_id: 2008,
+          record_kind: 'OPERATIONAL',
+        },
+      },
+    ]);
+
+    await expect(
+      service.approve('super-1', 'request-1', { expected_revision: 0 }),
+    ).rejects.toMatchObject({
+      code: 'CERTIFICATE_IMPORT_AUTHORIZATION_PENDING',
+    });
+    expect(
+      prisma.institutional_certificate_requests.updateMany,
+    ).not.toHaveBeenCalled();
+    expect(prisma.enrollments.create).not.toHaveBeenCalled();
+  });
+
+  it('C-1 retires the pending person when an earlier institutional certificate is approved', async () => {
+    approveOnPrisma();
+    prisma.ecclesiastical_years.findMany.mockImplementation(
+      async (args: { where?: { year_id?: { in?: number[] } } }) =>
+        args?.where?.year_id?.in
+          ? [
+              {
+                year_id: 2008,
+                start_date: new Date('2008-01-01T00:00:00.000Z'),
+                end_date: new Date('2008-12-31T00:00:00.000Z'),
+                active: false,
+              },
+              {
+                year_id: 2026,
+                start_date: new Date('2026-01-01T00:00:00.000Z'),
+                end_date: new Date('2026-12-31T00:00:00.000Z'),
+                active: true,
+              },
+            ]
+          : [
+              {
+                year_id: 2008,
+                start_date: new Date('2008-01-01T00:00:00.000Z'),
+                end_date: new Date('2008-12-31T00:00:00.000Z'),
+                active: false,
+              },
+            ],
+    );
+    prisma.institutional_certificate_requests.findFirst
+      .mockResolvedValueOnce(requestRow())
+      .mockResolvedValueOnce(
+        requestRow({
+          status: 'APPROVED',
+          ecclesiastical_year_id: 2008,
+          revision: 1,
+        }),
+      );
+    prisma.institutional_certificate_requests.updateMany.mockResolvedValue({
+      count: 1,
+    });
+    prisma.enrollments.findMany.mockResolvedValue([
+      {
+        enrollment_id: 15,
+        ecclesiastical_year_id: 2026,
+        record_kind: 'OPERATIONAL',
+      },
+    ]);
+    prisma.investiture_authorization_people.findMany.mockResolvedValue([
+      {
+        person_id: 'person-ana',
+        enrollment_id: 15,
+        request: { ecclesiastical_year_id: 2026 },
+        enrollment: {
+          ecclesiastical_year_id: 2026,
+          record_kind: 'OPERATIONAL',
+        },
+      },
+    ]);
+
+    const approved = await service.approve('super-1', 'request-1', {
+      expected_revision: 0,
+    });
+
+    expect(approved.status).toBe('APPROVED');
+    expect(prisma.enrollments.create).not.toHaveBeenCalled();
+    expect(
+      prisma.investiture_authorization_people.updateMany,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'REMOVED',
+          resolution_code: 'HISTORICAL_CERTIFICATE_APPLIED',
+          system_reason:
+            'Investidura aplicada por certificado de un año anterior',
+        }),
+      }),
+    );
   });
 });

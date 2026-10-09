@@ -27,6 +27,7 @@ type ThresholdContext = {
   timeZone: string;
   yearStart: string;
   yearEnd: string;
+  yearActive: boolean;
   minimumPercent: number | null;
 };
 
@@ -133,7 +134,7 @@ export class FieldClassThresholdConfigService {
 
     const year = await this.prisma.ecclesiastical_years.findUnique({
       where: { year_id: ecclesiasticalYearId },
-      select: { start_date: true, end_date: true },
+      select: { start_date: true, end_date: true, active: true },
     });
     if (!year?.start_date || !year.end_date) {
       throw new AppNotFoundException(ErrorCode.CLASS_THRESHOLD_YEAR_NOT_FOUND);
@@ -153,6 +154,7 @@ export class FieldClassThresholdConfigService {
       timeZone: this.timezones.assertTimezone(field.timezone),
       yearStart: civilDate(year.start_date),
       yearEnd: civilDate(year.end_date),
+      yearActive: year.active !== false,
       minimumPercent: row?.minimum_percent ?? null,
     };
   }
@@ -162,6 +164,9 @@ export class FieldClassThresholdConfigService {
     context: ThresholdContext,
     now: Date,
   ): boolean {
+    if (!context.yearActive) {
+      return false;
+    }
     return canEditFieldClassThreshold({
       roles: (authorization.grants?.global_roles ?? []).map(
         (grant) => grant.role_name,
