@@ -443,6 +443,55 @@ describe('EvidenceReviewService', () => {
     );
   });
 
+  it('getHistory lists the instructor proposal actions (B9) without breaking the mapper', async () => {
+    const performer = { name: 'Ana', paternal_last_name: 'Pérez' };
+    const at = (minute: number) => new Date(`2026-10-12T10:0${minute}:00.000Z`);
+    mockPrisma.validation_logs.findMany.mockResolvedValue([
+      {
+        action: 'instructor_proposed',
+        performer,
+        comment: '{"proposal_id":"p-1","kind":"EXTERNAL"}',
+        created_at: at(1),
+      },
+      {
+        action: 'instructor_withdrawn',
+        performer,
+        comment: '{"proposal_id":"p-1"}',
+        created_at: at(2),
+      },
+      {
+        action: 'instructor_approved',
+        performer: null,
+        comment: '{"proposal_id":"p-2","kind":"USER","previous_kind":"NONE"}',
+        created_at: at(3),
+      },
+      {
+        action: 'instructor_rejected',
+        performer,
+        comment: '{"proposal_id":"p-3","reason":"No firmó"}',
+        created_at: at(4),
+      },
+      {
+        action: 'some_future_action',
+        performer,
+        comment: null,
+        created_at: at(5),
+      },
+    ]);
+
+    const history = await service.getHistory('actor-1', 'honor', 31);
+
+    expect(history.map((entry) => entry.action)).toEqual([
+      'instructor_proposed',
+      'instructor_withdrawn',
+      'instructor_approved',
+      'instructor_rejected',
+      'some_future_action',
+    ]);
+    expect(history[2].performed_by_name).toBeNull();
+    expect(history[0].comment).toBe('{"proposal_id":"p-1","kind":"EXTERNAL"}');
+  });
+
   describe('honor detail instructor and completion date (B5)', () => {
     const honorRecord = (extra: Record<string, unknown> = {}) => ({
       user_honor_id: 31,

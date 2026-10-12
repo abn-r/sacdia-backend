@@ -2562,6 +2562,9 @@ model users {
   certificate_bulk_import_reviews        certificate_bulk_import_items[]       @relation("certificate_import_item_reviewer")
   certificate_import_items_instructed    certificate_bulk_import_items[]       @relation("certificate_import_item_instructor")
   honors_instructed                      users_honors[]                        @relation("user_honor_instructor")
+  honor_instructor_proposals_proposed    honor_instructor_proposals[]          @relation("honor_instructor_proposal_proposer")
+  honor_instructor_proposals_as_instructor honor_instructor_proposals[]        @relation("honor_instructor_proposal_instructor")
+  honor_instructor_proposals_reviewed    honor_instructor_proposals[]          @relation("honor_instructor_proposal_reviewer")
   institutional_certificate_requests     institutional_certificate_requests[]  @relation("institutional_certificate_request_owner")
   institutional_certificate_reviews      institutional_certificate_requests[]  @relation("institutional_certificate_request_reviewer")
   institutional_certificate_events       institutional_certificate_request_events[] @relation("institutional_certificate_event_performer")
@@ -3598,6 +3601,7 @@ model users_honors {
   users                           users                             @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_user_id_fkey")
   validator                       users?                            @relation("honor_validator", fields: [validated_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   instructor                      users?                            @relation("user_honor_instructor", fields: [instructor_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  instructor_proposals              honor_instructor_proposals[]
   evidence_files                    evidence_files[]
   user_honor_requirement_progress   user_honor_requirement_progress[]
   certification_component_responses certification_component_responses[]
@@ -3606,6 +3610,38 @@ model users_honors {
   @@index([user_id], map: "idx_users_honors_user_id")
   @@index([validation_status], map: "idx_users_honors_validation_status")
   @@index([honor_id, active], map: "idx_users_honors_honor_active")
+}
+
+enum honor_instructor_proposal_status_enum {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+// M4 (20261013100000): propuesta de instructor sobre una especialidad APPROVED (D11). users_honors
+// no se toca hasta aprobar. CHECKs (un solo instructor, nombre 3..150, revisor/fecha, motivo) e
+// índices parciales (uq_honor_instructor_proposals_pending, idx_honor_instructor_proposals_queue)
+// viven en la migración; Prisma no expresa los índices parciales.
+model honor_instructor_proposals {
+  proposal_id        String                                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_honor_id      Int
+  proposed_by_id     String                                @db.Uuid
+  instructor_user_id String?                               @db.Uuid
+  instructor_name    String?                               @db.VarChar(150)
+  status             honor_instructor_proposal_status_enum @default(PENDING)
+  rejection_reason   String?
+  reviewed_by_id     String?                               @db.Uuid
+  reviewed_at        DateTime?                             @db.Timestamptz(6)
+  created_at         DateTime                              @default(now()) @db.Timestamptz(6)
+  modified_at        DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user_honor  users_honors @relation(fields: [user_honor_id], references: [user_honor_id], onDelete: NoAction, onUpdate: NoAction)
+  proposed_by users        @relation("honor_instructor_proposal_proposer", fields: [proposed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  instructor  users?       @relation("honor_instructor_proposal_instructor", fields: [instructor_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewed_by users?       @relation("honor_instructor_proposal_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([user_honor_id, created_at(sort: Desc)], map: "idx_honor_instructor_proposals_honor")
 }
 
 model users_permissions {
