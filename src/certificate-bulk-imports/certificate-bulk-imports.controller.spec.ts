@@ -2,6 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CertificateBulkImportsController } from './certificate-bulk-imports.controller';
 import { CertificateBulkImportsService } from './certificate-bulk-imports.service';
 import { CertificateImportFilesService } from './certificate-import-files.service';
+import { CertificateImportDraftDeletionService } from './certificate-import-draft-deletion.service';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { JwtAuthGuard } from '../common/guards';
+import { SKIP_PERMISSIONS_KEY } from '../common/decorators/skip-permissions.decorator';
 
 const mockService = {
   createDraft: jest.fn(),
@@ -23,6 +27,8 @@ const mockFiles = {
   remove: jest.fn(),
 };
 
+const mockDeletion = { deleteDraft: jest.fn() };
+
 const req = { user: { sub: 'user-1' } } as any;
 
 describe('CertificateBulkImportsController', () => {
@@ -34,6 +40,10 @@ describe('CertificateBulkImportsController', () => {
       providers: [
         { provide: CertificateBulkImportsService, useValue: mockService },
         { provide: CertificateImportFilesService, useValue: mockFiles },
+        {
+          provide: CertificateImportDraftDeletionService,
+          useValue: mockDeletion,
+        },
       ],
     }).compile();
 
@@ -145,5 +155,36 @@ describe('CertificateBulkImportsController', () => {
         CertificateBulkImportsController.prototype.listClassCatalog,
       ),
     ).toBe('catalog/classes');
+  });
+
+  it('deletes a draft for the authenticated owner', async () => {
+    mockDeletion.deleteDraft.mockResolvedValue({
+      batch_id: 'batch-1',
+      deleted: true,
+    });
+
+    await expect(controller.deleteDraft(req, 'batch-1')).resolves.toEqual({
+      status: 'success',
+      data: { batch_id: 'batch-1', deleted: true },
+    });
+    expect(mockDeletion.deleteDraft).toHaveBeenCalledWith('user-1', 'batch-1');
+  });
+
+  it('exposes DELETE :batchId behind the JWT guard without RBAC permissions', () => {
+    const handler = CertificateBulkImportsController.prototype.deleteDraft;
+    expect(Reflect.getMetadata('path', handler)).toBe(':batchId');
+    // RequestMethod.DELETE === 3
+    expect(Reflect.getMetadata('method', handler)).toBe(3);
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, CertificateBulkImportsController),
+    ).toContain(JwtAuthGuard);
+    expect(
+      Reflect.getMetadata(
+        SKIP_PERMISSIONS_KEY,
+        CertificateBulkImportsController,
+      ),
+    ).toBe(true);
+    const responses = Reflect.getMetadata('swagger/apiResponse', handler);
+    expect(Object.keys(responses)).toEqual(['200', '404', '409']);
   });
 });

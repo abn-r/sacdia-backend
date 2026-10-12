@@ -765,5 +765,7 @@
   "HONOR_DATE_IN_FUTURE": "A data não pode ser futura",
   "VALIDATION_HONOR_COMPLETED_AT_REQUIRED": "Informe a data de conclusão da especialidade antes de enviá-la para revisão",
   "CERTIFICATE_IMPORT_HONOR_INSTRUCTOR_NOT_ALLOWED": "Linhas de classe não têm instrutor de especialidade",
-  "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "O tipo de clube não corresponde à classe escolhida"
+  "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "O tipo de clube não corresponde à classe escolhida",
+  "CERTIFICATE_IMPORT_BATCH_NOT_DELETABLE": "Somente um rascunho sem solicitações institucionais pode ser excluído",
+  "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "A leitura OCR ainda está em andamento. Tente novamente em alguns segundos."
 }
