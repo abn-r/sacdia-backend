@@ -1,5 +1,8 @@
 import { ErrorCode } from '../common/errors/error-codes';
-import { HonorValidationWorkflowService } from './honor-validation-workflow.service';
+import {
+  HonorValidationWorkflowService,
+  REQUIRE_HONOR_COMPLETED_AT_ON_SUBMIT,
+} from './honor-validation-workflow.service';
 
 describe('HonorValidationWorkflowService', () => {
   const now = new Date('2026-06-01T12:00:00.000Z');
@@ -327,25 +330,26 @@ describe('HonorValidationWorkflowService', () => {
       });
     }
 
-    it.each([
-      ['IN_PROGRESS', 'IN_PROGRESS'],
-      ['REJECTED', 'REJECTED'],
-    ])(
-      'blocks a %s honor without completed_at and writes nothing',
-      async (status) => {
-        mockPrisma.users_honors.findUnique.mockResolvedValue(
-          inProgress({ validation_status: status, completed_at: null }),
-        );
+    it('keeps completed_at optional on submit until the app captures it', () => {
+      expect(REQUIRE_HONOR_COMPLETED_AT_ON_SUBMIT).toBe(false);
+    });
 
-        await expect(
-          service.submitForReview(10, 'user-1'),
-        ).rejects.toMatchObject({
-          code: ErrorCode.VALIDATION_HONOR_COMPLETED_AT_REQUIRED,
-        });
-        expect(mockPrisma.users_honors.update).not.toHaveBeenCalled();
-        expect(mockPrisma.validation_logs.create).not.toHaveBeenCalled();
-      },
-    );
+    it('does not reject an IN_PROGRESS honor for a missing completed_at', async () => {
+      mockPrisma.users_honors.findUnique.mockResolvedValue(
+        inProgress({ completed_at: null }),
+      );
+      mockPrisma.users_honors.update.mockResolvedValue(
+        honorRecord({ validation_status: 'PENDING_REVIEW', submitted_at: now }),
+      );
+
+      const outcome = await service
+        .submitForReview(10, 'user-1')
+        .catch((error: unknown) => error);
+
+      expect(outcome).not.toMatchObject({
+        code: ErrorCode.VALIDATION_HONOR_COMPLETED_AT_REQUIRED,
+      });
+    });
 
     it('reports missing evidence before the missing completion date', async () => {
       mockPrisma.users_honors.findUnique.mockResolvedValue(

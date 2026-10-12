@@ -22,6 +22,10 @@ const HONOR_COMPLETION_MODE_UNDECIDED = 'UNDECIDED' as const;
 const HONOR_COMPLETION_MODE_IN_APP = 'IN_APP' as const;
 const HONOR_COMPLETION_MODE_EXTERNAL = 'EXTERNAL' as const;
 
+// Apps published before the completion-date picker (S7) never send
+// completed_at. Flip to true once that app version is the minimum supported.
+export const REQUIRE_HONOR_COMPLETED_AT_ON_SUBMIT = false;
+
 type HonorCompletionMode =
   | typeof HONOR_COMPLETION_MODE_UNDECIDED
   | typeof HONOR_COMPLETION_MODE_IN_APP
@@ -310,12 +314,14 @@ export class HonorValidationWorkflowService {
   }
 
   /**
-   * La fecha de finalización es obligatoria para enviar a revisión (opcional en
-   * borrador). Se vuelve a validar el rango por si la fila llegó por otra vía.
+   * La fecha de finalización se exige al enviar a revisión solo cuando
+   * REQUIRE_HONOR_COMPLETED_AT_ON_SUBMIT es true (la app publicada aún no la
+   * captura). Si viene, se revalida el rango por si la fila llegó por otra vía.
    * El instructor sigue siendo opcional (D1).
    */
   private assertCompletedAt(userHonor: Pick<UserHonorRecord, 'completed_at'>) {
     if (!userHonor.completed_at) {
+      if (!REQUIRE_HONOR_COMPLETED_AT_ON_SUBMIT) return;
       throw new AppBadRequestException(
         ErrorCode.VALIDATION_HONOR_COMPLETED_AT_REQUIRED,
       );
