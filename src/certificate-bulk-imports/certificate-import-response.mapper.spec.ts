@@ -3,6 +3,7 @@ import {
   toPublicImportBatch,
   toPublicImportFile,
   toPublicImportItem,
+  withOcrState,
 } from './certificate-import-response.mapper';
 
 describe('certificate import response mapper', () => {
@@ -300,6 +301,61 @@ describe('certificate import response mapper', () => {
 
       expect(batch.items[0]).toMatchObject({ source_file_id: 'file-1', source_page: 3 });
       expect(batch.items[1]).toMatchObject({ source_file_id: null, source_page: null });
+    });
+  });
+
+  describe('withOcrState', () => {
+    const source = { batch_id: 'batch-1', files: [], items: [] };
+    const status = (
+      ocr_state: 'pending' | 'running' | 'done' | 'empty' | 'failed' | null,
+      ocr_error_code: string | null = null,
+    ) => ({ ocr_state, ocr_error_code });
+
+    it.each(['pending', 'running', 'done', 'empty', 'failed'] as const)(
+      'adds ocr_state=%s next to the public batch',
+      (state) => {
+        const out = withOcrState(toPublicImportBatch(source), status(state));
+
+        expect(out.ocr_state).toBe(state);
+        expect(out.ocr_error_code).toBeNull();
+        expect(out.batch_id).toBe('batch-1');
+      },
+    );
+
+    it('adds ocr_error_code next to a failed state', () => {
+      const out = withOcrState(
+        source,
+        status('failed', 'CERTIFICATE_IMPORT_OCR_QUOTA'),
+      );
+
+      expect(JSON.parse(JSON.stringify(out))).toMatchObject({
+        ocr_state: 'failed',
+        ocr_error_code: 'CERTIFICATE_IMPORT_OCR_QUOTA',
+      });
+    });
+
+    it('keeps explicit nulls (OCR never requested)', () => {
+      const out = withOcrState(source, status(null));
+
+      expect(JSON.parse(JSON.stringify(out))).toMatchObject({
+        ocr_state: null,
+        ocr_error_code: null,
+      });
+    });
+
+    it('omits both keys when the state is unknown (undefined)', () => {
+      const out = withOcrState(source, undefined);
+
+      expect(out).toBe(source);
+      const json = JSON.parse(JSON.stringify(out));
+      expect(json).not.toHaveProperty('ocr_state');
+      expect(json).not.toHaveProperty('ocr_error_code');
+    });
+
+    it('does not mutate the batch it receives', () => {
+      withOcrState(source, status('done'));
+
+      expect(source).not.toHaveProperty('ocr_state');
     });
   });
 });

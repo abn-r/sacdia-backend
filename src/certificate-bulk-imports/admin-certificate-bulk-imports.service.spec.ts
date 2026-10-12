@@ -593,4 +593,87 @@ describe('AdminCertificateBulkImportsService', () => {
       expect(json.total).toBe(1);
     });
   });
+
+  describe('ocr_state (D3)', () => {
+    const queue = { getJob: jest.fn() };
+    const batch = (events: unknown[]) => ({
+      batch_id: 'batch-1',
+      local_field_id: 7,
+      status: 'SUBMITTED',
+      files: [{ file_id: 'file-1' }],
+      items: [],
+      events,
+    });
+    const queuedEvent = {
+      action: 'OCR_QUEUED',
+      item_id: null,
+      created_at: new Date(Date.now() - 1_000),
+    };
+    let withQueue: AdminCertificateBulkImportsService;
+
+    beforeEach(() => {
+      prisma.users.findUnique.mockResolvedValue({
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
+      });
+      withQueue = new AdminCertificateBulkImportsService(
+        prisma as any,
+        application as any,
+        yearResolver as any,
+        queue as any,
+      );
+    });
+
+    it('getDetail exposes the state derived from the job', async () => {
+      queue.getJob.mockResolvedValue({ getState: async () => 'active' });
+      prisma.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        batch([queuedEvent]),
+      );
+
+      const detail = await withQueue.getDetail('reviewer-1', 'batch-1');
+
+      expect(detail.ocr_state).toBe('running');
+      expect(queue.getJob).toHaveBeenCalledWith('certificate-ocr-batch-1');
+    });
+
+    it('getDetail exposes null when OCR was never requested', async () => {
+      prisma.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        batch([]),
+      );
+
+      const detail = await withQueue.getDetail('reviewer-1', 'batch-1');
+
+      expect(detail).toHaveProperty('ocr_state', null);
+    });
+
+    it('getDetail survives a BullMQ failure and omits the key', async () => {
+      queue.getJob.mockRejectedValue(new Error('ECONNREFUSED'));
+      jest
+        .spyOn((withQueue as any).logger, 'warn')
+        .mockImplementation(() => undefined);
+      prisma.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        batch([queuedEvent]),
+      );
+
+      const detail = await withQueue.getDetail('reviewer-1', 'batch-1');
+
+      expect(detail.batch_id).toBe('batch-1');
+      expect(detail).not.toHaveProperty('ocr_state');
+    });
+
+    it('listPending never asks Redis nor adds ocr_state', async () => {
+      prisma.certificate_bulk_import_batches.findMany.mockResolvedValue([
+        batch([queuedEvent]),
+      ]);
+      prisma.certificate_bulk_import_batches.count.mockResolvedValue(1);
+
+      const result = await withQueue.listPending('reviewer-1', {
+        page: 1,
+        limit: 20,
+      });
+
+      expect(queue.getJob).not.toHaveBeenCalled();
+      expect(result.items[0]).not.toHaveProperty('ocr_state');
+    });
+  });
 });

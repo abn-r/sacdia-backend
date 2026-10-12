@@ -27,7 +27,14 @@ import { CERTIFICATE_OCR_PROVIDER } from './ocr/certificate-ocr.provider';
 import {
   CERTIFICATE_OCR_JOB,
   CERTIFICATE_OCR_QUEUE,
+  certificateOcrJobId,
 } from './ocr/certificate-ocr.queue';
+import {
+  OCR_NEVER_REQUESTED,
+  isLiveOcrJobState,
+  resolveOcrState,
+  sanitizeOcrErrorCode,
+} from './ocr/certificate-ocr-state';
 import { Inject } from '@nestjs/common';
 import { normalizeCertificateImportFileRef } from './certificate-import-file-ref';
 import {
@@ -47,6 +54,7 @@ import {
   localizedName,
   toPublicImportBatch,
   toPublicImportItem,
+  withOcrState,
 } from './certificate-import-response.mapper';
 import { InstructorsService } from '../instructors/instructors.service';
 import { TranslationService } from '../common/services/translation.service';
@@ -87,7 +95,7 @@ export class CertificateBulkImportsService {
     private readonly ocrProvider: CertificateOcrProvider,
     @Optional()
     @InjectQueue(CERTIFICATE_OCR_QUEUE)
-    private readonly ocrQueue: Pick<Queue, 'add'> | null = null,
+    private readonly ocrQueue: Pick<Queue, 'add' | 'getJob'> | null = null,
     private readonly instructors: InstructorsService,
   ) {}
 
@@ -151,7 +159,11 @@ export class CertificateBulkImportsService {
 
       await this.recordEvent(tx, batch.batch_id, null, 'DRAFT_CREATED', userId);
 
-      return toPublicImportBatch(batch, this.translations.getCurrentLocale());
+      // Un borrador nuevo nunca pidió OCR: sin consulta a Redis.
+      return withOcrState(
+        toPublicImportBatch(batch, this.translations.getCurrentLocale()),
+        OCR_NEVER_REQUESTED,
+      );
     });
   }
 
@@ -161,12 +173,42 @@ export class CertificateBulkImportsService {
       throw new BadRequestException('CERTIFICATE_IMPORT_OCR_UNAVAILABLE');
     }
 
+    const jobId = certificateOcrJobId(batchId);
+    try {
+      const existing = await this.ocrQueue.getJob(jobId);
+      const state = existing ? await existing.getState() : null;
+      // Idempotente: una lectura en cola o en curso no se duplica ni escribe
+      // otro OCR_QUEUED.
+      if (isLiveOcrJobState(state)) {
+        return this.getBatch(userId, batchId);
+      }
+      // Un job fallido (o completado y aún retenido) conserva el jobId y haría
+      // que add() devolviera el viejo sin encolar: se elimina antes.
+      if (existing && (state === 'failed' || state === 'completed')) {
+        await existing.remove();
+      }
+    } catch {
+      this.logger.error('certificate OCR enqueue failed');
+      throw new BadRequestException('CERTIFICATE_IMPORT_OCR_UNAVAILABLE');
+    }
+
+    // OCR_QUEUED se escribe ANTES de add(): un worker rápido puede terminar y
+    // registrar OCR_PROCESSED dentro de add(), y ese evento debe quedar
+    // posterior. Si add() falla, el evento se compensa (se borra).
+    const queuedEvent = await this.recordEvent(
+      this.prisma,
+      batchId,
+      null,
+      'OCR_QUEUED',
+      userId,
+      { queued: true },
+    );
     try {
       await this.ocrQueue.add(
         CERTIFICATE_OCR_JOB,
         { userId, batchId },
         {
-          jobId: `certificate-ocr-${batchId}`,
+          jobId,
           attempts: 2,
           backoff: { type: 'fixed', delay: 5_000 },
           removeOnComplete: true,
@@ -174,6 +216,7 @@ export class CertificateBulkImportsService {
         },
       );
     } catch (error) {
+      await this.discardQueuedEvent(queuedEvent?.event_id);
       const message = error instanceof Error ? error.message : '';
       if (!/already exists|already waiting|jobid/i.test(message)) {
         this.logger.error('certificate OCR enqueue failed');
@@ -182,10 +225,34 @@ export class CertificateBulkImportsService {
       return this.getBatch(userId, batchId);
     }
 
-    await this.recordEvent(this.prisma, batchId, null, 'OCR_QUEUED', userId, {
-      queued: true,
-    });
     return this.getBatch(userId, batchId);
+  }
+
+  /**
+   * Registra el fallo terminal de la lectura (lo llama el worker). Solo guarda
+   * un código de la lista pública; un código desconocido queda genérico.
+   * Nunca el mensaje del error, texto ni URLs.
+   */
+  async recordOcrFailure(userId: string, batchId: string, code: unknown) {
+    await this.recordEvent(this.prisma, batchId, null, 'OCR_FAILED', userId, {
+      error_code: sanitizeOcrErrorCode(code),
+    });
+  }
+
+  /**
+   * Compensa un OCR_QUEUED cuyo add() falló, para que el lote no quede en
+   * pending/failed por una lectura que nunca se encoló. Si el borrado también
+   * falla, queda el evento (el estado cae a `failed` pasados 5 minutos).
+   */
+  private async discardQueuedEvent(eventId: string | undefined) {
+    if (!eventId) return;
+    try {
+      await this.prisma.certificate_bulk_import_item_events.deleteMany({
+        where: { event_id: eventId },
+      });
+    } catch {
+      this.logger.warn('certificate OCR queued event cleanup failed');
+    }
   }
 
   async runQueuedOcr(userId: string, batchId: string) {
@@ -322,10 +389,13 @@ export class CertificateBulkImportsService {
     if (!batch) {
       throw new NotFoundException('CERTIFICATE_IMPORT_BATCH_NOT_FOUND');
     }
-    return toPublicImportBatch(
-      batch,
-      this.translations.getCurrentLocale(),
-      await this.instructorPhotos(batch.items),
+    return withOcrState(
+      toPublicImportBatch(
+        batch,
+        this.translations.getCurrentLocale(),
+        await this.instructorPhotos(batch.items),
+      ),
+      await resolveOcrState(this.ocrQueue, batchId, batch.events, this.logger),
     );
   }
 
@@ -545,7 +615,25 @@ export class CertificateBulkImportsService {
   }
 
   async submit(userId: string, batchId: string) {
-    const submittedBatch = await this.prisma.$transaction(async (tx) => {
+    const submittedBatch = await this.submitInTransaction(userId, batchId);
+    // Fuera de la transacción: no se mantiene abierta mientras se consulta Redis.
+    return withOcrState(
+      toPublicImportBatch(
+        submittedBatch,
+        this.translations.getCurrentLocale(),
+        await this.instructorPhotos(submittedBatch.items),
+      ),
+      await resolveOcrState(
+        this.ocrQueue,
+        batchId,
+        submittedBatch.events,
+        this.logger,
+      ),
+    );
+  }
+
+  private async submitInTransaction(userId: string, batchId: string) {
+    return this.prisma.$transaction(async (tx) => {
       const batch = await this.findOwnedBatch(tx, userId, batchId);
       this.assertDraftLike(batch.status, 'submit');
 
@@ -679,11 +767,6 @@ export class CertificateBulkImportsService {
       });
       return submitted;
     });
-    return toPublicImportBatch(
-      submittedBatch,
-      this.translations.getCurrentLocale(),
-      await this.instructorPhotos(submittedBatch.items),
-    );
   }
 
   async resubmitItem(
@@ -1342,7 +1425,7 @@ export class CertificateBulkImportsService {
     performedById: string,
     payload?: Record<string, unknown>,
   ) {
-    await tx.certificate_bulk_import_item_events.create({
+    return tx.certificate_bulk_import_item_events.create({
       data: {
         batch_id: batchId,
         item_id: itemId,

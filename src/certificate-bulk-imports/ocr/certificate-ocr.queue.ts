@@ -5,3 +5,8 @@ export type CertificateOcrJobPayload = {
   userId: string;
   batchId: string;
 };
+
+/** Deterministic id: one OCR job per batch (no duplicates while one is live). */
+export function certificateOcrJobId(batchId: string): string {
+  return `certificate-ocr-${batchId}`;
+}

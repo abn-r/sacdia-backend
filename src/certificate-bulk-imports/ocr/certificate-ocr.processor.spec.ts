@@ -106,4 +106,81 @@ describe('CertificateOcrProcessor', () => {
       } as never),
     ).rejects.toBe(error);
   });
+
+  describe('terminal failure event', () => {
+    const job = (overrides: Record<string, unknown> = {}) =>
+      ({
+        id: 'job-9',
+        data: { userId: 'user-1', batchId: 'batch-1' },
+        attemptsMade: 2,
+        opts: { attempts: 2 },
+        ...overrides,
+      }) as never;
+    const build = () => {
+      const recordOcrFailure = jest.fn().mockResolvedValue(undefined);
+      return {
+        recordOcrFailure,
+        processor: new CertificateOcrProcessor({ recordOcrFailure } as never),
+      };
+    };
+
+    it('records the code of an UnrecoverableError on the first attempt', async () => {
+      const { processor, recordOcrFailure } = build();
+
+      await processor.recordTerminalFailure(
+        job({ attemptsMade: 1 }),
+        new UnrecoverableError('CERTIFICATE_IMPORT_PDF_ENCRYPTED'),
+      );
+
+      expect(recordOcrFailure).toHaveBeenCalledWith(
+        'user-1',
+        'batch-1',
+        'CERTIFICATE_IMPORT_PDF_ENCRYPTED',
+      );
+    });
+
+    it('records the code of a retryable error only on its last attempt', async () => {
+      const { processor, recordOcrFailure } = build();
+      const error = new BadRequestException(
+        'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+      );
+
+      await processor.recordTerminalFailure(job({ attemptsMade: 1 }), error);
+      expect(recordOcrFailure).not.toHaveBeenCalled();
+
+      await processor.recordTerminalFailure(job({ attemptsMade: 2 }), error);
+      expect(recordOcrFailure).toHaveBeenCalledWith(
+        'user-1',
+        'batch-1',
+        'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+      );
+    });
+
+    it('passes AppException codes through', async () => {
+      const { processor, recordOcrFailure } = build();
+
+      await processor.recordTerminalFailure(
+        job(),
+        new AppBadRequestException(
+          ErrorCode.CERTIFICATE_IMPORT_FILE_URL_INVALID,
+        ),
+      );
+
+      expect(recordOcrFailure.mock.calls[0][2]).toBe(
+        'CERTIFICATE_IMPORT_FILE_URL_INVALID',
+      );
+    });
+
+    it('does nothing without ids and never throws if recording fails', async () => {
+      const { processor, recordOcrFailure } = build();
+      await processor.recordTerminalFailure(job({ data: {} }), new Error('x'));
+      await processor.recordTerminalFailure(undefined, new Error('x'));
+      expect(recordOcrFailure).not.toHaveBeenCalled();
+
+      recordOcrFailure.mockRejectedValue(new Error('db down'));
+      await expect(
+        processor.recordTerminalFailure(job(), new Error('x')),
+      ).resolves.toBeUndefined();
+    });
+  });
 });
