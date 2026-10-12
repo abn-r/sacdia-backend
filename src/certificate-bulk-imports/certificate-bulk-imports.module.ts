@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaModule } from '../prisma/prisma.module';
+import { InstructorsModule } from '../instructors/instructors.module';
 import { CertificateBulkImportsService } from './certificate-bulk-imports.service';
 import { CertificateBulkImportsController } from './certificate-bulk-imports.controller';
 import { AdminCertificateBulkImportsController } from './admin-certificate-bulk-imports.controller';
@@ -27,7 +28,7 @@ import {
 import { CertificateOcrProcessor } from './ocr/certificate-ocr.processor';
 
 @Module({
-  imports: [PrismaModule, CertificateOcrQueueModule],
+  imports: [PrismaModule, InstructorsModule, CertificateOcrQueueModule],
   controllers: [
     CertificateBulkImportsController,
     AdminCertificateBulkImportsController,

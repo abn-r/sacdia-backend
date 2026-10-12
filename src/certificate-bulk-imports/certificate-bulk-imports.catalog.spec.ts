@@ -36,7 +36,15 @@ describe('CertificateBulkImportsService catalog and date range (B1)', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
-    service = new CertificateBulkImportsService(prisma as never, ocrProvider);
+    service = new CertificateBulkImportsService(
+      prisma as never,
+      ocrProvider,
+      null,
+      {
+        assertEligible: jest.fn(),
+        photoUrlsFor: jest.fn().mockResolvedValue(new Map()),
+      } as never,
+    );
     tx.certificate_bulk_import_items.count.mockResolvedValue(1);
     tx.honors.findUnique.mockResolvedValue({ active: true });
     tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({

@@ -13,6 +13,7 @@ import {
   AppBadRequestException,
   AppConflictException,
 } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   CreateCertificateBulkImportDto,
   UpdateCertificateImportItemDto,
@@ -45,9 +46,34 @@ import {
   catalogItemInclude,
   localizedName,
   toPublicImportBatch,
+  toPublicImportItem,
 } from './certificate-import-response.mapper';
+import { InstructorsService } from '../instructors/instructors.service';
 import { TranslationService } from '../common/services/translation.service';
 import { checkDateInRange } from '../common/utils/honor-date-range';
+
+type InstructorFields = {
+  instructor_user_id: string | null;
+  instructor_name: string | null;
+};
+const NO_INSTRUCTOR: InstructorFields = {
+  instructor_user_id: null,
+  instructor_name: null,
+};
+
+/** Campos de la fila que `changed_fields` puede nombrar en la auditoría (sin valores). */
+const AUDITED_ITEM_FIELDS = [
+  'item_type',
+  'honor_id',
+  'class_id',
+  'instructor_user_id',
+  'instructor_name',
+  'detected_name',
+  'detected_date',
+  'completed_at',
+  'ocr_confidence',
+  'field_confidence',
+] as const;
 
 @Injectable()
 export class CertificateBulkImportsService {
@@ -62,6 +88,7 @@ export class CertificateBulkImportsService {
     @Optional()
     @InjectQueue(CERTIFICATE_OCR_QUEUE)
     private readonly ocrQueue: Pick<Queue, 'add'> | null = null,
+    private readonly instructors: InstructorsService,
   ) {}
 
   async createDraft(userId: string, dto: CreateCertificateBulkImportDto) {
@@ -104,11 +131,21 @@ export class CertificateBulkImportsService {
       });
 
       if (dto.items?.length) {
-        await tx.certificate_bulk_import_items.createMany({
-          data: dto.items.map((item) =>
-            this.toItemCreateData(batch.batch_id, item),
-          ),
-        });
+        const rows: Prisma.certificate_bulk_import_itemsCreateManyInput[] = [];
+        for (const item of dto.items) {
+          // BC-9: un instructor inválido no rompe el alta; la fila nace NEEDS_REVIEW.
+          const { instructor, reason } = await this.settleCreateInstructor(
+            userId,
+            item,
+          );
+          const row = this.toItemCreateData(batch.batch_id, item, instructor);
+          if (reason) {
+            row.status = CertificateBulkImportItemStatus.NEEDS_REVIEW;
+            row.rejection_reason = reason;
+          }
+          rows.push(row);
+        }
+        await tx.certificate_bulk_import_items.createMany({ data: rows });
         await this.downgradeInvalidReadyItems(tx, userId, batch.batch_id);
       }
 
@@ -177,12 +214,22 @@ export class CertificateBulkImportsService {
           status: true,
           honor_id: true,
           class_id: true,
+          revision: true,
+          instructor_user_id: true,
+          instructor_name: true,
         },
       });
+      // Solo se descartan las filas que el miembro todavía no tocó: un reproceso
+      // no borra lo que ya completó (catálogo, instructor o cualquier edición).
       const disposableIds = existing
         .filter(
           (item) =>
-            item.status === 'NEEDS_REVIEW' && !item.honor_id && !item.class_id,
+            item.status === 'NEEDS_REVIEW' &&
+            !item.honor_id &&
+            !item.class_id &&
+            !item.instructor_user_id &&
+            !item.instructor_name &&
+            (item.revision ?? 0) === 0,
         )
         .map((item) => item.item_id);
       if (disposableIds.length > 0) {
@@ -264,7 +311,11 @@ export class CertificateBulkImportsService {
     if (!batch) {
       throw new NotFoundException('CERTIFICATE_IMPORT_BATCH_NOT_FOUND');
     }
-    return toPublicImportBatch(batch, this.translations.getCurrentLocale());
+    return toPublicImportBatch(
+      batch,
+      this.translations.getCurrentLocale(),
+      await this.instructorPhotos(batch.items),
+    );
   }
 
   /**
@@ -339,7 +390,7 @@ export class CertificateBulkImportsService {
     batchId: string,
     dto: UpdateCertificateImportItemDto,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       const batch = await this.findOwnedBatch(tx, userId, batchId);
       this.assertDraftLike(batch.status, 'add item');
       this.assertRevision(batch.revision, dto.expected_revision);
@@ -349,9 +400,13 @@ export class CertificateBulkImportsService {
       // updateItem is the explicit edit path and keeps answering 400 for the
       // same future date or invalid catalog on purpose.
       let reviewReason: string | null = this.dateRangeReason(dto.completed_at);
+      // El instructor se resuelve aparte: si el catálogo falla, uno válido igual se guarda.
+      const { instructor, reason: instructorReason } =
+        await this.settleCreateInstructor(batch.user_id, dto);
       if (!reviewReason) {
         try {
           await this.assertCatalogChoice(tx, dto);
+          await this.assertClubTypeMatches(tx, dto);
           await this.assertClassAgeIfReady(tx, batch.user_id, dto);
         } catch (error) {
           reviewReason = this.reviewReason(error);
@@ -366,21 +421,26 @@ export class CertificateBulkImportsService {
       if (count >= 100) {
         throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_LIMIT');
       }
-      const data = this.toItemCreateData(batchId, dto);
+      reviewReason ??= instructorReason;
+      const data = this.toItemCreateData(batchId, dto, instructor);
       if (reviewReason) {
         data.status = CertificateBulkImportItemStatus.NEEDS_REVIEW;
         data.rejection_reason = reviewReason;
       }
       const item = await tx.certificate_bulk_import_items.create({
         data,
+        include: this.itemInclude(),
       });
       await tx.certificate_bulk_import_batches.update({
         where: { batch_id: batchId },
         data: { revision: (batch.revision ?? 0) + 1 },
       });
-      await this.recordEvent(tx, batchId, item.item_id, 'ITEM_ADDED', userId);
+      await this.recordEvent(tx, batchId, item.item_id, 'ITEM_ADDED', userId, {
+        changed_fields: this.changedFields(null, item),
+      });
       return item;
     });
+    return this.presentItem(created);
   }
 
   async removeItem(userId: string, batchId: string, itemId: string) {
@@ -414,7 +474,7 @@ export class CertificateBulkImportsService {
     itemId: string,
     dto: UpdateCertificateImportItemDto,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const batch = await this.findOwnedBatch(tx, userId, batchId);
       this.assertDraftLike(batch.status, 'update item');
       const existing = await this.findOwnedItem(tx, batchId, itemId);
@@ -422,6 +482,8 @@ export class CertificateBulkImportsService {
 
       const merged = this.mergeItem(existing, dto);
       this.assertDateInRange(merged.completed_at);
+      await this.assertInstructorChoice(batch.user_id, existing, dto);
+      await this.assertClubTypeMatches(tx, merged);
       if (dto.mark_as_ready) {
         await this.assertCatalogChoice(tx, merged);
         await this.assertClassAgeIfReady(tx, batch.user_id, merged);
@@ -447,12 +509,13 @@ export class CertificateBulkImportsService {
       const item = await tx.certificate_bulk_import_items.update({
         where: { item_id: itemId },
         data: {
-          ...this.toItemUpdateData(dto),
+          ...this.toItemUpdateData(dto, merged),
           ...(dto.mark_as_ready
             ? { status, rejection_reason: null }
             : { status }),
           revision: (existing.revision ?? 0) + 1,
         },
+        include: this.itemInclude(),
       });
 
       await tx.certificate_bulk_import_batches.update({
@@ -462,14 +525,16 @@ export class CertificateBulkImportsService {
 
       await this.recordEvent(tx, batchId, itemId, 'ITEM_UPDATED', userId, {
         status,
+        changed_fields: this.changedFields(existing, item),
       });
 
       return item;
     });
+    return this.presentItem(updated);
   }
 
   async submit(userId: string, batchId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const submittedBatch = await this.prisma.$transaction(async (tx) => {
       const batch = await this.findOwnedBatch(tx, userId, batchId);
       this.assertDraftLike(batch.status, 'submit');
 
@@ -601,11 +666,13 @@ export class CertificateBulkImportsService {
         },
         include: this.batchInclude(),
       });
-      return toPublicImportBatch(
-        submitted,
-        this.translations.getCurrentLocale(),
-      );
+      return submitted;
     });
+    return toPublicImportBatch(
+      submittedBatch,
+      this.translations.getCurrentLocale(),
+      await this.instructorPhotos(submittedBatch.items),
+    );
   }
 
   async resubmitItem(
@@ -614,7 +681,7 @@ export class CertificateBulkImportsService {
     itemId: string,
     dto: UpdateCertificateImportItemDto,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const resubmitted = await this.prisma.$transaction(async (tx) => {
       const batch = await this.findOwnedBatch(tx, userId, batchId);
       const existingItem = await this.findOwnedItem(tx, batchId, itemId);
 
@@ -627,6 +694,8 @@ export class CertificateBulkImportsService {
       if (!this.isReady({ ...merged, mark_as_ready: true })) {
         throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_INCOMPLETE');
       }
+      await this.assertInstructorChoice(batch.user_id, existingItem, dto);
+      await this.assertClubTypeMatches(tx, merged);
       await this.assertCatalogChoice(tx, merged);
       await lockInvestitureYearsAscending(
         tx,
@@ -645,11 +714,12 @@ export class CertificateBulkImportsService {
       const item = await tx.certificate_bulk_import_items.update({
         where: { item_id: itemId },
         data: {
-          ...this.toItemUpdateData(dto),
+          ...this.toItemUpdateData(dto, merged),
           status: CertificateBulkImportItemStatus.RESUBMITTED,
           rejection_reason: null,
           revision: (existingItem.revision ?? 0) + 1,
         },
+        include: this.itemInclude(),
       });
 
       await tx.certificate_bulk_import_batches.update({
@@ -657,10 +727,13 @@ export class CertificateBulkImportsService {
         data: { status: 'SUBMITTED' },
       });
 
-      await this.recordEvent(tx, batchId, itemId, 'ITEM_RESUBMITTED', userId);
+      await this.recordEvent(tx, batchId, itemId, 'ITEM_RESUBMITTED', userId, {
+        changed_fields: this.changedFields(existingItem, item),
+      });
 
       return item;
     });
+    return this.presentItem(resubmitted);
   }
 
   private async findOwnedBatch(
@@ -798,6 +871,7 @@ export class CertificateBulkImportsService {
   private toItemCreateData(
     batchId: string,
     item: UpdateCertificateImportItemDto,
+    instructor: InstructorFields = NO_INSTRUCTOR,
   ): Prisma.certificate_bulk_import_itemsCreateManyInput {
     if (!item.item_type) {
       throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_TYPE_REQUIRED');
@@ -814,6 +888,8 @@ export class CertificateBulkImportsService {
         item.item_type === CertificateBulkImportItemType.CLASS
           ? (item.class_id ?? null)
           : null,
+      instructor_user_id: instructor.instructor_user_id,
+      instructor_name: instructor.instructor_name,
       detected_name: item.detected_name,
       detected_date: this.toDate(item.detected_date),
       completed_at: this.toDate(item.completed_at),
@@ -825,22 +901,23 @@ export class CertificateBulkImportsService {
     };
   }
 
+  /**
+   * Inconsistencia 4: tipo, catálogo e instructor salen de `mergeItem`
+   * ("undefined = no cambia"), no de que el body traiga `item_type`. Cambiar el
+   * tipo limpia el id del tipo anterior y el instructor si pasa a CLASS; un
+   * PATCH que no los menciona los deja como estaban.
+   */
   private toItemUpdateData(
     dto: UpdateCertificateImportItemDto,
+    merged: ReturnType<CertificateBulkImportsService['mergeItem']>,
   ): Prisma.certificate_bulk_import_itemsUncheckedUpdateInput {
-    const data: Prisma.certificate_bulk_import_itemsUncheckedUpdateInput = {};
-
-    if (dto.item_type !== undefined) {
-      data.item_type = dto.item_type;
-      data.honor_id =
-        dto.item_type === CertificateBulkImportItemType.HONOR
-          ? (dto.honor_id ?? null)
-          : null;
-      data.class_id =
-        dto.item_type === CertificateBulkImportItemType.CLASS
-          ? (dto.class_id ?? null)
-          : null;
-    }
+    const data: Prisma.certificate_bulk_import_itemsUncheckedUpdateInput = {
+      item_type: merged.item_type as CertificateBulkImportItemType,
+      honor_id: merged.honor_id,
+      class_id: merged.class_id,
+      instructor_user_id: merged.instructor_user_id,
+      instructor_name: merged.instructor_name,
+    };
 
     if (dto.detected_name !== undefined) {
       data.detected_name = dto.detected_name;
@@ -871,11 +948,15 @@ export class CertificateBulkImportsService {
       honor_id?: number | null;
       class_id?: number | null;
       completed_at?: Date | null;
+      instructor_user_id?: string | null;
+      instructor_name?: string | null;
     },
     dto: UpdateCertificateImportItemDto,
   ) {
     const itemType = dto.item_type ?? existing.item_type;
     return {
+      ...this.resolveInstructor(existing, dto, itemType),
+      club_type_id: dto.club_type_id,
       item_type: itemType,
       honor_id:
         itemType === CertificateBulkImportItemType.HONOR
@@ -888,6 +969,114 @@ export class CertificateBulkImportsService {
       completed_at: dto.completed_at ?? this.civilDate(existing.completed_at),
       mark_as_ready: dto.mark_as_ready,
     };
+  }
+
+  /**
+   * Instructor resultante de aplicar `dto` sobre `existing` (undefined = no
+   * cambia, null = borra, valor = asigna y limpia el otro). Solo validación
+   * sincrónica: la elegibilidad la decide `InstructorsService` al elegirlo.
+   */
+  private resolveInstructor(
+    existing: Partial<InstructorFields> | null,
+    dto: UpdateCertificateImportItemDto,
+    itemType: string | undefined,
+  ): InstructorFields {
+    const givenUser = typeof dto.instructor_user_id === 'string';
+    const givenName = typeof dto.instructor_name === 'string';
+    if (givenUser && givenName) {
+      throw new AppBadRequestException(ErrorCode.HONOR_INSTRUCTOR_AMBIGUOUS);
+    }
+    if (itemType === CertificateBulkImportItemType.CLASS) {
+      if (givenUser || givenName) {
+        throw new AppBadRequestException(
+          ErrorCode.CERTIFICATE_IMPORT_HONOR_INSTRUCTOR_NOT_ALLOWED,
+        );
+      }
+      return NO_INSTRUCTOR;
+    }
+    let user = existing?.instructor_user_id ?? null;
+    let name = existing?.instructor_name ?? null;
+    if (dto.instructor_user_id !== undefined) {
+      user = dto.instructor_user_id;
+      if (givenUser) name = null;
+    }
+    if (dto.instructor_name !== undefined) {
+      name = dto.instructor_name;
+      if (givenName) user = null;
+    }
+    return { instructor_user_id: user, instructor_name: name };
+  }
+
+  /**
+   * Alta (BC-9): un instructor inválido no rompe la llamada. Devuelve el
+   * instructor a guardar (ninguno si falló) y el código para `rejection_reason`.
+   */
+  private async settleCreateInstructor(
+    ownerUserId: string,
+    dto: UpdateCertificateImportItemDto,
+  ): Promise<{ instructor: InstructorFields; reason: string | null }> {
+    try {
+      const instructor = this.resolveInstructor(null, dto, dto.item_type);
+      await this.assertInstructorChoice(ownerUserId, null, dto);
+      return { instructor, reason: null };
+    } catch (error) {
+      const reason = this.reviewReason(error);
+      if (!reason) throw error;
+      return { instructor: NO_INSTRUCTOR, reason };
+    }
+  }
+
+  /** Elegibilidad contra el DUEÑO del lote, solo si el cliente asigna un usuario nuevo. */
+  private async assertInstructorChoice(
+    ownerUserId: string,
+    existing: Partial<InstructorFields> | null,
+    dto: UpdateCertificateImportItemDto,
+  ) {
+    const chosen = dto.instructor_user_id;
+    if (typeof chosen === 'string' && chosen !== existing?.instructor_user_id) {
+      await this.instructors.assertEligible(ownerUserId, chosen);
+    }
+  }
+
+  /** `club_type_id` es solo una verificación de coherencia; no se guarda. */
+  private async assertClubTypeMatches(
+    tx: Prisma.TransactionClient,
+    item: {
+      item_type?: string | null;
+      class_id?: number | null;
+      club_type_id?: number;
+    },
+  ) {
+    if (
+      item.club_type_id === undefined ||
+      !item.class_id ||
+      item.item_type !== CertificateBulkImportItemType.CLASS
+    ) {
+      return;
+    }
+    const klass = await tx.classes.findUnique({
+      where: { class_id: item.class_id },
+      select: { club_type_id: true },
+    });
+    if (klass && klass.club_type_id !== item.club_type_id) {
+      throw new AppBadRequestException(
+        ErrorCode.CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH,
+      );
+    }
+  }
+
+  /** Nombres de los campos que cambiaron, sin valores (el nombre libre no va a la auditoría). */
+  private changedFields(
+    before: Record<string, unknown> | null,
+    after: Record<string, unknown>,
+  ): string[] {
+    const comparable = (value: unknown) =>
+      value instanceof Date
+        ? value.toISOString()
+        : JSON.stringify(value ?? null);
+    return AUDITED_ITEM_FIELDS.filter(
+      (field) => comparable(before?.[field]) !== comparable(after[field]),
+    );
   }
 
   private assertRevision(
@@ -1084,13 +1273,49 @@ export class CertificateBulkImportsService {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 
+  private itemInclude() {
+    return catalogItemInclude(this.translations.getCurrentLocale(), true);
+  }
+
+  private async presentItem<I extends object>(item: I) {
+    return toPublicImportItem(
+      item,
+      this.translations.getCurrentLocale(),
+      await this.instructorPhotos([item]),
+    );
+  }
+
+  /** URLs firmadas de las fotos de los instructores del sistema (una por usuario). */
+  private instructorPhotos(
+    items: ReadonlyArray<object> | undefined,
+  ): Promise<Map<string, string | null>> {
+    const users = new Map<
+      string,
+      { user_id: string; user_image: string | null }
+    >();
+    for (const item of items ?? []) {
+      const user = (
+        item as {
+          instructor?: { user_id: string; user_image?: string | null } | null;
+        }
+      ).instructor;
+      if (user) {
+        users.set(user.user_id, {
+          user_id: user.user_id,
+          user_image: user.user_image ?? null,
+        });
+      }
+    }
+    return this.instructors.photoUrlsFor([...users.values()]);
+  }
+
   private batchInclude() {
     return {
       files: true,
       items: {
         where: { active: true },
         orderBy: { created_at: 'asc' as const },
-        include: catalogItemInclude(this.translations.getCurrentLocale()),
+        include: this.itemInclude(),
       },
       events: {
         orderBy: { created_at: 'asc' as const },

@@ -775,5 +775,7 @@
   "HONOR_INSTRUCTOR_INVALID": "The selected instructor is not valid",
   "HONOR_INSTRUCTOR_SELF": "You cannot be your own instructor",
   "HONOR_DATE_TOO_OLD": "The date cannot be earlier than January 1, 1960",
-  "HONOR_DATE_IN_FUTURE": "The date cannot be in the future"
+  "HONOR_DATE_IN_FUTURE": "The date cannot be in the future",
+  "CERTIFICATE_IMPORT_HONOR_INSTRUCTOR_NOT_ALLOWED": "Class rows do not take a honor instructor",
+  "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "The club type does not match the selected class"
 }

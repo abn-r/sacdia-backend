@@ -114,4 +114,67 @@ describe('certificate bulk import DTOs', () => {
       await expect(validate(dto)).resolves.toEqual([]);
     });
   });
+  describe('instructor and club type fields (B2)', () => {
+    const UUID = '7d1f6c52-5a6f-4b8a-9d57-6f6b1a2f3c11';
+    const build = (plain: Record<string, unknown>) =>
+      plainToInstance(UpdateCertificateImportItemDto, plain);
+    const failing = async (plain: Record<string, unknown>) =>
+      (await validate(build(plain), { whitelist: true }))
+        .map((error) => error.property)
+        .sort();
+
+    it('treats undefined and null as "no change" and "clear"', async () => {
+      await expect(failing({})).resolves.toEqual([]);
+      await expect(
+        failing({ instructor_user_id: null, instructor_name: null }),
+      ).resolves.toEqual([]);
+    });
+
+    it('accepts a uuid and rejects anything else for instructor_user_id', async () => {
+      await expect(failing({ instructor_user_id: UUID })).resolves.toEqual([]);
+      await expect(
+        failing({ instructor_user_id: 'not-a-uuid' }),
+      ).resolves.toEqual(['instructor_user_id']);
+    });
+
+    it('normalizes the free name (trim + collapsed spaces)', async () => {
+      const dto = build({ instructor_name: '  Juan   Carlos \t Pérez  ' });
+      await expect(validate(dto)).resolves.toEqual([]);
+      expect(dto.instructor_name).toBe('Juan Carlos Pérez');
+    });
+
+    it('rejects names of 2 characters, blank-after-trim and 151 characters', async () => {
+      await expect(failing({ instructor_name: 'Al' })).resolves.toEqual([
+        'instructor_name',
+      ]);
+      await expect(failing({ instructor_name: '     ' })).resolves.toEqual([
+        'instructor_name',
+      ]);
+      await expect(
+        failing({ instructor_name: 'a'.repeat(151) }),
+      ).resolves.toEqual(['instructor_name']);
+      await expect(
+        failing({ instructor_name: 'a'.repeat(150) }),
+      ).resolves.toEqual([]);
+    });
+
+    it('rejects control characters in the free name', async () => {
+      await expect(
+        failing({ instructor_name: 'Ana\u0007 Pérez' }),
+      ).resolves.toEqual(['instructor_name']);
+      await expect(
+        failing({ instructor_name: 'Ana\u0000Pérez' }),
+      ).resolves.toEqual(['instructor_name']);
+    });
+
+    it('validates club_type_id as a positive integer', async () => {
+      await expect(failing({ club_type_id: 2 })).resolves.toEqual([]);
+      await expect(failing({ club_type_id: 0 })).resolves.toEqual([
+        'club_type_id',
+      ]);
+      await expect(failing({ club_type_id: 1.5 })).resolves.toEqual([
+        'club_type_id',
+      ]);
+    });
+  });
 });

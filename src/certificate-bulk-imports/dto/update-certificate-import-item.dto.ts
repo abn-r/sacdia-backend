@@ -15,6 +15,10 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { IsDateInRange } from '../../common/utils/honor-date-range';
+import {
+  InstructorNameField,
+  InstructorUserIdField,
+} from '../../instructors/instructor-fields';
 import { CertificateBulkImportItemType } from '../certificate-bulk-imports.types';
 
 export class UpdateCertificateImportItemDto {
@@ -89,6 +93,25 @@ export class UpdateCertificateImportItemDto {
     inFuture: 'CERTIFICATE_IMPORT_DATE_IN_FUTURE',
   })
   completed_at?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Tipo de club de la clase elegida. Solo verificación de coherencia con la clase, no se guarda. Si no coincide: 400 CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH.',
+    minimum: 1,
+    example: 1,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  club_type_id?: number;
+
+  /** Solo filas HONOR; opcional y no cuenta para "lista" (D1). */
+  @InstructorUserIdField()
+  instructor_user_id?: string | null;
+
+  @InstructorNameField()
+  instructor_name?: string | null;
 
   @ApiPropertyOptional({
     description: 'Confianza general del OCR entre 0 y 1',

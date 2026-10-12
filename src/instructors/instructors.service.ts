@@ -162,6 +162,19 @@ export class InstructorsService {
     }
   }
 
+  /** Foto firmada (TTL corto) por usuario; `null` si no tiene o falla la firma. */
+  async photoUrlsFor(
+    users: ReadonlyArray<{ user_id: string; user_image: string | null }>,
+  ): Promise<Map<string, string | null>> {
+    const urls = new Map<string, string | null>();
+    await Promise.all(
+      users.map(async (user) =>
+        urls.set(user.user_id, await this.signPhoto(user.user_image)),
+      ),
+    );
+    return urls;
+  }
+
   private async signPhoto(value: string | null): Promise<string | null> {
     if (!value) return null;
     try {
