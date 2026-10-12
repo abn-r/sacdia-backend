@@ -569,10 +569,12 @@ describe('CertificateBulkImportApplicationService', () => {
 
     expect(tx.users_honors.update).toHaveBeenCalledWith(
       expect.objectContaining({
+        // Fila vieja sin completed_at: la fecha coincide, se confirma.
         data: {
           active: true,
           certificate: batchFiles[0].file_url,
           images: [batchFiles[0].file_url],
+          completed_at: completedAt,
         },
       }),
     );

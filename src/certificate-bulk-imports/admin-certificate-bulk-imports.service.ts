@@ -29,6 +29,7 @@ import {
 } from './certificate-import-year-resolver.service';
 import { ApproveCertificateImportDto, RejectCertificateImportDto } from './dto';
 import { sameInstructor } from '../instructors/instructor-view';
+import { honorCompletionDate } from '../honors/honor-completion-date';
 import {
   CertificateBulkImportBatchStatus,
   CertificateBulkImportItemStatus,
@@ -185,6 +186,7 @@ export class AdminCertificateBulkImportsService {
       select: {
         honor_id: true,
         date: true,
+        completed_at: true,
         instructor_user_id: true,
         instructor_name: true,
       },
@@ -194,7 +196,7 @@ export class AdminCertificateBulkImportsService {
       if (
         current &&
         (current.instructor_user_id || current.instructor_name) &&
-        civilDateFromDbDate(current.date) ===
+        civilDateFromDbDate(honorCompletionDate(current)) ===
           civilDateFromDbDate(item.completed_at) &&
         !sameInstructor(current, item)
       ) {

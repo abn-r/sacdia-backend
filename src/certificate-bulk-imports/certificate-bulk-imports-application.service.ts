@@ -31,6 +31,8 @@ import {
 import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
 import { LATER_CERTIFICATE_ACCREDITATION_REASON } from '../investiture-requests/investiture-request-lock';
 import { instructorKind, sameInstructor } from '../instructors/instructor-view';
+import { honorCompletionDate } from '../honors/honor-completion-date';
+import { checkDateInRange } from '../common/utils/honor-date-range';
 
 type CertificateImportApplicationTransaction = Pick<
   Prisma.TransactionClient,
@@ -168,6 +170,14 @@ export class CertificateBulkImportApplicationService {
     if (!item.honor_id) {
       throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_MISSING_HONOR');
     }
+    // El CHECK de `users_honors.completed_at` (>= 1960-01-01) fallaría con un 500:
+    // un ítem anterior a D6 con fecha antigua se rechaza con un mensaje claro.
+    if (
+      checkDateInRange(civilDateFromDbDate(item.completed_at) ?? '') ===
+      'TOO_OLD'
+    ) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_DATE_TOO_OLD');
+    }
 
     const primaryFile = this.primaryFile(item);
     const now = new Date();
@@ -180,25 +190,29 @@ export class CertificateBulkImportApplicationService {
         user_honor_id: true,
         active: true,
         date: true,
+        completed_at: true,
         validation_status: true,
         instructor_user_id: true,
         instructor_name: true,
       },
     });
 
-    if (
-      existingUserHonor?.date &&
-      existingUserHonor.validation_status === 'APPROVED' &&
-      civilDateFromDbDate(existingUserHonor.date) !==
-        civilDateFromDbDate(item.completed_at)
-    ) {
+    // M5: `completed_at` es la fecha de finalización; `date` es la de inicio. Se
+    // compara la finalización (con respaldo en `date` para filas viejas sin
+    // backfill) y solo contra filas ya APPROVED: en una fila abierta del flujo
+    // normal `date` es el inicio y no dice nada de la finalización.
+    const approvedCompletion =
+      existingUserHonor?.validation_status === 'APPROVED'
+        ? civilDateFromDbDate(honorCompletionDate(existingUserHonor))
+        : null;
+    const itemCompletion = civilDateFromDbDate(item.completed_at);
+
+    if (approvedCompletion && approvedCompletion !== itemCompletion) {
       throw new BadRequestException('CERTIFICATE_IMPORT_FINAL_DATE_CONFLICT');
     }
 
     const identicalHonor =
-      !!existingUserHonor?.date &&
-      civilDateFromDbDate(existingUserHonor.date) ===
-        civilDateFromDbDate(item.completed_at);
+      !!approvedCompletion && approvedCompletion === itemCompletion;
 
     const instructor = this.resolveApprovedInstructor(existingUserHonor, item);
 
@@ -210,6 +224,10 @@ export class CertificateBulkImportApplicationService {
                 active: true,
                 certificate: primaryFile.file_url,
                 images: item.batch.files.map((file) => file.file_url),
+                // Fila vieja sin backfill: la fecha coincide, se confirma.
+                ...(existingUserHonor.completed_at
+                  ? {}
+                  : { completed_at: item.completed_at! }),
                 ...instructor.write,
               }
             : {
@@ -222,7 +240,8 @@ export class CertificateBulkImportApplicationService {
                 rejection_reason: null,
                 certificate: primaryFile.file_url,
                 images: item.batch.files.map((file) => file.file_url),
-                date: item.completed_at!,
+                // `date` (inicio) de una fila existente no se pisa.
+                completed_at: item.completed_at!,
                 ...instructor.write,
               },
         })
@@ -239,7 +258,9 @@ export class CertificateBulkImportApplicationService {
             rejection_reason: null,
             certificate: primaryFile.file_url,
             images: item.batch.files.map((file) => file.file_url),
+            // Inicio desconocido: `date` (NOT NULL) refleja la finalización.
             date: item.completed_at!,
+            completed_at: item.completed_at!,
             ...instructor.write,
           },
         });

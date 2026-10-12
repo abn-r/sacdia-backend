@@ -310,11 +310,17 @@ export class UserHonorsController {
   @RequirePermissions('user_honors:submit')
   @ApiOperation({
     summary: 'Actualizar progreso de honor',
-    description: 'Actualiza evidencias, validación o certificado del honor',
+    description:
+      'Actualiza evidencias, modo de trabajo, fecha de finalización (completedAt) e instructor opcional (instructorUserId o instructorName, exclusivos; null los borra). Solo en IN_PROGRESS o REJECTED.',
   })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'honorId', type: Number })
   @ApiResponse({ status: 200, description: 'Honor actualizado' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Estado no editable, fecha fuera de 1960-01-01..hoy o instructor inválido (HONOR_INSTRUCTOR_INVALID/SELF/AMBIGUOUS)',
+  })
   async updateHonor(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,

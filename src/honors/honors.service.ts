@@ -32,6 +32,14 @@ import { AchievementsService } from '../achievements/achievements.service';
 import pLimit from 'p-limit';
 import { randomUUID } from 'crypto';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
+import { InstructorsService } from '../instructors/instructors.service';
+import {
+  instructorUserSelect,
+  instructorUserSelectNoPhoto,
+  sameInstructor,
+  toInstructorView,
+  instructorKind,
+} from '../instructors/instructor-view';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
@@ -45,10 +53,35 @@ import {
 // used by PROFILE_URL_LIMITER in camporees.service.ts.
 export const HONOR_DETAIL_URL_LIMITER = pLimit(20);
 const HONOR_MUTATION_BLOCKED_STATUSES = ['PENDING_REVIEW', 'APPROVED'] as const;
+// Instructor (M1) con el que se arma el bloque `instructor` de las respuestas.
+// Una sola fila trae la foto para firmarla; los listados no (hasta 500 filas).
+const USER_HONOR_INSTRUCTOR_INCLUDE = {
+  instructor: { select: instructorUserSelect },
+} satisfies Prisma.users_honorsInclude;
+const SINGLE_ROW = { instructorPhoto: true } as const;
+const USER_HONOR_INSTRUCTOR_LIST_INCLUDE = {
+  instructor: { select: instructorUserSelectNoPhoto },
+} satisfies Prisma.users_honorsInclude;
 const INITIAL_HONOR_COMPLETION_MODE = HonorCompletionModeDto.UNDECIDED;
 const ADVENTURERS_CLUB_TYPE_ID = 1;
 const PATHFINDERS_CLUB_TYPE_ID = 2;
 const MASTER_GUIDES_CLUB_TYPE_ID = 3;
+
+type InstructorColumns = {
+  instructor_user_id: string | null;
+  instructor_name: string | null;
+};
+
+/** Instructor y fecha de finalización que un DTO del flujo normal puede escribir. */
+type InstructorCompletionInput = {
+  instructorUserId?: string | null;
+  instructorName?: string | null;
+  completedAt?: string | null;
+};
+
+type InstructorCompletionData = Partial<InstructorColumns> & {
+  completed_at?: Date | null;
+};
 
 type UploadedObjectRef = {
   bucketAlias: StorageBucketAlias;
@@ -68,6 +101,7 @@ export class HonorsService {
     private readonly translationService: TranslationService,
     private readonly masterHonorsEvaluator: MasterHonorsEvaluatorService,
     private readonly catalogCache: CatalogCacheService,
+    private readonly instructors: InstructorsService,
   ) {}
 
   // ========================================
@@ -398,6 +432,7 @@ export class HonorsService {
         ...(validated !== undefined && { validate: validated }),
       },
       include: {
+        ...USER_HONOR_INSTRUCTOR_LIST_INCLUDE,
         honors: {
           select: {
             honor_id: true,
@@ -546,6 +581,10 @@ export class HonorsService {
               validated_by_id: null,
               validated_at: null,
               rejection_reason: null,
+              // El reinicio vacía también lo declarado: instructor y finalización.
+              instructor_user_id: null,
+              instructor_name: null,
+              completed_at: null,
               modified_at: new Date(),
             };
 
@@ -553,6 +592,7 @@ export class HonorsService {
         where: { user_honor_id: existing.user_honor_id },
         data: reactivationData,
         include: {
+          ...USER_HONOR_INSTRUCTOR_INCLUDE,
           honors: {
             select: {
               name: true,
@@ -587,7 +627,7 @@ export class HonorsService {
         );
       }
 
-      return this.mapUserHonorPrivateUrls(updated);
+      return this.mapUserHonorPrivateUrls(updated, SINGLE_ROW);
     }
 
     // Crear nuevo registro
@@ -604,6 +644,7 @@ export class HonorsService {
         active: true,
       },
       include: {
+        ...USER_HONOR_INSTRUCTOR_INCLUDE,
         honors: {
           select: {
             honor_id: true,
@@ -637,7 +678,7 @@ export class HonorsService {
       );
     }
 
-    return this.mapUserHonorPrivateUrls(created);
+    return this.mapUserHonorPrivateUrls(created, SINGLE_ROW);
   }
 
   private async evaluateMasterHonors(userId: string) {
@@ -664,16 +705,27 @@ export class HonorsService {
       select: {
         user_honor_id: true,
         validation_status: true,
+        instructor_user_id: true,
+        instructor_name: true,
       },
     });
 
     if (existing) {
       this.assertHonorIsMutable(existing.validation_status);
+      const instructorData = await this.buildInstructorCompletionData(
+        userId,
+        existing,
+        dto,
+      );
 
       const updated = await this.prisma.users_honors.update({
         where: { user_honor_id: existing.user_honor_id },
-        data: this.buildUpdateDataFromCreateDto(dto),
+        data: {
+          ...this.buildUpdateDataFromCreateDto(dto),
+          ...instructorData,
+        },
         include: {
+          ...USER_HONOR_INSTRUCTOR_INCLUDE,
           honors: {
             select: {
               honor_id: true,
@@ -690,16 +742,23 @@ export class HonorsService {
         },
       });
 
-      return this.mapUserHonorPrivateUrls(updated);
+      return this.mapUserHonorPrivateUrls(updated, SINGLE_ROW);
     }
 
+    const instructorData = await this.buildInstructorCompletionData(
+      userId,
+      null,
+      dto,
+    );
     const created = await this.prisma.users_honors.create({
       data: {
         user_id: userId,
         honor_id: dto.honorId,
         ...this.buildCreateDataFromCreateDto(dto),
+        ...instructorData,
       },
       include: {
+        ...USER_HONOR_INSTRUCTOR_INCLUDE,
         honors: {
           select: {
             honor_id: true,
@@ -716,7 +775,7 @@ export class HonorsService {
       },
     });
 
-    return this.mapUserHonorPrivateUrls(created);
+    return this.mapUserHonorPrivateUrls(created, SINGLE_ROW);
   }
 
   async createUserHonorsBulk(userId: string, dto: BulkCreateUserHonorsDto) {
@@ -764,6 +823,8 @@ export class HonorsService {
         user_honor_id: true,
         honor_id: true,
         validation_status: true,
+        instructor_user_id: true,
+        instructor_name: true,
       },
     });
 
@@ -774,16 +835,31 @@ export class HonorsService {
     }
 
     const existingByHonorId = new Map(
-      existingUserHonors.map((item) => [item.honor_id, item.user_honor_id]),
+      existingUserHonors.map((item) => [item.honor_id, item]),
     );
 
-    const operations = dto.honors.map((item) => {
-      const existingId = existingByHonorId.get(item.honorId);
+    // Instructor y finalización se validan para todo el lote antes de escribir.
+    const instructorData = await Promise.all(
+      dto.honors.map((item) =>
+        this.buildInstructorCompletionData(
+          userId,
+          existingByHonorId.get(item.honorId) ?? null,
+          item,
+        ),
+      ),
+    );
+
+    const operations = dto.honors.map((item, index) => {
+      const existingId = existingByHonorId.get(item.honorId)?.user_honor_id;
       if (existingId) {
         return this.prisma.users_honors.update({
           where: { user_honor_id: existingId },
-          data: this.buildUpdateDataFromCreateDto(item),
+          data: {
+            ...this.buildUpdateDataFromCreateDto(item),
+            ...instructorData[index],
+          },
           include: {
+            ...USER_HONOR_INSTRUCTOR_LIST_INCLUDE,
             honors: {
               select: {
                 honor_id: true,
@@ -806,8 +882,10 @@ export class HonorsService {
           user_id: userId,
           honor_id: item.honorId,
           ...this.buildCreateDataFromCreateDto(item),
+          ...instructorData[index],
         },
         include: {
+          ...USER_HONOR_INSTRUCTOR_LIST_INCLUDE,
           honors: {
             select: {
               honor_id: true,
@@ -1008,6 +1086,7 @@ export class HonorsService {
             active: true,
           },
           include: {
+            ...USER_HONOR_INSTRUCTOR_INCLUDE,
             honors: {
               select: {
                 honor_id: true,
@@ -1053,7 +1132,7 @@ export class HonorsService {
     return {
       status: 'success',
       data: {
-        user_honor: await this.mapUserHonorPrivateUrls(updated),
+        user_honor: await this.mapUserHonorPrivateUrls(updated, SINGLE_ROW),
         uploaded: {
           certificate:
             certificateFile && nextCertificateUrl
@@ -1131,13 +1210,32 @@ export class HonorsService {
       updateData.completion_mode = dto.completionMode;
     }
 
-    // Actualizar fecha
+    // Actualizar fecha de inicio
     if (dto.date) updateData.date = new Date(dto.date);
 
-    const updated = await this.prisma.users_honors.update({
+    // Instructor (D10) y fecha de finalización: solo con la fila mutable (guard de arriba).
+    const instructorData = await this.buildInstructorCompletionData(
+      userId,
+      userHonor,
+      dto,
+    );
+    Object.assign(updateData, instructorData);
+    const nextInstructor = {
+      instructor_user_id:
+        instructorData.instructor_user_id !== undefined
+          ? instructorData.instructor_user_id
+          : userHonor.instructor_user_id,
+      instructor_name:
+        instructorData.instructor_name !== undefined
+          ? instructorData.instructor_name
+          : userHonor.instructor_name,
+    };
+
+    const args = {
       where: { user_honor_id: userHonor.user_honor_id },
       data: updateData,
       include: {
+        ...USER_HONOR_INSTRUCTOR_INCLUDE,
         honors: {
           select: {
             honor_id: true,
@@ -1152,9 +1250,27 @@ export class HonorsService {
           },
         },
       },
-    });
+    } satisfies Prisma.users_honorsUpdateArgs;
 
-    return this.mapUserHonorPrivateUrls(updated);
+    // Auditoría: solo cambia el tipo/identidad, nunca se copia el nombre libre.
+    const updated = sameInstructor(userHonor, nextInstructor)
+      ? await this.prisma.users_honors.update(args)
+      : await this.prisma.$transaction(async (tx) => {
+          const row = await tx.users_honors.update(args);
+          await tx.validation_logs.create({
+            data: {
+              entity_type: 'honor',
+              entity_id: String(userHonor.user_honor_id),
+              user_id: userId,
+              action: 'instructor_set',
+              performed_by: userId,
+              comment: `Instructor de la especialidad: ${instructorKind(nextInstructor)}`,
+            },
+          });
+          return row;
+        });
+
+    return this.mapUserHonorPrivateUrls(updated, SINGLE_ROW);
   }
 
   async abandonHonor(userId: string, honorId: number) {
@@ -1226,6 +1342,46 @@ export class HonorsService {
       images: (dto.images || []) as Prisma.InputJsonValue,
       document: dto.document || null,
     };
+  }
+
+  /**
+   * D1/D10. Instructor y fecha de finalización que escribe el flujo normal.
+   * `undefined` = no cambia, `null` = borra, valor = asigna (y un usuario limpia
+   * el nombre libre y al revés). La elegibilidad se evalúa contra el DUEÑO de la
+   * especialidad (`ownerUserId`), no contra quien llama, y solo si el usuario
+   * elegido es distinto del actual. El rango de `completedAt` ya lo validó el DTO.
+   */
+  private async buildInstructorCompletionData(
+    ownerUserId: string,
+    current: InstructorColumns | null,
+    input: InstructorCompletionInput,
+  ): Promise<InstructorCompletionData> {
+    const givenUser = typeof input.instructorUserId === 'string';
+    const givenName = typeof input.instructorName === 'string';
+    if (givenUser && givenName) {
+      throw new AppBadRequestException(ErrorCode.HONOR_INSTRUCTOR_AMBIGUOUS);
+    }
+    if (givenUser && input.instructorUserId !== current?.instructor_user_id) {
+      await this.instructors.assertEligible(
+        ownerUserId,
+        input.instructorUserId as string,
+      );
+    }
+
+    const data: InstructorCompletionData = {};
+    if (input.instructorUserId !== undefined) {
+      data.instructor_user_id = input.instructorUserId;
+      if (givenUser) data.instructor_name = null;
+    }
+    if (input.instructorName !== undefined) {
+      data.instructor_name = input.instructorName;
+      if (givenName) data.instructor_user_id = null;
+    }
+    if (input.completedAt !== undefined) {
+      data.completed_at =
+        input.completedAt === null ? null : new Date(input.completedAt);
+    }
+    return data;
   }
 
   private assertHonorIsMutable(validationStatus?: string | null) {
@@ -1411,6 +1567,7 @@ export class HonorsService {
 
   private async mapUserHonorPrivateUrls<T extends Record<string, any>>(
     userHonor: T,
+    options: { instructorPhoto?: boolean } = {},
   ): Promise<T> {
     if (!userHonor) return userHonor;
 
@@ -1459,6 +1616,20 @@ export class HonorsService {
     if (hasCertificate) mapped.certificate = certificate ?? '';
     if (hasDocument) mapped.document = document ?? null;
     if (hasImages) mapped.images = images;
+
+    // Bloque `instructor` (sin email). Solo si la fila trae la relación cargada,
+    // para no inventar "Usuario eliminado" donde solo hay una columna cruda. La
+    // foto se firma únicamente en respuestas de una sola fila.
+    if (
+      'instructor_user_id' in userHonor &&
+      (userHonor.instructor_user_id == null || userHonor.instructor)
+    ) {
+      const photoUrls =
+        options.instructorPhoto && userHonor.instructor
+          ? await this.instructors.photoUrlsFor([userHonor.instructor])
+          : undefined;
+      mapped.instructor = toInstructorView(userHonor, photoUrls);
+    }
 
     return mapped as T;
   }

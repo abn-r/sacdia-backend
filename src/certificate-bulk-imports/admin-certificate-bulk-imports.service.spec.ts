@@ -407,6 +407,30 @@ describe('AdminCertificateBulkImportsService', () => {
       ]);
     });
 
+    it('compares the completion date (completed_at, falling back to date) when previewing the conflict', async () => {
+      const START = new Date('2026-04-01T00:00:00.000Z');
+      prisma.users_honors.findMany.mockResolvedValue([
+        // Inicio distinto, finalización igual: hay conflicto de instructor.
+        { honor_id: 10, date: START, completed_at: DATE, instructor_user_id: 'luis', instructor_name: null },
+        // `date` coincide pero la finalización aprobada es otra: sin conflicto.
+        { honor_id: 11, date: DATE, completed_at: new Date('2026-04-20T00:00:00.000Z'), instructor_user_id: 'luis', instructor_name: null },
+        // Fila vieja sin completed_at: se usa date.
+        { honor_id: 12, date: DATE, completed_at: null, instructor_user_id: 'luis', instructor_name: null },
+      ]);
+
+      const detail = await detailFor([
+        honorItem({ instructor_name: 'Juan López Ruiz' }),
+        honorItem({ item_id: 'item-2', honor_id: 11, instructor_name: 'Juan López Ruiz' }),
+        honorItem({ item_id: 'item-3', honor_id: 12, instructor_name: 'Juan López Ruiz' }),
+      ]);
+
+      expect(detail.items.map((item) => item.instructor_conflict)).toEqual([
+        true,
+        false,
+        true,
+      ]);
+    });
+
     it('reads the conflict of an approved row from its ITEM_APPROVED event', async () => {
       const detail = await detailFor(
         [honorItem({ status: 'APPROVED' }), honorItem({ item_id: 'item-2', status: 'APPROVED' })],

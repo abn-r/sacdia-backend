@@ -15,6 +15,35 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { IsDateInRange } from '../../common/utils/honor-date-range';
+import {
+  InstructorNameField,
+  InstructorUserIdField,
+} from '../../instructors/instructor-fields';
+
+const HONOR_DATE_CODES = {
+  tooOld: 'HONOR_DATE_TOO_OLD',
+  inFuture: 'HONOR_DATE_IN_FUTURE',
+} as const;
+
+/**
+ * Fecha de finalización de la especialidad, 1960-01-01 a hoy (D6). `undefined`
+ * = no cambia, `null` = borra. Es obligatoria solo al enviar a revisión.
+ */
+function CompletedAtField(): PropertyDecorator {
+  const decorators: Array<(target: object, key: string) => void> = [
+    ApiPropertyOptional({
+      description:
+        'Fecha en que el miembro completó la especialidad (yyyy-mm-dd, entre 1960-01-01 y hoy). null la borra. Obligatoria para enviar a revisión. `date` sigue siendo la fecha de inicio.',
+      example: '2026-04-12',
+      nullable: true,
+    }),
+    IsOptional(),
+    IsDateString({ strict: true }),
+    IsDateInRange(HONOR_DATE_CODES),
+  ];
+  return (target, key) => decorators.forEach((d) => d(target, String(key)));
+}
 
 export enum HonorCompletionModeDto {
   UNDECIDED = 'UNDECIDED',
@@ -25,7 +54,8 @@ export enum HonorCompletionModeDto {
 export class StartHonorDto {
   @ApiPropertyOptional({ description: 'Fecha de inicio del honor' })
   @IsOptional()
-  @IsDateString()
+  @IsDateString({ strict: true })
+  @IsDateInRange(HONOR_DATE_CODES)
   date?: string;
 }
 
@@ -60,9 +90,13 @@ export class UpdateUserHonorDto {
   @IsString()
   document?: string | null;
 
-  @ApiPropertyOptional({ description: 'Fecha de completación' })
+  @ApiPropertyOptional({
+    description:
+      'Fecha de inicio del honor (yyyy-mm-dd, entre 1960-01-01 y hoy)',
+  })
   @IsOptional()
-  @IsDateString()
+  @IsDateString({ strict: true })
+  @IsDateInRange(HONOR_DATE_CODES)
   date?: string;
 
   @ApiPropertyOptional({
@@ -72,6 +106,15 @@ export class UpdateUserHonorDto {
   @IsOptional()
   @IsEnum(HonorCompletionModeDto)
   completionMode?: HonorCompletionModeDto;
+
+  @CompletedAtField()
+  completedAt?: string | null;
+
+  @InstructorUserIdField()
+  instructorUserId?: string | null;
+
+  @InstructorNameField()
+  instructorName?: string | null;
 }
 
 export class CreateUserHonorDto {
@@ -81,7 +124,8 @@ export class CreateUserHonorDto {
 
   @ApiPropertyOptional({ description: 'Fecha de registro/inicio del honor' })
   @IsOptional()
-  @IsDateString()
+  @IsDateString({ strict: true })
+  @IsDateInRange(HONOR_DATE_CODES)
   date?: string;
 
   @ApiPropertyOptional({ description: 'Honor validado por instructor' })
@@ -111,6 +155,15 @@ export class CreateUserHonorDto {
   @IsOptional()
   @IsString()
   document?: string | null;
+
+  @CompletedAtField()
+  completedAt?: string | null;
+
+  @InstructorUserIdField()
+  instructorUserId?: string | null;
+
+  @InstructorNameField()
+  instructorName?: string | null;
 }
 
 export class BulkCreateUserHonorsDto {

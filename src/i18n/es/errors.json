@@ -776,6 +776,7 @@
   "HONOR_INSTRUCTOR_SELF": "No puedes ser tu propio instructor",
   "HONOR_DATE_TOO_OLD": "La fecha no puede ser anterior al 1 de enero de 1960",
   "HONOR_DATE_IN_FUTURE": "La fecha no puede ser futura",
+  "VALIDATION_HONOR_COMPLETED_AT_REQUIRED": "Indica la fecha de finalización de la especialidad antes de enviarla a revisión",
   "CERTIFICATE_IMPORT_HONOR_INSTRUCTOR_NOT_ALLOWED": "Las filas de clase no llevan instructor de especialidad",
   "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "El tipo de club no coincide con la clase elegida"
 }

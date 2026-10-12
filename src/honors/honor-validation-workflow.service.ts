@@ -5,6 +5,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { assertDateInRange } from '../common/utils/honor-date-range';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
@@ -20,6 +21,10 @@ const HONOR_STATUS_REJECTED = 'REJECTED' as const;
 const HONOR_COMPLETION_MODE_UNDECIDED = 'UNDECIDED' as const;
 const HONOR_COMPLETION_MODE_IN_APP = 'IN_APP' as const;
 const HONOR_COMPLETION_MODE_EXTERNAL = 'EXTERNAL' as const;
+
+// Apps published before the completion-date picker (S7) never send
+// completed_at. Flip to true once that app version is the minimum supported.
+export const REQUIRE_HONOR_COMPLETED_AT_ON_SUBMIT = false;
 
 type HonorCompletionMode =
   | typeof HONOR_COMPLETION_MODE_UNDECIDED
@@ -37,6 +42,7 @@ type UserHonorRecord = {
   images: unknown;
   document: string | null;
   certificate: string | null;
+  completed_at: Date | null;
   validated_at: Date | null;
   modified_at: Date;
 };
@@ -294,6 +300,8 @@ export class HonorValidationWorkflowService {
         );
     }
 
+    this.assertCompletedAt(userHonor);
+
     if (
       userHonor.validation_status === HONOR_STATUS_REJECTED &&
       userHonor.validated_at &&
@@ -303,6 +311,25 @@ export class HonorValidationWorkflowService {
         ErrorCode.VALIDATION_HONOR_NO_CHANGES_AFTER_REJECTION,
       );
     }
+  }
+
+  /**
+   * La fecha de finalización se exige al enviar a revisión solo cuando
+   * REQUIRE_HONOR_COMPLETED_AT_ON_SUBMIT es true (la app publicada aún no la
+   * captura). Si viene, se revalida el rango por si la fila llegó por otra vía.
+   * El instructor sigue siendo opcional (D1).
+   */
+  private assertCompletedAt(userHonor: Pick<UserHonorRecord, 'completed_at'>) {
+    if (!userHonor.completed_at) {
+      if (!REQUIRE_HONOR_COMPLETED_AT_ON_SUBMIT) return;
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_COMPLETED_AT_REQUIRED,
+      );
+    }
+    assertDateInRange(userHonor.completed_at.toISOString().slice(0, 10), {
+      tooOld: ErrorCode.HONOR_DATE_TOO_OLD,
+      inFuture: ErrorCode.HONOR_DATE_IN_FUTURE,
+    });
   }
 
   private async assertInAppSubmitEligibility(

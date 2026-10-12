@@ -763,6 +763,7 @@
   "HONOR_INSTRUCTOR_SELF": "Vous ne pouvez pas être votre propre instructeur",
   "HONOR_DATE_TOO_OLD": "La date ne peut pas être antérieure au 1er janvier 1960",
   "HONOR_DATE_IN_FUTURE": "La date ne peut pas être dans le futur",
+  "VALIDATION_HONOR_COMPLETED_AT_REQUIRED": "Indiquez la date d'achèvement de la spécialité avant de l'envoyer en révision",
   "CERTIFICATE_IMPORT_HONOR_INSTRUCTOR_NOT_ALLOWED": "Les lignes de classe n'ont pas d'instructeur de spécialité",
   "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "Le type de club ne correspond pas à la classe choisie"
 }

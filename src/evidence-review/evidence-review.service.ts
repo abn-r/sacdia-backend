@@ -21,6 +21,11 @@ import {
 import { BulkRejectEvidenceDto } from './dto/bulk-reject-evidence.dto';
 import { HonorValidationWorkflowService } from '../honors/honor-validation-workflow.service';
 import {
+  instructorUserSelectNoPhoto,
+  toInstructorView,
+  type InstructorView,
+} from '../instructors/instructor-view';
+import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
@@ -90,6 +95,10 @@ export type EvidenceDetail = EvidenceItem & {
   files: EvidenceFile[];
   validated_by_name: string | null;
   honor_review_packet?: HonorReviewPacket;
+  /** Solo `honor`. Instructor declarado (sin foto ni email); `null` = sin instructor. */
+  instructor?: InstructorView | null;
+  /** Solo `honor`. Fecha de finalización declarada por el miembro (yyyy-mm-dd). */
+  completed_at?: Date | null;
 };
 
 export type HonorRequirementReviewItem = {
@@ -679,6 +688,7 @@ export class EvidenceReviewService {
         validator: {
           select: { name: true, paternal_last_name: true },
         },
+        instructor: { select: instructorUserSelectNoPhoto },
         // Load normalized evidence files (populated after migration).
         evidence_files: {
           where: { active: true },
@@ -723,6 +733,8 @@ export class EvidenceReviewService {
         ? buildMemberName(record.validator)
         : null,
       honor_review_packet: honorReviewPacket,
+      instructor: toInstructorView(record),
+      completed_at: record.completed_at,
     };
   }
 

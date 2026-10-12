@@ -10,6 +10,7 @@ import { HonorRequirementsService } from './honor-requirements.service';
 import { AdminHonorsController } from '../admin/admin-honors.controller';
 import { AdminHonorsService } from '../admin/admin-honors.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { InstructorsModule } from '../instructors/instructors.module';
 import { CatalogsModule } from '../catalogs/catalogs.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -37,6 +38,7 @@ function isRedisConfigured(): boolean {
 @Module({
   imports: [
     PrismaModule,
+    InstructorsModule,
     CatalogsModule,
     AchievementsModule,
     NotificationsModule,
