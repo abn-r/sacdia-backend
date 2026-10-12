@@ -10,6 +10,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { lockInvestitureAuthorizationPastor } from '../investiture-requests/investiture-request-lock';
 import { displayName } from '../investiture-requests/investiture-communications.rules';
 import {
@@ -614,14 +615,6 @@ export class DistrictInvestiturePastorService {
     }
     return null;
   }
-}
-
-/**
- * Prisma no escapa `%`, `_` ni `\` en `contains`: sin esto, `%%%` listaría a
- * todos. PostgreSQL usa la barra invertida como escape por omisión en ILIKE.
- */
-function escapeLikeWildcards(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 function roleSet(

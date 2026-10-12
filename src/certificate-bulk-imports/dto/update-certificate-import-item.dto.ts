@@ -14,6 +14,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsDateInRange } from '../../common/utils/honor-date-range';
 import { CertificateBulkImportItemType } from '../certificate-bulk-imports.types';
 
 export class UpdateCertificateImportItemDto {
@@ -76,13 +77,17 @@ export class UpdateCertificateImportItemDto {
 
   @ApiPropertyOptional({
     description:
-      'Fecha de completado/certificación confirmada por el miembro en formato ISO yyyy-mm-dd',
+      'Fecha de completado/certificación (especialidad) o de investidura (clase) confirmada por el miembro en formato ISO yyyy-mm-dd. Entre 1960-01-01 y hoy.',
     example: '2026-04-12',
   })
   @ValidateIf(
     (dto: UpdateCertificateImportItemDto) => dto.mark_as_ready === true,
   )
   @IsDateString({ strict: true })
+  @IsDateInRange({
+    tooOld: 'CERTIFICATE_IMPORT_DATE_TOO_OLD',
+    inFuture: 'CERTIFICATE_IMPORT_DATE_IN_FUTURE',
+  })
   completed_at?: string;
 
   @ApiPropertyOptional({

@@ -107,4 +107,55 @@ describe('CertificateOcrParser', () => {
       }),
     ]);
   });
+
+  describe('date range (D6)', () => {
+    const parse = (date: string) =>
+      new CertificateOcrParser().parse(`
+        Especialidades: Primeros Auxilios
+        Clase: Amigo
+        Fecha: ${date}
+      `);
+
+    it('keeps the raw date and leaves completedAt empty when it reads 1925', () => {
+      const { items } = parse('1925-05-12');
+
+      expect(items).toHaveLength(2);
+      for (const item of items) {
+        expect(item.completedAt).toBeUndefined();
+        expect(item.detectedDate).toBe('1925-05-12');
+        expect(item.fieldConfidence.date).toBe(0);
+        expect(item.confidence).toBe(0.48);
+      }
+    });
+
+    it('rejects 1959-12-31 and accepts 1960-01-01', () => {
+      expect(parse('1959-12-31').items[0].completedAt).toBeUndefined();
+      expect(parse('1960-01-01').items[0]).toMatchObject({
+        completedAt: '1960-01-01',
+      });
+    });
+
+    it('does not accept a future date as completedAt', () => {
+      const { items } = parse('2099-01-01');
+
+      expect(items[0].completedAt).toBeUndefined();
+      expect(items[0].detectedDate).toBe('2099-01-01');
+      expect(items[0].fieldConfidence.date).toBe(0);
+    });
+
+    it('drops an impossible calendar date instead of storing it', () => {
+      const { items } = parse('2020-13-45');
+
+      expect(items[0].completedAt).toBeUndefined();
+      expect(items[0].detectedDate).toBeUndefined();
+    });
+
+    it('does not add detectedDate when the date is valid', () => {
+      const [item] = parse('2026-04-12').items;
+
+      expect(item.completedAt).toBe('2026-04-12');
+      expect(item).not.toHaveProperty('detectedDate');
+      expect(item.fieldConfidence.date).toBe(0.7);
+    });
+  });
 });

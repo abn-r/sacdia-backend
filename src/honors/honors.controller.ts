@@ -29,6 +29,7 @@ import {
 } from '@nestjs/swagger';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { HonorsService } from './honors.service';
+import { HonorSearchPipe } from './honor-search.pipe';
 import {
   StartHonorDto,
   UpdateUserHonorDto,
@@ -74,6 +75,13 @@ export class HonorsController {
     type: Number,
     description: '1=Básico, 2=Avanzado, 3=Máster',
   })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description:
+      'Busca en el nombre y sus traducciones. 2 a 60 caracteres tras recortar; si no cumple, 400. No se cachea.',
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Lista paginada de honores' })
@@ -84,6 +92,7 @@ export class HonorsController {
     clubTypeId?: number,
     @Query('skillLevel', new ParseIntPipe({ optional: true }))
     skillLevel?: number,
+    @Query('search', new HonorSearchPipe()) search?: string,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
@@ -92,7 +101,7 @@ export class HonorsController {
     if (limit) pagination.limit = Math.min(limit, 100);
 
     return this.honorsService.findAll(
-      { categoryId, clubTypeId, skillLevel },
+      { categoryId, clubTypeId, skillLevel, search },
       pagination,
     );
   }
