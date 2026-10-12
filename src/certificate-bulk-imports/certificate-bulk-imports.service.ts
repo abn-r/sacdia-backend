@@ -185,6 +185,23 @@ export class CertificateBulkImportsService {
       if (existing && (state === 'failed' || state === 'completed')) {
         await existing.remove();
       }
+    } catch {
+      this.logger.error('certificate OCR enqueue failed');
+      throw new BadRequestException('CERTIFICATE_IMPORT_OCR_UNAVAILABLE');
+    }
+
+    // OCR_QUEUED se escribe ANTES de add(): un worker rápido puede terminar y
+    // registrar OCR_PROCESSED dentro de add(), y ese evento debe quedar
+    // posterior. Si add() falla, el evento se compensa (se borra).
+    const queuedEvent = await this.recordEvent(
+      this.prisma,
+      batchId,
+      null,
+      'OCR_QUEUED',
+      userId,
+      { queued: true },
+    );
+    try {
       await this.ocrQueue.add(
         CERTIFICATE_OCR_JOB,
         { userId, batchId },
@@ -197,6 +214,7 @@ export class CertificateBulkImportsService {
         },
       );
     } catch (error) {
+      await this.discardQueuedEvent(queuedEvent?.event_id);
       const message = error instanceof Error ? error.message : '';
       if (!/already exists|already waiting|jobid/i.test(message)) {
         this.logger.error('certificate OCR enqueue failed');
@@ -205,10 +223,23 @@ export class CertificateBulkImportsService {
       return this.getBatch(userId, batchId);
     }
 
-    await this.recordEvent(this.prisma, batchId, null, 'OCR_QUEUED', userId, {
-      queued: true,
-    });
     return this.getBatch(userId, batchId);
+  }
+
+  /**
+   * Compensa un OCR_QUEUED cuyo add() falló, para que el lote no quede en
+   * pending/failed por una lectura que nunca se encoló. Si el borrado también
+   * falla, queda el evento (el estado cae a `failed` pasados 5 minutos).
+   */
+  private async discardQueuedEvent(eventId: string | undefined) {
+    if (!eventId) return;
+    try {
+      await this.prisma.certificate_bulk_import_item_events.deleteMany({
+        where: { event_id: eventId },
+      });
+    } catch {
+      this.logger.warn('certificate OCR queued event cleanup failed');
+    }
   }
 
   async runQueuedOcr(userId: string, batchId: string) {
@@ -1381,7 +1412,7 @@ export class CertificateBulkImportsService {
     performedById: string,
     payload?: Record<string, unknown>,
   ) {
-    await tx.certificate_bulk_import_item_events.create({
+    return tx.certificate_bulk_import_item_events.create({
       data: {
         batch_id: batchId,
         item_id: itemId,

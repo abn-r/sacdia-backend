@@ -35,6 +35,7 @@ describe('CertificateBulkImportsService', () => {
     },
     certificate_bulk_import_item_events: {
       create: jest.fn(),
+      deleteMany: jest.fn(),
     },
   };
 
@@ -1061,6 +1062,119 @@ describe('CertificateBulkImportsService', () => {
         expect(result.batch_id).toBe('batch-1');
       },
     );
+
+    it('records OCR_QUEUED before add(), so a worker finishing inside add() ends done, not pending', async () => {
+      const { svc, queue } = withQueue(undefined);
+      const stored: Array<{ action: string; created_at: Date; payload?: unknown }> = [];
+      let clock = Date.now();
+      tx.certificate_bulk_import_item_events.create.mockImplementation(
+        async ({ data }: any) => {
+          stored.push({
+            action: data.action,
+            created_at: new Date(++clock),
+            payload: data.payload,
+          });
+          return { event_id: `event-${stored.length}` };
+        },
+      );
+      const order: string[] = [];
+      queue.add.mockImplementation(async () => {
+        order.push(`add(events=${stored.map((e) => e.action).join(',')})`);
+        // instant worker: OCR_PROCESSED lands before add() returns
+        stored.push({
+          action: 'OCR_PROCESSED',
+          created_at: new Date(++clock),
+          payload: { item_count: 0 },
+        });
+        return { id: 'job-1' };
+      });
+      tx.certificate_bulk_import_batches.findFirst.mockImplementation(
+        async () => ({ ...confirmedBatch(), events: [...stored] }),
+      );
+
+      const result = await svc.processOcr('user-1', 'batch-1');
+
+      expect(order).toEqual(['add(events=OCR_QUEUED)']);
+      expect(result.ocr_state).toBe('empty');
+      expect(
+        tx.certificate_bulk_import_item_events.deleteMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('retry after a failure orders remove, OCR_QUEUED, add', async () => {
+      const failed = job('failed');
+      const { svc, queue } = withQueue(failed);
+      const order: string[] = [];
+      failed.remove.mockImplementation(async () => void order.push('remove'));
+      tx.certificate_bulk_import_item_events.create.mockImplementation(
+        async ({ data }: any) => {
+          order.push(data.action);
+          return { event_id: 'event-1' };
+        },
+      );
+      queue.add.mockImplementation(async () => void order.push('add'));
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch(),
+      );
+
+      await svc.processOcr('user-1', 'batch-1');
+
+      expect(order).toEqual(['remove', 'OCR_QUEUED', 'add']);
+    });
+
+    it('compensates the OCR_QUEUED event and answers 400 when add() fails', async () => {
+      const { svc, queue } = withQueue(undefined);
+      tx.certificate_bulk_import_item_events.create.mockResolvedValue({
+        event_id: 'event-9',
+      });
+      queue.add.mockRejectedValue(new Error('ECONNREFUSED redis://:secret@h'));
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch(),
+      );
+
+      await expect(svc.processOcr('user-1', 'batch-1')).rejects.toThrow(
+        'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+      );
+      expect(
+        tx.certificate_bulk_import_item_events.deleteMany,
+      ).toHaveBeenCalledWith({ where: { event_id: 'event-9' } });
+    });
+
+    it('still answers 400 when the compensation itself fails', async () => {
+      const { svc, queue } = withQueue(undefined);
+      tx.certificate_bulk_import_item_events.create.mockResolvedValue({
+        event_id: 'event-9',
+      });
+      tx.certificate_bulk_import_item_events.deleteMany.mockRejectedValue(
+        new Error('db down'),
+      );
+      queue.add.mockRejectedValue(new Error('boom'));
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch(),
+      );
+
+      await expect(svc.processOcr('user-1', 'batch-1')).rejects.toThrow(
+        'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+      );
+    });
+
+    it('compensates the event and returns the batch when add() reports a duplicate job id', async () => {
+      const { svc, queue } = withQueue(undefined);
+      tx.certificate_bulk_import_item_events.create.mockResolvedValue({
+        event_id: 'event-9',
+      });
+      queue.add.mockRejectedValue(new Error('Job already exists'));
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch(),
+      );
+
+      const result = await svc.processOcr('user-1', 'batch-1');
+
+      expect(result.batch_id).toBe('batch-1');
+      expect(
+        tx.certificate_bulk_import_item_events.deleteMany,
+      ).toHaveBeenCalledWith({ where: { event_id: 'event-9' } });
+    });
 
     it('does not remove anything when no job exists', async () => {
       const { svc, queue } = withQueue(undefined);
