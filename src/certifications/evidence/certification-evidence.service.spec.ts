@@ -27,6 +27,7 @@ const baseEnrollment = {
   user_id: USER_ID,
   certification_id: CERT_ID,
   certification_version_id: VERSION_ID,
+  status: 'IN_PROGRESS',
 };
 
 const baseSection = {
@@ -523,6 +524,122 @@ describe('CertificationEvidenceService', () => {
       await service.delete(USER_ID, ENROLLMENT_ID, EVIDENCE_ID);
 
       expect(txMock.certification_evidences.update).toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // enrollment-level guard (status of the enrollment, not of the requirement)
+  // ==========================================================================
+
+  describe('enrollment status guard', () => {
+    const LOCKED_STATUSES = [
+      'CERTIFIED',
+      'APPROVED',
+      'SUBMITTED_FOR_FINAL_REVIEW',
+    ];
+
+    const lockedEnrollment = (status: string) => ({
+      ...baseEnrollment,
+      status,
+    });
+
+    it.each(LOCKED_STATUSES)(
+      'presign on a %s enrollment → CERT_REQUIREMENT_LOCKED, nothing created',
+      async (status) => {
+        txMock.users_certifications.findFirst.mockResolvedValue(
+          lockedEnrollment(status),
+        );
+
+        await expect(
+          service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, presignDto),
+        ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
+        expect(mockFileStorage.getSignedUploadUrl).not.toHaveBeenCalled();
+        expect(txMock.certification_evidences.create).not.toHaveBeenCalled();
+        expect(
+          txMock.certification_section_progress.create,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(LOCKED_STATUSES)(
+      'confirm on a %s enrollment → CERT_REQUIREMENT_LOCKED, nothing updated',
+      async (status) => {
+        txMock.users_certifications.findFirst.mockResolvedValue(
+          lockedEnrollment(status),
+        );
+
+        await expect(
+          service.confirm(USER_ID, ENROLLMENT_ID, SECTION_ID, confirmDto),
+        ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
+        expect(txMock.certification_evidences.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(LOCKED_STATUSES)(
+      'delete on a %s enrollment → CERT_REQUIREMENT_LOCKED, nothing updated',
+      async (status) => {
+        txMock.users_certifications.findFirst.mockResolvedValue(
+          lockedEnrollment(status),
+        );
+
+        await expect(
+          service.delete(USER_ID, ENROLLMENT_ID, EVIDENCE_ID),
+        ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
+        expect(txMock.certification_evidences.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('presign on an IN_PROGRESS enrollment behaves as before', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(baseEnrollment);
+      txMock.certification_sections.findFirst.mockResolvedValue(baseSection);
+      txMock.certification_section_progress.findFirst.mockResolvedValue(
+        draftProgress,
+      );
+      txMock.certification_component_responses.upsert.mockResolvedValue({
+        response_id: RESPONSE_ID,
+      });
+      mockFileStorage.getSignedUploadUrl.mockResolvedValue({
+        url: 'https://r2.example.com/signed-put',
+        key: 'k',
+        expiresInSeconds: 900,
+      });
+      txMock.certification_evidences.create.mockResolvedValue({
+        evidence_id: EVIDENCE_ID,
+      });
+
+      const result = await service.presign(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+        presignDto,
+      );
+
+      expect(result.evidence_id).toBe(EVIDENCE_ID);
+    });
+
+    it('READY_FOR_CLOSEOUT still allows presign (optional requirements stay editable)', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(
+        lockedEnrollment('READY_FOR_CLOSEOUT'),
+      );
+      txMock.certification_sections.findFirst.mockResolvedValue(baseSection);
+      txMock.certification_section_progress.findFirst.mockResolvedValue(
+        draftProgress,
+      );
+      txMock.certification_component_responses.upsert.mockResolvedValue({
+        response_id: RESPONSE_ID,
+      });
+      mockFileStorage.getSignedUploadUrl.mockResolvedValue({
+        url: 'https://r2.example.com/signed-put',
+        key: 'k',
+        expiresInSeconds: 900,
+      });
+      txMock.certification_evidences.create.mockResolvedValue({
+        evidence_id: EVIDENCE_ID,
+      });
+
+      await expect(
+        service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, presignDto),
+      ).resolves.toMatchObject({ evidence_id: EVIDENCE_ID });
     });
   });
 });
