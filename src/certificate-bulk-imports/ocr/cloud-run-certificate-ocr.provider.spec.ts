@@ -382,6 +382,95 @@ describe('CloudRunCertificateOcrProvider', () => {
     await server.close();
   });
 
+  it('records the file and page of each row from pages[].text (page 3 of a 5-page PDF)', async () => {
+    const server = await listen(async (req, res) => {
+      await readBody(req);
+      res.end(
+        JSON.stringify({
+          version: 'v1',
+          operationId: FILE_ID,
+          pageCount: 5,
+          pages: [
+            'Portada',
+            'Índice',
+            'Especialidad: Nudos\nFecha: 2024-05-12',
+            'Firmas',
+            'Anexo',
+          ].map((text, index) => ({ pageNumber: index + 1, text })),
+        }),
+      );
+    });
+    const pdfBytes = Buffer.from('%PDF-1.7\n');
+    const ocr = provider(server.port, storageFor(pdfBytes, 'application/pdf'), {
+      countPdf: async () => 5,
+    });
+
+    const parsed = await ocr.extract([
+      imageInput({
+        fileType: 'application/pdf',
+        fileName: 'cert.pdf',
+        sizeBytes: pdfBytes.length,
+      }),
+    ]);
+
+    expect(parsed.items).toEqual([
+      expect.objectContaining({
+        detectedName: 'Nudos',
+        completedAt: '2024-05-12',
+        sourceFileId: FILE_ID,
+        sourcePage: 3,
+      }),
+    ]);
+    expect(parsed.files).toEqual([
+      {
+        fileId: FILE_ID,
+        pages: expect.arrayContaining([
+          { pageNumber: 3, text: 'Especialidad: Nudos\nFecha: 2024-05-12' },
+        ]),
+      },
+    ]);
+    expect(parsed.rawText).toContain('Portada\nÍndice\nEspecialidad: Nudos');
+    await server.close();
+  });
+
+  it('assigns each row to the file it was read from when a batch has several', async () => {
+    const server = await listen(async (req, res) => {
+      await readBody(req);
+      const operationId = String(req.headers['x-ocr-operation-id']);
+      res.end(
+        JSON.stringify({
+          version: 'v1',
+          operationId,
+          pageCount: 1,
+          pages: [
+            {
+              pageNumber: 1,
+              text:
+                operationId === FILE_ID
+                  ? 'Honor: Natación'
+                  : 'Honor: Nudos\nClase: Amigo',
+            },
+          ],
+        }),
+      );
+    });
+    const ocr = provider(server.port, storageFor(JPEG, 'image/jpeg'));
+
+    const parsed = await ocr.extract([
+      imageInput(),
+      imageInput({ fileId: OTHER_FILE_ID }),
+    ]);
+
+    expect(
+      parsed.items.map((i) => [i.detectedName, i.sourceFileId, i.sourcePage]),
+    ).toEqual([
+      ['Natación', FILE_ID, 1],
+      ['Nudos', OTHER_FILE_ID, 1],
+      ['Amigo', OTHER_FILE_ID, 1],
+    ]);
+    await server.close();
+  });
+
   it('does not open HTTP when the PDF page count fails', async () => {
     let hits = 0;
     const server = await listen((req, res) => {

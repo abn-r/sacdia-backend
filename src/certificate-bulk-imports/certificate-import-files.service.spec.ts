@@ -233,6 +233,75 @@ describe('CertificateImportFilesService', () => {
     }
   }
 
+  describe('page_count at confirm (D4)', () => {
+    const claimedData = () =>
+      prisma.certificate_bulk_import_files.updateMany.mock.calls[0][0].data;
+
+    it.each([1, 5])('stores the PDF page count (%i) in the same claim that seals it', async (pages) => {
+      await preparePdf(pages);
+
+      const sealed = await service.confirm('owner-1', 'batch-1', 'file-1');
+
+      expect(claimedData()).toMatchObject({
+        upload_status: 'CONFIRMED',
+        page_count: pages,
+      });
+      expect(sealed.page_count).toBe(pages);
+      await waitForIdleValidationWorkers();
+    });
+
+    it('stores 1 for an image', async () => {
+      prisma.certificate_bulk_import_files.findFirst.mockResolvedValueOnce({
+        file_id: 'file-1',
+        file_type: 'image/jpeg',
+        file_url: 'staging-key',
+        upload_status: 'PENDING_UPLOAD',
+        staging_key: 'staging-key',
+        object_key: null,
+        size_bytes: 1200n,
+        confirmed_at: null,
+        page_count: null,
+        jurisdiction: 'CAMPO_LOCAL',
+        batch: { user_id: 'owner-1', local_field_id: 7, status: 'DRAFT' },
+      });
+
+      const sealed = await service.confirm('owner-1', 'batch-1', 'file-1');
+
+      expect(claimedData()).toMatchObject({ page_count: 1 });
+      expect(sealed.page_count).toBe(1);
+    });
+
+    it('returns the persisted value on a repeated confirm and null for a file from before M2', async () => {
+      const confirmed = {
+        file_id: 'file-1',
+        file_type: 'application/pdf',
+        upload_status: 'CONFIRMED',
+        staging_key: null,
+        object_key: 'sealed/file.pdf',
+        size_bytes: 1200n,
+        confirmed_at: new Date('2026-09-21T00:00:00.000Z'),
+        jurisdiction: 'CAMPO_LOCAL',
+        batch: { user_id: 'owner-1', local_field_id: 7, status: 'DRAFT' },
+      };
+      prisma.certificate_bulk_import_files.findFirst.mockResolvedValueOnce({
+        ...confirmed,
+        page_count: 3,
+      });
+      await expect(
+        service.confirm('owner-1', 'batch-1', 'file-1'),
+      ).resolves.toMatchObject({ page_count: 3 });
+
+      prisma.certificate_bulk_import_files.findFirst.mockResolvedValueOnce({
+        ...confirmed,
+        page_count: null,
+      });
+      await expect(
+        service.confirm('owner-1', 'batch-1', 'file-1'),
+      ).resolves.toMatchObject({ page_count: null });
+      expect(prisma.certificate_bulk_import_files.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
   it('rejects confirm when the PDF queue is full without sealing', async () => {
     const bytes = await preparePdf(1);
     let releaseHold: () => void = () => undefined;

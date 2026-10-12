@@ -421,6 +421,7 @@ export class AdminCertificateBulkImportsService {
         jurisdiction?: string | null;
         size_bytes?: bigint | null;
         staging_key?: unknown;
+        page_count?: number | null;
       }[];
       items?: {
         item_id?: string;

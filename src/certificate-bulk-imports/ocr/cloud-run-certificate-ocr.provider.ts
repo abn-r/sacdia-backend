@@ -14,6 +14,8 @@ import type {
 import {
   CertificateOcrParseResult,
   CertificateOcrParser,
+  type CertificateOcrFileText,
+  type CertificateOcrPage,
 } from './certificate-ocr.parser';
 import { signOcrProxyRequest } from './ocr-proxy-signer';
 import {
@@ -125,15 +127,22 @@ export class CloudRunCertificateOcrProvider implements CertificateOcrProvider {
   async extract(
     files: CertificateOcrFileInput[],
   ): Promise<CertificateOcrParseResult> {
-    const texts: string[] = [];
-    for (const file of files) texts.push(await this.readFile(file));
-    const rawText = texts.filter((text) => text.trim()).join('\n');
-    if (!rawText.trim()) this.fail('CERTIFICATE_IMPORT_OCR_FAILED');
-    const parsed = this.parser.parse(rawText);
+    const texts: CertificateOcrFileText[] = [];
+    for (const file of files) {
+      texts.push({
+        fileId: file.fileId ?? null,
+        pages: await this.readFile(file),
+      });
+    }
+    // Se conserva el texto por archivo y página: el parser registra dónde leyó cada fila.
+    const parsed = this.parser.parseFiles(texts);
+    if (!parsed.rawText.trim()) this.fail('CERTIFICATE_IMPORT_OCR_FAILED');
     return { ...parsed, rawText: clipStoredOcrText(parsed.rawText) };
   }
 
-  private async readFile(file: CertificateOcrFileInput): Promise<string> {
+  private async readFile(
+    file: CertificateOcrFileInput,
+  ): Promise<CertificateOcrPage[]> {
     const operation = this.operation(file);
     const url = this.proxyUrl();
     const bytes = await readSealedCertificateObject(this.storage, file);
@@ -158,7 +167,7 @@ export class CloudRunCertificateOcrProvider implements CertificateOcrProvider {
     };
     for (const [name, value] of signed.headers) headers[name] = value;
     const response = await this.post(url, headers, bytes);
-    return this.readText(response, operation.operationId, pageCount);
+    return this.readPages(response, operation.operationId, pageCount);
   }
 
   private operation(file: CertificateOcrFileInput): {
@@ -209,11 +218,11 @@ export class CloudRunCertificateOcrProvider implements CertificateOcrProvider {
     }
   }
 
-  private readText(
+  private readPages(
     response: ProxyResponse,
     operationId: string,
     pageCount: number,
-  ): string {
+  ): CertificateOcrPage[] {
     if (response.oversize) {
       this.fail(
         response.status === 429 || response.status >= 500
@@ -227,7 +236,7 @@ export class CloudRunCertificateOcrProvider implements CertificateOcrProvider {
     const envelope = this.errorEnvelope(response.body);
     if (envelope) this.fail(RENDER_CODE[envelope]);
     if (response.status === 200) {
-      return this.successText(response.body, operationId, pageCount);
+      return this.successPages(response.body, operationId, pageCount);
     }
     this.fail(
       response.status === 429 || response.status >= 500
@@ -259,11 +268,11 @@ export class CloudRunCertificateOcrProvider implements CertificateOcrProvider {
     return record.code as OcrErrorCode;
   }
 
-  private successText(
+  private successPages(
     body: Buffer,
     operationId: string,
     pageCount: number,
-  ): string {
+  ): CertificateOcrPage[] {
     let parsed: unknown;
     try {
       parsed = JSON.parse(body.toString('utf8'));
@@ -303,10 +312,10 @@ export class CloudRunCertificateOcrProvider implements CertificateOcrProvider {
       byNumber.set(pageNumber, item.text);
     }
     if (byNumber.size !== pageCount) this.fail('CERTIFICATE_IMPORT_OCR_FAILED');
-    return Array.from(
-      { length: pageCount },
-      (_, index) => byNumber.get(index + 1) ?? '',
-    ).join('\n');
+    return Array.from({ length: pageCount }, (_, index) => ({
+      pageNumber: index + 1,
+      text: byNumber.get(index + 1) ?? '',
+    }));
   }
 
   private post(

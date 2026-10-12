@@ -202,6 +202,40 @@ describe('GoogleVisionCertificateOcrProvider ADC', () => {
       (await f.ocr.extract([f.file])).items.map((i) => i.detectedName),
     ).toEqual(['Primero', 'Segundo']);
   });
+  it('records the page of each row in a PDF and page 1 for an image', async () => {
+    const f = await pdfFixture(3);
+    f.client.batchAnnotateFiles.mockResolvedValue([
+      {
+        responses: [
+          {
+            responses: [
+              { context: { pageNumber: 3 }, fullTextAnnotation: { text: 'Honor: Tres' } },
+              { context: { pageNumber: 1 }, fullTextAnnotation: { text: 'Portada' } },
+              { context: { pageNumber: 2 }, fullTextAnnotation: { text: 'Honor: Dos' } },
+            ],
+          },
+        ],
+      },
+    ]);
+    const image = fixture();
+
+    const fileId = '11111111-1111-4111-8111-111111111111';
+    const pdfResult = await f.ocr.extract([{ ...f.file, fileId }]);
+    const imageResult = await image.ocr.extract([{ ...file, fileId }]);
+
+    expect(
+      pdfResult.items.map((i) => [i.detectedName, i.sourceFileId, i.sourcePage]),
+    ).toEqual([
+      ['Dos', fileId, 2],
+      ['Tres', fileId, 3],
+    ]);
+    expect(pdfResult.files[0].pages.map((p) => p.pageNumber)).toEqual([1, 2, 3]);
+    expect(imageResult.items[0]).toMatchObject({
+      detectedName: 'Amigo',
+      sourceFileId: fileId,
+      sourcePage: 1,
+    });
+  });
   it.each([[1], [1, 1], [1, 3], [1, 2, 3], [1, undefined]])(
     'rejects incomplete/duplicate/extra page coverage %j',
     async (...numbers) => {

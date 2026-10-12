@@ -19,6 +19,8 @@ import {
 import {
   CertificateOcrParseResult,
   CertificateOcrParser,
+  type CertificateOcrFileText,
+  type CertificateOcrPage,
 } from './certificate-ocr.parser';
 import {
   clipStoredOcrText,
@@ -68,12 +70,17 @@ export class GoogleVisionCertificateOcrProvider
   async extract(
     files: CertificateOcrFileInput[],
   ): Promise<CertificateOcrParseResult> {
-    const texts: string[] = [];
-    for (const file of files) texts.push(await this.readFile(file));
-    const rawText = texts.filter((text) => text.trim()).join('\n');
-    if (!rawText.trim())
+    const texts: CertificateOcrFileText[] = [];
+    for (const file of files) {
+      texts.push({
+        fileId: file.fileId ?? null,
+        pages: await this.readFile(file),
+      });
+    }
+    // Se conserva el texto por archivo y página: el parser registra dónde leyó cada fila.
+    const parsed = this.parser.parseFiles(texts);
+    if (!parsed.rawText.trim())
       throw new BadRequestException('CERTIFICATE_IMPORT_OCR_FAILED');
-    const parsed = this.parser.parse(rawText);
     return { ...parsed, rawText: clipStoredOcrText(parsed.rawText) };
   }
 
@@ -113,7 +120,9 @@ export class GoogleVisionCertificateOcrProvider
     }
   }
 
-  private async readFile(file: CertificateOcrFileInput): Promise<string> {
+  private async readFile(
+    file: CertificateOcrFileInput,
+  ): Promise<CertificateOcrPage[]> {
     const bytes = await readSealedCertificateObject(this.storage, file);
     const pageCount =
       file.fileType === 'application/pdf'
@@ -141,7 +150,8 @@ export class GoogleVisionCertificateOcrProvider
       );
       if (response?.responses?.length !== 1)
         throw new BadRequestException('CERTIFICATE_IMPORT_OCR_FAILED');
-      return this.pageText(response.responses[0]);
+      // Una imagen es una sola página.
+      return [{ pageNumber: 1, text: this.pageText(response.responses[0]) }];
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
       throw this.vendorError(error);
@@ -152,7 +162,7 @@ export class GoogleVisionCertificateOcrProvider
     client: VisionClient,
     bytes: Buffer,
     count: number,
-  ): Promise<string> {
+  ): Promise<CertificateOcrPage[]> {
     const pages = Array.from({ length: count }, (_, n) => n + 1);
     const [response] = await client.batchAnnotateFiles(
       {
@@ -195,9 +205,10 @@ export class GoogleVisionCertificateOcrProvider
     }
     if (byNumber.size !== count)
       throw new BadRequestException('CERTIFICATE_IMPORT_OCR_FAILED');
-    return pages
-      .map((number) => this.pageText(byNumber.get(number)!))
-      .join('\n');
+    return pages.map((number) => ({
+      pageNumber: number,
+      text: this.pageText(byNumber.get(number)!),
+    }));
   }
 
   private pageText(page: PageResponse): string {
