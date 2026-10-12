@@ -1,6 +1,7 @@
 import { ErrorCode } from '../../common/errors/error-codes';
 import {
   assertEnrollmentAbandonable,
+  assertEnrollmentEditable,
   assertReadyForCloseout,
   assertRequirementEditable,
   assertVersionMutable,
@@ -135,6 +136,29 @@ describe('certification state machine', () => {
       'WITHDRAWN',
     ] as const)('allows abandoning an enrollment in %s', (status) => {
       expect(() => assertEnrollmentAbandonable(status)).not.toThrow();
+    });
+  });
+
+  describe('enrollment editability', () => {
+    it.each([
+      'ENROLLED',
+      'IN_PROGRESS',
+      'CHANGES_REQUESTED',
+      'READY_FOR_CLOSEOUT',
+    ] as const)('allows requirement/evidence edits while %s', (status) => {
+      expect(() => assertEnrollmentEditable(status)).not.toThrow();
+    });
+
+    it.each([
+      'SUBMITTED_FOR_FINAL_REVIEW',
+      'APPROVED',
+      'CERTIFIED',
+      'WITHDRAWN',
+      'EXPIRED',
+    ] as const)('locks requirement/evidence edits while %s', (status) => {
+      expect(() => assertEnrollmentEditable(status)).toThrow(
+        expect.objectContaining({ code: ErrorCode.CERT_REQUIREMENT_LOCKED }),
+      );
     });
   });
 

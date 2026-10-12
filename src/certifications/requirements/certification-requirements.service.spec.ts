@@ -711,4 +711,116 @@ describe('CertificationRequirementsService', () => {
       expect(result.requirement.status).toBe('SUBMITTED');
     });
   });
+
+  // ==========================================================================
+  // enrollment-level guard (status of the enrollment, not of the requirement)
+  // ==========================================================================
+
+  describe('enrollment status guard', () => {
+    const LOCKED_STATUSES = [
+      'CERTIFIED',
+      'APPROVED',
+      'SUBMITTED_FOR_FINAL_REVIEW',
+    ];
+
+    it.each(LOCKED_STATUSES)(
+      'saveDraft on a %s enrollment → CERT_REQUIREMENT_LOCKED, nothing written',
+      async (status) => {
+        txMock.users_certifications.findFirst.mockResolvedValue({
+          ...baseEnrollment,
+          status,
+        });
+
+        await expect(
+          service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
+            responses: [{ component_id: TEXT_COMPONENT_ID, text_value: 'x' }],
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
+        expect(
+          txMock.certification_section_progress.create,
+        ).not.toHaveBeenCalled();
+        expect(
+          txMock.certification_component_responses.upsert,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(LOCKED_STATUSES)(
+      'submitRequirement on a %s enrollment → CERT_REQUIREMENT_LOCKED, no lock bump or event',
+      async (status) => {
+        txMock.users_certifications.findFirst.mockResolvedValue({
+          ...baseEnrollment,
+          status,
+        });
+
+        await expect(
+          service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, {
+            lock_version: 0,
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
+        expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
+        expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('getRequirement (read) is still allowed on a CERTIFIED enrollment', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue({
+        ...baseEnrollment,
+        status: 'CERTIFIED',
+      });
+      mockPrisma.certification_sections.findFirst.mockResolvedValue(
+        baseSection,
+      );
+      mockPrisma.certification_section_progress.findFirst.mockResolvedValue(
+        null,
+      );
+
+      const result = await service.getRequirement(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+      );
+
+      expect(result.status).toBe('DRAFT');
+    });
+
+    it('saveDraft on an IN_PROGRESS enrollment behaves as before', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(
+        inProgressEnrollment,
+      );
+      txMock.certification_sections.findFirst.mockResolvedValue(baseSection);
+      txMock.certification_section_progress.findFirst.mockResolvedValue({
+        progress_id: 1,
+        status: 'DRAFT',
+      });
+      txMock.certification_component_responses.upsert.mockResolvedValue({});
+      txMock.certification_component_responses.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
+          responses: [{ component_id: TEXT_COMPONENT_ID, text_value: 'x' }],
+        }),
+      ).resolves.toMatchObject({ section_id: SECTION_ID });
+    });
+
+    it('READY_FOR_CLOSEOUT still allows saveDraft (optional requirements stay editable)', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue({
+        ...baseEnrollment,
+        status: 'READY_FOR_CLOSEOUT',
+      });
+      txMock.certification_sections.findFirst.mockResolvedValue(baseSection);
+      txMock.certification_section_progress.findFirst.mockResolvedValue({
+        progress_id: 1,
+        status: 'DRAFT',
+      });
+      txMock.certification_component_responses.upsert.mockResolvedValue({});
+      txMock.certification_component_responses.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
+          responses: [{ component_id: TEXT_COMPONENT_ID, text_value: 'x' }],
+        }),
+      ).resolves.toMatchObject({ section_id: SECTION_ID });
+    });
+  });
 });

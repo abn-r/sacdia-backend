@@ -343,6 +343,59 @@ describe('CertificationCloseoutService', () => {
       });
     });
 
+    it.each(['CERTIFIED', 'APPROVED', 'SUBMITTED_FOR_FINAL_REVIEW', 'IN_PROGRESS'])(
+      'TC12b - enrollment %s is not in a closeout state → CERT_CLOSEOUT_INCOMPLETE, evidence untouched',
+      async (status) => {
+        txMock.users_certifications.findFirst.mockResolvedValue({
+          ...readyEnrollment,
+          status,
+        });
+
+        await expect(
+          service.confirmCloseoutEvidence(USER_ID, ENROLLMENT_ID, confirmDto),
+        ).rejects.toMatchObject({ code: ErrorCode.CERT_CLOSEOUT_INCOMPLETE });
+        expect(
+          txMock.certification_closeout_evidences.findFirst,
+        ).not.toHaveBeenCalled();
+        expect(
+          txMock.certification_closeout_evidences.update,
+        ).not.toHaveBeenCalled();
+        expect(mockFileStorage.getObjectInfo).not.toHaveBeenCalled();
+      },
+    );
+
+    it('TC12c - CHANGES_REQUESTED is a valid closeout state (same replay as presign)', async () => {
+      // Fresh copy: the service mutates the row it loads.
+      txMock.users_certifications.findFirst.mockResolvedValue({
+        ...readyEnrollment,
+        status: 'CHANGES_REQUESTED',
+      });
+      wireAllRequiredApproved(txMock);
+      txMock.certification_closeout_evidences.findFirst.mockResolvedValue(
+        pendingEvidence,
+      );
+      mockFileStorage.getObjectInfo.mockResolvedValue({
+        size: 102400,
+        contentType: 'application/pdf',
+      });
+      txMock.certification_closeout_evidences.update.mockResolvedValue({
+        closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
+        upload_status: 'CONFIRMED',
+        review_status: 'PENDING',
+      });
+
+      const result = await service.confirmCloseoutEvidence(
+        USER_ID,
+        ENROLLMENT_ID,
+        confirmDto,
+      );
+
+      expect(result.upload_status).toBe('CONFIRMED');
+      expect(txMock.users_certifications.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: 'READY_FOR_CLOSEOUT' } }),
+      );
+    });
+
     it('TC13 - happy path transitions PENDING_UPLOAD → CONFIRMED', async () => {
       txMock.users_certifications.findFirst.mockResolvedValue(readyEnrollment);
       txMock.certification_closeout_evidences.findFirst.mockResolvedValue(

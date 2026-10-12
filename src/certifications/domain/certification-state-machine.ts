@@ -73,6 +73,17 @@ export const ENROLLMENT_NOT_ABANDONABLE_STATUSES: readonly CertificationEnrollme
 const ENROLLMENT_NOT_ABANDONABLE: ReadonlySet<CertificationEnrollmentStatus> =
   new Set(ENROLLMENT_NOT_ABANDONABLE_STATUSES);
 
+/**
+ * Estados en los que el participante puede crear/editar/enviar requisitos y
+ * evidencias. READY_FOR_CLOSEOUT se permite a proposito: en ese estado todos
+ * los requisitos obligatorios ya estan aprobados, pero los opcionales siguen
+ * siendo editables (assertRequirementEditable protege cada requisito). Todo
+ * estado terminal o de revision final bloquea la edicion.
+ */
+const ENROLLMENT_EDITABLE: ReadonlySet<CertificationEnrollmentStatus> = new Set(
+  ['ENROLLED', 'IN_PROGRESS', 'CHANGES_REQUESTED', 'READY_FOR_CLOSEOUT'],
+);
+
 const REQUIREMENT_EDIT_LOCKED: ReadonlySet<CertificationRequirementStatus> =
   new Set(['SUBMITTED', 'APPROVED']);
 
@@ -150,6 +161,17 @@ export function assertEnrollmentAbandonable(
   if (ENROLLMENT_NOT_ABANDONABLE.has(status)) {
     throw new AppConflictException(ErrorCode.CERT_ENROLLMENT_NOT_ABANDONABLE, {
       status,
+    });
+  }
+}
+
+export function assertEnrollmentEditable(
+  status: CertificationEnrollmentStatus,
+): void {
+  if (!ENROLLMENT_EDITABLE.has(status)) {
+    throw new AppConflictException(ErrorCode.CERT_REQUIREMENT_LOCKED, {
+      status,
+      entity: 'enrollment',
     });
   }
 }

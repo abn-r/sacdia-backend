@@ -4,10 +4,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   AppBadRequestException,
   AppConflictException,
-  AppNotFoundException,
 } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import {
+  assertEnrollmentEditable,
   assertReadyForCloseout,
   assertRequirementEditable,
   canTransitionEnrollment,
@@ -23,6 +23,7 @@ import type {
 } from '../domain/certification-definition.types';
 import type { SaveRequirementDraftDto } from '../dto/save-requirement-draft.dto';
 import type { SubmitRequirementDto } from '../dto/submit-requirement.dto';
+import { getOwnedEnrollmentOrThrow } from '../shared/owned-enrollment';
 
 type RequirementDbClient = PrismaService | Prisma.TransactionClient;
 
@@ -133,7 +134,7 @@ export class CertificationRequirementsService {
     dto: SaveRequirementDraftDto,
   ): Promise<RequirementView> {
     return this.prisma.$transaction(async (tx) => {
-      const enrollment = await this.getOwnedEnrollmentOrThrow(
+      const enrollment = await this.getEditableEnrollmentOrThrow(
         userId,
         enrollmentId,
         tx,
@@ -229,7 +230,7 @@ export class CertificationRequirementsService {
     dto: SubmitRequirementDto,
   ): Promise<{ requirement: RequirementView; progress_summary: ProgressSummary }> {
     return this.prisma.$transaction(async (tx) => {
-      const enrollment = await this.getOwnedEnrollmentOrThrow(
+      const enrollment = await this.getEditableEnrollmentOrThrow(
         userId,
         enrollmentId,
         tx,
@@ -316,24 +317,32 @@ export class CertificationRequirementsService {
   // Helpers
   // ==========================================================================
 
-  private async getOwnedEnrollmentOrThrow(
+  private getOwnedEnrollmentOrThrow(
     userId: string,
     enrollmentId: number,
     db: RequirementDbClient = this.prisma,
   ): Promise<EnrollmentRecord> {
-    const enrollment = await db.users_certifications.findFirst({
-      where: {
-        enrollment_id: enrollmentId,
-        user_id: userId,
-        active: true,
-      },
-    });
+    return getOwnedEnrollmentOrThrow(db, userId, enrollmentId);
+  }
 
-    if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
-    }
-
-    return enrollment as EnrollmentRecord;
+  /**
+   * Owned enrollment + enrollment-level edit guard. Use for every mutation
+   * (draft / submit); plain reads keep using getOwnedEnrollmentOrThrow.
+   */
+  private async getEditableEnrollmentOrThrow(
+    userId: string,
+    enrollmentId: number,
+    db: RequirementDbClient = this.prisma,
+  ): Promise<EnrollmentRecord> {
+    const enrollment = await this.getOwnedEnrollmentOrThrow(
+      userId,
+      enrollmentId,
+      db,
+    );
+    assertEnrollmentEditable(
+      enrollment.status as CertificationEnrollmentStatus,
+    );
+    return enrollment;
   }
 
   private async getSectionForEnrollmentOrThrow(
