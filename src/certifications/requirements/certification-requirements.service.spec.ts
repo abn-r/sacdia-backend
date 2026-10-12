@@ -612,6 +612,152 @@ describe('CertificationRequirementsService', () => {
       expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
     });
 
+    describe('FILE_EVIDENCE completeness', () => {
+      const FILE_COMPONENT_ID = 203;
+
+      const sectionWithFile = {
+        ...baseSection,
+        certification_requirement_components: [
+          {
+            component_id: FILE_COMPONENT_ID,
+            component_type: 'FILE_EVIDENCE',
+            label: 'Comprobante',
+            required: true,
+          },
+        ],
+      };
+
+      const progressWithFileResponse = (
+        evidences: { evidence_id: number }[] | undefined,
+      ) => ({
+        ...draftProgressComplete,
+        certification_component_responses: [
+          {
+            component_id: FILE_COMPONENT_ID,
+            text_value: null,
+            attestation_confirmed: null,
+            linked_user_honor_id: null,
+            linked_activity_id: null,
+            certification_evidences: evidences,
+          },
+        ],
+      });
+
+      const wireFileSection = (progress: object) => {
+        wireHappyPath({ progress });
+        txMock.certification_sections.findFirst.mockResolvedValue(
+          sectionWithFile,
+        );
+      };
+
+      it('TC19b - required FILE_EVIDENCE with an empty response and no evidence → CERT_REQUIREMENT_INCOMPLETE', async () => {
+        wireFileSection(progressWithFileResponse([]));
+
+        await expect(
+          service.submitRequirement(
+            USER_ID,
+            ENROLLMENT_ID,
+            SECTION_ID,
+            submitDto,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE,
+          response: expect.objectContaining({
+            namedArgs: expect.objectContaining({
+              missing_component_ids: [FILE_COMPONENT_ID],
+            }),
+          }),
+        });
+        expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
+        expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+      });
+
+      it('TC19c - evidence relation not loaded at all is treated as incomplete (fail closed)', async () => {
+        wireFileSection(progressWithFileResponse(undefined));
+
+        await expect(
+          service.submitRequirement(
+            USER_ID,
+            ENROLLMENT_ID,
+            SECTION_ID,
+            submitDto,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE,
+        });
+      });
+
+      it('TC19d - a CONFIRMED active evidence completes the FILE_EVIDENCE component', async () => {
+        wireFileSection(progressWithFileResponse([{ evidence_id: 5000 }]));
+
+        const result = await service.submitRequirement(
+          USER_ID,
+          ENROLLMENT_ID,
+          SECTION_ID,
+          submitDto,
+        );
+
+        expect(result.requirement.status).toBe('SUBMITTED');
+      });
+
+      it('TC19e - evidences are fetched filtered to CONFIRMED + active in the same query (no per-component lookups)', async () => {
+        wireFileSection(progressWithFileResponse([{ evidence_id: 5000 }]));
+
+        await service.submitRequirement(
+          USER_ID,
+          ENROLLMENT_ID,
+          SECTION_ID,
+          submitDto,
+        );
+
+        // PENDING_UPLOAD / soft-deleted rows are excluded by this filter, so
+        // they surface as an empty array (TC19b) and keep the component
+        // incomplete.
+        expect(
+          txMock.certification_section_progress.findFirst,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            include: {
+              certification_component_responses: {
+                include: {
+                  certification_evidences: {
+                    where: { upload_status: 'CONFIRMED', active: true },
+                    select: { evidence_id: true },
+                    take: 1,
+                  },
+                },
+              },
+            },
+          }),
+        );
+        expect(
+          txMock.certification_section_progress.findFirst,
+        ).toHaveBeenCalledTimes(1);
+      });
+
+      it('TC19f - optional FILE_EVIDENCE without evidence does not block submit', async () => {
+        wireFileSection(progressWithFileResponse([]));
+        txMock.certification_sections.findFirst.mockResolvedValue({
+          ...sectionWithFile,
+          certification_requirement_components: [
+            {
+              ...sectionWithFile.certification_requirement_components[0],
+              required: false,
+            },
+          ],
+        });
+
+        const result = await service.submitRequirement(
+          USER_ID,
+          ENROLLMENT_ID,
+          SECTION_ID,
+          submitDto,
+        );
+
+        expect(result.requirement.status).toBe('SUBMITTED');
+      });
+    });
+
     it('TC20 - no draft saved yet → CERT_REQUIREMENT_INCOMPLETE', async () => {
       txMock.users_certifications.findFirst.mockResolvedValue(baseEnrollment);
       txMock.certification_sections.findFirst.mockResolvedValue(baseSection);
