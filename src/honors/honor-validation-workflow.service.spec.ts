@@ -63,6 +63,7 @@ describe('HonorValidationWorkflowService', () => {
       images: ['r2://image.jpg'],
       document: null,
       certificate: '',
+      completed_at: new Date('2026-05-30T00:00:00.000Z'),
       submitted_at: null,
       validated_at: null,
       modified_at: new Date('2026-06-01T11:00:00.000Z'),
@@ -313,6 +314,85 @@ describe('HonorValidationWorkflowService', () => {
       validation_status: 'PENDING_REVIEW',
     });
     expect(masterHonorsEvaluator.evaluateUser).not.toHaveBeenCalled();
+  });
+
+  describe('completed_at on submit (M5)', () => {
+    function inProgress(overrides = {}) {
+      return honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'EXTERNAL',
+        images: ['r2://general-evidence.jpg'],
+        document: 'r2://completed-format.pdf',
+        ...overrides,
+      });
+    }
+
+    it.each([
+      ['IN_PROGRESS', 'IN_PROGRESS'],
+      ['REJECTED', 'REJECTED'],
+    ])(
+      'blocks a %s honor without completed_at and writes nothing',
+      async (status) => {
+        mockPrisma.users_honors.findUnique.mockResolvedValue(
+          inProgress({ validation_status: status, completed_at: null }),
+        );
+
+        await expect(
+          service.submitForReview(10, 'user-1'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.VALIDATION_HONOR_COMPLETED_AT_REQUIRED,
+        });
+        expect(mockPrisma.users_honors.update).not.toHaveBeenCalled();
+        expect(mockPrisma.validation_logs.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('reports missing evidence before the missing completion date', async () => {
+      mockPrisma.users_honors.findUnique.mockResolvedValue(
+        inProgress({ images: [], document: null, completed_at: null }),
+      );
+      mockPrisma.evidence_files.count.mockResolvedValue(0);
+
+      await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject(
+        {
+          code: ErrorCode.VALIDATION_HONOR_MISSING_EVIDENCE,
+        },
+      );
+    });
+
+    it('re-checks the range of the stored date', async () => {
+      mockPrisma.users_honors.findUnique.mockResolvedValue(
+        inProgress({ completed_at: new Date('1959-12-31T00:00:00.000Z') }),
+      );
+      await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject(
+        { code: ErrorCode.HONOR_DATE_TOO_OLD },
+      );
+
+      mockPrisma.users_honors.findUnique.mockResolvedValue(
+        inProgress({ completed_at: new Date('2026-06-02T00:00:00.000Z') }),
+      );
+      await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject(
+        { code: ErrorCode.HONOR_DATE_IN_FUTURE },
+      );
+      expect(mockPrisma.users_honors.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts the 1960-01-01 boundary and today, with no instructor (D1)', async () => {
+      for (const completed_at of [
+        new Date('1960-01-01T00:00:00.000Z'),
+        new Date('2026-06-01T00:00:00.000Z'),
+      ]) {
+        mockPrisma.users_honors.findUnique.mockResolvedValue(
+          inProgress({ completed_at, instructor_user_id: null }),
+        );
+        mockPrisma.users_honors.update.mockResolvedValue(
+          honorRecord({ validation_status: 'PENDING_REVIEW' }),
+        );
+        await expect(
+          service.submitForReview(10, 'user-1'),
+        ).resolves.toMatchObject({ validation_status: 'PENDING_REVIEW' });
+      }
+    });
   });
 
   it('approves only pending honors and keeps validate in sync', async () => {

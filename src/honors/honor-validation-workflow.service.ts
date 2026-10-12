@@ -5,6 +5,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { assertDateInRange } from '../common/utils/honor-date-range';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
@@ -37,6 +38,7 @@ type UserHonorRecord = {
   images: unknown;
   document: string | null;
   certificate: string | null;
+  completed_at: Date | null;
   validated_at: Date | null;
   modified_at: Date;
 };
@@ -294,6 +296,8 @@ export class HonorValidationWorkflowService {
         );
     }
 
+    this.assertCompletedAt(userHonor);
+
     if (
       userHonor.validation_status === HONOR_STATUS_REJECTED &&
       userHonor.validated_at &&
@@ -303,6 +307,23 @@ export class HonorValidationWorkflowService {
         ErrorCode.VALIDATION_HONOR_NO_CHANGES_AFTER_REJECTION,
       );
     }
+  }
+
+  /**
+   * La fecha de finalización es obligatoria para enviar a revisión (opcional en
+   * borrador). Se vuelve a validar el rango por si la fila llegó por otra vía.
+   * El instructor sigue siendo opcional (D1).
+   */
+  private assertCompletedAt(userHonor: Pick<UserHonorRecord, 'completed_at'>) {
+    if (!userHonor.completed_at) {
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_COMPLETED_AT_REQUIRED,
+      );
+    }
+    assertDateInRange(userHonor.completed_at.toISOString().slice(0, 10), {
+      tooOld: ErrorCode.HONOR_DATE_TOO_OLD,
+      inFuture: ErrorCode.HONOR_DATE_IN_FUTURE,
+    });
   }
 
   private async assertInAppSubmitEligibility(

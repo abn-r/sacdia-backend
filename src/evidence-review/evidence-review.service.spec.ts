@@ -443,6 +443,80 @@ describe('EvidenceReviewService', () => {
     );
   });
 
+  describe('honor detail instructor and completion date (B5)', () => {
+    const honorRecord = (extra: Record<string, unknown> = {}) => ({
+      user_honor_id: 31,
+      user_id: 'user-1',
+      honor_id: 20,
+      validation_status: 'PENDING_REVIEW',
+      completion_mode: 'EXTERNAL',
+      submitted_at: new Date('2026-06-01T10:00:00.000Z'),
+      validated_at: null,
+      rejection_reason: null,
+      certificate: '',
+      document: null,
+      images: [],
+      completed_at: new Date('2026-05-30T00:00:00.000Z'),
+      instructor_user_id: null,
+      instructor_name: null,
+      instructor: null,
+      users: { user_id: 'user-1', name: 'Ana', paternal_last_name: 'Pérez' },
+      honors: { honor_id: 20, name: 'Arte cristiano', description: null },
+      validator: null,
+      evidence_files: [],
+      ...extra,
+    });
+
+    it('exposes the system instructor (no photo, no email) and completed_at', async () => {
+      mockPrisma.users_honors.findFirst.mockResolvedValue(
+        honorRecord({
+          instructor_user_id: 'luis',
+          instructor: {
+            user_id: 'luis',
+            name: 'Luis',
+            paternal_last_name: 'Gómez',
+            maternal_last_name: null,
+          },
+        }),
+      );
+
+      const detail = await service.getDetail('admin-user', 'honor', 31);
+
+      expect(detail.instructor).toEqual({
+        kind: 'USER',
+        user_id: 'luis',
+        display_name: 'Luis Gómez',
+      });
+      expect(detail.completed_at).toEqual(new Date('2026-05-30T00:00:00.000Z'));
+      expect(JSON.stringify(detail)).not.toMatch(/email|photo_url/);
+      const include =
+        mockPrisma.users_honors.findFirst.mock.calls[0][0].include;
+      expect(include.instructor.select).not.toHaveProperty('user_image');
+      expect(include.instructor.select).not.toHaveProperty('email');
+    });
+
+    it('exposes an external instructor as such', async () => {
+      mockPrisma.users_honors.findFirst.mockResolvedValue(
+        honorRecord({ instructor_name: 'Juan López Ruiz' }),
+      );
+
+      const detail = await service.getDetail('admin-user', 'honor', 31);
+
+      expect(detail.instructor).toEqual({
+        kind: 'EXTERNAL',
+        display_name: 'Juan López Ruiz',
+      });
+    });
+
+    it('returns instructor null when none was declared', async () => {
+      mockPrisma.users_honors.findFirst.mockResolvedValue(honorRecord());
+
+      const detail = await service.getDetail('admin-user', 'honor', 31);
+
+      expect(detail.instructor).toBeNull();
+    });
+  });
+
   it('returns a structured honor review packet with general and requirement evidence', async () => {
     const submittedAt = new Date('2026-06-01T10:00:00.000Z');
     const uploadedAt = new Date('2026-06-01T10:05:00.000Z');
