@@ -28,6 +28,7 @@ import {
   UpdateCertificateImportItemDto,
 } from './dto';
 import { CertificateImportFilesService } from './certificate-import-files.service';
+import { CertificateImportDraftDeletionService } from './certificate-import-draft-deletion.service';
 
 interface AuthenticatedRequest {
   user: { sub: string };
@@ -42,6 +43,7 @@ export class CertificateBulkImportsController {
   constructor(
     private readonly service: CertificateBulkImportsService,
     private readonly filesService: CertificateImportFilesService,
+    private readonly draftDeletion: CertificateImportDraftDeletionService,
   ) {}
 
   @Get()
@@ -108,6 +110,31 @@ export class CertificateBulkImportsController {
     @Param('batchId') batchId: string,
   ) {
     const data = await this.service.getBatch(req.user.sub, batchId);
+    return { status: 'success', data };
+  }
+
+  @Delete(':batchId')
+  @ApiOperation({
+    summary: 'Descartar un borrador propio',
+    description:
+      'Borra el lote en DRAFT, sus filas y archivos (confirmados o no) y los objetos en almacenamiento. La app lo llama al cancelar durante la subida. Los objetos se borran después del commit, en modo best-effort.',
+  })
+  @ApiParam({ name: 'batchId', description: 'ID UUID del lote' })
+  @ApiResponse({ status: 200, description: 'Borrador eliminado' })
+  @ApiResponse({
+    status: 404,
+    description: 'El lote no existe o no es del usuario',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'CERTIFICATE_IMPORT_BATCH_NOT_DELETABLE (ya no es DRAFT o tiene solicitudes institucionales) o CERTIFICATE_IMPORT_OCR_IN_PROGRESS (lectura OCR en cola o en curso; reintentar)',
+  })
+  async deleteDraft(
+    @Request() req: AuthenticatedRequest,
+    @Param('batchId') batchId: string,
+  ) {
+    const data = await this.draftDeletion.deleteDraft(req.user.sub, batchId);
     return { status: 'success', data };
   }
 

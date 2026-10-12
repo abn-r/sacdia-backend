@@ -777,5 +777,7 @@
   "HONOR_DATE_TOO_OLD": "La fecha no puede ser anterior al 1 de enero de 1960",
   "HONOR_DATE_IN_FUTURE": "La fecha no puede ser futura",
   "CERTIFICATE_IMPORT_HONOR_INSTRUCTOR_NOT_ALLOWED": "Las filas de clase no llevan instructor de especialidad",
-  "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "El tipo de club no coincide con la clase elegida"
+  "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "El tipo de club no coincide con la clase elegida",
+  "CERTIFICATE_IMPORT_BATCH_NOT_DELETABLE": "Solo se puede eliminar un borrador sin solicitudes institucionales",
+  "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "La lectura OCR sigue en curso. Inténtalo de nuevo en unos segundos."
 }

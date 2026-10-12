@@ -9,6 +9,7 @@ import { CertificateBulkImportApplicationService } from './certificate-bulk-impo
 import { AdminCertificateBulkImportsService } from './admin-certificate-bulk-imports.service';
 import { CertificateImportYearResolver } from './certificate-import-year-resolver.service';
 import { CertificateImportFilesService } from './certificate-import-files.service';
+import { CertificateImportDraftDeletionService } from './certificate-import-draft-deletion.service';
 import { InstitutionalCertificateRequestsService } from './institutional-certificate-requests.service';
 import { InstitutionalCertificateRequestsController } from './institutional-certificate-requests.controller';
 import { AdminInstitutionalCertificateRequestsController } from './admin-institutional-certificate-requests.controller';
@@ -41,6 +42,7 @@ import { CertificateOcrProcessor } from './ocr/certificate-ocr.processor';
     AdminCertificateBulkImportsService,
     CertificateImportYearResolver,
     CertificateImportFilesService,
+    CertificateImportDraftDeletionService,
     InstitutionalCertificateRequestsService,
     googleVisionClientFactoryProvider,
     {
