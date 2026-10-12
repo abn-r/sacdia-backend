@@ -351,6 +351,95 @@ describe('CertificationsService', () => {
       expect(mockEligibilityService.evaluateForVersion).not.toHaveBeenCalled();
     });
 
+    it('TC09b - existing-enrollment lookup ignores active for awarded/in-review rows', async () => {
+      wireHappyPath();
+
+      await service.enrollUser(USER_ID, dto);
+
+      expect(mockPrisma.users_certifications.findFirst).toHaveBeenCalledWith({
+        where: {
+          user_id: USER_ID,
+          certification_id: CERT_ID,
+          OR: [
+            { active: true },
+            {
+              status: {
+                in: ['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED', 'CERTIFIED'],
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    /**
+     * Simulates the DB evaluating the `where` of the existing-enrollment lookup
+     * against a single historical row, so the tests exercise the real filter
+     * instead of a hard-coded mock result.
+     */
+    const wireHistoricalRow = (status: string, active: boolean) => {
+      mockPrisma.users_certifications.findFirst.mockImplementation(
+        async ({
+          where,
+        }: {
+          where: {
+            user_id: string;
+            certification_id: number;
+            OR: Array<{ active?: boolean; status?: { in: string[] } }>;
+          };
+        }) => {
+          const row = { ...baseEnrollment, status, active };
+          const sameOwner =
+            where.user_id === row.user_id &&
+            where.certification_id === row.certification_id;
+          const matchesOr = where.OR.some(
+            (c) =>
+              (c.active !== undefined && c.active === row.active) ||
+              (c.status !== undefined && c.status.in.includes(row.status)),
+          );
+          return sameOwner && matchesOr ? row : null;
+        },
+      );
+    };
+
+    it.each(['CERTIFIED', 'APPROVED', 'SUBMITTED_FOR_FINAL_REVIEW'])(
+      'TC09c - inactive historical %s row → CERT_ALREADY_ENROLLED, nothing created',
+      async (status) => {
+        wireHappyPath();
+        wireHistoricalRow(status, false);
+
+        await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+          code: ErrorCode.CERT_ALREADY_ENROLLED,
+        });
+        expect(mockPrisma.users_certifications.create).not.toHaveBeenCalled();
+        expect(
+          mockEligibilityService.evaluateForVersion,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['WITHDRAWN', 'EXPIRED'])(
+      'TC09d - inactive historical %s row does not block re-enrollment',
+      async (status) => {
+        wireHappyPath();
+        wireHistoricalRow(status, false);
+
+        const result = await service.enrollUser(USER_ID, dto);
+
+        expect(result.enrollment_id).toBe(ENROLLMENT_ID);
+        expect(mockPrisma.users_certifications.create).toHaveBeenCalled();
+      },
+    );
+
+    it('TC09e - active row of any status still → CERT_ALREADY_ENROLLED', async () => {
+      wireHappyPath();
+      wireHistoricalRow('IN_PROGRESS', true);
+
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+        code: ErrorCode.CERT_ALREADY_ENROLLED,
+      });
+    });
+
     it('TC10 - not eligible per configured rules → ForbiddenException', async () => {
       mockPrisma.certifications.findUnique.mockResolvedValue({
         certification_id: CERT_ID,

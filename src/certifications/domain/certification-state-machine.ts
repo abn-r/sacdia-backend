@@ -62,10 +62,16 @@ const REQUIREMENT_TRANSITIONS: Record<
  * certificacion ya fue otorgada (CERTIFIED), esta aprobada pendiente de
  * emision (APPROVED) o esta en revision final (SUBMITTED_FOR_FINAL_REVIEW).
  * Abandonar en esos estados borraria un expediente otorgado o en curso de
- * revision y permitiria reinscribirse sobre el.
+ * revision y permitiria reinscribirse sobre el. Tambien se usa en enrollUser
+ * para rechazar la reinscripcion sobre filas historicas inactivas en estos
+ * estados (el dominio no define recertificacion/renovacion: CERTIFIED es
+ * terminal y nada escribe EXPIRED ni expires_at).
  */
+export const ENROLLMENT_NOT_ABANDONABLE_STATUSES: readonly CertificationEnrollmentStatus[] =
+  ['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED', 'CERTIFIED'];
+
 const ENROLLMENT_NOT_ABANDONABLE: ReadonlySet<CertificationEnrollmentStatus> =
-  new Set(['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED', 'CERTIFIED']);
+  new Set(ENROLLMENT_NOT_ABANDONABLE_STATUSES);
 
 const REQUIREMENT_EDIT_LOCKED: ReadonlySet<CertificationRequirementStatus> =
   new Set(['SUBMITTED', 'APPROVED']);

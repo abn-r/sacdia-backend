@@ -18,6 +18,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { CertificationEligibilityService } from './eligibility/certification-eligibility.service';
 import {
   assertEnrollmentAbandonable,
+  ENROLLMENT_NOT_ABANDONABLE_STATUSES,
   transitionEnrollment,
 } from './domain/certification-state-machine';
 import type { CertificationEnrollmentStatus } from './domain/certification-definition.types';
@@ -134,13 +135,21 @@ export class CertificationsService {
       throw new AppNotFoundException(ErrorCode.CERT_NOT_FOUND);
     }
 
-    // 2. Verificar si ya está inscrito
+    // 2. Verificar si ya está inscrito. Además de la inscripción activa, se
+    // rechaza cualquier fila histórica (aunque esté inactiva) en estado
+    // CERTIFIED / APPROVED / SUBMITTED_FOR_FINAL_REVIEW: son abandonos previos
+    // al guard de deleteCertification y no deben permitir reinscribirse sobre
+    // una certificación otorgada o en revisión final. Filas inactivas
+    // WITHDRAWN / EXPIRED sí permiten reinscripción.
     const existingEnrollment = await this.prisma.users_certifications.findFirst(
       {
         where: {
           user_id: userId,
           certification_id: dto.certification_id,
-          active: true,
+          OR: [
+            { active: true },
+            { status: { in: [...ENROLLMENT_NOT_ABANDONABLE_STATUSES] } },
+          ],
         },
       },
     );
