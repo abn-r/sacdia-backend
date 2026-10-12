@@ -16,6 +16,11 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { CertificationEligibilityService } from './eligibility/certification-eligibility.service';
+import {
+  assertEnrollmentAbandonable,
+  transitionEnrollment,
+} from './domain/certification-state-machine';
+import type { CertificationEnrollmentStatus } from './domain/certification-definition.types';
 
 @Injectable()
 export class CertificationsService {
@@ -612,30 +617,77 @@ export class CertificationsService {
   }
 
   /**
-   * Abandonar una certificación (soft delete)
+   * Abandonar una certificación.
+   *
+   * - CERTIFIED / APPROVED / SUBMITTED_FOR_FINAL_REVIEW: 409
+   *   (CERT_ENROLLMENT_NOT_ABANDONABLE). No se puede esconder una
+   *   certificación otorgada ni una en revisión final.
+   * - ENROLLED / IN_PROGRESS / READY_FOR_CLOSEOUT / CHANGES_REQUESTED:
+   *   transición a WITHDRAWN vía máquina de estados + active=false + evento
+   *   de auditoría WITHDRAWN.
+   * - EXPIRED: la máquina no permite EXPIRED -> WITHDRAWN; se conserva EXPIRED
+   *   y solo se desactiva (active=false) para permitir la reinscripción.
+   * - WITHDRAWN activo: estado inconsistente (WITHDRAWN siempre debería ir con
+   *   active=false). Se trata como idempotente: solo se desactiva, de modo que
+   *   el usuario no quede bloqueado por CERT_ALREADY_ENROLLED.
    */
   async deleteCertification(userId: string, certificationId: number) {
-    const enrollment = await this.prisma.users_certifications.findFirst({
-      where: {
-        user_id: userId,
-        certification_id: certificationId,
-        active: true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const enrollment = await tx.users_certifications.findFirst({
+        where: {
+          user_id: userId,
+          certification_id: certificationId,
+          active: true,
+        },
+      });
+
+      if (!enrollment) {
+        throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
+      }
+
+      const currentStatus = enrollment.status as CertificationEnrollmentStatus;
+      assertEnrollmentAbandonable(currentStatus);
+
+      const keepsStatus =
+        currentStatus === 'EXPIRED' || currentStatus === 'WITHDRAWN';
+      const nextStatus = keepsStatus
+        ? currentStatus
+        : transitionEnrollment(currentStatus, 'WITHDRAWN');
+
+      // Condicionado al estado leído: si un revisor movió la inscripción entre
+      // el read y el write (p. ej. a revisión final), no se abandona.
+      const result = await tx.users_certifications.updateMany({
+        where: {
+          enrollment_id: enrollment.enrollment_id,
+          active: true,
+          status: currentStatus,
+        },
+        data: {
+          status: nextStatus,
+          active: false,
+          lock_version: { increment: 1 },
+        },
+      });
+
+      if (result.count === 0) {
+        throw new AppConflictException(ErrorCode.CERT_CONCURRENT_UPDATE);
+      }
+
+      if (!keepsStatus) {
+        await tx.certification_review_events.create({
+          data: {
+            enrollment_id: enrollment.enrollment_id,
+            event_type: 'WITHDRAWN',
+            performed_by_id: userId,
+            from_status: currentStatus,
+            to_status: nextStatus,
+          },
+        });
+      }
+
+      return {
+        message: 'Certification enrollment deleted successfully',
+      };
     });
-
-    if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
-    }
-
-    await this.prisma.users_certifications.update({
-      where: { enrollment_id: enrollment.enrollment_id },
-      data: {
-        active: false,
-      },
-    });
-
-    return {
-      message: 'Certification enrollment deleted successfully',
-    };
   }
 }

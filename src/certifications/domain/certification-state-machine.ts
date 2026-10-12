@@ -57,6 +57,16 @@ const REQUIREMENT_TRANSITIONS: Record<
   APPROVED: new Set(),
 };
 
+/**
+ * Estados en los que el participante NO puede abandonar la inscripcion: la
+ * certificacion ya fue otorgada (CERTIFIED), esta aprobada pendiente de
+ * emision (APPROVED) o esta en revision final (SUBMITTED_FOR_FINAL_REVIEW).
+ * Abandonar en esos estados borraria un expediente otorgado o en curso de
+ * revision y permitiria reinscribirse sobre el.
+ */
+const ENROLLMENT_NOT_ABANDONABLE: ReadonlySet<CertificationEnrollmentStatus> =
+  new Set(['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED', 'CERTIFIED']);
+
 const REQUIREMENT_EDIT_LOCKED: ReadonlySet<CertificationRequirementStatus> =
   new Set(['SUBMITTED', 'APPROVED']);
 
@@ -123,6 +133,16 @@ export function assertRequirementEditable(
 ): void {
   if (REQUIREMENT_EDIT_LOCKED.has(status)) {
     throw new AppConflictException(ErrorCode.CERT_REQUIREMENT_LOCKED, {
+      status,
+    });
+  }
+}
+
+export function assertEnrollmentAbandonable(
+  status: CertificationEnrollmentStatus,
+): void {
+  if (ENROLLMENT_NOT_ABANDONABLE.has(status)) {
+    throw new AppConflictException(ErrorCode.CERT_ENROLLMENT_NOT_ABANDONABLE, {
       status,
     });
   }

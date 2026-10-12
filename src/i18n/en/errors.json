@@ -729,6 +729,7 @@
   "CERT_CLOSEOUT_INCOMPLETE": "Required requirements or board evidence are incomplete",
   "CERT_CONCURRENT_UPDATE": "A concurrent change updated this record; retry",
   "CERT_LEGACY_ENDPOINT_DEPRECATED": "This legacy endpoint is deprecated for versioned enrollments; use the requirement flow",
+  "CERT_ENROLLMENT_NOT_ABANDONABLE": "An enrollment in status '{status}' cannot be abandoned",
   "FIELD_PAYMENT_ORDER_NOT_FOUND": "Payment order not found",
   "FIELD_PAYMENT_ORDER_INVALID_TRANSITION": "Order state transition not allowed",
   "FIELD_PAYMENT_ORDER_FORBIDDEN": "You are not allowed to operate this payment order",
