@@ -511,6 +511,10 @@ model certificate_bulk_import_items {
   // índice parcial idx_certificate_bulk_items_instructor_user viven en la migración.
   instructor_user_id  String?                                           @db.Uuid
   instructor_name     String?                                           @db.VarChar(150)
+  // M2 (20261010130000): dónde leyó el OCR la fila. Solo las escribe el parser. Sin CHECK entre
+  // ambas (ON DELETE SET NULL); CHECK source_page >= 1 e índice parcial en la migración.
+  source_file_id      String?                                           @db.Uuid
+  source_page         Int?                                              @db.SmallInt
   revision            Int                                               @default(0)
   active              Boolean                                           @default(true)
   created_at          DateTime                                          @default(now()) @db.Timestamptz(6)
@@ -521,6 +525,7 @@ model certificate_bulk_import_items {
   class       classes?                              @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
   reviewed_by users?                                @relation("certificate_import_item_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   instructor  users?                                @relation("certificate_import_item_instructor", fields: [instructor_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  source_file certificate_bulk_import_files?        @relation("certificate_import_item_source_file", fields: [source_file_id], references: [file_id], onDelete: SetNull, onUpdate: NoAction)
   events      certificate_bulk_import_item_events[]
 
   @@index([batch_id], map: "idx_certificate_bulk_items_batch")
@@ -546,9 +551,12 @@ model certificate_bulk_import_files {
   size_bytes     BigInt?
   confirmed_at   DateTime?                               @db.Timestamptz(6)
   jurisdiction   certificate_import_file_jurisdiction_enum @default(CAMPO_LOCAL)
+  // M2 (20261010130000): se escribe al confirmar. NULL en archivos anteriores a M2.
+  page_count     Int?                                    @db.SmallInt
 
   batch       certificate_bulk_import_batches @relation(fields: [batch_id], references: [batch_id], onDelete: Cascade, onUpdate: NoAction)
   uploaded_by users                           @relation("certificate_import_file_uploader", fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  items_sourced certificate_bulk_import_items[] @relation("certificate_import_item_source_file")
   institutional_certificate_requests institutional_certificate_requests[]
 
   @@index([batch_id], map: "idx_certificate_bulk_files_batch")
