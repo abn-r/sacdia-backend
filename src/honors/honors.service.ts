@@ -503,23 +503,34 @@ export class HonorsService {
 
     // Si existe pero está inactivo, reactivar; si no, crear nuevo
     if (existing) {
+      // Filas APPROVED / PENDING_REVIEW abandonadas antes del guard en
+      // abandonHonor: solo se restaura `active`, sin resetear validación,
+      // archivos ni fechas.
+      const isBlockedStatus = HONOR_MUTATION_BLOCKED_STATUSES.includes(
+        existing.validation_status as (typeof HONOR_MUTATION_BLOCKED_STATUSES)[number],
+      );
+      const reactivationData: Prisma.users_honorsUncheckedUpdateInput =
+        isBlockedStatus
+          ? { active: true, modified_at: new Date() }
+          : {
+              active: true,
+              date: dto?.date ? new Date(dto.date) : new Date(),
+              validate: false,
+              validation_status: 'IN_PROGRESS',
+              completion_mode: INITIAL_HONOR_COMPLETION_MODE,
+              certificate: '',
+              images: [],
+              document: null,
+              submitted_at: null,
+              validated_by_id: null,
+              validated_at: null,
+              rejection_reason: null,
+              modified_at: new Date(),
+            };
+
       const updated = await this.prisma.users_honors.update({
         where: { user_honor_id: existing.user_honor_id },
-        data: {
-          active: true,
-          date: dto?.date ? new Date(dto.date) : new Date(),
-          validate: false,
-          validation_status: 'IN_PROGRESS',
-          completion_mode: INITIAL_HONOR_COMPLETION_MODE,
-          certificate: '',
-          images: [],
-          document: null,
-          submitted_at: null,
-          validated_by_id: null,
-          validated_at: null,
-          rejection_reason: null,
-          modified_at: new Date(),
-        },
+        data: reactivationData,
         include: {
           honors: {
             select: {
@@ -1137,6 +1148,9 @@ export class HonorsService {
     if (!userHonor) {
       throw new AppNotFoundException(ErrorCode.HONOR_USER_HONOR_NOT_FOUND);
     }
+
+    // No se puede abandonar un honor en revisión o aprobado
+    this.assertHonorIsMutable(userHonor.validation_status);
 
     return this.prisma.users_honors.update({
       where: { user_honor_id: userHonor.user_honor_id },
