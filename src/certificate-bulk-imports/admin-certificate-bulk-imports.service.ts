@@ -29,17 +29,16 @@ import {
 } from './certificate-import-year-resolver.service';
 import { ApproveCertificateImportDto, RejectCertificateImportDto } from './dto';
 import { sameInstructor } from '../instructors/instructor-view';
+import {
+  assertReviewerCanAccessLocalField,
+  resolveReviewerAccess,
+  type ReviewerAccess,
+} from '../common/reviewer-scope/reviewer-scope';
 import { honorCompletionDate } from '../honors/honor-completion-date';
 import {
   CertificateBulkImportBatchStatus,
   CertificateBulkImportItemStatus,
 } from './certificate-bulk-imports.types';
-
-type ReviewerAccess = {
-  global: boolean;
-  localFieldId: number | null;
-  superAdmin: boolean;
-};
 
 const REVIEWABLE_ITEM_STATUSES = [
   CertificateBulkImportItemStatus.SUBMITTED,
@@ -363,67 +362,24 @@ export class AdminCertificateBulkImportsService {
     return batch;
   }
 
-  private async resolveReviewerAccess(
-    reviewerId: string,
-  ): Promise<ReviewerAccess> {
-    const reviewer = await this.prisma.users.findUnique({
-      where: { user_id: reviewerId },
-      select: {
-        local_field_id: true,
-        users_roles: {
-          where: { active: true },
-          select: { roles: { select: { role_name: true } } },
-        },
-      },
+  private resolveReviewerAccess(reviewerId: string): Promise<ReviewerAccess> {
+    return resolveReviewerAccess(this.prisma, reviewerId, {
+      reviewerNotFound: () =>
+        new ForbiddenException('CERTIFICATE_IMPORT_REVIEWER_NOT_FOUND'),
+      scopeRequired: () =>
+        new ForbiddenException('CERTIFICATE_IMPORT_REVIEWER_SCOPE_REQUIRED'),
     });
-
-    if (!reviewer) {
-      throw new ForbiddenException('CERTIFICATE_IMPORT_REVIEWER_NOT_FOUND');
-    }
-
-    const roles = new Set(
-      reviewer.users_roles.map((entry) => entry.roles.role_name.toLowerCase()),
-    );
-
-    if (roles.has('super-admin')) {
-      return { global: true, localFieldId: null, superAdmin: true };
-    }
-
-    if (
-      (roles.has('admin') || roles.has('assistant-admin')) &&
-      reviewer.local_field_id == null
-    ) {
-      return { global: true, localFieldId: null, superAdmin: false };
-    }
-
-    if (
-      reviewer.local_field_id &&
-      (roles.has('admin') ||
-        roles.has('assistant-admin') ||
-        roles.has('director-lf') ||
-        roles.has('assistant-lf'))
-    ) {
-      return {
-        global: false,
-        localFieldId: reviewer.local_field_id,
-        superAdmin: false,
-      };
-    }
-
-    throw new ForbiddenException('CERTIFICATE_IMPORT_REVIEWER_SCOPE_REQUIRED');
   }
 
   private assertCanAccessBatch(
     access: ReviewerAccess,
     batchLocalFieldId: number | null,
   ) {
-    if (access.global) {
-      return;
-    }
-
-    if (!access.localFieldId || access.localFieldId !== batchLocalFieldId) {
-      throw new ForbiddenException('CERTIFICATE_IMPORT_BATCH_FORBIDDEN');
-    }
+    assertReviewerCanAccessLocalField(
+      access,
+      batchLocalFieldId,
+      () => new ForbiddenException('CERTIFICATE_IMPORT_BATCH_FORBIDDEN'),
+    );
   }
 
   private visibleCommonItemWhere(): Prisma.certificate_bulk_import_itemsWhereInput {
