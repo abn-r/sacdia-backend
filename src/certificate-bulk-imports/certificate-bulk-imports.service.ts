@@ -240,17 +240,28 @@ export class CertificateBulkImportsService {
       }
 
       if (ocrResult.items.length > 0) {
+        // Solo se guarda un archivo de origen que sigue siendo del lote; la página
+        // no tiene sentido sin su archivo (D4, D12).
+        const readableIds = new Set(readable.map((file) => file.file_id));
         await tx.certificate_bulk_import_items.createMany({
-          data: ocrResult.items.map((item) => ({
-            batch_id: batch.batch_id,
-            item_type: item.type,
-            detected_name: item.detectedName,
-            detected_date: this.toDate(item.detectedDate ?? item.completedAt),
-            completed_at: this.toDate(item.completedAt),
-            ocr_confidence: item.confidence,
-            field_confidence: this.toInputJson(item.fieldConfidence),
-            status: CertificateBulkImportItemStatus.NEEDS_REVIEW,
-          })),
+          data: ocrResult.items.map((item) => {
+            const sourceFileId =
+              item.sourceFileId && readableIds.has(item.sourceFileId)
+                ? item.sourceFileId
+                : null;
+            return {
+              source_file_id: sourceFileId,
+              source_page: sourceFileId ? (item.sourcePage ?? null) : null,
+              batch_id: batch.batch_id,
+              item_type: item.type,
+              detected_name: item.detectedName,
+              detected_date: this.toDate(item.detectedDate ?? item.completedAt),
+              completed_at: this.toDate(item.completedAt),
+              ocr_confidence: item.confidence,
+              field_confidence: this.toInputJson(item.fieldConfidence),
+              status: CertificateBulkImportItemStatus.NEEDS_REVIEW,
+            };
+          }),
         });
       }
 

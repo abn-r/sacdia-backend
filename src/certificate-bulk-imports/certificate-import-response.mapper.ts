@@ -20,23 +20,38 @@ import {
   type InstructorView,
 } from '../instructors/instructor-view';
 
-type FileRowLike = { size_bytes?: bigint | null; staging_key?: unknown };
+type FileRowLike = {
+  size_bytes?: bigint | null;
+  staging_key?: unknown;
+  page_count?: number | null;
+};
 
 export type PublicImportFile<F extends FileRowLike> = Omit<
   F,
   'size_bytes' | 'staging_key'
 > &
-  ('size_bytes' extends keyof F ? { size_bytes: number | null } : unknown);
+  ('size_bytes' extends keyof F ? { size_bytes: number | null } : unknown) &
+  ('page_count' extends keyof F ? { page_count: number | null } : unknown);
 
+/**
+ * `page_count` (D4) llega como número o `null` (archivo anterior a M2): el
+ * cliente muestra "PDF" sin número. Una fila sin esa columna no se toca.
+ */
 export function toPublicImportFile<F extends FileRowLike>(
   file: F,
 ): PublicImportFile<F> {
-  const { staging_key: _stagingKey, size_bytes: sizeBytes, ...rest } = file;
+  const {
+    staging_key: _stagingKey,
+    size_bytes: sizeBytes,
+    page_count: pageCount,
+    ...rest
+  } = file;
   return {
     ...rest,
     ...(sizeBytes === undefined
       ? {}
       : { size_bytes: sizeBytes === null ? null : Number(sizeBytes) }),
+    ...(pageCount === undefined ? {} : { page_count: pageCount ?? null }),
   } as PublicImportFile<F>;
 }
 

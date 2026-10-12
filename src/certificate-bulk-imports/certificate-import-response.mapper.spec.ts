@@ -267,4 +267,39 @@ describe('certificate import response mapper', () => {
       });
     });
   });
+  describe('page_count and source columns (B4)', () => {
+    it('exposes page_count as a number and null for files from before M2', () => {
+      expect(toPublicImportFile({ ...row, page_count: 3 }).page_count).toBe(3);
+      expect(toPublicImportFile({ ...row, page_count: null }).page_count).toBeNull();
+    });
+
+    it('does not invent page_count when the column was not selected', () => {
+      expect(toPublicImportFile(row)).not.toHaveProperty('page_count');
+    });
+
+    it('carries page_count of every file in a batch response', () => {
+      const batch = toPublicImportBatch({
+        files: [
+          { ...row, page_count: 5 },
+          { ...row, file_id: 'file-2', page_count: null },
+        ],
+      });
+
+      expect(batch.files.map((file) => file.page_count)).toEqual([5, null]);
+      expect(() => JSON.stringify(batch)).not.toThrow();
+    });
+
+    it('keeps source_file_id and source_page on the item, null for manual rows', () => {
+      const batch = toPublicImportBatch({
+        files: [],
+        items: [
+          { source_file_id: 'file-1', source_page: 3, honor: null },
+          { source_file_id: null, source_page: null, honor: null },
+        ],
+      });
+
+      expect(batch.items[0]).toMatchObject({ source_file_id: 'file-1', source_page: 3 });
+      expect(batch.items[1]).toMatchObject({ source_file_id: null, source_page: null });
+    });
+  });
 });

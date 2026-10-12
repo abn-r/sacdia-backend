@@ -424,6 +424,39 @@ describe('AdminCertificateBulkImportsService', () => {
     });
   });
 
+  describe('proof pages in the reviewer detail (B4)', () => {
+    it('exposes files[].page_count and items[].source_file_id/source_page, null before M2', async () => {
+      prisma.users.findUnique.mockResolvedValue({
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
+      });
+      prisma.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+        batch_id: 'batch-1',
+        user_id: 'member-1',
+        local_field_id: 7,
+        status: 'SUBMITTED',
+        files: [
+          { file_id: 'file-1', jurisdiction: 'CAMPO_LOCAL', size_bytes: 10n, page_count: 5 },
+          { file_id: 'file-2', jurisdiction: 'CAMPO_LOCAL', size_bytes: 10n, page_count: null },
+        ],
+        items: [
+          { item_id: 'item-1', item_type: 'CLASS', source_file_id: 'file-1', source_page: 3 },
+          { item_id: 'item-2', item_type: 'CLASS', source_file_id: null, source_page: null },
+        ],
+        events: [],
+      });
+
+      const detail = await service.getDetail('reviewer-1', 'batch-1');
+
+      expect(detail.files.map((file) => file.page_count)).toEqual([5, null]);
+      expect(detail.items.map((item) => [item.source_file_id, item.source_page])).toEqual([
+        ['file-1', 3],
+        [null, null],
+      ]);
+      expect(() => JSON.stringify(detail)).not.toThrow();
+    });
+  });
+
   describe('JSON-safe reviewer responses (BigInt size_bytes)', () => {
     const reviewerFile = () => ({
       file_id: 'file-1',

@@ -43,6 +43,7 @@ type FileRow = {
   object_key: string | null;
   size_bytes: bigint | null;
   confirmed_at: Date | null;
+  page_count: number | null;
   jurisdiction: string;
   active: boolean;
   batch: {
@@ -148,6 +149,8 @@ export class CertificateImportFilesService {
     const sealId = `${fileId}-${randomUUID()}`;
     const destination = `batches/${batchId}/sealed/${sealId}${extension}`;
     let pdfBytes: Buffer | undefined;
+    // D4: páginas del archivo, persistidas al confirmar. Imagen = 1.
+    let pageCount = 1;
     if (existing.file_type === 'application/pdf') {
       const downloaded = await this.callStorage(() =>
         this.storage.getObject(
@@ -170,7 +173,7 @@ export class CertificateImportFilesService {
           'CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH',
         );
       }
-      await assertCertificateImportPdf(downloaded, {
+      pageCount = await assertCertificateImportPdf(downloaded, {
         queueWaitMs: PDF_CONFIRM_QUEUE_WAIT_MS,
         queueFullCode: ErrorCode.CERTIFICATE_IMPORT_PDF_BUSY,
       });
@@ -216,6 +219,7 @@ export class CertificateImportFilesService {
           file_url: sealed.key,
           size_bytes: BigInt(stored!.size),
           confirmed_at: claimedAt,
+          page_count: pageCount,
         },
       })
       .catch(async (error: unknown) => {
@@ -248,6 +252,7 @@ export class CertificateImportFilesService {
             upload_status: true,
             size_bytes: true,
             confirmed_at: true,
+            page_count: true,
           },
         })
         .catch(() => undefined);
@@ -275,6 +280,7 @@ export class CertificateImportFilesService {
           size_bytes: current.size_bytes,
           file_type: existing.file_type,
           confirmed_at: current.confirmed_at,
+          page_count: current.page_count,
         });
       }
       throw new BadRequestException('CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED');
@@ -292,6 +298,7 @@ export class CertificateImportFilesService {
       size_bytes: BigInt(stored!.size),
       file_type: existing.file_type,
       confirmed_at: claimedAt,
+      page_count: pageCount,
     });
   }
 
@@ -496,6 +503,7 @@ export class CertificateImportFilesService {
     size_bytes: bigint | null;
     file_type: string;
     confirmed_at: Date | null;
+    page_count?: number | null;
   }) {
     return {
       file_id: file.file_id,
@@ -503,6 +511,7 @@ export class CertificateImportFilesService {
       size_bytes: file.size_bytes == null ? null : Number(file.size_bytes),
       mime_type: file.file_type,
       confirmed_at: file.confirmed_at,
+      page_count: file.page_count ?? null,
     };
   }
 
