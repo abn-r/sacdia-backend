@@ -2,8 +2,12 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { CertificateBulkImportApplicationService } from './certificate-bulk-imports-application.service';
@@ -14,7 +18,10 @@ import {
   toPublicImportItem,
   type PublicImportFile,
   type PublicImportItem,
+  withOcrState,
 } from './certificate-import-response.mapper';
+import { CERTIFICATE_OCR_QUEUE } from './ocr/certificate-ocr.queue';
+import { resolveOcrState } from './ocr/certificate-ocr-state';
 import {
   CertificateImportYearResolver,
   civilDateFromDbDate,
@@ -45,10 +52,15 @@ const REVIEWABLE_BATCH_STATUSES = [
 
 @Injectable()
 export class AdminCertificateBulkImportsService {
+  private readonly logger = new Logger(AdminCertificateBulkImportsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly applicationService: CertificateBulkImportApplicationService,
     private readonly yearResolver: CertificateImportYearResolver,
+    @Optional()
+    @InjectQueue(CERTIFICATE_OCR_QUEUE)
+    private readonly ocrQueue: Pick<Queue, 'getJob'> | null = null,
   ) {}
 
   async listPending(
@@ -95,14 +107,26 @@ export class AdminCertificateBulkImportsService {
     const items = batch.items ?? [];
     const blockers = await this.yearResolver.blockersForItems(items);
     const conflicts = await this.instructorConflicts(found.user_id, found);
-    return this.attachOperationalReconciliation({
-      ...batch,
-      items: items.map((item) => ({
-        ...item,
-        approval_blockers: blockers.get(item.item_id) ?? [],
-        instructor_conflict: conflicts.has(item.item_id),
-      })),
-    });
+    // Solo el detalle resuelve ocr_state; listPending no consulta Redis por lote.
+    const ocrState = await resolveOcrState(
+      this.ocrQueue,
+      batchId,
+      batch.events,
+      this.logger,
+    );
+    return this.attachOperationalReconciliation(
+      withOcrState(
+        {
+          ...batch,
+          items: items.map((item) => ({
+            ...item,
+            approval_blockers: blockers.get(item.item_id) ?? [],
+            instructor_conflict: conflicts.has(item.item_id),
+          })),
+        },
+        ocrState,
+      ),
+    );
   }
 
   /**

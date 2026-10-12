@@ -291,7 +291,10 @@ describe('CertificateBulkImportsService', () => {
   });
 
   it('enqueues the read and leaves extraction to the worker', async () => {
-    const queue = { add: jest.fn().mockResolvedValue({ id: 'job-1' }) };
+    const queue = {
+      add: jest.fn().mockResolvedValue({ id: 'job-1' }),
+      getJob: jest.fn().mockResolvedValue(undefined),
+    };
     const queued = new CertificateBulkImportsService(
       prisma as never,
       ocrProvider,
@@ -850,6 +853,239 @@ describe('CertificateBulkImportsService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  describe('ocr_state and OCR retry (D3)', () => {
+    const confirmedBatch = (events: unknown[] = []) => ({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+      files: [
+        {
+          file_url: 'evidence/cert.jpg',
+          file_name: 'cert.jpg',
+          file_type: 'image/jpeg',
+          upload_status: 'CONFIRMED',
+          object_key: 'batches/batch-1/sealed/cert.jpg',
+          active: true,
+        },
+      ],
+      items: [],
+      events,
+    });
+    const queuedEvent = (ageMs: number) => ({
+      action: 'OCR_QUEUED',
+      created_at: new Date(Date.now() - ageMs),
+    });
+    const processedEvent = (ageMs: number, itemCount: number) => ({
+      action: 'OCR_PROCESSED',
+      created_at: new Date(Date.now() - ageMs),
+      payload: { item_count: itemCount },
+    });
+    const job = (state: string) => ({
+      getState: jest.fn().mockResolvedValue(state),
+      remove: jest.fn().mockResolvedValue(undefined),
+    });
+    const withQueue = (existing: ReturnType<typeof job> | undefined) => {
+      const queue = {
+        add: jest.fn().mockResolvedValue({ id: 'job-1' }),
+        getJob: jest.fn().mockResolvedValue(existing),
+      };
+      return {
+        queue,
+        svc: new CertificateBulkImportsService(
+          prisma as never,
+          ocrProvider,
+          queue,
+          instructors as never,
+        ),
+      };
+    };
+
+    it.each([
+      ['waiting', 'pending'],
+      ['delayed', 'pending'],
+      ['active', 'running'],
+      ['failed', 'failed'],
+    ])('getBatch maps a %s job to %s', async (jobState, expected) => {
+      const { svc, queue } = withQueue(job(jobState));
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch([queuedEvent(1_000)]),
+      );
+
+      const result = await svc.getBatch('user-1', 'batch-1');
+
+      expect(result.ocr_state).toBe(expected);
+      expect(queue.getJob).toHaveBeenCalledWith('certificate-ocr-batch-1');
+    });
+
+    it('getBatch resolves done and empty from events without asking Redis', async () => {
+      const { svc, queue } = withQueue(undefined);
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValueOnce(
+        confirmedBatch([queuedEvent(9_000), processedEvent(5_000, 2)]),
+      );
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValueOnce(
+        confirmedBatch([queuedEvent(9_000), processedEvent(5_000, 0)]),
+      );
+
+      expect((await svc.getBatch('user-1', 'batch-1')).ocr_state).toBe('done');
+      expect((await svc.getBatch('user-1', 'batch-1')).ocr_state).toBe('empty');
+      expect(queue.getJob).not.toHaveBeenCalled();
+    });
+
+    it('getBatch is failed when the job aged out of Redis after 5 minutes', async () => {
+      const { svc } = withQueue(undefined);
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch([queuedEvent(6 * 60_000)]),
+      );
+
+      expect((await svc.getBatch('user-1', 'batch-1')).ocr_state).toBe(
+        'failed',
+      );
+    });
+
+    it('getBatch returns ocr_state null when OCR was never requested', async () => {
+      const { svc, queue } = withQueue(undefined);
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch([]),
+      );
+
+      const result = await svc.getBatch('user-1', 'batch-1');
+
+      expect(result).toHaveProperty('ocr_state', null);
+      expect(queue.getJob).not.toHaveBeenCalled();
+    });
+
+    it('getBatch returns null without Redis configured and no OCR request', async () => {
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch([]),
+      );
+
+      expect(await service.getBatch('user-1', 'batch-1')).toHaveProperty(
+        'ocr_state',
+        null,
+      );
+    });
+
+    it('getBatch survives a BullMQ failure: omits ocr_state and logs without content', async () => {
+      const { svc, queue } = withQueue(undefined);
+      queue.getJob.mockRejectedValue(
+        new Error('ECONNREFUSED redis://:secret@host:6379'),
+      );
+      const warn = jest
+        .spyOn((svc as any).logger, 'warn')
+        .mockImplementation(() => undefined);
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch([queuedEvent(1_000)]),
+      );
+
+      const result = await svc.getBatch('user-1', 'batch-1');
+
+      expect(result.batch_id).toBe('batch-1');
+      expect(result).not.toHaveProperty('ocr_state');
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).not.toContain('secret');
+    });
+
+    it('createDraft answers ocr_state null without asking Redis', async () => {
+      const { svc, queue } = withQueue(undefined);
+      tx.certificate_bulk_import_batches.create.mockResolvedValue({
+        batch_id: 'batch-1',
+        files: [],
+        items: [],
+        events: [],
+      });
+
+      const result = await svc.createDraft('user-1', {} as never);
+
+      expect(result).toHaveProperty('ocr_state', null);
+      expect(queue.getJob).not.toHaveBeenCalled();
+    });
+
+    it('processOcr answers with the derived state of the fresh read', async () => {
+      const { svc, queue } = withQueue(undefined);
+      queue.getJob
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValue(job('waiting'));
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch([queuedEvent(10)]),
+      );
+
+      const result = await svc.processOcr('user-1', 'batch-1');
+
+      expect(result.ocr_state).toBe('pending');
+    });
+
+    it('retry after a failure removes the failed job, then enqueues with the same jobId', async () => {
+      const failed = job('failed');
+      const { svc, queue } = withQueue(failed);
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch([queuedEvent(10 * 60_000)]),
+      );
+      const order: string[] = [];
+      failed.remove.mockImplementation(async () => void order.push('remove'));
+      queue.add.mockImplementation(async () => void order.push('add'));
+
+      await svc.processOcr('user-1', 'batch-1');
+
+      expect(failed.remove).toHaveBeenCalledTimes(1);
+      expect(queue.add).toHaveBeenCalledWith(
+        'read',
+        { userId: 'user-1', batchId: 'batch-1' },
+        expect.objectContaining({ jobId: 'certificate-ocr-batch-1' }),
+      );
+      expect(order).toEqual(['remove', 'add']);
+      expect(
+        tx.certificate_bulk_import_item_events.create,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'OCR_QUEUED' }),
+        }),
+      );
+    });
+
+    it.each(['waiting', 'delayed', 'active'])(
+      'is idempotent while the job is %s: no remove, no add, no new OCR_QUEUED',
+      async (state) => {
+        const live = job(state);
+        const { svc, queue } = withQueue(live);
+        tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+          confirmedBatch([queuedEvent(1_000)]),
+        );
+
+        const result = await svc.processOcr('user-1', 'batch-1');
+
+        expect(live.remove).not.toHaveBeenCalled();
+        expect(queue.add).not.toHaveBeenCalled();
+        expect(
+          tx.certificate_bulk_import_item_events.create,
+        ).not.toHaveBeenCalled();
+        expect(result.batch_id).toBe('batch-1');
+      },
+    );
+
+    it('does not remove anything when no job exists', async () => {
+      const { svc, queue } = withQueue(undefined);
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch(),
+      );
+
+      await svc.processOcr('user-1', 'batch-1');
+
+      expect(queue.add).toHaveBeenCalledTimes(1);
+    });
+
+    it('still reports the OCR as unavailable when Redis fails while enqueuing', async () => {
+      const { svc, queue } = withQueue(undefined);
+      queue.getJob.mockRejectedValue(new Error('ECONNREFUSED'));
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch(),
+      );
+
+      await expect(svc.processOcr('user-1', 'batch-1')).rejects.toThrow(
+        'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+      );
+    });
+  });
+
   describe('JSON-safe batch responses (BigInt size_bytes)', () => {
     // Prisma returns certificate_bulk_import_files.size_bytes as bigint and
     // Express res.json cannot serialize it. Every member response that
@@ -938,7 +1174,10 @@ describe('CertificateBulkImportsService', () => {
     });
 
     it('processOcr serializes file sizes as numbers when it returns the batch', async () => {
-      const queue = { add: jest.fn().mockResolvedValue({ id: 'job-1' }) };
+      const queue = {
+        add: jest.fn().mockResolvedValue({ id: 'job-1' }),
+        getJob: jest.fn().mockResolvedValue(undefined),
+      };
       const queued = new CertificateBulkImportsService(
         prisma as never,
         ocrProvider,

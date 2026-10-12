@@ -27,7 +27,12 @@ import { CERTIFICATE_OCR_PROVIDER } from './ocr/certificate-ocr.provider';
 import {
   CERTIFICATE_OCR_JOB,
   CERTIFICATE_OCR_QUEUE,
+  certificateOcrJobId,
 } from './ocr/certificate-ocr.queue';
+import {
+  isLiveOcrJobState,
+  resolveOcrState,
+} from './ocr/certificate-ocr-state';
 import { Inject } from '@nestjs/common';
 import { normalizeCertificateImportFileRef } from './certificate-import-file-ref';
 import {
@@ -47,6 +52,7 @@ import {
   localizedName,
   toPublicImportBatch,
   toPublicImportItem,
+  withOcrState,
 } from './certificate-import-response.mapper';
 import { InstructorsService } from '../instructors/instructors.service';
 import { TranslationService } from '../common/services/translation.service';
@@ -87,7 +93,7 @@ export class CertificateBulkImportsService {
     private readonly ocrProvider: CertificateOcrProvider,
     @Optional()
     @InjectQueue(CERTIFICATE_OCR_QUEUE)
-    private readonly ocrQueue: Pick<Queue, 'add'> | null = null,
+    private readonly ocrQueue: Pick<Queue, 'add' | 'getJob'> | null = null,
     private readonly instructors: InstructorsService,
   ) {}
 
@@ -151,7 +157,11 @@ export class CertificateBulkImportsService {
 
       await this.recordEvent(tx, batch.batch_id, null, 'DRAFT_CREATED', userId);
 
-      return toPublicImportBatch(batch, this.translations.getCurrentLocale());
+      // Un borrador nuevo nunca pidió OCR: sin consulta a Redis.
+      return withOcrState(
+        toPublicImportBatch(batch, this.translations.getCurrentLocale()),
+        null,
+      );
     });
   }
 
@@ -161,12 +171,25 @@ export class CertificateBulkImportsService {
       throw new BadRequestException('CERTIFICATE_IMPORT_OCR_UNAVAILABLE');
     }
 
+    const jobId = certificateOcrJobId(batchId);
     try {
+      const existing = await this.ocrQueue.getJob(jobId);
+      const state = existing ? await existing.getState() : null;
+      // Idempotente: una lectura en cola o en curso no se duplica ni escribe
+      // otro OCR_QUEUED.
+      if (isLiveOcrJobState(state)) {
+        return this.getBatch(userId, batchId);
+      }
+      // Un job fallido (o completado y aún retenido) conserva el jobId y haría
+      // que add() devolviera el viejo sin encolar: se elimina antes.
+      if (existing && (state === 'failed' || state === 'completed')) {
+        await existing.remove();
+      }
       await this.ocrQueue.add(
         CERTIFICATE_OCR_JOB,
         { userId, batchId },
         {
-          jobId: `certificate-ocr-${batchId}`,
+          jobId,
           attempts: 2,
           backoff: { type: 'fixed', delay: 5_000 },
           removeOnComplete: true,
@@ -322,10 +345,13 @@ export class CertificateBulkImportsService {
     if (!batch) {
       throw new NotFoundException('CERTIFICATE_IMPORT_BATCH_NOT_FOUND');
     }
-    return toPublicImportBatch(
-      batch,
-      this.translations.getCurrentLocale(),
-      await this.instructorPhotos(batch.items),
+    return withOcrState(
+      toPublicImportBatch(
+        batch,
+        this.translations.getCurrentLocale(),
+        await this.instructorPhotos(batch.items),
+      ),
+      await resolveOcrState(this.ocrQueue, batchId, batch.events, this.logger),
     );
   }
 
@@ -545,7 +571,25 @@ export class CertificateBulkImportsService {
   }
 
   async submit(userId: string, batchId: string) {
-    const submittedBatch = await this.prisma.$transaction(async (tx) => {
+    const submittedBatch = await this.submitInTransaction(userId, batchId);
+    // Fuera de la transacción: no se mantiene abierta mientras se consulta Redis.
+    return withOcrState(
+      toPublicImportBatch(
+        submittedBatch,
+        this.translations.getCurrentLocale(),
+        await this.instructorPhotos(submittedBatch.items),
+      ),
+      await resolveOcrState(
+        this.ocrQueue,
+        batchId,
+        submittedBatch.events,
+        this.logger,
+      ),
+    );
+  }
+
+  private async submitInTransaction(userId: string, batchId: string) {
+    return this.prisma.$transaction(async (tx) => {
       const batch = await this.findOwnedBatch(tx, userId, batchId);
       this.assertDraftLike(batch.status, 'submit');
 
@@ -679,11 +723,6 @@ export class CertificateBulkImportsService {
       });
       return submitted;
     });
-    return toPublicImportBatch(
-      submittedBatch,
-      this.translations.getCurrentLocale(),
-      await this.instructorPhotos(submittedBatch.items),
-    );
   }
 
   async resubmitItem(

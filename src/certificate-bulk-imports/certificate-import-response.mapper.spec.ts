@@ -3,6 +3,7 @@ import {
   toPublicImportBatch,
   toPublicImportFile,
   toPublicImportItem,
+  withOcrState,
 } from './certificate-import-response.mapper';
 
 describe('certificate import response mapper', () => {
@@ -300,6 +301,40 @@ describe('certificate import response mapper', () => {
 
       expect(batch.items[0]).toMatchObject({ source_file_id: 'file-1', source_page: 3 });
       expect(batch.items[1]).toMatchObject({ source_file_id: null, source_page: null });
+    });
+  });
+
+  describe('withOcrState', () => {
+    const source = { batch_id: 'batch-1', files: [], items: [] };
+
+    it.each(['pending', 'running', 'done', 'empty', 'failed'] as const)(
+      'adds ocr_state=%s next to the public batch',
+      (state) => {
+        const out = withOcrState(toPublicImportBatch(source), state);
+
+        expect(out.ocr_state).toBe(state);
+        expect(out.batch_id).toBe('batch-1');
+      },
+    );
+
+    it('keeps an explicit null (OCR never requested)', () => {
+      const out = withOcrState(source, null);
+
+      expect(out).toHaveProperty('ocr_state', null);
+      expect(JSON.parse(JSON.stringify(out))).toHaveProperty('ocr_state', null);
+    });
+
+    it('omits the key when the state is unknown (undefined)', () => {
+      const out = withOcrState(source, undefined);
+
+      expect(out).toBe(source);
+      expect(JSON.parse(JSON.stringify(out))).not.toHaveProperty('ocr_state');
+    });
+
+    it('does not mutate the batch it receives', () => {
+      withOcrState(source, 'done');
+
+      expect(source).not.toHaveProperty('ocr_state');
     });
   });
 });
