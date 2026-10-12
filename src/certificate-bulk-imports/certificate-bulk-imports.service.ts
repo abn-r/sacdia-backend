@@ -30,8 +30,10 @@ import {
   certificateOcrJobId,
 } from './ocr/certificate-ocr.queue';
 import {
+  OCR_NEVER_REQUESTED,
   isLiveOcrJobState,
   resolveOcrState,
+  sanitizeOcrErrorCode,
 } from './ocr/certificate-ocr-state';
 import { Inject } from '@nestjs/common';
 import { normalizeCertificateImportFileRef } from './certificate-import-file-ref';
@@ -160,7 +162,7 @@ export class CertificateBulkImportsService {
       // Un borrador nuevo nunca pidió OCR: sin consulta a Redis.
       return withOcrState(
         toPublicImportBatch(batch, this.translations.getCurrentLocale()),
-        null,
+        OCR_NEVER_REQUESTED,
       );
     });
   }
@@ -224,6 +226,17 @@ export class CertificateBulkImportsService {
     }
 
     return this.getBatch(userId, batchId);
+  }
+
+  /**
+   * Registra el fallo terminal de la lectura (lo llama el worker). Solo guarda
+   * un código de la lista pública; un código desconocido queda genérico.
+   * Nunca el mensaje del error, texto ni URLs.
+   */
+  async recordOcrFailure(userId: string, batchId: string, code: unknown) {
+    await this.recordEvent(this.prisma, batchId, null, 'OCR_FAILED', userId, {
+      error_code: sanitizeOcrErrorCode(code),
+    });
   }
 
   /**

@@ -1,13 +1,22 @@
 import {
+  OCR_GENERIC_ERROR_CODE,
   OCR_ORPHAN_QUEUED_MAX_AGE_MS,
+  OCR_PUBLIC_ERROR_CODES,
   deriveOcrState,
+  deriveOcrStatus,
   isLiveOcrJobState,
   resolveOcrState,
+  sanitizeOcrErrorCode,
 } from './certificate-ocr-state';
 
 const NOW = new Date('2026-10-12T12:00:00.000Z');
 const ago = (ms: number) => new Date(NOW.getTime() - ms);
 const queued = (at: Date) => ({ action: 'OCR_QUEUED', created_at: at });
+const failedEvent = (at: Date, errorCode?: unknown) => ({
+  action: 'OCR_FAILED',
+  created_at: at,
+  payload: errorCode === undefined ? undefined : { error_code: errorCode },
+});
 const processed = (at: Date, itemCount: number) => ({
   action: 'OCR_PROCESSED',
   created_at: at,
@@ -170,7 +179,7 @@ describe('resolveOcrState', () => {
       logger,
       NOW,
     );
-    expect(state).toBe('running');
+    expect(state).toEqual({ ocr_state: 'running', ocr_error_code: null });
     expect(queue.getJob).toHaveBeenCalledWith('certificate-ocr-batch-1');
   });
 
@@ -178,7 +187,7 @@ describe('resolveOcrState', () => {
     const queue = queueWith('active');
     expect(
       await resolveOcrState(queue as never, 'b', [], logger, NOW),
-    ).toBeNull();
+    ).toEqual({ ocr_state: null, ocr_error_code: null });
     expect(
       await resolveOcrState(
         queue as never,
@@ -187,7 +196,7 @@ describe('resolveOcrState', () => {
         logger,
         NOW,
       ),
-    ).toBe('done');
+    ).toMatchObject({ ocr_state: 'done' });
     expect(queue.getJob).not.toHaveBeenCalled();
   });
 
@@ -200,7 +209,7 @@ describe('resolveOcrState', () => {
         logger,
         NOW,
       ),
-    ).toBe('failed');
+    ).toEqual({ ocr_state: 'failed', ocr_error_code: null });
   });
 
   it('omits the state (undefined) and logs without the error message when Redis fails', async () => {
@@ -236,7 +245,168 @@ describe('resolveOcrState', () => {
         logger,
         NOW,
       ),
-    ).toBe('empty');
+    ).toMatchObject({ ocr_state: 'empty' });
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('ocr_error_code (failure event)', () => {
+  const logger = { warn: jest.fn() };
+
+  it.each([...OCR_PUBLIC_ERROR_CODES])(
+    'exposes the recorded code %s',
+    (code) => {
+      const status = deriveOcrStatus(
+        [queued(ago(9_000)), failedEvent(ago(5_000), code)],
+        'failed',
+        NOW,
+      );
+      expect(status).toEqual({ ocr_state: 'failed', ocr_error_code: code });
+    },
+  );
+
+  it('keeps the specific code even when the job already left Redis', () => {
+    expect(
+      deriveOcrStatus(
+        [
+          queued(ago(2 * 3_600_000)),
+          failedEvent(
+            ago(2 * 3_600_000 - 5_000),
+            'CERTIFICATE_IMPORT_PDF_ENCRYPTED',
+          ),
+        ],
+        null,
+        NOW,
+      ),
+    ).toEqual({
+      ocr_state: 'failed',
+      ocr_error_code: 'CERTIFICATE_IMPORT_PDF_ENCRYPTED',
+    });
+  });
+
+  it('answers from the events alone, without asking Redis', async () => {
+    const queue = { getJob: jest.fn() };
+    const status = await resolveOcrState(
+      queue as never,
+      'b',
+      [
+        queued(ago(9_000)),
+        failedEvent(ago(5_000), 'CERTIFICATE_IMPORT_OCR_QUOTA'),
+      ],
+      logger,
+      NOW,
+    );
+    expect(status).toEqual({
+      ocr_state: 'failed',
+      ocr_error_code: 'CERTIFICATE_IMPORT_OCR_QUOTA',
+    });
+    expect(queue.getJob).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an unknown code', 'SOMETHING_NEW'],
+    ['a free-text message', 'connect ECONNREFUSED redis://:secret@host'],
+    ['a non-string value', { message: 'secret' }],
+    ['a missing code', undefined],
+  ])('turns %s into the generic code', (_, bad) => {
+    const status = deriveOcrStatus(
+      [queued(ago(9_000)), failedEvent(ago(5_000), bad)],
+      'failed',
+      NOW,
+    );
+    expect(status).toEqual({
+      ocr_state: 'failed',
+      ocr_error_code: OCR_GENERIC_ERROR_CODE,
+    });
+    expect(JSON.stringify(status)).not.toContain('secret');
+  });
+
+  it('is null (unknown cause) for a failed job without a failure event', () => {
+    expect(deriveOcrStatus([queued(ago(1_000))], 'failed', NOW)).toEqual({
+      ocr_state: 'failed',
+      ocr_error_code: null,
+    });
+  });
+
+  it('is null (unknown cause) for the 5-minute orphan rule', () => {
+    expect(
+      deriveOcrStatus(
+        [queued(ago(OCR_ORPHAN_QUEUED_MAX_AGE_MS + 1_000))],
+        null,
+        NOW,
+      ),
+    ).toEqual({ ocr_state: 'failed', ocr_error_code: null });
+  });
+
+  describe('precedence', () => {
+    it('a retry after a failure clears the code', () => {
+      const events = [
+        queued(ago(60_000)),
+        failedEvent(ago(50_000), 'CERTIFICATE_IMPORT_OCR_QUOTA'),
+        queued(ago(1_000)),
+      ];
+      expect(deriveOcrStatus(events, 'waiting', NOW)).toEqual({
+        ocr_state: 'pending',
+        ocr_error_code: null,
+      });
+      expect(deriveOcrStatus(events, 'active', NOW)).toEqual({
+        ocr_state: 'running',
+        ocr_error_code: null,
+      });
+    });
+
+    it('a retry that succeeds drops the old code', () => {
+      const events = [
+        queued(ago(60_000)),
+        failedEvent(ago(50_000), 'CERTIFICATE_IMPORT_OCR_QUOTA'),
+        queued(ago(30_000)),
+        processed(ago(20_000), 2),
+      ];
+      expect(deriveOcrStatus(events, null, NOW)).toEqual({
+        ocr_state: 'done',
+        ocr_error_code: null,
+      });
+    });
+
+    it('a retry that fails again reports the new code', () => {
+      const events = [
+        queued(ago(60_000)),
+        failedEvent(ago(50_000), 'CERTIFICATE_IMPORT_OCR_QUOTA'),
+        queued(ago(30_000)),
+        failedEvent(ago(20_000), 'CERTIFICATE_IMPORT_PDF_INVALID'),
+      ];
+      expect(deriveOcrStatus(events, 'failed', NOW).ocr_error_code).toBe(
+        'CERTIFICATE_IMPORT_PDF_INVALID',
+      );
+    });
+
+    it('a retry that failed without an event does not inherit the old code', () => {
+      const events = [
+        queued(ago(60_000)),
+        failedEvent(ago(50_000), 'CERTIFICATE_IMPORT_OCR_QUOTA'),
+        queued(ago(30_000)),
+      ];
+      expect(deriveOcrStatus(events, 'failed', NOW)).toEqual({
+        ocr_state: 'failed',
+        ocr_error_code: null,
+      });
+    });
+
+    it('ocr_error_code is null whenever the state is not failed', () => {
+      const events = [queued(ago(1_000))];
+      for (const job of ['waiting', 'active', null]) {
+        expect(deriveOcrStatus(events, job, NOW).ocr_error_code).toBeNull();
+      }
+    });
+  });
+});
+
+describe('sanitizeOcrErrorCode', () => {
+  it('passes whitelisted codes and generalizes the rest', () => {
+    expect(sanitizeOcrErrorCode('CERTIFICATE_IMPORT_OCR_QUOTA')).toBe(
+      'CERTIFICATE_IMPORT_OCR_QUOTA',
+    );
+    expect(sanitizeOcrErrorCode('nope')).toBe(OCR_GENERIC_ERROR_CODE);
+    expect(sanitizeOcrErrorCode(null)).toBe(OCR_GENERIC_ERROR_CODE);
   });
 });

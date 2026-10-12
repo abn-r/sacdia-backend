@@ -9,6 +9,53 @@ import { certificateOcrJobId } from './certificate-ocr.queue';
 export type CertificateOcrState =
   'pending' | 'running' | 'done' | 'empty' | 'failed';
 
+/** Generic code: the worker failed but its code is not a known public one. */
+export const OCR_GENERIC_ERROR_CODE = 'CERTIFICATE_IMPORT_OCR_FAILED';
+
+/**
+ * Failure codes the OCR module throws (provider mapping, sealed-object read,
+ * `runQueuedOcr` preconditions). Only these are ever persisted or exposed:
+ * the failure event stores a code and nothing else (no message, text or URL).
+ * The names are the real public error codes, the same ones the 400 at enqueue
+ * time uses.
+ */
+export const OCR_PUBLIC_ERROR_CODES: ReadonlySet<string> = new Set([
+  'CERTIFICATE_IMPORT_OCR_UNAVAILABLE',
+  'CERTIFICATE_IMPORT_OCR_FAILED',
+  'CERTIFICATE_IMPORT_OCR_QUOTA',
+  'CERTIFICATE_IMPORT_OCR_UNSUPPORTED_TYPE',
+  'CERTIFICATE_IMPORT_OCR_FILE_TOO_LARGE',
+  'CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES',
+  'CERTIFICATE_IMPORT_PDF_INVALID',
+  'CERTIFICATE_IMPORT_PDF_ENCRYPTED',
+  'CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE',
+  'CERTIFICATE_IMPORT_FILE_NOT_CONFIRMED',
+  'CERTIFICATE_IMPORT_FILE_CONTENT_MISMATCH',
+  'CERTIFICATE_IMPORT_FILE_TOO_LARGE',
+  'CERTIFICATE_IMPORT_FILE_URL_INVALID',
+  'CERTIFICATE_IMPORT_CANNOT_PROCESS_OCR',
+  'CERTIFICATE_IMPORT_BATCH_NOT_FOUND',
+]);
+
+/** Known public code as is; anything else (or non-string) becomes generic. */
+export function sanitizeOcrErrorCode(code: unknown): string {
+  return typeof code === 'string' && OCR_PUBLIC_ERROR_CODES.has(code)
+    ? code
+    : OCR_GENERIC_ERROR_CODE;
+}
+
+/** What the batch responses carry: `ocr_state` plus the failure code. */
+export type CertificateOcrStatus = {
+  ocr_state: CertificateOcrState | null;
+  /** Only non-null when `ocr_state === 'failed'` and the worker reported why. */
+  ocr_error_code: string | null;
+};
+
+export const OCR_NEVER_REQUESTED: CertificateOcrStatus = {
+  ocr_state: null,
+  ocr_error_code: null,
+};
+
 /**
  * A job gone from Redis whose `OCR_QUEUED` event has no `OCR_PROCESSED` is
  * `pending` while it is younger than this (covers the gap between `add()` and
@@ -51,21 +98,34 @@ function itemCount(payload: unknown): number {
   return typeof count === 'number' ? count : 0;
 }
 
+type EventDecision =
+  { kind: 'final'; status: CertificateOcrStatus } | { kind: 'job' };
+
+const final = (
+  ocr_state: CertificateOcrState | null,
+  ocr_error_code: string | null = null,
+): EventDecision => ({ kind: 'final', status: { ocr_state, ocr_error_code } });
+
 /**
- * Event half of the derivation. Returns the final state when the events alone
- * decide it (`null`, `done`, `empty`), or `'job'` when the live job must be
- * consulted.
+ * Event half of the derivation: `final` when the events alone decide it, or
+ * `job` when the live job must be consulted.
  */
-function fromEvents(
-  events: readonly OcrEventLike[],
-): null | 'done' | 'empty' | 'job' {
+function fromEvents(events: readonly OcrEventLike[]): EventDecision {
   const queued = latest(events, 'OCR_QUEUED');
-  if (!queued) return null;
+  if (!queued) return final(null);
   const processed = latest(events, 'OCR_PROCESSED');
   if (processed && processed.at >= queued.at) {
-    return itemCount(processed.event.payload) > 0 ? 'done' : 'empty';
+    return final(itemCount(processed.event.payload) > 0 ? 'done' : 'empty');
   }
-  return 'job';
+  // Terminal failure recorded by the worker. Only a failure at or after the
+  // latest OCR_QUEUED counts, so a retry (new OCR_QUEUED) clears the code.
+  const failure = latest(events, 'OCR_FAILED');
+  if (failure && failure.at >= queued.at) {
+    const code = (failure.event.payload as { error_code?: unknown } | null)
+      ?.error_code;
+    return final('failed', sanitizeOcrErrorCode(code));
+  }
+  return { kind: 'job' };
 }
 
 /**
@@ -75,36 +135,57 @@ function fromEvents(
  *    `empty`. The event is the source of truth because a successful job is
  *    deleted (`removeOnComplete`). A re-run queued after an old result does
  *    not match this rule, so the old result never masks the new read.
- * 3. Live job: `active` is `running`; `waiting`/`delayed`/... is `pending`
+ * 3. `OCR_FAILED` (worker's terminal failure) at or after the latest
+ *    `OCR_QUEUED`: `failed` with its `ocr_error_code`.
+ * 4. Live job: `active` is `running`; `waiting`/`delayed`/... is `pending`
  *    (includes the backoff between attempts); `failed` is `failed`.
- * 4. No usable job (absent, `completed` without event, `unknown`): `failed`
+ * 5. No usable job (absent, `completed` without event, `unknown`): `failed`
  *    if the latest `OCR_QUEUED` is older than 5 minutes, else `pending`.
+ *
+ * `ocr_error_code` is non-null only through rule 3. A `failed` inferred from
+ * the job (rule 4) or the age rule (5) has no recorded cause, so the code is
+ * `null` ("unknown cause") rather than a made-up generic one; clients show
+ * their default failure message. A known `failed` with an unrecognized code
+ * is the generic `CERTIFICATE_IMPORT_OCR_FAILED`.
  *
  * `jobState` is the BullMQ state, or `null` when the job does not exist.
  */
+export function deriveOcrStatus(
+  events: readonly OcrEventLike[],
+  jobState: string | null,
+  now: Date = new Date(),
+): CertificateOcrStatus {
+  const decided = fromEvents(events);
+  if (decided.kind === 'final') return decided.status;
+  const inferred = (ocr_state: CertificateOcrState): CertificateOcrStatus => ({
+    ocr_state,
+    ocr_error_code: null,
+  });
+  if (jobState === 'active') return inferred('running');
+  if (LIVE_WAITING_STATES.has(jobState ?? '')) return inferred('pending');
+  if (jobState === 'failed') return inferred('failed');
+  const queued = latest(events, 'OCR_QUEUED');
+  const age = now.getTime() - (queued?.at ?? now.getTime());
+  return inferred(age > OCR_ORPHAN_QUEUED_MAX_AGE_MS ? 'failed' : 'pending');
+}
+
 export function deriveOcrState(
   events: readonly OcrEventLike[],
   jobState: string | null,
   now: Date = new Date(),
 ): CertificateOcrState | null {
-  const decided = fromEvents(events);
-  if (decided !== 'job') return decided;
-  if (jobState === 'active') return 'running';
-  if (LIVE_WAITING_STATES.has(jobState ?? '')) return 'pending';
-  if (jobState === 'failed') return 'failed';
-  const queued = latest(events, 'OCR_QUEUED');
-  const age = now.getTime() - (queued?.at ?? now.getTime());
-  return age > OCR_ORPHAN_QUEUED_MAX_AGE_MS ? 'failed' : 'pending';
+  return deriveOcrStatus(events, jobState, now).ocr_state;
 }
 
 /**
- * Resolves `ocr_state` from the batch events already loaded by the caller plus
- * at most one `queue.getJob()` (none when the events already decide it).
+ * Resolves the OCR status from the batch events already loaded by the caller
+ * plus at most one `queue.getJob()` (none when the events already decide it).
  *
  * Returns `undefined` when the state cannot be determined because Redis
- * failed: callers omit the key, which clients treat as "no data" (plan R6).
- * `done`/`empty` still resolve then, as they need no Redis. The failure is
- * logged without the error message (it can carry connection details).
+ * failed: callers omit the keys, which clients treat as "no data" (plan R6).
+ * Event-decided states (`done`, `empty`, failure with code) still resolve
+ * then, as they need no Redis. The failure is logged without the error
+ * message (it can carry connection details).
  */
 export async function resolveOcrState(
   queue: OcrJobLookup | null | undefined,
@@ -112,9 +193,9 @@ export async function resolveOcrState(
   events: readonly OcrEventLike[] | undefined,
   logger: Pick<Logger, 'warn'>,
   now: Date = new Date(),
-): Promise<CertificateOcrState | null | undefined> {
+): Promise<CertificateOcrStatus | undefined> {
   const decided = fromEvents(events ?? []);
-  if (decided !== 'job') return decided;
+  if (decided.kind === 'final') return decided.status;
   let jobState: string | null = null;
   if (queue) {
     try {
@@ -127,5 +208,5 @@ export async function resolveOcrState(
       return undefined;
     }
   }
-  return deriveOcrState(events ?? [], jobState, now);
+  return deriveOcrStatus(events ?? [], jobState, now);
 }

@@ -22,6 +22,37 @@ export class CertificateOcrProcessor
     this.worker.on('error', (err: Error) => {
       this.logger.error(`certificate OCR worker error: ${err.message}`);
     });
+    this.worker.on('failed', (job, err) => {
+      void this.recordTerminalFailure(job, err);
+    });
+  }
+
+  /**
+   * Persists the cause when a job fails for good (UnrecoverableError, or the
+   * last attempt of a retryable error) so the batch can expose `ocr_error_code`.
+   * Intermediate attempts that will be retried record nothing. Best effort: a
+   * failure here must never affect the queue.
+   */
+  async recordTerminalFailure(
+    job: Job<CertificateOcrJobPayload> | undefined,
+    error: Error,
+  ): Promise<void> {
+    const userId = job?.data?.userId;
+    const batchId = job?.data?.batchId;
+    if (!job || !userId || !batchId) return;
+    const exhausted =
+      error instanceof UnrecoverableError ||
+      job.attemptsMade >= (job.opts?.attempts ?? 1);
+    if (!exhausted) return;
+    try {
+      await this.imports.recordOcrFailure(
+        userId,
+        batchId,
+        certificateOcrErrorCode(error),
+      );
+    } catch {
+      this.logger.error(`certificate OCR job ${job.id} failure not recorded`);
+    }
   }
 
   async process(job: Job<CertificateOcrJobPayload>): Promise<void> {

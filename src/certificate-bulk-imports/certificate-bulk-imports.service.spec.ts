@@ -1176,6 +1176,47 @@ describe('CertificateBulkImportsService', () => {
       ).toHaveBeenCalledWith({ where: { event_id: 'event-9' } });
     });
 
+    it('getBatch exposes ocr_error_code from the failure event', async () => {
+      const { svc, queue } = withQueue(undefined);
+      tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(
+        confirmedBatch([
+          queuedEvent(9_000),
+          {
+            action: 'OCR_FAILED',
+            created_at: new Date(Date.now() - 5_000),
+            payload: { error_code: 'CERTIFICATE_IMPORT_OCR_QUOTA' },
+          },
+        ]),
+      );
+
+      const result = await svc.getBatch('user-1', 'batch-1');
+
+      expect(result).toMatchObject({
+        ocr_state: 'failed',
+        ocr_error_code: 'CERTIFICATE_IMPORT_OCR_QUOTA',
+      });
+      expect(queue.getJob).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES', 'CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES'],
+      ['SOMETHING_NEW', 'CERTIFICATE_IMPORT_OCR_FAILED'],
+      ['boom redis://:secret@host', 'CERTIFICATE_IMPORT_OCR_FAILED'],
+    ])('recordOcrFailure(%s) stores only %s', async (input, stored) => {
+      await service.recordOcrFailure('user-1', 'batch-1', input);
+
+      expect(tx.certificate_bulk_import_item_events.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          batch_id: 'batch-1',
+          action: 'OCR_FAILED',
+          payload: { error_code: stored },
+        }),
+      });
+      expect(
+        JSON.stringify(tx.certificate_bulk_import_item_events.create.mock.calls),
+      ).not.toContain('secret');
+    });
+
     it('does not remove anything when no job exists', async () => {
       const { svc, queue } = withQueue(undefined);
       tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(

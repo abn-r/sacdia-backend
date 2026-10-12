@@ -19,7 +19,7 @@ import {
   toInstructorView,
   type InstructorView,
 } from '../instructors/instructor-view';
-import type { CertificateOcrState } from './ocr/certificate-ocr-state';
+import type { CertificateOcrStatus } from './ocr/certificate-ocr-state';
 
 type FileRowLike = {
   size_bytes?: bigint | null;
@@ -250,13 +250,13 @@ export function toPublicImportItem<I extends object>(
 // ── Estado de lectura del OCR (D3) ───────────────────────────────────────────
 
 /**
- * Agrega `ocr_state` ya resuelto (el mapper nunca consulta Redis). `undefined`
- * (no se pudo determinar) omite la clave: el cliente lo trata como "sin dato",
- * distinto de `null` ("nunca se pidió OCR").
+ * Agrega `ocr_state` y `ocr_error_code` ya resueltos (el mapper nunca consulta
+ * Redis). `undefined` (no se pudo determinar) omite ambas claves: el cliente lo
+ * trata como "sin dato", distinto de `ocr_state: null` ("nunca se pidió OCR").
  */
 export function withOcrState<T extends object>(
   batch: T,
-  ocrState: CertificateOcrState | null | undefined,
-): T & { ocr_state?: CertificateOcrState | null } {
-  return ocrState === undefined ? batch : { ...batch, ocr_state: ocrState };
+  status: CertificateOcrStatus | undefined,
+): T & Partial<CertificateOcrStatus> {
+  return status === undefined ? batch : { ...batch, ...status };
 }
