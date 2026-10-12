@@ -6,6 +6,8 @@ import {
   UserHonorRequirementsController,
 } from './honor-requirements.controller';
 import { HonorsService } from './honors.service';
+import { HonorInstructorProposalsService } from './honor-instructor-proposals.service';
+import { AdminHonorInstructorProposalsController } from './admin-honor-instructor-proposals.controller';
 import { HonorRequirementsService } from './honor-requirements.service';
 import { AdminHonorsController } from '../admin/admin-honors.controller';
 import { AdminHonorsService } from '../admin/admin-honors.service';
@@ -51,9 +53,11 @@ function isRedisConfigured(): boolean {
     HonorRequirementsController,
     UserHonorRequirementsController,
     AdminHonorsController,
+    AdminHonorInstructorProposalsController,
   ],
   providers: [
     HonorsService,
+    HonorInstructorProposalsService,
     HonorRequirementsService,
     MasterHonorsService,
     AdminHonorsService,

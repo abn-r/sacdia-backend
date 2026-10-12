@@ -12,6 +12,7 @@ import {
   UseGuards,
   UploadedFiles,
   UseInterceptors,
+  Request,
 } from '@nestjs/common';
 import {
   FilesValidationPipe,
@@ -28,13 +29,17 @@ import {
   ApiConsumes,
 } from '@nestjs/swagger';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { HonorsService } from './honors.service';
+import { HonorInstructorProposalsService } from './honor-instructor-proposals.service';
+import { namedThrottle } from '../config/throttler.helpers';
 import { HonorSearchPipe } from './honor-search.pipe';
 import {
   StartHonorDto,
   UpdateUserHonorDto,
   CreateUserHonorDto,
   BulkCreateUserHonorsDto,
+  ProposeHonorInstructorDto,
 } from './dto';
 import {
   JwtAuthGuard,
@@ -161,7 +166,10 @@ export class HonorsController {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class UserHonorsController {
-  constructor(private readonly honorsService: HonorsService) {}
+  constructor(
+    private readonly honorsService: HonorsService,
+    private readonly proposalsService: HonorInstructorProposalsService,
+  ) {}
 
   @Get()
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
@@ -344,5 +352,62 @@ export class UserHonorsController {
     @Param('honorId', ParseIntPipe) honorId: number,
   ) {
     return this.honorsService.abandonHonor(userId, honorId);
+  }
+
+  @Post(':honorId/instructor-proposal')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @RequirePermissions('user_honors:submit')
+  @Throttle(namedThrottle({ ttl: 60_000, limit: 10 }))
+  @ApiOperation({
+    summary: 'Proponer el instructor de una especialidad aprobada',
+    description:
+      'Solo el dueño, solo en una especialidad APPROVED y activa. Exactamente uno de instructorUserId (mismo Campo Local, activo, aprobado y mayor de edad) o instructorName. Crea una propuesta PENDING que el Campo Local aprueba o rechaza; si ya había una pendiente, la reemplaza (la anterior queda WITHDRAWN). No cambia la especialidad hasta que se apruebe. Límite: 10 por minuto.',
+  })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiParam({ name: 'honorId', type: Number })
+  @ApiResponse({ status: 201, description: 'Propuesta creada (PENDING)' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'HONOR_INSTRUCTOR_PROPOSAL_NOT_APPROVED, HONOR_INSTRUCTOR_REQUIRED/AMBIGUOUS/INVALID/SELF/UNCHANGED',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'HONOR_INSTRUCTOR_PROPOSAL_FORBIDDEN (no eres el dueño)',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'HONOR_INSTRUCTOR_PROPOSAL_NOT_PENDING (solicitud simultánea)',
+  })
+  async proposeInstructor(
+    @Request() req: { user: { sub: string } },
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('honorId', ParseIntPipe) honorId: number,
+    @Body() dto: ProposeHonorInstructorDto,
+  ) {
+    return this.proposalsService.propose(req.user.sub, userId, honorId, dto);
+  }
+
+  @Delete(':honorId/instructor-proposal')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @RequirePermissions('user_honors:submit')
+  @ApiOperation({
+    summary: 'Retirar la propuesta de instructor pendiente',
+    description:
+      'Solo el dueño. Pasa la propuesta PENDING a WITHDRAWN. 404 si no hay una pendiente.',
+  })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiParam({ name: 'honorId', type: Number })
+  @ApiResponse({ status: 200, description: 'Propuesta retirada (WITHDRAWN)' })
+  @ApiResponse({
+    status: 404,
+    description: 'HONOR_INSTRUCTOR_PROPOSAL_NOT_FOUND',
+  })
+  async withdrawInstructorProposal(
+    @Request() req: { user: { sub: string } },
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('honorId', ParseIntPipe) honorId: number,
+  ) {
+    return this.proposalsService.withdraw(req.user.sub, userId, honorId);
   }
 }

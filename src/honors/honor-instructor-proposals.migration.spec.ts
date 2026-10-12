@@ -88,7 +88,9 @@ describe('honor instructor proposals migration (M4, 20261013100000)', () => {
     for (const [suffix, expression] of checks) {
       const name = `honor_instructor_proposals_${suffix}`;
       expect(ddl).toMatch(
-        new RegExp(`ADD CONSTRAINT ${name}\\s+CHECK \\(${expression}\\) NOT VALID`),
+        new RegExp(
+          `ADD CONSTRAINT ${name}\\s+CHECK \\(${expression}\\) NOT VALID`,
+        ),
       );
       expect(ddl).toMatch(
         new RegExp(

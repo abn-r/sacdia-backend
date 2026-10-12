@@ -42,6 +42,9 @@ describe('HonorsService', () => {
     validation_logs: {
       create: jest.fn(),
     },
+    honor_instructor_proposals: {
+      findMany: jest.fn(),
+    },
   };
 
   const masterHonorsEvaluator = {
@@ -1862,6 +1865,133 @@ describe('HonorsService', () => {
           mockPrismaService.users_honors.update.mock.calls[0][0].include;
         expect(include.instructor.select).toHaveProperty('user_image');
         expect(include.instructor.select).not.toHaveProperty('email');
+      });
+
+      describe('instructor_proposal block (B9, D11)', () => {
+        const proposal = (extra: Record<string, unknown> = {}) => ({
+          proposal_id: 'prop-1',
+          user_honor_id: 70,
+          status: 'PENDING',
+          instructor_user_id: 'instructor-1',
+          instructor_name: null,
+          rejection_reason: null,
+          created_at: new Date('2026-10-12T15:00:00.000Z'),
+          reviewed_at: null,
+          reviewed_by_id: 'secret-reviewer',
+          proposed_by_id: 'owner-1',
+          instructor: {
+            user_id: 'instructor-1',
+            name: 'Ana',
+            paternal_last_name: 'Pérez',
+            maternal_last_name: null,
+          },
+          ...extra,
+        });
+
+        beforeEach(() => {
+          mockPrismaService.honor_instructor_proposals.findMany.mockReset();
+        });
+
+        it('is null on every row and costs no query when nothing is APPROVED', async () => {
+          mockPrismaService.users_honors.findMany.mockResolvedValue([
+            withInstructor({ validation_status: 'IN_PROGRESS' }),
+          ]);
+
+          const [row] = await service.getUserHonors('owner-1');
+
+          expect(row.instructor_proposal).toBeNull();
+          expect(
+            mockPrismaService.honor_instructor_proposals.findMany,
+          ).not.toHaveBeenCalled();
+        });
+
+        it('shows the latest PENDING proposal without email, photo nor reviewer', async () => {
+          mockPrismaService.users_honors.findMany.mockResolvedValue([
+            withInstructor({ validation_status: 'APPROVED' }),
+          ]);
+          mockPrismaService.honor_instructor_proposals.findMany.mockResolvedValue(
+            [proposal()],
+          );
+
+          const [row] = await service.getUserHonors('owner-1');
+
+          expect(row.instructor_proposal).toEqual({
+            proposal_id: 'prop-1',
+            status: 'PENDING',
+            instructor: {
+              kind: 'USER',
+              user_id: 'instructor-1',
+              display_name: 'Ana Pérez',
+            },
+            rejection_reason: null,
+            created_at: new Date('2026-10-12T15:00:00.000Z'),
+            reviewed_at: null,
+          });
+          expect(JSON.stringify(row.instructor_proposal)).not.toMatch(
+            /email|photo_url|secret-reviewer/,
+          );
+          const args =
+            mockPrismaService.honor_instructor_proposals.findMany.mock
+              .calls[0][0];
+          expect(args.where.user_honor_id).toEqual({ in: [70] });
+          expect(args.include.instructor.select).not.toHaveProperty(
+            'user_image',
+          );
+          expect(args.include.instructor.select).not.toHaveProperty('email');
+        });
+
+        it('shows a REJECTED proposal with its reason', async () => {
+          mockPrismaService.users_honors.findMany.mockResolvedValue([
+            withInstructor({ validation_status: 'APPROVED' }),
+          ]);
+          mockPrismaService.honor_instructor_proposals.findMany.mockResolvedValue(
+            [
+              proposal({
+                status: 'REJECTED',
+                instructor_user_id: null,
+                instructor_name: 'Juan López Ruiz',
+                instructor: null,
+                rejection_reason: 'No firmó el certificado',
+                reviewed_at: new Date('2026-10-13T10:00:00.000Z'),
+              }),
+            ],
+          );
+
+          const [row] = await service.getUserHonors('owner-1');
+
+          expect(row.instructor_proposal).toMatchObject({
+            status: 'REJECTED',
+            instructor: { kind: 'EXTERNAL', display_name: 'Juan López Ruiz' },
+            rejection_reason: 'No firmó el certificado',
+          });
+        });
+
+        it('keeps only the LATEST proposal: a newer WITHDRAWN or APPROVED one hides an older REJECTED', async () => {
+          mockPrismaService.users_honors.findMany.mockResolvedValue([
+            withInstructor({ validation_status: 'APPROVED' }),
+            withInstructor({
+              user_honor_id: 71,
+              validation_status: 'APPROVED',
+            }),
+          ]);
+          // orderBy created_at desc: la primera de cada especialidad es la última.
+          mockPrismaService.honor_instructor_proposals.findMany.mockResolvedValue(
+            [
+              proposal({ proposal_id: 'p-new', status: 'WITHDRAWN' }),
+              proposal({ proposal_id: 'p-old', status: 'REJECTED' }),
+              proposal({
+                proposal_id: 'p-71',
+                user_honor_id: 71,
+                status: 'APPROVED',
+              }),
+            ],
+          );
+
+          const [first, second] = await service.getUserHonors('owner-1');
+
+          expect(first.instructor_proposal).toBeNull();
+          expect(second.instructor_proposal).toBeNull();
+        });
       });
 
       it('does not invent "Usuario eliminado" for a raw row without the relation loaded', async () => {

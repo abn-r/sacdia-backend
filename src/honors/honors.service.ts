@@ -40,6 +40,7 @@ import {
   toInstructorView,
   instructorKind,
 } from '../instructors/instructor-view';
+import { loadLatestProposalViews } from './honor-instructor-proposal-view';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
@@ -451,10 +452,21 @@ export class HonorsService {
       take: 500,
     });
 
+    // D11: solo una especialidad APPROVED puede tener propuesta; una consulta para todas.
+    const proposals = await loadLatestProposalViews(
+      this.prisma,
+      honors
+        .filter((userHonor) => userHonor.validation_status === 'APPROVED')
+        .map((userHonor) => userHonor.user_honor_id),
+    );
+
     return Promise.all(
-      honors.map((userHonor) =>
-        HONOR_DETAIL_URL_LIMITER(() => this.mapUserHonorPrivateUrls(userHonor)),
-      ),
+      honors.map(async (userHonor) => ({
+        ...(await HONOR_DETAIL_URL_LIMITER(() =>
+          this.mapUserHonorPrivateUrls(userHonor),
+        )),
+        instructor_proposal: proposals.get(userHonor.user_honor_id) ?? null,
+      })),
     );
   }
 
