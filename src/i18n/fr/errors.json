@@ -757,5 +757,10 @@
   "CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES": "Le PDF doit contenir au maximum 5 pages",
   "CERTIFICATE_IMPORT_PDF_INVALID": "Le PDF est invalide ou illisible",
   "CERTIFICATE_IMPORT_PDF_ENCRYPTED": "Les PDF chiffrés ne sont pas pris en charge ; importez une copie sans mot de passe",
-  "CERTIFICATE_IMPORT_PDF_BUSY": "D'autres fichiers sont en cours de traitement. Réessayez dans quelques secondes."
+  "CERTIFICATE_IMPORT_PDF_BUSY": "D'autres fichiers sont en cours de traitement. Réessayez dans quelques secondes.",
+  "HONOR_INSTRUCTOR_AMBIGUOUS": "Indiquez un instructeur du système ou un nom, pas les deux",
+  "HONOR_INSTRUCTOR_INVALID": "L'instructeur choisi n'est pas valide",
+  "HONOR_INSTRUCTOR_SELF": "Vous ne pouvez pas être votre propre instructeur",
+  "HONOR_DATE_TOO_OLD": "La date ne peut pas être antérieure au 1er janvier 1960",
+  "HONOR_DATE_IN_FUTURE": "La date ne peut pas être dans le futur"
 }

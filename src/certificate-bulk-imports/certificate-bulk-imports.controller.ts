@@ -5,6 +5,7 @@ import {
   Get,
   Patch,
   Param,
+  ParseIntPipe,
   Post,
   Query,
   Request,
@@ -14,6 +15,7 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -80,6 +82,21 @@ export class CertificateBulkImportsController {
     @Param('batchId') batchId: string,
   ) {
     const data = await this.service.processOcr(req.user.sub, batchId);
+    return { status: 'success', data };
+  }
+
+  @Get('catalog/classes')
+  @ApiOperation({
+    summary: 'Clases que se pueden elegir al cargar un certificado',
+    description:
+      'Incluye clases retiradas (GET /classes las oculta) y las institucionales con `institutional: true`. Excluye las inactivas que no son institucionales. Misma regla que valida el servidor al dejar la fila lista.',
+  })
+  @ApiQuery({ name: 'clubTypeId', required: false, type: Number })
+  async listClassCatalog(
+    @Query('clubTypeId', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
+  ) {
+    const data = await this.service.listClassCatalog(clubTypeId);
     return { status: 'success', data };
   }
 

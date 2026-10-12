@@ -770,5 +770,10 @@
   "CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES": "The PDF must contain no more than 5 pages",
   "CERTIFICATE_IMPORT_PDF_INVALID": "The PDF is invalid or cannot be read",
   "CERTIFICATE_IMPORT_PDF_ENCRYPTED": "Encrypted PDFs are not supported; upload an unencrypted copy",
-  "CERTIFICATE_IMPORT_PDF_BUSY": "Other files are being processed. Try again in a few seconds."
+  "CERTIFICATE_IMPORT_PDF_BUSY": "Other files are being processed. Try again in a few seconds.",
+  "HONOR_INSTRUCTOR_AMBIGUOUS": "Provide either a system instructor or a name, not both",
+  "HONOR_INSTRUCTOR_INVALID": "The selected instructor is not valid",
+  "HONOR_INSTRUCTOR_SELF": "You cannot be your own instructor",
+  "HONOR_DATE_TOO_OLD": "The date cannot be earlier than January 1, 1960",
+  "HONOR_DATE_IN_FUTURE": "The date cannot be in the future"
 }

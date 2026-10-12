@@ -8,6 +8,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   StartHonorDto,
   UpdateUserHonorDto,
@@ -88,6 +89,26 @@ export class HonorsService {
         },
       }),
       ...(filters?.skillLevel && { skill_level: filters.skillLevel }),
+      ...(filters?.search && this.buildSearchWhere(filters.search)),
+    };
+  }
+
+  /**
+   * Busca en el nombre principal (español) y en las traducciones, de cualquier
+   * idioma. Prisma no escapa `%`/`_` en `contains`. Sin cache: el filtro por
+   * `ILIKE %q%` no aprovecha el índice btree de `honors.name`.
+   */
+  private buildSearchWhere(search: string): Prisma.honorsWhereInput {
+    const term = escapeLikeWildcards(search.trim().replace(/\s+/g, ' '));
+    return {
+      OR: [
+        { name: { contains: term, mode: 'insensitive' } },
+        {
+          translations: {
+            some: { name: { contains: term, mode: 'insensitive' } },
+          },
+        },
+      ],
     };
   }
 
@@ -503,23 +524,34 @@ export class HonorsService {
 
     // Si existe pero está inactivo, reactivar; si no, crear nuevo
     if (existing) {
+      // Filas APPROVED / PENDING_REVIEW abandonadas antes del guard en
+      // abandonHonor: solo se restaura `active`, sin resetear validación,
+      // archivos ni fechas.
+      const isBlockedStatus = HONOR_MUTATION_BLOCKED_STATUSES.includes(
+        existing.validation_status as (typeof HONOR_MUTATION_BLOCKED_STATUSES)[number],
+      );
+      const reactivationData: Prisma.users_honorsUncheckedUpdateInput =
+        isBlockedStatus
+          ? { active: true, modified_at: new Date() }
+          : {
+              active: true,
+              date: dto?.date ? new Date(dto.date) : new Date(),
+              validate: false,
+              validation_status: 'IN_PROGRESS',
+              completion_mode: INITIAL_HONOR_COMPLETION_MODE,
+              certificate: '',
+              images: [],
+              document: null,
+              submitted_at: null,
+              validated_by_id: null,
+              validated_at: null,
+              rejection_reason: null,
+              modified_at: new Date(),
+            };
+
       const updated = await this.prisma.users_honors.update({
         where: { user_honor_id: existing.user_honor_id },
-        data: {
-          active: true,
-          date: dto?.date ? new Date(dto.date) : new Date(),
-          validate: false,
-          validation_status: 'IN_PROGRESS',
-          completion_mode: INITIAL_HONOR_COMPLETION_MODE,
-          certificate: '',
-          images: [],
-          document: null,
-          submitted_at: null,
-          validated_by_id: null,
-          validated_at: null,
-          rejection_reason: null,
-          modified_at: new Date(),
-        },
+        data: reactivationData,
         include: {
           honors: {
             select: {
@@ -1137,6 +1169,9 @@ export class HonorsService {
     if (!userHonor) {
       throw new AppNotFoundException(ErrorCode.HONOR_USER_HONOR_NOT_FOUND);
     }
+
+    // No se puede abandonar un honor en revisión o aprobado
+    this.assertHonorIsMutable(userHonor.validation_status);
 
     return this.prisma.users_honors.update({
       where: { user_honor_id: userHonor.user_honor_id },

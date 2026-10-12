@@ -161,6 +161,70 @@ describe('HonorsService', () => {
       );
     });
 
+    it('searches the name and its translations, case-insensitively', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+      mockPrismaService.honors.count.mockResolvedValue(0);
+
+      await service.findAll({ search: '  first   aid ' });
+
+      const expected = {
+        OR: [
+          { name: { contains: 'first aid', mode: 'insensitive' } },
+          {
+            translations: {
+              some: { name: { contains: 'first aid', mode: 'insensitive' } },
+            },
+          },
+        ],
+      };
+      expect(mockPrismaService.honors.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ active: true, ...expected }),
+        }),
+      );
+      expect(mockPrismaService.honors.count).toHaveBeenCalledWith({
+        where: expect.objectContaining(expected),
+      });
+    });
+
+    it('escapes % and _ in the search so they are not wildcards', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+      mockPrismaService.honors.count.mockResolvedValue(0);
+
+      await service.findAll({ search: '50%_off' });
+
+      const { where } = mockPrismaService.honors.findMany.mock.calls[0][0];
+      expect(where.OR[0]).toEqual({
+        name: { contains: '50\\%\\_off', mode: 'insensitive' },
+      });
+    });
+
+    it('combines search with category and keeps non-search queries unchanged', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+      mockPrismaService.honors.count.mockResolvedValue(0);
+
+      await service.findAll({ categoryId: 3, search: 'nudos' });
+      await service.findAll({ categoryId: 3 });
+
+      const [withSearch, withoutSearch] =
+        mockPrismaService.honors.findMany.mock.calls.map(
+          ([args]) => args.where,
+        );
+      expect(withSearch).toMatchObject({ honors_category_id: 3 });
+      expect(withSearch.OR).toHaveLength(2);
+      expect(withoutSearch).not.toHaveProperty('OR');
+    });
+
+    it('does not apply search to the cached grouped endpoint', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+
+      await service.getGroupedByCategory({ categoryId: 3 });
+
+      expect(
+        mockPrismaService.honors.findMany.mock.calls[0][0].where,
+      ).not.toHaveProperty('OR');
+    });
+
     it('should filter by many-to-many club type applicability', async () => {
       mockPrismaService.honors.findMany.mockResolvedValue([]);
       mockPrismaService.honors.count.mockResolvedValue(0);
@@ -666,6 +730,144 @@ describe('HonorsService', () => {
         expect(result).toEqual(updated);
         expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith(
           expect.objectContaining({ where: { user_honor_id: 7 } }),
+        );
+      },
+    );
+  });
+
+  describe('abandonHonor', () => {
+    it.each(['APPROVED', 'PENDING_REVIEW'])(
+      'should block abandoning an honor in %s status',
+      async (status) => {
+        mockPrismaService.users_honors.findFirst.mockResolvedValue({
+          user_honor_id: 7,
+          validation_status: status,
+          active: true,
+        });
+
+        await expect(service.abandonHonor('user-123', 8)).rejects.toMatchObject(
+          {
+            code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+          },
+        );
+
+        expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED', null])(
+      'should still abandon an honor in %s status',
+      async (status) => {
+        const updated = { user_honor_id: 7, active: false };
+        mockPrismaService.users_honors.findFirst.mockResolvedValue({
+          user_honor_id: 7,
+          validation_status: status,
+          active: true,
+        });
+        mockPrismaService.users_honors.update.mockResolvedValue(updated);
+
+        const result = await service.abandonHonor('user-123', 8);
+
+        expect(result).toEqual(updated);
+        expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith({
+          where: { user_honor_id: 7 },
+          data: { active: false, modified_at: expect.any(Date) },
+        });
+      },
+    );
+  });
+
+  describe('startHonor reactivation guard', () => {
+    const mockHonor = {
+      honor_id: 1,
+      name: 'Nudos',
+      honors_category_id: 10,
+      club_type_id: 2,
+    };
+
+    it.each(['APPROVED', 'PENDING_REVIEW'])(
+      'should only restore active on an inactive %s honor',
+      async (status) => {
+        const existing = {
+          user_honor_id: 1,
+          user_id: 'user-123',
+          honor_id: 1,
+          active: false,
+          validation_status: status,
+          validate: true,
+          certificate: 'https://r2.example/cert.pdf',
+        };
+        mockPrismaService.honors.findUnique.mockResolvedValue(mockHonor);
+        mockPrismaService.users_honors.findFirst.mockResolvedValue(existing);
+        mockPrismaService.users_honors.update.mockResolvedValue({
+          ...existing,
+          active: true,
+          honors: {
+            name: 'Nudos',
+            honor_image: null,
+            honors_categories: { name: 'General' },
+          },
+        });
+
+        await service.startHonor('user-123', 1);
+
+        const call = mockPrismaService.users_honors.update.mock.calls[0][0];
+        expect(call.where).toEqual({ user_honor_id: 1 });
+        expect(call.data).toEqual({
+          active: true,
+          modified_at: expect.any(Date),
+        });
+        expect(call.data).not.toHaveProperty('validation_status');
+        expect(call.data).not.toHaveProperty('validate');
+        expect(call.data).not.toHaveProperty('certificate');
+        expect(call.data).not.toHaveProperty('images');
+        expect(call.data).not.toHaveProperty('document');
+        expect(call.data).not.toHaveProperty('validated_by_id');
+        expect(call.data).not.toHaveProperty('validated_at');
+        expect(call.data).not.toHaveProperty('submitted_at');
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED', null])(
+      'should reset an inactive honor in %s status as before',
+      async (status) => {
+        const existing = {
+          user_honor_id: 1,
+          user_id: 'user-123',
+          honor_id: 1,
+          active: false,
+          validation_status: status,
+        };
+        mockPrismaService.honors.findUnique.mockResolvedValue(mockHonor);
+        mockPrismaService.users_honors.findFirst.mockResolvedValue(existing);
+        mockPrismaService.users_honors.update.mockResolvedValue({
+          ...existing,
+          active: true,
+          honors: {
+            name: 'Nudos',
+            honor_image: null,
+            honors_categories: { name: 'General' },
+          },
+        });
+
+        await service.startHonor('user-123', 1);
+
+        expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { user_honor_id: 1 },
+            data: expect.objectContaining({
+              active: true,
+              validate: false,
+              validation_status: 'IN_PROGRESS',
+              certificate: '',
+              images: [],
+              document: null,
+              submitted_at: null,
+              validated_by_id: null,
+              validated_at: null,
+              rejection_reason: null,
+            }),
+          }),
         );
       },
     );

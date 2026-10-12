@@ -13,6 +13,7 @@ const mockService = {
   updateItem: jest.fn(),
   submit: jest.fn(),
   resubmitItem: jest.fn(),
+  listClassCatalog: jest.fn(),
 };
 
 const mockFiles = {
@@ -128,5 +129,21 @@ describe('CertificateBulkImportsController', () => {
       data: { file_id: 'file-1' },
     });
     expect(mockFiles.presign).toHaveBeenCalledWith('user-1', 'batch-1', dto);
+  });
+
+  it('serves the class catalog under catalog/classes with the optional club type', async () => {
+    mockService.listClassCatalog.mockResolvedValue([{ class_id: 1 }]);
+
+    await expect(controller.listClassCatalog(2)).resolves.toEqual({
+      status: 'success',
+      data: [{ class_id: 1 }],
+    });
+    expect(mockService.listClassCatalog).toHaveBeenCalledWith(2);
+    expect(
+      Reflect.getMetadata(
+        'path',
+        CertificateBulkImportsController.prototype.listClassCatalog,
+      ),
+    ).toBe('catalog/classes');
   });
 });
