@@ -30,6 +30,7 @@ import {
   SIGNED_DOWNLOAD_TTL_SECONDS,
   SIGNED_UPLOAD_TTL_SECONDS,
 } from '../evidence/certification-evidence.constants';
+import { getOwnedEnrollmentOrThrow } from '../shared/owned-enrollment';
 import type { PresignCertificationCloseoutEvidenceDto } from '../dto/review-certification-closeout.dto';
 import type { ConfirmCertificationCloseoutEvidenceDto } from '../dto/review-certification-closeout.dto';
 import type { RequestCertificationCloseoutChangesDto } from '../dto/review-certification-closeout.dto';
@@ -135,6 +136,8 @@ export class CertificationCloseoutService {
         enrollmentId,
         tx,
       );
+
+      await this.ensureEnrollmentReadyForCloseout(tx, enrollment);
 
       const evidence = await tx.certification_closeout_evidences.findFirst({
         where: {
@@ -522,24 +525,12 @@ export class CertificationCloseoutService {
   // Helpers
   // ==========================================================================
 
-  private async getOwnedEnrollmentOrThrow(
+  private getOwnedEnrollmentOrThrow(
     userId: string,
     enrollmentId: number,
     db: CloseoutDbClient = this.prisma,
   ): Promise<EnrollmentRecord> {
-    const enrollment = await db.users_certifications.findFirst({
-      where: {
-        enrollment_id: enrollmentId,
-        user_id: userId,
-        active: true,
-      },
-    });
-
-    if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
-    }
-
-    return enrollment as EnrollmentRecord;
+    return getOwnedEnrollmentOrThrow(db, userId, enrollmentId);
   }
 
   private async getEnrollmentInScopeOrThrow(

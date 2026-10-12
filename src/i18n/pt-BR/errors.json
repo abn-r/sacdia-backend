@@ -716,6 +716,7 @@
   "CERT_CLOSEOUT_INCOMPLETE": "Requisitos obrigatórios ou comprovante de junta incompletos",
   "CERT_CONCURRENT_UPDATE": "Uma alteração concorrente atualizou este registro; tente novamente",
   "CERT_LEGACY_ENDPOINT_DEPRECATED": "Este endpoint legado está deprecado para inscrições versionadas; use o fluxo por requisito",
+  "CERT_ENROLLMENT_NOT_ABANDONABLE": "Uma inscrição no estado '{status}' não pode ser abandonada",
   "FIELD_PAYMENT_ORDER_NOT_FOUND": "Ordem de pagamento não encontrada",
   "FIELD_PAYMENT_ORDER_INVALID_TRANSITION": "Transição de estado da ordem não permitida",
   "FIELD_PAYMENT_ORDER_FORBIDDEN": "Você não tem permissão para operar esta ordem de pagamento",

@@ -12,8 +12,15 @@ import {
   StorageBucketAlias,
 } from '../../common/services/file-storage.service';
 import type { FileStorageService } from '../../common/services/file-storage.service';
-import { assertRequirementEditable } from '../domain/certification-state-machine';
-import type { CertificationRequirementStatus } from '../domain/certification-definition.types';
+import {
+  assertEnrollmentEditable,
+  assertRequirementEditable,
+} from '../domain/certification-state-machine';
+import type {
+  CertificationEnrollmentStatus,
+  CertificationRequirementStatus,
+} from '../domain/certification-definition.types';
+import { getOwnedEnrollmentOrThrow } from '../shared/owned-enrollment';
 import {
   assertAllowedEvidenceFile,
   assertConfirmedObjectMatches,
@@ -30,6 +37,7 @@ type EnrollmentRecord = {
   user_id: string;
   certification_id: number;
   certification_version_id: number;
+  status: string;
 };
 
 type ComponentRecord = {
@@ -74,7 +82,7 @@ export class CertificationEvidenceService {
     assertAllowedEvidenceFile(dto.mime_type, dto.file_size);
 
     return this.prisma.$transaction(async (tx) => {
-      const enrollment = await this.getOwnedEnrollmentOrThrow(
+      const enrollment = await this.getEditableEnrollmentOrThrow(
         userId,
         enrollmentId,
         tx,
@@ -173,7 +181,7 @@ export class CertificationEvidenceService {
     dto: ConfirmCertificationEvidenceDto,
   ): Promise<EvidenceView> {
     return this.prisma.$transaction(async (tx) => {
-      const enrollment = await this.getOwnedEnrollmentOrThrow(
+      const enrollment = await this.getEditableEnrollmentOrThrow(
         userId,
         enrollmentId,
         tx,
@@ -234,7 +242,7 @@ export class CertificationEvidenceService {
 
   async delete(userId: string, enrollmentId: number, evidenceId: number) {
     return this.prisma.$transaction(async (tx) => {
-      const enrollment = await this.getOwnedEnrollmentOrThrow(
+      const enrollment = await this.getEditableEnrollmentOrThrow(
         userId,
         enrollmentId,
         tx,
@@ -281,24 +289,24 @@ export class CertificationEvidenceService {
   // Helpers
   // ==========================================================================
 
-  private async getOwnedEnrollmentOrThrow(
+  /**
+   * Owned enrollment + enrollment-level edit guard. Every evidence operation
+   * (presign / confirm / delete) mutates, so all of them go through this.
+   */
+  private async getEditableEnrollmentOrThrow(
     userId: string,
     enrollmentId: number,
     db: EvidenceDbClient = this.prisma,
   ): Promise<EnrollmentRecord> {
-    const enrollment = await db.users_certifications.findFirst({
-      where: {
-        enrollment_id: enrollmentId,
-        user_id: userId,
-        active: true,
-      },
-    });
-
-    if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
-    }
-
-    return enrollment as EnrollmentRecord;
+    const enrollment = await getOwnedEnrollmentOrThrow(
+      db,
+      userId,
+      enrollmentId,
+    );
+    assertEnrollmentEditable(
+      enrollment.status as CertificationEnrollmentStatus,
+    );
+    return enrollment;
   }
 
   private async getSectionForEnrollmentOrThrow(

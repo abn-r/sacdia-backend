@@ -4,10 +4,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   AppBadRequestException,
   AppConflictException,
-  AppNotFoundException,
 } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import {
+  assertEnrollmentEditable,
   assertReadyForCloseout,
   assertRequirementEditable,
   canTransitionEnrollment,
@@ -23,8 +23,26 @@ import type {
 } from '../domain/certification-definition.types';
 import type { SaveRequirementDraftDto } from '../dto/save-requirement-draft.dto';
 import type { SubmitRequirementDto } from '../dto/submit-requirement.dto';
+import { getOwnedEnrollmentOrThrow } from '../shared/owned-enrollment';
 
 type RequirementDbClient = PrismaService | Prisma.TransactionClient;
+
+/**
+ * Loads, in the same round-trip as the responses, whether each response has at
+ * least one confirmed and active evidence (take: 1 keeps it to a single row
+ * per response). Avoids a per-component query when validating FILE_EVIDENCE.
+ */
+const CONFIRMED_EVIDENCE_INCLUDE = {
+  certification_component_responses: {
+    include: {
+      certification_evidences: {
+        where: { upload_status: 'CONFIRMED', active: true },
+        select: { evidence_id: true },
+        take: 1,
+      },
+    },
+  },
+} satisfies Prisma.certification_section_progressInclude;
 
 type EnrollmentRecord = {
   enrollment_id: number;
@@ -57,6 +75,11 @@ type ComponentResponseRecord = {
   attestation_confirmed: boolean | null;
   linked_user_honor_id: number | null;
   linked_activity_id: number | null;
+  /**
+   * Active, CONFIRMED evidence rows linked to this response. Only loaded by
+   * submitRequirement (see CONFIRMED_EVIDENCE_INCLUDE); undefined elsewhere.
+   */
+  certification_evidences?: { evidence_id: number }[];
 };
 
 type ProgressRecord = {
@@ -133,7 +156,7 @@ export class CertificationRequirementsService {
     dto: SaveRequirementDraftDto,
   ): Promise<RequirementView> {
     return this.prisma.$transaction(async (tx) => {
-      const enrollment = await this.getOwnedEnrollmentOrThrow(
+      const enrollment = await this.getEditableEnrollmentOrThrow(
         userId,
         enrollmentId,
         tx,
@@ -229,7 +252,7 @@ export class CertificationRequirementsService {
     dto: SubmitRequirementDto,
   ): Promise<{ requirement: RequirementView; progress_summary: ProgressSummary }> {
     return this.prisma.$transaction(async (tx) => {
-      const enrollment = await this.getOwnedEnrollmentOrThrow(
+      const enrollment = await this.getEditableEnrollmentOrThrow(
         userId,
         enrollmentId,
         tx,
@@ -245,7 +268,7 @@ export class CertificationRequirementsService {
           enrollment_id: enrollment.enrollment_id,
           section_id: sectionId,
         },
-        include: { certification_component_responses: true },
+        include: CONFIRMED_EVIDENCE_INCLUDE,
       });
 
       if (!progress) {
@@ -316,24 +339,32 @@ export class CertificationRequirementsService {
   // Helpers
   // ==========================================================================
 
-  private async getOwnedEnrollmentOrThrow(
+  private getOwnedEnrollmentOrThrow(
     userId: string,
     enrollmentId: number,
     db: RequirementDbClient = this.prisma,
   ): Promise<EnrollmentRecord> {
-    const enrollment = await db.users_certifications.findFirst({
-      where: {
-        enrollment_id: enrollmentId,
-        user_id: userId,
-        active: true,
-      },
-    });
+    return getOwnedEnrollmentOrThrow(db, userId, enrollmentId);
+  }
 
-    if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
-    }
-
-    return enrollment as EnrollmentRecord;
+  /**
+   * Owned enrollment + enrollment-level edit guard. Use for every mutation
+   * (draft / submit); plain reads keep using getOwnedEnrollmentOrThrow.
+   */
+  private async getEditableEnrollmentOrThrow(
+    userId: string,
+    enrollmentId: number,
+    db: RequirementDbClient = this.prisma,
+  ): Promise<EnrollmentRecord> {
+    const enrollment = await this.getOwnedEnrollmentOrThrow(
+      userId,
+      enrollmentId,
+      db,
+    );
+    assertEnrollmentEditable(
+      enrollment.status as CertificationEnrollmentStatus,
+    );
+    return enrollment;
   }
 
   private async getSectionForEnrollmentOrThrow(
@@ -408,7 +439,10 @@ export class CertificationRequirementsService {
       case 'LINKED_ACTIVITY':
         return typeof response?.linked_activity_id === 'number';
       case 'FILE_EVIDENCE':
-        return response !== undefined;
+        // The response row is created empty by presign/saveDraft, so its mere
+        // existence proves nothing: require at least one CONFIRMED, active
+        // evidence uploaded for it.
+        return (response?.certification_evidences?.length ?? 0) > 0;
       default:
         return false;
     }
