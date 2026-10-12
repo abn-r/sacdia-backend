@@ -9,6 +9,8 @@ import {
   IsEnum,
   Min,
   Max,
+  MaxLength,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -145,4 +147,16 @@ export class HonorFiltersDto {
   @Min(1)
   @Max(3)
   skillLevel?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Texto a buscar en el nombre (y en su traducción), sin distinguir mayúsculas. 2 a 60 caracteres tras recortar espacios. Solo aplica a GET /honors.',
+    minLength: 2,
+    maxLength: 60,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(60)
+  search?: string;
 }

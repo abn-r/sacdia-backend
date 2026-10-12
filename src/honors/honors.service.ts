@@ -8,6 +8,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   StartHonorDto,
   UpdateUserHonorDto,
@@ -88,6 +89,26 @@ export class HonorsService {
         },
       }),
       ...(filters?.skillLevel && { skill_level: filters.skillLevel }),
+      ...(filters?.search && this.buildSearchWhere(filters.search)),
+    };
+  }
+
+  /**
+   * Busca en el nombre principal (español) y en las traducciones, de cualquier
+   * idioma. Prisma no escapa `%`/`_` en `contains`. Sin cache: el filtro por
+   * `ILIKE %q%` no aprovecha el índice btree de `honors.name`.
+   */
+  private buildSearchWhere(search: string): Prisma.honorsWhereInput {
+    const term = escapeLikeWildcards(search.trim().replace(/\s+/g, ' '));
+    return {
+      OR: [
+        { name: { contains: term, mode: 'insensitive' } },
+        {
+          translations: {
+            some: { name: { contains: term, mode: 'insensitive' } },
+          },
+        },
+      ],
     };
   }
 

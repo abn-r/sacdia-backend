@@ -161,6 +161,70 @@ describe('HonorsService', () => {
       );
     });
 
+    it('searches the name and its translations, case-insensitively', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+      mockPrismaService.honors.count.mockResolvedValue(0);
+
+      await service.findAll({ search: '  first   aid ' });
+
+      const expected = {
+        OR: [
+          { name: { contains: 'first aid', mode: 'insensitive' } },
+          {
+            translations: {
+              some: { name: { contains: 'first aid', mode: 'insensitive' } },
+            },
+          },
+        ],
+      };
+      expect(mockPrismaService.honors.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ active: true, ...expected }),
+        }),
+      );
+      expect(mockPrismaService.honors.count).toHaveBeenCalledWith({
+        where: expect.objectContaining(expected),
+      });
+    });
+
+    it('escapes % and _ in the search so they are not wildcards', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+      mockPrismaService.honors.count.mockResolvedValue(0);
+
+      await service.findAll({ search: '50%_off' });
+
+      const { where } = mockPrismaService.honors.findMany.mock.calls[0][0];
+      expect(where.OR[0]).toEqual({
+        name: { contains: '50\\%\\_off', mode: 'insensitive' },
+      });
+    });
+
+    it('combines search with category and keeps non-search queries unchanged', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+      mockPrismaService.honors.count.mockResolvedValue(0);
+
+      await service.findAll({ categoryId: 3, search: 'nudos' });
+      await service.findAll({ categoryId: 3 });
+
+      const [withSearch, withoutSearch] =
+        mockPrismaService.honors.findMany.mock.calls.map(
+          ([args]) => args.where,
+        );
+      expect(withSearch).toMatchObject({ honors_category_id: 3 });
+      expect(withSearch.OR).toHaveLength(2);
+      expect(withoutSearch).not.toHaveProperty('OR');
+    });
+
+    it('does not apply search to the cached grouped endpoint', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+
+      await service.getGroupedByCategory({ categoryId: 3 });
+
+      expect(
+        mockPrismaService.honors.findMany.mock.calls[0][0].where,
+      ).not.toHaveProperty('OR');
+    });
+
     it('should filter by many-to-many club type applicability', async () => {
       mockPrismaService.honors.findMany.mockResolvedValue([]);
       mockPrismaService.honors.count.mockResolvedValue(0);
