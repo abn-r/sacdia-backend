@@ -663,6 +663,216 @@ describe('HonorsService', () => {
     });
   });
 
+  describe('createUserHonor mutability guard', () => {
+    const mockActiveHonor = () =>
+      mockPrismaService.honors.findUnique.mockResolvedValue({
+        honor_id: 8,
+        active: true,
+        club_type_id: 2,
+      });
+
+    it.each(['APPROVED', 'PENDING_REVIEW'])(
+      'should block re-registering an honor in %s status',
+      async (status) => {
+        mockActiveHonor();
+        mockPrismaService.users_honors.findFirst.mockResolvedValue({
+          user_honor_id: 7,
+          validation_status: status,
+        });
+
+        await expect(
+          service.createUserHonor('user-123', {
+            honorId: 8,
+            date: '2026-03-03',
+            validate: true,
+          }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+        });
+
+        expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+        expect(mockPrismaService.users_honors.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should block reactivating an inactive honor that is already approved', async () => {
+      mockActiveHonor();
+      mockPrismaService.users_honors.findFirst.mockResolvedValue({
+        user_honor_id: 7,
+        validation_status: 'APPROVED',
+        active: false,
+      });
+
+      await expect(
+        service.createUserHonor('user-123', { honorId: 8 }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+      });
+
+      expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+    });
+
+    it.each(['IN_PROGRESS', 'REJECTED'])(
+      'should still update an existing honor in %s status',
+      async (status) => {
+        const updated = { user_honor_id: 7, user_id: 'user-123', honor_id: 8 };
+        mockActiveHonor();
+        mockPrismaService.users_honors.findFirst.mockResolvedValue({
+          user_honor_id: 7,
+          validation_status: status,
+        });
+        mockPrismaService.users_honors.update.mockResolvedValue(updated);
+
+        const result = await service.createUserHonor('user-123', {
+          honorId: 8,
+        });
+
+        expect(result).toEqual(updated);
+        expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { user_honor_id: 7 } }),
+        );
+      },
+    );
+  });
+
+  describe('abandonHonor', () => {
+    it.each(['APPROVED', 'PENDING_REVIEW'])(
+      'should block abandoning an honor in %s status',
+      async (status) => {
+        mockPrismaService.users_honors.findFirst.mockResolvedValue({
+          user_honor_id: 7,
+          validation_status: status,
+          active: true,
+        });
+
+        await expect(service.abandonHonor('user-123', 8)).rejects.toMatchObject(
+          {
+            code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+          },
+        );
+
+        expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED', null])(
+      'should still abandon an honor in %s status',
+      async (status) => {
+        const updated = { user_honor_id: 7, active: false };
+        mockPrismaService.users_honors.findFirst.mockResolvedValue({
+          user_honor_id: 7,
+          validation_status: status,
+          active: true,
+        });
+        mockPrismaService.users_honors.update.mockResolvedValue(updated);
+
+        const result = await service.abandonHonor('user-123', 8);
+
+        expect(result).toEqual(updated);
+        expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith({
+          where: { user_honor_id: 7 },
+          data: { active: false, modified_at: expect.any(Date) },
+        });
+      },
+    );
+  });
+
+  describe('startHonor reactivation guard', () => {
+    const mockHonor = {
+      honor_id: 1,
+      name: 'Nudos',
+      honors_category_id: 10,
+      club_type_id: 2,
+    };
+
+    it.each(['APPROVED', 'PENDING_REVIEW'])(
+      'should only restore active on an inactive %s honor',
+      async (status) => {
+        const existing = {
+          user_honor_id: 1,
+          user_id: 'user-123',
+          honor_id: 1,
+          active: false,
+          validation_status: status,
+          validate: true,
+          certificate: 'https://r2.example/cert.pdf',
+        };
+        mockPrismaService.honors.findUnique.mockResolvedValue(mockHonor);
+        mockPrismaService.users_honors.findFirst.mockResolvedValue(existing);
+        mockPrismaService.users_honors.update.mockResolvedValue({
+          ...existing,
+          active: true,
+          honors: {
+            name: 'Nudos',
+            honor_image: null,
+            honors_categories: { name: 'General' },
+          },
+        });
+
+        await service.startHonor('user-123', 1);
+
+        const call = mockPrismaService.users_honors.update.mock.calls[0][0];
+        expect(call.where).toEqual({ user_honor_id: 1 });
+        expect(call.data).toEqual({
+          active: true,
+          modified_at: expect.any(Date),
+        });
+        expect(call.data).not.toHaveProperty('validation_status');
+        expect(call.data).not.toHaveProperty('validate');
+        expect(call.data).not.toHaveProperty('certificate');
+        expect(call.data).not.toHaveProperty('images');
+        expect(call.data).not.toHaveProperty('document');
+        expect(call.data).not.toHaveProperty('validated_by_id');
+        expect(call.data).not.toHaveProperty('validated_at');
+        expect(call.data).not.toHaveProperty('submitted_at');
+      },
+    );
+
+    it.each(['IN_PROGRESS', 'REJECTED', null])(
+      'should reset an inactive honor in %s status as before',
+      async (status) => {
+        const existing = {
+          user_honor_id: 1,
+          user_id: 'user-123',
+          honor_id: 1,
+          active: false,
+          validation_status: status,
+        };
+        mockPrismaService.honors.findUnique.mockResolvedValue(mockHonor);
+        mockPrismaService.users_honors.findFirst.mockResolvedValue(existing);
+        mockPrismaService.users_honors.update.mockResolvedValue({
+          ...existing,
+          active: true,
+          honors: {
+            name: 'Nudos',
+            honor_image: null,
+            honors_categories: { name: 'General' },
+          },
+        });
+
+        await service.startHonor('user-123', 1);
+
+        expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { user_honor_id: 1 },
+            data: expect.objectContaining({
+              active: true,
+              validate: false,
+              validation_status: 'IN_PROGRESS',
+              certificate: '',
+              images: [],
+              document: null,
+              submitted_at: null,
+              validated_by_id: null,
+              validated_at: null,
+              rejection_reason: null,
+            }),
+          }),
+        );
+      },
+    );
+  });
+
   describe('createUserHonorsBulk', () => {
     it('should throw BadRequestException for duplicate honor ids', async () => {
       await expect(
@@ -709,6 +919,58 @@ describe('HonorsService', () => {
           }),
         }),
       );
+    });
+
+    it.each(['APPROVED', 'PENDING_REVIEW'])(
+      'should reject the whole bulk without writes when an existing row is %s',
+      async (status) => {
+        mockPrismaService.honors.findMany.mockResolvedValue([
+          { honor_id: 1, club_type_id: 2 },
+          { honor_id: 2, club_type_id: 2 },
+          { honor_id: 3, club_type_id: 2 },
+        ]);
+        mockPrismaService.users_honors.findMany.mockResolvedValue([
+          { user_honor_id: 200, honor_id: 1, validation_status: 'IN_PROGRESS' },
+          { user_honor_id: 201, honor_id: 2, validation_status: status },
+        ]);
+
+        await expect(
+          service.createUserHonorsBulk('user-123', {
+            honors: [{ honorId: 1 }, { honorId: 2 }, { honorId: 3 }],
+          }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+        });
+
+        expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+        expect(mockPrismaService.users_honors.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should still update mutable (IN_PROGRESS/REJECTED) rows and create new ones', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([
+        { honor_id: 1, club_type_id: 2 },
+        { honor_id: 2, club_type_id: 2 },
+        { honor_id: 3, club_type_id: 2 },
+      ]);
+      mockPrismaService.users_honors.findMany.mockResolvedValue([
+        { user_honor_id: 200, honor_id: 1, validation_status: 'IN_PROGRESS' },
+        { user_honor_id: 201, honor_id: 2, validation_status: 'REJECTED' },
+      ]);
+      mockPrismaService.users_honors.update.mockResolvedValue({
+        user_honor_id: 200,
+      });
+      mockPrismaService.users_honors.create.mockResolvedValue({
+        user_honor_id: 202,
+      });
+
+      const result = await service.createUserHonorsBulk('user-123', {
+        honors: [{ honorId: 1 }, { honorId: 2 }, { honorId: 3 }],
+      });
+
+      expect(result).toHaveLength(3);
+      expect(mockPrismaService.users_honors.update).toHaveBeenCalledTimes(2);
+      expect(mockPrismaService.users_honors.create).toHaveBeenCalledTimes(1);
     });
 
     it('should reject bulk honors outside the active club section', async () => {

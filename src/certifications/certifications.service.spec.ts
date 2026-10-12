@@ -16,6 +16,10 @@ const createTxMock = () => ({
   users_certifications: {
     findFirst: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  certification_review_events: {
+    create: jest.fn(),
   },
   certification_sections: {
     findFirst: jest.fn(),
@@ -345,6 +349,95 @@ describe('CertificationsService', () => {
         code: ErrorCode.CERT_ALREADY_ENROLLED,
       });
       expect(mockEligibilityService.evaluateForVersion).not.toHaveBeenCalled();
+    });
+
+    it('TC09b - existing-enrollment lookup ignores active for awarded/in-review rows', async () => {
+      wireHappyPath();
+
+      await service.enrollUser(USER_ID, dto);
+
+      expect(mockPrisma.users_certifications.findFirst).toHaveBeenCalledWith({
+        where: {
+          user_id: USER_ID,
+          certification_id: CERT_ID,
+          OR: [
+            { active: true },
+            {
+              status: {
+                in: ['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED', 'CERTIFIED'],
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    /**
+     * Simulates the DB evaluating the `where` of the existing-enrollment lookup
+     * against a single historical row, so the tests exercise the real filter
+     * instead of a hard-coded mock result.
+     */
+    const wireHistoricalRow = (status: string, active: boolean) => {
+      mockPrisma.users_certifications.findFirst.mockImplementation(
+        async ({
+          where,
+        }: {
+          where: {
+            user_id: string;
+            certification_id: number;
+            OR: Array<{ active?: boolean; status?: { in: string[] } }>;
+          };
+        }) => {
+          const row = { ...baseEnrollment, status, active };
+          const sameOwner =
+            where.user_id === row.user_id &&
+            where.certification_id === row.certification_id;
+          const matchesOr = where.OR.some(
+            (c) =>
+              (c.active !== undefined && c.active === row.active) ||
+              (c.status !== undefined && c.status.in.includes(row.status)),
+          );
+          return sameOwner && matchesOr ? row : null;
+        },
+      );
+    };
+
+    it.each(['CERTIFIED', 'APPROVED', 'SUBMITTED_FOR_FINAL_REVIEW'])(
+      'TC09c - inactive historical %s row → CERT_ALREADY_ENROLLED, nothing created',
+      async (status) => {
+        wireHappyPath();
+        wireHistoricalRow(status, false);
+
+        await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+          code: ErrorCode.CERT_ALREADY_ENROLLED,
+        });
+        expect(mockPrisma.users_certifications.create).not.toHaveBeenCalled();
+        expect(
+          mockEligibilityService.evaluateForVersion,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['WITHDRAWN', 'EXPIRED'])(
+      'TC09d - inactive historical %s row does not block re-enrollment',
+      async (status) => {
+        wireHappyPath();
+        wireHistoricalRow(status, false);
+
+        const result = await service.enrollUser(USER_ID, dto);
+
+        expect(result.enrollment_id).toBe(ENROLLMENT_ID);
+        expect(mockPrisma.users_certifications.create).toHaveBeenCalled();
+      },
+    );
+
+    it('TC09e - active row of any status still → CERT_ALREADY_ENROLLED', async () => {
+      wireHappyPath();
+      wireHistoricalRow('IN_PROGRESS', true);
+
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+        code: ErrorCode.CERT_ALREADY_ENROLLED,
+      });
     });
 
     it('TC10 - not eligible per configured rules → ForbiddenException', async () => {
@@ -954,42 +1047,157 @@ describe('CertificationsService', () => {
   // ==========================================================================
 
   describe('deleteCertification', () => {
-    it('TC31 - happy path: sets active=false and returns success message', async () => {
-      mockPrisma.users_certifications.findFirst.mockResolvedValue(
-        baseEnrollment,
+    const withStatus = (status: string) => ({ ...baseEnrollment, status });
+
+    beforeEach(() => {
+      txMock.users_certifications.updateMany.mockResolvedValue({ count: 1 });
+      txMock.certification_review_events.create.mockResolvedValue({});
+    });
+
+    it('TC31 - happy path: IN_PROGRESS → WITHDRAWN, active=false, lock_version bumped, event recorded', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(
+        withStatus('IN_PROGRESS'),
       );
-      mockPrisma.users_certifications.update.mockResolvedValue({
-        ...baseEnrollment,
-        active: false,
-      });
 
       const result = await service.deleteCertification(USER_ID, CERT_ID);
 
       expect(result.message).toBe(
         'Certification enrollment deleted successfully',
       );
-      expect(mockPrisma.users_certifications.update).toHaveBeenCalledWith({
-        where: { enrollment_id: ENROLLMENT_ID },
-        data: { active: false },
+      expect(txMock.users_certifications.updateMany).toHaveBeenCalledWith({
+        where: {
+          enrollment_id: ENROLLMENT_ID,
+          active: true,
+          status: 'IN_PROGRESS',
+        },
+        data: {
+          status: 'WITHDRAWN',
+          active: false,
+          lock_version: { increment: 1 },
+        },
+      });
+      expect(txMock.certification_review_events.create).toHaveBeenCalledWith({
+        data: {
+          enrollment_id: ENROLLMENT_ID,
+          event_type: 'WITHDRAWN',
+          performed_by_id: USER_ID,
+          from_status: 'IN_PROGRESS',
+          to_status: 'WITHDRAWN',
+        },
       });
     });
 
+    it.each(['ENROLLED', 'IN_PROGRESS', 'READY_FOR_CLOSEOUT', 'CHANGES_REQUESTED'])(
+      'TC31b - abandonable from %s → WITHDRAWN + active=false',
+      async (status) => {
+        txMock.users_certifications.findFirst.mockResolvedValue(
+          withStatus(status),
+        );
+
+        await service.deleteCertification(USER_ID, CERT_ID);
+
+        expect(txMock.users_certifications.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              status: 'WITHDRAWN',
+              active: false,
+            }),
+          }),
+        );
+        expect(txMock.certification_review_events.create).toHaveBeenCalledTimes(
+          1,
+        );
+      },
+    );
+
+    it.each(['CERTIFIED', 'APPROVED', 'SUBMITTED_FOR_FINAL_REVIEW'])(
+      'TC31c - %s → 409 CERT_ENROLLMENT_NOT_ABANDONABLE, nothing written',
+      async (status) => {
+        txMock.users_certifications.findFirst.mockResolvedValue(
+          withStatus(status),
+        );
+
+        await expect(
+          service.deleteCertification(USER_ID, CERT_ID),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CERT_ENROLLMENT_NOT_ABANDONABLE,
+          status: 409,
+        });
+        expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
+        expect(txMock.users_certifications.update).not.toHaveBeenCalled();
+        expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('TC31d - EXPIRED → keeps EXPIRED, only active=false, no WITHDRAWN event', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(
+        withStatus('EXPIRED'),
+      );
+
+      await service.deleteCertification(USER_ID, CERT_ID);
+
+      expect(txMock.users_certifications.updateMany).toHaveBeenCalledWith({
+        where: {
+          enrollment_id: ENROLLMENT_ID,
+          active: true,
+          status: 'EXPIRED',
+        },
+        data: {
+          status: 'EXPIRED',
+          active: false,
+          lock_version: { increment: 1 },
+        },
+      });
+      expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+    });
+
+    it('TC31e - active WITHDRAWN (inconsistent row) → idempotent: only deactivates', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(
+        withStatus('WITHDRAWN'),
+      );
+
+      await service.deleteCertification(USER_ID, CERT_ID);
+
+      expect(txMock.users_certifications.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'WITHDRAWN',
+            active: false,
+          }),
+        }),
+      );
+      expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+    });
+
+    it('TC31f - state changed concurrently (updateMany count 0) → CERT_CONCURRENT_UPDATE, no event', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(
+        withStatus('READY_FOR_CLOSEOUT'),
+      );
+      txMock.users_certifications.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.deleteCertification(USER_ID, CERT_ID),
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_CONCURRENT_UPDATE });
+      expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+    });
+
     it('TC32 - not enrolled → NotFoundException', async () => {
-      mockPrisma.users_certifications.findFirst.mockResolvedValue(null);
+      txMock.users_certifications.findFirst.mockResolvedValue(null);
 
       await expect(
         service.deleteCertification(USER_ID, CERT_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
+      expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
     });
 
     it('TC33 - only queries active enrollments', async () => {
-      mockPrisma.users_certifications.findFirst.mockResolvedValue(null);
+      txMock.users_certifications.findFirst.mockResolvedValue(null);
 
       await expect(
         service.deleteCertification(USER_ID, CERT_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
 
-      expect(mockPrisma.users_certifications.findFirst).toHaveBeenCalledWith({
+      expect(txMock.users_certifications.findFirst).toHaveBeenCalledWith({
         where: {
           user_id: USER_ID,
           certification_id: CERT_ID,
@@ -998,22 +1206,17 @@ describe('CertificationsService', () => {
       });
     });
 
-    it('TC34 - does not hard-delete; only sets active=false', async () => {
-      mockPrisma.users_certifications.findFirst.mockResolvedValue(
-        baseEnrollment,
+    it('TC34 - does not hard-delete; soft-deactivates via updateMany', async () => {
+      txMock.users_certifications.findFirst.mockResolvedValue(
+        withStatus('ENROLLED'),
       );
-      mockPrisma.users_certifications.update.mockResolvedValue({
-        ...baseEnrollment,
-        active: false,
-      });
 
       await service.deleteCertification(USER_ID, CERT_ID);
 
-      // delete should never be called
       expect(
-        (mockPrisma.users_certifications as Record<string, jest.Mock>).delete,
+        (txMock.users_certifications as Record<string, jest.Mock>).delete,
       ).toBeUndefined();
-      expect(mockPrisma.users_certifications.update).toHaveBeenCalled();
+      expect(txMock.users_certifications.updateMany).toHaveBeenCalled();
     });
   });
 });
