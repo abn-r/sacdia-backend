@@ -11,6 +11,7 @@ import {
 } from '../common/services/file-storage.service';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
+import { InstructorsService } from '../instructors/instructors.service';
 
 describe('HonorsService', () => {
   let service: HonorsService;
@@ -38,10 +39,18 @@ describe('HonorsService', () => {
     club_role_assignments: {
       findFirst: jest.fn(),
     },
+    validation_logs: {
+      create: jest.fn(),
+    },
   };
 
   const masterHonorsEvaluator = {
     evaluateUser: jest.fn(),
+  };
+
+  const instructors = {
+    assertEligible: jest.fn(),
+    photoUrlsFor: jest.fn(),
   };
 
   mockPrismaService.$transaction = jest.fn(async (callback: any) =>
@@ -75,6 +84,12 @@ describe('HonorsService', () => {
   beforeEach(async () => {
     masterHonorsEvaluator.evaluateUser.mockReset();
     masterHonorsEvaluator.evaluateUser.mockResolvedValue([]);
+    instructors.assertEligible.mockReset();
+    instructors.assertEligible.mockResolvedValue(undefined);
+    instructors.photoUrlsFor.mockReset();
+    instructors.photoUrlsFor.mockResolvedValue(
+      new Map([['instructor-1', 'https://signed.example/photo.jpg']]),
+    );
     mockPrismaService.users_pr.findUnique.mockResolvedValue({
       active_club_assignment_id: 'assignment-1',
     });
@@ -99,6 +114,7 @@ describe('HonorsService', () => {
           provide: MasterHonorsEvaluatorService,
           useValue: masterHonorsEvaluator,
         },
+        { provide: InstructorsService, useValue: instructors },
         {
           provide: TranslationService,
           useValue: {
@@ -111,8 +127,8 @@ describe('HonorsService', () => {
           provide: CatalogCacheService,
           useValue: {
             getEpoch: jest.fn().mockResolvedValue(0),
-            getOrSet: jest.fn(
-              (_key: string, loader: () => Promise<unknown>) => loader(),
+            getOrSet: jest.fn((_key: string, loader: () => Promise<unknown>) =>
+              loader(),
             ),
           },
         },
@@ -866,11 +882,31 @@ describe('HonorsService', () => {
               validated_by_id: null,
               validated_at: null,
               rejection_reason: null,
+              instructor_user_id: null,
+              instructor_name: null,
+              completed_at: null,
             }),
           }),
         );
       },
     );
+
+    it('should not accept an instructor or completion date when starting', async () => {
+      mockPrismaService.honors.findUnique.mockResolvedValue(mockHonor);
+      mockPrismaService.users_honors.findFirst.mockResolvedValue(null);
+      mockPrismaService.users_honors.create.mockResolvedValue({
+        user_honor_id: 1,
+      });
+
+      await service.startHonor('user-123', 1, {
+        instructorName: 'Juan López',
+        completedAt: '2026-01-01',
+      } as any);
+
+      const data = mockPrismaService.users_honors.create.mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('instructor_name');
+      expect(data).not.toHaveProperty('completed_at');
+    });
   });
 
   describe('createUserHonorsBulk', () => {
@@ -1435,6 +1471,432 @@ describe('HonorsService', () => {
       });
 
       expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('instructor and completed_at (B5)', () => {
+    const ANA = '7d1f6c52-5a6f-4b8a-9d57-6f6b1a2f3c11';
+    const mutableRow = (extra: Record<string, unknown> = {}) => ({
+      user_honor_id: 70,
+      validation_status: 'IN_PROGRESS',
+      active: true,
+      instructor_user_id: null,
+      instructor_name: null,
+      ...extra,
+    });
+    const patchData = () =>
+      mockPrismaService.users_honors.update.mock.calls[0][0].data;
+
+    beforeEach(() => {
+      mockPrismaService.users_honors.findFirst.mockResolvedValue(mutableRow());
+      mockPrismaService.users_honors.update.mockResolvedValue({
+        user_honor_id: 70,
+        instructor_user_id: null,
+        instructor_name: null,
+        instructor: null,
+      });
+    });
+
+    describe('PATCH instructor', () => {
+      it('assigns a system instructor, validates it against the OWNER and clears the free name', async () => {
+        await service.updateUserHonor('owner-1', 15, { instructorUserId: ANA });
+
+        expect(instructors.assertEligible).toHaveBeenCalledWith('owner-1', ANA);
+        expect(patchData()).toMatchObject({
+          instructor_user_id: ANA,
+          instructor_name: null,
+        });
+      });
+
+      it('assigns an external name and clears the system instructor', async () => {
+        mockPrismaService.users_honors.findFirst.mockResolvedValue(
+          mutableRow({ instructor_user_id: ANA }),
+        );
+
+        await service.updateUserHonor('owner-1', 15, {
+          instructorName: 'Juan López Ruiz',
+        });
+
+        expect(instructors.assertEligible).not.toHaveBeenCalled();
+        expect(patchData()).toMatchObject({
+          instructor_user_id: null,
+          instructor_name: 'Juan López Ruiz',
+        });
+      });
+
+      it('rejects an ineligible or self instructor with the InstructorsService error and writes nothing', async () => {
+        const error = Object.assign(new Error('x'), {
+          code: ErrorCode.HONOR_INSTRUCTOR_INVALID,
+        });
+        instructors.assertEligible.mockRejectedValue(error);
+
+        await expect(
+          service.updateUserHonor('owner-1', 15, { instructorUserId: ANA }),
+        ).rejects.toMatchObject({ code: ErrorCode.HONOR_INSTRUCTOR_INVALID });
+
+        expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+        expect(mockPrismaService.validation_logs.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects a user and a free name sent together (HONOR_INSTRUCTOR_AMBIGUOUS)', async () => {
+        await expect(
+          service.updateUserHonor('owner-1', 15, {
+            instructorUserId: ANA,
+            instructorName: 'Juan López Ruiz',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.HONOR_INSTRUCTOR_AMBIGUOUS });
+
+        expect(instructors.assertEligible).not.toHaveBeenCalled();
+        expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+      });
+
+      it('clears the instructor with null and leaves it alone with undefined', async () => {
+        mockPrismaService.users_honors.findFirst.mockResolvedValue(
+          mutableRow({ instructor_user_id: ANA }),
+        );
+        await service.updateUserHonor('owner-1', 15, {
+          instructorUserId: null,
+          instructorName: null,
+        });
+        expect(patchData()).toMatchObject({
+          instructor_user_id: null,
+          instructor_name: null,
+        });
+
+        mockPrismaService.users_honors.update.mockClear();
+        await service.updateUserHonor('owner-1', 15, { validate: false });
+        expect(patchData()).not.toHaveProperty('instructor_user_id');
+        expect(patchData()).not.toHaveProperty('instructor_name');
+        expect(patchData()).not.toHaveProperty('completed_at');
+      });
+
+      it('does not re-validate the same system instructor', async () => {
+        mockPrismaService.users_honors.findFirst.mockResolvedValue(
+          mutableRow({ instructor_user_id: ANA }),
+        );
+
+        await service.updateUserHonor('owner-1', 15, { instructorUserId: ANA });
+
+        expect(instructors.assertEligible).not.toHaveBeenCalled();
+        expect(mockPrismaService.validation_logs.create).not.toHaveBeenCalled();
+      });
+
+      it.each(['APPROVED', 'PENDING_REVIEW'])(
+        'blocks the change on a %s row without touching the instructor',
+        async (status) => {
+          mockPrismaService.users_honors.findFirst.mockResolvedValue(
+            mutableRow({ validation_status: status }),
+          );
+
+          await expect(
+            service.updateUserHonor('owner-1', 15, {
+              instructorUserId: ANA,
+              completedAt: '2026-01-01',
+            }),
+          ).rejects.toMatchObject({
+            code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+          });
+
+          expect(instructors.assertEligible).not.toHaveBeenCalled();
+          expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(['IN_PROGRESS', 'REJECTED'])(
+        'accepts the change on a %s row',
+        async (status) => {
+          mockPrismaService.users_honors.findFirst.mockResolvedValue(
+            mutableRow({ validation_status: status }),
+          );
+
+          await service.updateUserHonor('owner-1', 15, {
+            instructorName: 'Juan López Ruiz',
+          });
+
+          expect(mockPrismaService.users_honors.update).toHaveBeenCalledTimes(
+            1,
+          );
+        },
+      );
+
+      it('audits a change in validation_logs with the kind only, never the free name', async () => {
+        await service.updateUserHonor('owner-1', 15, {
+          instructorName: 'Juan López Ruiz',
+        });
+
+        expect(mockPrismaService.validation_logs.create).toHaveBeenCalledTimes(
+          1,
+        );
+        const { data } =
+          mockPrismaService.validation_logs.create.mock.calls[0][0];
+        expect(data).toMatchObject({
+          entity_type: 'honor',
+          entity_id: '70',
+          user_id: 'owner-1',
+          action: 'instructor_set',
+        });
+        expect(data.comment).toContain('EXTERNAL');
+        expect(JSON.stringify(data)).not.toContain('Juan');
+      });
+    });
+
+    describe('PATCH completedAt', () => {
+      it('stores the date as a civil date and clears it with null', async () => {
+        await service.updateUserHonor('owner-1', 15, {
+          completedAt: '2026-04-12',
+        });
+        expect(patchData().completed_at).toEqual(
+          new Date('2026-04-12T00:00:00.000Z'),
+        );
+
+        mockPrismaService.users_honors.update.mockClear();
+        await service.updateUserHonor('owner-1', 15, { completedAt: null });
+        expect(patchData().completed_at).toBeNull();
+      });
+
+      it('leaves date (the start) untouched', async () => {
+        await service.updateUserHonor('owner-1', 15, {
+          completedAt: '2026-04-12',
+        });
+        expect(patchData()).not.toHaveProperty('date');
+      });
+    });
+
+    describe('create paths', () => {
+      it('createUserHonor on a new row validates and writes the instructor and completion date', async () => {
+        mockPrismaService.honors.findUnique.mockResolvedValue({
+          honor_id: 8,
+          active: true,
+          club_type_id: 2,
+        });
+        mockPrismaService.users_honors.findFirst.mockResolvedValue(null);
+        mockPrismaService.users_honors.create.mockResolvedValue({
+          user_honor_id: 1,
+        });
+
+        await service.createUserHonor('owner-1', {
+          honorId: 8,
+          instructorUserId: ANA,
+          completedAt: '2026-04-12',
+        });
+
+        expect(instructors.assertEligible).toHaveBeenCalledWith('owner-1', ANA);
+        expect(
+          mockPrismaService.users_honors.create.mock.calls[0][0].data,
+        ).toMatchObject({
+          instructor_user_id: ANA,
+          completed_at: new Date('2026-04-12T00:00:00.000Z'),
+        });
+      });
+
+      it.each(['APPROVED', 'PENDING_REVIEW'])(
+        'createUserHonor cannot set an instructor on a %s row',
+        async (status) => {
+          mockPrismaService.honors.findUnique.mockResolvedValue({
+            honor_id: 8,
+            active: true,
+            club_type_id: 2,
+          });
+          mockPrismaService.users_honors.findFirst.mockResolvedValue({
+            user_honor_id: 7,
+            validation_status: status,
+            instructor_user_id: null,
+            instructor_name: null,
+          });
+
+          await expect(
+            service.createUserHonor('owner-1', {
+              honorId: 8,
+              instructorName: 'Juan López Ruiz',
+            }),
+          ).rejects.toMatchObject({
+            code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+          });
+
+          expect(instructors.assertEligible).not.toHaveBeenCalled();
+          expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(['APPROVED', 'PENDING_REVIEW'])(
+        'createUserHonorsBulk cannot set an instructor on a %s row and writes nothing',
+        async (status) => {
+          mockPrismaService.honors.findMany.mockResolvedValue([
+            { honor_id: 1, club_type_id: 2 },
+            { honor_id: 2, club_type_id: 2 },
+          ]);
+          mockPrismaService.users_honors.findMany.mockResolvedValue([
+            {
+              user_honor_id: 201,
+              honor_id: 2,
+              validation_status: status,
+              instructor_user_id: null,
+              instructor_name: null,
+            },
+          ]);
+
+          await expect(
+            service.createUserHonorsBulk('owner-1', {
+              honors: [
+                { honorId: 1, instructorUserId: ANA },
+                { honorId: 2, instructorName: 'Juan López Ruiz' },
+              ],
+            }),
+          ).rejects.toMatchObject({
+            code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+          });
+
+          expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+          expect(mockPrismaService.users_honors.create).not.toHaveBeenCalled();
+        },
+      );
+
+      it('createUserHonorsBulk validates every instructor before writing anything', async () => {
+        mockPrismaService.honors.findMany.mockResolvedValue([
+          { honor_id: 1, club_type_id: 2 },
+          { honor_id: 2, club_type_id: 2 },
+        ]);
+        mockPrismaService.users_honors.findMany.mockResolvedValue([]);
+        instructors.assertEligible
+          .mockResolvedValueOnce(undefined)
+          .mockRejectedValueOnce(
+            Object.assign(new Error('x'), {
+              code: ErrorCode.HONOR_INSTRUCTOR_INVALID,
+            }),
+          );
+
+        await expect(
+          service.createUserHonorsBulk('owner-1', {
+            honors: [
+              { honorId: 1, instructorUserId: ANA },
+              { honorId: 2, instructorUserId: ANA },
+            ],
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.HONOR_INSTRUCTOR_INVALID });
+
+        expect(mockPrismaService.users_honors.create).not.toHaveBeenCalled();
+        expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('responses', () => {
+      const withInstructor = (extra: Record<string, unknown> = {}) => ({
+        user_honor_id: 70,
+        user_id: 'owner-1',
+        certificate: '',
+        images: [],
+        document: null,
+        completed_at: new Date('2026-04-12T00:00:00.000Z'),
+        instructor_user_id: 'instructor-1',
+        instructor_name: null,
+        instructor: {
+          user_id: 'instructor-1',
+          name: 'Ana',
+          paternal_last_name: 'Pérez',
+          maternal_last_name: null,
+          user_image: 'ana.jpg',
+          email: 'ana@example.com',
+        },
+        ...extra,
+      });
+
+      it('getUserHonors: instructor block without email nor photo, completed_at kept, no photo signing', async () => {
+        mockPrismaService.users_honors.findMany.mockResolvedValue([
+          withInstructor(),
+          withInstructor({
+            user_honor_id: 71,
+            instructor_user_id: null,
+            instructor_name: 'Juan López Ruiz',
+            instructor: null,
+          }),
+          withInstructor({
+            user_honor_id: 72,
+            instructor_user_id: null,
+            instructor: null,
+          }),
+        ]);
+
+        const [system, external, none] = await service.getUserHonors('owner-1');
+
+        expect(system.instructor).toEqual({
+          kind: 'USER',
+          user_id: 'instructor-1',
+          display_name: 'Ana Pérez',
+        });
+        expect(external.instructor).toEqual({
+          kind: 'EXTERNAL',
+          display_name: 'Juan López Ruiz',
+        });
+        expect(none.instructor).toBeNull();
+        expect(system.completed_at).toEqual(
+          new Date('2026-04-12T00:00:00.000Z'),
+        );
+        expect(JSON.stringify(system)).not.toMatch(
+          /email|ana@|photo_url|ana\.jpg/,
+        );
+        expect(instructors.photoUrlsFor).not.toHaveBeenCalled();
+
+        const include =
+          mockPrismaService.users_honors.findMany.mock.calls[0][0].include;
+        expect(include.instructor.select).not.toHaveProperty('user_image');
+        expect(include.instructor.select).not.toHaveProperty('email');
+      });
+
+      it('single-row responses sign the instructor photo, still without email', async () => {
+        mockPrismaService.users_honors.update.mockResolvedValue(
+          withInstructor(),
+        );
+
+        const result = await service.updateUserHonor('owner-1', 15, {
+          validate: false,
+        });
+
+        expect(result.instructor).toEqual({
+          kind: 'USER',
+          user_id: 'instructor-1',
+          display_name: 'Ana Pérez',
+          photo_url: 'https://signed.example/photo.jpg',
+        });
+        expect(JSON.stringify(result)).not.toMatch(/email|ana@/);
+        const include =
+          mockPrismaService.users_honors.update.mock.calls[0][0].include;
+        expect(include.instructor.select).toHaveProperty('user_image');
+        expect(include.instructor.select).not.toHaveProperty('email');
+      });
+
+      it('does not invent "Usuario eliminado" for a raw row without the relation loaded', async () => {
+        mockPrismaService.users_honors.update.mockResolvedValue({
+          user_honor_id: 70,
+          instructor_user_id: 'instructor-1',
+          instructor_name: null,
+        });
+
+        const result = await service.updateUserHonor('owner-1', 15, {
+          validate: false,
+        });
+
+        expect(result).not.toHaveProperty('instructor');
+      });
+
+      it('shows a deleted account as "Usuario eliminado"', async () => {
+        mockPrismaService.users_honors.findMany.mockResolvedValue([
+          withInstructor({
+            instructor: {
+              user_id: 'instructor-1',
+              name: null,
+              paternal_last_name: null,
+              maternal_last_name: null,
+            },
+          }),
+        ]);
+
+        const [row] = await service.getUserHonors('owner-1');
+
+        expect(row.instructor).toMatchObject({
+          kind: 'USER',
+          display_name: 'Usuario eliminado',
+        });
+      });
     });
   });
 
