@@ -41,11 +41,19 @@ import {
   rejectSameYearLiveAuthorization,
 } from './class-certificate-live-authorization';
 import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
-import { toPublicImportBatch } from './certificate-import-response.mapper';
+import {
+  catalogItemInclude,
+  localizedName,
+  toPublicImportBatch,
+} from './certificate-import-response.mapper';
+import { TranslationService } from '../common/services/translation.service';
+import { checkDateInRange } from '../common/utils/honor-date-range';
 
 @Injectable()
 export class CertificateBulkImportsService {
   private readonly logger = new Logger(CertificateBulkImportsService.name);
+  /** Sin estado: solo lee el idioma de la petición. No necesita inyección. */
+  private readonly translations = new TranslationService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -106,7 +114,7 @@ export class CertificateBulkImportsService {
 
       await this.recordEvent(tx, batch.batch_id, null, 'DRAFT_CREATED', userId);
 
-      return toPublicImportBatch(batch);
+      return toPublicImportBatch(batch, this.translations.getCurrentLocale());
     });
   }
 
@@ -190,7 +198,7 @@ export class CertificateBulkImportsService {
             batch_id: batch.batch_id,
             item_type: item.type,
             detected_name: item.detectedName,
-            detected_date: this.toDate(item.completedAt),
+            detected_date: this.toDate(item.detectedDate ?? item.completedAt),
             completed_at: this.toDate(item.completedAt),
             ocr_confidence: item.confidence,
             field_confidence: this.toInputJson(item.fieldConfidence),
@@ -256,7 +264,48 @@ export class CertificateBulkImportsService {
     if (!batch) {
       throw new NotFoundException('CERTIFICATE_IMPORT_BATCH_NOT_FOUND');
     }
-    return toPublicImportBatch(batch);
+    return toPublicImportBatch(batch, this.translations.getCurrentLocale());
+  }
+
+  /**
+   * Clases que este flujo permite elegir. Misma regla que `assertCatalogChoice`:
+   * activas, más las institucionales aunque estén inactivas, y SIN ventana de
+   * disponibilidad por año. `GET /classes` oculta las clases retiradas, y un
+   * certificado histórico puede ser de una de ellas.
+   */
+  async listClassCatalog(clubTypeId?: number) {
+    const locale = this.translations.getCurrentLocale();
+    const rows = await this.prisma.classes.findMany({
+      where: {
+        ...(clubTypeId ? { club_type_id: clubTypeId } : {}),
+        OR: [
+          { active: true },
+          { asset_code: { in: [...INSTITUTIONAL_CLASS_ASSET_CODES] } },
+        ],
+      },
+      select: {
+        class_id: true,
+        name: true,
+        asset_code: true,
+        club_type_id: true,
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true },
+        },
+      },
+      orderBy: [
+        { club_type_id: 'asc' },
+        { display_order: 'asc' },
+        { class_id: 'asc' },
+      ],
+    });
+    return rows.map((row) => ({
+      class_id: row.class_id,
+      name: localizedName(row, locale),
+      asset_code: row.asset_code,
+      club_type_id: row.club_type_id,
+      institutional: INSTITUTIONAL_CLASS_ASSET_CODES.has(row.asset_code ?? ''),
+    }));
   }
 
   async listMine(userId: string, page = 1, limit = 20) {
@@ -299,7 +348,7 @@ export class CertificateBulkImportsService {
       // with the code as rejection_reason, whether or not mark_as_ready is set.
       // updateItem is the explicit edit path and keeps answering 400 for the
       // same future date or invalid catalog on purpose.
-      let reviewReason: string | null = this.futureDateReason(dto.completed_at);
+      let reviewReason: string | null = this.dateRangeReason(dto.completed_at);
       if (!reviewReason) {
         try {
           await this.assertCatalogChoice(tx, dto);
@@ -372,7 +421,7 @@ export class CertificateBulkImportsService {
       this.assertRevision(existing.revision, dto.expected_revision);
 
       const merged = this.mergeItem(existing, dto);
-      this.assertNotFuture(merged.completed_at);
+      this.assertDateInRange(merged.completed_at);
       if (dto.mark_as_ready) {
         await this.assertCatalogChoice(tx, merged);
         await this.assertClassAgeIfReady(tx, batch.user_id, merged);
@@ -552,7 +601,10 @@ export class CertificateBulkImportsService {
         },
         include: this.batchInclude(),
       });
-      return toPublicImportBatch(submitted);
+      return toPublicImportBatch(
+        submitted,
+        this.translations.getCurrentLocale(),
+      );
     });
   }
 
@@ -571,7 +623,7 @@ export class CertificateBulkImportsService {
       }
 
       const merged = this.mergeItem(existingItem, dto);
-      this.assertNotFuture(merged.completed_at);
+      this.assertDateInRange(merged.completed_at);
       if (!this.isReady({ ...merged, mark_as_ready: true })) {
         throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_INCOMPLETE');
       }
@@ -705,7 +757,7 @@ export class CertificateBulkImportsService {
       where: { batch_id: batchId, status: 'READY' },
     });
     for (const item of ready) {
-      const futureReason = this.futureDateReason(
+      const futureReason = this.dateRangeReason(
         this.civilDate(item.completed_at),
       );
       if (futureReason) {
@@ -848,17 +900,24 @@ export class CertificateBulkImportsService {
     }
   }
 
-  private assertNotFuture(completedAt?: string) {
+  /** D6: `1960-01-01 <= fecha <= hoy`. Mensaje plano, como el resto del módulo. */
+  private assertDateInRange(completedAt?: string) {
     if (!completedAt) return;
-    const today = new Date().toISOString().slice(0, 10);
-    if (completedAt > today) {
+    const issue = checkDateInRange(completedAt);
+    if (issue === 'TOO_OLD') {
+      throw new BadRequestException('CERTIFICATE_IMPORT_DATE_TOO_OLD');
+    }
+    if (issue === 'IN_FUTURE') {
       throw new BadRequestException('CERTIFICATE_IMPORT_DATE_IN_FUTURE');
+    }
+    if (issue === 'INVALID') {
+      throw new BadRequestException('CERTIFICATE_IMPORT_DATE_INVALID');
     }
   }
 
-  private futureDateReason(completedAt?: string): string | null {
+  private dateRangeReason(completedAt?: string): string | null {
     try {
-      this.assertNotFuture(completedAt);
+      this.assertDateInRange(completedAt);
       return null;
     } catch (error) {
       if (error instanceof BadRequestException) {
@@ -1031,6 +1090,7 @@ export class CertificateBulkImportsService {
       items: {
         where: { active: true },
         orderBy: { created_at: 'asc' as const },
+        include: catalogItemInclude(this.translations.getCurrentLocale()),
       },
       events: {
         orderBy: { created_at: 'asc' as const },

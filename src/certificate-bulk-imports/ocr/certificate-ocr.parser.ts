@@ -1,9 +1,13 @@
+import { checkDateInRange } from '../../common/utils/honor-date-range';
 import { CertificateBulkImportItemType } from '../certificate-bulk-imports.types';
 
 export interface CertificateOcrCandidate {
   type: CertificateBulkImportItemType;
   detectedName: string;
+  /** Fecha válida (D6: 1960-01-01 a hoy). Fuera de rango queda vacía. */
   completedAt?: string;
+  /** Fecha cruda que leyó el OCR. Solo se llena cuando quedó fuera de rango. */
+  detectedDate?: string;
   confidence: number;
   fieldConfidence: Record<string, number>;
 }
@@ -19,19 +23,27 @@ const CLASS_LABEL_REGEX = /(?:clase|investidura)\s*:\s*([^\n]+)/gi;
 export class CertificateOcrParser {
   parse(rawText: string): CertificateOcrParseResult {
     const normalizedText = this.normalizeWhitespace(rawText);
-    const completedAt = this.extractDate(normalizedText);
+    const rawDate = this.extractDate(normalizedText);
+    // D6: una lectura como "1925" por "2025" no pasa como fecha válida. Se
+    // conserva cruda en `detectedDate` y la fila nace sin `completedAt`.
+    const dateIssue = rawDate ? checkDateInRange(rawDate) : null;
+    const completedAt = rawDate && dateIssue === null ? rawDate : undefined;
+    const detectedDate =
+      dateIssue === 'TOO_OLD' || dateIssue === 'IN_FUTURE' ? rawDate : undefined;
     const items: CertificateOcrCandidate[] = [
       ...this.extractItems(
         normalizedText,
         HONOR_LABEL_REGEX,
         CertificateBulkImportItemType.HONOR,
         completedAt,
+        detectedDate,
       ),
       ...this.extractItems(
         normalizedText,
         CLASS_LABEL_REGEX,
         CertificateBulkImportItemType.CLASS,
         completedAt,
+        detectedDate,
       ),
     ];
 
@@ -60,6 +72,7 @@ export class CertificateOcrParser {
     labelRegex: RegExp,
     type: CertificateBulkImportItemType,
     completedAt?: string,
+    detectedDate?: string,
   ): CertificateOcrCandidate[] {
     const matches = [...text.matchAll(labelRegex)];
 
@@ -68,6 +81,7 @@ export class CertificateOcrParser {
         type,
         detectedName,
         completedAt,
+        ...(detectedDate ? { detectedDate } : {}),
         confidence: completedAt ? 0.72 : 0.48,
         fieldConfidence: {
           type: 0.8,

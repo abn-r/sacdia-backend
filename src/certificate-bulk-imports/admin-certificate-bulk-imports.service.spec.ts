@@ -347,6 +347,68 @@ describe('AdminCertificateBulkImportsService', () => {
       });
     });
 
+    it('getDetail returns honor.category and class.club_type and asks for them', async () => {
+      prisma.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+        ...reviewerBatch(),
+        items: [
+          {
+            item_id: 'item-honor',
+            item_type: 'HONOR',
+            completed_at: new Date('2020-01-01T00:00:00.000Z'),
+            honor: {
+              honor_id: 12,
+              name: 'Primeros Auxilios',
+              translations: [],
+              honors_categories: {
+                honor_category_id: 3,
+                name: 'Salud',
+                translations: [],
+              },
+            },
+            class: null,
+          },
+          {
+            item_id: 'item-class',
+            item_type: 'CLASS',
+            completed_at: new Date('2020-01-01T00:00:00.000Z'),
+            honor: null,
+            class: {
+              class_id: 4,
+              name: 'Amigo',
+              asset_code: 'CQ-01',
+              translations: [],
+              club_types: {
+                club_type_id: 2,
+                name: 'Conquistadores',
+                translations: [],
+              },
+            },
+          },
+        ],
+      });
+
+      const detail = await service.getDetail('reviewer-1', 'batch-1');
+
+      const include =
+        prisma.certificate_bulk_import_batches.findFirst.mock.calls[0][0]
+          .include;
+      expect(
+        include.items.include.honor.select.honors_categories,
+      ).toBeDefined();
+      expect(include.items.include.class.select.club_types).toBeDefined();
+      expect(detail.items[0].honor).toEqual({
+        honor_id: 12,
+        name: 'Primeros Auxilios',
+        category: { honor_category_id: 3, name: 'Salud' },
+      });
+      expect(detail.items[1].class).toEqual({
+        class_id: 4,
+        name: 'Amigo',
+        asset_code: 'CQ-01',
+        club_type: { club_type_id: 2, name: 'Conquistadores' },
+      });
+    });
+
     it('getDetail serializes file sizes as numbers and keeps the viewer fields', async () => {
       prisma.certificate_bulk_import_batches.findFirst.mockResolvedValue(
         reviewerBatch(),

@@ -12,6 +12,8 @@
  * change unrelated modules and hide the next BigInt column.
  */
 
+import { TranslationService } from '../common/services/translation.service';
+
 type FileRowLike = { size_bytes?: bigint | null; staging_key?: unknown };
 
 export type PublicImportFile<F extends FileRowLike> = Omit<
@@ -34,20 +36,170 @@ export function toPublicImportFile<F extends FileRowLike>(
 
 export type PublicImportBatch<T extends { files?: FileRowLike[] }> = Omit<
   T,
-  'files'
+  'files' | 'items'
 > &
   (T extends { files: Array<infer F extends FileRowLike> }
     ? { files: Array<PublicImportFile<F>> }
-    : unknown);
+    : unknown) &
+  (T extends { items: Array<infer I> }
+    ? { items: Array<PublicImportItem<I>> }
+    : T extends { items?: Array<infer I> }
+      ? { items?: Array<PublicImportItem<I>> }
+      : unknown);
 
 export function toPublicImportBatch<T extends { files?: FileRowLike[] }>(
   batch: T,
+  locale = 'es',
 ): PublicImportBatch<T> {
-  if (batch.files === undefined) {
+  const items = (batch as { items?: object[] }).items;
+  // Las filas sin `honor`/`class` cargados no se tocan (misma referencia).
+  const hasCatalog = items?.some((item) => 'honor' in item || 'class' in item);
+  if (batch.files === undefined && !hasCatalog) {
     return batch as unknown as PublicImportBatch<T>;
   }
   return {
     ...batch,
-    files: batch.files.map((file) => toPublicImportFile(file)),
+    ...(batch.files === undefined
+      ? {}
+      : { files: batch.files.map((file) => toPublicImportFile(file)) }),
+    ...(hasCatalog && items
+      ? { items: items.map((item) => toPublicImportItem(item, locale)) }
+      : {}),
   } as unknown as PublicImportBatch<T>;
+}
+
+// ── Nombres de catálogo en las filas (inconsistencia 3 del plan) ─────────────
+
+type NameTranslation = { locale: string; name: string | null };
+type CatalogName = {
+  name: string;
+  translations?: NameTranslation[];
+};
+
+export type PublicHonorRef = {
+  honor_id: number;
+  name: string;
+  category: { honor_category_id: number; name: string } | null;
+};
+
+export type PublicClassRef = {
+  class_id: number;
+  name: string;
+  asset_code: string | null;
+  club_type: { club_type_id: number; name: string } | null;
+};
+
+export type PublicImportItem<I> = Omit<I, 'honor' | 'class'> &
+  ('honor' extends keyof I ? { honor: PublicHonorRef | null } : unknown) &
+  ('class' extends keyof I ? { class: PublicClassRef | null } : unknown);
+
+/** El overlay de traducciones es puro; no hace falta inyectarlo. */
+const translator = new TranslationService();
+
+export function localizedName<T extends CatalogName>(
+  record: T,
+  locale: string,
+): string {
+  return translator.translate(
+    { name: record.name },
+    (record.translations ?? []).map((row) => ({
+      locale: row.locale,
+      ...(row.name == null ? {} : { name: row.name }),
+    })),
+    locale,
+    ['name'],
+  ).name;
+}
+
+/**
+ * `include` de `honor` y `class` para las filas del lote. Trae categoría y tipo
+ * de club, con las traducciones del idioma pedido (`es` vive en la tabla
+ * principal y no necesita traducción).
+ */
+export function catalogItemInclude(locale = 'es') {
+  const translations = {
+    where: { locale },
+    select: { locale: true, name: true },
+  };
+  return {
+    honor: {
+      select: {
+        honor_id: true,
+        name: true,
+        translations,
+        honors_categories: {
+          select: { honor_category_id: true, name: true, translations },
+        },
+      },
+    },
+    class: {
+      select: {
+        class_id: true,
+        name: true,
+        asset_code: true,
+        translations,
+        club_types: {
+          select: { club_type_id: true, name: true, translations },
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Aplana `honor` y `class` a `{ honor: {…, category}, class: {…, club_type} }`
+ * con nombres traducidos. Una fila sin esas relaciones cargadas queda igual.
+ */
+export function toPublicImportItem<I extends object>(
+  item: I,
+  locale = 'es',
+): PublicImportItem<I> {
+  const row = item as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...row };
+  if ('honor' in row) {
+    const honor = row.honor as
+      | (CatalogName & {
+          honor_id: number;
+          honors_categories?:
+            (CatalogName & { honor_category_id: number }) | null;
+        })
+      | null
+      | undefined;
+    out.honor = honor
+      ? {
+          honor_id: honor.honor_id,
+          name: localizedName(honor, locale),
+          category: honor.honors_categories
+            ? {
+                honor_category_id: honor.honors_categories.honor_category_id,
+                name: localizedName(honor.honors_categories, locale),
+              }
+            : null,
+        }
+      : null;
+  }
+  if ('class' in row) {
+    const klass = row.class as
+      | (CatalogName & {
+          class_id: number;
+          asset_code?: string | null;
+          club_types?: (CatalogName & { club_type_id: number }) | null;
+        })
+      | null
+      | undefined;
+    out.class = klass
+      ? {
+          class_id: klass.class_id,
+          name: localizedName(klass, locale),
+          asset_code: klass.asset_code ?? null,
+          club_type: klass.club_types
+            ? {
+                club_type_id: klass.club_types.club_type_id,
+                name: localizedName(klass.club_types, locale),
+              }
+            : null,
+        }
+      : null;
+  }
+  return out as PublicImportItem<I>;
 }

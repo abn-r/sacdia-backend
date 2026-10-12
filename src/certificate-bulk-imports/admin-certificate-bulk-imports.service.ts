@@ -9,8 +9,11 @@ import { Prisma } from '@prisma/client';
 import { CertificateBulkImportApplicationService } from './certificate-bulk-imports-application.service';
 import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
 import {
+  catalogItemInclude,
   toPublicImportFile,
+  toPublicImportItem,
   type PublicImportFile,
+  type PublicImportItem,
 } from './certificate-import-response.mapper';
 import {
   CertificateImportYearResolver,
@@ -349,8 +352,9 @@ export class AdminCertificateBulkImportsService {
     },
   >(
     batch: T,
-  ): Omit<T, 'files'> & {
+  ): Omit<T, 'files' | 'items'> & {
     files: Array<PublicImportFile<NonNullable<T['files']>[number]>>;
+    items: Array<PublicImportItem<NonNullable<T['items']>[number]>>;
   } {
     const items = (batch.items ?? []).filter(
       (item) =>
@@ -367,7 +371,9 @@ export class AdminCertificateBulkImportsService {
       files: (batch.files ?? [])
         .filter((file) => file.jurisdiction !== 'INSTITUTIONAL')
         .map((file) => toPublicImportFile(file)),
-      items,
+      items: items.map((item) => toPublicImportItem(item)) as unknown as Array<
+        PublicImportItem<NonNullable<T['items']>[number]>
+      >,
       events: (batch.events ?? []).filter(
         (event) => event.item_id == null || visibleIds.has(event.item_id),
       ),
@@ -389,10 +395,8 @@ export class AdminCertificateBulkImportsService {
       items: {
         where: { active: true },
         orderBy: { created_at: 'asc' as const },
-        include: {
-          honor: { select: { honor_id: true, name: true } },
-          class: { select: { class_id: true, name: true, asset_code: true } },
-        },
+        // El panel del Campo Local trabaja en español (tabla principal).
+        include: catalogItemInclude('es'),
       },
       events: { orderBy: { created_at: 'asc' as const } },
     };
