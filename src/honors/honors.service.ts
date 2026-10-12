@@ -652,10 +652,13 @@ export class HonorsService {
       },
       select: {
         user_honor_id: true,
+        validation_status: true,
       },
     });
 
     if (existing) {
+      this.assertHonorIsMutable(existing.validation_status);
+
       const updated = await this.prisma.users_honors.update({
         where: { user_honor_id: existing.user_honor_id },
         data: this.buildUpdateDataFromCreateDto(dto),
@@ -749,8 +752,15 @@ export class HonorsService {
       select: {
         user_honor_id: true,
         honor_id: true,
+        validation_status: true,
       },
     });
+
+    // Validate every existing row before writing anything, so a blocked row
+    // (PENDING_REVIEW / APPROVED) fails the whole bulk without partial writes.
+    for (const item of existingUserHonors) {
+      this.assertHonorIsMutable(item.validation_status);
+    }
 
     const existingByHonorId = new Map(
       existingUserHonors.map((item) => [item.honor_id, item.user_honor_id]),
