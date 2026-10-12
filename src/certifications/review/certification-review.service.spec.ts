@@ -379,6 +379,30 @@ describe('CertificationReviewService', () => {
       expect(txMock.certification_section_progress.update).not.toHaveBeenCalled();
     });
 
+    it('TC10b - requirement of an inactive (abandoned) enrollment is not approvable → RECORD_NOT_FOUND, no mutation', async () => {
+      // The lookup is filtered by users_certifications.active=true, so the
+      // DB returns no row for an abandoned enrollment.
+      txMock.certification_section_progress.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.approve(localReviewer, PROGRESS_ID, approveDto),
+      ).rejects.toMatchObject({ code: ErrorCode.RECORD_NOT_FOUND });
+
+      expect(
+        txMock.certification_section_progress.findFirst,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            progress_id: PROGRESS_ID,
+            users_certifications: { active: true },
+          }),
+        }),
+      );
+      expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
+      expect(txMock.certification_section_progress.update).not.toHaveBeenCalled();
+      expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+    });
+
     it('TC11 - reviewer is the participant → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
@@ -501,6 +525,25 @@ describe('CertificationReviewService', () => {
       txMock.certification_section_progress.update.mockResolvedValue({});
       txMock.certification_review_events.create.mockResolvedValue({});
     };
+
+    it('TC17b - requirement of an inactive (abandoned) enrollment → RECORD_NOT_FOUND, no mutation', async () => {
+      txMock.certification_section_progress.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.requestChanges(localReviewer, PROGRESS_ID, requestChangesDto),
+      ).rejects.toMatchObject({ code: ErrorCode.RECORD_NOT_FOUND });
+
+      expect(
+        txMock.certification_section_progress.findFirst,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            users_certifications: { active: true },
+          }),
+        }),
+      );
+      expect(txMock.certification_section_progress.update).not.toHaveBeenCalled();
+    });
 
     it('TC17 - reviewer out of scope → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(

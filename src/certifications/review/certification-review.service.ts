@@ -252,6 +252,7 @@ export class CertificationReviewService {
         actor,
         progressId,
         tx,
+        { requireActiveEnrollment: true },
       );
       this.assertReviewerIsNotParticipant(actor, progress.user_id);
 
@@ -322,6 +323,7 @@ export class CertificationReviewService {
         actor,
         progressId,
         tx,
+        { requireActiveEnrollment: true },
       );
       this.assertReviewerIsNotParticipant(actor, progress.user_id);
 
@@ -405,13 +407,26 @@ export class CertificationReviewService {
   // Helpers
   // ==========================================================================
 
+  /**
+   * `requireActiveEnrollment` is set by the mutating paths (approve /
+   * requestChanges) so a reviewer cannot act on a requirement whose enrollment
+   * was abandoned (users_certifications.active=false). Read paths (detail,
+   * evidence download) keep seeing historical rows.
+   */
   private async getProgressInScopeOrThrow(
     actor: CertificationReviewActor,
     progressId: number,
     db: ReviewDbClient = this.prisma,
+    options: { requireActiveEnrollment?: boolean } = {},
   ): Promise<ProgressWithTrayInclude> {
     const progress = await db.certification_section_progress.findFirst({
-      where: { progress_id: progressId, active: true },
+      where: {
+        progress_id: progressId,
+        active: true,
+        ...(options.requireActiveEnrollment
+          ? { users_certifications: { active: true } }
+          : {}),
+      },
       include: TRAY_INCLUDE,
     });
 
