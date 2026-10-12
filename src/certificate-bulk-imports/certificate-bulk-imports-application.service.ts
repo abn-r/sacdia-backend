@@ -30,6 +30,7 @@ import {
 } from './class-certificate-live-authorization';
 import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
 import { LATER_CERTIFICATE_ACCREDITATION_REASON } from '../investiture-requests/investiture-request-lock';
+import { instructorKind, sameInstructor } from '../instructors/instructor-view';
 
 type CertificateImportApplicationTransaction = Pick<
   Prisma.TransactionClient,
@@ -81,6 +82,8 @@ type CertificateImportItemWithBatch = {
   honor_id?: number | null;
   class_id?: number | null;
   completed_at?: Date | null;
+  instructor_user_id?: string | null;
+  instructor_name?: string | null;
   status?: string | null;
   applied_entity_type?: string | null;
   applied_entity_id?: number | null;
@@ -178,6 +181,8 @@ export class CertificateBulkImportApplicationService {
         active: true,
         date: true,
         validation_status: true,
+        instructor_user_id: true,
+        instructor_name: true,
       },
     });
 
@@ -195,6 +200,8 @@ export class CertificateBulkImportApplicationService {
       civilDateFromDbDate(existingUserHonor.date) ===
         civilDateFromDbDate(item.completed_at);
 
+    const instructor = this.resolveApprovedInstructor(existingUserHonor, item);
+
     const userHonor = existingUserHonor
       ? await tx.users_honors.update({
           where: { user_honor_id: existingUserHonor.user_honor_id },
@@ -203,6 +210,7 @@ export class CertificateBulkImportApplicationService {
                 active: true,
                 certificate: primaryFile.file_url,
                 images: item.batch.files.map((file) => file.file_url),
+                ...instructor.write,
               }
             : {
                 active: true,
@@ -215,6 +223,7 @@ export class CertificateBulkImportApplicationService {
                 certificate: primaryFile.file_url,
                 images: item.batch.files.map((file) => file.file_url),
                 date: item.completed_at!,
+                ...instructor.write,
               },
         })
       : await tx.users_honors.create({
@@ -231,6 +240,7 @@ export class CertificateBulkImportApplicationService {
             certificate: primaryFile.file_url,
             images: item.batch.files.map((file) => file.file_url),
             date: item.completed_at!,
+            ...instructor.write,
           },
         });
 
@@ -263,10 +273,74 @@ export class CertificateBulkImportApplicationService {
       {
         applied_entity_type: 'USER_HONOR',
         applied_entity_id: userHonor.user_honor_id,
+        // Auditoría sin el nombre libre: solo el tipo y, si es usuario, su id.
+        instructor_kind: instructorKind(item),
+        ...(item.instructor_user_id
+          ? { instructor_user_id: item.instructor_user_id }
+          : {}),
+        ...instructor.audit,
       },
     );
 
-    return updatedItem;
+    // `instructor_conflict` viaja en la respuesta de aprobar (D7) para que el panel lo muestre.
+    return { ...updatedItem, instructor_conflict: instructor.conflict };
+  }
+
+  /**
+   * §5 / D7. Qué instructor queda en `users_honors` al aprobar y qué se audita.
+   * - Sin fila previa: copia el de la importación.
+   * - Fila aún no APPROVED: la importación manda si trae instructor (reemplaza
+   *   al declarado antes y deja `previous_instructor_kind`); si no trae, deja el
+   *   existente. Nunca se borra un instructor por omisión.
+   * - Fila ya APPROVED (misma fecha, o antes se habría lanzado
+   *   FINAL_DATE_CONFLICT): completa si no había, y si había OTRO conserva el
+   *   existente y marca `instructor_conflict`.
+   */
+  private resolveApprovedInstructor(
+    existing: {
+      validation_status: string;
+      instructor_user_id: string | null;
+      instructor_name: string | null;
+    } | null,
+    item: CertificateImportItemWithBatch,
+  ): {
+    write: {
+      instructor_user_id?: string | null;
+      instructor_name?: string | null;
+    };
+    conflict: boolean;
+    audit: Record<string, unknown>;
+  } {
+    const incoming = {
+      instructor_user_id: item.instructor_user_id ?? null,
+      instructor_name: item.instructor_name ?? null,
+    };
+    const write = { write: incoming, conflict: false, audit: {} };
+    const hasIncoming = instructorKind(incoming) !== 'NONE';
+    if (!existing || !hasIncoming) {
+      return existing ? { ...write, write: {} } : write;
+    }
+    const hadInstructor = instructorKind(existing) !== 'NONE';
+    if (!hadInstructor || sameInstructor(existing, incoming)) {
+      return write;
+    }
+    if (existing.validation_status === 'APPROVED') {
+      return {
+        write: {},
+        conflict: true,
+        audit: {
+          instructor_conflict: true,
+          kept_instructor_kind: instructorKind(existing),
+          ...(existing.instructor_user_id
+            ? { kept_instructor_user_id: existing.instructor_user_id }
+            : {}),
+        },
+      };
+    }
+    return {
+      ...write,
+      audit: { previous_instructor_kind: instructorKind(existing) },
+    };
   }
 
   private async approveClassItem(

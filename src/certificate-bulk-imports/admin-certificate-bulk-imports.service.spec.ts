@@ -18,6 +18,7 @@ describe('AdminCertificateBulkImportsService', () => {
       count: jest.fn(),
     },
     certificate_bulk_import_item_events: { create: jest.fn() },
+    users_honors: { findMany: jest.fn() },
     $transaction: jest.fn(
       async (callback: (client: typeof prisma) => unknown) => callback(prisma),
     ),
@@ -312,6 +313,117 @@ describe('AdminCertificateBulkImportsService', () => {
     expect(detail.files).toEqual([{ file_id: 'file-1' }]);
     expect(detail.status).toBe('SUBMITTED');
   });
+  describe('instructor in the reviewer detail (B2, D7)', () => {
+    const DATE = new Date('2026-04-12T00:00:00.000Z');
+    const honorItem = (extra: Record<string, unknown> = {}) => ({
+      item_id: 'item-1',
+      item_type: 'HONOR',
+      status: 'SUBMITTED',
+      honor_id: 10,
+      completed_at: DATE,
+      instructor_user_id: null,
+      instructor_name: null,
+      instructor: null,
+      ...extra,
+    });
+    const detailFor = (
+      items: Record<string, unknown>[],
+      events: Record<string, unknown>[] = [],
+    ) => {
+      prisma.users.findUnique.mockResolvedValue({
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
+      });
+      prisma.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+        batch_id: 'batch-1',
+        user_id: 'member-1',
+        local_field_id: 7,
+        status: 'SUBMITTED',
+        files: [{ file_id: 'file-1' }],
+        items,
+        events,
+      });
+      return service.getDetail('reviewer-1', 'batch-1');
+    };
+
+    it('shows the instructor block without email or photo and flags a pending conflict', async () => {
+      prisma.users_honors.findMany.mockResolvedValue([
+        {
+          honor_id: 10,
+          date: DATE,
+          instructor_user_id: 'luis',
+          instructor_name: null,
+        },
+      ]);
+
+      const detail = await detailFor([
+        honorItem({
+          instructor_name: 'Juan López Ruiz',
+        }),
+        honorItem({
+          item_id: 'item-2',
+          honor_id: 11,
+          instructor_user_id: 'ana',
+          instructor: { user_id: 'ana', name: 'Ana', paternal_last_name: 'Pérez', maternal_last_name: null },
+        }),
+      ]);
+
+      expect(prisma.users_honors.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: 'member-1',
+            validation_status: 'APPROVED',
+          }),
+        }),
+      );
+      expect(detail.items[0]).toMatchObject({ instructor_conflict: true });
+      expect(detail.items[1]).toMatchObject({
+        instructor_conflict: false,
+        instructor: { kind: 'USER', user_id: 'ana', display_name: 'Ana Pérez' },
+      });
+      expect(detail.items[1].instructor).not.toHaveProperty('photo_url');
+      expect(JSON.stringify(detail.items[1])).not.toContain('email');
+    });
+
+    it('does not flag a conflict when the dates differ, nothing was approved or the instructor matches', async () => {
+      prisma.users_honors.findMany.mockResolvedValue([
+        { honor_id: 10, date: new Date('2025-01-01T00:00:00.000Z'), instructor_user_id: 'luis', instructor_name: null },
+        { honor_id: 11, date: DATE, instructor_user_id: 'ana', instructor_name: null },
+        { honor_id: 12, date: DATE, instructor_user_id: null, instructor_name: null },
+      ]);
+
+      const detail = await detailFor([
+        honorItem({ instructor_name: 'Juan López Ruiz' }),
+        honorItem({ item_id: 'item-2', honor_id: 11, instructor_user_id: 'ana' }),
+        honorItem({ item_id: 'item-3', honor_id: 12, instructor_user_id: 'ana' }),
+        honorItem({ item_id: 'item-4', honor_id: 13, instructor_user_id: 'ana' }),
+      ]);
+
+      expect(detail.items.map((item) => item.instructor_conflict)).toEqual([
+        false,
+        false,
+        false,
+        false,
+      ]);
+    });
+
+    it('reads the conflict of an approved row from its ITEM_APPROVED event', async () => {
+      const detail = await detailFor(
+        [honorItem({ status: 'APPROVED' }), honorItem({ item_id: 'item-2', status: 'APPROVED' })],
+        [
+          { item_id: 'item-1', action: 'ITEM_APPROVED', payload: { instructor_conflict: true } },
+          { item_id: 'item-2', action: 'ITEM_APPROVED', payload: { instructor_kind: 'NONE' } },
+        ],
+      );
+
+      expect(prisma.users_honors.findMany).not.toHaveBeenCalled();
+      expect(detail.items.map((item) => item.instructor_conflict)).toEqual([
+        true,
+        false,
+      ]);
+    });
+  });
+
   describe('JSON-safe reviewer responses (BigInt size_bytes)', () => {
     const reviewerFile = () => ({
       file_id: 'file-1',

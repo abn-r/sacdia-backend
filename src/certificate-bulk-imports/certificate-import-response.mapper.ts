@@ -13,6 +13,12 @@
  */
 
 import { TranslationService } from '../common/services/translation.service';
+import {
+  instructorUserSelect,
+  instructorUserSelectNoPhoto,
+  toInstructorView,
+  type InstructorView,
+} from '../instructors/instructor-view';
 
 type FileRowLike = { size_bytes?: bigint | null; staging_key?: unknown };
 
@@ -50,10 +56,13 @@ export type PublicImportBatch<T extends { files?: FileRowLike[] }> = Omit<
 export function toPublicImportBatch<T extends { files?: FileRowLike[] }>(
   batch: T,
   locale = 'es',
+  photoUrls?: ReadonlyMap<string, string | null>,
 ): PublicImportBatch<T> {
   const items = (batch as { items?: object[] }).items;
-  // Las filas sin `honor`/`class` cargados no se tocan (misma referencia).
-  const hasCatalog = items?.some((item) => 'honor' in item || 'class' in item);
+  // Las filas sin `honor`/`class`/`instructor` cargados no se tocan (misma referencia).
+  const hasCatalog = items?.some(
+    (item) => 'honor' in item || 'class' in item || 'instructor' in item,
+  );
   if (batch.files === undefined && !hasCatalog) {
     return batch as unknown as PublicImportBatch<T>;
   }
@@ -63,7 +72,11 @@ export function toPublicImportBatch<T extends { files?: FileRowLike[] }>(
       ? {}
       : { files: batch.files.map((file) => toPublicImportFile(file)) }),
     ...(hasCatalog && items
-      ? { items: items.map((item) => toPublicImportItem(item, locale)) }
+      ? {
+          items: items.map((item) =>
+            toPublicImportItem(item, locale, photoUrls),
+          ),
+        }
       : {}),
   } as unknown as PublicImportBatch<T>;
 }
@@ -89,9 +102,12 @@ export type PublicClassRef = {
   club_type: { club_type_id: number; name: string } | null;
 };
 
-export type PublicImportItem<I> = Omit<I, 'honor' | 'class'> &
+export type PublicImportItem<I> = Omit<I, 'honor' | 'class' | 'instructor'> &
   ('honor' extends keyof I ? { honor: PublicHonorRef | null } : unknown) &
-  ('class' extends keyof I ? { class: PublicClassRef | null } : unknown);
+  ('class' extends keyof I ? { class: PublicClassRef | null } : unknown) &
+  ('instructor' extends keyof I
+    ? { instructor: InstructorView | null }
+    : unknown);
 
 /** El overlay de traducciones es puro; no hace falta inyectarlo. */
 const translator = new TranslationService();
@@ -112,16 +128,22 @@ export function localizedName<T extends CatalogName>(
 }
 
 /**
- * `include` de `honor` y `class` para las filas del lote. Trae categoría y tipo
- * de club, con las traducciones del idioma pedido (`es` vive en la tabla
- * principal y no necesita traducción).
+ * `include` de `honor`, `class` e `instructor` para las filas del lote. Trae
+ * categoría y tipo de club, con las traducciones del idioma pedido (`es` vive
+ * en la tabla principal y no necesita traducción). El instructor nunca trae
+ * correo; `user_image` solo se pide donde la respuesta firma la foto (miembro).
  */
-export function catalogItemInclude(locale = 'es') {
+export function catalogItemInclude(locale = 'es', withInstructorPhoto = false) {
   const translations = {
     where: { locale },
     select: { locale: true, name: true },
   };
   return {
+    instructor: {
+      select: withInstructorPhoto
+        ? instructorUserSelect
+        : instructorUserSelectNoPhoto,
+    },
     honor: {
       select: {
         honor_id: true,
@@ -148,14 +170,19 @@ export function catalogItemInclude(locale = 'es') {
 
 /**
  * Aplana `honor` y `class` a `{ honor: {…, category}, class: {…, club_type} }`
- * con nombres traducidos. Una fila sin esas relaciones cargadas queda igual.
+ * con nombres traducidos y reemplaza la relación `instructor` por su bloque
+ * público. Una fila sin esas relaciones cargadas queda igual.
  */
 export function toPublicImportItem<I extends object>(
   item: I,
   locale = 'es',
+  photoUrls?: ReadonlyMap<string, string | null>,
 ): PublicImportItem<I> {
   const row = item as Record<string, unknown>;
   const out: Record<string, unknown> = { ...row };
+  if ('instructor' in row) {
+    out.instructor = toInstructorView(row, photoUrls);
+  }
   if ('honor' in row) {
     const honor = row.honor as
       | (CatalogName & {

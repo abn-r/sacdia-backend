@@ -52,11 +52,23 @@ describe('CertificateBulkImportsService', () => {
     extract: jest.fn(),
   };
 
+  const instructors = {
+    assertEligible: jest.fn(),
+    photoUrlsFor: jest.fn(),
+  };
+
   let service: CertificateBulkImportsService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new CertificateBulkImportsService(prisma as any, ocrProvider);
+    instructors.assertEligible.mockResolvedValue(undefined);
+    instructors.photoUrlsFor.mockResolvedValue(new Map());
+    service = new CertificateBulkImportsService(
+      prisma as any,
+      ocrProvider,
+      null,
+      instructors as never,
+    );
     prisma.users.findUnique.mockResolvedValue({ local_field_id: 7 });
     tx.certificate_bulk_import_items.count.mockResolvedValue(1);
     tx.certificate_bulk_import_files.count.mockResolvedValue(1);
@@ -284,6 +296,7 @@ describe('CertificateBulkImportsService', () => {
       prisma as never,
       ocrProvider,
       queue,
+      instructors as never,
     );
     tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
       batch_id: 'batch-1',
@@ -930,6 +943,7 @@ describe('CertificateBulkImportsService', () => {
         prisma as never,
         ocrProvider,
         queue,
+        instructors as never,
       );
       tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
         ...batchWithFile(),

@@ -158,4 +158,113 @@ describe('certificate import response mapper', () => {
       ).toEqual({ locale: 'en' });
     });
   });
+  describe('instructor block (B2)', () => {
+    const ana = {
+      user_id: 'ana',
+      name: 'Ana',
+      paternal_last_name: 'Pérez',
+      maternal_last_name: 'Gómez',
+      user_image: 'users/ana.jpg',
+    };
+
+    it('builds a USER block from the live name, with a photo only when URLs are given', () => {
+      const item = {
+        instructor_user_id: 'ana',
+        instructor_name: null,
+        instructor: ana,
+      };
+
+      expect(toPublicImportItem(item).instructor).toEqual({
+        kind: 'USER',
+        user_id: 'ana',
+        display_name: 'Ana Pérez Gómez',
+      });
+      expect(
+        toPublicImportItem(item, 'es', new Map([['ana', 'https://signed/ana']]))
+          .instructor,
+      ).toEqual({
+        kind: 'USER',
+        user_id: 'ana',
+        display_name: 'Ana Pérez Gómez',
+        photo_url: 'https://signed/ana',
+      });
+      expect(
+        toPublicImportItem(item, 'es', new Map()).instructor,
+      ).toMatchObject({ photo_url: null });
+    });
+
+    it('shows an anonymized account as "Usuario eliminado" and never leaks the email', () => {
+      const item = {
+        instructor_user_id: 'gone',
+        instructor_name: null,
+        instructor: {
+          user_id: 'gone',
+          name: null,
+          paternal_last_name: null,
+          maternal_last_name: null,
+          user_image: null,
+          email: 'deleted-gone@sacdia.deleted',
+        },
+      };
+
+      const view = toPublicImportItem(item).instructor;
+
+      expect(view).toMatchObject({
+        kind: 'USER',
+        display_name: 'Usuario eliminado',
+      });
+      expect(JSON.stringify(view)).not.toContain('@');
+    });
+
+    it('builds an EXTERNAL block from the free name and null when there is no instructor', () => {
+      expect(
+        toPublicImportItem({
+          instructor_user_id: null,
+          instructor_name: 'Juan López Ruiz',
+          instructor: null,
+        }).instructor,
+      ).toEqual({ kind: 'EXTERNAL', display_name: 'Juan López Ruiz' });
+      expect(
+        toPublicImportItem({
+          instructor_user_id: null,
+          instructor_name: null,
+          instructor: null,
+        }).instructor,
+      ).toBeNull();
+    });
+
+    it('keeps the raw columns and asks only for non-email fields', () => {
+      const out = toPublicImportItem({
+        instructor_user_id: 'ana',
+        instructor_name: null,
+        instructor: ana,
+      });
+      expect(out).toMatchObject({
+        instructor_user_id: 'ana',
+        instructor_name: null,
+      });
+
+      const select = catalogItemInclude('es').instructor.select;
+      expect(select).not.toHaveProperty('email');
+      expect(select).not.toHaveProperty('user_image');
+      expect(catalogItemInclude('es', true).instructor.select).toHaveProperty(
+        'user_image',
+      );
+    });
+
+    it('maps instructors inside a batch response', () => {
+      const batch = toPublicImportBatch(
+        {
+          files: [],
+          items: [{ instructor_name: 'Juan López Ruiz', instructor: null }],
+        },
+        'es',
+      );
+
+      expect(batch.items[0].instructor).toEqual({
+        kind: 'EXTERNAL',
+        display_name: 'Juan López Ruiz',
+      });
+    });
+  });
 });

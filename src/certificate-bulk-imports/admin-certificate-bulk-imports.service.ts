@@ -21,6 +21,7 @@ import {
   classifyCertificateImportYear,
 } from './certificate-import-year-resolver.service';
 import { ApproveCertificateImportDto, RejectCertificateImportDto } from './dto';
+import { sameInstructor } from '../instructors/instructor-view';
 import {
   CertificateBulkImportBatchStatus,
   CertificateBulkImportItemStatus,
@@ -93,13 +94,90 @@ export class AdminCertificateBulkImportsService {
     }
     const items = batch.items ?? [];
     const blockers = await this.yearResolver.blockersForItems(items);
+    const conflicts = await this.instructorConflicts(found.user_id, found);
     return this.attachOperationalReconciliation({
       ...batch,
       items: items.map((item) => ({
         ...item,
         approval_blockers: blockers.get(item.item_id) ?? [],
+        instructor_conflict: conflicts.has(item.item_id),
       })),
     });
+  }
+
+  /**
+   * D7. Ids de filas HONOR cuyo instructor choca con el ya aprobado.
+   * - Aprobadas: sale del `ITEM_APPROVED` (la decisión ya se tomó).
+   * - Por decidir: se compara con la fila APPROVED de `users_honors` del mismo
+   *   usuario y especialidad, con la misma fecha (con otra fecha la aprobación
+   *   falla por FINAL_DATE_CONFLICT y no hay nada que conservar).
+   */
+  private async instructorConflicts(
+    ownerUserId: string,
+    batch: {
+      items: Array<{
+        item_id: string;
+        item_type: string;
+        status: string;
+        honor_id: number | null;
+        completed_at: Date | null;
+        instructor_user_id: string | null;
+        instructor_name: string | null;
+      }>;
+      events: Array<{
+        item_id: string | null;
+        action: string;
+        payload: Prisma.JsonValue;
+      }>;
+    },
+  ): Promise<Set<string>> {
+    const conflicts = new Set<string>();
+    for (const event of batch.events ?? []) {
+      const payload = event.payload as { instructor_conflict?: boolean } | null;
+      if (
+        event.item_id &&
+        event.action === 'ITEM_APPROVED' &&
+        payload?.instructor_conflict === true
+      ) {
+        conflicts.add(event.item_id);
+      }
+    }
+    const pending = (batch.items ?? []).filter(
+      (item) =>
+        REVIEWABLE_ITEM_STATUSES.includes(
+          item.status as CertificateBulkImportItemStatus,
+        ) &&
+        item.item_type === 'HONOR' &&
+        item.honor_id &&
+        (item.instructor_user_id || item.instructor_name),
+    );
+    if (pending.length === 0) return conflicts;
+    const approved = await this.prisma.users_honors.findMany({
+      where: {
+        user_id: ownerUserId,
+        honor_id: { in: pending.map((item) => item.honor_id as number) },
+        validation_status: 'APPROVED',
+      },
+      select: {
+        honor_id: true,
+        date: true,
+        instructor_user_id: true,
+        instructor_name: true,
+      },
+    });
+    for (const item of pending) {
+      const current = approved.find((row) => row.honor_id === item.honor_id);
+      if (
+        current &&
+        (current.instructor_user_id || current.instructor_name) &&
+        civilDateFromDbDate(current.date) ===
+          civilDateFromDbDate(item.completed_at) &&
+        !sameInstructor(current, item)
+      ) {
+        conflicts.add(item.item_id);
+      }
+    }
+    return conflicts;
   }
 
   async approveBatch(
