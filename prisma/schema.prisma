@@ -507,6 +507,10 @@ model certificate_bulk_import_items {
   reviewed_at         DateTime?                                         @db.Timestamptz(6)
   applied_entity_type certificate_bulk_import_applied_entity_type_enum?
   applied_entity_id   Int?
+  // M1 (20261010120000): instructor opcional, solo filas HONOR. CHECKs de exclusividad y el
+  // índice parcial idx_certificate_bulk_items_instructor_user viven en la migración.
+  instructor_user_id  String?                                           @db.Uuid
+  instructor_name     String?                                           @db.VarChar(150)
   revision            Int                                               @default(0)
   active              Boolean                                           @default(true)
   created_at          DateTime                                          @default(now()) @db.Timestamptz(6)
@@ -516,6 +520,7 @@ model certificate_bulk_import_items {
   honor       honors?                               @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction)
   class       classes?                              @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
   reviewed_by users?                                @relation("certificate_import_item_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  instructor  users?                                @relation("certificate_import_item_instructor", fields: [instructor_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   events      certificate_bulk_import_item_events[]
 
   @@index([batch_id], map: "idx_certificate_bulk_items_batch")
@@ -2547,6 +2552,8 @@ model users {
   certificate_bulk_import_files          certificate_bulk_import_files[]       @relation("certificate_import_file_uploader")
   certificate_bulk_import_events         certificate_bulk_import_item_events[] @relation("certificate_import_event_performer")
   certificate_bulk_import_reviews        certificate_bulk_import_items[]       @relation("certificate_import_item_reviewer")
+  certificate_import_items_instructed    certificate_bulk_import_items[]       @relation("certificate_import_item_instructor")
+  honors_instructed                      users_honors[]                        @relation("user_honor_instructor")
   institutional_certificate_requests     institutional_certificate_requests[]  @relation("institutional_certificate_request_owner")
   institutional_certificate_reviews      institutional_certificate_requests[]  @relation("institutional_certificate_request_reviewer")
   institutional_certificate_events       institutional_certificate_request_events[] @relation("institutional_certificate_event_performer")
@@ -3567,6 +3574,9 @@ model users_honors {
   validated_by_id                 String?                           @db.Uuid
   validated_at                    DateTime?                         @db.Timestamptz(6)
   rejection_reason                String?
+  // M1 (20261010120000): instructor opcional. CHECKs e índice parcial de conteo en la migración.
+  instructor_user_id              String?                           @db.Uuid
+  instructor_name                 String?                           @db.VarChar(150)
   certificate                     String                            @db.VarChar
   images                          Json                              @default("[]")
   document                        String?                           @db.VarChar
@@ -3576,6 +3586,7 @@ model users_honors {
   honors                          honors                            @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_honor_id_fkey")
   users                           users                             @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_user_id_fkey")
   validator                       users?                            @relation("honor_validator", fields: [validated_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  instructor                      users?                            @relation("user_honor_instructor", fields: [instructor_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   evidence_files                    evidence_files[]
   user_honor_requirement_progress   user_honor_requirement_progress[]
   certification_component_responses certification_component_responses[]
