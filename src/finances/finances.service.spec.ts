@@ -159,6 +159,29 @@ describe('FinancesService', () => {
     });
   });
 
+  describe('getAllTransactions search', () => {
+    it('escapes LIKE wildcards in description and category search', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({
+        club_sections: [{ club_section_id: 7 }],
+      });
+      mockPrismaService.finances.findMany.mockResolvedValue([]);
+      mockPrismaService.finances.count.mockResolvedValue(0);
+
+      await service.getAllTransactions(1, { search: 'cuota%_1' }, null);
+
+      const { where } = mockPrismaService.finances.findMany.mock.calls[0][0];
+      const escaped = 'cuota\\%\\_1';
+      expect(where.OR).toEqual([
+        { description: { contains: escaped, mode: 'insensitive' } },
+        {
+          finances_categories: {
+            name: { contains: escaped, mode: 'insensitive' },
+          },
+        },
+      ]);
+    });
+  });
+
   describe('getSummary', () => {
     it('should return financial summary', async () => {
       const mockClub = {

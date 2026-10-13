@@ -191,4 +191,33 @@ describe('AnnualFoldersService — getEvaluationQueue', () => {
     });
     expect(where.AND[2].OR).toEqual(expect.any(Array));
   });
+
+  it('escapes LIKE wildcards in every search predicate', async () => {
+    mockPrismaService.users_roles.findFirst.mockResolvedValue({
+      user_role_id: 'super-admin-role',
+    });
+
+    await service.getEvaluationQueue('reviewer-1', {
+      search: ' 50%_off ',
+      status: 'needs_review',
+    });
+
+    const where =
+      mockPrismaService.annual_folders.findMany.mock.calls[0][0].where;
+    const searchWhere = where.AND[where.AND.length - 1];
+    const contained: unknown[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (node && typeof node === 'object') {
+        for (const [key, value] of Object.entries(node)) {
+          if (key === 'contains') contained.push(value);
+          else walk(value);
+        }
+      }
+    };
+    walk(searchWhere);
+
+    expect(contained).toHaveLength(6);
+    expect(new Set(contained)).toEqual(new Set(['50\\%\\_off']));
+  });
 });

@@ -302,6 +302,25 @@ describe('InstitutionalCertificateRequestsService', () => {
     ).not.toHaveBeenCalled();
   });
 
+  it('escapes LIKE wildcards in the reviewer q filter', async () => {
+    prisma.users.findUnique.mockResolvedValue({
+      users_roles: [{ roles: { role_name: 'super-admin' } }],
+    });
+    prisma.institutional_certificate_requests.findMany.mockResolvedValue([]);
+    prisma.institutional_certificate_requests.count.mockResolvedValue(0);
+
+    await service.listForReview('reviewer-1', 1, 20, { q: ' ana%_1 ' });
+
+    const { where } =
+      prisma.institutional_certificate_requests.findMany.mock.calls[0][0];
+    const escaped = 'ana\\%\\_1';
+    expect(where.user.OR).toEqual([
+      { name: { contains: escaped, mode: 'insensitive' } },
+      { paternal_last_name: { contains: escaped, mode: 'insensitive' } },
+      { maternal_last_name: { contains: escaped, mode: 'insensitive' } },
+    ]);
+  });
+
   function approveOnPrisma() {
     prisma.$transaction.mockImplementation(
       async (callback: (client: typeof prisma) => unknown) => callback(prisma),

@@ -128,6 +128,24 @@ describe('ClubEnrollmentsService', () => {
     );
   });
 
+  it('escapes LIKE wildcards in the validation queue search', async () => {
+    mockPrisma.club_enrollments.findMany.mockResolvedValue([]);
+    mockPrisma.club_enrollments.count.mockResolvedValue(0);
+
+    await service.findValidationQueue({ search: ' ac%_v ' });
+
+    const { where } = mockPrisma.club_enrollments.findMany.mock.calls[0][0];
+    const escaped = 'ac\\%\\_v';
+    expect(where.OR).toEqual([
+      { club_section: { clubs: { name: { contains: escaped } } } },
+      { club_section: { club_types: { name: { contains: escaped } } } },
+      { creator: { name: { contains: escaped } } },
+      { creator: { paternal_last_name: { contains: escaped } } },
+      { creator: { maternal_last_name: { contains: escaped } } },
+      { creator: { email: { contains: escaped } } },
+    ]);
+  });
+
   it('approves pending annual club enrollment and creates annual folder afterwards', async () => {
     mockPrisma.club_enrollments.findUnique.mockResolvedValue({
       club_enrollment_id: 'enrollment-1',

@@ -7,6 +7,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { escapeLikeWildcards } from '../../common/utils/escape-like';
 import { EventsPublisher } from '../shared/events.publisher';
 import {
   computeLineTotal,
@@ -421,14 +422,14 @@ export class OrdersService {
       where.OR = [
         {
           folio_referencia: {
-            contains: query.q,
+            contains: escapeLikeWildcards(query.q),
             mode: 'insensitive',
           },
         },
         {
           creator: {
             name: {
-              contains: query.q,
+              contains: escapeLikeWildcards(query.q),
               mode: 'insensitive',
             },
           },
@@ -436,7 +437,7 @@ export class OrdersService {
         {
           creator: {
             paternal_last_name: {
-              contains: query.q,
+              contains: escapeLikeWildcards(query.q),
               mode: 'insensitive',
             },
           },

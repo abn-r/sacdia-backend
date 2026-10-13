@@ -10,6 +10,7 @@ import {
   type ResolvedAuthorizationProfile,
 } from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { CamporeeStaffService } from '../camporee-staff/camporee-staff.service';
 import {
   CloneFromTemplateDto,
@@ -718,10 +719,15 @@ export class CamporeeEventsService {
       ...(filters?.q
         ? {
             OR: [
-              { title: { contains: filters.q, mode: 'insensitive' as const } },
+              {
+                title: {
+                  contains: escapeLikeWildcards(filters.q),
+                  mode: 'insensitive' as const,
+                },
+              },
               {
                 description: {
-                  contains: filters.q,
+                  contains: escapeLikeWildcards(filters.q),
                   mode: 'insensitive' as const,
                 },
               },
