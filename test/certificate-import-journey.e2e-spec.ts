@@ -90,6 +90,22 @@ describe('certificate import journey', () => {
     await pool?.end();
   });
 
+  /** Calendar-year historical period; shared across tests, so created once. */
+  async function ensureCertificateYear(year: number) {
+    const start = new Date(`${year}-01-01T00:00:00.000Z`);
+    const existing = await prisma.ecclesiastical_years.findFirst({
+      where: { start_date: start },
+    });
+    if (existing) return existing;
+    return prisma.ecclesiastical_years.create({
+      data: {
+        start_date: start,
+        end_date: new Date(`${year}-12-31T00:00:00.000Z`),
+        active: false,
+      },
+    });
+  }
+
   it('goes from an empty reading to a historical class through rejection and correction', async () => {
     const owner = await prisma.users.create({
       data: {
@@ -283,6 +299,31 @@ describe('certificate import journey', () => {
       },
     });
 
+    // The period is resolved when the request is filed: without it nothing is
+    // stored and no enrollment is opened.
+    await expect(
+      institutional.submit(owner.user_id, {
+        class_id: advanced.class_id,
+        file_id: file.file_id,
+        completed_at: '1991-05-05',
+        source: 'MANUAL',
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CERTIFICATE_IMPORT_YEAR_NOT_FOUND,
+    });
+    expect(
+      await prisma.institutional_certificate_requests.count({
+        where: { user_id: owner.user_id },
+      }),
+    ).toBe(0);
+
+    await prisma.ecclesiastical_years.create({
+      data: {
+        start_date: new Date('1991-01-01T00:00:00.000Z'),
+        end_date: new Date('1991-12-31T00:00:00.000Z'),
+        active: false,
+      },
+    });
     const request = await institutional.submit(owner.user_id, {
       class_id: advanced.class_id,
       file_id: file.file_id,
@@ -292,22 +333,10 @@ describe('certificate import journey', () => {
     await expect(institutional.listForReview(campo.user_id)).rejects.toThrow(
       'CERTIFICATE_IMPORT_INSTITUTIONAL_FORBIDDEN',
     );
-    await expect(
-      institutional.approve(superAdmin.user_id, request.request_id, {
-        expected_revision: request.revision,
-      }),
-    ).rejects.toThrow('CERTIFICATE_IMPORT_YEAR_NOT_FOUND');
     const pending = await institutional.getMine(owner.user_id, request.request_id);
     expect(pending.status).toBe('PENDING_REVIEW');
     expect(pending.enrollment_created).toBe(false);
 
-    await prisma.ecclesiastical_years.create({
-      data: {
-        start_date: new Date('1991-01-01T00:00:00.000Z'),
-        end_date: new Date('1991-12-31T00:00:00.000Z'),
-        active: false,
-      },
-    });
     const approved = await institutional.approve(
       superAdmin.user_id,
       request.request_id,
@@ -538,11 +567,18 @@ describe('certificate import journey', () => {
       mark_as_ready: true,
       expected_revision: 2,
     });
-    await imports.submit(owner.user_id, batch.batch_id);
-
-    await expect(
-      admin.approveItem(reviewer.user_id, batch.batch_id, amigoItem.item_id, {}),
-    ).rejects.toThrow('CERTIFICATE_IMPORT_YEAR_NOT_FOUND');
+    // Without a historical period the items are born NEEDS_REVIEW: they cannot
+    // be submitted, so nothing reaches the current enrollment.
+    for (const item of [amigoItem, exploradorItem, guideItem]) {
+      const stored = await prisma.certificate_bulk_import_items.findUniqueOrThrow({
+        where: { item_id: item.item_id },
+      });
+      expect(stored.status).toBe('NEEDS_REVIEW');
+      expect(stored.rejection_reason).toBe('CERTIFICATE_IMPORT_YEAR_NOT_FOUND');
+    }
+    await expect(imports.submit(owner.user_id, batch.batch_id)).rejects.toThrow(
+      'CERTIFICATE_IMPORT_ITEMS_INCOMPLETE',
+    );
     const untouched = await prisma.enrollments.findUniqueOrThrow({
       where: { enrollment_id: current.enrollment_id },
     });
@@ -562,6 +598,14 @@ describe('certificate import journey', () => {
         active: false,
       },
     });
+    for (const item of [amigoItem, exploradorItem, guideItem]) {
+      await imports.updateItem(owner.user_id, batch.batch_id, item.item_id, {
+        item_type: CertificateBulkImportItemType.CLASS,
+        mark_as_ready: true,
+        expected_revision: 0,
+      });
+    }
+    await imports.submit(owner.user_id, batch.batch_id);
     await admin.approveItem(reviewer.user_id, batch.batch_id, amigoItem.item_id, {});
     await admin.approveItem(
       reviewer.user_id,
@@ -1558,6 +1602,7 @@ describe('certificate import journey', () => {
         confirmed_at: new Date(),
       },
     });
+    await ensureCertificateYear(2000);
     const item = await imports.addItem(owner.user_id, batch.batch_id, {
       item_type: CertificateBulkImportItemType.CLASS,
       class_id: amigo.class_id,
@@ -1667,6 +1712,7 @@ describe('certificate import journey', () => {
       active: true,
     });
 
+    await ensureCertificateYear(1995);
     const item = await imports.addItem(owner.user_id, batch.batch_id, {
       item_type: CertificateBulkImportItemType.CLASS,
       class_id: amigo.class_id,
@@ -1758,6 +1804,8 @@ describe('certificate import journey', () => {
       },
     });
 
+    await ensureCertificateYear(1993);
+    await ensureCertificateYear(1994);
     const first = await institutional.submit(owner.user_id, {
       class_id: advanced.class_id,
       file_id: file.file_id,
@@ -1957,6 +2005,7 @@ describe('certificate import journey', () => {
       },
     });
 
+    await ensureCertificateYear(2006);
     ocr.extract.mockResolvedValueOnce(
       parser.parse(`
         Clase: Explorador
