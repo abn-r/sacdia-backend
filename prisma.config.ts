@@ -9,8 +9,12 @@ export default defineConfig({
     path: "prisma/migrations",
     seed: "npx tsx prisma/seed.ts",
   },
+  // Prisma 7 config only accepts `url` (plus `shadowDatabaseUrl`); there is no
+  // `directUrl`. This file is used by the Prisma CLI only (generate, migrate),
+  // never by the running app, which builds its own pool from DATABASE_URL in
+  // src/prisma/prisma-pool.config.ts. Migrations need a direct connection
+  // (advisory lock + DDL in one session), so prefer the non-pooler URL when set.
   datasource: {
-    url: process.env["DATABASE_URL"],
-    directUrl: process.env["DATABASE_DIRECT_URL"] as string | undefined,
-  } as any,
+    url: process.env["DATABASE_DIRECT_URL"] ?? process.env["DATABASE_URL"],
+  },
 });
