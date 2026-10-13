@@ -223,6 +223,21 @@ describe('RedisThrottlerStorage fail-open', () => {
     expect(client.eval).toHaveBeenCalledTimes(2);
   });
 
+  it('dedupes the client error events instead of logging every reconnect', () => {
+    createStorage();
+    const [, onError] = client.on.mock.calls.find(
+      ([event]) => event === 'error',
+    )!;
+
+    for (let i = 0; i < 100; i += 1) onError(quotaError);
+
+    expect(Logger.prototype.error).toHaveBeenCalledTimes(1);
+    expect(Logger.prototype.error).toHaveBeenCalledWith(
+      expect.stringContaining('Redis throttler error'),
+      expect.anything(),
+    );
+  });
+
   it('still fails the startup readiness check when Redis is down', async () => {
     client.isOpen = false;
     client.isReady = false;

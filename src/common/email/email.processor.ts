@@ -1,4 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { attachBullmqWorkerErrorLogging } from '../../config/bullmq-worker-logging';
 import { buildBullmqWorkerOptions } from '../../config/bullmq-workers.config';
 import {
   Inject,
@@ -128,9 +129,7 @@ export class EmailProcessor
   }
 
   onApplicationBootstrap() {
-    this.worker.on('error', (err: Error) => {
-      this.logger.error(`Email worker error: ${err.message}`, err.stack);
-    });
+    attachBullmqWorkerErrorLogging(this.worker, this.logger, EMAIL_QUEUE);
 
     this.worker.on('failed', (job: Job | undefined, err: Error) => {
       this.logger.error(

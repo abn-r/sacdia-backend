@@ -1,4 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { attachBullmqWorkerErrorLogging } from '../config/bullmq-worker-logging';
 import { buildBullmqWorkerOptions } from '../config/bullmq-workers.config';
 import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
@@ -48,9 +49,11 @@ export class AchievementsProcessor
    * Must be onApplicationBootstrap — worker is not available earlier.
    */
   onApplicationBootstrap() {
-    this.worker.on('error', (err: Error) => {
-      this.logger.error(`BullMQ worker error: ${err.message}`, err.stack);
-    });
+    attachBullmqWorkerErrorLogging(
+      this.worker,
+      this.logger,
+      ACHIEVEMENTS_QUEUE,
+    );
 
     this.worker.on('failed', (job: Job | undefined, err: Error) => {
       this.logger.error(

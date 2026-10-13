@@ -1,5 +1,9 @@
 import { Logger, OnApplicationShutdown } from '@nestjs/common';
 import { createClient, type RedisClientType } from 'redis';
+import {
+  DedupedErrorLogger,
+  redisErrorHint,
+} from '../common/observability/deduped-error-logger';
 
 type ThrottlerStorageRecord = {
   totalHits: number;
@@ -79,8 +83,10 @@ export class RedisThrottlerStorage implements OnApplicationShutdown {
       options.failOpenCooldownMs ?? DEFAULT_FAIL_OPEN_COOLDOWN_MS;
     this.now = options.now ?? Date.now;
     this.client = createRedisThrottlerClient(redisUrl);
+    // node-redis emits 'error' on every reconnect attempt (~1-2 s apart).
+    const clientErrors = new DedupedErrorLogger(this.logger);
     this.client.on('error', (error: Error) => {
-      this.logger.error(`Redis throttler error: ${error.message}`);
+      clientErrors.log('Redis throttler error', error, redisErrorHint(error));
     });
   }
 
