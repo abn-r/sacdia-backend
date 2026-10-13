@@ -49,6 +49,12 @@ describe('certificate import journey', () => {
   const ocr = {
     extract: jest.fn().mockResolvedValue({ rawText: 'sin etiquetas', items: [] }),
   };
+  // Instructor lookups are not part of this journey: no instructor is chosen
+  // and photo signing needs object storage.
+  const instructors = {
+    assertEligible: jest.fn().mockResolvedValue(undefined),
+    photoUrlsFor: jest.fn().mockResolvedValue(new Map()),
+  };
 
   beforeAll(async () => {
     const url = await prepareAnnualCycleDatabase();
@@ -64,7 +70,12 @@ describe('certificate import journey', () => {
     });
     pool = new pg.Pool({ connectionString: url });
     prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
-    imports = new CertificateBulkImportsService(prisma as never, ocr, null);
+    imports = new CertificateBulkImportsService(
+      prisma as never,
+      ocr,
+      null,
+      instructors as never,
+    );
     const application = new CertificateBulkImportApplicationService(prisma as never);
     admin = new AdminCertificateBulkImportsService(
       prisma as never,
