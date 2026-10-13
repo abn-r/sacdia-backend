@@ -99,7 +99,7 @@ const builders = {
 `;
 
 describe('email templates render with the real @react-email/render', () => {
-  it.each(['@react-email/render', '@react-email/components'])(
+  it.each(['@react-email/render', 'react-email'])(
     'react-dom resolved from %s has exactly the same version as react',
     (name) => {
       const reactVersion = (require('react') as { version: string }).version;
