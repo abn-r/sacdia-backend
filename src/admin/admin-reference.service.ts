@@ -7,6 +7,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
@@ -1210,7 +1211,7 @@ export class AdminReferenceService {
     const where: Prisma.honors_categoriesWhereInput = search
       ? {
           name: {
-            contains: search,
+            contains: escapeLikeWildcards(search),
             mode: 'insensitive',
           },
         }
