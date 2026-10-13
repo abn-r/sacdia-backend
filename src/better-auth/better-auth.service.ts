@@ -54,6 +54,23 @@ export interface BaAuthResult {
   accessToken: string;
 }
 
+/**
+ * Summarises a Better Auth / provider error for logs without dumping request
+ * payloads. APIError carries `status` and `body.code`; anything else falls
+ * back to its message.
+ */
+function describeOAuthError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const { status, body } = error as Error & {
+    status?: unknown;
+    body?: { code?: unknown };
+  };
+  const parts = [error.name];
+  if (status !== undefined) parts.push(`status=${String(status)}`);
+  if (body?.code !== undefined) parts.push(`code=${String(body.code)}`);
+  return `${parts.join(' ')}: ${error.message}`;
+}
+
 /** Returned by enrollTotp — client generates QR from totpURI. */
 export interface BaTotpEnrollResult {
   totpURI: string;
@@ -949,6 +966,9 @@ export class BetterAuthService implements IBetterAuthService {
       });
 
       if (!result.url) {
+        this.logger.error(
+          `OAuth URL generation for ${provider} returned no url`,
+        );
         throw new AppInternalServerErrorException(
           ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
         );
@@ -961,6 +981,9 @@ export class BetterAuthService implements IBetterAuthService {
       return { url: result.url, state };
     } catch (error) {
       if (error instanceof AppInternalServerErrorException) throw error;
+      this.logger.error(
+        `OAuth URL generation failed for ${provider} — ${describeOAuthError(error)}`,
+      );
       throw new AppInternalServerErrorException(
         ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
       );
@@ -1025,6 +1048,9 @@ export class BetterAuthService implements IBetterAuthService {
       ) {
         throw error;
       }
+      this.logger.error(
+        `OAuth callback failed for ${provider} — ${describeOAuthError(error)}`,
+      );
       throw new AppInternalServerErrorException(
         ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
       );
