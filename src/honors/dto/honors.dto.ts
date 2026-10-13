@@ -28,13 +28,15 @@ const HONOR_DATE_CODES = {
 
 /**
  * Fecha de finalización de la especialidad, 1960-01-01 a hoy (D6). `undefined`
- * = no cambia, `null` = borra. Es obligatoria solo al enviar a revisión.
+ * = no cambia, `null` = borra. Enviar a revisión la exige solo cuando
+ * REQUIRE_HONOR_COMPLETED_AT_ON_SUBMIT es true (hoy false, por las versiones de
+ * la app que todavía no la capturan).
  */
 function CompletedAtField(): PropertyDecorator {
   const decorators: Array<(target: object, key: string) => void> = [
     ApiPropertyOptional({
       description:
-        'Fecha en que el miembro completó la especialidad (yyyy-mm-dd, entre 1960-01-01 y hoy). null la borra. Obligatoria para enviar a revisión. `date` sigue siendo la fecha de inicio.',
+        'Fecha en que el miembro completó la especialidad (yyyy-mm-dd, entre 1960-01-01 y hoy). null la borra. Por ahora es opcional al enviar a revisión; se validará como obligatoria cuando la app que la captura sea la versión mínima. `date` sigue siendo la fecha de inicio.',
       example: '2026-04-12',
       nullable: true,
     }),
