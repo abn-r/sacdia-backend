@@ -12,9 +12,9 @@
 -- Requiere M1 (20261010120000_certificate_import_honor_instructor) aplicada:
 -- al aprobar, el backend escribe users_honors.instructor_user_id/instructor_name.
 --
--- Corre con `prisma migrate deploy` (Render preDeploy), que envía el archivo
--- entero en una sola transacción. Por eso los índices NO usan CONCURRENTLY: no
--- puede correr dentro de una transacción. La tabla se crea vacía en esta misma
+-- Corre con `prisma migrate deploy` (Render preDeploy). Con CONCURRENTLY este
+-- archivo falló ahí (P3018 / 25001: no puede correr dentro de una transacción),
+-- así que los índices NO usan CONCURRENTLY. La tabla se crea vacía en esta misma
 -- migración, así que un CREATE INDEX normal es instantáneo y no bloquea a nadie.
 -- El archivo es re-ejecutable: el tipo y la tabla usan IF NOT EXISTS / manejo de
 -- duplicate_object, las restricciones se recrean con DROP CONSTRAINT IF EXISTS y
