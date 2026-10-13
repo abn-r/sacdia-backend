@@ -106,16 +106,19 @@ describe('honor instructor proposals migration (M4, 20261013100000)', () => {
     expect(ddl).toMatch(/rejection_reason IS NOT NULL AND char_length/);
   });
 
-  it('builds the partial indexes CONCURRENTLY and outside any transaction', () => {
+  it('builds the indexes without CONCURRENTLY so migrate deploy can run it in one transaction', () => {
     expect(ddl).toMatch(
-      /CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_honor_instructor_proposals_pending\s+ON honor_instructor_proposals \(user_honor_id\)\s+WHERE status = 'PENDING';/,
+      /CREATE UNIQUE INDEX IF NOT EXISTS uq_honor_instructor_proposals_pending\s+ON honor_instructor_proposals \(user_honor_id\)\s+WHERE status = 'PENDING';/,
     );
     expect(ddl).toMatch(
-      /CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_honor_instructor_proposals_queue\s+ON honor_instructor_proposals \(created_at\)\s+WHERE status = 'PENDING';/,
+      /CREATE INDEX IF NOT EXISTS idx_honor_instructor_proposals_queue\s+ON honor_instructor_proposals \(created_at\)\s+WHERE status = 'PENDING';/,
     );
     expect(ddl).toMatch(
-      /CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_honor_instructor_proposals_honor\s+ON honor_instructor_proposals \(user_honor_id, created_at DESC\);/,
+      /CREATE INDEX IF NOT EXISTS idx_honor_instructor_proposals_honor\s+ON honor_instructor_proposals \(user_honor_id, created_at DESC\);/,
     );
+    // With CONCURRENTLY, prisma migrate deploy failed on this file (P3018 /
+    // 25001); the table is new and empty, so plain indexes are enough.
+    expect(ddl).not.toMatch(/\bCONCURRENTLY\b/i);
     // El BEGIN del bloque DO ... END no cuenta: se busca el control de transacción.
     expect(ddl).not.toMatch(/^\s*(BEGIN|COMMIT|START TRANSACTION)\s*;/im);
   });
