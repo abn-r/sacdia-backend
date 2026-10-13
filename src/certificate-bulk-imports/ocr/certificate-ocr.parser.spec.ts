@@ -341,4 +341,50 @@ describe('CertificateOcrParser', () => {
       expect(item.fieldConfidence.institutional).toBe(1);
     });
   });
+  describe('class label anchoring (#1)', () => {
+    it('finds exactly one class and none named after a date', () => {
+      const { items } = new CertificateOcrParser().parseFiles([
+        {
+          fileId: null,
+          pages: [
+            {
+              pageNumber: 1,
+              text: 'Especialidad: Nudos y amarras\nFecha: 12/03/2024\nInstructor: Ana Perez Gomez',
+            },
+            {
+              pageNumber: 2,
+              text: 'CERTIFICADO DE INVESTIDURA\nClase: Amigo\nFecha de investidura: 15/10/2021',
+            },
+          ],
+        },
+      ]);
+      const classes = items.filter((i) => i.type === 'CLASS');
+
+      expect(classes.map((c) => c.detectedName)).toEqual(['Amigo']);
+    });
+
+    it('does not read a label that follows another word', () => {
+      const { items } = new CertificateOcrParser().parse(
+        'Fecha de investidura: 15/10/2021\nFecha de clase: 01/01/2020\nSin especialidad: Nudos',
+      );
+
+      expect(items).toEqual([]);
+    });
+
+    it('accepts a label after spaces or a bullet', () => {
+      const { items } = new CertificateOcrParser().parse(
+        '  - Especialidad: Nudos\n• Clase: Amigo',
+      );
+
+      expect(items.map((i) => i.detectedName)).toEqual(['Nudos', 'Amigo']);
+    });
+
+    it('drops candidates whose name has no letters or is only a date', () => {
+      const { items } = new CertificateOcrParser().parse(
+        'Clase: 15/10/2021\nEspecialidad: 2021-10-15\nHonor: 123\nHonor: Nudos',
+      );
+
+      expect(items.map((i) => i.detectedName)).toEqual(['Nudos']);
+    });
+  });
 });

@@ -34,9 +34,14 @@ export interface CertificateOcrParseResult {
   files: CertificateOcrFileText[];
 }
 
+// Las etiquetas van al inicio de la línea (con espacios o viñetas antes). Sin el
+// ancla, "Fecha de investidura: 15/10/2021" se leía como una clase llamada
+// "15/10/2021".
 const HONOR_LABEL_REGEX =
-  /(?:especialidad(?:es)?|honor(?:es)?)\s*:\s*([^\n]+)/gi;
-const CLASS_LABEL_REGEX = /(?:clase|investidura)\s*:\s*([^\n]+)/gi;
+  /^[ \t•·*-]*(?:especialidad(?:es)?|honor(?:es)?)\s*:\s*([^\n]+)/gim;
+const CLASS_LABEL_REGEX = /^[ \t•·*-]*(?:clase|investidura)\s*:\s*([^\n]+)/gim;
+const DATE_ONLY_REGEX =
+  /\b(?:(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/](?:19|20)\d{2})\b/g;
 
 /** Confianza de la fecha cuando viene de la propia página y cuando es un respaldo. */
 const PAGE_DATE_CONFIDENCE = 0.7;
@@ -166,37 +171,44 @@ export class CertificateOcrParser {
           : FALLBACK_DATE_CONFIDENCE;
 
       return [...page.text.matchAll(labelRegex)].flatMap((match) =>
-        this.splitNames(match[1]).flatMap((detectedName) => {
-          const key = `${type}|${this.identity(detectedName)}`;
-          const firstSeenAt = seen.get(key);
-          if (firstSeenAt !== undefined && firstSeenAt !== page.location) {
-            return [];
-          }
-          seen.set(key, page.location);
-          return [
-            {
-              type,
-              detectedName,
-              completedAt,
-              ...(detectedDate ? { detectedDate } : {}),
-              confidence: completedAt
-                ? dateConfidence === PAGE_DATE_CONFIDENCE
-                  ? 0.72
-                  : 0.6
-                : 0.48,
-              fieldConfidence: {
-                type: 0.8,
-                name: 0.7,
-                date: completedAt ? dateConfidence : 0,
+        this.splitNames(match[1])
+          .filter((detectedName) => this.looksLikeName(detectedName))
+          .flatMap((detectedName) => {
+            const key = `${type}|${this.identity(detectedName)}`;
+            const firstSeenAt = seen.get(key);
+            if (firstSeenAt !== undefined && firstSeenAt !== page.location) {
+              return [];
+            }
+            seen.set(key, page.location);
+            return [
+              {
+                type,
+                detectedName,
+                completedAt,
+                ...(detectedDate ? { detectedDate } : {}),
+                confidence: completedAt
+                  ? dateConfidence === PAGE_DATE_CONFIDENCE
+                    ? 0.72
+                    : 0.6
+                  : 0.48,
+                fieldConfidence: {
+                  type: 0.8,
+                  name: 0.7,
+                  date: completedAt ? dateConfidence : 0,
+                },
+                ...(page.fileId
+                  ? { sourceFileId: page.fileId, sourcePage: page.pageNumber }
+                  : {}),
               },
-              ...(page.fileId
-                ? { sourceFileId: page.fileId, sourcePage: page.pageNumber }
-                : {}),
-            },
-          ];
-        }),
+            ];
+          }),
       );
     });
+  }
+
+  /** Un nombre sin letras (por ejemplo, solo una fecha) no es un candidato. */
+  private looksLikeName(name: string): boolean {
+    return /\p{L}/u.test(name.replace(DATE_ONLY_REGEX, ''));
   }
 
   /** Nombre sin mayúsculas, tildes ni espacios repetidos, para detectar el mismo candidato. */
