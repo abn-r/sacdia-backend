@@ -167,27 +167,39 @@ describe('T8 annual-membership HTTP', () => {
     expect(members[0].status).toBe('active');
   });
 
-  it('A11: GM invested return is blocked without writing; CQ enroll is idempotent', async () => {
+  it('A11: GM invested return continues membership without a new class (path_complete); CQ enroll is idempotent', async () => {
     await new Promise((resolve) => setTimeout(resolve, 1200));
 
-    const blocked = await request(app.getHttpServer())
+    // Guías Mayores is the last club type: once the GM class is invested the
+    // NextClassResolver answers `journey_complete`, so the directive continues
+    // the membership WITHOUT writing a class enrollment (since #447). The
+    // `blocked` / ANNUAL_CLASS_POLICY_UNRESOLVED outcome is reserved for a
+    // configuration_error and is covered in annual-continuations.service.spec.
+    const pathComplete = await request(app.getHttpServer())
       .post(listUrl(fixture.gmSectionId))
       .set(bearer(ANNUAL_CYCLE_IDS.gmDirector))
       .send({ user_ids: [ANNUAL_CYCLE_IDS.returnedMember] })
       .expect(200);
-    expect(blocked.body.data.results[0].outcome).toBe('blocked');
-    expect(blocked.body.data.results[0].error_code).toBe(
-      'ANNUAL_CLASS_POLICY_UNRESOLVED',
-    );
+    expect(pathComplete.body.data.results[0].outcome).toBe('path_complete');
+    expect(pathComplete.body.data.results[0].enrollment_id).toBeNull();
+    expect(pathComplete.body.data.results[0].error_code).toBeNull();
 
-    const stillInactive = await prisma.club_role_assignments.findFirst({
+    const nowActive = await prisma.club_role_assignments.findFirst({
       where: {
         user_id: ANNUAL_CYCLE_IDS.returnedMember,
         club_section_id: fixture.gmSectionId,
         ecclesiastical_year_id: fixture.yearCurrent,
       },
     });
-    expect(stillInactive?.status).toBe('inactive');
+    expect(nowActive?.status).toBe('active');
+
+    const newClassEnrollment = await prisma.enrollments.findFirst({
+      where: {
+        user_id: ANNUAL_CYCLE_IDS.returnedMember,
+        ecclesiastical_year_id: fixture.yearCurrent,
+      },
+    });
+    expect(newClassEnrollment).toBeNull();
 
     const already = await request(app.getHttpServer())
       .post(listUrl(fixture.cqSectionId))

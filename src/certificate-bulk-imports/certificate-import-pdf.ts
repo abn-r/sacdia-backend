@@ -19,7 +19,7 @@ export { CERTIFICATE_IMPORT_MAX_PDF_PAGES };
 
 /**
  * Render Free, confirmed 2026-10-07: 512 MiB RAM and 0.1 CPU, no memory
- * metrics. render.yaml says "starter" and is not a source of truth.
+ * metrics. render.yaml mirrors that live service ("API Sacdia", free).
  * Assumption, not a measurement: the Nest parent can already occupy ~300 MiB.
  * One validation may add at most 128 MiB of process RSS, so a single attack
  * stays inside the 512 MiB box.
