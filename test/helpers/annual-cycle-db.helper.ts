@@ -613,6 +613,15 @@ export async function seedAnnualCycleFixture(
     );
 
     if (mode === 'year-cut') {
+      // The scheduled successor must be Guía Mayor eligible: the club role
+      // eligibility rules (#460) reject the `director` role for users without
+      // a qualifying GM-01 enrollment, which makes the cut skip the plan.
+      await client.query(
+        `INSERT INTO enrollments
+          (user_id, class_id, ecclesiastical_year_id, investiture_status, active)
+         VALUES ($1, $2, $3, 'INVESTIDO', true)`,
+        [ANNUAL_CYCLE_IDS.gmSuccessor, gmClassId, yearPrev],
+      );
       await client.query(
         `INSERT INTO club_role_assignments
           (user_id, role_id, club_section_id, ecclesiastical_year_id, start_date, end_date, active, status)

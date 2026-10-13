@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { CatalogsService } from '../catalogs/catalogs.service';
 import { CreateClubEnrollmentDto, UpdateClubEnrollmentDto } from './dto';
 import { AnnualFoldersService } from '../annual-folders/annual-folders.service';
@@ -470,8 +471,9 @@ export class ClubEnrollmentsService {
   private buildValidationQueueSearchWhere(
     search: string | undefined,
   ): Prisma.club_enrollmentsWhereInput {
-    const value = search?.trim();
-    if (!value) return {};
+    const trimmed = search?.trim();
+    if (!trimmed) return {};
+    const value = escapeLikeWildcards(trimmed);
 
     return {
       OR: [

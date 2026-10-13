@@ -168,6 +168,21 @@ describe('CamporeeVenuesService', () => {
     });
   });
 
+  describe('listVenues q search', () => {
+    it('escapes LIKE wildcards in q for the venue name', async () => {
+      prisma.camporee_venues.findMany.mockResolvedValue([]);
+      prisma.camporee_venues.count.mockResolvedValue(0);
+
+      await service.listVenues({ q: 'sala%_1' });
+
+      const { where } = prisma.camporee_venues.findMany.mock.calls[0][0];
+      expect(where.name).toEqual({
+        contains: 'sala\\%\\_1',
+        mode: 'insensitive',
+      });
+    });
+  });
+
   // ── listVenuesForCamporee — visibility ───────────────────────────────────
 
   describe('listVenuesForCamporee (local scope)', () => {

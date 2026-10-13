@@ -27,6 +27,13 @@ import {
 
 jest.setTimeout(180000);
 
+/**
+ * The historical age gate needs a complete birth date to accredit a class.
+ * Far enough back to satisfy every minimum age at every certificate year
+ * (1990 onwards) used here, whatever today's date is.
+ */
+const TEST_BIRTHDAY = new Date('1950-01-01T00:00:00.000Z');
+
 const SQL = [
   'prisma/migrations/20260921140000_historical_certificate_enrollments/migration.sql',
   'prisma/migrations/20260921153000_ecclesiastical_year_no_overlap/migration.sql',
@@ -40,7 +47,15 @@ describe('certificate import journey', () => {
   let admin: AdminCertificateBulkImportsService;
   let institutional: InstitutionalCertificateRequestsService;
   const ocr = {
-    extract: jest.fn().mockResolvedValue({ rawText: 'sin etiquetas', items: [] }),
+    extract: jest
+      .fn()
+      .mockResolvedValue({ rawText: 'sin etiquetas', items: [] }),
+  };
+  // Instructor lookups are not part of this journey: no instructor is chosen
+  // and photo signing needs object storage.
+  const instructors = {
+    assertEligible: jest.fn().mockResolvedValue(undefined),
+    photoUrlsFor: jest.fn().mockResolvedValue(new Map()),
   };
 
   beforeAll(async () => {
@@ -57,14 +72,23 @@ describe('certificate import journey', () => {
     });
     pool = new pg.Pool({ connectionString: url });
     prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
-    imports = new CertificateBulkImportsService(prisma as never, ocr, null);
-    const application = new CertificateBulkImportApplicationService(prisma as never);
+    imports = new CertificateBulkImportsService(
+      prisma as never,
+      ocr,
+      null,
+      instructors as never,
+    );
+    const application = new CertificateBulkImportApplicationService(
+      prisma as never,
+    );
     admin = new AdminCertificateBulkImportsService(
       prisma as never,
       application,
       new CertificateImportYearResolver(prisma as never),
     );
-    institutional = new InstitutionalCertificateRequestsService(prisma as never);
+    institutional = new InstitutionalCertificateRequestsService(
+      prisma as never,
+    );
   });
 
   afterAll(async () => {
@@ -72,9 +96,26 @@ describe('certificate import journey', () => {
     await pool?.end();
   });
 
+  /** Calendar-year historical period; shared across tests, so created once. */
+  async function ensureCertificateYear(year: number) {
+    const start = new Date(`${year}-01-01T00:00:00.000Z`);
+    const existing = await prisma.ecclesiastical_years.findFirst({
+      where: { start_date: start },
+    });
+    if (existing) return existing;
+    return prisma.ecclesiastical_years.create({
+      data: {
+        start_date: start,
+        end_date: new Date(`${year}-12-31T00:00:00.000Z`),
+        active: false,
+      },
+    });
+  }
+
   it('goes from an empty reading to a historical class through rejection and correction', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-owner@certificate-import.test',
         name: 'Owner',
         active: true,
@@ -83,6 +124,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-reviewer@certificate-import.test',
         name: 'Reviewer',
         active: true,
@@ -158,9 +200,10 @@ describe('certificate import journey', () => {
     await admin.rejectItem(reviewer.user_id, batch.batch_id, added.item_id, {
       reason: 'Fecha ilegible',
     });
-    const rejected = await prisma.certificate_bulk_import_items.findUniqueOrThrow({
-      where: { item_id: added.item_id },
-    });
+    const rejected =
+      await prisma.certificate_bulk_import_items.findUniqueOrThrow({
+        where: { item_id: added.item_id },
+      });
     expect(rejected.status).toBe('REJECTED');
     expect(rejected.rejection_reason).toBe('Fecha ilegible');
 
@@ -170,8 +213,18 @@ describe('certificate import journey', () => {
       completed_at: '2004-06-01',
       mark_as_ready: true,
     });
-    await admin.approveItem(reviewer.user_id, batch.batch_id, added.item_id, {});
-    await admin.approveItem(reviewer.user_id, batch.batch_id, added.item_id, {});
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      added.item_id,
+      {},
+    );
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      added.item_id,
+      {},
+    );
 
     const rows = await prisma.enrollments.findMany({
       where: { user_id: owner.user_id, class_id: amigo.class_id },
@@ -182,21 +235,25 @@ describe('certificate import journey', () => {
       investiture_status: 'INVESTIDO',
       active: true,
     });
-    expect(rows[0].investiture_date?.toISOString().slice(0, 10)).toBe('2004-06-01');
+    expect(rows[0].investiture_date?.toISOString().slice(0, 10)).toBe(
+      '2004-06-01',
+    );
     expect(
       await prisma.investiture_validation_history.count({
         where: { enrollment_id: rows[0].enrollment_id, action: 'INVESTIDO' },
       }),
     ).toBe(1);
-    const closed = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: batch.batch_id },
-    });
+    const closed =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: batch.batch_id },
+      });
     expect(closed.status).toBe('APPROVED');
   });
 
   it('keeps an institutional certificate out of enrollments until a period exists', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm@certificate-import.test',
         name: 'Guia',
         active: true,
@@ -205,6 +262,7 @@ describe('certificate import journey', () => {
     });
     const superAdmin = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-super@certificate-import.test',
         name: 'Super',
         active: true,
@@ -213,6 +271,7 @@ describe('certificate import journey', () => {
     });
     const campo = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-campo@certificate-import.test',
         name: 'Campo',
         active: true,
@@ -227,7 +286,11 @@ describe('certificate import journey', () => {
     });
     await prisma.users_roles.createMany({
       data: [
-        { user_id: superAdmin.user_id, role_id: superRole.role_id, active: true },
+        {
+          user_id: superAdmin.user_id,
+          role_id: superRole.role_id,
+          active: true,
+        },
         { user_id: campo.user_id, role_id: campoRole.role_id, active: true },
       ],
     });
@@ -260,6 +323,31 @@ describe('certificate import journey', () => {
       },
     });
 
+    // The period is resolved when the request is filed: without it nothing is
+    // stored and no enrollment is opened.
+    await expect(
+      institutional.submit(owner.user_id, {
+        class_id: advanced.class_id,
+        file_id: file.file_id,
+        completed_at: '1991-05-05',
+        source: 'MANUAL',
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CERTIFICATE_IMPORT_YEAR_NOT_FOUND,
+    });
+    expect(
+      await prisma.institutional_certificate_requests.count({
+        where: { user_id: owner.user_id },
+      }),
+    ).toBe(0);
+
+    await prisma.ecclesiastical_years.create({
+      data: {
+        start_date: new Date('1991-01-01T00:00:00.000Z'),
+        end_date: new Date('1991-12-31T00:00:00.000Z'),
+        active: false,
+      },
+    });
     const request = await institutional.submit(owner.user_id, {
       class_id: advanced.class_id,
       file_id: file.file_id,
@@ -269,22 +357,13 @@ describe('certificate import journey', () => {
     await expect(institutional.listForReview(campo.user_id)).rejects.toThrow(
       'CERTIFICATE_IMPORT_INSTITUTIONAL_FORBIDDEN',
     );
-    await expect(
-      institutional.approve(superAdmin.user_id, request.request_id, {
-        expected_revision: request.revision,
-      }),
-    ).rejects.toThrow('CERTIFICATE_IMPORT_YEAR_NOT_FOUND');
-    const pending = await institutional.getMine(owner.user_id, request.request_id);
+    const pending = await institutional.getMine(
+      owner.user_id,
+      request.request_id,
+    );
     expect(pending.status).toBe('PENDING_REVIEW');
     expect(pending.enrollment_created).toBe(false);
 
-    await prisma.ecclesiastical_years.create({
-      data: {
-        start_date: new Date('1991-01-01T00:00:00.000Z'),
-        end_date: new Date('1991-12-31T00:00:00.000Z'),
-        active: false,
-      },
-    });
     const approved = await institutional.approve(
       superAdmin.user_id,
       request.request_id,
@@ -302,6 +381,7 @@ describe('certificate import journey', () => {
   it('keeps one institutional decision when approve and reject race', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-race@certificate-import.test',
         name: 'Carrera',
         active: true,
@@ -310,6 +390,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-race-super@certificate-import.test',
         name: 'Revisor',
         active: true,
@@ -374,20 +455,25 @@ describe('certificate import journey', () => {
       }),
     ]);
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
     const lost = results.find((result) => result.status === 'rejected');
     expect(lost?.status).toBe('rejected');
     if (lost?.status === 'rejected') {
       const message =
-        lost.reason instanceof Error ? lost.reason.message : String(lost.reason);
+        lost.reason instanceof Error
+          ? lost.reason.message
+          : String(lost.reason);
       expect(message).toMatch(
         /CERTIFICATE_IMPORT_REVISION_CONFLICT|CERTIFICATE_IMPORT_DECISION_IMMUTABLE/,
       );
     }
 
-    const stored = await prisma.institutional_certificate_requests.findUniqueOrThrow({
-      where: { request_id: request.request_id },
-    });
+    const stored =
+      await prisma.institutional_certificate_requests.findUniqueOrThrow({
+        where: { request_id: request.request_id },
+      });
     expect(['APPROVED', 'REJECTED']).toContain(stored.status);
     expect(
       await prisma.institutional_certificate_request_events.count({
@@ -405,6 +491,7 @@ describe('certificate import journey', () => {
   it('substitutes the current Guía Mayor and accredits Amigo plus Explorador without Compañero', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-sub@certificate-import.test',
         name: 'Sustitucion',
         active: true,
@@ -413,6 +500,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-sub-reviewer@certificate-import.test',
         name: 'Revisor GM',
         active: true,
@@ -497,13 +585,17 @@ describe('certificate import journey', () => {
       mark_as_ready: true,
       expected_revision: 0,
     });
-    const exploradorItem = await imports.addItem(owner.user_id, batch.batch_id, {
-      item_type: CertificateBulkImportItemType.CLASS,
-      class_id: explorador.class_id,
-      completed_at: '2005-08-01',
-      mark_as_ready: true,
-      expected_revision: 1,
-    });
+    const exploradorItem = await imports.addItem(
+      owner.user_id,
+      batch.batch_id,
+      {
+        item_type: CertificateBulkImportItemType.CLASS,
+        class_id: explorador.class_id,
+        completed_at: '2005-08-01',
+        mark_as_ready: true,
+        expected_revision: 1,
+      },
+    );
     const guideItem = await imports.addItem(owner.user_id, batch.batch_id, {
       item_type: CertificateBulkImportItemType.CLASS,
       class_id: guide.class_id,
@@ -511,11 +603,19 @@ describe('certificate import journey', () => {
       mark_as_ready: true,
       expected_revision: 2,
     });
-    await imports.submit(owner.user_id, batch.batch_id);
-
-    await expect(
-      admin.approveItem(reviewer.user_id, batch.batch_id, amigoItem.item_id, {}),
-    ).rejects.toThrow('CERTIFICATE_IMPORT_YEAR_NOT_FOUND');
+    // Without a historical period the items are born NEEDS_REVIEW: they cannot
+    // be submitted, so nothing reaches the current enrollment.
+    for (const item of [amigoItem, exploradorItem, guideItem]) {
+      const stored =
+        await prisma.certificate_bulk_import_items.findUniqueOrThrow({
+          where: { item_id: item.item_id },
+        });
+      expect(stored.status).toBe('NEEDS_REVIEW');
+      expect(stored.rejection_reason).toBe('CERTIFICATE_IMPORT_YEAR_NOT_FOUND');
+    }
+    await expect(imports.submit(owner.user_id, batch.batch_id)).rejects.toThrow(
+      'CERTIFICATE_IMPORT_ITEMS_INCOMPLETE',
+    );
     const untouched = await prisma.enrollments.findUniqueOrThrow({
       where: { enrollment_id: current.enrollment_id },
     });
@@ -535,15 +635,38 @@ describe('certificate import journey', () => {
         active: false,
       },
     });
-    await admin.approveItem(reviewer.user_id, batch.batch_id, amigoItem.item_id, {});
+    for (const item of [amigoItem, exploradorItem, guideItem]) {
+      await imports.updateItem(owner.user_id, batch.batch_id, item.item_id, {
+        item_type: CertificateBulkImportItemType.CLASS,
+        mark_as_ready: true,
+        expected_revision: 0,
+      });
+    }
+    await imports.submit(owner.user_id, batch.batch_id);
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      amigoItem.item_id,
+      {},
+    );
     await admin.approveItem(
       reviewer.user_id,
       batch.batch_id,
       exploradorItem.item_id,
       {},
     );
-    await admin.approveItem(reviewer.user_id, batch.batch_id, guideItem.item_id, {});
-    await admin.approveItem(reviewer.user_id, batch.batch_id, guideItem.item_id, {});
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      guideItem.item_id,
+      {},
+    );
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      guideItem.item_id,
+      {},
+    );
 
     const rows = await prisma.enrollments.findMany({
       where: { user_id: owner.user_id },
@@ -608,6 +731,7 @@ describe('certificate import journey', () => {
   it('accredits an honor in users_honors and does not open an enrollment', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-honor@certificate-import.test',
         name: 'Honor',
         active: true,
@@ -616,6 +740,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-honor-reviewer@certificate-import.test',
         name: 'Revisor honor',
         active: true,
@@ -688,9 +813,10 @@ describe('certificate import journey', () => {
     expect(
       await prisma.enrollments.count({ where: { user_id: owner.user_id } }),
     ).toBe(0);
-    const closed = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: batch.batch_id },
-    });
+    const closed =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: batch.batch_id },
+      });
     expect(closed.status).toBe('APPROVED');
   });
 
@@ -706,6 +832,7 @@ describe('certificate import journey', () => {
     `);
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-jurisdiction-owner@certificate-import.test',
         name: 'Dueno',
         active: true,
@@ -714,6 +841,7 @@ describe('certificate import journey', () => {
     });
     const superAdmin = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-jurisdiction-super@certificate-import.test',
         name: 'Super',
         active: true,
@@ -725,6 +853,7 @@ describe('certificate import journey', () => {
         async (roleName) => {
           const user = await prisma.users.create({
             data: {
+              birthday: TEST_BIRTHDAY,
               email: `journey-jurisdiction-${roleName}@certificate-import.test`,
               name: roleName,
               active: true,
@@ -735,7 +864,11 @@ describe('certificate import journey', () => {
             where: { role_name: roleName },
           });
           await prisma.users_roles.create({
-            data: { user_id: user.user_id, role_id: role.role_id, active: true },
+            data: {
+              user_id: user.user_id,
+              role_id: role.role_id,
+              active: true,
+            },
           });
           return { roleName, userId: user.user_id };
         },
@@ -808,9 +941,9 @@ describe('certificate import journey', () => {
     });
 
     for (const outsider of outsiders) {
-      await expect(institutional.listForReview(outsider.userId)).rejects.toThrow(
-        'CERTIFICATE_IMPORT_INSTITUTIONAL_FORBIDDEN',
-      );
+      await expect(
+        institutional.listForReview(outsider.userId),
+      ).rejects.toThrow('CERTIFICATE_IMPORT_INSTITUTIONAL_FORBIDDEN');
       await expect(
         institutional.approve(outsider.userId, request.request_id, {
           expected_revision: request.revision,
@@ -823,7 +956,10 @@ describe('certificate import journey', () => {
         }),
       ).rejects.toThrow('CERTIFICATE_IMPORT_INSTITUTIONAL_FORBIDDEN');
     }
-    const pending = await institutional.getMine(owner.user_id, request.request_id);
+    const pending = await institutional.getMine(
+      owner.user_id,
+      request.request_id,
+    );
     expect(pending.status).toBe('PENDING_REVIEW');
 
     const storage = { getSignedDownloadUrl: jest.fn() };
@@ -838,7 +974,9 @@ describe('certificate import journey', () => {
     }
     expect(storage.getSignedDownloadUrl).not.toHaveBeenCalled();
 
-    const genericAdmin = outsiders.find((outsider) => outsider.roleName === 'admin');
+    const genericAdmin = outsiders.find(
+      (outsider) => outsider.roleName === 'admin',
+    );
     const union = outsiders.find(
       (outsider) => outsider.roleName === 'director-union',
     );
@@ -853,7 +991,12 @@ describe('certificate import journey', () => {
       batch.batch_id,
     );
     await expect(
-      admin.approveItem(genericAdmin!.userId, batch.batch_id, planted.item_id, {}),
+      admin.approveItem(
+        genericAdmin!.userId,
+        batch.batch_id,
+        planted.item_id,
+        {},
+      ),
     ).rejects.toThrow('CERTIFICATE_IMPORT_ITEM_NOT_FOUND');
     await expect(
       admin.rejectItem(genericAdmin!.userId, batch.batch_id, planted.item_id, {
@@ -868,9 +1011,10 @@ describe('certificate import journey', () => {
     expect(queue.items.map((entry) => entry.request_id)).toContain(
       request.request_id,
     );
-    const storedItem = await prisma.certificate_bulk_import_items.findUniqueOrThrow({
-      where: { item_id: planted.item_id },
-    });
+    const storedItem =
+      await prisma.certificate_bulk_import_items.findUniqueOrThrow({
+        where: { item_id: planted.item_id },
+      });
     expect(storedItem.status).toBe('SUBMITTED');
     expect(
       await prisma.enrollments.count({ where: { user_id: owner.user_id } }),
@@ -880,6 +1024,7 @@ describe('certificate import journey', () => {
   it('keeps one Campo Local decision when approve and reject race', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-campo-race@certificate-import.test',
         name: 'Carrera campo',
         active: true,
@@ -888,6 +1033,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-campo-race-reviewer@certificate-import.test',
         name: 'Revisor campo',
         active: true,
@@ -952,29 +1098,36 @@ describe('certificate import journey', () => {
       }),
     ]);
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
     const lost = results.find((result) => result.status === 'rejected');
     expect(lost?.status).toBe('rejected');
     if (lost?.status === 'rejected') {
       const message =
-        lost.reason instanceof Error ? lost.reason.message : String(lost.reason);
+        lost.reason instanceof Error
+          ? lost.reason.message
+          : String(lost.reason);
       expect(message).toMatch(
         /CERTIFICATE_IMPORT_ITEM_NOT_REVIEWABLE|CERTIFICATE_IMPORT_ITEM_NOT_FOUND/,
       );
     }
 
-    const stored = await prisma.certificate_bulk_import_items.findUniqueOrThrow({
-      where: { item_id: item.item_id },
-    });
+    const stored = await prisma.certificate_bulk_import_items.findUniqueOrThrow(
+      {
+        where: { item_id: item.item_id },
+      },
+    );
     const enrollments = await prisma.enrollments.count({
       where: { user_id: owner.user_id, class_id: amigo.class_id },
     });
-    const decisionEvents = await prisma.certificate_bulk_import_item_events.count({
-      where: {
-        item_id: item.item_id,
-        action: { in: ['ITEM_APPROVED', 'ITEM_REJECTED'] },
-      },
-    });
+    const decisionEvents =
+      await prisma.certificate_bulk_import_item_events.count({
+        where: {
+          item_id: item.item_id,
+          action: { in: ['ITEM_APPROVED', 'ITEM_REJECTED'] },
+        },
+      });
     expect(decisionEvents).toBe(1);
     if (stored.status === 'APPROVED') {
       expect(enrollments).toBe(1);
@@ -989,6 +1142,7 @@ describe('certificate import journey', () => {
   it('keeps a substituted Guía Mayor invested, without a new class or another row', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-stay@certificate-import.test',
         name: 'Permanece',
         active: true,
@@ -997,6 +1151,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-stay-reviewer@certificate-import.test',
         name: 'Revisor permanece',
         active: true,
@@ -1106,9 +1261,12 @@ describe('certificate import journey', () => {
     });
 
     const investiture = new InvestitureService(prisma as never, {} as never);
-    const expired = await investiture.expireOverdueEnrollments(reviewer.user_id, {
-      ecclesiastical_year_id: laterYear.year_id,
-    });
+    const expired = await investiture.expireOverdueEnrollments(
+      reviewer.user_id,
+      {
+        ecclesiastical_year_id: laterYear.year_id,
+      },
+    );
     expect(expired.enrollment_ids).toContain(overdue.enrollment_id);
     expect(expired.enrollment_ids).not.toContain(current.enrollment_id);
 
@@ -1139,16 +1297,23 @@ describe('certificate import journey', () => {
     const section = await prisma.club_sections.create({
       data: { active: true, club_type_id: guide.club_type_id },
     });
-    const nextClass = new NextClassResolver(prisma as never, {
-      ageAtDate: () => 30,
-    } as never);
+    const nextClass = new NextClassResolver(
+      prisma as never,
+      {
+        ageAtDate: () => 30,
+      } as never,
+    );
     await expect(
-      nextClass.resolve(owner.user_id, section.club_section_id, laterYear.year_id),
+      nextClass.resolve(
+        owner.user_id,
+        section.club_section_id,
+        laterYear.year_id,
+      ),
     ).resolves.toEqual({ kind: 'journey_complete' });
 
     const writer = new ClassEnrollmentWriter(prisma as never);
     await expect(
-      writer.upsert(prisma as never, {
+      writer.upsert(prisma, {
         userId: owner.user_id,
         classId: guide.class_id,
         ecclesiasticalYearId: laterYear.year_id,
@@ -1170,6 +1335,7 @@ describe('certificate import journey', () => {
   it('accredits a class and an honor from the same sealed document', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-mixed@certificate-import.test',
         name: 'Mixto',
         active: true,
@@ -1178,6 +1344,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-mixed-reviewer@certificate-import.test',
         name: 'Revisor mixto',
         active: true,
@@ -1254,14 +1421,21 @@ describe('certificate import journey', () => {
     });
     await imports.submit(owner.user_id, batch.batch_id);
 
-    await admin.approveItem(reviewer.user_id, batch.batch_id, classItem.item_id, {});
-    const halfway = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: batch.batch_id },
-    });
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      classItem.item_id,
+      {},
+    );
+    const halfway =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: batch.batch_id },
+      });
     expect(halfway.status).toBe('SUBMITTED');
-    const openHonor = await prisma.certificate_bulk_import_items.findUniqueOrThrow({
-      where: { item_id: honorItem.item_id },
-    });
+    const openHonor =
+      await prisma.certificate_bulk_import_items.findUniqueOrThrow({
+        where: { item_id: honorItem.item_id },
+      });
     expect(openHonor.status).toBe('SUBMITTED');
     expect(
       await prisma.enrollments.count({ where: { user_id: owner.user_id } }),
@@ -1270,9 +1444,24 @@ describe('certificate import journey', () => {
       await prisma.users_honors.count({ where: { user_id: owner.user_id } }),
     ).toBe(0);
 
-    await admin.approveItem(reviewer.user_id, batch.batch_id, honorItem.item_id, {});
-    await admin.approveItem(reviewer.user_id, batch.batch_id, classItem.item_id, {});
-    await admin.approveItem(reviewer.user_id, batch.batch_id, honorItem.item_id, {});
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      honorItem.item_id,
+      {},
+    );
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      classItem.item_id,
+      {},
+    );
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      honorItem.item_id,
+      {},
+    );
 
     const enrollments = await prisma.enrollments.findMany({
       where: { user_id: owner.user_id, class_id: amigo.class_id },
@@ -1300,7 +1489,10 @@ describe('certificate import journey', () => {
     expect(honors[0].date.toISOString().slice(0, 10)).toBe('2003-04-04');
     expect(
       await prisma.evidence_files.count({
-        where: { user_honor_id: honors[0].user_honor_id, file_url: file.file_url },
+        where: {
+          user_honor_id: honors[0].user_honor_id,
+          file_url: file.file_url,
+        },
       }),
     ).toBe(1);
 
@@ -1328,9 +1520,10 @@ describe('certificate import journey', () => {
         where: { batch_id: batch.batch_id, action: 'ITEM_APPROVED' },
       }),
     ).toBe(2);
-    const closed = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: batch.batch_id },
-    });
+    const closed =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: batch.batch_id },
+      });
     expect(closed.status).toBe('APPROVED');
     const storedYear = await prisma.ecclesiastical_years.findUniqueOrThrow({
       where: { year_id: year.year_id },
@@ -1341,6 +1534,7 @@ describe('certificate import journey', () => {
   it('rejects one row of a mixed document and leaves the other pending', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-separate@certificate-import.test',
         name: 'Separado',
         active: true,
@@ -1349,6 +1543,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-separate-reviewer@certificate-import.test',
         name: 'Revisor separado',
         active: true,
@@ -1434,9 +1629,14 @@ describe('certificate import journey', () => {
       }),
     ).rejects.toThrow('CERTIFICATE_IMPORT_ITEM_DECISION_REQUIRED');
 
-    await admin.rejectItem(reviewer.user_id, batch.batch_id, honorItem.item_id, {
-      reason: 'La especialidad no coincide',
-    });
+    await admin.rejectItem(
+      reviewer.user_id,
+      batch.batch_id,
+      honorItem.item_id,
+      {
+        reason: 'La especialidad no coincide',
+      },
+    );
     const afterReject = await prisma.certificate_bulk_import_items.findMany({
       where: { batch_id: batch.batch_id, active: true },
     });
@@ -1461,7 +1661,12 @@ describe('certificate import journey', () => {
       ).status,
     ).toBe('SUBMITTED');
 
-    await admin.approveItem(reviewer.user_id, batch.batch_id, classItem.item_id, {});
+    await admin.approveItem(
+      reviewer.user_id,
+      batch.batch_id,
+      classItem.item_id,
+      {},
+    );
     expect(
       await prisma.enrollments.count({
         where: { user_id: owner.user_id, class_id: amigo.class_id },
@@ -1470,9 +1675,10 @@ describe('certificate import journey', () => {
     expect(
       await prisma.users_honors.count({ where: { user_id: owner.user_id } }),
     ).toBe(0);
-    const closed = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: batch.batch_id },
-    });
+    const closed =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: batch.batch_id },
+      });
     expect(closed.status).toBe('NEEDS_CORRECTION');
     const storedYear = await prisma.ecclesiastical_years.findUniqueOrThrow({
       where: { year_id: year.year_id },
@@ -1483,6 +1689,7 @@ describe('certificate import journey', () => {
   it('keeps the sealed file when storage cannot be read', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-storage@certificate-import.test',
         name: 'Archivo',
         active: true,
@@ -1517,6 +1724,7 @@ describe('certificate import journey', () => {
         confirmed_at: new Date(),
       },
     });
+    await ensureCertificateYear(2000);
     const item = await imports.addItem(owner.user_id, batch.batch_id, {
       item_type: CertificateBulkImportItemType.CLASS,
       class_id: amigo.class_id,
@@ -1528,25 +1736,28 @@ describe('certificate import journey', () => {
       new Error('CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE'),
     );
 
-    await expect(imports.runQueuedOcr(owner.user_id, batch.batch_id)).rejects.toThrow(
-      'CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE',
-    );
+    await expect(
+      imports.runQueuedOcr(owner.user_id, batch.batch_id),
+    ).rejects.toThrow('CERTIFICATE_IMPORT_STORAGE_UNAVAILABLE');
 
-    const storedFile = await prisma.certificate_bulk_import_files.findUniqueOrThrow({
-      where: { file_id: file.file_id },
-    });
+    const storedFile =
+      await prisma.certificate_bulk_import_files.findUniqueOrThrow({
+        where: { file_id: file.file_id },
+      });
     expect(storedFile).toMatchObject({
       upload_status: 'CONFIRMED',
       object_key: 'batches/sealed/storage.jpg',
       active: true,
     });
-    const storedItem = await prisma.certificate_bulk_import_items.findUniqueOrThrow({
-      where: { item_id: item.item_id },
-    });
+    const storedItem =
+      await prisma.certificate_bulk_import_items.findUniqueOrThrow({
+        where: { item_id: item.item_id },
+      });
     expect(storedItem).toMatchObject({ status: 'READY', active: true });
-    const storedBatch = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: batch.batch_id },
-    });
+    const storedBatch =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: batch.batch_id },
+      });
     expect(storedBatch.status).toBe('DRAFT');
     expect(storedBatch.raw_ocr_payload).toBeNull();
     expect(
@@ -1559,6 +1770,7 @@ describe('certificate import journey', () => {
   it('retries a sealed confirm and refuses edits after the document is sent', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-retry@certificate-import.test',
         name: 'Reintento',
         active: true,
@@ -1601,9 +1813,11 @@ describe('certificate import journey', () => {
       getObjectPrefix: jest
         .fn()
         .mockResolvedValue(Buffer.from([0xff, 0xd8, 0xff, 0x00])),
-      copyObject: jest.fn(async (_bucket: string, _source: string, destination: string) => ({
-        key: destination,
-      })),
+      copyObject: jest.fn(
+        async (_bucket: string, _source: string, destination: string) => ({
+          key: destination,
+        }),
+      ),
       deleteMany: jest.fn().mockResolvedValue(undefined),
     };
     const files = new CertificateImportFilesService(
@@ -1611,20 +1825,31 @@ describe('certificate import journey', () => {
       storage as never,
     );
 
-    const first = await files.confirm(owner.user_id, batch.batch_id, pending.file_id);
-    const second = await files.confirm(owner.user_id, batch.batch_id, pending.file_id);
+    const first = await files.confirm(
+      owner.user_id,
+      batch.batch_id,
+      pending.file_id,
+    );
+    const second = await files.confirm(
+      owner.user_id,
+      batch.batch_id,
+      pending.file_id,
+    );
     expect(second.object_key).toBe(first.object_key);
     expect(first.object_key).toContain('/sealed/');
     expect(storage.copyObject).toHaveBeenCalledTimes(1);
-    const sealed = await prisma.certificate_bulk_import_files.findUniqueOrThrow({
-      where: { file_id: pending.file_id },
-    });
+    const sealed = await prisma.certificate_bulk_import_files.findUniqueOrThrow(
+      {
+        where: { file_id: pending.file_id },
+      },
+    );
     expect(sealed).toMatchObject({
       upload_status: 'CONFIRMED',
       object_key: first.object_key,
       active: true,
     });
 
+    await ensureCertificateYear(1995);
     const item = await imports.addItem(owner.user_id, batch.batch_id, {
       item_type: CertificateBulkImportItemType.CLASS,
       class_id: amigo.class_id,
@@ -1656,25 +1881,30 @@ describe('certificate import journey', () => {
       'CERTIFICATE_IMPORT_CANNOT_SUBMIT',
     );
 
-    const storedItem = await prisma.certificate_bulk_import_items.findUniqueOrThrow({
-      where: { item_id: item.item_id },
-    });
+    const storedItem =
+      await prisma.certificate_bulk_import_items.findUniqueOrThrow({
+        where: { item_id: item.item_id },
+      });
     expect(storedItem.status).toBe('SUBMITTED');
-    expect(storedItem.completed_at?.toISOString().slice(0, 10)).toBe('1995-06-01');
+    expect(storedItem.completed_at?.toISOString().slice(0, 10)).toBe(
+      '1995-06-01',
+    );
     expect(
       await prisma.certificate_bulk_import_items.count({
         where: { batch_id: batch.batch_id, active: true },
       }),
     ).toBe(1);
-    const storedBatch = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: batch.batch_id },
-    });
+    const storedBatch =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: batch.batch_id },
+      });
     expect(storedBatch.status).toBe('SUBMITTED');
   });
 
   it('retries an institutional submit without a second request', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-institutional-retry@certificate-import.test',
         name: 'Institucional',
         active: true,
@@ -1715,6 +1945,8 @@ describe('certificate import journey', () => {
       },
     });
 
+    await ensureCertificateYear(1993);
+    await ensureCertificateYear(1994);
     const first = await institutional.submit(owner.user_id, {
       class_id: advanced.class_id,
       file_id: file.file_id,
@@ -1773,6 +2005,7 @@ describe('certificate import journey', () => {
     const parser = new CertificateOcrParser();
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-parser@certificate-import.test',
         name: 'Lector',
         active: true,
@@ -1796,9 +2029,7 @@ describe('certificate import journey', () => {
       },
     });
     ocr.extract.mockResolvedValueOnce(
-      parser.parse(
-        'Se certifica que la persona completó Amigo el 12/04/2006',
-      ),
+      parser.parse('Se certifica que la persona completó Amigo el 12/04/2006'),
     );
     await imports.runQueuedOcr(owner.user_id, unlabeled.batch_id);
     expect(
@@ -1867,9 +2098,10 @@ describe('certificate import journey', () => {
     expect(
       await prisma.users_honors.count({ where: { user_id: owner.user_id } }),
     ).toBe(0);
-    const stored = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: labeled.batch_id },
-    });
+    const stored =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: labeled.batch_id },
+      });
     expect(stored.status).toBe('DRAFT');
   });
 
@@ -1877,6 +2109,7 @@ describe('certificate import journey', () => {
     const parser = new CertificateOcrParser();
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-reread@certificate-import.test',
         name: 'Relectura',
         active: true,
@@ -1912,6 +2145,7 @@ describe('certificate import journey', () => {
       },
     });
 
+    await ensureCertificateYear(2006);
     ocr.extract.mockResolvedValueOnce(
       parser.parse(`
         Clase: Explorador
@@ -1925,7 +2159,9 @@ describe('certificate import journey', () => {
       where: { batch_id: batch.batch_id, active: true },
     });
     expect(firstPass).toHaveLength(2);
-    const suggestion = firstPass.find((item) => item.detected_name === 'Explorador');
+    const suggestion = firstPass.find(
+      (item) => item.detected_name === 'Explorador',
+    );
     const institutionalSuggestion = firstPass.find(
       (item) => item.detected_name === 'Guía Mayor Avanzado',
     );
@@ -1940,13 +2176,18 @@ describe('certificate import journey', () => {
       }),
     ).toBe(0);
 
-    await imports.updateItem(owner.user_id, batch.batch_id, suggestion!.item_id, {
-      item_type: CertificateBulkImportItemType.CLASS,
-      class_id: explorador.class_id,
-      completed_at: '2006-04-12',
-      mark_as_ready: true,
-      expected_revision: 0,
-    });
+    await imports.updateItem(
+      owner.user_id,
+      batch.batch_id,
+      suggestion!.item_id,
+      {
+        item_type: CertificateBulkImportItemType.CLASS,
+        class_id: explorador.class_id,
+        completed_at: '2006-04-12',
+        mark_as_ready: true,
+        expected_revision: 0,
+      },
+    );
 
     ocr.extract.mockResolvedValueOnce(
       parser.parse(`
@@ -1966,9 +2207,10 @@ describe('certificate import journey', () => {
     });
     expect(kept.completed_at?.toISOString().slice(0, 10)).toBe('2006-04-12');
 
-    const replaced = await prisma.certificate_bulk_import_items.findUniqueOrThrow({
-      where: { item_id: institutionalSuggestion!.item_id },
-    });
+    const replaced =
+      await prisma.certificate_bulk_import_items.findUniqueOrThrow({
+        where: { item_id: institutionalSuggestion!.item_id },
+      });
     expect(replaced.active).toBe(false);
 
     const active = await prisma.certificate_bulk_import_items.findMany({
@@ -1976,7 +2218,10 @@ describe('certificate import journey', () => {
     });
     expect(active).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ item_id: suggestion!.item_id, status: 'READY' }),
+        expect.objectContaining({
+          item_id: suggestion!.item_id,
+          status: 'READY',
+        }),
         expect.objectContaining({
           item_type: 'HONOR',
           detected_name: 'Natación',
@@ -1994,9 +2239,10 @@ describe('certificate import journey', () => {
     expect(
       await prisma.enrollments.count({ where: { user_id: owner.user_id } }),
     ).toBe(0);
-    const stored = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: batch.batch_id },
-    });
+    const stored =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: batch.batch_id },
+      });
     expect(stored.status).toBe('DRAFT');
   });
 
@@ -2012,6 +2258,7 @@ describe('certificate import journey', () => {
     );
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-prereq@certificate-import.test',
         name: 'Prerequisito',
         active: true,
@@ -2115,13 +2362,16 @@ describe('certificate import journey', () => {
 
     const guideOwner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-cross@certificate-import.test',
         name: 'Cruce',
         active: true,
         approval_status: 'approved',
       },
     });
-    let guide = await prisma.classes.findFirst({ where: { asset_code: 'GM-01' } });
+    let guide = await prisma.classes.findFirst({
+      where: { asset_code: 'GM-01' },
+    });
     if (!guide) {
       const guideType = await prisma.club_types.create({
         data: { name: 'Guías Mayores', active: true },
@@ -2185,6 +2435,7 @@ describe('certificate import journey', () => {
   it('rolls back Guía Mayor substitution when the history write fails', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-rollback@certificate-import.test',
         name: 'Rollback',
         active: true,
@@ -2193,6 +2444,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-rollback-reviewer@certificate-import.test',
         name: 'Revisor rollback',
         active: true,
@@ -2205,7 +2457,9 @@ describe('certificate import journey', () => {
     await prisma.users_roles.create({
       data: { user_id: reviewer.user_id, role_id: role.role_id, active: true },
     });
-    let guide = await prisma.classes.findFirst({ where: { asset_code: 'GM-01' } });
+    let guide = await prisma.classes.findFirst({
+      where: { asset_code: 'GM-01' },
+    });
     if (!guide) {
       const clubType = await prisma.club_types.create({
         data: { name: 'Guías rollback', active: true },
@@ -2315,7 +2569,12 @@ describe('certificate import journey', () => {
     `);
 
     try {
-      await admin.approveItem(reviewer.user_id, batch.batch_id, item.item_id, {});
+      await admin.approveItem(
+        reviewer.user_id,
+        batch.batch_id,
+        item.item_id,
+        {},
+      );
       throw new Error('expected the history write to abort the substitution');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2324,7 +2583,9 @@ describe('certificate import journey', () => {
       await pool.query(
         'DROP TRIGGER IF EXISTS fail_certificate_import_history_insert ON investiture_validation_history',
       );
-      await pool.query('DROP FUNCTION IF EXISTS fail_certificate_import_history_insert()');
+      await pool.query(
+        'DROP FUNCTION IF EXISTS fail_certificate_import_history_insert()',
+      );
     }
 
     const kept = await prisma.enrollments.findUniqueOrThrow({
@@ -2355,16 +2616,18 @@ describe('certificate import journey', () => {
       history_id: priorHistory.history_id,
       action: 'SUBMITTED',
     });
-    const storedItem = await prisma.certificate_bulk_import_items.findUniqueOrThrow({
-      where: { item_id: item.item_id },
-    });
+    const storedItem =
+      await prisma.certificate_bulk_import_items.findUniqueOrThrow({
+        where: { item_id: item.item_id },
+      });
     expect(storedItem).toMatchObject({
       status: 'SUBMITTED',
       applied_entity_id: null,
     });
-    const storedBatch = await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
-      where: { batch_id: batch.batch_id },
-    });
+    const storedBatch =
+      await prisma.certificate_bulk_import_batches.findUniqueOrThrow({
+        where: { batch_id: batch.batch_id },
+      });
     expect(storedBatch.status).toBe('SUBMITTED');
     expect(
       await prisma.enrollments.count({
@@ -2385,6 +2648,7 @@ describe('certificate import journey', () => {
     );
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-slot-owner@certificate-import.test',
         name: 'Cupo',
         active: true,
@@ -2393,6 +2657,7 @@ describe('certificate import journey', () => {
     });
     const bystander = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-slot-bystander@certificate-import.test',
         name: 'Ajeno',
         active: true,
@@ -2401,6 +2666,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-slot-reviewer@certificate-import.test',
         name: 'Revisor cupo',
         active: true,
@@ -2471,7 +2737,11 @@ describe('certificate import journey', () => {
       },
     });
 
-    const submittedClass = async (classId: number, completedAt: string, key: string) => {
+    const submittedClass = async (
+      classId: number,
+      completedAt: string,
+      key: string,
+    ) => {
       const batch = await prisma.certificate_bulk_import_batches.create({
         data: { user_id: owner.user_id, status: 'SUBMITTED' },
       });
@@ -2503,27 +2773,38 @@ describe('certificate import journey', () => {
       '2010-09-01',
       'slot-explorador',
     );
-    const amigoItem = await submittedClass(amigo.class_id, '2010-02-01', 'slot-amigo');
+    const amigoItem = await submittedClass(
+      amigo.class_id,
+      '2010-02-01',
+      'slot-amigo',
+    );
     await admin.approveItem(
       reviewer.user_id,
       exploradorItem.batch_id,
       exploradorItem.item_id,
       {},
     );
-    await admin.approveItem(reviewer.user_id, amigoItem.batch_id, amigoItem.item_id, {});
+    await admin.approveItem(
+      reviewer.user_id,
+      amigoItem.batch_id,
+      amigoItem.item_id,
+      {},
+    );
 
     const accredited = await prisma.enrollments.findMany({
       where: { user_id: owner.user_id },
       orderBy: { class_id: 'asc' },
     });
     expect(accredited).toHaveLength(2);
-    expect(accredited.every((row) => row.record_kind === 'HISTORICAL_CERTIFICATE')).toBe(
-      true,
-    );
-    expect(accredited.every((row) => row.investiture_status === 'INVESTIDO')).toBe(true);
-    expect(accredited.every((row) => row.ecclesiastical_year_id === year.year_id)).toBe(
-      true,
-    );
+    expect(
+      accredited.every((row) => row.record_kind === 'HISTORICAL_CERTIFICATE'),
+    ).toBe(true);
+    expect(
+      accredited.every((row) => row.investiture_status === 'INVESTIDO'),
+    ).toBe(true);
+    expect(
+      accredited.every((row) => row.ecclesiastical_year_id === year.year_id),
+    ).toBe(true);
     expect(
       await prisma.investiture_validation_history.count({
         where: {
@@ -2579,6 +2860,7 @@ describe('certificate import journey', () => {
     const writer = new ClassEnrollmentWriter(prisma as never);
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-race-owner@certificate-import.test',
         name: 'Carrera GM',
         active: true,
@@ -2587,6 +2869,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-race-reviewer@certificate-import.test',
         name: 'Revisor carrera',
         active: true,
@@ -2599,7 +2882,9 @@ describe('certificate import journey', () => {
     await prisma.users_roles.create({
       data: { user_id: reviewer.user_id, role_id: role.role_id, active: true },
     });
-    let guide = await prisma.classes.findFirst({ where: { asset_code: 'GM-01' } });
+    let guide = await prisma.classes.findFirst({
+      where: { asset_code: 'GM-01' },
+    });
     if (!guide) {
       const clubType = await prisma.club_types.create({
         data: { name: 'Guías carrera', active: true },
@@ -2700,7 +2985,9 @@ describe('certificate import journey', () => {
       investiture_status: 'INVESTIDO',
       active: true,
     });
-    expect(rows[0].investiture_date?.toISOString().slice(0, 10)).toBe('2012-04-04');
+    expect(rows[0].investiture_date?.toISOString().slice(0, 10)).toBe(
+      '2012-04-04',
+    );
     expect(
       await prisma.ecclesiastical_years.findUniqueOrThrow({
         where: { year_id: certificateYear.year_id },
@@ -2716,6 +3003,7 @@ describe('certificate import journey', () => {
   it('invests the current enrollment when the reviewer confirms that row', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-reconcile@certificate-import.test',
         name: 'Conciliar',
         active: true,
@@ -2724,6 +3012,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-reconcile-reviewer@certificate-import.test',
         name: 'Revisor conciliar',
         active: true,
@@ -2769,7 +3058,11 @@ describe('certificate import journey', () => {
       },
     });
     const module = await prisma.class_modules.create({
-      data: { name: 'Modulo conciliar', class_id: amigo.class_id, active: true },
+      data: {
+        name: 'Modulo conciliar',
+        class_id: amigo.class_id,
+        active: true,
+      },
     });
     const progress = await prisma.class_module_progress.create({
       data: {
@@ -2841,7 +3134,9 @@ describe('certificate import journey', () => {
       locked_for_validation: true,
     });
     expect(invested.enrollment_date.toISOString()).toBe(started.toISOString());
-    expect(invested.investiture_date?.toISOString().slice(0, 10)).toBe('2014-08-20');
+    expect(invested.investiture_date?.toISOString().slice(0, 10)).toBe(
+      '2014-08-20',
+    );
     const keptProgress = await prisma.class_module_progress.findUniqueOrThrow({
       where: { module_progress_id: progress.module_progress_id },
     });
