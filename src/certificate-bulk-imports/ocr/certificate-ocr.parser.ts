@@ -40,21 +40,32 @@ export interface CertificateOcrParseResult {
 const HONOR_LABEL_REGEX =
   /^[ \t•·*-]*(?:especialidad(?:es)?|honor(?:es)?)\s*:\s*([^\n]+)/gim;
 const CLASS_LABEL_REGEX = /^[ \t•·*-]*(?:clase|investidura)\s*:\s*([^\n]+)/gim;
-const DATE_ONLY_REGEX =
-  /\b(?:(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/](?:19|20)\d{2})\b/g;
+const DATE_REGEX =
+  /\b(?:(19\d{2}|20\d{2})[-/](\d{1,2})[-/](\d{1,2})|(\d{1,2})[-/](\d{1,2})[-/](19\d{2}|20\d{2}))\b/g;
 
-/** Confianza de la fecha cuando viene de la propia página y cuando es un respaldo. */
+/**
+ * Confianza de la fecha según de dónde salió (el umbral de la app es 0.8, D5):
+ * - `own`: la fecha que sigue a la etiqueta del candidato, antes de la siguiente.
+ * - `page`: una fecha de la misma página que no le sigue (la previa más cercana o
+ *   la primera de la página).
+ * - `fallback`: la del archivo o la del lote.
+ */
+const OWN_DATE_CONFIDENCE = 0.85;
 const PAGE_DATE_CONFIDENCE = 0.7;
 const FALLBACK_DATE_CONFIDENCE = 0.5;
 
-type DateSource = 'page' | 'file' | 'batch';
+type DateSource = 'own' | 'page' | 'fallback';
+type PageDate = { index: number; value: string };
 type ParsedPage = {
   fileId: string | null;
   pageNumber: number;
   /** Clave de ubicación: dos candidatos iguales en la misma no se deduplican. */
   location: string;
   text: string;
-  date?: { value: string; source: DateSource };
+  /** Fechas de la página con su posición en `text`. */
+  dates: PageDate[];
+  /** Fecha del archivo o, si no la tiene, la del lote. */
+  fallbackDate?: string;
 };
 
 export class CertificateOcrParser {
@@ -67,9 +78,11 @@ export class CertificateOcrParser {
 
   /**
    * Extrae candidatos por archivo y por página (§4.7).
-   * - La fecha de un candidato es la de su página; si la página no tiene, la
-   *   primera del archivo; si el archivo tampoco, la primera del lote (el
-   *   comportamiento anterior). En los dos respaldos la confianza baja.
+   * - La fecha de un candidato es la más cercana después de su etiqueta y antes
+   *   de la siguiente etiqueta; si no hay, la previa más cercana de la página; si
+   *   no, la primera de la página; si la página no tiene, la primera del archivo
+   *   y, si el archivo tampoco, la primera del lote. En los dos últimos
+   *   respaldos la confianza baja.
    * - Un mismo candidato en varias páginas o archivos se conserva una vez: el del
    *   primer archivo (orden de subida) y, dentro de él, el de la primera página.
    */
@@ -94,18 +107,13 @@ export class CertificateOcrParser {
       const fileDate = this.extractDate(fileJoined[fileIndex]);
       return file.pages.map((page): ParsedPage => {
         const text = this.normalizeWhitespace(page.text);
-        const own = this.extractDate(text);
-        const fallback = fileDate
-          ? { value: fileDate, source: 'file' as const }
-          : batchDate
-            ? { value: batchDate, source: 'batch' as const }
-            : undefined;
         return {
           fileId: file.fileId,
           pageNumber: page.pageNumber,
           location: `${fileIndex}:${page.pageNumber}`,
           text,
-          date: own ? { value: own, source: 'page' } : fallback,
+          dates: this.findDates(text),
+          fallbackDate: fileDate ?? batchDate,
         };
       });
     });
@@ -156,22 +164,38 @@ export class CertificateOcrParser {
     seen: Map<string, string>,
   ): CertificateOcrCandidate[] {
     return pages.flatMap((page) => {
-      // D6: una lectura como "1925" por "2025" no pasa como fecha válida. Se
-      // conserva cruda en `detectedDate` y la fila nace sin `completedAt`.
-      const rawDate = page.date?.value;
-      const dateIssue = rawDate ? checkDateInRange(rawDate) : null;
-      const completedAt = rawDate && dateIssue === null ? rawDate : undefined;
-      const detectedDate =
-        dateIssue === 'TOO_OLD' || dateIssue === 'IN_FUTURE'
-          ? rawDate
-          : undefined;
-      const dateConfidence =
-        page.date?.source === 'page'
-          ? PAGE_DATE_CONFIDENCE
-          : FALLBACK_DATE_CONFIDENCE;
+      // Inicio de toda etiqueta de candidato (especialidad, honor, clase) de la
+      // página: una fecha no pasa de la siguiente etiqueta.
+      const labelStarts = [HONOR_LABEL_REGEX, CLASS_LABEL_REGEX]
+        .flatMap((regex) => [...page.text.matchAll(regex)])
+        .map((match) => match.index ?? 0);
 
-      return [...page.text.matchAll(labelRegex)].flatMap((match) =>
-        this.splitNames(match[1])
+      return [...page.text.matchAll(labelRegex)].flatMap((match) => {
+        const start = match.index ?? 0;
+        const nextLabel = Math.min(
+          Infinity,
+          ...labelStarts.filter((position) => position > start),
+        );
+        const { value: rawDate, source } = this.pickDate(
+          page,
+          start,
+          nextLabel,
+        );
+        // D6: una lectura como "1925" por "2025" no pasa como fecha válida. Se
+        // conserva cruda en `detectedDate` y la fila nace sin `completedAt`.
+        const dateIssue = rawDate ? checkDateInRange(rawDate) : null;
+        const completedAt = rawDate && dateIssue === null ? rawDate : undefined;
+        const detectedDate =
+          dateIssue === 'TOO_OLD' || dateIssue === 'IN_FUTURE'
+            ? rawDate
+            : undefined;
+        const dateConfidence = {
+          own: OWN_DATE_CONFIDENCE,
+          page: PAGE_DATE_CONFIDENCE,
+          fallback: FALLBACK_DATE_CONFIDENCE,
+        }[source];
+
+        return this.splitNames(match[1])
           .filter((detectedName) => this.looksLikeName(detectedName))
           .flatMap((detectedName) => {
             const key = `${type}|${this.identity(detectedName)}`;
@@ -187,9 +211,11 @@ export class CertificateOcrParser {
                 completedAt,
                 ...(detectedDate ? { detectedDate } : {}),
                 confidence: completedAt
-                  ? dateConfidence === PAGE_DATE_CONFIDENCE
-                    ? 0.72
-                    : 0.6
+                  ? source === 'own'
+                    ? 0.8
+                    : source === 'page'
+                      ? 0.72
+                      : 0.6
                   : 0.48,
                 fieldConfidence: {
                   type: 0.8,
@@ -201,14 +227,43 @@ export class CertificateOcrParser {
                   : {}),
               },
             ];
-          }),
-      );
+          });
+      });
     });
+  }
+
+  /**
+   * Fecha de un candidato cuya etiqueta empieza en `start`: la más cercana
+   * después de ella y antes de la siguiente etiqueta; si no hay, la previa más
+   * cercana de la página; si no, la primera de la página; si no, el respaldo del
+   * archivo o del lote.
+   */
+  private pickDate(
+    page: ParsedPage,
+    start: number,
+    nextLabel: number,
+  ): { value?: string; source: DateSource } {
+    const own = page.dates.find(
+      (date) => date.index >= start && date.index < nextLabel,
+    );
+    if (own) {
+      return { value: own.value, source: 'own' };
+    }
+    const previous = [...page.dates]
+      .reverse()
+      .find((date) => date.index < start);
+    if (previous) {
+      return { value: previous.value, source: 'page' };
+    }
+    if (page.dates.length > 0) {
+      return { value: page.dates[0].value, source: 'page' };
+    }
+    return { value: page.fallbackDate, source: 'fallback' };
   }
 
   /** Un nombre sin letras (por ejemplo, solo una fecha) no es un candidato. */
   private looksLikeName(name: string): boolean {
-    return /\p{L}/u.test(name.replace(DATE_ONLY_REGEX, ''));
+    return /\p{L}/u.test(name.replace(new RegExp(DATE_REGEX), ''));
   }
 
   /** Nombre sin mayúsculas, tildes ni espacios repetidos, para detectar el mismo candidato. */
@@ -233,22 +288,18 @@ export class CertificateOcrParser {
       .filter(Boolean);
   }
 
+  /** Fechas del texto en orden de aparición, con su posición. */
+  private findDates(text: string): PageDate[] {
+    return [...text.matchAll(DATE_REGEX)].map((match) => ({
+      index: match.index ?? 0,
+      value: match[1]
+        ? this.toIsoDate(match[1], match[2], match[3])
+        : this.toIsoDate(match[6], match[5], match[4]),
+    }));
+  }
+
   private extractDate(text: string): string | undefined {
-    const isoLike = text.match(
-      /\b(19\d{2}|20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/,
-    );
-    if (isoLike) {
-      return this.toIsoDate(isoLike[1], isoLike[2], isoLike[3]);
-    }
-
-    const dayFirst = text.match(
-      /\b(\d{1,2})[-/](\d{1,2})[-/](19\d{2}|20\d{2})\b/,
-    );
-    if (dayFirst) {
-      return this.toIsoDate(dayFirst[3], dayFirst[2], dayFirst[1]);
-    }
-
-    return undefined;
+    return this.findDates(text)[0]?.value;
   }
 
   private toIsoDate(year: string, month: string, day: string): string {
