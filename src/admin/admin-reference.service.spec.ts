@@ -283,6 +283,23 @@ describe('AdminReferenceService', () => {
       );
     });
 
+    it('should escape LIKE wildcards in the search term', async () => {
+      prismaMock.honors_categories.findMany.mockResolvedValue([]);
+      prismaMock.honors_categories.count.mockResolvedValue(0);
+
+      await service.listHonorCategories({
+        search: ' 100%_ok ',
+      } as unknown as Parameters<typeof service.listHonorCategories>[0]);
+
+      expect(prismaMock.honors_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            name: { contains: '100\\%\\_ok', mode: 'insensitive' },
+          },
+        }),
+      );
+    });
+
     it('should list all categories without search', async () => {
       prismaMock.honors_categories.findMany.mockResolvedValue([]);
       prismaMock.honors_categories.count.mockResolvedValue(0);

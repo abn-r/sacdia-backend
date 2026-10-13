@@ -2,6 +2,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import 'multer';
 import pLimit from 'p-limit';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -3053,8 +3054,9 @@ export class AnnualFoldersService {
   }
 
   private buildEvaluationQueueSearchWhere(
-    search: string,
+    rawSearch: string,
   ): Prisma.annual_foldersWhereInput {
+    const search = escapeLikeWildcards(rawSearch);
     return {
       OR: [
         {

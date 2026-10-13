@@ -33,6 +33,7 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { CoordinationService } from '../coordination/coordination.service';
 import {
   AdminListUsersQueryDto,
@@ -1269,8 +1270,9 @@ export class AdminUsersService {
       filters.push({ active: query.active });
     }
 
-    const search = query.search?.trim();
-    if (search) {
+    const rawSearch = query.search?.trim();
+    if (rawSearch) {
+      const search = escapeLikeWildcards(rawSearch);
       filters.push({
         OR: [
           { email: { contains: search, mode: 'insensitive' } },

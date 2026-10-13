@@ -27,6 +27,7 @@ import type {
   RejectInstitutionalCertificateRequestDto,
 } from './dto/review-institutional-certificate-request.dto';
 import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 
 type InstitutionalStore = Pick<
   Prisma.TransactionClient,
@@ -236,7 +237,8 @@ export class InstitutionalCertificateRequestsService {
     if (filters.status && !REVIEW_STATUSES.has(filters.status)) {
       throw new BadRequestException('CERTIFICATE_IMPORT_STATUS_INVALID');
     }
-    const q = filters.q?.trim();
+    const rawQ = filters.q?.trim();
+    const q = rawQ ? escapeLikeWildcards(rawQ) : rawQ;
     return this.list(
       {
         ...(filters.status
