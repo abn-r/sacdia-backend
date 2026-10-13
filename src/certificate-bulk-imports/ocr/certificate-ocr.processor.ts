@@ -1,4 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { buildBullmqWorkerOptions } from '../../config/bullmq-workers.config';
 import { HttpException, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Job, UnrecoverableError } from 'bullmq';
 import { CertificateBulkImportsService } from '../certificate-bulk-imports.service';
@@ -7,7 +8,10 @@ import {
   CertificateOcrJobPayload,
 } from './certificate-ocr.queue';
 
-@Processor(CERTIFICATE_OCR_QUEUE, { concurrency: 1 })
+@Processor(
+  CERTIFICATE_OCR_QUEUE,
+  buildBullmqWorkerOptions('certificate-import-ocr', { concurrency: 1 }),
+)
 export class CertificateOcrProcessor
   extends WorkerHost
   implements OnApplicationBootstrap

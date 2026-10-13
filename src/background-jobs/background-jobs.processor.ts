@@ -1,4 +1,5 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { buildBullmqWorkerOptions } from '../config/bullmq-workers.config';
 import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
@@ -29,7 +30,7 @@ function isSkippableMonthlyPdfError(error: unknown): boolean {
   );
 }
 
-@Processor(BACKGROUND_JOBS_QUEUE)
+@Processor(BACKGROUND_JOBS_QUEUE, buildBullmqWorkerOptions('background-jobs'))
 export class BackgroundJobsProcessor
   extends WorkerHost
   implements OnApplicationBootstrap

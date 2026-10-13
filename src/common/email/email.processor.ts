@@ -1,4 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { buildBullmqWorkerOptions } from '../../config/bullmq-workers.config';
 import {
   Inject,
   Logger,
@@ -103,7 +104,10 @@ function resolveLang(raw: string | undefined): SupportedEmailLocale {
  * limiter is hit, BullMQ delays the job automatically without triggering a
  * retry attempt count.
  */
-@Processor(EMAIL_QUEUE, EMAIL_WORKER_OPTIONS)
+@Processor(
+  EMAIL_QUEUE,
+  buildBullmqWorkerOptions('emails', EMAIL_WORKER_OPTIONS),
+)
 export class EmailProcessor
   extends WorkerHost
   implements OnApplicationBootstrap

@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { isPlaceholderUrl } from '../../config/bullmq.config';
+import { isBullmqWorkerEnabled } from '../../config/bullmq-workers.config';
 import { EmailService } from './email.service';
 import { EmailQueueProducer, EMAIL_QUEUE } from './email.queue';
 import { EmailProcessor } from './email.processor';
@@ -59,7 +60,9 @@ function isRedisConfigured(): boolean {
     },
     EmailService,
     EmailQueueProducer,
-    ...(isRedisConfigured() ? [EmailProcessor] : []),
+    ...(isRedisConfigured() && isBullmqWorkerEnabled('emails')
+      ? [EmailProcessor]
+      : []),
   ],
   exports: [EmailService],
 })

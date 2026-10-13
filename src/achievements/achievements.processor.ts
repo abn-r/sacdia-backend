@@ -1,4 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { buildBullmqWorkerOptions } from '../config/bullmq-workers.config';
 import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
@@ -27,7 +28,7 @@ export interface RetroactiveEvaluateJobData {
 
 export type AchievementJobType = 'evaluate' | 'retroactive-evaluate';
 
-@Processor(ACHIEVEMENTS_QUEUE)
+@Processor(ACHIEVEMENTS_QUEUE, buildBullmqWorkerOptions('achievements'))
 export class AchievementsProcessor
   extends WorkerHost
   implements OnApplicationBootstrap

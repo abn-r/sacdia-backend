@@ -1,4 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { buildBullmqWorkerOptions } from '../config/bullmq-workers.config';
 import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Job } from 'bullmq';
 import * as Sentry from '@sentry/node';
@@ -12,7 +13,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 
-@Processor(MASTER_HONORS_QUEUE)
+@Processor(MASTER_HONORS_QUEUE, buildBullmqWorkerOptions('master-honors'))
 export class MasterHonorsRecalculationProcessor
   extends WorkerHost
   implements OnApplicationBootstrap
