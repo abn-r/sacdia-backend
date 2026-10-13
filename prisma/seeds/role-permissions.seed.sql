@@ -207,7 +207,7 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- Counselor inherits ALL member permissions plus additional ones
 -- for managing their unit members' progress and viewing detailed profiles.
 -- Additional over MEMBER: users:read_detail, classes:update, units:update,
--- investiture:submit, club_roles:read, insurance:read
+-- club_roles:read, insurance:read
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -274,7 +274,7 @@ WHERE r.role_name = 'counselor'
     -- Investiture (read only)
     'investiture:read',
 
-    -- ===== Additional COUNSELOR permissions (6) =====
+    -- ===== Additional COUNSELOR permissions (5) =====
     -- View detailed profile of club members (honors, classes, emergency, health)
     'users:read_detail',
     -- Validate/return class progress for members in their classes
@@ -286,8 +286,6 @@ WHERE r.role_name = 'counselor'
     -- Member of the Month
     'mom:read',
     'mom:evaluate',
-    -- Submit members as investiture candidates to section leadership
-    'investiture:submit',
     -- See member list of the club and their roles
     'club_roles:read',
     -- View insurance status of members they oversee
@@ -470,7 +468,7 @@ WHERE r.role_name = 'secretary'
     -- Investiture (read only)
     'investiture:read',
 
-    -- ===== Inherited from COUNSELOR (6) =====
+    -- ===== Inherited from COUNSELOR (5) =====
     -- View detailed profile of club members
     'users:read_detail',
     -- Validate/return class progress
@@ -483,7 +481,6 @@ WHERE r.role_name = 'secretary'
     'mom:read',
     'mom:evaluate',
     -- Submit members as investiture candidates
-    'investiture:submit',
     -- See member list and roles
     'club_roles:read',
     -- View insurance status
@@ -613,7 +610,7 @@ WHERE r.role_name = 'treasurer'
     -- Investiture (read only)
     'investiture:read',
 
-    -- ===== Inherited from COUNSELOR (6) =====
+    -- ===== Inherited from COUNSELOR (5) =====
     -- View detailed profile of club members
     'users:read_detail',
     -- Validate/return class progress
@@ -626,7 +623,6 @@ WHERE r.role_name = 'treasurer'
     'mom:read',
     'mom:evaluate',
     -- Submit members as investiture candidates
-    'investiture:submit',
     -- See member list and roles
     'club_roles:read',
     -- View insurance status
@@ -744,7 +740,7 @@ WHERE r.role_name = 'secretary-treasurer'
     -- Investiture (read only)
     'investiture:read',
 
-    -- ===== Inherited from COUNSELOR (6) =====
+    -- ===== Inherited from COUNSELOR (5) =====
     'users:read_detail',
     'classes:submit_progress',
     'units:update',
@@ -753,7 +749,6 @@ WHERE r.role_name = 'secretary-treasurer'
     -- Member of the Month
     'mom:read',
     'mom:evaluate',
-    'investiture:submit',
     'club_roles:read',
     'insurance:read',
 
@@ -891,7 +886,7 @@ WHERE r.role_name = 'deputy-director'
     -- Investiture (read only)
     'investiture:read',
 
-    -- ===== Inherited from COUNSELOR (6) =====
+    -- ===== Inherited from COUNSELOR (5) =====
     'users:read_detail',
     'classes:submit_progress',
     'units:update',
@@ -900,7 +895,6 @@ WHERE r.role_name = 'deputy-director'
     -- Member of the Month
     'mom:read',
     'mom:evaluate',
-    'investiture:submit',
     'club_roles:read',
     'insurance:read',
 
@@ -921,7 +915,6 @@ WHERE r.role_name = 'deputy-director'
     'camporees:create',
     'camporees:update',
     -- Investiture validation (accept/reject from counselors)
-    'investiture:validate',
     -- Activity management
     'activities:create',
     'activities:update',
@@ -1026,7 +1019,7 @@ WHERE r.role_name = 'director'
     -- Investiture (read only)
     'investiture:read',
 
-    -- ===== Inherited from COUNSELOR (6) =====
+    -- ===== Inherited from COUNSELOR (5) =====
     'users:read_detail',
     'classes:submit_progress',
     'units:update',
@@ -1035,7 +1028,6 @@ WHERE r.role_name = 'director'
     -- Member of the Month
     'mom:read',
     'mom:evaluate',
-    'investiture:submit',
     'club_roles:read',
     'insurance:read',
 
@@ -1082,7 +1074,6 @@ WHERE r.role_name = 'director'
 
     -- ===== From DEPUTY-DIRECTOR (1 unique) =====
     -- Investiture validation (accept/reject from counselors)
-    'investiture:validate',
 
     -- ===== Additional DIRECTOR permissions (3 unique) =====
     -- Delete activities
@@ -1127,8 +1118,8 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- Global role that oversees assigned club sections.
 -- Can view club info, members, classes, and approve/reject class progress
 -- and investiture candidates. Read-heavy with limited write (classes:update,
--- investiture:validate, investiture:mark_invested, user_honors:update).
--- Total: 19
+-- user_honors:update).
+-- Total: 17
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1159,8 +1150,6 @@ WHERE r.role_name = 'coordinator'
 
     -- Investiture (read + validate + mark invested)
     'investiture:read',
-    'investiture:validate',
-    'investiture:mark_invested',
 
     -- Evidence & honors (read + validate/reject)
     'evidence_folders:read',
@@ -1192,9 +1181,9 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- ZONE-COORDINATOR role (GLOBAL)
 -- ============================
 -- Global role that oversees coordinators across a zone.
--- Has ALL coordinator permissions (19) PLUS the ability to view
+-- Has ALL coordinator permissions (17) PLUS the ability to view
 -- coordinator profiles (emergency contacts, health, insurance).
--- Total: 19 (coordinator) + 3 (additional) = 22
+-- Total: 17 (coordinator) + 3 (additional) = 20
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1226,8 +1215,6 @@ WHERE r.role_name = 'zone-coordinator'
 
     -- Investiture (read + validate + mark invested)
     'investiture:read',
-    'investiture:validate',
-    'investiture:mark_invested',
 
     -- Evidence & honors (read + validate/reject)
     'evidence_folders:read',
@@ -1269,7 +1256,7 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- Global role that oversees zone-coordinators and coordinators across
 -- the entire local field. Has ALL zone-coordinator permissions.
 -- The difference is organizational scope (handled at application level).
--- Total: 22 (same as zone-coordinator)
+-- Total: 20 (same as zone-coordinator)
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1301,8 +1288,6 @@ WHERE r.role_name = 'general-coordinator'
 
     -- Investiture (read + validate + mark invested)
     'investiture:read',
-    'investiture:validate',
-    'investiture:mark_invested',
 
     -- Evidence & honors (read + validate/reject)
     'evidence_folders:read',
@@ -1339,9 +1324,8 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- ASSISTANT-LF role (GLOBAL)
 -- ============================
 -- Asistente de campo local. Can see EVERYTHING a director sees (58 permissions)
--- PLUS additional field-level permissions: investiture:mark_invested and
--- geographic/organizational read permissions.
--- Total: 58 (director) + 6 (additional) = 64
+-- PLUS additional field-level geographic/organizational read permissions.
+-- Total: 58 (director) + 5 (additional) = 63
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1418,8 +1402,6 @@ WHERE r.role_name = 'assistant-lf'
 
     -- Investiture
     'investiture:read',
-    'investiture:submit',
-    'investiture:validate',
 
     -- Counselor-level
     'users:read_detail',
@@ -1471,9 +1453,7 @@ WHERE r.role_name = 'assistant-lf'
     'user_certifications:read',
     'user_certifications:manage',
 
-    -- ===== Additional ASSISTANT-LF permissions (6) =====
-    -- Mark members as invested (field-level authority)
-    'investiture:mark_invested',
+    -- ===== Additional ASSISTANT-LF permissions (5) =====
     -- Geographic/organizational data (field-level visibility)
     'countries:read',
     'unions:read',
@@ -2783,23 +2763,6 @@ WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
     'camporee-supplies:review-pay',
     'camporee-supplies:deliver'
   )
-ON CONFLICT (role_id, permission_id) DO UPDATE SET
-  active = true,
-  modified_at = now();
-
-INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
-SELECT gen_random_uuid(), r.role_id, p.permission_id, true
-FROM roles r
-CROSS JOIN permissions p
-WHERE r.role_name IN (
-    'coordinator',
-    'zone-coordinator',
-    'general-coordinator'
-  )
-  AND r.role_category = 'GLOBAL'
-  AND r.active = true
-  AND p.active = true
-  AND p.permission_name = 'investiture:mark_invested'
 ON CONFLICT (role_id, permission_id) DO UPDATE SET
   active = true,
   modified_at = now();

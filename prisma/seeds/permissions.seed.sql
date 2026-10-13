@@ -399,23 +399,7 @@ ON CONFLICT (permission_name) DO UPDATE SET
 -- Investiture
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
-  ('investiture:submit', 'Submit enrollment for investiture validation', true),
-  ('investiture:validate', 'Validate investiture submissions', true),
-  ('investiture:mark_invested', 'Mark member as invested', true),
   ('investiture:read', 'Read investiture history and pending', true)
-ON CONFLICT (permission_name) DO UPDATE SET
-  description = EXCLUDED.description,
-  active = EXCLUDED.active,
-  modified_at = now();
-
--- ============================
--- Investiture Configuration
--- ============================
-INSERT INTO permissions (permission_name, description, active) VALUES
-  ('investiture_config:read', 'Read investiture configuration', true),
-  ('investiture_config:create', 'Create investiture configuration', true),
-  ('investiture_config:update', 'Update investiture configuration', true),
-  ('investiture_config:delete', 'Delete investiture configuration', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
