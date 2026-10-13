@@ -580,6 +580,40 @@ describe('CertificateBulkImportApplicationService', () => {
     );
   });
 
+  it('keeps a PDF in certificate but out of the image thumbnails', async () => {
+    const pdf = {
+      file_url: `certificate-imports/batches/b1/sealed/f1.pdf`,
+      file_name: 'cert.pdf',
+      file_type: 'application/pdf',
+      uploaded_by_id: 'member-1',
+    };
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'SUBMITTED',
+      item_type: 'HONOR',
+      honor_id: 10,
+      completed_at: new Date('2026-04-12T00:00:00.000Z'),
+      batch: { batch_id: 'batch-1', user_id: 'member-1', files: [pdf] },
+    });
+    tx.users_honors.findFirst.mockResolvedValue(null);
+    tx.users_honors.create.mockResolvedValue({ user_honor_id: 50 });
+    tx.certificate_bulk_import_items.update.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'APPROVED',
+    });
+
+    await service.approveItem('reviewer-1', 'batch-1', 'item-1', {});
+
+    expect(tx.users_honors.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          certificate: pdf.file_url,
+          images: [],
+        }),
+      }),
+    );
+  });
+
   it('does not convert an ordinary in-progress enrollment into a historical fact', async () => {
     tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
       item_id: 'item-2',

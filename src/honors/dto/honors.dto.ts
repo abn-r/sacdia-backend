@@ -205,7 +205,7 @@ export class HonorFiltersDto {
 
   @ApiPropertyOptional({
     description:
-      'Texto a buscar en el nombre (y en su traducción), sin distinguir mayúsculas. 2 a 60 caracteres tras recortar espacios. Solo aplica a GET /honors.',
+      'Texto a buscar en el nombre (y en su traducción), sin distinguir mayúsculas ni tildes, por palabras de 3 letras o más (todas; si no hay, cualquiera). 2 a 60 caracteres tras recortar espacios. Solo aplica a GET /honors.',
     minLength: 2,
     maxLength: 60,
   })

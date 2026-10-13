@@ -706,6 +706,32 @@ describe('CertificateBulkImportsService', () => {
     );
   });
 
+  it('asks for active items only when it returns the submitted batch', async () => {
+    tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      user_id: 'user-1',
+      status: 'DRAFT',
+    });
+    tx.certificate_bulk_import_items.findMany.mockResolvedValue([]);
+    tx.certificate_bulk_import_items.updateMany.mockResolvedValue({ count: 2 });
+    tx.certificate_bulk_import_batches.update.mockResolvedValue({
+      batch_id: 'batch-1',
+      status: 'SUBMITTED',
+      items: [],
+    });
+
+    await service.submit('user-1', 'batch-1');
+
+    // Los ítems quitados quedan con active=false: la respuesta no los incluye.
+    expect(tx.certificate_bulk_import_batches.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          items: expect.objectContaining({ where: { active: true } }),
+        }),
+      }),
+    );
+  });
+
   it('resubmits a rejected item after correction', async () => {
     tx.certificate_bulk_import_batches.findFirst.mockResolvedValue({
       batch_id: 'batch-1',

@@ -5,6 +5,7 @@ import { AchievementsService } from '../achievements/achievements.service';
 import { TranslationService } from '../common/services/translation.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { HonorCompletionModeDto } from './dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -17,6 +18,7 @@ describe('HonorsService', () => {
   let service: HonorsService;
 
   const mockPrismaService: any = {
+    $queryRaw: jest.fn(),
     honors: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -180,58 +182,177 @@ describe('HonorsService', () => {
       );
     });
 
-    it('searches the name and its translations, case-insensitively', async () => {
-      mockPrismaService.honors.findMany.mockResolvedValue([]);
-      mockPrismaService.honors.count.mockResolvedValue(0);
-
-      await service.findAll({ search: '  first   aid ' });
-
-      const expected = {
-        OR: [
-          { name: { contains: 'first aid', mode: 'insensitive' } },
-          {
-            translations: {
-              some: { name: { contains: 'first aid', mode: 'insensitive' } },
-            },
-          },
-        ],
+    describe('search (accent-insensitive, by tokens)', () => {
+      const honorRow = (id: number, name: string) => ({
+        honor_id: id,
+        name,
+        honors_category_id: 1,
+        translations: [],
+      });
+      const queryText = () =>
+        mockPrismaService.$queryRaw.mock.calls[0][0] as {
+          sql: string;
+          values: unknown[];
+        };
+      // El sql de Prisma.Sql con `?` por parámetro.
+      const rawArgs = () => {
+        const query = queryText();
+        return { sql: query.sql, values: query.values };
       };
-      expect(mockPrismaService.honors.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ active: true, ...expected }),
-        }),
-      );
-      expect(mockPrismaService.honors.count).toHaveBeenCalledWith({
-        where: expect.objectContaining(expected),
+
+      beforeEach(() => {
+        mockPrismaService.$queryRaw.mockReset();
+        mockPrismaService.honors.findMany.mockReset();
+        mockPrismaService.honors.count.mockReset();
       });
-    });
 
-    it('escapes % and _ in the search so they are not wildcards', async () => {
-      mockPrismaService.honors.findMany.mockResolvedValue([]);
-      mockPrismaService.honors.count.mockResolvedValue(0);
+      it('finds "Natación" with "natacion" (single token, all-tokens match)', async () => {
+        mockPrismaService.$queryRaw.mockResolvedValue([
+          { honor_id: 7, score: 1 },
+        ]);
+        mockPrismaService.honors.findMany
+          .mockResolvedValueOnce([{ honor_id: 7, name: 'Natación' }])
+          .mockResolvedValueOnce([honorRow(7, 'Natación')]);
 
-      await service.findAll({ search: '50%_off' });
+        const result = await service.findAll({ search: ' natacion ' });
 
-      const { where } = mockPrismaService.honors.findMany.mock.calls[0][0];
-      expect(where.OR[0]).toEqual({
-        name: { contains: '50\\%\\_off', mode: 'insensitive' },
+        expect(result.data.map((h: any) => h.name)).toEqual(['Natación']);
+        expect(result.meta.total).toBe(1);
+        const { sql, values } = rawArgs();
+        expect(sql).toContain('translate(h.name');
+        expect(sql).toContain('honors_translations');
+        expect(sql).not.toContain('natacion');
+        expect(values).toContain('%nataci%');
       });
-    });
 
-    it('combines search with category and keeps non-search queries unchanged', async () => {
-      mockPrismaService.honors.findMany.mockResolvedValue([]);
-      mockPrismaService.honors.count.mockResolvedValue(0);
+      it('falls back to ANY token when none matches all, ordered by matches', async () => {
+        // "Natacion principiante": solo "Natación" coincide con un token.
+        mockPrismaService.$queryRaw.mockResolvedValue([
+          { honor_id: 7, score: 1 },
+        ]);
+        mockPrismaService.honors.findMany
+          .mockResolvedValueOnce([{ honor_id: 7, name: 'Natación' }])
+          .mockResolvedValueOnce([honorRow(7, 'Natación')]);
 
-      await service.findAll({ categoryId: 3, search: 'nudos' });
-      await service.findAll({ categoryId: 3 });
+        const result = await service.findAll({
+          search: 'Natacion principiante',
+        });
 
-      const [withSearch, withoutSearch] =
-        mockPrismaService.honors.findMany.mock.calls.map(
-          ([args]) => args.where,
+        expect(result.data.map((h: any) => h.name)).toEqual(['Natación']);
+        const { values } = rawArgs();
+        expect(values).toEqual(
+          expect.arrayContaining(['%nataci%', '%principian%']),
         );
-      expect(withSearch).toMatchObject({ honors_category_id: 3 });
-      expect(withSearch.OR).toHaveLength(2);
-      expect(withoutSearch).not.toHaveProperty('OR');
+      });
+
+      it('finds "Amarres" with "Nudos y amarras" via the fallback and ignores "y"', async () => {
+        mockPrismaService.$queryRaw.mockResolvedValue([
+          { honor_id: 3, score: 1 },
+        ]);
+        mockPrismaService.honors.findMany
+          .mockResolvedValueOnce([{ honor_id: 3, name: 'Amarres' }])
+          .mockResolvedValueOnce([honorRow(3, 'Amarres')]);
+
+        const result = await service.findAll({ search: 'Nudos y amarras' });
+
+        expect(result.data.map((h: any) => h.name)).toEqual(['Amarres']);
+        const { values } = rawArgs();
+        expect(values).toEqual(expect.arrayContaining(['%nudo%', '%amarr%']));
+        expect(values).not.toContain('%y%');
+      });
+
+      it('prefers rows that match all tokens over partial ones', async () => {
+        mockPrismaService.$queryRaw.mockResolvedValue([
+          { honor_id: 1, score: 1 },
+          { honor_id: 2, score: 2 },
+        ]);
+        mockPrismaService.honors.findMany
+          .mockResolvedValueOnce([{ honor_id: 2, name: 'B' }])
+          .mockResolvedValueOnce([honorRow(2, 'B')]);
+
+        await service.findAll({ search: 'primeros auxilios' });
+
+        // Solo el que coincide con los dos tokens pasa al segundo paso.
+        expect(
+          mockPrismaService.honors.findMany.mock.calls[0][0].where.honor_id,
+        ).toEqual({ in: [2] });
+      });
+
+      it('orders by matching tokens, then by name, and paginates the ranked ids', async () => {
+        mockPrismaService.$queryRaw.mockResolvedValue([
+          { honor_id: 1, score: 1 },
+          { honor_id: 2, score: 1 },
+          { honor_id: 3, score: 1 },
+        ]);
+        mockPrismaService.honors.findMany
+          .mockResolvedValueOnce([
+            { honor_id: 1, name: 'Zeta' },
+            { honor_id: 2, name: 'Álamo' },
+            { honor_id: 3, name: 'Beta' },
+          ])
+          .mockResolvedValueOnce([honorRow(1, 'Zeta')]);
+
+        const pagination = new PaginationDto();
+        pagination.page = 2;
+        pagination.limit = 2;
+        const result = await service.findAll(
+          { search: 'alamo beta' },
+          pagination,
+        );
+
+        expect(
+          mockPrismaService.honors.findMany.mock.calls[1][0].where,
+        ).toEqual({ honor_id: { in: [1] } });
+        expect(result.data.map((h: any) => h.name)).toEqual(['Zeta']);
+        expect(result.meta.total).toBe(3);
+      });
+
+      it('escapes % and _ in the search so they are not wildcards', async () => {
+        mockPrismaService.$queryRaw.mockResolvedValue([]);
+
+        const result = await service.findAll({ search: '50%_off' });
+
+        expect(rawArgs().values).toContain('%50\\%\\_o%');
+        expect(rawArgs().sql).not.toContain('50');
+        expect(result.data).toEqual([]);
+        expect(mockPrismaService.honors.findMany).not.toHaveBeenCalled();
+      });
+
+      it('combines search with category and the other catalog filters', async () => {
+        mockPrismaService.$queryRaw.mockResolvedValue([
+          { honor_id: 7, score: 1 },
+        ]);
+        mockPrismaService.honors.findMany
+          .mockResolvedValueOnce([{ honor_id: 7, name: 'Nudos' }])
+          .mockResolvedValueOnce([honorRow(7, 'Nudos')]);
+
+        await service.findAll({
+          categoryId: 3,
+          skillLevel: 2,
+          search: 'nudos',
+        });
+
+        expect(
+          mockPrismaService.honors.findMany.mock.calls[0][0].where,
+        ).toEqual({
+          active: true,
+          honors_category_id: 3,
+          skill_level: 2,
+          honor_id: { in: [7] },
+        });
+      });
+
+      it('keeps non-search queries on the plain Prisma path', async () => {
+        mockPrismaService.honors.findMany.mockResolvedValue([]);
+        mockPrismaService.honors.count.mockResolvedValue(0);
+
+        await service.findAll({ categoryId: 3 });
+
+        expect(mockPrismaService.$queryRaw).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.honors.findMany.mock.calls[0][0].where,
+        ).toEqual({ active: true, honors_category_id: 3 });
+      });
     });
 
     it('does not apply search to the cached grouped endpoint', async () => {
@@ -2069,6 +2190,97 @@ describe('HonorsService', () => {
       );
       const results = await Promise.all(tasks);
       expect(results).toEqual([0, 1, 2, 3, 4]);
+    });
+  });
+  describe('evidence that came from a certificate import (#10)', () => {
+    const BATCH = '8b0f6f0e-6c2a-4f0e-9f2e-1d6b9a4e7c11';
+    const sealedPdf = `certificate-imports/batches/${BATCH}/sealed/f1-aaaa.pdf`;
+    const sealedPng = `certificate-imports/batches/${BATCH}/sealed/f2-bbbb.png`;
+
+    const signWith = () =>
+      mockFileStorageService.getSignedDownloadUrl.mockImplementation(
+        async (bucket: StorageBucketAlias, value: string) =>
+          `https://signed.example/${bucket}/${value}`,
+      );
+
+    beforeEach(() => {
+      mockPrismaService.honor_instructor_proposals.findMany.mockResolvedValue(
+        [],
+      );
+    });
+
+    afterEach(() => {
+      mockFileStorageService.getSignedDownloadUrl.mockImplementation(
+        async (_bucket: StorageBucketAlias, value: string) => value,
+      );
+    });
+
+    it('signs certificate and images from the certificate import bucket, not the honors one', async () => {
+      signWith();
+      mockPrismaService.users_honors.findMany.mockResolvedValue([
+        {
+          user_honor_id: 22,
+          validation_status: 'APPROVED',
+          certificate: sealedPdf,
+          images: [sealedPng],
+          instructor_user_id: null,
+          instructor_name: null,
+          instructor: null,
+        },
+      ]);
+
+      const [row] = await service.getUserHonors('owner-1');
+
+      expect(row.certificate).toBe(
+        `https://signed.example/CERTIFICATE_IMPORTS/${sealedPdf}`,
+      );
+      expect(row.images).toEqual([
+        `https://signed.example/CERTIFICATE_IMPORTS/${sealedPng}`,
+      ]);
+    });
+
+    it('keeps signing the member uploads with the honors buckets', async () => {
+      signWith();
+      mockPrismaService.users_honors.findMany.mockResolvedValue([
+        {
+          user_honor_id: 23,
+          validation_status: 'PENDING_REVIEW',
+          certificate: 'users-honors-cert/u1/cert.pdf',
+          images: ['users-honors/u1/a.jpg'],
+          instructor_user_id: null,
+          instructor_name: null,
+          instructor: null,
+        },
+      ]);
+
+      const [row] = await service.getUserHonors('owner-1');
+
+      expect(row.certificate).toBe(
+        'https://signed.example/USERS_HONORS_CERT/users-honors-cert/u1/cert.pdf',
+      );
+      expect(row.images).toEqual([
+        'https://signed.example/USERS_HONORS/users-honors/u1/a.jpg',
+      ]);
+    });
+
+    it('does not list an imported PDF as an image thumbnail', async () => {
+      signWith();
+      mockPrismaService.users_honors.findMany.mockResolvedValue([
+        {
+          user_honor_id: 22,
+          validation_status: 'APPROVED',
+          certificate: sealedPdf,
+          images: [sealedPdf],
+          instructor_user_id: null,
+          instructor_name: null,
+          instructor: null,
+        },
+      ]);
+
+      const [row] = await service.getUserHonors('owner-1');
+
+      expect(row.images).toEqual([]);
+      expect(row.certificate).toContain(sealedPdf);
     });
   });
 });

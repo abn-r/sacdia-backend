@@ -223,7 +223,7 @@ export class CertificateBulkImportApplicationService {
             ? {
                 active: true,
                 certificate: primaryFile.file_url,
-                images: item.batch.files.map((file) => file.file_url),
+                images: this.evidenceImages(item),
                 // Fila vieja sin backfill: la fecha coincide, se confirma.
                 ...(existingUserHonor.completed_at
                   ? {}
@@ -239,7 +239,7 @@ export class CertificateBulkImportApplicationService {
                 validated_at: now,
                 rejection_reason: null,
                 certificate: primaryFile.file_url,
-                images: item.batch.files.map((file) => file.file_url),
+                images: this.evidenceImages(item),
                 // `date` (inicio) de una fila existente no se pisa.
                 completed_at: item.completed_at!,
                 ...instructor.write,
@@ -257,7 +257,7 @@ export class CertificateBulkImportApplicationService {
             validated_at: now,
             rejection_reason: null,
             certificate: primaryFile.file_url,
-            images: item.batch.files.map((file) => file.file_url),
+            images: this.evidenceImages(item),
             // Inicio desconocido: `date` (NOT NULL) refleja la finalización.
             date: item.completed_at!,
             completed_at: item.completed_at!,
@@ -809,6 +809,17 @@ export class CertificateBulkImportApplicationService {
     }
 
     return item;
+  }
+
+  /**
+   * `users_honors.images` alimenta las miniaturas de "Evidencias generales": solo
+   * van los archivos de imagen. Un PDF queda en `certificate` y en
+   * `evidence_files`, pero no se puede mostrar como miniatura.
+   */
+  private evidenceImages(item: CertificateImportItemWithBatch): string[] {
+    return item.batch.files
+      .filter((file) => file.file_type.toLowerCase().startsWith('image/'))
+      .map((file) => file.file_url);
   }
 
   private primaryFile(item: CertificateImportItemWithBatch) {
