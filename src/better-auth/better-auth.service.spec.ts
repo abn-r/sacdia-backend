@@ -867,4 +867,67 @@ describe('BetterAuthService', () => {
       );
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // OAuth error logging
+  // ---------------------------------------------------------------------------
+
+  describe('OAuth error logging', () => {
+    function betterAuthApiError() {
+      return Object.assign(new Error('Invalid callbackURL'), {
+        name: 'APIError',
+        status: 'FORBIDDEN',
+        body: { code: 'INVALID_CALLBACKURL' },
+      });
+    }
+
+    it('logs the underlying Better Auth error when the OAuth URL cannot be generated', async () => {
+      const { svc } = buildService();
+      const logError = jest
+        .spyOn((svc as any).logger, 'error')
+        .mockImplementation(() => undefined);
+      mockBaInstance.api.signInSocial.mockRejectedValue(betterAuthApiError());
+
+      await expect(
+        svc.getOAuthUrl('google', 'https://sacdia.app/auth/callback'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
+      });
+      expect(logError).toHaveBeenCalledWith(
+        'OAuth URL generation failed for google — APIError status=FORBIDDEN code=INVALID_CALLBACKURL: Invalid callbackURL',
+      );
+    });
+
+    it('logs when Better Auth returns no OAuth URL', async () => {
+      const { svc } = buildService();
+      const logError = jest
+        .spyOn((svc as any).logger, 'error')
+        .mockImplementation(() => undefined);
+      mockBaInstance.api.signInSocial.mockResolvedValue({});
+
+      await expect(
+        svc.getOAuthUrl('apple', 'https://sacdia.app/auth/callback'),
+      ).rejects.toBeDefined();
+      expect(logError).toHaveBeenCalledWith(
+        'OAuth URL generation for apple returned no url',
+      );
+    });
+
+    it('logs the underlying error when the OAuth callback fails', async () => {
+      const { svc } = buildService();
+      const logError = jest
+        .spyOn((svc as any).logger, 'error')
+        .mockImplementation(() => undefined);
+      mockBaInstance.api.callbackOAuth.mockRejectedValue(
+        new Error('state mismatch'),
+      );
+
+      await expect(
+        svc.handleOAuthCallback('google', 'code', 'state', ''),
+      ).rejects.toBeDefined();
+      expect(logError).toHaveBeenCalledWith(
+        'OAuth callback failed for google — Error: state mismatch',
+      );
+    });
+  });
 });
