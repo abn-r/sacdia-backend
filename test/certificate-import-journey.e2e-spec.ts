@@ -27,6 +27,13 @@ import {
 
 jest.setTimeout(180000);
 
+/**
+ * The historical age gate needs a complete birth date to accredit a class.
+ * Far enough back to satisfy every minimum age at every certificate year
+ * (1990 onwards) used here, whatever today's date is.
+ */
+const TEST_BIRTHDAY = new Date('1950-01-01T00:00:00.000Z');
+
 const SQL = [
   'prisma/migrations/20260921140000_historical_certificate_enrollments/migration.sql',
   'prisma/migrations/20260921153000_ecclesiastical_year_no_overlap/migration.sql',
@@ -75,6 +82,7 @@ describe('certificate import journey', () => {
   it('goes from an empty reading to a historical class through rejection and correction', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-owner@certificate-import.test',
         name: 'Owner',
         active: true,
@@ -83,6 +91,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-reviewer@certificate-import.test',
         name: 'Reviewer',
         active: true,
@@ -197,6 +206,7 @@ describe('certificate import journey', () => {
   it('keeps an institutional certificate out of enrollments until a period exists', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm@certificate-import.test',
         name: 'Guia',
         active: true,
@@ -205,6 +215,7 @@ describe('certificate import journey', () => {
     });
     const superAdmin = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-super@certificate-import.test',
         name: 'Super',
         active: true,
@@ -213,6 +224,7 @@ describe('certificate import journey', () => {
     });
     const campo = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-campo@certificate-import.test',
         name: 'Campo',
         active: true,
@@ -302,6 +314,7 @@ describe('certificate import journey', () => {
   it('keeps one institutional decision when approve and reject race', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-race@certificate-import.test',
         name: 'Carrera',
         active: true,
@@ -310,6 +323,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-race-super@certificate-import.test',
         name: 'Revisor',
         active: true,
@@ -405,6 +419,7 @@ describe('certificate import journey', () => {
   it('substitutes the current Guía Mayor and accredits Amigo plus Explorador without Compañero', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-sub@certificate-import.test',
         name: 'Sustitucion',
         active: true,
@@ -413,6 +428,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-sub-reviewer@certificate-import.test',
         name: 'Revisor GM',
         active: true,
@@ -608,6 +624,7 @@ describe('certificate import journey', () => {
   it('accredits an honor in users_honors and does not open an enrollment', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-honor@certificate-import.test',
         name: 'Honor',
         active: true,
@@ -616,6 +633,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-honor-reviewer@certificate-import.test',
         name: 'Revisor honor',
         active: true,
@@ -706,6 +724,7 @@ describe('certificate import journey', () => {
     `);
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-jurisdiction-owner@certificate-import.test',
         name: 'Dueno',
         active: true,
@@ -714,6 +733,7 @@ describe('certificate import journey', () => {
     });
     const superAdmin = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-jurisdiction-super@certificate-import.test',
         name: 'Super',
         active: true,
@@ -725,6 +745,7 @@ describe('certificate import journey', () => {
         async (roleName) => {
           const user = await prisma.users.create({
             data: {
+              birthday: TEST_BIRTHDAY,
               email: `journey-jurisdiction-${roleName}@certificate-import.test`,
               name: roleName,
               active: true,
@@ -880,6 +901,7 @@ describe('certificate import journey', () => {
   it('keeps one Campo Local decision when approve and reject race', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-campo-race@certificate-import.test',
         name: 'Carrera campo',
         active: true,
@@ -888,6 +910,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-campo-race-reviewer@certificate-import.test',
         name: 'Revisor campo',
         active: true,
@@ -989,6 +1012,7 @@ describe('certificate import journey', () => {
   it('keeps a substituted Guía Mayor invested, without a new class or another row', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-stay@certificate-import.test',
         name: 'Permanece',
         active: true,
@@ -997,6 +1021,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-stay-reviewer@certificate-import.test',
         name: 'Revisor permanece',
         active: true,
@@ -1170,6 +1195,7 @@ describe('certificate import journey', () => {
   it('accredits a class and an honor from the same sealed document', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-mixed@certificate-import.test',
         name: 'Mixto',
         active: true,
@@ -1178,6 +1204,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-mixed-reviewer@certificate-import.test',
         name: 'Revisor mixto',
         active: true,
@@ -1341,6 +1368,7 @@ describe('certificate import journey', () => {
   it('rejects one row of a mixed document and leaves the other pending', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-separate@certificate-import.test',
         name: 'Separado',
         active: true,
@@ -1349,6 +1377,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-separate-reviewer@certificate-import.test',
         name: 'Revisor separado',
         active: true,
@@ -1483,6 +1512,7 @@ describe('certificate import journey', () => {
   it('keeps the sealed file when storage cannot be read', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-storage@certificate-import.test',
         name: 'Archivo',
         active: true,
@@ -1559,6 +1589,7 @@ describe('certificate import journey', () => {
   it('retries a sealed confirm and refuses edits after the document is sent', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-retry@certificate-import.test',
         name: 'Reintento',
         active: true,
@@ -1675,6 +1706,7 @@ describe('certificate import journey', () => {
   it('retries an institutional submit without a second request', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-institutional-retry@certificate-import.test',
         name: 'Institucional',
         active: true,
@@ -1773,6 +1805,7 @@ describe('certificate import journey', () => {
     const parser = new CertificateOcrParser();
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-parser@certificate-import.test',
         name: 'Lector',
         active: true,
@@ -1877,6 +1910,7 @@ describe('certificate import journey', () => {
     const parser = new CertificateOcrParser();
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-reread@certificate-import.test',
         name: 'Relectura',
         active: true,
@@ -2012,6 +2046,7 @@ describe('certificate import journey', () => {
     );
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-prereq@certificate-import.test',
         name: 'Prerequisito',
         active: true,
@@ -2115,6 +2150,7 @@ describe('certificate import journey', () => {
 
     const guideOwner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-cross@certificate-import.test',
         name: 'Cruce',
         active: true,
@@ -2185,6 +2221,7 @@ describe('certificate import journey', () => {
   it('rolls back Guía Mayor substitution when the history write fails', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-rollback@certificate-import.test',
         name: 'Rollback',
         active: true,
@@ -2193,6 +2230,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-rollback-reviewer@certificate-import.test',
         name: 'Revisor rollback',
         active: true,
@@ -2385,6 +2423,7 @@ describe('certificate import journey', () => {
     );
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-slot-owner@certificate-import.test',
         name: 'Cupo',
         active: true,
@@ -2393,6 +2432,7 @@ describe('certificate import journey', () => {
     });
     const bystander = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-slot-bystander@certificate-import.test',
         name: 'Ajeno',
         active: true,
@@ -2401,6 +2441,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-slot-reviewer@certificate-import.test',
         name: 'Revisor cupo',
         active: true,
@@ -2579,6 +2620,7 @@ describe('certificate import journey', () => {
     const writer = new ClassEnrollmentWriter(prisma as never);
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-race-owner@certificate-import.test',
         name: 'Carrera GM',
         active: true,
@@ -2587,6 +2629,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-gm-race-reviewer@certificate-import.test',
         name: 'Revisor carrera',
         active: true,
@@ -2716,6 +2759,7 @@ describe('certificate import journey', () => {
   it('invests the current enrollment when the reviewer confirms that row', async () => {
     const owner = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-reconcile@certificate-import.test',
         name: 'Conciliar',
         active: true,
@@ -2724,6 +2768,7 @@ describe('certificate import journey', () => {
     });
     const reviewer = await prisma.users.create({
       data: {
+        birthday: TEST_BIRTHDAY,
         email: 'journey-reconcile-reviewer@certificate-import.test',
         name: 'Revisor conciliar',
         active: true,
