@@ -1,13 +1,5 @@
 import * as React from 'react';
-import {
-  Body,
-  Container,
-  Head,
-  Html,
-  Link,
-  Section,
-  Text,
-} from '@react-email/components';
+import { Body, Container, Head, Html, Link, Section, Text } from 'react-email';
 
 export interface InvestitureNoticeEmailProps {
   paragraphs: string[];
