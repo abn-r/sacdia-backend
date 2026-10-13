@@ -56,6 +56,40 @@ describe('buildThrottlerOptions', () => {
 
     expect(storage.assertReady).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    [undefined, true],
+    ['true', true],
+    [true, true],
+    ['false', false],
+    [false, false],
+  ])(
+    'passes failOpen for THROTTLER_FAIL_OPEN=%p as %p',
+    async (raw, expected) => {
+      const storage = {
+        assertReady: jest.fn().mockResolvedValue(undefined),
+      } as unknown as RedisThrottlerStorage;
+      const factory = jest.fn(() => storage);
+
+      await buildThrottlerOptions(
+        {
+          get: jest.fn(
+            (key: string) =>
+              ({
+                NODE_ENV: 'production',
+                REDIS_URL: 'redis://localhost:6379',
+                THROTTLER_FAIL_OPEN: raw,
+              })[key],
+          ),
+        },
+        factory,
+      );
+
+      expect(factory).toHaveBeenCalledWith('redis://localhost:6379', {
+        failOpen: expected,
+      });
+    },
+  );
 });
 
 describe('getThrottlerTiers', () => {

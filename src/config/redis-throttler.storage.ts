@@ -10,6 +10,7 @@ type ThrottlerStorageRecord = {
 
 const REDIS_PROTOCOL_VERSION = 2 as const;
 const REDIS_KEEP_ALIVE_INITIAL_DELAY_MS = 5_000;
+const DEFAULT_FAIL_OPEN_COOLDOWN_MS = 15_000;
 type NoRedisExtensions = Record<never, never>;
 type Redis2Client = RedisClientType<
   NoRedisExtensions,
@@ -38,18 +39,45 @@ export function createRedisThrottlerClient(redisUrl: string): Redis2Client {
 
 type RedisThrottlerClient = ReturnType<typeof createRedisThrottlerClient>;
 
+export interface RedisThrottlerStorageOptions {
+  /**
+   * When true (default) a Redis error (connection refused, timeout, command
+   * quota exhausted, ...) lets the request through unthrottled instead of
+   * failing it. Rate limiting is therefore OFF while Redis is unavailable.
+   */
+  failOpen?: boolean;
+  /** After a Redis failure, skip Redis entirely for this long. */
+  failOpenCooldownMs?: number;
+  now?: () => number;
+}
+
 /**
  * Redis-backed storage for @nestjs/throttler v6.
  *
  * The default throttler storage is process-local memory, which is not safe for
  * horizontally scaled production APIs. This implementation keeps counters and
  * block markers in Redis so all instances share the same rate-limit state.
+ *
+ * Failure policy: only errors raised by the Redis client (connect / EVAL) are
+ * swallowed, and only when `failOpen` is on. After one failure a short
+ * cooldown short-circuits further calls so a dead Redis neither adds latency
+ * to every request nor burns more of a rate-limited quota. Over-limit
+ * decisions (isBlocked) are never affected.
  */
 export class RedisThrottlerStorage implements OnApplicationShutdown {
   private readonly logger = new Logger(RedisThrottlerStorage.name);
   private readonly client: RedisThrottlerClient;
+  private readonly failOpen: boolean;
+  private readonly failOpenCooldownMs: number;
+  private readonly now: () => number;
+  private failOpenUntil = 0;
+  private degraded = false;
 
-  constructor(redisUrl: string) {
+  constructor(redisUrl: string, options: RedisThrottlerStorageOptions = {}) {
+    this.failOpen = options.failOpen ?? true;
+    this.failOpenCooldownMs =
+      options.failOpenCooldownMs ?? DEFAULT_FAIL_OPEN_COOLDOWN_MS;
+    this.now = options.now ?? Date.now;
     this.client = createRedisThrottlerClient(redisUrl);
     this.client.on('error', (error: Error) => {
       this.logger.error(`Redis throttler error: ${error.message}`);
@@ -68,18 +96,35 @@ export class RedisThrottlerStorage implements OnApplicationShutdown {
     blockDuration: number,
     throttlerName: string,
   ): Promise<ThrottlerStorageRecord> {
-    await this.ensureConnected();
+    if (this.failOpen && this.now() < this.failOpenUntil) {
+      return this.permissiveRecord(ttl);
+    }
 
     const hitsKey = this.buildHitsKey(key, throttlerName);
     const blockKey = this.buildBlockKey(key, throttlerName);
-    const result = (await this.client.eval(INCREMENT_SCRIPT, {
-      keys: [hitsKey, blockKey],
-      arguments: [
-        String(Math.max(ttl, 1)),
-        String(limit),
-        String(Math.max(blockDuration, 1)),
-      ],
-    })) as [number, number, number, number];
+    let result: [number, number, number, number];
+    try {
+      await this.ensureConnected();
+      result = (await this.client.eval(INCREMENT_SCRIPT, {
+        keys: [hitsKey, blockKey],
+        arguments: [
+          String(Math.max(ttl, 1)),
+          String(limit),
+          String(Math.max(blockDuration, 1)),
+        ],
+      })) as [number, number, number, number];
+    } catch (error) {
+      if (!this.failOpen) throw error;
+      this.enterFailOpen(error);
+      return this.permissiveRecord(ttl);
+    }
+
+    if (this.degraded) {
+      this.degraded = false;
+      this.logger.log(
+        'Redis throttler recovered; rate limiting is active again',
+      );
+    }
 
     const [totalHits, timeToExpireMs, isBlocked, timeToBlockExpireMs] = result;
 
@@ -95,6 +140,26 @@ export class RedisThrottlerStorage implements OnApplicationShutdown {
     if (this.client.isOpen) {
       await this.client.quit();
     }
+  }
+
+  private enterFailOpen(error: unknown): void {
+    this.failOpenUntil = this.now() + this.failOpenCooldownMs;
+    this.degraded = true;
+    const message = error instanceof Error ? error.message : String(error);
+    // Logged once per cooldown window at most: requests during the cooldown
+    // never reach Redis and never reach this method.
+    this.logger.error(
+      `Redis throttler unavailable (${message}); failing open - rate limiting is DISABLED until Redis recovers (retry in ${this.failOpenCooldownMs} ms)`,
+    );
+  }
+
+  private permissiveRecord(ttl: number): ThrottlerStorageRecord {
+    return {
+      totalHits: 0,
+      timeToExpire: this.millisecondsToSeconds(ttl),
+      isBlocked: false,
+      timeToBlockExpire: 0,
+    };
   }
 
   private buildHitsKey(key: string, throttlerName: string): string {

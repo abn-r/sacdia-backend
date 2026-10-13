@@ -13,6 +13,7 @@ import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { GlobalRoles, Public } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
+import { SkipAllThrottlerTiers } from '../config/throttler.helpers';
 
 @ApiTags('health')
 @Controller('health')
@@ -23,12 +24,17 @@ export class HealthController {
     private readonly catalogCache: CatalogCacheService,
   ) {}
 
+  // The platform health check polls this route continuously. It must not touch
+  // Redis (throttler counters cost 3 commands per hit and a Redis failure
+  // would turn the probe into a 500 and block deploys), so it is exempt from
+  // every throttler tier and performs no I/O.
   @Public()
+  @SkipAllThrottlerTiers()
   @Get()
   @ApiOperation({
     summary: 'Public ping — returns ok if API is reachable',
     description:
-      'Lightweight liveness probe. Returns HTTP 200 with a timestamp whenever the Node process is running. No authentication required.',
+      'Lightweight liveness probe. Returns HTTP 200 with a timestamp whenever the Node process is running. No authentication, no rate limiting and no Redis/database access.',
   })
   @ApiResponse({
     status: 200,

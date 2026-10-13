@@ -11,7 +11,7 @@ costs in behaviour.
 | BullMQ worker, idle | per `drainDelay`: 1 `BZPOPMIN` + 1 `moveToActive` script; per `stalledInterval`: 1 stalled-check script | 6 workers run in this process (see below) |
 | BullMQ worker, active job | 1 lock-renewal script per `lockDuration / 2` per running job | only while a job runs |
 | BullMQ `Queue` (producers) | 0 idle; a few commands per `add` | no `QueueEvents`, no repeatable jobs / schedulers in this codebase |
-| Throttler (`RedisThrottlerStorage`) | 3 `EVAL` per request (one per tier: short/medium/long) | |
+| Throttler (`RedisThrottlerStorage`) | 3 `EVAL` per request (one per tier: short/medium/long) | `GET /health` is exempt (0 commands) |
 | Auth path (cache-manager / keyv) | ~2 GET for token blacklist + 1 GET (+ SET on miss) for the authorization context per authenticated request | |
 | Cron locks (`DistributedLockService`) | get + set + del per run (~3-5 commands) | `*/15` crons: activities reminder, investiture reminder; hourly membership expiry |
 
@@ -55,6 +55,7 @@ All optional, validated in `src/config/env.validation.ts`, read by
 | `BULLMQ_WORKER_DRAIN_DELAY_SECONDS` | `30` (1-300) | Seconds an idle worker blocks waiting for a job. |
 | `BULLMQ_WORKER_STALLED_INTERVAL_MS` | `300000` (30000-3600000) | Stalled-job check interval. Always clamped to at least the queue's `lockDuration`. |
 | `BULLMQ_WORKERS_ENABLED` | `true` | `false` creates no worker in this process. |
+| `THROTTLER_FAIL_OPEN` | `true` | `true`: a Redis error in the throttler lets the request through unthrottled. `false`: the Redis error surfaces as a 500 (previous behaviour). |
 | `BULLMQ_DISABLED_QUEUES` | empty | Comma-separated queues whose worker is not created (`notifications,achievements,emails,background-jobs,master-honors,certificate-import-ocr`). Unknown names fail validation. |
 
 Fixed (not env): OCR `lockDuration` 60 s (was 30 s); email
@@ -95,3 +96,16 @@ that worker enabled consumes them. Nothing is lost, nothing is processed.
 Do not disable a worker in the only running instance unless the feature is
 intentionally off. Typical use: run workers on one instance and set
 `BULLMQ_WORKERS_ENABLED=false` on web-only instances or local dev.
+
+## Redis outage behaviour (rate limiting)
+
+- `GET /api/v1/health` never touches Redis (throttler skipped) so the Render
+  health check stays green when Redis is down or over quota.
+- The Redis throttler fails open: if Redis errors, requests pass unthrottled
+  (one error log per outage, then a recovery log), and Redis is retried after
+  a 15 s cooldown. Set `THROTTLER_FAIL_OPEN=false` to restore fail-closed.
+  While Redis is down there is no rate limiting: a deliberate
+  availability-over-protection trade-off.
+- Boot is unchanged: in production the API still refuses to start if Redis is
+  unreachable at boot (cache and throttler readiness probes), so a restart
+  during an outage cannot come up.
