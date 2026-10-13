@@ -7,27 +7,24 @@
 -- rechaza. Solo al aprobar se escribe users_honors.instructor_*; hasta entonces
 -- users_honors no se toca. Aditiva y sin riesgo sobre datos existentes: no altera
 -- ninguna tabla vieja. FKs y CHECKs con NOT VALID + VALIDATE CONSTRAINT (la tabla
--- nace vacia, la validacion es trivial) e indices CREATE INDEX CONCURRENTLY.
+-- nace vacia, la validacion es trivial) e indices normales (ver sección 6).
 --
 -- Requiere M1 (20261010120000_certificate_import_honor_instructor) aplicada:
 -- al aprobar, el backend escribe users_honors.instructor_user_id/instructor_name.
 --
--- CÓMO APLICARLA (manual, Neon dev -> staging -> prod, ANTES de desplegar el
--- backend que usa la tabla; la shadow DB está rota, no uses migrate dev/deploy):
---
---   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20261013100000_honor_instructor_proposals/migration.sql
---
--- IMPORTANTE: NO uses `psql -1` / `--single-transaction` ni envuelvas el archivo
--- en BEGIN/COMMIT. CREATE INDEX CONCURRENTLY no puede correr dentro de una
--- transacción. Con `-f` cada sentencia corre en su propia transacción implícita.
+-- Corre con `prisma migrate deploy` (Render preDeploy), que envía el archivo
+-- entero en una sola transacción. Por eso los índices NO usan CONCURRENTLY: no
+-- puede correr dentro de una transacción. La tabla se crea vacía en esta misma
+-- migración, así que un CREATE INDEX normal es instantáneo y no bloquea a nadie.
 -- El archivo es re-ejecutable: el tipo y la tabla usan IF NOT EXISTS / manejo de
 -- duplicate_object, las restricciones se recrean con DROP CONSTRAINT IF EXISTS y
--- los índices con IF NOT EXISTS. Si un CREATE INDEX CONCURRENTLY falla a medias
--- deja un índice INVALID: `DROP INDEX CONCURRENTLY <nombre>;` y vuelve a correr
--- el archivo.
+-- los índices con IF NOT EXISTS.
 --
--- Después de aplicar, registrar en _prisma_migrations (flujo manual del repo):
---   corepack pnpm exec prisma migrate resolve --applied 20261013100000_honor_instructor_proposals
+-- Historia: la primera versión usaba CREATE INDEX CONCURRENTLY y se aplicó a mano
+-- con psql sentencia por sentencia. Falló con migrate deploy en staging y
+-- producción (P3018 / 25001) y se recuperó a mano el 2026-10-12. El esquema
+-- resultante es idéntico; el checksum en _prisma_migrations se actualizó en las
+-- tres ramas de Neon al cambiar este archivo.
 --
 -- Rollback: solo hacia adelante. Antes de que haya propuestas reales:
 --   DROP TABLE honor_instructor_proposals; DROP TYPE honor_instructor_proposal_status_enum;
@@ -121,19 +118,19 @@ ALTER TABLE honor_instructor_proposals VALIDATE CONSTRAINT honor_instructor_prop
 ALTER TABLE honor_instructor_proposals VALIDATE CONSTRAINT honor_instructor_proposals_reason_ck;
 
 -- ============================================================
--- 6. Índices (CONCURRENTLY: fuera de transacción)
+-- 6. Índices (tabla recién creada y vacía: sin CONCURRENTLY)
 -- ============================================================
 -- Una sola propuesta pendiente por especialidad. Reemplazar = retirar la anterior
 -- en la misma transacción; dos solicitudes simultáneas no pueden dejar dos.
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_honor_instructor_proposals_pending
+CREATE UNIQUE INDEX IF NOT EXISTS uq_honor_instructor_proposals_pending
   ON honor_instructor_proposals (user_honor_id)
   WHERE status = 'PENDING';
 
 -- Cola del Campo Local (más antigua primero).
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_honor_instructor_proposals_queue
+CREATE INDEX IF NOT EXISTS idx_honor_instructor_proposals_queue
   ON honor_instructor_proposals (created_at)
   WHERE status = 'PENDING';
 
 -- Última propuesta por especialidad (bloque instructor_proposal de getUserHonors).
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_honor_instructor_proposals_honor
+CREATE INDEX IF NOT EXISTS idx_honor_instructor_proposals_honor
   ON honor_instructor_proposals (user_honor_id, created_at DESC);
