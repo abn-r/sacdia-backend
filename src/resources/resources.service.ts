@@ -27,6 +27,7 @@ import {
 } from './pipes/resource-file-validation.pipe';
 import type { CreateResourceDto } from './dto/create-resource.dto';
 import type { UpdateResourceDto } from './dto/update-resource.dto';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import type { ResourceQueryDto } from './dto/resource-query.dto';
 import { GenerateUploadUrlDto } from './dto/generate-upload-url.dto';
 import type { CreateResourceFromUploadedDto } from './dto/create-resource-from-uploaded.dto';
@@ -409,7 +410,10 @@ export class ResourcesService {
       ...(query.scope_level && { scope_level: query.scope_level }),
       ...(query.scope_id != null && { scope_id: query.scope_id }),
       ...(query.search && {
-        title: { contains: query.search, mode: 'insensitive' },
+        title: {
+          contains: escapeLikeWildcards(query.search),
+          mode: 'insensitive',
+        },
       }),
     };
 
@@ -491,7 +495,10 @@ export class ResourcesService {
         resource_category_id: query.resource_category_id,
       }),
       ...(query.search && {
-        title: { contains: query.search, mode: 'insensitive' },
+        title: {
+          contains: escapeLikeWildcards(query.search),
+          mode: 'insensitive',
+        },
       }),
     };
 

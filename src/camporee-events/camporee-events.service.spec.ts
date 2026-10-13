@@ -227,6 +227,23 @@ describe('CamporeeEventsService', () => {
     });
   });
 
+  describe('listEvents q search', () => {
+    it('escapes LIKE wildcards in q for title and description', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+      prisma.camporee_events.findMany.mockResolvedValue([]);
+      prisma.camporee_events.count.mockResolvedValue(0);
+
+      await service.listEvents(1, 'local', { q: '50%_off' });
+
+      const { where } = prisma.camporee_events.findMany.mock.calls[0][0];
+      const escaped = '50\\%\\_off';
+      expect(where.OR).toEqual([
+        { title: { contains: escaped, mode: 'insensitive' } },
+        { description: { contains: escaped, mode: 'insensitive' } },
+      ]);
+    });
+  });
+
   // ── getEvent ─────────────────────────────────────────────────────────────
 
   describe('getEvent', () => {

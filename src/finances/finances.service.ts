@@ -7,6 +7,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   CreateFinanceDto,
   UpdateFinanceDto,
@@ -292,13 +293,16 @@ export class FinancesService {
           OR: [
             {
               description: {
-                contains: dto.search,
+                contains: escapeLikeWildcards(dto.search),
                 mode: 'insensitive' as const,
               },
             },
             {
               finances_categories: {
-                name: { contains: dto.search, mode: 'insensitive' as const },
+                name: {
+                  contains: escapeLikeWildcards(dto.search),
+                  mode: 'insensitive' as const,
+                },
               },
             },
           ],
