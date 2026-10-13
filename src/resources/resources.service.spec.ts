@@ -485,6 +485,21 @@ describe('ResourcesService institutional scope policy', () => {
     );
   });
 
+  it.each(['findAll', 'getVisibleResources'] as const)(
+    '%s escapes LIKE wildcards in the title search',
+    async (method) => {
+      await service[method]({ search: '100%_ok' }, authorization);
+
+      expect(mockPrisma.resources.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            title: { contains: '100\\%\\_ok', mode: 'insensitive' },
+          }),
+        }),
+      );
+    },
+  );
+
   it('includes resources for the active club type in app visibility', async () => {
     await service.getVisibleResources({}, authorization);
 

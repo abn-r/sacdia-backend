@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { escapeLikeWildcards } from '../../common/utils/escape-like';
 import type { ListInventoryQueryDto } from './dto/list-inventory.query.dto';
 import type { CreateProductDto } from './dto/create-product.dto';
 import type { UpdateProductDto } from './dto/update-product.dto';
@@ -54,9 +55,10 @@ export class InventoryService {
     }
 
     if (query.q) {
+      const q = escapeLikeWildcards(query.q);
       where.OR = [
-        { title: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
-        { sku: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
+        { title: { contains: q, mode: Prisma.QueryMode.insensitive } },
+        { sku: { contains: q, mode: Prisma.QueryMode.insensitive } },
       ];
     }
 

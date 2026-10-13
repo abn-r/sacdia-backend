@@ -1,7 +1,7 @@
 import { EMAIL_JOB_PASSWORD_RESET } from './email.queue';
 
 /**
- * React, @react-email/render, @react-email/components and the .tsx templates
+ * React, @react-email/render, react-email and the .tsx templates
  * cost ~40 MiB RSS. They must not be loaded when EmailProcessor is imported
  * (application boot) and must be loaded when the first email is composed.
  */
@@ -25,15 +25,15 @@ describe('EmailProcessor lazy rendering', () => {
         ),
       };
     });
-    jest.doMock('@react-email/components', () => {
+    jest.doMock('react-email', () => {
       componentsLoaded();
-      return jest.requireActual('@react-email/components');
+      return jest.requireActual('react-email');
     });
   });
 
   afterEach(() => {
     jest.dontMock('@react-email/render');
-    jest.dontMock('@react-email/components');
+    jest.dontMock('react-email');
     if (originalEmailEnabled === undefined) delete process.env.EMAIL_ENABLED;
     else process.env.EMAIL_ENABLED = originalEmailEnabled;
   });

@@ -1186,7 +1186,7 @@ describe('PermissionsGuard', () => {
   it('rejects investiture enrollment mutation when actor permission is scoped to another club section', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {
-        return { permissions: ['investiture:submit'], mode: 'all' };
+        return { permissions: ['investiture:read'], mode: 'all' };
       }
       if (key === AUTHORIZATION_RESOURCE_KEY) {
         return { type: 'investiture_enrollment', idParam: 'enrollmentId' };
@@ -1195,7 +1195,7 @@ describe('PermissionsGuard', () => {
     });
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
       createResolved({
-        activeClubPermissions: ['investiture:submit'],
+        activeClubPermissions: ['investiture:read'],
         clubId: 10,
         instanceId: 22,
       }),

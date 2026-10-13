@@ -469,6 +469,41 @@ describe('AdminUsersService', () => {
       ]);
     });
 
+    it('should escape LIKE wildcards in the search term', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+        }),
+      );
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+      mockPrismaService.users.count.mockResolvedValue(0);
+
+      await service.listUsers(
+        'actor-super',
+        buildListQuery({ search: ' a%b_c ' }),
+      );
+
+      const { where } = mockPrismaService.users.findMany.mock.calls[0][0];
+      expect(where).toEqual({
+        OR: [
+          { email: { contains: 'a\\%b\\_c', mode: 'insensitive' } },
+          { name: { contains: 'a\\%b\\_c', mode: 'insensitive' } },
+          {
+            paternal_last_name: {
+              contains: 'a\\%b\\_c',
+              mode: 'insensitive',
+            },
+          },
+          {
+            maternal_last_name: {
+              contains: 'a\\%b\\_c',
+              mode: 'insensitive',
+            },
+          },
+        ],
+      });
+    });
+
     it('should sort the full result set by name and surnames before pagination', async () => {
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization({

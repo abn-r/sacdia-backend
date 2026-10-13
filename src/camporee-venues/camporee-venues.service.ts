@@ -5,6 +5,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   CreateCamporeeVenueDto,
   ListCamporeeVenuesFilterDto,
@@ -92,7 +93,12 @@ export class CamporeeVenuesService {
         : {}),
       ...(filters.active !== undefined ? { active: filters.active } : {}),
       ...(filters.q
-        ? { name: { contains: filters.q, mode: 'insensitive' as const } }
+        ? {
+            name: {
+              contains: escapeLikeWildcards(filters.q),
+              mode: 'insensitive' as const,
+            },
+          }
         : {}),
     };
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { toTerritoryId } from '../common/authorization/actor-territory-scope';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
@@ -259,8 +260,9 @@ export class SupportService {
       where.user_id = query.userId;
     }
 
-    const search = query.search?.trim();
-    if (search) {
+    const rawSearch = query.search?.trim();
+    if (rawSearch) {
+      const search = escapeLikeWildcards(rawSearch);
       where.OR = [
         { title: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },

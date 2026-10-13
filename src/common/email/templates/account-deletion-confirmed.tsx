@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Text, Section } from '@react-email/components';
+import { Text, Section } from 'react-email';
 import { Layout } from './_layout';
 import type { SupportedEmailLocale } from '../email.queue';
 

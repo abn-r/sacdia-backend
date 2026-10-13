@@ -8,7 +8,7 @@ import {
   Text,
   Hr,
   Font,
-} from '@react-email/components';
+} from 'react-email';
 import type { SupportedEmailLocale } from '../email.queue';
 
 interface LayoutLabels {

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Text, Section, Hr } from '@react-email/components';
+import { Text, Section, Hr } from 'react-email';
 import { Layout } from './_layout';
 
 export type CronAlertCondition = 'consecutive_failures' | 'duration' | 'failure_rate';
