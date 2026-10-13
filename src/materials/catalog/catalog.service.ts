@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { escapeLikeWildcards } from '../../common/utils/escape-like';
 import type { ListCatalogQueryDto } from './dto/list-catalog.query.dto';
 import type {
   MaterialProductDto,
@@ -51,7 +52,10 @@ export class CatalogService {
     }
 
     if (query.q) {
-      where.title = { contains: query.q, mode: Prisma.QueryMode.insensitive };
+      where.title = {
+        contains: escapeLikeWildcards(query.q),
+        mode: Prisma.QueryMode.insensitive,
+      };
     }
 
     const [rows, total] = await Promise.all([
