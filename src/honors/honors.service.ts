@@ -44,6 +44,7 @@ import {
   buildHonorSearchTokens,
   pickHonorSearchMatches,
 } from './honor-search-tokens';
+import { isCertificateImportObjectKey } from '../certificate-bulk-imports/certificate-import-file-ref';
 import { loadLatestProposalViews } from './honor-instructor-proposal-view';
 import {
   CatalogCacheService,
@@ -1661,8 +1662,13 @@ export class HonorsService {
 
     let images: unknown = userHonor.images;
     if (hasImages && Array.isArray(userHonor.images)) {
+      // Filas aprobadas antes de que `images` dejara de recibir PDFs: un PDF de
+      // una carga por certificado no se muestra como miniatura (sigue en
+      // `certificate`).
       const urls = userHonor.images.filter(
-        (value: unknown): value is string => typeof value === 'string',
+        (value: unknown): value is string =>
+          typeof value === 'string' &&
+          !(isCertificateImportObjectKey(value) && /\.pdf$/i.test(value)),
       );
       images = await Promise.all(
         urls.map((url) =>
@@ -1701,13 +1707,20 @@ export class HonorsService {
   ): Promise<string | null> {
     if (!value) return null;
 
+    // Al aprobar una carga por certificado se copia la referencia del archivo del
+    // lote, que vive en CERTIFICATE_IMPORTS: firmarla con el bucket de honores
+    // daría una URL a un objeto que no existe.
+    const bucket = isCertificateImportObjectKey(value)
+      ? StorageBucketAlias.CERTIFICATE_IMPORTS
+      : bucketAlias;
+
     try {
-      return await this.fileStorage.getSignedDownloadUrl(bucketAlias, value, {
+      return await this.fileStorage.getSignedDownloadUrl(bucket, value, {
         expiresInSeconds: HonorsService.PRIVATE_ASSET_URL_TTL_SECONDS,
       });
     } catch (error) {
       this.logger.warn(
-        `Failed to generate signed URL for ${bucketAlias}. Returning original value.`,
+        `Failed to generate signed URL for ${bucket}. Returning original value.`,
         error,
       );
       return value;

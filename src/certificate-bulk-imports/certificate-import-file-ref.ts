@@ -53,6 +53,19 @@ export function isCertificateImportFileRef(
   return isStorageKey(trimmed);
 }
 
+const CERTIFICATE_IMPORT_OBJECT_KEY =
+  /(?:^|\/)batches\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:staging|sealed)\//i;
+
+/**
+ * La referencia apunta a un objeto del bucket CERTIFICATE_IMPORTS (la forma
+ * `batches/<lote>/staging|sealed/<archivo>` la fija el servicio de archivos del
+ * flujo). Al aprobar, esa referencia se copia a `users_honors`; quien la firme
+ * debe usar ese bucket y no el de las evidencias de honores.
+ */
+export function isCertificateImportObjectKey(value: string): boolean {
+  return CERTIFICATE_IMPORT_OBJECT_KEY.test(value);
+}
+
 export function normalizeCertificateImportFileRef(
   value: unknown,
   allowedHosts: ReadonlySet<string> = collectCertificateImportAllowedHosts(),

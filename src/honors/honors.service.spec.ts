@@ -2192,4 +2192,95 @@ describe('HonorsService', () => {
       expect(results).toEqual([0, 1, 2, 3, 4]);
     });
   });
+  describe('evidence that came from a certificate import (#10)', () => {
+    const BATCH = '8b0f6f0e-6c2a-4f0e-9f2e-1d6b9a4e7c11';
+    const sealedPdf = `certificate-imports/batches/${BATCH}/sealed/f1-aaaa.pdf`;
+    const sealedPng = `certificate-imports/batches/${BATCH}/sealed/f2-bbbb.png`;
+
+    const signWith = () =>
+      mockFileStorageService.getSignedDownloadUrl.mockImplementation(
+        async (bucket: StorageBucketAlias, value: string) =>
+          `https://signed.example/${bucket}/${value}`,
+      );
+
+    beforeEach(() => {
+      mockPrismaService.honor_instructor_proposals.findMany.mockResolvedValue(
+        [],
+      );
+    });
+
+    afterEach(() => {
+      mockFileStorageService.getSignedDownloadUrl.mockImplementation(
+        async (_bucket: StorageBucketAlias, value: string) => value,
+      );
+    });
+
+    it('signs certificate and images from the certificate import bucket, not the honors one', async () => {
+      signWith();
+      mockPrismaService.users_honors.findMany.mockResolvedValue([
+        {
+          user_honor_id: 22,
+          validation_status: 'APPROVED',
+          certificate: sealedPdf,
+          images: [sealedPng],
+          instructor_user_id: null,
+          instructor_name: null,
+          instructor: null,
+        },
+      ]);
+
+      const [row] = await service.getUserHonors('owner-1');
+
+      expect(row.certificate).toBe(
+        `https://signed.example/CERTIFICATE_IMPORTS/${sealedPdf}`,
+      );
+      expect(row.images).toEqual([
+        `https://signed.example/CERTIFICATE_IMPORTS/${sealedPng}`,
+      ]);
+    });
+
+    it('keeps signing the member uploads with the honors buckets', async () => {
+      signWith();
+      mockPrismaService.users_honors.findMany.mockResolvedValue([
+        {
+          user_honor_id: 23,
+          validation_status: 'PENDING_REVIEW',
+          certificate: 'users-honors-cert/u1/cert.pdf',
+          images: ['users-honors/u1/a.jpg'],
+          instructor_user_id: null,
+          instructor_name: null,
+          instructor: null,
+        },
+      ]);
+
+      const [row] = await service.getUserHonors('owner-1');
+
+      expect(row.certificate).toBe(
+        'https://signed.example/USERS_HONORS_CERT/users-honors-cert/u1/cert.pdf',
+      );
+      expect(row.images).toEqual([
+        'https://signed.example/USERS_HONORS/users-honors/u1/a.jpg',
+      ]);
+    });
+
+    it('does not list an imported PDF as an image thumbnail', async () => {
+      signWith();
+      mockPrismaService.users_honors.findMany.mockResolvedValue([
+        {
+          user_honor_id: 22,
+          validation_status: 'APPROVED',
+          certificate: sealedPdf,
+          images: [sealedPdf],
+          instructor_user_id: null,
+          instructor_name: null,
+          instructor: null,
+        },
+      ]);
+
+      const [row] = await service.getUserHonors('owner-1');
+
+      expect(row.images).toEqual([]);
+      expect(row.certificate).toContain(sealedPdf);
+    });
+  });
 });
