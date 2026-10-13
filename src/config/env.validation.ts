@@ -176,6 +176,9 @@ export const envValidationSchema = Joi.object({
   LOG_LEVEL: Joi.string().valid('debug', 'info', 'warn', 'error').optional(),
   LOG_PRETTY: Joi.boolean().optional(),
   LOG_PRETTY_IGNORE: Joi.string().optional(),
+  // Minutes between 'Process memory' log lines (default 15). 0 disables the
+  // interval but keeps the boot line. Skipped under NODE_ENV=test unless set.
+  PROCESS_MEMORY_LOG_INTERVAL_MINUTES: Joi.number().integer().min(0).optional(),
 
   // Redis
   REDIS_URL: redisUrlSchema,

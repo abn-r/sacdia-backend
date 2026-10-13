@@ -450,3 +450,23 @@ describe('OCR proxy mode', () => {
     ).toBeDefined();
   });
 });
+
+describe('envValidationSchema process memory logging', () => {
+  it('allows PROCESS_MEMORY_LOG_INTERVAL_MINUTES to be omitted', () => {
+    const { error } = validate();
+
+    expect(error).toBeUndefined();
+  });
+
+  it.each(['0', '15', 5, 0])('accepts %p', (value) => {
+    const { error } = validate({ PROCESS_MEMORY_LOG_INTERVAL_MINUTES: value });
+
+    expect(error).toBeUndefined();
+  });
+
+  it.each(['-1', '1.5', 'abc'])('rejects %p', (value) => {
+    const { error } = validate({ PROCESS_MEMORY_LOG_INTERVAL_MINUTES: value });
+
+    expect(error?.message).toContain('PROCESS_MEMORY_LOG_INTERVAL_MINUTES');
+  });
+});

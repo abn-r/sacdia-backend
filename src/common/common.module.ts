@@ -30,6 +30,7 @@ import { ClubAssignmentEffectivityPolicy } from './authorization/club-assignment
 import { AuthorizationContextVersionService } from './authorization/authorization-context-version.service';
 import { EcclesiasticalYearService } from './services/ecclesiastical-year.service';
 import { ClubCycleReadinessService } from './services/club-cycle-readiness.service';
+import { ProcessMemoryLoggerService } from './observability/process-memory-logger.service';
 
 @Global()
 @Module({
@@ -75,6 +76,7 @@ import { ClubCycleReadinessService } from './services/club-cycle-readiness.servi
     // OBSERVABILIDAD - Logging de ejecución de crons
     // ==========================================
     CronRunLogger,
+    ProcessMemoryLoggerService,
     // ==========================================
     // MONITORING - Automated cron job alerting
     // ==========================================
