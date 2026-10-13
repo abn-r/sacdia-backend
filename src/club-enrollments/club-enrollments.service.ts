@@ -475,14 +475,16 @@ export class ClubEnrollmentsService {
     if (!trimmed) return {};
     const value = escapeLikeWildcards(trimmed);
 
+    const match = { contains: value, mode: 'insensitive' as const };
+
     return {
       OR: [
-        { club_section: { clubs: { name: { contains: value } } } },
-        { club_section: { club_types: { name: { contains: value } } } },
-        { creator: { name: { contains: value } } },
-        { creator: { paternal_last_name: { contains: value } } },
-        { creator: { maternal_last_name: { contains: value } } },
-        { creator: { email: { contains: value } } },
+        { club_section: { clubs: { name: match } } },
+        { club_section: { club_types: { name: match } } },
+        { creator: { name: match } },
+        { creator: { paternal_last_name: match } },
+        { creator: { maternal_last_name: match } },
+        { creator: { email: match } },
       ],
     };
   }

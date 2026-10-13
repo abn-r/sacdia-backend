@@ -237,9 +237,61 @@ describe('CamporeeEventsService', () => {
 
       const { where } = prisma.camporee_events.findMany.mock.calls[0][0];
       const escaped = '50\\%\\_off';
-      expect(where.OR).toEqual([
-        { title: { contains: escaped, mode: 'insensitive' } },
-        { description: { contains: escaped, mode: 'insensitive' } },
+      expect(where.AND).toEqual([
+        {
+          OR: [
+            { title: { contains: escaped, mode: 'insensitive' } },
+            { description: { contains: escaped, mode: 'insensitive' } },
+          ],
+        },
+      ]);
+    });
+
+    it('keeps the section filter when q is also present', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+      prisma.camporee_events.findMany.mockResolvedValue([]);
+      prisma.camporee_events.count.mockResolvedValue(0);
+
+      await service.listEvents(1, 'local', {
+        section: 'adventurers',
+        q: 'fogata',
+      });
+
+      const { where } = prisma.camporee_events.findMany.mock.calls[0][0];
+      expect(where.OR).toBeUndefined();
+      expect(where.AND).toEqual([
+        {
+          OR: [
+            { sections: { has: 'adventurers' } },
+            { sections: { equals: [] } },
+          ],
+        },
+        {
+          OR: [
+            { title: { contains: 'fogata', mode: 'insensitive' } },
+            { description: { contains: 'fogata', mode: 'insensitive' } },
+          ],
+        },
+      ]);
+      // count must use the very same where
+      expect(prisma.camporee_events.count).toHaveBeenCalledWith({ where });
+    });
+
+    it('applies only the section filter when q is absent', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+      prisma.camporee_events.findMany.mockResolvedValue([]);
+      prisma.camporee_events.count.mockResolvedValue(0);
+
+      await service.listEvents(1, 'local', { section: 'pathfinders' });
+
+      const { where } = prisma.camporee_events.findMany.mock.calls[0][0];
+      expect(where.AND).toEqual([
+        {
+          OR: [
+            { sections: { has: 'pathfinders' } },
+            { sections: { equals: [] } },
+          ],
+        },
       ]);
     });
   });
@@ -923,9 +975,7 @@ describe('CamporeeEventsService', () => {
         where: { camporee_event_id: 1 },
       });
       expect(prisma.camporee_event_honors.createMany).toHaveBeenCalledWith({
-        data: [
-          { camporee_event_id: 1, honor_id: 42, display_order: 0 },
-        ],
+        data: [{ camporee_event_id: 1, honor_id: 42, display_order: 0 }],
       });
       expect(result.honors).toEqual([
         {

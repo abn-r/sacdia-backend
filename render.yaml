@@ -1,22 +1,29 @@
 # Render Blueprint — canonical deployment config for sacdia-backend.
 # https://render.com/docs/blueprint-spec
 #
-# preDeployCommand guarantees the Prisma schema is applied BEFORE the new
-# code starts serving traffic. Never replace it with `prisma db push`.
+# Mirrors the live Render service "API Sacdia" (Free plan, branch development,
+# autoDeploy on).
 #
-# Secrets (DATABASE_URL, BETTER_AUTH_SECRET, QR_JWT_SECRET, REDIS_URL, R2_*, etc.) are
+# The Free plan does NOT support preDeployCommand, so `prisma migrate deploy`
+# runs at the END of the build. That means a migration is applied while the
+# previous release is still serving traffic: every migration must be backwards
+# compatible with the code currently running (expand/contract, no destructive
+# change in the same release). Never replace it with `prisma db push`.
+#
+# Secrets (DATABASE_URL, DATABASE_DIRECT_URL, BETTER_AUTH_SECRET, QR_JWT_SECRET, REDIS_URL, R2_*, etc.) are
 # managed in the Render dashboard — sync: false keeps them out of this file.
 # See .env.example for the full catalog.
 
 services:
   - type: web
-    name: sacdia-backend
+    name: API Sacdia
     runtime: node
     region: oregon
-    plan: starter
-    buildCommand: pnpm install --frozen-lockfile && pnpm prisma generate && pnpm build
-    preDeployCommand: pnpm prisma migrate deploy
-    startCommand: pnpm start:prod
+    plan: free
+    branch: development
+    autoDeploy: true
+    buildCommand: corepack pnpm install --frozen-lockfile && NODE_OPTIONS=--max-old-space-size=4096 corepack pnpm run build && corepack pnpm exec prisma migrate deploy
+    startCommand: node --max-old-space-size=320 --max-semi-space-size=2 dist/src/main.js
     healthCheckPath: /api/v1/health
     envVars:
       - key: NODE_ENV
@@ -30,6 +37,8 @@ services:
       - key: ALLOWED_ORIGINS
         sync: false
       - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_DIRECT_URL
         sync: false
       - key: BETTER_AUTH_SECRET
         sync: false

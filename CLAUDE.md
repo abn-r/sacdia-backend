@@ -87,7 +87,7 @@ La documentación funcional por módulo vive en `../docs/features/`.
 
 - Runtime: Node 24 (`NODE_VERSION: '24.13.1'` en `.github/workflows/ci.yml`; `engines.node: >=24 <25`) + pnpm 10 + `actions/setup-node@v4`
 - `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` sigue habilitado para que las acciones JavaScript corran alineadas con Node 24.
-- Deploy: Render.com (`render.yaml`; `preDeployCommand: pnpm prisma migrate deploy`)
+- Deploy: Render.com (`render.yaml`, service "API Sacdia", Free plan; `prisma migrate deploy` runs at the end of the build, no preDeploy)
 - ESLint: reglas `no-unsafe-*` deshabilitadas para compatibilidad con Prisma (8328 → 0 errores)
 - Jest: `transformIgnorePatterns: []` para paquetes ESM; `prisma generate` corre antes de los tests
 - Unit tests: bloqueantes; el job ya no usa `continue-on-error`

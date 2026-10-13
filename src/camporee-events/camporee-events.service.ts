@@ -527,7 +527,9 @@ export class CamporeeEventsService {
 
     const unique = new Set(honorIds);
     if (unique.size !== honorIds.length) {
-      throw new AppBadRequestException(ErrorCode.CAMPOREE_EVENT_HONOR_DUPLICATE);
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_HONOR_DUPLICATE,
+      );
     }
 
     if (honorIds.length === 0) return;
@@ -539,9 +541,12 @@ export class CamporeeEventsService {
     const foundIds = new Set(found.map((row) => row.honor_id));
     const missing = honorIds.filter((id) => !foundIds.has(id));
     if (missing.length > 0) {
-      throw new AppBadRequestException(ErrorCode.CAMPOREE_EVENT_HONOR_NOT_FOUND, {
-        honor_ids: missing,
-      });
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_HONOR_NOT_FOUND,
+        {
+          honor_ids: missing,
+        },
+      );
     }
   }
 
@@ -695,6 +700,26 @@ export class CamporeeEventsService {
         ? { local_camporee_id: camporeeId }
         : { union_camporee_id: camporeeId };
 
+    const andConditions: any[] = [];
+    // sections filter: event must contain the value OR have empty sections (matches all)
+    if (filters?.section) {
+      andConditions.push({
+        OR: [
+          { sections: { has: filters.section } },
+          { sections: { equals: [] } },
+        ],
+      });
+    }
+    if (filters?.q) {
+      const q = escapeLikeWildcards(filters.q);
+      andConditions.push({
+        OR: [
+          { title: { contains: q, mode: 'insensitive' as const } },
+          { description: { contains: q, mode: 'insensitive' as const } },
+        ],
+      });
+    }
+
     const where: any = {
       ...scopeWhere,
       active: true,
@@ -702,38 +727,14 @@ export class CamporeeEventsService {
       ...(filters?.display_category
         ? { display_category: filters.display_category }
         : {}),
-      // sections filter: event must contain the value OR have empty sections (matches all)
-      ...(filters?.section
-        ? {
-            OR: [
-              { sections: { has: filters.section } },
-              { sections: { equals: [] } },
-            ],
-          }
-        : {}),
       ...(filters?.status ? { status: filters.status } : {}),
       ...(filters?.venue_id ? { venue_id: filters.venue_id } : {}),
       ...(filters?.leader_user_id
         ? { leader_user_id: filters.leader_user_id }
         : {}),
-      ...(filters?.q
-        ? {
-            OR: [
-              {
-                title: {
-                  contains: escapeLikeWildcards(filters.q),
-                  mode: 'insensitive' as const,
-                },
-              },
-              {
-                description: {
-                  contains: escapeLikeWildcards(filters.q),
-                  mode: 'insensitive' as const,
-                },
-              },
-            ],
-          }
-        : {}),
+      // Each OR group lives inside AND so section + q never overwrite each
+      // other (two sibling `OR` keys on one object would collide).
+      ...(andConditions.length ? { AND: andConditions } : {}),
     };
 
     const [data, total] = await this.prisma.$transaction([
@@ -813,9 +814,7 @@ export class CamporeeEventsService {
     const staffByEvent = await this.loadEventStaffAssignments([
       event.camporee_event_id,
     ]);
-    const honorsByEvent = await this.loadEventHonors([
-      event.camporee_event_id,
-    ]);
+    const honorsByEvent = await this.loadEventHonors([event.camporee_event_id]);
     return this.attachEventHonors(
       this.attachEventStaffAssignments(
         this.attachScheduleBlocks([event], blocksByEvent),
