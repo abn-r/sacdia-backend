@@ -7,7 +7,7 @@ import {
   AppBadRequestException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import PDFDocument from 'pdfkit';
+import { loadPdfKit } from '../common/utils/pdfkit-loader';
 import { AnnualComputedData } from './annual-reports.service';
 import { buildAnnualReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
 
@@ -111,6 +111,7 @@ export class AnnualReportsPdfService {
         reportData.ecclesiastical_year?.start_date?.getFullYear() ?? 'N/A',
       );
 
+    const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
       size: 'LETTER',
       margins: {

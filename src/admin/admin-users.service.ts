@@ -13,10 +13,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { randomBytes } from 'crypto';
 import { Prisma, role_category, user_approval_status } from '@prisma/client';
-// NOTE: xlsx 0.18.x is the last Apache-2.0 licensed release available on npm.
-// Newer versions are CDN-only. The package has known prototype-pollution advisories
-// (SNYK-JS-XLSX-*) — accepted project convention given no viable npm alternative.
-import * as XLSX from 'xlsx';
+import { lazyModule } from '../common/utils/lazy-module';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import {
   createPaginatedResult,
@@ -504,6 +501,13 @@ interface AdminUserDetail extends AdminUserListItem {
   post_registration: MinimalPostRegistrationBlock | null;
   scope: ScopeMeta;
 }
+
+// NOTE: xlsx 0.18.x is the last Apache-2.0 licensed release available on npm.
+// Newer versions are CDN-only. The package has known prototype-pollution advisories
+// (SNYK-JS-XLSX-*) — accepted project convention given no viable npm alternative.
+// Loaded lazily (first bulk import / template download) to keep it out of the
+// boot-time memory footprint (~25-40 MiB RSS).
+const loadXlsx = lazyModule(() => require('xlsx') as typeof import('xlsx'));
 
 @Injectable()
 export class AdminUsersService {
@@ -1564,6 +1568,7 @@ export class AdminUsersService {
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     // 1. Parse the workbook
+    const XLSX = loadXlsx();
     const wb = XLSX.read(fileBuffer, {
       type: 'buffer',
       cellDates: false,
@@ -1813,6 +1818,7 @@ export class AdminUsersService {
    * Pure builder used by both the public actor-scoped entrypoint and tests.
    */
   private buildBulkTemplateBuffer(allowedRoles: string[]): Buffer {
+    const XLSX = loadXlsx();
     const wb = XLSX.utils.book_new();
 
     // Pick an example role the actor can actually use. Default to 'user'

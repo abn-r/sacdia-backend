@@ -57,4 +57,60 @@ describe('PosthogService', () => {
     await service.onModuleDestroy();
     expect(client._shutdown).toHaveBeenCalled();
   });
+
+  it('does not create the PostHog client until the first capture', async () => {
+    const service = new PosthogService(
+      configWith({ POSTHOG_PROJECT_TOKEN: 'phc_test' }),
+    );
+
+    expect(PostHog).not.toHaveBeenCalled();
+    await expect(service.onModuleDestroy()).resolves.toBeUndefined();
+    expect(PostHog).not.toHaveBeenCalled();
+
+    service.capture('event_a', 'user-1');
+    service.capture('event_b', 'user-1');
+
+    expect(PostHog).toHaveBeenCalledTimes(1);
+    expect(PostHog).toHaveBeenCalledWith('phc_test', {
+      host: 'https://us.i.posthog.com',
+    });
+  });
+
+  it('does not create the client for an empty distinct id', () => {
+    const service = new PosthogService(
+      configWith({ POSTHOG_PROJECT_TOKEN: 'phc_test' }),
+    );
+
+    service.capture('event_a', '');
+
+    expect(PostHog).not.toHaveBeenCalled();
+  });
+});
+
+describe('PosthogService module loading', () => {
+  afterEach(() => {
+    jest.dontMock('posthog-node');
+  });
+
+  it('does not load posthog-node on import and loads it on first capture', () => {
+    jest.resetModules();
+    const loaded = jest.fn();
+    const capture = jest.fn();
+    jest.doMock('posthog-node', () => {
+      loaded();
+      return { PostHog: jest.fn().mockImplementation(() => ({ capture })) };
+    });
+
+    const { PosthogService: Isolated } = require('./posthog.service') as {
+      PosthogService: typeof PosthogService;
+    };
+    const service = new Isolated(configWith({ POSTHOG_PROJECT_TOKEN: 'phc' }));
+    expect(loaded).not.toHaveBeenCalled();
+
+    service.capture('event_a', 'user-1');
+    service.capture('event_b', 'user-1');
+
+    expect(loaded).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledTimes(2);
+  });
 });

@@ -7,7 +7,7 @@ import {
   AppBadRequestException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import PDFDocument from 'pdfkit';
+import { loadPdfKit } from '../common/utils/pdfkit-loader';
 import { QuarterlyComputedData } from './quarterly-reports.service';
 import { buildQuarterlyReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
 
@@ -89,6 +89,7 @@ export class QuarterlyReportsPdfService {
     const clubName = (club?.name as string) ?? 'N/A';
     const quarterLabel = t(`quarter_labels.${report.quarter}`);
 
+    const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
       size: 'LETTER',
       margins: {

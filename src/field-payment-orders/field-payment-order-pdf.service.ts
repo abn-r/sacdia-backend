@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import PDFDocument from 'pdfkit';
+import { loadPdfKit } from '../common/utils/pdfkit-loader';
 
 export interface FieldPaymentOrderPdfModel {
   folio_reference: string;
@@ -48,6 +48,7 @@ function formatDate(date: Date): string {
 @Injectable()
 export class FieldPaymentOrderPdfService {
   async render(model: FieldPaymentOrderPdfModel): Promise<Buffer> {
+    const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
       size: 'LETTER',
       margin: PAGE_MARGIN,

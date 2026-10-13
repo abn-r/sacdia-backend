@@ -8,8 +8,6 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
-import { render } from '@react-email/render';
-import * as React from 'react';
 import { ConfigService } from '@nestjs/config';
 import { I18nService } from 'nestjs-i18n';
 
@@ -40,20 +38,48 @@ import {
 } from './investiture-mail.gate';
 import { EMAIL_PROVIDER } from './providers/email-provider.interface';
 import type { IEmailProvider } from './providers/email-provider.interface';
-import { DataExportReadyEmail } from './templates/data-export-ready';
-import { EmailVerificationEmail } from './templates/email-verification';
-import { PasswordResetEmail } from './templates/password-reset';
-import { AccountDeletionConfirmedEmail } from './templates/account-deletion-confirmed';
-import { CronAlertEmail } from './templates/cron-alert';
-import { InvestitureNoticeEmail } from './templates/investiture-notice';
 import { assertNoRelativeInvestitureLink } from '../../investiture-requests/investiture-communications.rules';
 import type { CronAlertCondition } from './templates/cron-alert';
+import { lazyModule } from '../utils/lazy-module';
 
 interface RenderedEmail {
   subject: string;
   html: string;
   text: string;
 }
+
+/**
+ * React, @react-email/* and the .tsx templates cost ~40 MiB RSS when loaded.
+ * They are only needed to compose an email, so they are required the first time
+ * a job is rendered instead of at application boot.
+ */
+const loadEmailRendering = lazyModule(() => {
+  const { render } =
+    require('@react-email/render') as typeof import('@react-email/render');
+  const React = require('react') as typeof import('react');
+  const { DataExportReadyEmail } =
+    require('./templates/data-export-ready') as typeof import('./templates/data-export-ready');
+  const { EmailVerificationEmail } =
+    require('./templates/email-verification') as typeof import('./templates/email-verification');
+  const { PasswordResetEmail } =
+    require('./templates/password-reset') as typeof import('./templates/password-reset');
+  const { AccountDeletionConfirmedEmail } =
+    require('./templates/account-deletion-confirmed') as typeof import('./templates/account-deletion-confirmed');
+  const { CronAlertEmail } =
+    require('./templates/cron-alert') as typeof import('./templates/cron-alert');
+  const { InvestitureNoticeEmail } =
+    require('./templates/investiture-notice') as typeof import('./templates/investiture-notice');
+  return {
+    render,
+    React,
+    DataExportReadyEmail,
+    EmailVerificationEmail,
+    PasswordResetEmail,
+    AccountDeletionConfirmedEmail,
+    CronAlertEmail,
+    InvestitureNoticeEmail,
+  };
+});
 
 const SUPPORTED_LOCALES: SupportedEmailLocale[] = ['es', 'en', 'fr', 'pt-BR'];
 
@@ -287,6 +313,16 @@ export class EmailProcessor
     jobName: string,
     data: EmailJobPayload,
   ): Promise<RenderedEmail> {
+    const {
+      render,
+      React,
+      DataExportReadyEmail,
+      EmailVerificationEmail,
+      PasswordResetEmail,
+      AccountDeletionConfirmedEmail,
+      CronAlertEmail,
+      InvestitureNoticeEmail,
+    } = loadEmailRendering();
     switch (jobName) {
       case EMAIL_JOB_DATA_EXPORT_READY: {
         const d = data as DataExportReadyJobPayload;

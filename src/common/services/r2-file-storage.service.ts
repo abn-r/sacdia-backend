@@ -2,15 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AppInternalServerErrorException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { ConfigService } from '@nestjs/config';
-import {
-  CopyObjectCommand,
-  DeleteObjectsCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type { S3Client } from '@aws-sdk/client-s3';
+import { lazyModule } from '../utils/lazy-module';
 import {
   FileStorageService,
   SignedUploadResult,
@@ -21,6 +14,16 @@ import {
   UploadFileOptions,
   UploadedFileResult,
 } from './file-storage.service';
+
+// The AWS SDK (client-s3 + presigner + smithy) costs ~16 MiB RSS on load and is
+// only needed on the first storage operation, so it is required lazily.
+const loadS3 = lazyModule(
+  () => require('@aws-sdk/client-s3') as typeof import('@aws-sdk/client-s3'),
+);
+const loadPresigner = lazyModule(
+  () =>
+    require('@aws-sdk/s3-request-presigner') as typeof import('@aws-sdk/s3-request-presigner'),
+);
 
 type R2BucketConfig = {
   bucket: string;
@@ -54,7 +57,7 @@ export class R2FileStorageService implements FileStorageService {
 
     try {
       await this.getClient().send(
-        new PutObjectCommand({
+        new (loadS3().PutObjectCommand)({
           Bucket: config.bucket,
           Key: objectKey,
           Body: buffer,
@@ -95,7 +98,7 @@ export class R2FileStorageService implements FileStorageService {
 
     try {
       const response = await this.getClient().send(
-        new DeleteObjectsCommand({
+        new (loadS3().DeleteObjectsCommand)({
           Bucket: bucket,
           Delete: {
             Objects: normalizedKeys.map((key) => ({ Key: key })),
@@ -182,9 +185,9 @@ export class R2FileStorageService implements FileStorageService {
       options?.expiresInSeconds,
     );
     try {
-      return await getSignedUrl(
+      return await loadPresigner().getSignedUrl(
         this.getClient(),
-        new GetObjectCommand({
+        new (loadS3().GetObjectCommand)({
           Bucket: config.bucket,
           Key: objectKey,
         }),
@@ -210,9 +213,9 @@ export class R2FileStorageService implements FileStorageService {
     const expiresIn = this.resolveSignedUrlExpiration(options.expiresInSeconds);
 
     try {
-      const url = await getSignedUrl(
+      const url = await loadPresigner().getSignedUrl(
         this.getClient(),
-        new PutObjectCommand({
+        new (loadS3().PutObjectCommand)({
           Bucket: config.bucket,
           Key: objectKey,
           ContentType: options.contentType,
@@ -247,7 +250,7 @@ export class R2FileStorageService implements FileStorageService {
 
     try {
       const response = await this.getClient().send(
-        new GetObjectCommand({
+        new (loadS3().GetObjectCommand)({
           Bucket: config.bucket,
           Key: objectKey,
           Range: `bytes=0-${length - 1}`,
@@ -282,7 +285,7 @@ export class R2FileStorageService implements FileStorageService {
 
     try {
       const response = await this.getClient().send(
-        new GetObjectCommand({
+        new (loadS3().GetObjectCommand)({
           Bucket: config.bucket,
           Key: objectKey,
         }),
@@ -327,7 +330,7 @@ export class R2FileStorageService implements FileStorageService {
 
     try {
       await this.getClient().send(
-        new CopyObjectCommand({
+        new (loadS3().CopyObjectCommand)({
           Bucket: config.bucket,
           CopySource: `${config.bucket}/${source
             .split('/')
@@ -359,7 +362,10 @@ export class R2FileStorageService implements FileStorageService {
 
     try {
       const response = await this.getClient().send(
-        new HeadObjectCommand({ Bucket: config.bucket, Key: objectKey }),
+        new (loadS3().HeadObjectCommand)({
+          Bucket: config.bucket,
+          Key: objectKey,
+        }),
       );
       return {
         size: response.ContentLength ?? 0,
@@ -485,7 +491,7 @@ export class R2FileStorageService implements FileStorageService {
   private async assertKeyDoesNotExist(bucket: string, key: string) {
     try {
       await this.getClient().send(
-        new HeadObjectCommand({
+        new (loadS3().HeadObjectCommand)({
           Bucket: bucket,
           Key: key,
         }),
@@ -531,7 +537,7 @@ export class R2FileStorageService implements FileStorageService {
     const secretAccessKey = this.getRequiredEnv('R2_SECRET_ACCESS_KEY');
     const region = this.configService.get<string>('R2_REGION') || 'auto';
 
-    this.s3Client = new S3Client({
+    this.s3Client = new (loadS3().S3Client)({
       region,
       endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
       credentials: {
