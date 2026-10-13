@@ -151,11 +151,13 @@ describe('CertificateOcrParser', () => {
     });
 
     it('does not add detectedDate when the date is valid', () => {
-      const [item] = parse('2026-04-12').items;
+      const [honor, klass] = parse('2026-04-12').items;
 
-      expect(item.completedAt).toBe('2026-04-12');
-      expect(item).not.toHaveProperty('detectedDate');
-      expect(item.fieldConfidence.date).toBe(0.7);
+      expect(honor.completedAt).toBe('2026-04-12');
+      expect(honor).not.toHaveProperty('detectedDate');
+      // La fecha va después de la clase: es suya; la especialidad la comparte.
+      expect(klass.fieldConfidence.date).toBe(0.85);
+      expect(honor.fieldConfidence.date).toBe(0.7);
     });
   });
   describe('by file and page (D4, D12)', () => {
@@ -254,15 +256,15 @@ describe('CertificateOcrParser', () => {
         confidence: 0.6,
         fieldConfidence: expect.objectContaining({ date: 0.5 }),
       });
-      // Fecha propia de la página.
+      // Fecha propia, justo después de la etiqueta.
       expect(byName.Dos).toMatchObject({
         completedAt: '2022-02-02',
-        confidence: 0.72,
-        fieldConfidence: expect.objectContaining({ date: 0.7 }),
+        confidence: 0.8,
+        fieldConfidence: expect.objectContaining({ date: 0.85 }),
       });
       expect(byName.Tres).toMatchObject({
         completedAt: '2023-03-03',
-        fieldConfidence: expect.objectContaining({ date: 0.7 }),
+        fieldConfidence: expect.objectContaining({ date: 0.85 }),
       });
       // Archivo sin fecha: la primera del lote.
       expect(byName.Cuatro).toMatchObject({
@@ -339,6 +341,139 @@ describe('CertificateOcrParser', () => {
 
       expect(item).toMatchObject({ sourcePage: 2 });
       expect(item.fieldConfidence.institutional).toBe(1);
+    });
+  });
+  describe('class label anchoring (#1)', () => {
+    it('finds exactly one class and none named after a date', () => {
+      const { items } = new CertificateOcrParser().parseFiles([
+        {
+          fileId: null,
+          pages: [
+            {
+              pageNumber: 1,
+              text: 'Especialidad: Nudos y amarras\nFecha: 12/03/2024\nInstructor: Ana Perez Gomez',
+            },
+            {
+              pageNumber: 2,
+              text: 'CERTIFICADO DE INVESTIDURA\nClase: Amigo\nFecha de investidura: 15/10/2021',
+            },
+          ],
+        },
+      ]);
+      const classes = items.filter((i) => i.type === 'CLASS');
+
+      expect(classes.map((c) => c.detectedName)).toEqual(['Amigo']);
+    });
+
+    it('does not read a label that follows another word', () => {
+      const { items } = new CertificateOcrParser().parse(
+        'Fecha de investidura: 15/10/2021\nFecha de clase: 01/01/2020\nSin especialidad: Nudos',
+      );
+
+      expect(items).toEqual([]);
+    });
+
+    it('accepts a label after spaces or a bullet', () => {
+      const { items } = new CertificateOcrParser().parse(
+        '  - Especialidad: Nudos\n• Clase: Amigo',
+      );
+
+      expect(items.map((i) => i.detectedName)).toEqual(['Nudos', 'Amigo']);
+    });
+
+    it('drops candidates whose name has no letters or is only a date', () => {
+      const { items } = new CertificateOcrParser().parse(
+        'Clase: 15/10/2021\nEspecialidad: 2021-10-15\nHonor: 123\nHonor: Nudos',
+      );
+
+      expect(items.map((i) => i.detectedName)).toEqual(['Nudos']);
+    });
+  });
+
+  describe('date by candidate (#5)', () => {
+    const FILE = '11111111-1111-4111-8111-111111111111';
+    const syntheticPdf = () =>
+      new CertificateOcrParser().parseFiles([
+        {
+          fileId: FILE,
+          pages: [
+            {
+              pageNumber: 1,
+              text: 'Especialidad: Nudos y amarras\nFecha: 12/03/2024\nInstructor: Ana Perez Gomez',
+            },
+            {
+              pageNumber: 2,
+              text: 'Especialidad: Primeros auxilios basico\nFecha: 05/08/2023\nEspecialidad: Natacion principiante\nFecha: 20/11/2022',
+            },
+            {
+              pageNumber: 3,
+              text: 'CERTIFICADO DE INVESTIDURA\nClase: Amigo\nFecha de investidura: 15/10/2021',
+            },
+          ],
+        },
+      ]);
+
+    it('gives each specialty on page 2 its own date', () => {
+      const byName = Object.fromEntries(
+        syntheticPdf().items.map((i) => [i.detectedName, i]),
+      );
+
+      expect(byName['Nudos y amarras'].completedAt).toBe('2024-03-12');
+      expect(byName['Primeros auxilios basico'].completedAt).toBe('2023-08-05');
+      expect(byName['Natacion principiante'].completedAt).toBe('2022-11-20');
+      expect(byName['Natacion principiante']).toMatchObject({
+        sourcePage: 2,
+        fieldConfidence: expect.objectContaining({ date: 0.85 }),
+      });
+    });
+
+    it('uses the closest previous date of the page when none follows', () => {
+      const [item] = new CertificateOcrParser().parse(
+        'Fecha: 01/02/2020\nEspecialidad: Nudos',
+      ).items;
+
+      expect(item).toMatchObject({
+        completedAt: '2020-02-01',
+        confidence: 0.72,
+        fieldConfidence: expect.objectContaining({ date: 0.7 }),
+      });
+    });
+
+    it('falls back to the first date of the page when the date is after the next label', () => {
+      const { items } = new CertificateOcrParser().parse(
+        'Especialidad: Uno\nEspecialidad: Dos\nFecha: 03/04/2021',
+      );
+
+      expect(items.map((i) => [i.detectedName, i.completedAt])).toEqual([
+        ['Uno', '2021-04-03'],
+        ['Dos', '2021-04-03'],
+      ]);
+      expect(items[0].fieldConfidence.date).toBe(0.7);
+      expect(items[1].fieldConfidence.date).toBe(0.85);
+    });
+
+    it('gives names in one label the same date and ranks own above fallback', () => {
+      const { items } = new CertificateOcrParser().parseFiles([
+        {
+          fileId: FILE,
+          pages: [
+            {
+              pageNumber: 1,
+              text: 'Especialidades: Uno, Dos\nFecha: 03/04/2021',
+            },
+            { pageNumber: 2, text: 'Especialidad: Tres' },
+          ],
+        },
+      ]);
+
+      expect(items.map((i) => i.completedAt)).toEqual([
+        '2021-04-03',
+        '2021-04-03',
+        '2021-04-03',
+      ]);
+      expect(items.map((i) => i.fieldConfidence.date)).toEqual([
+        0.85, 0.85, 0.5,
+      ]);
     });
   });
 });

@@ -3,6 +3,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import {
   collectCertificateImportAllowedHosts,
   isCertificateImportFileRef,
+  isCertificateImportObjectKey,
   normalizeCertificateImportFileRef,
 } from './certificate-import-file-ref';
 
@@ -106,6 +107,28 @@ describe('certificate-import-file-ref', () => {
           code: ErrorCode.CERTIFICATE_IMPORT_FILE_URL_INVALID,
         });
       }
+    });
+  });
+
+  describe('isCertificateImportObjectKey', () => {
+    const batch = '8b0f6f0e-6c2a-4f0e-9f2e-1d6b9a4e7c11';
+
+    it('recognizes staging and sealed keys, with or without the bucket prefix', () => {
+      expect(
+        isCertificateImportObjectKey(`batches/${batch}/sealed/f-1.pdf`),
+      ).toBe(true);
+      expect(
+        isCertificateImportObjectKey(
+          `certificate-imports/batches/${batch}/staging/f.png`,
+        ),
+      ).toBe(true);
+    });
+
+    it('does not claim honor evidence keys', () => {
+      expect(isCertificateImportObjectKey('users-honors/u1/a.jpg')).toBe(false);
+      expect(
+        isCertificateImportObjectKey(`users-honors/batches/x/sealed/a.jpg`),
+      ).toBe(false);
     });
   });
 });

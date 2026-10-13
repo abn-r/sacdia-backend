@@ -8,7 +8,6 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   StartHonorDto,
   UpdateUserHonorDto,
@@ -40,6 +39,12 @@ import {
   toInstructorView,
   instructorKind,
 } from '../instructors/instructor-view';
+import {
+  buildHonorSearchQuery,
+  buildHonorSearchTokens,
+  pickHonorSearchMatches,
+} from './honor-search-tokens';
+import { isCertificateImportObjectKey } from '../certificate-bulk-imports/certificate-import-file-ref';
 import { loadLatestProposalViews } from './honor-instructor-proposal-view';
 import {
   CatalogCacheService,
@@ -124,26 +129,81 @@ export class HonorsService {
         },
       }),
       ...(filters?.skillLevel && { skill_level: filters.skillLevel }),
-      ...(filters?.search && this.buildSearchWhere(filters.search)),
     };
   }
 
   /**
-   * Busca en el nombre principal (español) y en las traducciones, de cualquier
-   * idioma. Prisma no escapa `%`/`_` en `contains`. Sin cache: el filtro por
-   * `ILIKE %q%` no aprovecha el índice btree de `honors.name`.
+   * Ids de honores activos que coinciden con la búsqueda, ya ordenados por
+   * cantidad de tokens coincidentes. Busca en el nombre y en las traducciones sin
+   * distinguir tildes ni mayúsculas (sin `unaccent`: ver honor-search-tokens).
+   * Primero los que coinciden con todos los tokens; si no hay, con cualquiera.
+   * Sin cache: el filtro por `ILIKE %q%` no aprovecha el índice de `honors.name`.
    */
-  private buildSearchWhere(search: string): Prisma.honorsWhereInput {
-    const term = escapeLikeWildcards(search.trim().replace(/\s+/g, ' '));
+  private async searchHonorMatches(
+    search: string,
+  ): Promise<Array<{ honorId: number; score: number }>> {
+    const tokens = buildHonorSearchTokens(search);
+    if (tokens.length === 0) return [];
+    const rows = await this.prisma.$queryRaw<
+      Array<{ honor_id: number; score: number }>
+    >(buildHonorSearchQuery(tokens));
+    return pickHonorSearchMatches(rows, tokens.length);
+  }
+
+  private honorListInclude(locale: string) {
     return {
-      OR: [
-        { name: { contains: term, mode: 'insensitive' } },
-        {
-          translations: {
-            some: { name: { contains: term, mode: 'insensitive' } },
-          },
+      honors_categories: { select: { name: true, icon: true } },
+      club_types: { select: { name: true } },
+      honor_club_types: {
+        where: { active: true },
+        select: {
+          club_type_id: true,
+          club_type: { select: { name: true } },
         },
-      ],
+      },
+      translations: {
+        where: { locale },
+        select: { locale: true, name: true, description: true },
+      },
+    } satisfies Prisma.honorsInclude;
+  }
+
+  /**
+   * Página del catálogo con búsqueda: los filtros (categoría, tipo de club, nivel)
+   * se aplican sobre los ids que coinciden; el orden es por tokens coincidentes y
+   * luego por nombre.
+   */
+  private async findAllBySearch(
+    baseWhere: Prisma.honorsWhereInput,
+    search: string,
+    locale: string,
+    skip: number,
+    take: number,
+  ) {
+    const matches = await this.searchHonorMatches(search);
+    if (matches.length === 0) return { data: [], total: 0 };
+
+    const score = new Map(matches.map((m) => [m.honorId, m.score]));
+    const candidates = await this.prisma.honors.findMany({
+      where: { ...baseWhere, honor_id: { in: [...score.keys()] } },
+      select: { honor_id: true, name: true },
+    });
+    const ranked = candidates.sort(
+      (a, b) =>
+        (score.get(b.honor_id) ?? 0) - (score.get(a.honor_id) ?? 0) ||
+        a.name.localeCompare(b.name, 'es'),
+    );
+    const pageIds = ranked.slice(skip, skip + take).map((h) => h.honor_id);
+    if (pageIds.length === 0) return { data: [], total: ranked.length };
+
+    const rows = await this.prisma.honors.findMany({
+      where: { honor_id: { in: pageIds } },
+      include: this.honorListInclude(locale),
+    });
+    const byId = new Map(rows.map((row) => [row.honor_id, row]));
+    return {
+      data: pageIds.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])),
+      total: ranked.length,
     };
   }
 
@@ -153,31 +213,21 @@ export class HonorsService {
   ): Promise<PaginatedResult<any>> {
     const locale = this.translationService.getCurrentLocale();
     const where = this.buildHonorCatalogWhere(filters);
+    const skip = pagination?.skip ?? 0;
+    const take = pagination?.take ?? 50;
 
-    const [data, total] = await Promise.all([
-      this.prisma.honors.findMany({
-        where,
-        include: {
-          honors_categories: { select: { name: true, icon: true } },
-          club_types: { select: { name: true } },
-          honor_club_types: {
-            where: { active: true },
-            select: {
-              club_type_id: true,
-              club_type: { select: { name: true } },
-            },
-          },
-          translations: {
-            where: { locale },
-            select: { locale: true, name: true, description: true },
-          },
-        },
-        orderBy: [{ honors_category_id: 'asc' }, { name: 'asc' }],
-        skip: pagination?.skip ?? 0,
-        take: pagination?.take ?? 50,
-      }),
-      this.prisma.honors.count({ where }),
-    ]);
+    const { data, total } = filters?.search
+      ? await this.findAllBySearch(where, filters.search, locale, skip, take)
+      : await Promise.all([
+          this.prisma.honors.findMany({
+            where,
+            include: this.honorListInclude(locale),
+            orderBy: [{ honors_category_id: 'asc' }, { name: 'asc' }],
+            skip,
+            take,
+          }),
+          this.prisma.honors.count({ where }),
+        ]).then(([rows, count]) => ({ data: rows, total: count }));
 
     const translated = this.translationService.translateMany(
       data,
@@ -1612,8 +1662,13 @@ export class HonorsService {
 
     let images: unknown = userHonor.images;
     if (hasImages && Array.isArray(userHonor.images)) {
+      // Filas aprobadas antes de que `images` dejara de recibir PDFs: un PDF de
+      // una carga por certificado no se muestra como miniatura (sigue en
+      // `certificate`).
       const urls = userHonor.images.filter(
-        (value: unknown): value is string => typeof value === 'string',
+        (value: unknown): value is string =>
+          typeof value === 'string' &&
+          !(isCertificateImportObjectKey(value) && /\.pdf$/i.test(value)),
       );
       images = await Promise.all(
         urls.map((url) =>
@@ -1652,13 +1707,20 @@ export class HonorsService {
   ): Promise<string | null> {
     if (!value) return null;
 
+    // Al aprobar una carga por certificado se copia la referencia del archivo del
+    // lote, que vive en CERTIFICATE_IMPORTS: firmarla con el bucket de honores
+    // daría una URL a un objeto que no existe.
+    const bucket = isCertificateImportObjectKey(value)
+      ? StorageBucketAlias.CERTIFICATE_IMPORTS
+      : bucketAlias;
+
     try {
-      return await this.fileStorage.getSignedDownloadUrl(bucketAlias, value, {
+      return await this.fileStorage.getSignedDownloadUrl(bucket, value, {
         expiresInSeconds: HonorsService.PRIVATE_ASSET_URL_TTL_SECONDS,
       });
     } catch (error) {
       this.logger.warn(
-        `Failed to generate signed URL for ${bucketAlias}. Returning original value.`,
+        `Failed to generate signed URL for ${bucket}. Returning original value.`,
         error,
       );
       return value;

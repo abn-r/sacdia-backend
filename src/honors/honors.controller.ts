@@ -85,7 +85,7 @@ export class HonorsController {
     required: false,
     type: String,
     description:
-      'Busca en el nombre y sus traducciones. 2 a 60 caracteres tras recortar; si no cumple, 400. No se cachea.',
+      'Busca en el nombre y sus traducciones, sin distinguir mayúsculas ni tildes. Por palabras (de 3 letras o más): primero las que coinciden con todas; si no hay, con cualquiera, ordenadas por coincidencias. 2 a 60 caracteres tras recortar; si no cumple, 400. No se cachea.',
   })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
