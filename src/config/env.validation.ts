@@ -1,5 +1,11 @@
 import * as Joi from 'joi';
 import { isPlaceholderUrl } from './bullmq.config';
+import {
+  BULLMQ_DEFAULT_DRAIN_DELAY_SECONDS,
+  BULLMQ_DEFAULT_STALLED_INTERVAL_MS,
+  BULLMQ_WORKER_QUEUES,
+  parseQueueList,
+} from './bullmq-workers.config';
 import { decodeOcrProxySecret } from './ocr-proxy-secret';
 
 const OCR_PROXY_ENV_PATTERN = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
@@ -187,6 +193,46 @@ export const envValidationSchema = Joi.object({
     .integer()
     .positive()
     .default(5000),
+
+  // Rate limiting when Redis errors at runtime: false (default) surfaces the
+  // Redis error as a 500 so throttling is never bypassed; true lets requests
+  // through unthrottled (availability over protection). Boot-time readiness
+  // checks are unaffected.
+  THROTTLER_FAIL_OPEN: Joi.boolean().default(false),
+
+  // BullMQ workers - idle Redis command budget (see bullmq-workers.config.ts).
+  // Master switch: false creates no worker in this process (producers still
+  // enqueue, nothing consumes). Default true.
+  BULLMQ_WORKERS_ENABLED: Joi.boolean().default(true),
+  // Comma-separated queue names whose worker is NOT created in this process.
+  BULLMQ_DISABLED_QUEUES: Joi.string()
+    .allow('')
+    .custom((value: string, helpers) => {
+      const unknown = parseQueueList(value).filter(
+        (name) => !(BULLMQ_WORKER_QUEUES as readonly string[]).includes(name),
+      );
+      if (unknown.length > 0) {
+        return helpers.message({
+          custom: `{{#label}} contains unknown queue(s): ${unknown.join(', ')}. Valid: ${BULLMQ_WORKER_QUEUES.join(', ')}`,
+        });
+      }
+      return value;
+    }, 'BullMQ queue name list validation')
+    .optional(),
+  // Seconds an idle worker blocks waiting for a job. New jobs wake it
+  // immediately (marker), so this only bounds idle polling cost.
+  BULLMQ_WORKER_DRAIN_DELAY_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .max(300)
+    .default(BULLMQ_DEFAULT_DRAIN_DELAY_SECONDS),
+  // Interval of the stalled-jobs check. Crashed-worker jobs are recovered
+  // within ~2x this value.
+  BULLMQ_WORKER_STALLED_INTERVAL_MS: Joi.number()
+    .integer()
+    .min(30_000)
+    .max(3_600_000)
+    .default(BULLMQ_DEFAULT_STALLED_INTERVAL_MS),
 
   // Cloudflare R2
   R2_ACCOUNT_ID: Joi.string().optional(),

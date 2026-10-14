@@ -1,4 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { attachBullmqWorkerErrorLogging } from '../config/bullmq-worker-logging';
+import { buildBullmqWorkerOptions } from '../config/bullmq-workers.config';
 import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Job } from 'bullmq';
 import * as Sentry from '@sentry/node';
@@ -12,7 +14,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 
-@Processor(MASTER_HONORS_QUEUE)
+@Processor(MASTER_HONORS_QUEUE, buildBullmqWorkerOptions('master-honors'))
 export class MasterHonorsRecalculationProcessor
   extends WorkerHost
   implements OnApplicationBootstrap
@@ -27,9 +29,11 @@ export class MasterHonorsRecalculationProcessor
   }
 
   onApplicationBootstrap() {
-    this.worker.on('error', (err: Error) => {
-      this.logger.error(`BullMQ worker error: ${err.message}`, err.stack);
-    });
+    attachBullmqWorkerErrorLogging(
+      this.worker,
+      this.logger,
+      MASTER_HONORS_QUEUE,
+    );
 
     this.worker.on('failed', (job: Job | undefined, error: Error) => {
       this.logger.error(

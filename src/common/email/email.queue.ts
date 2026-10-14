@@ -5,11 +5,19 @@ import { Job, Queue } from 'bullmq';
 export const EMAIL_QUEUE = 'emails';
 export const EMAIL_DAILY_LIMIT = 90;
 export const EMAIL_DAILY_LIMIT_DURATION_MS = 24 * 60 * 60 * 1000;
+/**
+ * `maximumRateLimitDelay`: while the daily limiter is active the worker wakes
+ * up at most every N ms to promote delayed jobs (BullMQ default: 30 s, i.e.
+ * ~2 Redis commands/min for as long as the limiter holds - up to 24 h).
+ * 5 min costs ~0.4 commands/min; retries scheduled during that window can
+ * start up to 5 min late, which is irrelevant once the day's quota is spent.
+ */
 export const EMAIL_WORKER_OPTIONS = {
   limiter: {
     max: EMAIL_DAILY_LIMIT,
     duration: EMAIL_DAILY_LIMIT_DURATION_MS,
   },
+  maximumRateLimitDelay: 5 * 60 * 1000,
 } as const;
 
 // ---------------------------------------------------------------------------

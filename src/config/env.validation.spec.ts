@@ -470,3 +470,67 @@ describe('envValidationSchema process memory logging', () => {
     expect(error?.message).toContain('PROCESS_MEMORY_LOG_INTERVAL_MINUTES');
   });
 });
+
+describe('envValidationSchema BullMQ worker configuration', () => {
+  it('applies cheap idle-polling defaults', () => {
+    const { error, value } = validate();
+
+    expect(error).toBeUndefined();
+    expect(value.BULLMQ_WORKERS_ENABLED).toBe(true);
+    expect(value.BULLMQ_WORKER_DRAIN_DELAY_SECONDS).toBe(30);
+    expect(value.BULLMQ_WORKER_STALLED_INTERVAL_MS).toBe(300_000);
+    expect(value.BULLMQ_DISABLED_QUEUES).toBeUndefined();
+  });
+
+  it('accepts explicit values', () => {
+    const { error, value } = validate({
+      BULLMQ_WORKERS_ENABLED: 'false',
+      BULLMQ_DISABLED_QUEUES: 'emails,certificate-import-ocr',
+      BULLMQ_WORKER_DRAIN_DELAY_SECONDS: '60',
+      BULLMQ_WORKER_STALLED_INTERVAL_MS: '600000',
+    });
+
+    expect(error).toBeUndefined();
+    expect(value.BULLMQ_WORKERS_ENABLED).toBe(false);
+    expect(value.BULLMQ_WORKER_DRAIN_DELAY_SECONDS).toBe(60);
+    expect(value.BULLMQ_WORKER_STALLED_INTERVAL_MS).toBe(600_000);
+  });
+
+  it('allows an empty disabled-queue list', () => {
+    expect(validate({ BULLMQ_DISABLED_QUEUES: '' }).error).toBeUndefined();
+  });
+
+  it('rejects unknown queue names with the valid list', () => {
+    const { error } = validate({ BULLMQ_DISABLED_QUEUES: 'emails,typo' });
+
+    expect(error?.message).toContain('typo');
+    expect(error?.message).toContain('certificate-import-ocr');
+  });
+
+  it.each([
+    ['BULLMQ_WORKERS_ENABLED', 'maybe'],
+    ['BULLMQ_WORKER_DRAIN_DELAY_SECONDS', '0'],
+    ['BULLMQ_WORKER_DRAIN_DELAY_SECONDS', '301'],
+    ['BULLMQ_WORKER_DRAIN_DELAY_SECONDS', '1.5'],
+    ['BULLMQ_WORKER_STALLED_INTERVAL_MS', '1000'],
+    ['BULLMQ_WORKER_STALLED_INTERVAL_MS', '3600001'],
+  ])('rejects %s=%s', (key, rawValue) => {
+    expect(validate({ [key]: rawValue }).error).toBeDefined();
+  });
+});
+
+describe('envValidationSchema throttler fail-open', () => {
+  it('defaults to fail-closed', () => {
+    const { error, value } = validate();
+
+    expect(error).toBeUndefined();
+    expect(value.THROTTLER_FAIL_OPEN).toBe(false);
+  });
+
+  it('accepts an explicit opt-in and rejects garbage', () => {
+    expect(
+      validate({ THROTTLER_FAIL_OPEN: 'true' }).value.THROTTLER_FAIL_OPEN,
+    ).toBe(true);
+    expect(validate({ THROTTLER_FAIL_OPEN: 'maybe' }).error).toBeDefined();
+  });
+});

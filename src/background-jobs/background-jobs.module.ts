@@ -8,6 +8,7 @@ import { DataExportModule } from '../data-export/data-export.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
 import { isPlaceholderUrl } from '../config/bullmq.config';
+import { isBullmqWorkerEnabled } from '../config/bullmq-workers.config';
 
 function isRedisConfigured(): boolean {
   const rawUrl = process.env.REDIS_URL?.trim();
@@ -20,7 +21,8 @@ function isRedisConfigured(): boolean {
   }
 }
 
-const redisAvailable = isRedisConfigured();
+const workerEnabled =
+  isRedisConfigured() && isBullmqWorkerEnabled('background-jobs');
 
 @Module({
   imports: [
@@ -32,6 +34,6 @@ const redisAvailable = isRedisConfigured();
     AnnualFoldersModule,
     DataExportModule,
   ],
-  providers: [...(redisAvailable ? [BackgroundJobsProcessor] : [])],
+  providers: [...(workerEnabled ? [BackgroundJobsProcessor] : [])],
 })
 export class BackgroundJobsModule {}

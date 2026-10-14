@@ -22,6 +22,7 @@ import { MasterHonorsService } from './master-honors.service';
 import { MasterHonorsQueueModule } from './master-honors-queue.module';
 import { MasterHonorsRecalculationProcessor } from './master-honors-recalculation.processor';
 import { isPlaceholderUrl } from '../config/bullmq.config';
+import { isBullmqWorkerEnabled } from '../config/bullmq-workers.config';
 
 function isRedisConfigured(): boolean {
   const rawUrl = process.env.REDIS_URL?.trim();
@@ -63,7 +64,9 @@ function isRedisConfigured(): boolean {
     AdminHonorsService,
     HonorValidationWorkflowService,
     MasterHonorsEvaluatorService,
-    ...(isRedisConfigured() ? [MasterHonorsRecalculationProcessor] : []),
+    ...(isRedisConfigured() && isBullmqWorkerEnabled('master-honors')
+      ? [MasterHonorsRecalculationProcessor]
+      : []),
   ],
   exports: [HonorsService, HonorValidationWorkflowService],
 })

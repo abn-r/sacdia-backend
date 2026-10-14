@@ -1,4 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { attachBullmqWorkerErrorLogging } from '../../config/bullmq-worker-logging';
+import { buildBullmqWorkerOptions } from '../../config/bullmq-workers.config';
 import { HttpException, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Job, UnrecoverableError } from 'bullmq';
 import { CertificateBulkImportsService } from '../certificate-bulk-imports.service';
@@ -7,7 +9,10 @@ import {
   CertificateOcrJobPayload,
 } from './certificate-ocr.queue';
 
-@Processor(CERTIFICATE_OCR_QUEUE, { concurrency: 1 })
+@Processor(
+  CERTIFICATE_OCR_QUEUE,
+  buildBullmqWorkerOptions('certificate-import-ocr', { concurrency: 1 }),
+)
 export class CertificateOcrProcessor
   extends WorkerHost
   implements OnApplicationBootstrap
@@ -19,9 +24,11 @@ export class CertificateOcrProcessor
   }
 
   onApplicationBootstrap() {
-    this.worker.on('error', (err: Error) => {
-      this.logger.error(`certificate OCR worker error: ${err.message}`);
-    });
+    attachBullmqWorkerErrorLogging(
+      this.worker,
+      this.logger,
+      CERTIFICATE_OCR_QUEUE,
+    );
     this.worker.on('failed', (job, err) => {
       void this.recordTerminalFailure(job, err);
     });

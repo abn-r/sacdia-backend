@@ -8,6 +8,8 @@
 // =============================================================================
 
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { attachBullmqWorkerErrorLogging } from '../config/bullmq-worker-logging';
+import { buildBullmqWorkerOptions } from '../config/bullmq-workers.config';
 import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
@@ -119,7 +121,7 @@ const PERMANENT_FCM_ERROR_CODES = new Set([
   'messaging/invalid-argument',
 ]);
 
-@Processor(NOTIFICATIONS_QUEUE)
+@Processor(NOTIFICATIONS_QUEUE, buildBullmqWorkerOptions('notifications'))
 export class NotificationsProcessor
   extends WorkerHost
   implements OnApplicationBootstrap
@@ -148,9 +150,11 @@ export class NotificationsProcessor
    * initialized and BullRegistrar has run.
    */
   onApplicationBootstrap() {
-    this.worker.on('error', (err: Error) => {
-      this.logger.error(`BullMQ worker error: ${err.message}`, err.stack);
-    });
+    attachBullmqWorkerErrorLogging(
+      this.worker,
+      this.logger,
+      NOTIFICATIONS_QUEUE,
+    );
 
     this.worker.on('failed', (job: Job | undefined, err: Error) => {
       this.logger.error(

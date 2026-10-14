@@ -15,6 +15,7 @@ import {
 import { PrismaModule } from '../prisma/prisma.module';
 import { FirebaseAdminModule } from '../config/firebase-admin.module';
 import { BullModule } from '@nestjs/bullmq';
+import { isBullmqWorkerEnabled } from '../config/bullmq-workers.config';
 import { isPlaceholderUrl } from '../config/bullmq.config';
 
 /**
@@ -54,7 +55,9 @@ function isRedisConfigured(): boolean {
     NotificationPreferencesService,
     NotificationCategorySettingsService,
     FcmTokensService,
-    ...(isRedisConfigured() ? [NotificationsProcessor] : []),
+    ...(isRedisConfigured() && isBullmqWorkerEnabled('notifications')
+      ? [NotificationsProcessor]
+      : []),
   ],
   exports: [
     NotificationsService,

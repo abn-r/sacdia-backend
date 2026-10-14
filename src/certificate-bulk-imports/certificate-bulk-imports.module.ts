@@ -27,6 +27,7 @@ import {
   isCertificateOcrQueueConfigured,
 } from './ocr/certificate-ocr-queue.module';
 import { CertificateOcrProcessor } from './ocr/certificate-ocr.processor';
+import { isBullmqWorkerEnabled } from '../config/bullmq-workers.config';
 
 @Module({
   imports: [PrismaModule, InstructorsModule, CertificateOcrQueueModule],
@@ -63,7 +64,10 @@ import { CertificateOcrProcessor } from './ocr/certificate-ocr.processor';
         GOOGLE_VISION_CLIENT_FACTORY,
       ],
     },
-    ...(isCertificateOcrQueueConfigured() ? [CertificateOcrProcessor] : []),
+    ...(isCertificateOcrQueueConfigured() &&
+    isBullmqWorkerEnabled('certificate-import-ocr')
+      ? [CertificateOcrProcessor]
+      : []),
   ],
   exports: [
     CertificateBulkImportsService,

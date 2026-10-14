@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { isBullmqWorkerEnabled } from '../config/bullmq-workers.config';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ACHIEVEMENTS_QUEUE } from './achievements.constants';
@@ -62,7 +63,9 @@ const queueImports = isRedisConfigured()
     AdminAchievementsService,
 
     // Processor — only when Redis is available
-    ...(isRedisConfigured() ? [AchievementsProcessor] : []),
+    ...(isRedisConfigured() && isBullmqWorkerEnabled('achievements')
+      ? [AchievementsProcessor]
+      : []),
   ],
   exports: [AchievementsService, HandlerRegistry],
 })

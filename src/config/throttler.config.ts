@@ -5,7 +5,10 @@ import type {
   ThrottlerOptions,
 } from '@nestjs/throttler';
 import { isPlaceholderUrl } from './bullmq.config';
-import { RedisThrottlerStorage } from './redis-throttler.storage';
+import {
+  RedisThrottlerStorage,
+  type RedisThrottlerStorageOptions,
+} from './redis-throttler.storage';
 
 const logger = new Logger('ThrottlerConfig');
 
@@ -50,13 +53,16 @@ export function getThrottlerTiers(nodeEnv: string | undefined) {
   return nodeEnv === 'development' ? THROTTLER_TIERS_DEV : THROTTLER_TIERS;
 }
 
-type RedisStorageFactory = (redisUrl: string) => RedisThrottlerStorage;
+type RedisStorageFactory = (
+  redisUrl: string,
+  options: RedisThrottlerStorageOptions,
+) => RedisThrottlerStorage;
 type ConfigReader = Pick<ConfigService, 'get'>;
 
 export async function buildThrottlerOptions(
   configService: ConfigReader,
-  createStorage: RedisStorageFactory = (redisUrl) =>
-    new RedisThrottlerStorage(redisUrl),
+  createStorage: RedisStorageFactory = (redisUrl, options) =>
+    new RedisThrottlerStorage(redisUrl, options),
 ): Promise<ThrottlerModuleOptions> {
   const nodeEnv = configService.get<string>('NODE_ENV') ?? 'development';
   const isProduction = nodeEnv === 'production';
@@ -79,7 +85,9 @@ export async function buildThrottlerOptions(
     );
   }
 
-  const storage = createStorage(redisUrl);
+  const storage = createStorage(redisUrl, {
+    failOpen: isFailOpenEnabled(configService.get('THROTTLER_FAIL_OPEN')),
+  });
 
   try {
     await storage.assertReady();
@@ -109,6 +117,11 @@ function handleRedisUnavailable(
 
   logger.warn(`${message} Falling back to in-memory throttler storage.`);
   return throttlers;
+}
+
+/** Fail-closed is the default; only an explicit true/'true' turns fail-open on. */
+function isFailOpenEnabled(value: unknown): boolean {
+  return value === true || String(value).trim().toLowerCase() === 'true';
 }
 
 function isValidRedisUrl(redisUrl: string): boolean {

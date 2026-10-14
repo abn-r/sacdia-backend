@@ -1,4 +1,4 @@
-import type { ThrottlerOptions } from '@nestjs/throttler';
+import { SkipThrottle, type ThrottlerOptions } from '@nestjs/throttler';
 
 const configuredThrottlerNames = ['short', 'medium', 'long'] as const;
 
@@ -13,5 +13,17 @@ export function namedThrottle(
       (typeof configuredThrottlerNames)[number],
       NamedThrottleOptions
     >,
+  );
+}
+
+/**
+ * Exempts a handler or controller from every configured throttler tier.
+ *
+ * `@SkipThrottle()` alone only skips the throttler named "default"; this app
+ * registers short/medium/long, so each name must be listed explicitly.
+ */
+export function SkipAllThrottlerTiers(): MethodDecorator & ClassDecorator {
+  return SkipThrottle(
+    Object.fromEntries(configuredThrottlerNames.map((name) => [name, true])),
   );
 }
