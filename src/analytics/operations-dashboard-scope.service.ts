@@ -10,6 +10,7 @@ import {
   type ResolvedAuthorizationProfile,
 } from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import type {
   OperationsDashboardScopeFilters,
   OperationsDashboardScopeLevel,
@@ -22,6 +23,12 @@ const DIVISION_ROLES = new Set(['director-dia', 'assistant-dia']);
 const UNION_ROLES = new Set(['director-union', 'assistant-union']);
 const LOCAL_FIELD_ROLES = new Set(['director-lf', 'assistant-lf']);
 const ADMIN_SCOPE_ROLES = new Set(['admin', 'assistant-admin']);
+const COORDINATOR_ROLES = new Set([
+  'coordinator',
+  'zone-coordinator',
+  'general-coordinator',
+]);
+const COORDINATOR_SCOPE_NAME = 'Secciones asignadas';
 
 type ActorBaseScope = {
   level: OperationsDashboardScopeLevel;
@@ -33,6 +40,7 @@ export class OperationsDashboardScopeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly coordinationService: CoordinationService,
   ) {}
 
   async resolve(
@@ -42,6 +50,10 @@ export class OperationsDashboardScopeService {
     const authorization =
       await this.authorizationContext.resolveUserAuthorization(actorId);
     const base = this.resolveActorBaseScope(authorization);
+
+    if (base.level === 'coordinator') {
+      return this.resolveCoordinatorScope(actorId, filters);
+    }
 
     this.assertSameLevelFiltersWithinBase(base, authorization, filters);
 
@@ -115,7 +127,64 @@ export class OperationsDashboardScopeService {
       throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
     }
 
+    if (hasAnyRole(roles, COORDINATOR_ROLES)) {
+      return { level: 'coordinator', id: null };
+    }
+
     throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+  }
+
+  /**
+   * Coordinators see only their assigned club sections (PR #396 canon) and
+   * cannot navigate the territory, so any territorial filter is denied.
+   */
+  private async resolveCoordinatorScope(
+    actorId: string,
+    filters: OperationsDashboardScopeFilters,
+  ): Promise<ResolvedOperationsDashboardScope> {
+    if (
+      filters.divisionId !== undefined ||
+      filters.unionId !== undefined ||
+      filters.localFieldId !== undefined
+    ) {
+      this.denyOutsideScope();
+    }
+
+    const scope = await this.coordinationService.resolveCoordinatorScope(actorId);
+    const sectionIds = [...new Set(scope.club_section_ids)].sort(
+      (a, b) => a - b,
+    );
+    if (sectionIds.length === 0) {
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+
+    return {
+      level: 'coordinator',
+      id: null,
+      name: await this.resolveCoordinatorScopeName(scope.assignments),
+      path: [],
+      section_ids: sectionIds,
+    };
+  }
+
+  private async resolveCoordinatorScopeName(
+    assignments: Array<{ assignment_type: string; zone_id: number | null }>,
+  ): Promise<string> {
+    const zoneIds = new Set(
+      assignments.map((assignment) =>
+        assignment.assignment_type === 'ZONE' ? assignment.zone_id : null,
+      ),
+    );
+    if (zoneIds.size !== 1) return COORDINATOR_SCOPE_NAME;
+
+    const [zoneId] = zoneIds;
+    if (typeof zoneId !== 'number') return COORDINATOR_SCOPE_NAME;
+
+    const zone = await this.prisma.coordination_zones.findUnique({
+      where: { zone_id: zoneId },
+      select: { zone_id: true, name: true, active: true },
+    });
+    return zone?.active ? zone.name : COORDINATOR_SCOPE_NAME;
   }
 
   private requireNumericScopeId(value: number | string | undefined): number {

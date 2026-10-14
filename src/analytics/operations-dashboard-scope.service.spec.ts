@@ -64,14 +64,41 @@ const resolvedAuth = ({
   },
 });
 
+const coordinatorScope = ({
+  sectionIds,
+  assignments,
+}: {
+  sectionIds: number[];
+  assignments: Array<{
+    assignment_type: 'GENERAL' | 'ZONE' | 'SECTION';
+    zone_id?: number | null;
+  }>;
+}) => ({
+  is_coordinator: sectionIds.length > 0,
+  club_section_ids: sectionIds,
+  assignments: assignments.map((assignment, index) => ({
+    assignment_id: `assignment-${index}`,
+    assignment_type: assignment.assignment_type,
+    local_field_id: 100,
+    zone_id: assignment.zone_id ?? null,
+    club_type_id: null,
+    club_section_id: null,
+  })),
+  sections: [],
+});
+
 describe('OperationsDashboardScopeService', () => {
   const authorizationContext = {
     resolveUserAuthorization: jest.fn(),
+  };
+  const coordinationService = {
+    resolveCoordinatorScope: jest.fn(),
   };
   const prisma = {
     divisions: { findUnique: jest.fn() },
     unions: { findUnique: jest.fn() },
     local_fields: { findUnique: jest.fn() },
+    coordination_zones: { findUnique: jest.fn() },
   };
 
   let service: OperationsDashboardScopeService;
@@ -81,6 +108,14 @@ describe('OperationsDashboardScopeService', () => {
     service = new OperationsDashboardScopeService(
       prisma as any,
       authorizationContext as any,
+      coordinationService as any,
+    );
+    prisma.coordination_zones.findUnique.mockImplementation(({ where }) =>
+      Promise.resolve(
+        where.zone_id === 5
+          ? { zone_id: 5, name: 'Zona Norte', active: true }
+          : null,
+      ),
     );
 
     prisma.divisions.findUnique.mockImplementation(({ where }) =>
@@ -265,20 +300,131 @@ describe('OperationsDashboardScopeService', () => {
     },
   );
 
-  it('rejects coordinators and club-only actors', async () => {
-    authorizationContext.resolveUserAuthorization.mockResolvedValueOnce(
-      resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
-    );
-    await expect(service.resolve('coordinator', {})).rejects.toMatchObject({
-      code: ErrorCode.GUARD_PERMISSION_DENIED,
-    });
-
+  it('rejects club-only actors', async () => {
     authorizationContext.resolveUserAuthorization.mockResolvedValueOnce(
       resolvedAuth({ roles: [] }),
     );
     await expect(service.resolve('club-actor', {})).rejects.toMatchObject({
       code: ErrorCode.GUARD_PERMISSION_DENIED,
     });
+    expect(coordinationService.resolveCoordinatorScope).not.toHaveBeenCalled();
+  });
+
+  it('resolves a coordinator to its assigned sections, sorted and deduplicated', async () => {
+    authorizationContext.resolveUserAuthorization.mockResolvedValueOnce(
+      resolvedAuth({ roles: ['zone-coordinator'], localFieldId: 100 }),
+    );
+    coordinationService.resolveCoordinatorScope.mockResolvedValueOnce(
+      coordinatorScope({
+        sectionIds: [40, 12, 15, 12],
+        assignments: [{ assignment_type: 'GENERAL' }],
+      }),
+    );
+
+    await expect(service.resolve('coordinator', {})).resolves.toEqual({
+      level: 'coordinator',
+      id: null,
+      name: 'Secciones asignadas',
+      path: [],
+      section_ids: [12, 15, 40],
+    });
+    expect(coordinationService.resolveCoordinatorScope).toHaveBeenCalledWith(
+      'coordinator',
+    );
+  });
+
+  it('names the scope after the zone when every assignment is the same zone', async () => {
+    authorizationContext.resolveUserAuthorization.mockResolvedValueOnce(
+      resolvedAuth({ roles: ['zone-coordinator'], localFieldId: 100 }),
+    );
+    coordinationService.resolveCoordinatorScope.mockResolvedValueOnce(
+      coordinatorScope({
+        sectionIds: [12, 15],
+        assignments: [
+          { assignment_type: 'ZONE', zone_id: 5 },
+          { assignment_type: 'ZONE', zone_id: 5 },
+        ],
+      }),
+    );
+
+    await expect(service.resolve('coordinator', {})).resolves.toMatchObject({
+      level: 'coordinator',
+      name: 'Zona Norte',
+    });
+    expect(prisma.coordination_zones.findUnique).toHaveBeenCalledWith({
+      where: { zone_id: 5 },
+      select: { zone_id: true, name: true, active: true },
+    });
+  });
+
+  it('falls back to the generic name for mixed assignments or an unknown zone', async () => {
+    authorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
+    );
+    coordinationService.resolveCoordinatorScope.mockResolvedValueOnce(
+      coordinatorScope({
+        sectionIds: [12],
+        assignments: [
+          { assignment_type: 'ZONE', zone_id: 5 },
+          { assignment_type: 'SECTION' },
+        ],
+      }),
+    );
+    await expect(service.resolve('coordinator', {})).resolves.toMatchObject({
+      name: 'Secciones asignadas',
+    });
+
+    coordinationService.resolveCoordinatorScope.mockResolvedValueOnce(
+      coordinatorScope({
+        sectionIds: [12],
+        assignments: [{ assignment_type: 'ZONE', zone_id: 999 }],
+      }),
+    );
+    await expect(service.resolve('coordinator', {})).resolves.toMatchObject({
+      name: 'Secciones asignadas',
+    });
+  });
+
+  it('rejects a coordinator without active sections with a scope-missing error', async () => {
+    authorizationContext.resolveUserAuthorization.mockResolvedValueOnce(
+      resolvedAuth({ roles: ['general-coordinator'], localFieldId: 100 }),
+    );
+    coordinationService.resolveCoordinatorScope.mockResolvedValueOnce(
+      coordinatorScope({ sectionIds: [], assignments: [] }),
+    );
+
+    await expect(service.resolve('coordinator', {})).rejects.toMatchObject({
+      code: ErrorCode.ADMIN_USER_SCOPE_MISSING,
+    });
+  });
+
+  it('rejects any territorial filter for a coordinator before resolving sections', async () => {
+    authorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
+    );
+
+    for (const filters of [
+      { localFieldId: 100 },
+      { unionId: 10 },
+      { divisionId: 1 },
+    ]) {
+      await expect(service.resolve('coordinator', filters)).rejects.toMatchObject(
+        { code: ErrorCode.GUARD_PERMISSION_DENIED },
+      );
+    }
+    expect(coordinationService.resolveCoordinatorScope).not.toHaveBeenCalled();
+  });
+
+  it('prefers a broader territorial role over a coordinator role', async () => {
+    authorizationContext.resolveUserAuthorization.mockResolvedValueOnce(
+      resolvedAuth({ roles: ['coordinator', 'director-lf'], localFieldId: 100 }),
+    );
+
+    await expect(service.resolve('director', {})).resolves.toMatchObject({
+      level: 'local_field',
+      id: 100,
+    });
+    expect(coordinationService.resolveCoordinatorScope).not.toHaveBeenCalled();
   });
 
   it('returns 400 for an internally inconsistent requested chain', async () => {
