@@ -116,7 +116,7 @@ export class SocialSignInService {
       // The resolver deleted the previous holder's sessions; their access JWTs
       // stay valid until expiry unless the user is blacklisted. Do it before
       // signing so the new JWT (iat >= blacklist time) is not caught by it.
-      await this.tokenBlacklist.blacklistAllUserTokens(userId, JWT_TTL_SECONDS);
+      await this.blacklistPriorTokens(userId);
     }
 
     // Same rule as password login: with TOTP enrolled the JWT is mfa_pending
@@ -162,6 +162,31 @@ export class SocialSignInService {
       },
       needsPostRegistration: !userPr?.complete,
     };
+  }
+
+  /**
+   * The resolver already deleted the previous holder's sessions in a committed
+   * transaction, so a retry of the request would take the returning-user path
+   * and never blacklist again. Retry once here; if the cache is still down,
+   * log and carry on: the damage is bounded by the remaining JWT lifetime.
+   */
+  private async blacklistPriorTokens(userId: string): Promise<void> {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await this.tokenBlacklist.blacklistAllUserTokens(
+          userId,
+          JWT_TTL_SECONDS,
+        );
+        return;
+      } catch (error) {
+        if (attempt === 2) {
+          this.logger.error(
+            `Could not blacklist prior access JWTs for user ${userId} after revoking an unverified account — they stay valid up to ${JWT_TTL_SECONDS}s`,
+            error instanceof Error ? error.stack : String(error),
+          );
+        }
+      }
+    }
   }
 
   /**

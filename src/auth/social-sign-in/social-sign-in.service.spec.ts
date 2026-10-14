@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { BetterAuthService } from '../../better-auth/better-auth.service';
 import { AppUnauthorizedException } from '../../common/errors/app.exception';
@@ -154,6 +155,51 @@ describe('SocialSignInService', () => {
     expect(blacklistOrder).toBeLessThan(
       betterAuth.signJwt.mock.invocationCallOrder[0],
     );
+  });
+
+  describe('when prior access was revoked and the blacklist is flaky', () => {
+    beforeEach(() => {
+      resolver.resolve.mockResolvedValue({
+        userId: 'user-1',
+        created: false,
+        linked: true,
+        revokedPriorAccess: true,
+      });
+    });
+
+    it('retries the blacklist once and signs in', async () => {
+      tokenBlacklist.blacklistAllUserTokens
+        .mockRejectedValueOnce(new Error('cache down'))
+        .mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.signIn('google', { idToken: 't', nonce: 'n' }),
+      ).resolves.toMatchObject({ accessToken: 'sacdia-jwt' });
+      expect(tokenBlacklist.blacklistAllUserTokens).toHaveBeenCalledTimes(2);
+    });
+
+    it('logs an error and still signs in when the retry fails too', async () => {
+      const errorLog = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      tokenBlacklist.blacklistAllUserTokens.mockRejectedValue(
+        new Error('cache down'),
+      );
+
+      try {
+        await expect(
+          service.signIn('google', { idToken: 't', nonce: 'n' }),
+        ).resolves.toMatchObject({ accessToken: 'sacdia-jwt' });
+        expect(tokenBlacklist.blacklistAllUserTokens).toHaveBeenCalledTimes(2);
+        expect(errorLog).toHaveBeenCalledTimes(1);
+        expect(String(errorLog.mock.calls[0][0])).toContain('user-1');
+        expect(String(errorLog.mock.calls[0][0])).not.toContain('@');
+        expect(betterAuth.createSession).toHaveBeenCalledWith('user-1');
+      } finally {
+        errorLog.mockRestore();
+        tokenBlacklist.blacklistAllUserTokens.mockReset();
+      }
+    });
   });
 
   it('does not blacklist anything on a regular sign-in', async () => {
