@@ -27,11 +27,12 @@ describe('SocialSignInController', () => {
     }
   });
 
-  it('delegates a known provider to the service', async () => {
+  it('delegates a known provider and wraps the result like /auth/login', async () => {
     service.signIn.mockResolvedValue({ accessToken: 'jwt' });
     const dto = { idToken: 't', nonce: 'n' };
     await expect(controller.signIn('google', dto)).resolves.toEqual({
-      accessToken: 'jwt',
+      status: 'success',
+      data: { accessToken: 'jwt' },
     });
     expect(service.signIn).toHaveBeenCalledWith('google', dto);
   });

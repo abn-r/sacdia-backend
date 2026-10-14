@@ -1,11 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
-// NOTE: `totp` is NOT a valid export from `better-auth/plugins`.
-// The correct plugin is `twoFactor` which includes TOTP + OTP + backup codes.
-// See better-auth.service.ts for the TOTP API differences documented there.
-import { twoFactor } from 'better-auth/plugins';
 import { PrismaClient } from '@prisma/client';
-import { resolveBetterAuthTrustedOrigins } from '../auth/oauth-redirect-allowlist';
 
 /**
  * Creates the Better Auth instance.
@@ -19,13 +14,11 @@ import { resolveBetterAuthTrustedOrigins } from '../auth/oauth-redirect-allowlis
  * (createUser, signInWithPassword, refreshSession, signOut, resetPasswordForEmail)
  * and writes directly to Prisma.
  *
- * The BA instance is kept for:
- *   - OAuth (signInSocial, callbackOAuth)
- *   - TOTP / MFA (future — pending interface redesign)
- *   - Reading sessions after OAuth callbacks
+ * SACDIA code no longer uses this instance: OAuth is native id-token sign-in
+ * (src/auth/social-sign-in) and TOTP lives in BetterAuthService. It is kept
+ * only until Better Auth is removed from the backend.
  *
- * The user.fields mapping below is intentionally minimal — we only keep the
- * fields BA needs internally for READ operations during OAuth flows.
+ * The user.fields mapping below is intentionally minimal.
  */
 // The explicit cast to `ReturnType<typeof betterAuth>` prevents TS2742
 // ("inferred type cannot be named without a reference to an internal zod path")
@@ -41,9 +34,8 @@ import { resolveBetterAuthTrustedOrigins } from '../auth/oauth-redirect-allowlis
 //   There is no way to write a non-inferred return type that is both assignable
 //   from the concrete value AND free of the internal zod reference — hence the cast.
 //
-// FIDELITY: Consumers only access `ba.api` (already typed as `any` at the call
-// site in better-auth.service.ts) and the `handler` property — both present on
-// Auth<BetterAuthOptions>. The cast does not regress runtime behaviour.
+// FIDELITY: Nothing in SACDIA consumes the returned instance any more, so the
+// cast has no runtime effect; it only keeps the declared return type nameable.
 export function createBetterAuth(
   prisma: PrismaClient,
 ): ReturnType<typeof betterAuth> {
@@ -54,7 +46,7 @@ export function createBetterAuth(
     user: {
       modelName: 'users',
       fields: {
-        // BA uses these field mappings for READ operations in OAuth flows.
+        // BA uses these field mappings for READ operations only.
         // NOTE: BA does NOT correctly apply these mappings for WRITE operations —
         // that is why BetterAuthService handles user creation directly via Prisma.
         id: 'user_id',
@@ -63,29 +55,13 @@ export function createBetterAuth(
         updatedAt: 'modified_at',
       },
     },
-    plugins: [twoFactor()],
     emailAndPassword: { enabled: true },
-    socialProviders: {
-      google: {
-        clientId: process.env.GOOGLE_CLIENT_ID!,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      },
-      apple: {
-        clientId: process.env.APPLE_CLIENT_ID!,
-        teamId: process.env.APPLE_TEAM_ID!,
-        keyId: process.env.APPLE_KEY_ID!,
-        privateKey: process.env.APPLE_PRIVATE_KEY!,
-      },
-    },
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
       updateAge: 60 * 60 * 24, // 1 day slide
     },
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL: process.env.BETTER_AUTH_BASE_URL,
-    // Same source as OAuth initiate. http(s) entries become origins (BA API);
-    // custom schemes stay exact. Exact path check remains in OAuthService.
-    trustedOrigins: resolveBetterAuthTrustedOrigins(),
     advanced: {
       database: {
         // BA 1.7 validates the Prisma schema before every adapter call and
@@ -93,7 +69,7 @@ export function createBetterAuth(
         // (user_id, email_verified), BA does not honour user.fields.id in that
         // check, and TOTP lives in our own code instead of the twoFactor
         // tables — so the check always fails. BetterAuthService writes users
-        // and sessions directly through Prisma; BA only runs the OAuth flow.
+        // and sessions directly through Prisma.
         validateSchema: false,
       },
     },

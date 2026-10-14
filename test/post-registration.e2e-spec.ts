@@ -27,8 +27,6 @@ describe('Post-registration step 3 E2E', () => {
     signJwt: jest.fn().mockReturnValue('fake-jwt'),
     resetPasswordForEmail: jest.fn(),
     updatePasswordById: jest.fn(),
-    getOAuthUrl: jest.fn(),
-    handleOAuthCallback: jest.fn(),
     enrollTotp: jest.fn(),
     verifyTotp: jest.fn(),
     disableTotp: jest.fn(),

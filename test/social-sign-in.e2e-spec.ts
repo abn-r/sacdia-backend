@@ -88,19 +88,37 @@ describe('Social sign-in E2E', () => {
       .mockImplementation((fn: (tx: PrismaService) => Promise<unknown>) =>
         fn(prisma),
       );
+    // Every delegate SocialAccountResolver / SocialSignInService can touch is
+    // stubbed, so no request reaches the real database even on a branch the
+    // fixtures do not intend to exercise.
     jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
-    jest.spyOn(prisma.account, 'create').mockResolvedValue({});
+    jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
+    jest.spyOn(prisma.account, 'create').mockResolvedValue({} as any);
+    jest.spyOn(prisma.account, 'update').mockResolvedValue({} as any);
+    jest
+      .spyOn(prisma.account, 'deleteMany')
+      .mockResolvedValue({ count: 0 } as any);
     jest
       .spyOn(prisma.account, 'findMany')
       .mockResolvedValue([{ providerId: 'google' }] as never);
-    jest.spyOn(prisma.users, 'findUnique').mockResolvedValue(dbUser);
-    jest.spyOn(prisma.users, 'create').mockResolvedValue(dbUser);
-    jest.spyOn(prisma.users, 'update').mockResolvedValue(dbUser);
+    jest
+      .spyOn(prisma.session, 'deleteMany')
+      .mockResolvedValue({ count: 0 } as any);
+    jest
+      .spyOn(prisma.verification, 'deleteMany')
+      .mockResolvedValue({ count: 0 } as any);
+    jest.spyOn(prisma.users, 'findUnique').mockResolvedValue(dbUser as any);
+    jest.spyOn(prisma.users, 'create').mockResolvedValue(dbUser as any);
+    jest.spyOn(prisma.users, 'update').mockResolvedValue(dbUser as any);
     jest
       .spyOn(prisma.users_pr, 'findUnique')
-      .mockResolvedValue({ complete: false });
-    jest.spyOn(prisma.users_pr, 'create').mockResolvedValue({});
-    jest.spyOn(prisma.users_roles, 'findFirst').mockResolvedValue({});
+      .mockResolvedValue({ complete: false } as any);
+    jest.spyOn(prisma.users_pr, 'create').mockResolvedValue({} as any);
+    jest.spyOn(prisma.users_roles, 'findFirst').mockResolvedValue({} as any);
+    jest.spyOn(prisma.users_roles, 'create').mockResolvedValue({} as any);
+    jest
+      .spyOn(prisma.roles, 'findFirst')
+      .mockResolvedValue({ role_id: 'role-user' } as any);
   });
 
   const post = (provider: string, body: object) =>
@@ -119,7 +137,7 @@ describe('Social sign-in E2E', () => {
     const res = await post('google', { idToken: 'id-token', nonce: 'nonce-1' });
 
     expect(res.status).toBe(201);
-    // Success responses are wrapped by the global interceptor: { status, data }.
+    // No global wrapper exists: SocialSignInController wraps like /auth/login.
     expect(res.body.status).toBe('success');
     expect(res.body.data).toMatchObject({
       accessToken: 'fake-jwt',

@@ -57,7 +57,7 @@ export interface AdminMfaStatusDto {
 export class AdminAuthService {
   private readonly logger = new Logger(AdminAuthService.name);
 
-  // TOTP identifier format matches BetterAuthService.totpIdentifier()
+  // TOTP identifier format matches totpIdentifier() in better-auth.service.ts
   private readonly TOTP_IDENTIFIER_PREFIX = 'totp:';
 
   constructor(

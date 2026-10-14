@@ -1,6 +1,5 @@
 import {
   Injectable,
-  Inject,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -16,7 +15,6 @@ import * as bcrypt from 'bcryptjs';
 import { randomUUID, randomBytes } from 'crypto';
 import { generateSecret, generateURI, verifySync } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
-import type { BetterAuthInstance } from './better-auth.config';
 import { maskEmail } from '../common/utils/mask-email.util';
 import { EmailService } from '../common/email/email.service';
 import { accessJwtClaims } from '../common/constants/jwt-audiences';
@@ -54,23 +52,6 @@ export interface BaAuthResult {
   accessToken: string;
 }
 
-/**
- * Summarises a Better Auth / provider error for logs without dumping request
- * payloads. APIError carries `status` and `body.code`; anything else falls
- * back to its message.
- */
-function describeOAuthError(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-  const { status, body } = error as Error & {
-    status?: unknown;
-    body?: { code?: unknown };
-  };
-  const parts = [error.name];
-  if (status !== undefined) parts.push(`status=${String(status)}`);
-  if (body?.code !== undefined) parts.push(`code=${String(body.code)}`);
-  return `${parts.join(' ')}: ${error.message}`;
-}
-
 /** Returned by enrollTotp — client generates QR from totpURI. */
 export interface BaTotpEnrollResult {
   totpURI: string;
@@ -80,11 +61,6 @@ export interface BaTotpEnrollResult {
 export interface BaAssuranceLevel {
   currentLevel: 'aal1' | 'aal2';
   nextLevel: 'aal1' | 'aal2' | null;
-}
-
-export interface BaOAuthUrlResult {
-  url: string;
-  state: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,18 +97,6 @@ export interface IBetterAuthService {
   disableTotp(userId: string, password: string): Promise<void>;
   hasTotpEnabled(userId: string): Promise<{ enabled: boolean }>;
   markMfaSessionAssured(userId: string, sessionId: string): Promise<void>;
-
-  // -- OAuth ----------------------------------------------------------------
-  getOAuthUrl(
-    provider: 'google' | 'apple',
-    redirectUri: string,
-  ): Promise<BaOAuthUrlResult>;
-  handleOAuthCallback(
-    provider: 'google' | 'apple',
-    code: string,
-    state: string,
-    redirectUri: string,
-  ): Promise<BaAuthResult>;
 
   // -- JWT (Option C core — IMPLEMENTED) ------------------------------------
   signJwt(
@@ -230,9 +194,6 @@ export class BetterAuthService implements IBetterAuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
-    // Keep the BA instance injected for OAuth and TOTP (future use)
-    @Inject('BETTER_AUTH_INSTANCE')
-    private readonly ba: BetterAuthInstance,
     private readonly emailService: EmailService,
   ) {}
 
@@ -943,121 +904,6 @@ export class BetterAuthService implements IBetterAuthService {
     });
 
     return !!record;
-  }
-
-  // ---------------------------------------------------------------------------
-  // OAuth methods
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Generates an OAuth authorization URL for the given provider.
-   *
-   * BA handles OAuth flows natively — we keep using BA's API here since the
-   * adapter write issue only affects user CRUD operations.
-   */
-  async getOAuthUrl(
-    provider: 'google' | 'apple',
-    redirectUri: string,
-  ): Promise<BaOAuthUrlResult> {
-    try {
-      const result = await this.ba.api.signInSocial({
-        body: {
-          provider,
-          callbackURL: redirectUri,
-          disableRedirect: true,
-        },
-      });
-
-      if (!result.url) {
-        this.logger.error(
-          `OAuth URL generation for ${provider} returned no url`,
-        );
-        throw new AppInternalServerErrorException(
-          ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
-        );
-      }
-
-      const urlObj = new URL(result.url);
-      const state = urlObj.searchParams.get('state') ?? '';
-
-      this.logger.log(`OAuth URL generated for provider: ${provider}`);
-      return { url: result.url, state };
-    } catch (error) {
-      if (error instanceof AppInternalServerErrorException) throw error;
-      this.logger.error(
-        `OAuth URL generation failed for ${provider} — ${describeOAuthError(error)}`,
-      );
-      throw new AppInternalServerErrorException(
-        ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
-      );
-    }
-  }
-
-  /**
-   * Handles the OAuth callback after the provider redirects back.
-   *
-   * NOTE: BA's callbackOAuth is a browser-facing GET endpoint. For a proper
-   * server-side OAuth flow, the browser hits BA's callback URL directly and BA
-   * sets the session cookie, then redirects to callbackURL where the frontend
-   * reads the session token and calls SACDIA.
-   */
-  async handleOAuthCallback(
-    provider: 'google' | 'apple',
-    code: string,
-    state: string,
-    _redirectUri: string,
-  ): Promise<BaAuthResult> {
-    try {
-      const result = await (this.ba.api as any).callbackOAuth({
-        query: { code, state },
-        method: 'GET',
-      });
-
-      if (!result?.token) {
-        throw new AppInternalServerErrorException(
-          ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
-        );
-      }
-
-      // For OAuth, find the session BA created and load the user directly
-      const dbSession = await this.prisma.session.findFirst({
-        where: { token: result.token },
-      });
-      if (!dbSession) {
-        throw new AppUnauthorizedException(ErrorCode.AUTH_SESSION_EXPIRED);
-      }
-
-      const dbUser = await this.prisma.users.findUnique({
-        where: { user_id: dbSession.userId },
-      });
-      if (!dbUser) {
-        throw new AppInternalServerErrorException(
-          ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
-        );
-      }
-
-      const user = mapDbUserToBaUser(dbUser);
-      const session = mapDbSessionToBaSession(dbSession);
-      const accessToken = this.signJwt(user, false, session.id);
-
-      this.logger.log(
-        `OAuth callback handled for provider: ${provider}, user: ${user.id}`,
-      );
-      return { user, session, accessToken };
-    } catch (error) {
-      if (
-        error instanceof AppInternalServerErrorException ||
-        error instanceof AppUnauthorizedException
-      ) {
-        throw error;
-      }
-      this.logger.error(
-        `OAuth callback failed for ${provider} — ${describeOAuthError(error)}`,
-      );
-      throw new AppInternalServerErrorException(
-        ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
-      );
-    }
   }
 
   // -- JWT (Option C core — IMPLEMENTED) ------------------------------------

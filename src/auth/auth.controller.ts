@@ -420,12 +420,13 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
-  // Strict rate limit: 1 request per hour — destructive action, no retry spam
-  @Throttle(namedThrottle({ ttl: 3600000, limit: 1 }))
+  // Strict rate limit: 3 requests per hour. Destructive action, but a typo or a
+  // stale id token must not lock the user out for a full hour.
+  @Throttle(namedThrottle({ ttl: 3600000, limit: 3 }))
   @ApiOperation({
     summary: 'Eliminar cuenta del usuario autenticado',
     description:
-      'Elimina de forma permanente la cuenta. Requiere contraseña actual para confirmación. ' +
+      'Elimina de forma permanente la cuenta. Requiere la contraseña actual o un id token reciente de Google/Apple vinculado a la cuenta. ' +
       'Revoca todas las sesiones, anonimiza PII y elimina archivos de almacenamiento. ' +
       'Requerido por Apple App Store guideline 5.1.1(v).',
   })
@@ -440,7 +441,7 @@ export class AuthController {
   })
   @ApiResponse({
     status: 429,
-    description: 'Demasiadas solicitudes — límite de 1 por hora',
+    description: 'Demasiadas solicitudes — límite de 3 por hora',
   })
   async deleteAccount(
     @CurrentUser() user: { userId: string },
@@ -449,7 +450,9 @@ export class AuthController {
   ): Promise<void> {
     await this.accountDeletionService.deleteAccount(
       user.userId,
-      dto.password,
+      dto.password !== undefined
+        ? { password: dto.password }
+        : { provider: dto.provider!, idToken: dto.idToken!, nonce: dto.nonce! },
       ip,
     );
   }

@@ -20,6 +20,10 @@ export enum ErrorCode {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   AUTH_REFRESH_TOKEN_REQUIRED = 'AUTH_REFRESH_TOKEN_REQUIRED',
+  // Reserved for re-authentication failures (provider id-token verification,
+  // account-deletion re-auth). Do NOT use for session/JWT expiry: clients skip
+  // the token refresh on this code. Session expiry uses GUARD_JWT_UNAUTHORIZED,
+  // AUTH_REFRESH_TOKEN_INVALID or AUTH_SESSION_EXPIRED.
   AUTH_INVALID_TOKEN = 'AUTH_INVALID_TOKEN',
   AUTH_INVALID_CREDENTIALS = 'AUTH_INVALID_CREDENTIALS',
   AUTH_USER_ROLE_NOT_FOUND = 'AUTH_USER_ROLE_NOT_FOUND',
@@ -36,6 +40,9 @@ export enum ErrorCode {
   AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRED = 'AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRED',
   AUTH_ACCOUNT_NOT_FOUND = 'AUTH_ACCOUNT_NOT_FOUND',
   AUTH_ACCOUNT_ALREADY_DELETED = 'AUTH_ACCOUNT_ALREADY_DELETED',
+  // Reserved for re-authentication failures (password re-auth on account
+  // deletion). Do NOT use for session/JWT expiry: clients skip the token refresh
+  // on this code. See AUTH_INVALID_TOKEN for the codes that mean "session expired".
   AUTH_INVALID_PASSWORD = 'AUTH_INVALID_PASSWORD',
   AUTH_OAUTH_REDIRECT_NOT_ALLOWED = 'AUTH_OAUTH_REDIRECT_NOT_ALLOWED',
   AUTH_OAUTH_PROVIDER_INVALID = 'AUTH_OAUTH_PROVIDER_INVALID',

@@ -16,7 +16,7 @@
 > | TM-002 | Mitigado | SEC-002 (recorte territorial en `GET /clubs`; secciones solo con campos de identificación) |
 > | TM-004 | Corregido | SEC-004 |
 > | TM-005, TM-009 | Corregido | SEC-005 (`TRUST_PROXY_HOPS`) |
-> | TM-008 | Corregido | SEC-011 (`trustedOrigins`) |
+> | TM-008 | Eliminado (flujo borrado) | SEC-011: el flujo OAuth por navegador ya no existe |
 > | TM-013 | Corregido | SEC-013 |
 > | TM-014 | Corregido | SEC-014 (`POST /auth/password/reset`) |
 > | TM-015 | Corregido | SEC-015 |
@@ -30,7 +30,7 @@
 
 SACDIA backend is an internet-facing NestJS API for Pathfinder/Adventurer club administration. It holds member PII, health data, emergency contacts, payment proofs, and evidence files. The perimeter is deny-by-default JWT + fail-closed RBAC, with Redis rate limits and private R2 objects behind short-lived signed URLs.
 
-The dominant abuse path is **confused-deputy use of the member QR JWT as an API access token** (same HS256 secret, no `aud` check). A QR designed to be shown to staff becomes a 24h account session, including owner-bypass medical routes and GDPR export. Second is **authenticated directory enumeration** (`GET /clubs` and `GET /clubs/:id/sections`) that does not implement the territorial crop claimed in the security guide. Follow-up passes add **club `role_id` category skip** (permission elevation on club-scoped routes), a **missing password-reset confirm** API, **OAuth without auth-grade throttle**, and **MIME-only / 500 MB presign** upload gaps. Residual risk includes proxy/IP throttling assumptions on Render.
+The dominant abuse path is **confused-deputy use of the member QR JWT as an API access token** (same HS256 secret, no `aud` check). A QR designed to be shown to staff becomes a 24h account session, including owner-bypass medical routes and GDPR export. Second is **authenticated directory enumeration** (`GET /clubs` and `GET /clubs/:id/sections`) that does not implement the territorial crop claimed in the security guide. Follow-up passes add **club `role_id` category skip** (permission elevation on club-scoped routes), a **missing password-reset confirm** API, **OAuth without auth-grade throttle** (closed: `POST /auth/oauth/:provider/token` has 5/min), and **MIME-only / 500 MB presign** upload gaps. Residual risk includes proxy/IP throttling assumptions on Render.
 
 ## Scope and assumptions
 
@@ -77,7 +77,7 @@ CI/dev only: GitHub Actions (`ci.yml`), Jest e2e `E2E_PASSTHROUGH_PERMISSIONS` (
 ### Data flows and trust boundaries
 
 - **Internet → API** — HTTPS (edge). JSON / multipart / query. CORS allowlist + credentials; no-Origin allowed (mobile). JWT or `@Public()`. Rate limit (Redis). Schema: `I18nValidationPipe` whitelist + `SanitizePipe`.
-- **Browser/app → OAuth provider → BA callback → client → `POST /auth/oauth/callback`** — authorization code at BA; client posts opaque session token; SACDIA issues JWT. Redirect URL allowlisted in `OAuthService`.
+- **App → Google/Apple SDK → `POST /auth/oauth/:provider/token`** — the app posts a native id token plus the raw nonce; SACDIA verifies signature, issuer, audience, hashed nonce and a 10-minute age cap against the provider JWKS, then issues its own JWT. The browser OAuth flow (BA callback, redirect allowlist) was removed.
 - **API → PostgreSQL** — Prisma (parameterized). Trust: DB credentials in env. App enforces tenant scope in guards/services.
 - **API → Redis** — cache keys, throttle counters, queues. Prod fail-fast if missing.
 - **API → R2** — server-generated keys; client gets presigned PUT/GET. MIME/size checked on confirm for certifications/payment proofs.
@@ -157,7 +157,7 @@ flowchart TD
 | --- | --- | --- | --- | --- |
 | `GET /api/v1/health` | Unauth | Internet → API | Liveness only | `health.controller.ts:26-42` |
 | `POST /auth/{register,login,refresh,logout,password/reset-request,verify-email/confirm}` | Unauth | Internet → API | Extra throttle on auth | `auth.controller.ts` |
-| `POST /auth/oauth/{google,apple,callback}` | Unauth | Internet → IdP → API | Redirect allowlist | `oauth.controller.ts` |
+| `POST /auth/oauth/:provider/token` | Unauth | App → API | Id token verified with JWKS, hashed nonce, 10-min age cap, 5/min throttle | `social-sign-in.controller.ts` |
 | `POST /admin/rbac/bootstrap-admin` | Unauth + secret | Internet → API | Timing-safe compare; 1/min | `rbac.controller.ts:357-406` |
 | Public catalogs / honors / classes / certifications | Unauth | Internet → API | Reference data | class-level `@Public()` |
 | All other HTTP | Bearer JWT | Internet → API | Global guards | `app.module.ts` |
@@ -167,7 +167,7 @@ flowchart TD
 | Presign/confirm evidence | JWT + perms | Client → R2 → API HEAD | MIME allow-list | SECURITY-GUIDE + cert module |
 | `POST /users/me/data-export` | JWT self | API → queue → R2 | Full PII package | `data-export.controller.ts` |
 | BullMQ processors | Redis jobs | Worker trust | Compromised Redis → job inject | queue modules |
-| Better Auth instance | In-process | Not a separate HTTP mount in Nest | OAuth via `ba.api` | `better-auth.config.ts` |
+| Better Auth instance | In-process | Not a separate HTTP mount in Nest | Not used by SACDIA code; kept only until Better Auth is removed | `better-auth.config.ts` |
 
 ## Top abuse paths
 
@@ -186,8 +186,8 @@ flowchart TD
 5. **Refresh token theft**  
    Opaque 7-day BA session in client storage → `POST /auth/refresh` (5/min) → new access tokens. Logout/blacklist mitigates if reported.
 
-6. **OAuth allowlist lapse**  
-   Operator sets a loose `ALLOWED_OAUTH_REDIRECT_URLS` → BA redirects session cookie/fragment to attacker origin → token theft. App-level exact match is the control.
+6. **OAuth allowlist lapse** — *Removed (flow deleted)*  
+   The browser OAuth flow and `ALLOWED_OAUTH_REDIRECT_URLS` no longer exist. Sign-in is native: `POST /auth/oauth/:provider/token` verifies Google/Apple id tokens with a hashed nonce and a 10-minute age cap, so there is no redirect to hijack.
 
 7. **New resource type without guard case**  
    Developer adds `@AuthorizationResource({ type: 'foo' })` → `default: return true` → permission name only → cross-club if grant is broad.
@@ -204,8 +204,8 @@ flowchart TD
 11. **Club role_id swap**  
     Actor with `club_roles:assign` posts a GLOBAL `role_id` → `buildClubGrant` loads that role’s permissions → club-scoped endpoints treat the assignee as highly privileged in that section.
 
-12. **OAuth / session stuffing**  
-    Unthrottled `POST /auth/oauth/{google,apple,callback}` beyond global 3/s — steal or burn BA session tokens faster than login’s 5/min.
+12. **OAuth / token stuffing**  
+    Flooding `POST /auth/oauth/:provider/token` with forged or replayed id tokens. Controls: 5/min per-IP throttle (same as login), JWKS signature + audience + hashed-nonce + 10-minute age checks. The old `POST /auth/oauth/{google,apple,callback}` routes were removed (*Removed (flow deleted)*).
 
 ## Threat model table
 
@@ -218,14 +218,14 @@ flowchart TD
 | TM-005 | Unauth internet | Reach login | Stuff credentials | Account takeover | User sessions | 5/min throttle; generic errors; bcrypt 12 | Throttle key = `req.ip` + `trust proxy 1` | Confirm hops; lockout by email+IP | 429 / failed-login metrics | Medium | High | medium |
 | TM-006 | Unauth internet | Know/guess email | Reset / register / OAuth | Email flood or token mailbox steal | Mail, accounts | Reset silent for unknown email; register 5/min | Reset always says sent (OK); mailbox compromise is out of band | Keep silent; consider CAPTCHA at edge | Reset volume by IP | Low | Medium | low |
 | TM-007 | Club staff or leaked signed URL | Valid scope or stolen URL | Download evidence/export | Document exfil | R2 objects | Short TTL; scope before sign; MIME checks | TTL windows; QR-as-API (TM-001) also fetches exports | Fix TM-001; keep TTLs short | Download URL mint rate per user | Medium | High | medium |
-| TM-008 | OAuth config error | Broad redirect allowlist | Open redirect / token catch | Session theft | BA session + JWT | Exact URL allowlist in `OAuthService` | DTO is only `@IsUrl()`; BA `trustedOrigins` unset | Mirror allowlist in BA; keep exact URLs | Log `AUTH_OAUTH_REDIRECT_NOT_ALLOWED` | Low | High | medium |
+| TM-008 | OAuth config error | Broad redirect allowlist | Open redirect / token catch | Session theft | BA session + JWT | **Removed (flow deleted)** — the browser OAuth flow, redirect allowlist and `ALLOWED_OAUTH_REDIRECT_URLS` no longer exist; native id-token sign-in has no redirect | None | None needed | n/a | n/a | n/a | n/a |
 | TM-009 | Render topology mismatch | Extra proxy hops or client `X-Forwarded-For` | Bypass or share IP throttle | Brute force / noisy neighbor | Auth availability | `trust proxy` 1; user-id tracker when JWT present | Hop count not proven | Match hop count to Render | Compare `req.ip` vs socket IP in logs | Medium | Medium | medium |
 | TM-010 | Privileged insider | Admin/super-admin JWT | Mass read/mutate | Systemic integrity | Catalogs, users, broadcasts | GlobalRoles + permissions; audit interceptor; health details gated | Wildcard roles are powerful by design | Session limits, admin MFA, break-glass | Audit log on admin mutations | Medium | High | medium |
 | TM-011 | Redis attacker (if Redis exposed) | Network reach to Redis | Poison cache / enqueue jobs | Integrity / email spam | Cache, queues | Prod requires Redis; not public in blueprint | Redis ACL/network not in repo | Private network + AUTH; no internet bind | Unexpected job types | Low | High | low |
 | TM-012 | Unauth internet | `BOOTSTRAP_SECRET` leaked and no super-admin yet | Create first super-admin | Full admin | RBAC | Timing-safe compare; 1/min; 409 if exists | Secret must be removed/rotated after bootstrap | Unset secret after first admin | 403/409 on bootstrap | Low | High | low |
 | TM-013 | Club officer with `club_roles:assign` | Know a GLOBAL `role_id` UUID | Assign that role on a section | Elevated club-scoped permissions | Club RBAC integrity | By-name path requires `CLUB`; GlobalRoles still from `users_roles` | `resolveRoleId` returns raw `role_id`; FK has no category | Require `role_category: 'CLUB'` on id path | Audit `role_id` changes on assignments | Medium | High | high |
 | TM-014 | Unauth internet | Reset token emailed | No confirm API exists | Reset broken; tokens unused | Password reset integrity | Request is enumeration-safe; 3/min | Comment documents `POST /auth/password/reset` — not implemented | Implement confirm or stop minting tokens | Unused `verification` rows | Medium | Medium | medium |
-| TM-015 | Unauth internet | Reach OAuth routes | Stuff initiate/callback | Session/token abuse | OAuth / BA sessions | Global 3/s + 100/min; redirect allowlist | No 5/min `@Throttle` like login | Add named throttle on OAuth trio | 429 on `/auth/oauth/*` | Medium | Medium | medium |
+| TM-015 | Unauth internet | Reach `POST /auth/oauth/:provider/token` | Stuff forged or replayed id tokens | Session/token abuse | OAuth sign-in, user accounts | 5/min per-IP named `@Throttle`; JWKS signature, audience, hashed nonce, 10-minute age cap | Throttle is per IP (proxy-hop assumptions on Render) | Keep `TRUST_PROXY_HOPS` correct | 429 and `id token rejected` warnings on `/auth/oauth/*` | Low | Medium | low |
 | TM-016 | Authenticated uploader | `resources:create` or voucher/badge perms | Store non-matching content | Malware/polyglot on R2 or public CDN | R2 objects, badge CDN | Magic bytes on most multipart; size caps | Presign 500 MB HEAD-only; voucher/badge MIME-only | Magic-byte verify after PUT; reuse FileValidationPipe | Unusual Content-Type vs bytes | Medium | Medium | medium |
 | TM-017 | Future OCR provider | Client `file_url` | Server fetch of attacker URL | SSRF | Cloud metadata / internal HTTP | Current OCR is noop (no fetch) | DTO is unconstrained string | Allowlist R2/CDN hosts before any fetch | Outbound fetch to non-R2 hosts | Low | High | medium |
 
@@ -245,8 +245,8 @@ For **this** API (internet, multi-tenant church youth org, health + minors’ le
 | `src/auth/strategies/jwt.strategy.ts` | Only API token verifier; no `aud` | TM-001, TM-003 |
 | `src/qr/qr.service.ts` | Issues and verifies QR JWTs; PHI on card | TM-001, TM-007 |
 | `src/qr/qr.module.ts` | Shares `BETTER_AUTH_SECRET`, 24h TTL | TM-001, TM-003 |
-| `src/better-auth/better-auth.service.ts` | `signJwt`, reset, OAuth, sessions | TM-003, TM-006, TM-008 |
-| `src/better-auth/better-auth.config.ts` | BA secret, OAuth providers, no trustedOrigins | TM-008 |
+| `src/better-auth/better-auth.service.ts` | `signJwt`, reset, sessions | TM-003, TM-006 |
+| `src/better-auth/better-auth.config.ts` | BA secret; instance unused by SACDIA code (OAuth providers and trustedOrigins removed) | TM-008 (removed) |
 | `src/common/guards/permissions.guard.ts` | Tenant lock; `default` fail-open | TM-004 |
 | `src/clubs/clubs.controller.ts` | SkipPermissions listings | TM-002 |
 | `src/clubs/clubs.service.ts` | `findAll` has no actor; `resolveRoleId` | TM-002, TM-013 |
@@ -255,7 +255,7 @@ For **this** API (internet, multi-tenant church youth org, health + minors’ le
 | `src/certificate-bulk-imports/` | Client `file_url` OCR contract | TM-017 |
 | `src/camporees/camporees.controller.ts` | Voucher MIME-only | TM-016 |
 | `src/achievements/admin/admin-achievements.service.ts` | Public badge MIME-only | TM-016 |
-| `src/auth/oauth.controller.ts` | No auth-grade throttle | TM-015 |
+| `src/auth/social-sign-in/social-sign-in.controller.ts` | Public native sign-in; 5/min per-IP throttle | TM-015 |
 | `src/audit-logs/http-audit.interceptor.ts` | Raw XFF for audit IP | TM-009 |
 | `src/users/users.controller.ts` | Owner bypass + health subresources | TM-001 |
 | `src/data-export/data-export.controller.ts` | GDPR package | TM-001, TM-007 |

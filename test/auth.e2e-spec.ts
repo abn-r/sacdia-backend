@@ -40,17 +40,6 @@ describe('Auth E2E Tests', () => {
     signJwt: jest.fn().mockReturnValue('fake-jwt'),
     resetPasswordForEmail: jest.fn().mockResolvedValue(undefined),
     updatePasswordById: jest.fn().mockResolvedValue(undefined),
-    getOAuthUrl: jest
-      .fn()
-      .mockResolvedValue({ url: 'https://oauth.test', state: 'xyz' }),
-    handleOAuthCallback: jest.fn().mockResolvedValue({
-      user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
-      session: {
-        token: 'fake-session-token',
-        expiresAt: new Date(1900000000000),
-      },
-      accessToken: 'fake-jwt',
-    }),
     enrollTotp: jest.fn(),
     verifyTotp: jest.fn(),
     disableTotp: jest.fn(),

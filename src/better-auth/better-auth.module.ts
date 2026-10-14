@@ -20,7 +20,8 @@ import { PrismaService } from '../prisma/prisma.service';
  * This fixes a BA adapter limitation where WRITE operations use BA's internal
  * camelCase field names instead of the mapped snake_case names.
  *
- * BA instance is kept for OAuth (signInSocial, callbackOAuth) and TOTP (future).
+ * The BA instance provider is kept so the module shape is unchanged for
+ * other importers; BetterAuthService no longer injects it.
  *
  * Secret: BETTER_AUTH_SECRET (signs SACDIA HS256 access JWTs).
  * Claims: iss=https://api.sacdia.app aud=sacdia:access (set in signJwt).
