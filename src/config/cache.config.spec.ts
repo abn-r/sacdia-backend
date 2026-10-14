@@ -150,7 +150,7 @@ describe('buildCacheOptions', () => {
         const lazyStore = { name: 'lazy-redis-store' };
         const unverified = jest
           .fn<UnverifiedRedisCacheStoreFactory>()
-          .mockReturnValue(lazyStore as never);
+          .mockReturnValue(lazyStore);
 
         const options = await buildCacheOptions(
           createConfig({
@@ -192,9 +192,7 @@ describe('buildCacheOptions', () => {
           REDIS_URL: redisUrl,
           REDIS_BOOT_OPTIONAL: true,
         }),
-        jest
-          .fn<RedisCacheStoreFactory>()
-          .mockResolvedValue(redisStore as never),
+        jest.fn<RedisCacheStoreFactory>().mockResolvedValue(redisStore),
         unverified,
       );
 
