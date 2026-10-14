@@ -30,7 +30,7 @@ export class AppleIdTokenVerifier implements IdTokenVerifier {
 
   constructor(private readonly options: AppleIdTokenVerifierOptions) {
     if (!options.bundleId) {
-      this.logger.error(
+      this.logger.warn(
         'APPLE_BUNDLE_ID is empty — every Apple id token will be rejected',
       );
     }
@@ -60,6 +60,8 @@ export class AppleIdTokenVerifier implements IdTokenVerifier {
       this.logger.warn('apple id token rejected — missing sub');
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
     }
+    // The app passes SHA-256(nonce) to the Apple SDK, so the token carries the
+    // hash while we receive the raw nonce.
     if (payload.nonce !== hashAppleNonce(nonce)) {
       this.logger.warn(
         `apple id token rejected — nonce mismatch (sub ${truncateSub(payload.sub)})`,
@@ -67,9 +69,8 @@ export class AppleIdTokenVerifier implements IdTokenVerifier {
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
     }
 
-    // The app passes SHA-256(nonce) to the Apple SDK, so the token carries the
-    // hash while we receive the raw nonce. Apple never includes the name in the
-    // token: the app sends it on the first sign-in as `fullName`.
+    // Apple never includes the name in the token: the app sends it on the
+    // first sign-in as `fullName`.
     return {
       provider: this.provider,
       sub: payload.sub,

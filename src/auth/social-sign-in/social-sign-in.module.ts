@@ -20,8 +20,9 @@ import {
 const JWKS_OPTIONS = { timeoutDuration: 5_000 };
 
 /**
- * Native social sign-in for the mobile app. See
- * docs/plans/2026-10-14-native-social-sign-in-design.md (workspace root).
+ * Native social sign-in for the mobile app.
+ * Design: native social sign-in (sacdia workspace
+ * docs/plans/2026-10-14-native-social-sign-in-design.md).
  */
 @Module({
   providers: [

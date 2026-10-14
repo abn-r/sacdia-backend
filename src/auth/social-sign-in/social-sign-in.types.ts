@@ -1,9 +1,10 @@
 /**
  * Native social sign-in (mobile app).
  *
- * The app obtains an OpenID `idToken` from the Google or Apple SDK and posts
- * it to `POST /auth/oauth/:provider/token`. The backend verifies the token
- * itself (jose + the provider JWKS) and owns the users/accounts rows.
+ * The app obtains an OpenID `idToken` from the Google or Apple SDK and will
+ * post it to `POST /auth/oauth/:provider/token` (the endpoint is added in
+ * slice B2). The backend verifies the token itself (jose + the provider JWKS)
+ * and owns the users/accounts rows.
  * Better Auth is not involved.
  */
 

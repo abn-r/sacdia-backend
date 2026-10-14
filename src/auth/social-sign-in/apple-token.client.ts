@@ -39,7 +39,7 @@ export class AppleTokenError extends Error {
  * request avoids the 6-month rotation a cached secret would need.
  *
  * Used for: exchanging the native `authorizationCode` for a `refresh_token`
- * (stored in accounts.refresh_token) and revoking it when the user deletes
+ * (stored in accounts.refreshToken) and revoking it when the user deletes
  * the account (App Store guideline 5.1.1(v)).
  */
 @Injectable()

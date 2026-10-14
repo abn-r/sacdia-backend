@@ -29,7 +29,7 @@ export class GoogleIdTokenVerifier implements IdTokenVerifier {
 
   constructor(private readonly options: GoogleIdTokenVerifierOptions) {
     if (options.audiences.length === 0) {
-      this.logger.error(
+      this.logger.warn(
         'GOOGLE_OAUTH_AUDIENCES is empty — every Google id token will be rejected',
       );
     }
@@ -57,6 +57,20 @@ export class GoogleIdTokenVerifier implements IdTokenVerifier {
 
     if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
       this.logger.warn('google id token rejected — missing sub');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
+    }
+    // With several audiences, `azp` names the client the token was issued to;
+    // without it a token minted for another app could carry our client id.
+    if (
+      Array.isArray(payload.aud) &&
+      !(
+        typeof payload.azp === 'string' &&
+        this.options.audiences.includes(payload.azp)
+      )
+    ) {
+      this.logger.warn(
+        `google id token rejected — multi-audience token with unaccepted azp (sub ${truncateSub(payload.sub)})`,
+      );
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
     }
     // Google passes the nonce through untouched (Apple hashes it, see

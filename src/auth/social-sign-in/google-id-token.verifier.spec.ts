@@ -140,6 +140,33 @@ describe('GoogleIdTokenVerifier', () => {
     await rejects(await fixture.sign({ ...validClaims(), nonce: '' }), '');
   });
 
+  it('rejects a multi-audience token without azp', async () => {
+    await rejects(
+      await fixture.sign({ ...validClaims(), aud: [audience, 'evil-client'] }),
+    );
+  });
+
+  it('rejects a multi-audience token whose azp is not an accepted client', async () => {
+    await rejects(
+      await fixture.sign({
+        ...validClaims(),
+        aud: [audience, 'evil-client'],
+        azp: 'evil-client',
+      }),
+    );
+  });
+
+  it('accepts a multi-audience token whose azp is an accepted client', async () => {
+    const token = await fixture.sign({
+      ...validClaims(),
+      aud: [audience, 'evil-client'],
+      azp: audience,
+    });
+    await expect(verifier.verify(token, nonce)).resolves.toMatchObject({
+      sub: '1234567890',
+    });
+  });
+
   it('rejects everything when no audience is configured', async () => {
     verifier = new GoogleIdTokenVerifier({
       audiences: [],
