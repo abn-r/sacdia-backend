@@ -60,14 +60,24 @@ describe('buildThrottlerOptions', () => {
   });
 
   it.each([
-    [undefined, false],
-    ['true', true],
-    [true, true],
-    ['false', false],
-    [false, false],
+    // [THROTTLER_FAIL_OPEN, THROTTLER_REDIS_FALLBACK, expected fallback]
+    [undefined, undefined, 'closed'],
+    ['false', undefined, 'closed'],
+    [false, undefined, 'closed'],
+    ['true', undefined, 'open'],
+    [true, undefined, 'open'],
+    [undefined, 'closed', 'closed'],
+    [undefined, 'memory', 'memory'],
+    [undefined, 'open', 'open'],
+    [true, 'open', 'open'],
+    [false, 'memory', 'memory'],
+    // An explicit fallback always wins (env.validation rejects the conflict).
+    [true, 'memory', 'memory'],
+    [undefined, 'MEMORY', 'memory'],
+    [undefined, 'bogus', 'closed'],
   ])(
-    'passes failOpen for THROTTLER_FAIL_OPEN=%p as %p',
-    async (raw, expected) => {
+    'resolves THROTTLER_FAIL_OPEN=%p + THROTTLER_REDIS_FALLBACK=%p to %p',
+    async (failOpen, fallback, expected) => {
       const storage = {
         assertReady: jest.fn().mockResolvedValue(undefined),
       } as unknown as RedisThrottlerStorage;
@@ -80,7 +90,8 @@ describe('buildThrottlerOptions', () => {
               ({
                 NODE_ENV: 'production',
                 REDIS_URL: 'redis://localhost:6379',
-                THROTTLER_FAIL_OPEN: raw,
+                THROTTLER_FAIL_OPEN: failOpen,
+                THROTTLER_REDIS_FALLBACK: fallback,
               })[key],
           ),
         },
@@ -88,7 +99,7 @@ describe('buildThrottlerOptions', () => {
       );
 
       expect(factory).toHaveBeenCalledWith('redis://localhost:6379', {
-        failOpen: expected,
+        fallback: expected,
       });
     },
   );

@@ -6,7 +6,10 @@ import type {
 } from '@nestjs/throttler';
 import { withTimeout } from '../common/utils/with-timeout';
 import { isPlaceholderUrl } from './bullmq.config';
-import { isRedisBootOptional } from './redis-degraded.config';
+import {
+  isRedisBootOptional,
+  resolveThrottlerFallback,
+} from './redis-degraded.config';
 import {
   RedisThrottlerStorage,
   type RedisThrottlerStorageOptions,
@@ -94,7 +97,10 @@ export async function buildThrottlerOptions(
   }
 
   const storage = createStorage(redisUrl, {
-    failOpen: isFailOpenEnabled(configService.get('THROTTLER_FAIL_OPEN')),
+    fallback: resolveThrottlerFallback(
+      configService.get('THROTTLER_REDIS_FALLBACK'),
+      configService.get('THROTTLER_FAIL_OPEN'),
+    ),
   });
 
   try {
@@ -139,11 +145,6 @@ function handleRedisUnavailable(
 
   logger.warn(`${message} Falling back to in-memory throttler storage.`);
   return throttlers;
-}
-
-/** Fail-closed is the default; only an explicit true/'true' turns fail-open on. */
-function isFailOpenEnabled(value: unknown): boolean {
-  return value === true || String(value).trim().toLowerCase() === 'true';
 }
 
 function isValidRedisUrl(redisUrl: string): boolean {

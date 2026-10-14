@@ -208,10 +208,27 @@ export const envValidationSchema = Joi.object({
     .valid('db-session', 'reject', 'allow')
     .default('db-session'),
 
-  // Rate limiting when Redis errors at runtime: false (default) surfaces the
-  // Redis error as a 500 so throttling is never bypassed; true lets requests
-  // through unthrottled (availability over protection). Boot-time readiness
-  // checks are unaffected.
+  // Rate limiting when Redis errors at runtime (boot-time readiness checks
+  // are unaffected). THROTTLER_REDIS_FALLBACK:
+  //  - closed (default): surface the Redis error as a 500; throttling is
+  //    never bypassed.
+  //  - memory: per-process in-memory counters with the same limits for the
+  //    outage window (per instance, not shared).
+  //  - open: let requests through unthrottled.
+  // THROTTLER_FAIL_OPEN is the legacy boolean: true === 'open'. Precedence:
+  // an explicit THROTTLER_REDIS_FALLBACK wins; when it is unset,
+  // THROTTLER_FAIL_OPEN=true selects 'open', otherwise 'closed'. Combining
+  // THROTTLER_FAIL_OPEN=true with closed/memory is contradictory and rejected.
+  THROTTLER_REDIS_FALLBACK: Joi.any()
+    .when('THROTTLER_FAIL_OPEN', {
+      is: Joi.any().valid(true, 'true').required(),
+      then: Joi.string().valid('open').messages({
+        'any.only':
+          'THROTTLER_REDIS_FALLBACK conflicts with THROTTLER_FAIL_OPEN=true (legacy alias of "open"); unset one of them or use THROTTLER_REDIS_FALLBACK=open',
+      }),
+      otherwise: Joi.string().valid('closed', 'memory', 'open'),
+    })
+    .optional(),
   THROTTLER_FAIL_OPEN: Joi.boolean().default(false),
 
   // BullMQ workers - idle Redis command budget (see bullmq-workers.config.ts).

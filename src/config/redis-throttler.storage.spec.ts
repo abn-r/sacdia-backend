@@ -347,3 +347,204 @@ describe('RedisThrottlerStorage fail-open', () => {
     await expect(storage.assertReady()).rejects.toThrow('ECONNREFUSED');
   });
 });
+
+describe('RedisThrottlerStorage THROTTLER_REDIS_FALLBACK', () => {
+  const client = {
+    isOpen: true,
+    isReady: true,
+    connect: jest.fn(),
+    disconnect: jest.fn(),
+    ping: jest.fn(),
+    eval: jest.fn(),
+    quit: jest.fn(),
+    on: jest.fn(),
+  };
+  const down = new Error('connect ECONNREFUSED');
+  let nowMs = 0;
+  const now = () => nowMs;
+
+  function createStorage(
+    options: ConstructorParameters<typeof RedisThrottlerStorage>[1] = {},
+  ) {
+    return new RedisThrottlerStorage('redis://localhost:6379', {
+      now,
+      failOpenCooldownMs: 15_000,
+      ...options,
+    });
+  }
+
+  beforeEach(() => {
+    nowMs = 1_000_000;
+    client.isOpen = true;
+    client.isReady = true;
+    jest.clearAllMocks();
+    client.eval.mockResolvedValue([1, 500, 0, 0]);
+    mockCreateClient.mockReturnValue(client);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  describe("fallback: 'memory'", () => {
+    it('enforces the limit in memory while Redis is down and blocks over-limit', async () => {
+      client.eval.mockRejectedValue(down);
+      const storage = createStorage({ fallback: 'memory' });
+      const hit = () => storage.increment('ip:1', 1000, 3, 60000, 'short');
+
+      const results = [await hit(), await hit(), await hit(), await hit()];
+
+      expect(results.map((r) => r.totalHits)).toEqual([1, 2, 3, 4]);
+      expect(results.map((r) => r.isBlocked)).toEqual([
+        false,
+        false,
+        false,
+        true,
+      ]);
+      expect(results[3].timeToBlockExpire).toBeGreaterThan(0);
+      // Redis was tried once, then skipped for the cooldown.
+      expect(client.eval).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps counters separate per key and per throttler tier', async () => {
+      client.eval.mockRejectedValue(down);
+      const storage = createStorage({ fallback: 'memory' });
+
+      await storage.increment('ip:1', 1000, 1, 60000, 'short');
+      const sameKeyOtherTier = await storage.increment(
+        'ip:1',
+        10000,
+        20,
+        60000,
+        'medium',
+      );
+      const otherKey = await storage.increment('ip:2', 1000, 1, 60000, 'short');
+
+      expect(sameKeyOtherTier).toMatchObject({
+        totalHits: 1,
+        isBlocked: false,
+      });
+      expect(otherKey).toMatchObject({ totalHits: 1, isBlocked: false });
+    });
+
+    it('logs the in-memory fallback once per outage', async () => {
+      client.eval.mockRejectedValue(down);
+      const storage = createStorage({ fallback: 'memory' });
+
+      await storage.increment('ip:1', 1000, 3, 60000, 'short');
+      await storage.increment('ip:1', 1000, 3, 60000, 'short');
+      await storage.increment('ip:2', 1000, 3, 60000, 'short');
+
+      expect(Logger.prototype.error).toHaveBeenCalledTimes(1);
+      expect(Logger.prototype.error).toHaveBeenCalledWith(
+        expect.stringContaining('in-memory rate limiting'),
+      );
+    });
+
+    it('also covers connection failures, not just EVAL errors', async () => {
+      client.isOpen = false;
+      client.isReady = false;
+      client.connect.mockRejectedValue(down);
+      const storage = createStorage({ fallback: 'memory' });
+
+      await expect(
+        storage.increment('ip:1', 1000, 3, 60000, 'short'),
+      ).resolves.toMatchObject({ totalHits: 1, isBlocked: false });
+    });
+
+    it('returns to Redis after the cooldown and logs recovery', async () => {
+      client.eval.mockRejectedValueOnce(down);
+      const storage = createStorage({ fallback: 'memory' });
+      await storage.increment('ip:1', 1000, 3, 60000, 'short');
+      nowMs += 15_001;
+      client.eval.mockResolvedValueOnce([2, 700, 0, 0]);
+
+      await expect(
+        storage.increment('ip:1', 1000, 3, 60000, 'short'),
+      ).resolves.toMatchObject({ totalHits: 2, isBlocked: false });
+
+      expect(client.eval).toHaveBeenCalledTimes(2);
+      expect(Logger.prototype.log).toHaveBeenCalledWith(
+        expect.stringContaining('recovered'),
+      );
+    });
+
+    it('keeps honouring a genuine 429 answer from Redis', async () => {
+      client.eval.mockResolvedValue([21, 8000, 1, 60000]);
+      const storage = createStorage({ fallback: 'memory' });
+
+      await expect(
+        storage.increment('ip:1', 10000, 20, 60000, 'medium'),
+      ).resolves.toMatchObject({ isBlocked: true, totalHits: 21 });
+    });
+
+    it('releases the in-memory sweep timer on shutdown', async () => {
+      client.eval.mockRejectedValue(down);
+      client.isOpen = false;
+      const storage = createStorage({ fallback: 'memory' });
+      await storage.increment('ip:1', 1000, 3, 60000, 'short');
+
+      await expect(storage.onApplicationShutdown()).resolves.toBeUndefined();
+    });
+  });
+
+  describe("fallback: 'open'", () => {
+    it('lets requests through unthrottled', async () => {
+      client.eval.mockRejectedValue(down);
+      const storage = createStorage({ fallback: 'open' });
+
+      for (let i = 0; i < 10; i += 1) {
+        await expect(
+          storage.increment('ip:1', 1000, 3, 60000, 'short'),
+        ).resolves.toMatchObject({ isBlocked: false, totalHits: 0 });
+      }
+    });
+
+    it('is equivalent to the legacy failOpen: true option', async () => {
+      client.eval.mockRejectedValue(down);
+      const storage = createStorage({ failOpen: true });
+
+      await expect(
+        storage.increment('ip:1', 1000, 3, 60000, 'short'),
+      ).resolves.toMatchObject({ isBlocked: false, totalHits: 0 });
+      expect(Logger.prototype.error).toHaveBeenCalledWith(
+        expect.stringContaining('rate limiting is DISABLED'),
+      );
+    });
+
+    it('lets an explicit fallback win over the legacy failOpen flag', async () => {
+      client.eval.mockRejectedValue(down);
+      const storage = createStorage({ failOpen: true, fallback: 'closed' });
+
+      await expect(
+        storage.increment('ip:1', 1000, 3, 60000, 'short'),
+      ).rejects.toBe(down);
+    });
+  });
+
+  describe("fallback: 'closed' (default)", () => {
+    it('rethrows Redis errors on every request and never uses memory', async () => {
+      client.eval.mockRejectedValue(down);
+      const storage = createStorage({ fallback: 'closed' });
+
+      await expect(
+        storage.increment('ip:1', 1000, 3, 60000, 'short'),
+      ).rejects.toBe(down);
+      await expect(
+        storage.increment('ip:1', 1000, 3, 60000, 'short'),
+      ).rejects.toBe(down);
+      expect(client.eval).toHaveBeenCalledTimes(2);
+    });
+
+    it('is the default when no option is given', async () => {
+      client.eval.mockRejectedValue(down);
+      const storage = createStorage();
+
+      await expect(
+        storage.increment('ip:1', 1000, 3, 60000, 'short'),
+      ).rejects.toBe(down);
+    });
+  });
+});
