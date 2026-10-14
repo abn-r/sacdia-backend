@@ -273,4 +273,25 @@ describe('OperationsDashboardService', () => {
       expect.not.objectContaining({ section_ids: expect.anything() }),
     );
   });
+
+  it("serves the caller's scope label on a cache hit", async () => {
+    scopeService.resolve
+      .mockResolvedValueOnce({
+        ...coordinatorScope([12, 15]),
+        name: 'Zona Norte',
+      })
+      .mockResolvedValueOnce(coordinatorScope([12, 15]));
+
+    await service.getDashboard('coordinator-a', {});
+    const second = await service.getDashboard('coordinator-b', {});
+
+    expect(repository.loadSnapshot).toHaveBeenCalledTimes(1);
+    expect(second.meta.cached).toBe(true);
+    expect(second.meta.scope).toEqual({
+      level: 'coordinator',
+      id: null,
+      name: 'Secciones asignadas',
+      path: [],
+    });
+  });
 });

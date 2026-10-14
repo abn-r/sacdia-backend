@@ -57,7 +57,18 @@ export class OperationsDashboardService {
     if (cached && now < cached.expiresAt) {
       return {
         ...cached.data,
-        meta: { ...cached.data.meta, cached: true },
+        meta: {
+          ...cached.data.meta,
+          cached: true,
+          // The cache key is shared by callers with the same data scope, but
+          // the label belongs to the caller (e.g. two coordinators).
+          scope: {
+            level: scope.level,
+            id: scope.id,
+            name: scope.name,
+            path: scope.path,
+          },
+        },
       };
     }
     if (cached) this.cache.delete(cacheKey);
