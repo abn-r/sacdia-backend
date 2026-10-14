@@ -280,4 +280,40 @@ describe('AuthController', () => {
       expect(result).toEqual(expected);
     });
   });
+
+  describe('deleteAccount', () => {
+    const user = { userId: 'user-1' };
+
+    it('maps a password body to the password re-auth', async () => {
+      mockAccountDeletionService.deleteAccount.mockResolvedValue(undefined);
+
+      await controller.deleteAccount(
+        user,
+        { password: 'Secret123!' },
+        '1.1.1.1',
+      );
+
+      expect(mockAccountDeletionService.deleteAccount).toHaveBeenCalledWith(
+        'user-1',
+        { password: 'Secret123!' },
+        '1.1.1.1',
+      );
+    });
+
+    it('maps a social body to the id-token re-auth', async () => {
+      mockAccountDeletionService.deleteAccount.mockResolvedValue(undefined);
+
+      await controller.deleteAccount(
+        user,
+        { provider: 'apple', idToken: 'tok', nonce: 'raw' },
+        '1.1.1.1',
+      );
+
+      expect(mockAccountDeletionService.deleteAccount).toHaveBeenCalledWith(
+        'user-1',
+        { provider: 'apple', idToken: 'tok', nonce: 'raw' },
+        '1.1.1.1',
+      );
+    });
+  });
 });
