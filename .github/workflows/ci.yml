@@ -295,7 +295,8 @@ jobs:
             test/insurance.e2e-spec.ts \
             test/member-rankings.e2e-spec.ts \
             test/notifications-security.e2e-spec.ts \
-            test/section-rankings.e2e-spec.ts
+            test/section-rankings.e2e-spec.ts \
+            test/social-sign-in.e2e-spec.ts
 
   cross_repo_contract:
     name: Cross-repo Contract
