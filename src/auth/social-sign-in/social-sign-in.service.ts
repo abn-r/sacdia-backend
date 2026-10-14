@@ -94,6 +94,10 @@ export class SocialSignInService {
       await this.storeAppleRefreshToken(identity.sub, dto.authorizationCode);
     }
 
+    // Same rule as password login: with TOTP enrolled the JWT is mfa_pending
+    // until POST /auth/mfa/verify upgrades it.
+    const { enabled: mfaEnabled } =
+      await this.betterAuth.hasTotpEnabled(userId);
     const session = await this.betterAuth.createSession(userId);
     const [user, userPr, accounts] = await Promise.all([
       this.prisma.users.findUnique({ where: { user_id: userId } }),
@@ -106,7 +110,7 @@ export class SocialSignInService {
     const email = user?.email ?? identity.email!;
     const accessToken = this.betterAuth.signJwt(
       { id: userId, email },
-      false,
+      mfaEnabled,
       session.id,
     );
 

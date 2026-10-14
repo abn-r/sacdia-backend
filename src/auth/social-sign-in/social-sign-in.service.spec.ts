@@ -27,6 +27,7 @@ describe('SocialSignInService', () => {
       expiresAt: new Date(1_900_000_000_000),
     }),
     signJwt: jest.fn().mockReturnValue('sacdia-jwt'),
+    hasTotpEnabled: jest.fn(),
   };
   const prisma = {
     users: { findUnique: jest.fn() },
@@ -49,6 +50,7 @@ describe('SocialSignInService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     google.verify.mockResolvedValue(identity);
+    betterAuth.hasTotpEnabled.mockResolvedValue({ enabled: false });
     apple.verify.mockResolvedValue({
       ...identity,
       provider: 'apple',
@@ -113,6 +115,17 @@ describe('SocialSignInService', () => {
     expect(betterAuth.signJwt).toHaveBeenCalledWith(
       { id: 'user-1', email: 'ana@example.com' },
       false,
+      'sess-1',
+    );
+  });
+
+  it('issues an mfa_pending token when the user has TOTP enabled', async () => {
+    betterAuth.hasTotpEnabled.mockResolvedValue({ enabled: true });
+    await service.signIn('google', { idToken: 't', nonce: 'n' });
+    expect(betterAuth.hasTotpEnabled).toHaveBeenCalledWith('user-1');
+    expect(betterAuth.signJwt).toHaveBeenCalledWith(
+      { id: 'user-1', email: 'ana@example.com' },
+      true,
       'sess-1',
     );
   });
