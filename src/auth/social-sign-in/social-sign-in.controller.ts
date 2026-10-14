@@ -31,7 +31,7 @@ export class SocialSignInController {
     description:
       'La app obtiene el idToken con el SDK nativo y lo envía junto con el nonce. ' +
       'El backend verifica firma, emisor, audiencia, expiración y nonce; crea o vincula ' +
-      'el usuario; y devuelve el JWT de SACDIA. Misma respuesta que el antiguo /auth/oauth/callback.',
+      'el usuario; y devuelve el JWT de SACDIA envuelto como /auth/login ({ status, data }).',
   })
   @ApiParam({ name: 'provider', enum: [...SOCIAL_PROVIDERS] })
   @ApiResponse({
@@ -39,21 +39,24 @@ export class SocialSignInController {
     description: 'Sesión creada',
     schema: {
       example: {
-        accessToken: 'eyJhbGc...',
-        sessionToken: 'opaque_session_token',
-        refreshToken: 'opaque_session_token',
-        expiresAt: 1900000000,
-        tokenType: 'bearer',
-        user: {
-          id: 'uuid-123',
-          email: 'user@gmail.com',
-          name: 'Juan',
-          paternal_last_name: 'Pérez',
-          maternal_last_name: null,
-          avatar: 'https://r2.sacdia.app/profiles/...',
-          connectedProviders: ['google'],
+        status: 'success',
+        data: {
+          accessToken: 'eyJhbGc...',
+          sessionToken: 'opaque_session_token',
+          refreshToken: 'opaque_session_token',
+          expiresAt: 1900000000,
+          tokenType: 'bearer',
+          user: {
+            id: 'uuid-123',
+            email: 'user@gmail.com',
+            name: 'Juan',
+            paternal_last_name: 'Pérez',
+            maternal_last_name: null,
+            avatar: 'https://r2.sacdia.app/profiles/...',
+            connectedProviders: ['google'],
+          },
+          needsPostRegistration: true,
         },
-        needsPostRegistration: true,
       },
     },
   })
@@ -73,6 +76,10 @@ export class SocialSignInController {
         valid: SOCIAL_PROVIDERS.join(', '),
       });
     }
-    return this.socialSignIn.signIn(provider, dto);
+    // No global response wrapper exists: wrap by hand, like AuthService.login.
+    return {
+      status: 'success' as const,
+      data: await this.socialSignIn.signIn(provider, dto),
+    };
   }
 }
