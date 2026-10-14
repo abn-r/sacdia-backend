@@ -135,6 +135,9 @@ importers:
       joi:
         specifier: 18.2.9
         version: 18.2.9
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
       multer:
         specifier: '>=2.3.0'
         version: 2.4.0
