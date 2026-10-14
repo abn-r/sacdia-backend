@@ -1,4 +1,8 @@
-import { AppUnauthorizedException } from '../../common/errors/app.exception';
+import { createRemoteJWKSet, customFetch } from 'jose';
+import {
+  AppServiceUnavailableException,
+  AppUnauthorizedException,
+} from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { GoogleIdTokenVerifier } from './google-id-token.verifier';
 import {
@@ -108,6 +112,21 @@ describe('GoogleIdTokenVerifier', () => {
   it('rejects a token without nonce', async () => {
     const { nonce: _omit, ...claims } = validClaims();
     await rejects(await fixture.sign(claims));
+  });
+
+  it('reports a JWKS endpoint answering 500 as 503, not as an invalid token', async () => {
+    verifier = new GoogleIdTokenVerifier({
+      audiences: [audience],
+      getKey: createRemoteJWKSet(new URL('https://jwks.test/certs'), {
+        [customFetch]: async () => new Response('oops', { status: 500 }),
+      }),
+    });
+    const token = await fixture.sign(validClaims());
+    const error = await verifier.verify(token, nonce).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppServiceUnavailableException);
+    expect((error as AppServiceUnavailableException).code).toBe(
+      ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE,
+    );
   });
 
   it('rejects everything when no audience is configured', async () => {

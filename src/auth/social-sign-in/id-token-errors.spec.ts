@@ -46,6 +46,24 @@ describe('mapIdTokenError', () => {
     );
   });
 
+  it.each([
+    [
+      'bare JOSEError (non-200 JWKS response)',
+      new errors.JOSEError(
+        'Expected 200 OK from the JSON Web Key Set HTTP response',
+      ),
+    ],
+    ['invalid JWKS', new errors.JWKSInvalid()],
+  ])('maps %s to 503 AUTH_OAUTH_PROVIDER_UNAVAILABLE', (_label, cause) => {
+    const mapped = mapIdTokenError(cause, logger, 'google');
+    expect(mapped).toBeInstanceOf(AppServiceUnavailableException);
+    expect(mapped.code).toBe(ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE);
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('google JWKS unavailable'),
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('maps a network failure (non-jose error) to 503', () => {
     const mapped = mapIdTokenError(
       new TypeError('fetch failed'),
