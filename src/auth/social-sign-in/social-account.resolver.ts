@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { totpIdentifier } from '../../better-auth/better-auth.service';
 import { AppConflictException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -107,6 +108,13 @@ export class SocialAccountResolver {
         // it keeps nothing: no sessions, no password, no other provider links.
         await tx.session.deleteMany({ where: { userId: existing.user_id } });
         await tx.account.deleteMany({ where: { userId: existing.user_id } });
+        // Their TOTP secret and backup codes too: with it left behind every JWT
+        // issued from now on is mfa_pending, the real owner could never pass it
+        // (no secret, no password to disable it) and the old holder keeps the
+        // backup codes. Per-session MFA rows point at the sessions deleted above.
+        await tx.verification.deleteMany({
+          where: { identifier: totpIdentifier(existing.user_id) },
+        });
       } else {
         // A verified account keeps its links. A second identity from the same
         // provider (different sub) is never attached silently.

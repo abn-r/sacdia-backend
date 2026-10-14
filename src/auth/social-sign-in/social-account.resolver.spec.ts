@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { AppConflictException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { totpIdentifier } from '../../better-auth/better-auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SocialAccountResolver } from './social-account.resolver';
 import type { VerifiedIdentity } from './social-sign-in.types';
@@ -17,6 +18,7 @@ describe('SocialAccountResolver', () => {
       deleteMany: jest.fn(),
     },
     session: { deleteMany: jest.fn() },
+    verification: { deleteMany: jest.fn() },
     users: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
     users_pr: { findUnique: jest.fn(), create: jest.fn() },
     users_roles: { findFirst: jest.fn(), create: jest.fn() },
@@ -156,6 +158,7 @@ describe('SocialAccountResolver', () => {
     });
     expect(tx.account.deleteMany).not.toHaveBeenCalled();
     expect(tx.session.deleteMany).not.toHaveBeenCalled();
+    expect(tx.verification.deleteMany).not.toHaveBeenCalled();
   });
 
   it('revokes sessions and every prior account when linking to an unverified local account', async () => {
@@ -189,6 +192,9 @@ describe('SocialAccountResolver', () => {
       where: { userId: 'user-1' },
     });
     expect(order).toEqual(['sessions', 'accounts', 'create']);
+    expect(tx.verification.deleteMany).toHaveBeenCalledWith({
+      where: { identifier: totpIdentifier('user-1') },
+    });
     expect(tx.users.update).toHaveBeenCalledWith({
       where: { user_id: 'user-1' },
       data: expect.objectContaining({ email_verified: true }),

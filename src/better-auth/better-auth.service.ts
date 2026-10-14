@@ -165,6 +165,11 @@ export function passwordResetIdentifier(email: string): string {
   return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`;
 }
 
+/** `verification.identifier` of a user's TOTP secret and backup codes. */
+export function totpIdentifier(userId: string): string {
+  return `totp:${userId}`;
+}
+
 /**
  * Maps a Prisma `users` record to the `BaUser` shape used across the service.
  * Uses our schema field names: user_id, email_verified, user_image, created_at, modified_at.
@@ -713,10 +718,6 @@ export class BetterAuthService implements IBetterAuthService {
 
   // -- Private TOTP helpers --------------------------------------------------
 
-  private totpIdentifier(userId: string): string {
-    return `totp:${userId}`;
-  }
-
   private mfaSessionIdentifier(sessionId: string): string {
     return `mfa-session:${sessionId}`;
   }
@@ -801,7 +802,7 @@ export class BetterAuthService implements IBetterAuthService {
     const { plain: plainCodes, hashed: hashedCodes } =
       await this.generateBackupCodes();
 
-    const identifier = this.totpIdentifier(userId);
+    const identifier = totpIdentifier(userId);
     const value = JSON.stringify({ secret, backupCodes: hashedCodes });
     const expiresAt = new Date('2099-01-01T00:00:00.000Z');
     const now = new Date();
@@ -837,7 +838,7 @@ export class BetterAuthService implements IBetterAuthService {
     userId: string,
     code: string,
   ): Promise<{ verified: boolean }> {
-    const identifier = this.totpIdentifier(userId);
+    const identifier = totpIdentifier(userId);
     const record = await this.prisma.verification.findFirst({
       where: { identifier },
     });
@@ -879,7 +880,7 @@ export class BetterAuthService implements IBetterAuthService {
   async disableTotp(userId: string, password: string): Promise<void> {
     await this.verifyUserPassword(userId, password);
 
-    const identifier = this.totpIdentifier(userId);
+    const identifier = totpIdentifier(userId);
     await this.prisma.verification.deleteMany({ where: { identifier } });
 
     this.logger.log(`TOTP disabled for user: ${userId}`);
@@ -890,7 +891,7 @@ export class BetterAuthService implements IBetterAuthService {
    * Checks for existence of the totp:{userId} record in the verification table.
    */
   async hasTotpEnabled(userId: string): Promise<{ enabled: boolean }> {
-    const identifier = this.totpIdentifier(userId);
+    const identifier = totpIdentifier(userId);
     const record = await this.prisma.verification.findFirst({
       where: { identifier },
       select: { id: true },
