@@ -55,7 +55,8 @@ All optional, validated in `src/config/env.validation.ts`, read by
 | `BULLMQ_WORKER_DRAIN_DELAY_SECONDS` | `30` (1-300) | Seconds an idle worker blocks waiting for a job. |
 | `BULLMQ_WORKER_STALLED_INTERVAL_MS` | `300000` (30000-3600000) | Stalled-job check interval. Always clamped to at least the queue's `lockDuration`. |
 | `BULLMQ_WORKERS_ENABLED` | `true` | `false` creates no worker in this process. |
-| `THROTTLER_FAIL_OPEN` | `false` | `false` (fail-closed): a Redis error in the throttler surfaces as a 500, so rate limiting is never bypassed. `true` (opt-in): the request goes through unthrottled. |
+| `THROTTLER_FAIL_OPEN` | `false` | Legacy alias. `false` (fail-closed): a Redis error in the throttler surfaces as a 500, so rate limiting is never bypassed. `true` (opt-in): same as `THROTTLER_REDIS_FALLBACK=open`. Superseded by `THROTTLER_REDIS_FALLBACK`, see `redis-outage.md`. |
+| `THROTTLER_REDIS_FALLBACK` | `closed` | `closed` / `memory` / `open`: what the throttler does when Redis errors. See `redis-outage.md`. |
 | `BULLMQ_DISABLED_QUEUES` | empty | Comma-separated queues whose worker is not created (`notifications,achievements,emails,background-jobs,master-honors,certificate-import-ocr`). Unknown names fail validation. |
 
 Fixed (not env): OCR `lockDuration` 60 s (was 30 s); email
@@ -105,10 +106,15 @@ intentionally off. Typical use: run workers on one instance and set
   routes answer 500 instead of bypassing rate limiting (login included). This
   is the security contract enforced by
   `src/config/redis-throttler.storage.integration.spec.ts`.
-- `THROTTLER_FAIL_OPEN=true` is an explicit opt-in for availability over
+- `THROTTLER_FAIL_OPEN=true` (legacy, equivalent to
+  `THROTTLER_REDIS_FALLBACK=open`) is an explicit opt-in for availability over
   protection: requests pass unthrottled while Redis errors (one error log per
   outage, then a recovery log) and Redis is retried after a 15 s cooldown.
   Only enable it consciously, e.g. briefly during a known quota outage.
-- Boot is unchanged: in production the API still refuses to start if Redis is
-  unreachable at boot (cache and throttler readiness probes), so a restart
-  during an outage cannot come up.
+  `THROTTLER_REDIS_FALLBACK=memory` keeps rate limiting on (per instance)
+  during the outage.
+- Boot: by default the API still refuses to start in production if Redis is
+  unreachable at boot (cache and throttler readiness probes). Set
+  `REDIS_BOOT_OPTIONAL=true` to let it start anyway. Everything about running
+  through a Redis outage (boot flag, degraded auth, throttler fallback,
+  recommended Render values, residual risk) is in `redis-outage.md`.

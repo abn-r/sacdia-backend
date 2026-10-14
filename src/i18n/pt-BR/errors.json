@@ -602,6 +602,7 @@
   "MFA_CODE_INVALID": "TOTP não está ativado para este usuário. Chame POST /auth/mfa/enroll primeiro",
   "AUTH_EMAIL_ALREADY_IN_USE": "O endereço de e-mail já está em uso",
   "AUTH_SESSION_EXPIRED": "A sessão expirou",
+  "AUTH_REVOCATION_CHECK_UNAVAILABLE": "Não foi possível verificar a sessão no momento. Tente novamente em instantes.",
   "AUTH_TOTP_NOT_ENROLLED": "TOTP não está ativado para este usuário",
   "AUTH_TOTP_ENROLLMENT_FAILED": "Erro ao configurar o TOTP",
   "AUTH_OAUTH_CALLBACK_FAILED": "Erro no callback do OAuth",

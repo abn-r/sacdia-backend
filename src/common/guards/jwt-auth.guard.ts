@@ -1,13 +1,30 @@
-import { Injectable, ExecutionContext, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ExecutionContext,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import {
+  AppException,
   AppForbiddenException,
   AppUnauthorizedException,
 } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { SKIP_MFA_CHECK_KEY } from './mfa.guard';
+
+/** True for the 503 JwtStrategy raises when revocation cannot be verified. */
+export function isRevocationCheckUnavailable(
+  err: unknown,
+): err is AppException {
+  return (
+    err instanceof AppException &&
+    err.getStatus() === HttpStatus.SERVICE_UNAVAILABLE &&
+    err.code === ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE
+  );
+}
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -25,6 +42,22 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   handleRequest(err: any, user: any, info: any, context: ExecutionContext) {
+    // The revocation check could not be performed (Redis down, degraded mode
+    // reject / db-session without sid). That is a server-side condition, not
+    // an authentication failure: surface the 503 so clients retry instead of
+    // logging the user out.
+    if (isRevocationCheckUnavailable(err)) {
+      const request = context.switchToHttp().getRequest<Request>();
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_guard_revocation_check_unavailable',
+          method: request?.method,
+          url: request?.url,
+        }),
+      );
+      throw err;
+    }
+
     if (err || !user) {
       const request = context.switchToHttp().getRequest<Request>();
       const reason = this.resolveReason(err, info);

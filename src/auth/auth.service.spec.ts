@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import { accessJwtClaims } from '../common/constants/jwt-audiences';
 import {
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -109,9 +110,9 @@ describe('AuthService', () => {
   const mockTokenBlacklistService = {
     blacklist: jest.fn(),
     blacklistToken: jest.fn(),
-    isBlacklisted: jest.fn(),
+    checkToken: jest.fn(),
     blacklistAllUserTokens: jest.fn(),
-    isUserBlacklisted: jest.fn(),
+    checkUserTokens: jest.fn(),
   };
 
   const mockConfigService = {
@@ -731,6 +732,41 @@ describe('AuthService', () => {
       });
     });
 
+    it('should still succeed when the JWT blacklist write fails after the password changed', async () => {
+      mockBetterAuthService.resetPasswordWithToken.mockResolvedValue({
+        userId: 'user-123',
+      });
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 2 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockRejectedValue(
+        new Error('Redis down'),
+      );
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.confirmPasswordReset({
+          token: 'reset-token',
+          password: 'NewPassword123!',
+        }),
+      ).resolves.toEqual({
+        success: true,
+        message: 'Contraseña actualizada. Inicie sesión de nuevo',
+      });
+
+      expect(mockPrismaService.session.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123' },
+      });
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('auth_password_blacklist_failed'),
+      );
+      expect(errorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('Password reset confirm error'),
+        expect.anything(),
+      );
+      errorSpy.mockRestore();
+    });
+
     it('should propagate invalid token errors without revoking sessions', async () => {
       mockBetterAuthService.resetPasswordWithToken.mockRejectedValue(
         new AppBadRequestException(ErrorCode.AUTH_PASSWORD_RESET_TOKEN_INVALID),
@@ -781,6 +817,33 @@ describe('AuthService', () => {
       expect(
         mockTokenBlacklistService.blacklistAllUserTokens,
       ).toHaveBeenCalledWith('user-123', 28800);
+    });
+
+    it('should still succeed when the JWT blacklist write fails after the password changed', async () => {
+      mockBetterAuthService.updateOwnPassword.mockResolvedValue(undefined);
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 2 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockRejectedValue(
+        new Error('Redis down'),
+      );
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.updateOwnPassword(
+          'user-123',
+          'CurrentPassword123!',
+          'NewPassword123!',
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(mockPrismaService.session.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123' },
+      });
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('auth_password_blacklist_failed'),
+      );
+      errorSpy.mockRestore();
     });
 
     it('should not revoke sessions when current password validation fails', async () => {

@@ -607,6 +607,7 @@
   "MFA_CODE_INVALID": "TOTP is not enrolled for this user. Call POST /auth/mfa/enroll first",
   "AUTH_EMAIL_ALREADY_IN_USE": "Email already in use",
   "AUTH_SESSION_EXPIRED": "Session expired",
+  "AUTH_REVOCATION_CHECK_UNAVAILABLE": "Unable to verify the session right now. Please try again shortly.",
   "AUTH_TOTP_NOT_ENROLLED": "TOTP is not enrolled for this user",
   "AUTH_TOTP_ENROLLMENT_FAILED": "TOTP enrollment failed",
   "AUTH_OAUTH_CALLBACK_FAILED": "OAuth callback failed",

@@ -534,3 +534,115 @@ describe('envValidationSchema throttler fail-open', () => {
     expect(validate({ THROTTLER_FAIL_OPEN: 'maybe' }).error).toBeDefined();
   });
 });
+
+describe('REDIS_BOOT_OPTIONAL validation', () => {
+  it('defaults to false', () => {
+    const { error, value } = validate();
+
+    expect(error).toBeUndefined();
+    expect(value.REDIS_BOOT_OPTIONAL).toBe(false);
+  });
+
+  it.each([
+    ['true', true],
+    ['false', false],
+    [true, true],
+  ])('coerces %p to %p', (raw, expected) => {
+    const { error, value } = validate({ REDIS_BOOT_OPTIONAL: raw });
+
+    expect(error).toBeUndefined();
+    expect(value.REDIS_BOOT_OPTIONAL).toBe(expected);
+  });
+
+  it('rejects non-boolean values', () => {
+    const { error } = validate({ REDIS_BOOT_OPTIONAL: 'maybe' });
+
+    expect(error?.message).toContain('REDIS_BOOT_OPTIONAL');
+  });
+});
+
+describe('AUTH_BLACKLIST_DEGRADED_MODE validation', () => {
+  it('defaults to db-session', () => {
+    const { error, value } = validate();
+
+    expect(error).toBeUndefined();
+    expect(value.AUTH_BLACKLIST_DEGRADED_MODE).toBe('db-session');
+  });
+
+  it.each(['db-session', 'reject', 'allow'])('accepts %s', (mode) => {
+    const { error, value } = validate({ AUTH_BLACKLIST_DEGRADED_MODE: mode });
+
+    expect(error).toBeUndefined();
+    expect(value.AUTH_BLACKLIST_DEGRADED_MODE).toBe(mode);
+  });
+
+  it.each(['', 'open', 'true', 'DB-SESSION'])('rejects %p', (mode) => {
+    const { error } = validate({ AUTH_BLACKLIST_DEGRADED_MODE: mode });
+
+    expect(error?.message).toContain('AUTH_BLACKLIST_DEGRADED_MODE');
+  });
+});
+
+describe('THROTTLER_REDIS_FALLBACK validation', () => {
+  it('is optional and keeps THROTTLER_FAIL_OPEN defaulting to false', () => {
+    const { error, value } = validate();
+
+    expect(error).toBeUndefined();
+    expect(value.THROTTLER_REDIS_FALLBACK).toBeUndefined();
+    expect(value.THROTTLER_FAIL_OPEN).toBe(false);
+  });
+
+  it.each(['closed', 'memory', 'open'])('accepts %s', (mode) => {
+    const { error, value } = validate({ THROTTLER_REDIS_FALLBACK: mode });
+
+    expect(error).toBeUndefined();
+    expect(value.THROTTLER_REDIS_FALLBACK).toBe(mode);
+  });
+
+  it.each(['', 'fail-open', 'MEMORY', 'true'])('rejects %p', (mode) => {
+    const { error } = validate({ THROTTLER_REDIS_FALLBACK: mode });
+
+    expect(error?.message).toContain('THROTTLER_REDIS_FALLBACK');
+  });
+
+  it.each([
+    ['true', 'closed'],
+    ['true', 'memory'],
+    [true, 'memory'],
+  ])(
+    'rejects THROTTLER_FAIL_OPEN=%p combined with THROTTLER_REDIS_FALLBACK=%p',
+    (failOpen, fallback) => {
+      const { error } = validate({
+        THROTTLER_FAIL_OPEN: failOpen,
+        THROTTLER_REDIS_FALLBACK: fallback,
+      });
+
+      expect(error?.message).toContain('conflicts with THROTTLER_FAIL_OPEN');
+    },
+  );
+
+  it.each([
+    ['true', 'open'],
+    ['false', 'closed'],
+    ['false', 'memory'],
+    ['false', 'open'],
+    [undefined, 'memory'],
+  ])(
+    'accepts THROTTLER_FAIL_OPEN=%p with THROTTLER_REDIS_FALLBACK=%p',
+    (failOpen, fallback) => {
+      const { error } = validate({
+        THROTTLER_FAIL_OPEN: failOpen,
+        THROTTLER_REDIS_FALLBACK: fallback,
+      });
+
+      expect(error).toBeUndefined();
+    },
+  );
+
+  it('still accepts the legacy THROTTLER_FAIL_OPEN=true alone', () => {
+    const { error, value } = validate({ THROTTLER_FAIL_OPEN: 'true' });
+
+    expect(error).toBeUndefined();
+    expect(value.THROTTLER_FAIL_OPEN).toBe(true);
+  });
+});

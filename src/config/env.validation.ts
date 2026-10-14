@@ -193,11 +193,42 @@ export const envValidationSchema = Joi.object({
     .integer()
     .positive()
     .default(5000),
+  // false (default): a Redis outage during boot (cache probe / throttler
+  // readiness) aborts startup in production. true: log an error and boot
+  // anyway; the Redis-backed stores keep reconnecting in the background.
+  // Runtime behaviour while Redis is down is governed by
+  // AUTH_BLACKLIST_DEGRADED_MODE and THROTTLER_REDIS_FALLBACK.
+  REDIS_BOOT_OPTIONAL: Joi.boolean().default(false),
+  // What JwtStrategy does when the Redis token blacklist cannot be consulted:
+  //  - db-session (default): verify the Better Auth session row named by the
+  //    JWT `sid` claim in Postgres; tokens without `sid` get a 503.
+  //  - reject: fail closed with 503 AUTH_REVOCATION_CHECK_UNAVAILABLE.
+  //  - allow: accept the token (revoked tokens may work until they expire).
+  AUTH_BLACKLIST_DEGRADED_MODE: Joi.string()
+    .valid('db-session', 'reject', 'allow')
+    .default('db-session'),
 
-  // Rate limiting when Redis errors at runtime: false (default) surfaces the
-  // Redis error as a 500 so throttling is never bypassed; true lets requests
-  // through unthrottled (availability over protection). Boot-time readiness
-  // checks are unaffected.
+  // Rate limiting when Redis errors at runtime (boot-time readiness checks
+  // are unaffected). THROTTLER_REDIS_FALLBACK:
+  //  - closed (default): surface the Redis error as a 500; throttling is
+  //    never bypassed.
+  //  - memory: per-process in-memory counters with the same limits for the
+  //    outage window (per instance, not shared).
+  //  - open: let requests through unthrottled.
+  // THROTTLER_FAIL_OPEN is the legacy boolean: true === 'open'. Precedence:
+  // an explicit THROTTLER_REDIS_FALLBACK wins; when it is unset,
+  // THROTTLER_FAIL_OPEN=true selects 'open', otherwise 'closed'. Combining
+  // THROTTLER_FAIL_OPEN=true with closed/memory is contradictory and rejected.
+  THROTTLER_REDIS_FALLBACK: Joi.any()
+    .when('THROTTLER_FAIL_OPEN', {
+      is: Joi.any().valid(true, 'true').required(),
+      then: Joi.string().valid('open').messages({
+        'any.only':
+          'THROTTLER_REDIS_FALLBACK conflicts with THROTTLER_FAIL_OPEN=true (legacy alias of "open"); unset one of them or use THROTTLER_REDIS_FALLBACK=open',
+      }),
+      otherwise: Joi.string().valid('closed', 'memory', 'open'),
+    })
+    .optional(),
   THROTTLER_FAIL_OPEN: Joi.boolean().default(false),
 
   // BullMQ workers - idle Redis command budget (see bullmq-workers.config.ts).

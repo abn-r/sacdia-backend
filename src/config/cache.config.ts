@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { CacheModuleOptions } from '@nestjs/cache-manager';
 import { createKeyv, type Keyv } from '@keyv/redis';
 import { isPlaceholderUrl } from './bullmq.config';
+import { isRedisBootOptional } from './redis-degraded.config';
 
 const DEFAULT_CACHE_TTL_MS = 86_400_000;
 const DEFAULT_REDIS_CONNECTION_TIMEOUT_MS = 5_000;
@@ -14,15 +15,29 @@ export type RedisCacheStoreFactory = (
   connectionTimeoutMs: number,
 ) => Promise<Keyv>;
 
+/**
+ * Builds a Keyv Redis store WITHOUT probing it. Keyv connects lazily on first
+ * use and retries on every call, so a store created while Redis is down
+ * recovers by itself once Redis is back.
+ */
+export type UnverifiedRedisCacheStoreFactory = (
+  redisUrl: string,
+  connectionTimeoutMs: number,
+) => Keyv;
+
+export const createUnverifiedRedisCacheStore: UnverifiedRedisCacheStoreFactory =
+  (redisUrl, connectionTimeoutMs) =>
+    createKeyv(redisUrl, {
+      connectionTimeout: connectionTimeoutMs,
+      throwOnConnectError: true,
+      throwOnErrors: true,
+    });
+
 export const createRedisCacheStore: RedisCacheStoreFactory = async (
   redisUrl,
   connectionTimeoutMs,
 ) => {
-  const store = createKeyv(redisUrl, {
-    connectionTimeout: connectionTimeoutMs,
-    throwOnConnectError: true,
-    throwOnErrors: true,
-  });
+  const store = createUnverifiedRedisCacheStore(redisUrl, connectionTimeoutMs);
 
   try {
     // Keyv connects lazily. A real read verifies DNS, TLS, authentication and
@@ -38,6 +53,7 @@ export const createRedisCacheStore: RedisCacheStoreFactory = async (
 export async function buildCacheOptions(
   configService: ConfigService,
   redisStoreFactory: RedisCacheStoreFactory = createRedisCacheStore,
+  unverifiedStoreFactory: UnverifiedRedisCacheStoreFactory = createUnverifiedRedisCacheStore,
 ): Promise<CacheModuleOptions> {
   const environment = configService.get<string>('NODE_ENV', 'development');
   const isProduction = environment === 'production';
@@ -50,6 +66,9 @@ export async function buildCacheOptions(
     DEFAULT_REDIS_CONNECTION_TIMEOUT_MS,
   );
   const redisUrl = configService.get<string>('REDIS_URL')?.trim();
+  const bootOptional = isRedisBootOptional(
+    configService.get('REDIS_BOOT_OPTIONAL'),
+  );
 
   if (!redisUrl || isPlaceholderUrl(redisUrl)) {
     return handleRedisUnavailable(
@@ -73,6 +92,18 @@ export async function buildCacheOptions(
     return { stores: [store], ttl };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isProduction && bootOptional) {
+      // REDIS_BOOT_OPTIONAL: boot anyway, but keep the Redis store (never
+      // swap production to a per-process in-memory cache silently). Keyv
+      // reconnects on the next call once Redis is reachable again.
+      logger.error(
+        `Redis cache connection failed: ${message}. REDIS_BOOT_OPTIONAL=true: starting WITHOUT a verified cache connection; the Redis store will reconnect when Redis returns, and cache reads/writes fail (and fall back to the database) until then.`,
+      );
+      return {
+        stores: [unverifiedStoreFactory(redisUrl, connectionTimeoutMs)],
+        ttl,
+      };
+    }
     return handleRedisUnavailable(
       isProduction,
       ttl,

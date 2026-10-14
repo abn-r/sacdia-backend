@@ -4,13 +4,21 @@ import type {
   ThrottlerModuleOptions,
   ThrottlerOptions,
 } from '@nestjs/throttler';
+import { withTimeout } from '../common/utils/with-timeout';
 import { isPlaceholderUrl } from './bullmq.config';
+import {
+  isRedisBootOptional,
+  resolveThrottlerFallback,
+} from './redis-degraded.config';
 import {
   RedisThrottlerStorage,
   type RedisThrottlerStorageOptions,
 } from './redis-throttler.storage';
 
 const logger = new Logger('ThrottlerConfig');
+
+/** Upper bound for the boot-time Redis readiness check (connect + PING). */
+export const THROTTLER_READINESS_TIMEOUT_MS = 5_000;
 
 export const THROTTLER_TIERS = [
   {
@@ -68,6 +76,9 @@ export async function buildThrottlerOptions(
   const isProduction = nodeEnv === 'production';
   const throttlers = [...getThrottlerTiers(nodeEnv)];
   const redisUrl = configService.get<string>('REDIS_URL')?.trim();
+  const bootOptional = isRedisBootOptional(
+    configService.get('REDIS_BOOT_OPTIONAL'),
+  );
 
   if (!redisUrl || isPlaceholderUrl(redisUrl)) {
     return handleRedisUnavailable(
@@ -86,11 +97,18 @@ export async function buildThrottlerOptions(
   }
 
   const storage = createStorage(redisUrl, {
-    failOpen: isFailOpenEnabled(configService.get('THROTTLER_FAIL_OPEN')),
+    fallback: resolveThrottlerFallback(
+      configService.get('THROTTLER_REDIS_FALLBACK'),
+      configService.get('THROTTLER_FAIL_OPEN'),
+    ),
   });
 
   try {
-    await storage.assertReady();
+    await withTimeout(
+      storage.assertReady(),
+      THROTTLER_READINESS_TIMEOUT_MS,
+      `Redis throttler readiness check timed out after ${THROTTLER_READINESS_TIMEOUT_MS} ms`,
+    );
     logger.log('Using Redis-backed distributed throttler storage');
     return {
       throttlers,
@@ -98,6 +116,16 @@ export async function buildThrottlerOptions(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isProduction && bootOptional) {
+      // REDIS_BOOT_OPTIONAL: keep the Redis storage. Its client keeps
+      // reconnecting in the background, so distributed throttling resumes on
+      // its own once Redis returns; until then the runtime degraded policy
+      // (closed / memory / open) applies per request.
+      logger.error(
+        `Redis throttler connection failed: ${message}. REDIS_BOOT_OPTIONAL=true: starting anyway; the Redis client keeps reconnecting in the background.`,
+      );
+      return { throttlers, storage };
+    }
     return handleRedisUnavailable(
       isProduction,
       throttlers,
@@ -117,11 +145,6 @@ function handleRedisUnavailable(
 
   logger.warn(`${message} Falling back to in-memory throttler storage.`);
   return throttlers;
-}
-
-/** Fail-closed is the default; only an explicit true/'true' turns fail-open on. */
-function isFailOpenEnabled(value: unknown): boolean {
-  return value === true || String(value).trim().toLowerCase() === 'true';
 }
 
 function isValidRedisUrl(redisUrl: string): boolean {
