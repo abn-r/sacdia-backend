@@ -284,6 +284,23 @@ describe('AuthController', () => {
   describe('deleteAccount', () => {
     const user = { userId: 'user-1' };
 
+    it('allows three attempts per hour', () => {
+      for (const name of ['short', 'medium', 'long']) {
+        expect(
+          Reflect.getMetadata(
+            `THROTTLER:LIMIT${name}`,
+            AuthController.prototype.deleteAccount,
+          ),
+        ).toBe(3);
+        expect(
+          Reflect.getMetadata(
+            `THROTTLER:TTL${name}`,
+            AuthController.prototype.deleteAccount,
+          ),
+        ).toBe(3600000);
+      }
+    });
+
     it('maps a password body to the password re-auth', async () => {
       mockAccountDeletionService.deleteAccount.mockResolvedValue(undefined);
 
