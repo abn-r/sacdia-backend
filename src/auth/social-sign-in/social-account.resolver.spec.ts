@@ -1,4 +1,6 @@
 import { Test } from '@nestjs/testing';
+import { AppConflictException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SocialAccountResolver } from './social-account.resolver';
 import type { VerifiedIdentity } from './social-sign-in.types';
@@ -9,6 +11,7 @@ describe('SocialAccountResolver', () => {
   const tx = {
     account: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       deleteMany: jest.fn(),
     },
@@ -42,6 +45,7 @@ describe('SocialAccountResolver', () => {
     prisma.$transaction.mockImplementation(
       async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
     );
+    tx.account.findFirst.mockResolvedValue(null);
     tx.users_pr.findUnique.mockResolvedValue({ user_id: 'user-1' });
     tx.users_roles.findFirst.mockResolvedValue({ user_id: 'user-1' });
 
@@ -136,6 +140,42 @@ describe('SocialAccountResolver', () => {
       where: { user_id: 'user-1' },
       data: expect.objectContaining({ email_verified: true }),
     });
+  });
+
+  it('refuses a second identity from the same provider on a verified account', async () => {
+    tx.account.findUnique.mockResolvedValue(null);
+    tx.users.findUnique.mockResolvedValue(existingUser);
+    tx.account.findFirst.mockResolvedValue({ accountId: 'google-sub-OTHER' });
+
+    const error = await resolver.resolve(identity).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AppConflictException);
+    expect((error as AppConflictException).code).toBe(
+      ErrorCode.AUTH_OAUTH_PROVIDER_ALREADY_LINKED,
+    );
+    expect(tx.account.findFirst).toHaveBeenCalledWith({
+      where: { userId: 'user-1', providerId: 'google' },
+      select: { id: true },
+    });
+    expect(tx.account.create).not.toHaveBeenCalled();
+  });
+
+  it('wipes a stale same-provider row on an unverified account and links', async () => {
+    tx.account.findUnique.mockResolvedValue(null);
+    tx.users.findUnique.mockResolvedValue({
+      ...existingUser,
+      email_verified: false,
+    });
+    tx.account.findFirst.mockResolvedValue({ accountId: 'google-sub-OTHER' });
+
+    await expect(resolver.resolve(identity)).resolves.toMatchObject({
+      linked: true,
+      revokedPriorAccess: true,
+    });
+    expect(tx.account.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+    });
+    expect(tx.account.create).toHaveBeenCalledTimes(1);
   });
 
   it('creates the user, the account and the SACDIA rows when nothing matches', async () => {

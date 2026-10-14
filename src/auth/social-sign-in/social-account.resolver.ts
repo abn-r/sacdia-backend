@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { AppConflictException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { VerifiedIdentity } from './social-sign-in.types';
 
@@ -79,6 +81,21 @@ export class SocialAccountResolver {
         // it keeps nothing: no sessions, no password, no other provider links.
         await tx.session.deleteMany({ where: { userId: existing.user_id } });
         await tx.account.deleteMany({ where: { userId: existing.user_id } });
+      } else {
+        // A verified account keeps its links. A second identity from the same
+        // provider (different sub) is never attached silently.
+        const sameProvider = await tx.account.findFirst({
+          where: { userId: existing.user_id, providerId: provider },
+          select: { id: true },
+        });
+        if (sameProvider) {
+          this.logger.warn(
+            `${provider} sign-in refused — user ${existing.user_id} already linked to another ${provider} identity`,
+          );
+          throw new AppConflictException(
+            ErrorCode.AUTH_OAUTH_PROVIDER_ALREADY_LINKED,
+          );
+        }
       }
       await tx.account.create({
         data: {
