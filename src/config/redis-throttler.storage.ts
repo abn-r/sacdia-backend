@@ -45,9 +45,10 @@ type RedisThrottlerClient = ReturnType<typeof createRedisThrottlerClient>;
 
 export interface RedisThrottlerStorageOptions {
   /**
-   * When true (default) a Redis error (connection refused, timeout, command
-   * quota exhausted, ...) lets the request through unthrottled instead of
-   * failing it. Rate limiting is therefore OFF while Redis is unavailable.
+   * Opt-in (default false). When true a Redis error (connection refused,
+   * timeout, command quota exhausted, ...) lets the request through
+   * unthrottled instead of failing it. Rate limiting is therefore OFF while
+   * Redis is unavailable, so leave it off unless availability matters more.
    */
   failOpen?: boolean;
   /** After a Redis failure, skip Redis entirely for this long. */
@@ -78,7 +79,7 @@ export class RedisThrottlerStorage implements OnApplicationShutdown {
   private degraded = false;
 
   constructor(redisUrl: string, options: RedisThrottlerStorageOptions = {}) {
-    this.failOpen = options.failOpen ?? true;
+    this.failOpen = options.failOpen ?? false;
     this.failOpenCooldownMs =
       options.failOpenCooldownMs ?? DEFAULT_FAIL_OPEN_COOLDOWN_MS;
     this.now = options.now ?? Date.now;

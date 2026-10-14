@@ -99,7 +99,7 @@ describe('GET /health under a failing Redis throttler', () => {
     expect(increment).toHaveBeenCalled();
   });
 
-  it('answers 200 for other routes too when the Redis storage fails open', async () => {
+  it('by default keeps /health at 200 but fails other routes closed when Redis errors', async () => {
     const client = {
       isOpen: true,
       isReady: true,
@@ -111,6 +111,29 @@ describe('GET /health under a failing Redis throttler', () => {
     };
     mockCreateClient.mockReturnValue(client);
     const storage = new RedisThrottlerStorage('redis://localhost:6379');
+    app = await createApp(storage as unknown as ThrottlerStorage);
+
+    const probe = await request(app.getHttpServer()).get('/probe');
+    const health = await request(app.getHttpServer()).get('/health');
+
+    expect(probe.status).toBe(500);
+    expect(health.status).toBe(200);
+  });
+
+  it('answers 200 for other routes too when fail-open is opted in', async () => {
+    const client = {
+      isOpen: true,
+      isReady: true,
+      eval: jest.fn().mockRejectedValue(quotaError),
+      on: jest.fn(),
+      connect: jest.fn(),
+      disconnect: jest.fn(),
+      quit: jest.fn(),
+    };
+    mockCreateClient.mockReturnValue(client);
+    const storage = new RedisThrottlerStorage('redis://localhost:6379', {
+      failOpen: true,
+    });
     app = await createApp(storage as unknown as ThrottlerStorage);
 
     const probe = await request(app.getHttpServer()).get('/probe');

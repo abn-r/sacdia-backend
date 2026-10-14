@@ -119,9 +119,9 @@ function handleRedisUnavailable(
   return throttlers;
 }
 
-/** Fail-open is the default; only an explicit false/'false' turns it off. */
+/** Fail-closed is the default; only an explicit true/'true' turns fail-open on. */
 function isFailOpenEnabled(value: unknown): boolean {
-  return !(value === false || String(value).trim().toLowerCase() === 'false');
+  return value === true || String(value).trim().toLowerCase() === 'true';
 }
 
 function isValidRedisUrl(redisUrl: string): boolean {

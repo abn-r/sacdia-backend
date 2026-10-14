@@ -105,6 +105,7 @@ describe('RedisThrottlerStorage fail-open', () => {
   ) {
     return new RedisThrottlerStorage('redis://localhost:6379', {
       now,
+      failOpen: true,
       failOpenCooldownMs: 15_000,
       ...options,
     });
@@ -208,6 +209,17 @@ describe('RedisThrottlerStorage fail-open', () => {
     await expect(
       storage.increment('ip:1', 10000, 20, 60000, 'medium'),
     ).resolves.toMatchObject({ isBlocked: true, totalHits: 21 });
+  });
+
+  it('fails closed by default', async () => {
+    client.eval.mockRejectedValue(quotaError);
+    const storage = new RedisThrottlerStorage('redis://localhost:6379', {
+      now,
+    });
+
+    await expect(
+      storage.increment('ip:1', 1000, 3, 60000, 'short'),
+    ).rejects.toBe(quotaError);
   });
 
   it('rethrows Redis errors when failOpen is disabled', async () => {

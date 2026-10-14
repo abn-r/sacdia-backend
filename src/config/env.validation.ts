@@ -194,10 +194,11 @@ export const envValidationSchema = Joi.object({
     .positive()
     .default(5000),
 
-  // Rate limiting when Redis errors at runtime: true (default) lets requests
-  // through unthrottled (availability over protection); false surfaces the
-  // Redis error as a 500. Boot-time readiness checks are unaffected.
-  THROTTLER_FAIL_OPEN: Joi.boolean().default(true),
+  // Rate limiting when Redis errors at runtime: false (default) surfaces the
+  // Redis error as a 500 so throttling is never bypassed; true lets requests
+  // through unthrottled (availability over protection). Boot-time readiness
+  // checks are unaffected.
+  THROTTLER_FAIL_OPEN: Joi.boolean().default(false),
 
   // BullMQ workers - idle Redis command budget (see bullmq-workers.config.ts).
   // Master switch: false creates no worker in this process (producers still

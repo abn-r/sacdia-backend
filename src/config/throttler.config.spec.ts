@@ -58,7 +58,7 @@ describe('buildThrottlerOptions', () => {
   });
 
   it.each([
-    [undefined, true],
+    [undefined, false],
     ['true', true],
     [true, true],
     ['false', false],

@@ -520,17 +520,17 @@ describe('envValidationSchema BullMQ worker configuration', () => {
 });
 
 describe('envValidationSchema throttler fail-open', () => {
-  it('defaults to fail-open', () => {
+  it('defaults to fail-closed', () => {
     const { error, value } = validate();
 
     expect(error).toBeUndefined();
-    expect(value.THROTTLER_FAIL_OPEN).toBe(true);
+    expect(value.THROTTLER_FAIL_OPEN).toBe(false);
   });
 
-  it('accepts an explicit opt-out and rejects garbage', () => {
+  it('accepts an explicit opt-in and rejects garbage', () => {
     expect(
-      validate({ THROTTLER_FAIL_OPEN: 'false' }).value.THROTTLER_FAIL_OPEN,
-    ).toBe(false);
+      validate({ THROTTLER_FAIL_OPEN: 'true' }).value.THROTTLER_FAIL_OPEN,
+    ).toBe(true);
     expect(validate({ THROTTLER_FAIL_OPEN: 'maybe' }).error).toBeDefined();
   });
 });
