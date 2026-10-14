@@ -47,6 +47,41 @@ describe('TokenBlacklistService', () => {
     );
   });
 
+  it('keeps tokens issued in the same second valid by default', async () => {
+    jest.useFakeTimers({ now: 1_700_000_000_500 });
+
+    await service.blacklistAllUserTokens('user-123');
+    mockCache.get.mockResolvedValue(mockCache.set.mock.calls[0][1]);
+
+    await expect(service.checkUserTokens('user-123', 1699999999)).resolves.toBe(
+      'revoked',
+    );
+    await expect(service.checkUserTokens('user-123', 1700000000)).resolves.toBe(
+      'ok',
+    );
+  });
+
+  it('revokes tokens issued in the same second when includeCurrentSecond is set', async () => {
+    jest.useFakeTimers({ now: 1_700_000_000_500 });
+
+    await service.blacklistAllUserTokens('user-123', 600, {
+      includeCurrentSecond: true,
+    });
+    mockCache.get.mockResolvedValue(mockCache.set.mock.calls[0][1]);
+
+    expect(mockCache.set).toHaveBeenCalledWith(
+      'token:blacklist:user:user-123:all',
+      '1700000001',
+      600 * 1000,
+    );
+    await expect(service.checkUserTokens('user-123', 1700000000)).resolves.toBe(
+      'revoked',
+    );
+    await expect(service.checkUserTokens('user-123', 1700000001)).resolves.toBe(
+      'ok',
+    );
+  });
+
   it('should support legacy millisecond timestamp values', async () => {
     mockCache.get.mockResolvedValue('1700000000000');
 
