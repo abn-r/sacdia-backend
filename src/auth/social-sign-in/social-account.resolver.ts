@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AppConflictException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -23,6 +23,13 @@ export interface ResolvedSocialAccount {
 /** `users.name` and `users.paternal_last_name` are VarChar(50). */
 const NAME_MAX = 50;
 
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  );
+}
+
 /**
  * Maps a verified provider identity to a SACDIA user.
  *
@@ -40,6 +47,23 @@ export class SocialAccountResolver {
   constructor(private readonly prisma: PrismaService) {}
 
   async resolve(identity: VerifiedIdentity): Promise<ResolvedSocialAccount> {
+    try {
+      return await this.resolveOnce(identity);
+    } catch (error) {
+      // Two first sign-ins racing on the same new user both miss, both insert,
+      // and the loser hits a unique index. By now the winner has committed, so
+      // one rerun finds its rows. Not a loop: a second violation is a real bug.
+      if (!isUniqueViolation(error)) throw error;
+      this.logger.warn(
+        `${identity.provider} sign-in hit a unique violation — retrying once`,
+      );
+      return this.resolveOnce(identity);
+    }
+  }
+
+  private resolveOnce(
+    identity: VerifiedIdentity,
+  ): Promise<ResolvedSocialAccount> {
     return this.prisma.$transaction(async (tx) => {
       const result = await this.findOrCreate(tx, identity);
       await this.provisionSacdiaRows(tx, result.userId);

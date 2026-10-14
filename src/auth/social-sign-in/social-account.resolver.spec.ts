@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { AppConflictException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -315,5 +316,58 @@ describe('SocialAccountResolver', () => {
     tx.users.findUnique.mockResolvedValue(existingUser);
     await resolver.resolve(identity);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  describe('first sign-in race', () => {
+    const p2002 = () =>
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      });
+
+    it('reruns the transaction once after a unique violation', async () => {
+      prisma.$transaction
+        .mockRejectedValueOnce(p2002())
+        .mockImplementationOnce(
+          async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+        );
+      tx.account.findUnique.mockResolvedValue({ userId: 'user-1' });
+      tx.users.findUnique.mockResolvedValue(existingUser);
+
+      await expect(resolver.resolve(identity)).resolves.toMatchObject({
+        userId: 'user-1',
+        created: false,
+      });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it('rethrows when the retry hits the unique violation again', async () => {
+      const second = p2002();
+      prisma.$transaction
+        .mockRejectedValueOnce(p2002())
+        .mockRejectedValueOnce(second);
+
+      await expect(resolver.resolve(identity)).rejects.toBe(second);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retry other errors', async () => {
+      const boom = new Error('boom');
+      prisma.$transaction.mockRejectedValueOnce(boom);
+
+      await expect(resolver.resolve(identity)).rejects.toBe(boom);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry other Prisma error codes', async () => {
+      const other = new Prisma.PrismaClientKnownRequestError('timeout', {
+        code: 'P2028',
+        clientVersion: 'test',
+      });
+      prisma.$transaction.mockRejectedValueOnce(other);
+
+      await expect(resolver.resolve(identity)).rejects.toBe(other);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
   });
 });
