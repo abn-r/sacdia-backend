@@ -14,6 +14,8 @@ import {
   AppUnauthorizedException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { TokenBlacklistService } from '../common/services/token-blacklist.service';
+import { totpIdentifier } from '../better-auth/better-auth.service';
 import { AppleTokenClient } from './social-sign-in/apple-token.client';
 import {
   APPLE_ID_TOKEN_VERIFIER,
@@ -21,6 +23,12 @@ import {
   type IdTokenVerifier,
   type SocialProvider,
 } from './social-sign-in/social-sign-in.types';
+
+/**
+ * Access JWT lifetime. Mirrors `AuthService.JWT_TTL_SECONDS` (private there);
+ * a blacklist entry only has to outlive the longest-lived token.
+ */
+const JWT_TTL_SECONDS = 28800;
 
 export type DeleteAccountReauth =
   | { password: string }
@@ -41,7 +49,9 @@ export type DeleteAccountReauth =
  *      c. Anonymize PII fields to comply with GDPR/data minimization
  *      d. Deactivate all FCM tokens to prevent ghost notifications
  *      e. Delete all notification preferences (cascade handled by FK)
- *      f. Log deletion in account_deletion_log
+ *      f. Delete the TOTP secret and backup codes (verification row)
+ *      g. Log deletion in account_deletion_log
+ *   2b. Blacklist every access JWT of the user (best effort)
  *   3. Delete profile picture from R2 (fire-and-forget — outside transaction)
  *   4. Structured audit log
  *
@@ -65,6 +75,7 @@ export class AccountDeletionService {
     @Inject(GOOGLE_ID_TOKEN_VERIFIER) google: IdTokenVerifier,
     @Inject(APPLE_ID_TOKEN_VERIFIER) apple: IdTokenVerifier,
     private readonly appleTokens: AppleTokenClient,
+    private readonly tokenBlacklist: TokenBlacklistService,
   ) {
     this.verifiers = { google, apple };
   }
@@ -202,6 +213,11 @@ export class AccountDeletionService {
         },
       });
 
+      // 2c-bis. Remove the TOTP secret and hashed backup codes
+      await tx.verification.deleteMany({
+        where: { identifier: totpIdentifier(userId) },
+      });
+
       // 2d. Remove credential account password hash (hard-delete account row)
       await tx.account.deleteMany({ where: { userId } });
 
@@ -215,6 +231,19 @@ export class AccountDeletionService {
         },
       });
     });
+
+    // -------------------------------------------------------------------------
+    // 2b. End every access JWT. JwtStrategy does not check users.active, so
+    //     without this they stay valid until they expire. The account is
+    //     already gone: a blacklist failure must not fail the request.
+    // -------------------------------------------------------------------------
+    try {
+      await this.tokenBlacklist.blacklistAllUserTokens(userId, JWT_TTL_SECONDS);
+    } catch (error) {
+      this.logger.error(
+        `Could not blacklist access JWTs for deleted user ${userId} — they stay valid up to ${JWT_TTL_SECONDS}s: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     // -------------------------------------------------------------------------
     // 3. Delete profile picture from R2 (fire-and-forget, outside transaction)

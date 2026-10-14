@@ -8,6 +8,8 @@ import {
 } from '../common/services/file-storage.service';
 import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { TokenBlacklistService } from '../common/services/token-blacklist.service';
+import { totpIdentifier } from '../better-auth/better-auth.service';
 import { AppleTokenClient } from './social-sign-in/apple-token.client';
 import {
   APPLE_ID_TOKEN_VERIFIER,
@@ -33,6 +35,9 @@ const mockPrisma = {
   session: {
     deleteMany: jest.fn(),
   },
+  verification: {
+    deleteMany: jest.fn(),
+  },
   user_fcm_tokens: {
     updateMany: jest.fn(),
   },
@@ -52,6 +57,9 @@ const credentialAccount = {
 const mockGoogleVerifier = { provider: 'google', verify: jest.fn() };
 const mockAppleVerifier = { provider: 'apple', verify: jest.fn() };
 const mockAppleTokens = { revoke: jest.fn() };
+const mockTokenBlacklist = {
+  blacklistAllUserTokens: jest.fn().mockResolvedValue(undefined),
+};
 
 const mockFileStorage = {
   extractKeyFromPublicUrl: jest.fn(),
@@ -82,6 +90,7 @@ describe('AccountDeletionService', () => {
         { provide: GOOGLE_ID_TOKEN_VERIFIER, useValue: mockGoogleVerifier },
         { provide: APPLE_ID_TOKEN_VERIFIER, useValue: mockAppleVerifier },
         { provide: AppleTokenClient, useValue: mockAppleTokens },
+        { provide: TokenBlacklistService, useValue: mockTokenBlacklist },
       ],
     }).compile();
 
@@ -404,6 +413,67 @@ describe('AccountDeletionService', () => {
         }),
       ).resolves.toBeUndefined();
       expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('session and TOTP cleanup', () => {
+    beforeEach(() => {
+      mockPrisma.users.findUnique.mockResolvedValue({
+        user_id: USER_ID,
+        email: 'user@sacdia.app',
+        active: true,
+        user_image: null,
+      });
+      mockPrisma.account.findMany.mockResolvedValue([credentialAccount]);
+      (bcryptMock.compare as jest.Mock).mockResolvedValue(true);
+    });
+
+    it('deletes the TOTP secret row inside the transaction', async () => {
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
+
+      expect(mockPrisma.verification.deleteMany).toHaveBeenCalledWith({
+        where: { identifier: totpIdentifier(USER_ID) },
+      });
+      expect(
+        mockPrisma.verification.deleteMany.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(mockPrisma.$transaction.mock.invocationCallOrder[0]);
+    });
+
+    it('blacklists every access JWT of the user after the transaction', async () => {
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
+
+      expect(mockTokenBlacklist.blacklistAllUserTokens).toHaveBeenCalledWith(
+        USER_ID,
+        28800,
+      );
+      expect(
+        mockTokenBlacklist.blacklistAllUserTokens.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(mockPrisma.$transaction.mock.invocationCallOrder[0]);
+    });
+
+    it('does not blacklist when the transaction fails', async () => {
+      mockPrisma.$transaction.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(
+        service.deleteAccount(USER_ID, { password: PASSWORD }),
+      ).rejects.toThrow('db down');
+      expect(mockTokenBlacklist.blacklistAllUserTokens).not.toHaveBeenCalled();
+    });
+
+    it('still resolves and logs when the blacklist fails', async () => {
+      mockTokenBlacklist.blacklistAllUserTokens.mockRejectedValueOnce(
+        new Error('redis down'),
+      );
+      const logError = jest
+        .spyOn((service as any).logger, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.deleteAccount(USER_ID, { password: PASSWORD }),
+      ).resolves.toBeUndefined();
+
+      expect(logError).toHaveBeenCalledTimes(1);
+      expect(logError.mock.calls[0][0]).toContain(USER_ID);
     });
   });
 });
