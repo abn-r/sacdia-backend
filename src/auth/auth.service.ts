@@ -547,10 +547,7 @@ export class AuthService {
         dto.password,
       );
       await this.prisma.session.deleteMany({ where: { userId } });
-      await this.tokenBlacklist.blacklistAllUserTokens(
-        userId,
-        AuthService.JWT_TTL_SECONDS,
-      );
+      await this.blacklistUserTokensBestEffort(userId, 'password_reset');
       this.logger.log(`Password reset confirmed; sessions revoked for ${userId}`);
       return {
         success: true,
@@ -589,11 +586,39 @@ export class AuthService {
       newPassword,
     );
     await this.prisma.session.deleteMany({ where: { userId } });
-    await this.tokenBlacklist.blacklistAllUserTokens(
-      userId,
-      AuthService.JWT_TTL_SECONDS,
-    );
+    await this.blacklistUserTokensBestEffort(userId, 'password_change');
     this.logger.log(`Self-service password updated for user: ${userId}`);
+  }
+
+  /**
+   * Runs AFTER the password mutation and the session deletion have been
+   * committed, so a cache (Redis) failure must not turn a completed password
+   * change into a 500 / AUTH_PASSWORD_RESET_FAILED, nor invite a retry with a
+   * now-consumed token. Existing access JWTs stay valid until the session
+   * check (AUTH_BLACKLIST_DEGRADED_MODE=db-session rejects them: the session
+   * rows are already gone) or, at worst, until JWT_TTL_SECONDS elapse.
+   * Same precedent as SocialSignInService.blacklistPriorTokens.
+   */
+  private async blacklistUserTokensBestEffort(
+    userId: string,
+    flow: 'password_reset' | 'password_change',
+  ): Promise<void> {
+    try {
+      await this.tokenBlacklist.blacklistAllUserTokens(
+        userId,
+        AuthService.JWT_TTL_SECONDS,
+      );
+    } catch (error) {
+      this.logger.error(
+        JSON.stringify({
+          event: 'auth_password_blacklist_failed',
+          flow,
+          userId,
+          reason: error instanceof Error ? error.message : String(error),
+          note: `Sessions were deleted but access JWTs could not be blacklisted; they may stay valid until the DB session check rejects them or up to ${AuthService.JWT_TTL_SECONDS}s`,
+        }),
+      );
+    }
   }
 
   async getProfile(userId: string) {
