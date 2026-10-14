@@ -560,3 +560,25 @@ describe('REDIS_BOOT_OPTIONAL validation', () => {
     expect(error?.message).toContain('REDIS_BOOT_OPTIONAL');
   });
 });
+
+describe('AUTH_BLACKLIST_DEGRADED_MODE validation', () => {
+  it('defaults to db-session', () => {
+    const { error, value } = validate();
+
+    expect(error).toBeUndefined();
+    expect(value.AUTH_BLACKLIST_DEGRADED_MODE).toBe('db-session');
+  });
+
+  it.each(['db-session', 'reject', 'allow'])('accepts %s', (mode) => {
+    const { error, value } = validate({ AUTH_BLACKLIST_DEGRADED_MODE: mode });
+
+    expect(error).toBeUndefined();
+    expect(value.AUTH_BLACKLIST_DEGRADED_MODE).toBe(mode);
+  });
+
+  it.each(['', 'open', 'true', 'DB-SESSION'])('rejects %p', (mode) => {
+    const { error } = validate({ AUTH_BLACKLIST_DEGRADED_MODE: mode });
+
+    expect(error?.message).toContain('AUTH_BLACKLIST_DEGRADED_MODE');
+  });
+});

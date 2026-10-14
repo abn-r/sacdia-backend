@@ -4,17 +4,18 @@
  * an unhandled rejection. The underlying operation is NOT cancelled.
  */
 export async function withTimeout<T>(
-  promise: Promise<T>,
+  promise: PromiseLike<T> | T,
   timeoutMs: number,
   message: string,
 ): Promise<T> {
+  const operation = Promise.resolve(promise);
+  operation.catch(() => undefined);
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(message)), timeoutMs);
   });
-  promise.catch(() => undefined);
   try {
-    return await Promise.race([promise, timeout]);
+    return await Promise.race([operation, timeout]);
   } finally {
     if (timer) clearTimeout(timer);
   }

@@ -199,6 +199,14 @@ export const envValidationSchema = Joi.object({
   // Runtime behaviour while Redis is down is governed by
   // AUTH_BLACKLIST_DEGRADED_MODE and THROTTLER_REDIS_FALLBACK.
   REDIS_BOOT_OPTIONAL: Joi.boolean().default(false),
+  // What JwtStrategy does when the Redis token blacklist cannot be consulted:
+  //  - db-session (default): verify the Better Auth session row named by the
+  //    JWT `sid` claim in Postgres; tokens without `sid` get a 503.
+  //  - reject: fail closed with 503 AUTH_REVOCATION_CHECK_UNAVAILABLE.
+  //  - allow: accept the token (revoked tokens may work until they expire).
+  AUTH_BLACKLIST_DEGRADED_MODE: Joi.string()
+    .valid('db-session', 'reject', 'allow')
+    .default('db-session'),
 
   // Rate limiting when Redis errors at runtime: false (default) surfaces the
   // Redis error as a 500 so throttling is never bypassed; true lets requests

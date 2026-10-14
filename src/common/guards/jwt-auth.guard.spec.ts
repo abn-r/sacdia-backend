@@ -1,5 +1,9 @@
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { ErrorCode } from '../errors/error-codes';
+import {
+  AppServiceUnavailableException,
+  AppUnauthorizedException,
+} from '../errors/app.exception';
 
 describe('JwtAuthGuard', () => {
   const mockReflector = {
@@ -67,5 +71,44 @@ describe('JwtAuthGuard', () => {
     ).toThrow(
       expect.objectContaining({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED }),
     );
+  });
+
+  describe('revocation check unavailable', () => {
+    it('propagates the 503 instead of converting it to a 401', () => {
+      const guard = new JwtAuthGuard(mockReflector as any);
+      const error = new AppServiceUnavailableException(
+        ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+      );
+
+      let thrown: unknown;
+      try {
+        guard.handleRequest(error, false, null, mockContext);
+      } catch (caught) {
+        thrown = caught;
+      }
+
+      expect(thrown).toBe(error);
+      expect(thrown).toMatchObject({
+        code: ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+        status: 503,
+      });
+    });
+
+    it('still maps other strategy errors and 401s to GUARD_JWT_UNAUTHORIZED', () => {
+      const guard = new JwtAuthGuard(mockReflector as any);
+
+      for (const err of [
+        new Error('boom'),
+        new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED),
+        // A 503 with another code is not the revocation signal.
+        new AppServiceUnavailableException(ErrorCode.R2_UPLOAD_FAILED),
+      ]) {
+        expect(() =>
+          guard.handleRequest(err, false, null, mockContext),
+        ).toThrow(
+          expect.objectContaining({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED }),
+        );
+      }
+    });
   });
 });

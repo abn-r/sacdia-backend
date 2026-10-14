@@ -109,9 +109,9 @@ describe('AuthService', () => {
   const mockTokenBlacklistService = {
     blacklist: jest.fn(),
     blacklistToken: jest.fn(),
-    isBlacklisted: jest.fn(),
+    checkToken: jest.fn(),
     blacklistAllUserTokens: jest.fn(),
-    isUserBlacklisted: jest.fn(),
+    checkUserTokens: jest.fn(),
   };
 
   const mockConfigService = {
