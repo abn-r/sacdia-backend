@@ -235,10 +235,15 @@ export class AccountDeletionService {
     // -------------------------------------------------------------------------
     // 2b. End every access JWT. JwtStrategy does not check users.active, so
     //     without this they stay valid until they expire. The account is
-    //     already gone: a blacklist failure must not fail the request.
+    //     already gone: a blacklist failure must not fail the request. No new
+    //     token can follow, so tokens issued in this same second go too.
     // -------------------------------------------------------------------------
     try {
-      await this.tokenBlacklist.blacklistAllUserTokens(userId, JWT_TTL_SECONDS);
+      await this.tokenBlacklist.blacklistAllUserTokens(
+        userId,
+        JWT_TTL_SECONDS,
+        { includeCurrentSecond: true },
+      );
     } catch (error) {
       this.logger.error(
         `Could not blacklist access JWTs for deleted user ${userId} — they stay valid up to ${JWT_TTL_SECONDS}s: ${error instanceof Error ? error.message : String(error)}`,

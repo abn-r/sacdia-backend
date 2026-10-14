@@ -517,6 +517,7 @@ describe('AccountDeletionService', () => {
       expect(mockTokenBlacklist.blacklistAllUserTokens).toHaveBeenCalledWith(
         USER_ID,
         28800,
+        { includeCurrentSecond: true },
       );
       expect(
         mockTokenBlacklist.blacklistAllUserTokens.mock.invocationCallOrder[0],
