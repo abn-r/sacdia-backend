@@ -397,11 +397,12 @@ export class CatalogsService {
     end_date: Date;
     active: boolean;
   }) {
-    const startYear = row.start_date.getFullYear();
-    const endYear = row.end_date.getFullYear();
-    // "2025-2026" — adventist ecclesiastical years run Oct → Sep, so start/end
-    // years always differ. When they coincide (data edge-case) the label stays
-    // readable (e.g. "2025").
+    // `@db.Date` columns arrive as UTC midnight: read the UTC year so the
+    // server timezone cannot shift Jan 1 into the previous year.
+    const startYear = row.start_date.getUTCFullYear();
+    const endYear = row.end_date.getUTCFullYear();
+    // A year that spans two calendar years reads "2025-2026"; a calendar year
+    // (Jan → Dec) reads "2026".
     const name =
       startYear !== endYear ? `${startYear}-${endYear}` : `${startYear}`;
 

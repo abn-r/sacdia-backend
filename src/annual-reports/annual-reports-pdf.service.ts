@@ -108,7 +108,7 @@ export class AnnualReportsPdfService {
     const yearLabel =
       computed.year_label ??
       String(
-        reportData.ecclesiastical_year?.start_date?.getFullYear() ?? 'N/A',
+        reportData.ecclesiastical_year?.start_date?.getUTCFullYear() ?? 'N/A',
       );
 
     const PDFDocument = loadPdfKit();

@@ -241,10 +241,10 @@ export class AnnualReportsService {
 
     if (allSectionIds.length > 0) {
       // Aggregate all finance records in the year range by iterating months
-      const startYear = startDate.getFullYear();
-      const endYear = endDate.getFullYear();
-      const startMonth = startDate.getMonth() + 1;
-      const endMonth = endDate.getMonth() + 1;
+      const startYear = startDate.getUTCFullYear();
+      const endYear = endDate.getUTCFullYear();
+      const startMonth = startDate.getUTCMonth() + 1;
+      const endMonth = endDate.getUTCMonth() + 1;
 
       for (let y = startYear; y <= endYear; y++) {
         const monthStart = y === startYear ? startMonth : 1;
@@ -308,7 +308,7 @@ export class AnnualReportsService {
 
     return {
       ecclesiastical_year_id: ecclesiasticalYearId,
-      year_label: `${startDate.getFullYear()}–${endDate.getFullYear()}`,
+      year_label: `${startDate.getUTCFullYear()}–${endDate.getUTCFullYear()}`,
       member_count: memberCount,
       months_reported: monthsReported,
       directiva,
