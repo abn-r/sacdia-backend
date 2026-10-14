@@ -60,6 +60,7 @@ export class OperationsDashboardRepository {
   }: LoadSnapshotInput): Promise<OperationsDashboardRawSnapshot> {
     const bucket = this.bucketExpression(scope);
     const scopePredicate = this.scopePredicate(scope);
+    const clubScopePredicate = this.clubScopePredicate(scope);
     const enrollmentStatusPredicate =
       this.enrollmentStatusPredicate(ecclesiasticalYear);
 
@@ -88,7 +89,7 @@ export class OperationsDashboardRepository {
       queues,
     ] = await Promise.all([
       this.loadChildren(scope),
-      this.loadAdministrativeClubs(bucket, scopePredicate),
+      this.loadAdministrativeClubs(bucket, clubScopePredicate),
       this.loadOperations(
         bucket,
         scopePredicate,
@@ -156,6 +157,14 @@ export class OperationsDashboardRepository {
           SELECT c.club_id AS id, c.name
           FROM clubs c
           WHERE c.local_field_id = ${scope.id}
+          ORDER BY c.name ASC, c.club_id ASC
+        `);
+      case 'coordinator':
+        return this.prisma.$queryRaw<DashboardChildNode[]>(Prisma.sql`
+          SELECT DISTINCT c.club_id AS id, c.name
+          FROM clubs c
+          INNER JOIN club_sections cs ON cs.main_club_id = c.club_id
+          WHERE cs.club_section_id IN (${Prisma.join(this.sectionIds(scope))})
           ORDER BY c.name ASC, c.club_id ASC
         `);
     }
@@ -540,6 +549,8 @@ export class OperationsDashboardRepository {
         return Prisma.sql`lf.local_field_id`;
       case 'local_field':
         return Prisma.sql`c.club_id`;
+      case 'coordinator':
+        return Prisma.sql`c.club_id`;
     }
   }
 
@@ -553,7 +564,33 @@ export class OperationsDashboardRepository {
         return Prisma.sql`u.union_id = ${scope.id}`;
       case 'local_field':
         return Prisma.sql`lf.local_field_id = ${scope.id}`;
+      case 'coordinator':
+        return Prisma.sql`cs.club_section_id IN (${Prisma.join(this.sectionIds(scope))})`;
     }
+  }
+
+  /**
+   * Same as scopePredicate for territorial levels. For a coordinator, queries
+   * that start from `clubs c` (no club_sections join) filter by the clubs that
+   * own the assigned sections.
+   */
+  private clubScopePredicate(
+    scope: ResolvedOperationsDashboardScope,
+  ): Prisma.Sql {
+    if (scope.level !== 'coordinator') return this.scopePredicate(scope);
+    return Prisma.sql`c.club_id IN (
+      SELECT cs2.main_club_id FROM club_sections cs2
+      WHERE cs2.club_section_id IN (${Prisma.join(this.sectionIds(scope))})
+    )`;
+  }
+
+  private sectionIds(scope: ResolvedOperationsDashboardScope): number[] {
+    const ids = scope.section_ids ?? [];
+    if (ids.length === 0) {
+      // The scope service rejects empty coordinator scopes before reaching here.
+      throw new Error('Coordinator scope requires at least one section id');
+    }
+    return ids;
   }
 
   private enrollmentStatusPredicate(

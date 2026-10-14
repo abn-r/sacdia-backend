@@ -123,6 +123,53 @@ describe('OperationsDashboardRepository', () => {
     expect(queueQuery).toContain("ce.status = 'active'");
   });
 
+  it('filters a coordinator scope by assigned sections and lists their clubs', async () => {
+    const coordinatorScope: ResolvedOperationsDashboardScope = {
+      level: 'coordinator',
+      id: null,
+      name: 'Zona Norte',
+      path: [],
+      section_ids: [12, 15, 40],
+    };
+
+    await repository.loadSnapshot({
+      scope: coordinatorScope,
+      ecclesiasticalYear: year,
+      reportingMonth: { year: 2026, month: 6 },
+      includeHonors: true,
+    });
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(9);
+
+    const queries = prisma.$queryRaw.mock.calls.map(([query]) => ({
+      sql: (query.strings as string[]).join('?'),
+      values: query.values as unknown[],
+    }));
+
+    const childrenQuery = queries.find((q) => q.sql.includes('SELECT DISTINCT c.club_id AS id'));
+    expect(childrenQuery?.sql).toContain('INNER JOIN club_sections cs ON cs.main_club_id = c.club_id');
+    expect(childrenQuery?.sql).toContain('cs.club_section_id IN (?,?,?)');
+    expect(childrenQuery?.values).toEqual([12, 15, 40]);
+
+    const administrativeQuery = queries.find((q) => q.sql.includes('AS inactive'));
+    expect(administrativeQuery?.sql).toContain('c.club_id IN (');
+    expect(administrativeQuery?.sql).toContain('SELECT cs2.main_club_id FROM club_sections cs2');
+    expect(administrativeQuery?.sql).toContain('cs2.club_section_id IN (?,?,?)');
+    expect(administrativeQuery?.values).toEqual(expect.arrayContaining([12, 15, 40]));
+
+    const sectionScopedQueries = queries.filter(
+      (q) => q !== childrenQuery && q !== administrativeQuery,
+    );
+    expect(sectionScopedQueries).toHaveLength(7);
+    for (const query of sectionScopedQueries) {
+      expect(query.sql).toContain('cs.club_section_id IN (?,?,?)');
+      expect(query.sql).toContain('c.club_id AS bucket_id');
+      expect(query.values).toEqual(expect.arrayContaining([12, 15, 40]));
+    }
+
+    expect(JSON.stringify(prisma.$queryRaw.mock.calls)).not.toContain('ANY(');
+  });
+
   it('scopes class validation queues to the selected enrollment year and club type', async () => {
     await repository.loadSnapshot({
       scope: unionScope,
