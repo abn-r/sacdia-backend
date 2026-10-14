@@ -26,7 +26,7 @@
 > | SEC-011 | Eliminado (flujo borrado) | El flujo OAuth por navegador y `trustedOrigins` ya no existen |
 > | SEC-013 | Corregido | `resolveRoleId` exige `role_category: 'CLUB'` también por `role_id` (`src/clubs/clubs.service.ts:1779-1784`) |
 > | SEC-014 | Corregido | `POST /auth/password/reset` (`src/auth/auth.controller.ts:223`) |
-> | SEC-015 | Corregido | `@Throttle` 5/min a nivel de controlador OAuth (`src/auth/oauth.controller.ts:54`) |
+> | SEC-015 | Corregido | `@Throttle` 5/min en `POST /auth/oauth/:provider/token` (`src/auth/social-sign-in/social-sign-in.controller.ts:23`); las rutas initiate/callback fueron eliminadas |
 > | SEC-016 | Corregido | `createFromUploaded` muestrea magic bytes tras el PUT (`src/resources/resources.service.ts:217`) |
 > | SEC-017 | Corregido | `FileValidationPipe` en comprobante de camporee y badge de logros (`src/camporees/camporees.controller.ts:1166`, `src/achievements/admin/admin-achievements.controller.ts:329`) |
 > | SEC-018 | Corregido | `@IsCertificateImportFileRef()` con allowlist de hosts (`src/certificate-bulk-imports/dto/create-certificate-bulk-import.dto.ts:30`) |
@@ -44,7 +44,7 @@ The highest-impact gap is **token audience confusion**: QR member tokens are HS2
 
 Second theme: **`GET /clubs` and `GET /clubs/:clubId/sections` skip RBAC and do not apply the territorial crop documented in `docs/api/SECURITY-GUIDE.md`**. Any authenticated user can enumerate the org directory via sequential numeric IDs.
 
-Follow-up from dedicated auth / upload / bootstrap passes (see also threat model TM-013..017): `resolveRoleId` accepts any `role_id` without `CLUB` category check; password-reset **confirm** is not implemented; OAuth has no auth-grade throttle; several uploads still MIME-only (incl. 500 MB presign).
+Follow-up from dedicated auth / upload / bootstrap passes (see also threat model TM-013..017): `resolveRoleId` accepts any `role_id` without `CLUB` category check; password-reset **confirm** is not implemented; OAuth had no auth-grade throttle (closed, see SEC-015); several uploads still MIME-only (incl. 500 MB presign).
 
 Previous March 2026 highs (open OAuth redirect, unbounded Multer) are **closed** in current code.
 
@@ -155,11 +155,9 @@ Previous March 2026 highs (open OAuth redirect, unbounded Multer) are **closed**
 - **Fix**: after SEC-001, still minimize card fields; do not return the full authz graph on a QR read; keep blood/emergency on a staff-only validate response if required for first aid.
 - **False positive notes**: product may require blood type on the printed card — document as accepted residual.
 
-### SEC-015 — OAuth initiate/callback lack auth-grade `@Throttle`
+### SEC-015 — OAuth sign-in lacked auth-grade `@Throttle`
 
-- **Location**: `src/auth/oauth.controller.ts:57-110` — no `@Throttle`; login/register use 5/min
-- **Impact**: Token stuffing / BA session exchange limited only by global 3/s + 100/min
-- **Fix**: Same 5/min named throttle as login on `google`, `apple`, `callback`
+- **Status**: **Fixed** — the old `google` / `apple` / `callback` routes were removed (*Removed (flow deleted)*). The replacement, `POST /auth/oauth/:provider/token` (`src/auth/social-sign-in/social-sign-in.controller.ts:23`), is `@Public()` with the same 5/min named throttle as login (per IP). Forged or replayed id tokens are also rejected by JWKS signature, audience, hashed-nonce and 10-minute age checks.
 
 ### SEC-016 — Presigned resource PUT 500 MB without content verification
 
@@ -302,6 +300,6 @@ Previous March 2026 highs (open OAuth redirect, unbounded Multer) are **closed**
 3. **SEC-013** — force `role_category: 'CLUB'` on `role_id`.
 4. **SEC-014** — implement reset confirm or stop issuing unused tokens.
 5. **SEC-004 / SEC-015–018** — fail-closed resource types, OAuth throttle, upload magic bytes, OCR URL allowlist.
-6. **SEC-010 / SEC-011** — sequential IDs (accepted risk), BA `trustedOrigins` defense-in-depth.
+6. **SEC-010 / SEC-011** — sequential IDs (accepted risk), BA `trustedOrigins` defense-in-depth (SEC-011 is *Removed (flow deleted)*).
 
 SEC-009 and SEC-012 are closed on `fix/security-hardening-lote`.
