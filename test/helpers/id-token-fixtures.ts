@@ -13,6 +13,7 @@ import {
  */
 export interface IdTokenFixture {
   getKey: JWTVerifyGetKey;
+  /** `iat` defaults to now; pass it to forge an older token. */
   sign: (claims: JWTPayload & { kid?: string }) => Promise<string>;
   /** A second key the JWKS does not know — for "unknown kid" cases. */
   signWithUnknownKey: (claims: JWTPayload) => Promise<string>;
@@ -29,10 +30,14 @@ export async function createIdTokenFixture(): Promise<IdTokenFixture> {
   // jose 6 returns CryptoKey (the KeyLike alias was removed in v6).
   const sign =
     (privateKey: CryptoKey, kid: string) =>
-    async ({ kid: overrideKid, ...claims }: JWTPayload & { kid?: string }) =>
+    async ({
+      kid: overrideKid,
+      iat,
+      ...claims
+    }: JWTPayload & { kid?: string }) =>
       new SignJWT(claims)
         .setProtectedHeader({ alg: 'RS256', kid: overrideKid ?? kid })
-        .setIssuedAt()
+        .setIssuedAt(iat)
         .sign(privateKey);
 
   return {

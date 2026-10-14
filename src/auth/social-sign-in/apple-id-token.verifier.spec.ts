@@ -86,6 +86,19 @@ describe('AppleIdTokenVerifier', () => {
     await rejects(await fixture.sign(validClaims()), 'other-nonce');
   });
 
+  it('rejects a token issued more than 10 minutes ago', async () => {
+    const iat = Math.floor(Date.now() / 1000) - 11 * 60;
+    await rejects(await fixture.sign({ ...validClaims(), iat }));
+  });
+
+  it('accepts a token issued 9 minutes ago', async () => {
+    const iat = Math.floor(Date.now() / 1000) - 9 * 60;
+    const token = await fixture.sign({ ...validClaims(), iat });
+    await expect(verifier.verify(token, nonce)).resolves.toMatchObject({
+      sub: '001234.abcdef.5678',
+    });
+  });
+
   it('rejects a wrong audience', async () => {
     await rejects(await fixture.sign({ ...validClaims(), aud: 'app.other' }));
   });

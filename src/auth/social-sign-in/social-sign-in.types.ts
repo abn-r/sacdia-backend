@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+
 /**
  * Native social sign-in (mobile app).
  *
@@ -54,3 +56,15 @@ export function parseCsv(value: string | undefined): string[] {
 export function truncateSub(sub: unknown): string {
   return typeof sub === 'string' ? `${sub.slice(0, 8)}…` : 'unknown';
 }
+
+/**
+ * The app generates a raw nonce, passes SHA-256(raw) to the Google or Apple SDK
+ * and sends the raw nonce to the backend. The id token carries the hash.
+ */
+export function hashNonce(nonce: string): string {
+  return createHash('sha256').update(nonce).digest('hex');
+}
+
+/** Id tokens are used right after the SDK returns them; reject older ones. */
+export const ID_TOKEN_MAX_AGE = '10m';
+export const ID_TOKEN_CLOCK_TOLERANCE = '30s';

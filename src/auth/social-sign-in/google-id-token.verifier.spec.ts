@@ -5,6 +5,7 @@ import {
 } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { GoogleIdTokenVerifier } from './google-id-token.verifier';
+import { hashNonce } from './social-sign-in.types';
 import {
   FUTURE,
   PAST,
@@ -23,7 +24,7 @@ describe('GoogleIdTokenVerifier', () => {
     aud: audience,
     sub: '1234567890',
     exp: FUTURE,
-    nonce,
+    nonce: hashNonce(nonce),
     email: 'ana@example.com',
     email_verified: true,
     given_name: 'Ana',
@@ -138,6 +139,23 @@ describe('GoogleIdTokenVerifier', () => {
 
   it('rejects an empty nonce', async () => {
     await rejects(await fixture.sign({ ...validClaims(), nonce: '' }), '');
+  });
+
+  it('rejects a raw (unhashed) nonce claim', async () => {
+    await rejects(await fixture.sign({ ...validClaims(), nonce }));
+  });
+
+  it('rejects a token issued more than 10 minutes ago', async () => {
+    const iat = Math.floor(Date.now() / 1000) - 11 * 60;
+    await rejects(await fixture.sign({ ...validClaims(), iat }));
+  });
+
+  it('accepts a token issued 9 minutes ago', async () => {
+    const iat = Math.floor(Date.now() / 1000) - 9 * 60;
+    const token = await fixture.sign({ ...validClaims(), iat });
+    await expect(verifier.verify(token, nonce)).resolves.toMatchObject({
+      sub: '1234567890',
+    });
   });
 
   it('rejects a multi-audience token without azp', async () => {

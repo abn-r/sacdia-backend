@@ -1,10 +1,12 @@
 import { Logger } from '@nestjs/common';
-import { createHash } from 'crypto';
 import { jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
 import { AppUnauthorizedException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { mapIdTokenError } from './id-token-errors';
 import {
+  ID_TOKEN_CLOCK_TOLERANCE,
+  ID_TOKEN_MAX_AGE,
+  hashNonce,
   truncateSub,
   type IdTokenVerifier,
   type VerifiedIdentity,
@@ -17,11 +19,6 @@ export interface AppleIdTokenVerifierOptions {
   /** iOS bundle identifier — the `aud` of native Sign in with Apple tokens. */
   bundleId: string;
   getKey: JWTVerifyGetKey;
-}
-
-/** Apple puts SHA-256(nonce) in the token; the app sends the raw nonce. */
-export function hashAppleNonce(nonce: string): string {
-  return createHash('sha256').update(nonce).digest('hex');
 }
 
 export class AppleIdTokenVerifier implements IdTokenVerifier {
@@ -51,6 +48,8 @@ export class AppleIdTokenVerifier implements IdTokenVerifier {
         issuer: APPLE_ISSUER,
         audience: this.options.bundleId,
         algorithms: ['RS256'],
+        maxTokenAge: ID_TOKEN_MAX_AGE,
+        clockTolerance: ID_TOKEN_CLOCK_TOLERANCE,
       }));
     } catch (error) {
       throw mapIdTokenError(error, this.logger, this.provider);
@@ -62,7 +61,7 @@ export class AppleIdTokenVerifier implements IdTokenVerifier {
     }
     // The app passes SHA-256(nonce) to the Apple SDK, so the token carries the
     // hash while we receive the raw nonce.
-    if (payload.nonce !== hashAppleNonce(nonce)) {
+    if (payload.nonce !== hashNonce(nonce)) {
       this.logger.warn(
         `apple id token rejected — nonce mismatch (sub ${truncateSub(payload.sub)})`,
       );

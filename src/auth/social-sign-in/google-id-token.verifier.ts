@@ -4,6 +4,9 @@ import { AppUnauthorizedException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { mapIdTokenError } from './id-token-errors';
 import {
+  ID_TOKEN_CLOCK_TOLERANCE,
+  ID_TOKEN_MAX_AGE,
+  hashNonce,
   truncateSub,
   type IdTokenVerifier,
   type VerifiedIdentity,
@@ -50,6 +53,8 @@ export class GoogleIdTokenVerifier implements IdTokenVerifier {
         issuer: GOOGLE_ISSUERS,
         audience: this.options.audiences,
         algorithms: ['RS256'],
+        maxTokenAge: ID_TOKEN_MAX_AGE,
+        clockTolerance: ID_TOKEN_CLOCK_TOLERANCE,
       }));
     } catch (error) {
       throw mapIdTokenError(error, this.logger, this.provider);
@@ -73,9 +78,14 @@ export class GoogleIdTokenVerifier implements IdTokenVerifier {
       );
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
     }
-    // Google passes the nonce through untouched (Apple hashes it, see
-    // AppleIdTokenVerifier). A missing nonce is a replayable token: reject.
-    if (typeof payload.nonce !== 'string' || payload.nonce !== nonce) {
+    // Google copies the nonce verbatim into the id token, and the app passes
+    // SHA-256(raw nonce) to the SDK, so the token carries the hash. Presenting
+    // it therefore requires the preimage the app generated. A missing nonce is
+    // a replayable token: reject.
+    if (
+      typeof payload.nonce !== 'string' ||
+      payload.nonce !== hashNonce(nonce)
+    ) {
       this.logger.warn(
         `google id token rejected — nonce mismatch (sub ${truncateSub(payload.sub)})`,
       );
