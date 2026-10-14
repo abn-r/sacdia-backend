@@ -16,7 +16,7 @@
 > | TM-002 | Mitigado | SEC-002 (recorte territorial en `GET /clubs`; secciones solo con campos de identificación) |
 > | TM-004 | Corregido | SEC-004 |
 > | TM-005, TM-009 | Corregido | SEC-005 (`TRUST_PROXY_HOPS`) |
-> | TM-008 | Corregido | SEC-011 (`trustedOrigins`) |
+> | TM-008 | Eliminado (flujo borrado) | SEC-011: el flujo OAuth por navegador ya no existe |
 > | TM-013 | Corregido | SEC-013 |
 > | TM-014 | Corregido | SEC-014 (`POST /auth/password/reset`) |
 > | TM-015 | Corregido | SEC-015 |
@@ -77,7 +77,7 @@ CI/dev only: GitHub Actions (`ci.yml`), Jest e2e `E2E_PASSTHROUGH_PERMISSIONS` (
 ### Data flows and trust boundaries
 
 - **Internet → API** — HTTPS (edge). JSON / multipart / query. CORS allowlist + credentials; no-Origin allowed (mobile). JWT or `@Public()`. Rate limit (Redis). Schema: `I18nValidationPipe` whitelist + `SanitizePipe`.
-- **Browser/app → OAuth provider → BA callback → client → `POST /auth/oauth/callback`** — authorization code at BA; client posts opaque session token; SACDIA issues JWT. Redirect URL allowlisted in `OAuthService`.
+- **App → Google/Apple SDK → `POST /auth/oauth/:provider/token`** — the app posts a native id token plus the raw nonce; SACDIA verifies signature, issuer, audience, hashed nonce and a 10-minute age cap against the provider JWKS, then issues its own JWT. The browser OAuth flow (BA callback, redirect allowlist) was removed.
 - **API → PostgreSQL** — Prisma (parameterized). Trust: DB credentials in env. App enforces tenant scope in guards/services.
 - **API → Redis** — cache keys, throttle counters, queues. Prod fail-fast if missing.
 - **API → R2** — server-generated keys; client gets presigned PUT/GET. MIME/size checked on confirm for certifications/payment proofs.
@@ -157,7 +157,7 @@ flowchart TD
 | --- | --- | --- | --- | --- |
 | `GET /api/v1/health` | Unauth | Internet → API | Liveness only | `health.controller.ts:26-42` |
 | `POST /auth/{register,login,refresh,logout,password/reset-request,verify-email/confirm}` | Unauth | Internet → API | Extra throttle on auth | `auth.controller.ts` |
-| `POST /auth/oauth/{google,apple,callback}` | Unauth | Internet → IdP → API | Redirect allowlist | `oauth.controller.ts` |
+| `POST /auth/oauth/:provider/token` | Unauth | App → API | Id token verified with JWKS, hashed nonce, 10-min age cap, 5/min throttle | `social-sign-in.controller.ts` |
 | `POST /admin/rbac/bootstrap-admin` | Unauth + secret | Internet → API | Timing-safe compare; 1/min | `rbac.controller.ts:357-406` |
 | Public catalogs / honors / classes / certifications | Unauth | Internet → API | Reference data | class-level `@Public()` |
 | All other HTTP | Bearer JWT | Internet → API | Global guards | `app.module.ts` |
@@ -167,7 +167,7 @@ flowchart TD
 | Presign/confirm evidence | JWT + perms | Client → R2 → API HEAD | MIME allow-list | SECURITY-GUIDE + cert module |
 | `POST /users/me/data-export` | JWT self | API → queue → R2 | Full PII package | `data-export.controller.ts` |
 | BullMQ processors | Redis jobs | Worker trust | Compromised Redis → job inject | queue modules |
-| Better Auth instance | In-process | Not a separate HTTP mount in Nest | OAuth via `ba.api` | `better-auth.config.ts` |
+| Better Auth instance | In-process | Not a separate HTTP mount in Nest | Not used by SACDIA code; kept only until Better Auth is removed | `better-auth.config.ts` |
 
 ## Top abuse paths
 
@@ -186,8 +186,8 @@ flowchart TD
 5. **Refresh token theft**  
    Opaque 7-day BA session in client storage → `POST /auth/refresh` (5/min) → new access tokens. Logout/blacklist mitigates if reported.
 
-6. **OAuth allowlist lapse**  
-   Operator sets a loose `ALLOWED_OAUTH_REDIRECT_URLS` → BA redirects session cookie/fragment to attacker origin → token theft. App-level exact match is the control.
+6. **OAuth allowlist lapse** — *Removed (flow deleted)*  
+   The browser OAuth flow and `ALLOWED_OAUTH_REDIRECT_URLS` no longer exist. Sign-in is native: `POST /auth/oauth/:provider/token` verifies Google/Apple id tokens with a hashed nonce and a 10-minute age cap, so there is no redirect to hijack.
 
 7. **New resource type without guard case**  
    Developer adds `@AuthorizationResource({ type: 'foo' })` → `default: return true` → permission name only → cross-club if grant is broad.

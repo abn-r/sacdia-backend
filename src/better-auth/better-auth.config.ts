@@ -14,9 +14,9 @@ import { PrismaClient } from '@prisma/client';
  * (createUser, signInWithPassword, refreshSession, signOut, resetPasswordForEmail)
  * and writes directly to Prisma.
  *
- * The instance is kept only until Better Auth is removed from the backend.
- * OAuth (native id-token sign-in) and TOTP are SACDIA code; nothing calls
- * this instance at runtime.
+ * SACDIA code no longer uses this instance: OAuth is native id-token sign-in
+ * (src/auth/social-sign-in) and TOTP lives in BetterAuthService. It is kept
+ * only until Better Auth is removed from the backend.
  *
  * The user.fields mapping below is intentionally minimal.
  */
@@ -34,9 +34,8 @@ import { PrismaClient } from '@prisma/client';
 //   There is no way to write a non-inferred return type that is both assignable
 //   from the concrete value AND free of the internal zod reference — hence the cast.
 //
-// FIDELITY: Consumers only access `ba.api` (already typed as `any` at the call
-// site in better-auth.service.ts) and the `handler` property — both present on
-// Auth<BetterAuthOptions>. The cast does not regress runtime behaviour.
+// FIDELITY: Nothing in SACDIA consumes the returned instance any more, so the
+// cast has no runtime effect; it only keeps the declared return type nameable.
 export function createBetterAuth(
   prisma: PrismaClient,
 ): ReturnType<typeof betterAuth> {

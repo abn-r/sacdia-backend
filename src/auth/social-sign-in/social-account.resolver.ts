@@ -232,8 +232,8 @@ export class SocialAccountResolver {
 
   /**
    * SACDIA rows the auth tables know nothing about: post-registration state
-   * and the default global role. Idempotent. (Moved from
-   * OAuthService.ensureSacdiaUserProvisioned.)
+   * and the default global role. Idempotent. (Previously in OAuthService,
+   * removed with the browser OAuth flow.)
    */
   private async provisionSacdiaRows(
     tx: Prisma.TransactionClient,

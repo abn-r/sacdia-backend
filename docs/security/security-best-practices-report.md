@@ -23,7 +23,7 @@
 > | SEC-008 | Corregido | Mínimo de 12 caracteres para contraseñas nuevas (`src/auth/password-policy.ts:7`) |
 > | SEC-009, SEC-012 | Corregido | Ya marcados como corregidos en este informe |
 > | SEC-010 | Aceptado | IDs numéricos secuenciales; sin migración a UUID |
-> | SEC-011 | Corregido | `trustedOrigins` en `src/better-auth/better-auth.config.ts:88` |
+> | SEC-011 | Eliminado (flujo borrado) | El flujo OAuth por navegador y `trustedOrigins` ya no existen |
 > | SEC-013 | Corregido | `resolveRoleId` exige `role_category: 'CLUB'` también por `role_id` (`src/clubs/clubs.service.ts:1779-1784`) |
 > | SEC-014 | Corregido | `POST /auth/password/reset` (`src/auth/auth.controller.ts:223`) |
 > | SEC-015 | Corregido | `@Throttle` 5/min a nivel de controlador OAuth (`src/auth/oauth.controller.ts:54`) |
@@ -209,9 +209,7 @@ Previous March 2026 highs (open OAuth redirect, unbounded Multer) are **closed**
 
 ### SEC-011 — Better Auth `trustedOrigins` not set
 
-- **Location**: `src/better-auth/better-auth.config.ts:46-85`
-- **Evidence**: OAuth `callbackURL` is passed through after `OAuthService.validateRedirectUrl` (`oauth.service.ts:76-87`, allowlist from `ALLOWED_OAUTH_REDIRECT_URLS`).
-- **Fix**: set BA `trustedOrigins` to the same allowlist (defense in depth). Keep exact-URL allowlist (not origin-only).
+- **Status**: **Removed (flow deleted)** — the browser OAuth flow (BA callback, redirect allowlist, `ALLOWED_OAUTH_REDIRECT_URLS`) was removed. Sign-in is native: `POST /auth/oauth/:provider/token` verifies Google/Apple id tokens with a hashed nonce and a 10-minute age cap. There is no `callbackURL` left to constrain.
 
 ### SEC-019 — Register enumerates existing emails
 
@@ -239,7 +237,7 @@ Previous March 2026 highs (open OAuth redirect, unbounded Multer) are **closed**
 
 | Old ID | Status | Evidence |
 | --- | --- | --- |
-| SEC-001 OAuth open redirect | **Mitigated** | `oauth.service.ts:52-87` exact allowlist; `.env.example` `ALLOWED_OAUTH_REDIRECT_URLS` |
+| SEC-001 OAuth open redirect | **Removed (flow deleted)** | Browser OAuth flow and its redirect allowlist were deleted; native id-token sign-in (`POST /auth/oauth/:provider/token`, hashed nonce, 10-minute age cap) has no redirect |
 | SEC-002 Multer unbounded | **Fixed** | All `FileInterceptor` calls pass `DEFAULT_UPLOAD_OPTIONS` or an explicit `fileSize` |
 | SEC-003 Resources MIME-only | **Fixed** | `resource-file-validation.pipe.ts` magic bytes |
 | SEC-004 Dev body logs | **Fixed** | `http-exception.filter.ts:195-223` key-based redaction; prod omits `requestBody` |
