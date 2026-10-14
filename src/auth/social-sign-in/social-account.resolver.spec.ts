@@ -297,6 +297,25 @@ describe('SocialAccountResolver', () => {
     });
   });
 
+  it('leaves the name empty for an Apple private-relay email without a name', async () => {
+    tx.account.findUnique.mockResolvedValue(null);
+    tx.users.findUnique.mockResolvedValue(null);
+    tx.users.create.mockImplementation(
+      async ({ data }: { data: { user_id: string } }) => data,
+    );
+
+    await resolver.resolve({
+      provider: 'apple',
+      sub: 'apple-sub',
+      email: 'x7k2m9q@privaterelay.appleid.com',
+      emailVerified: true,
+    });
+
+    expect(tx.users.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: null }),
+    });
+  });
+
   it('truncates names to the 50-char columns', async () => {
     tx.account.findUnique.mockResolvedValue(null);
     tx.users.findUnique.mockResolvedValue(null);

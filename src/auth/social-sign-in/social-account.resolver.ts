@@ -23,6 +23,8 @@ export interface ResolvedSocialAccount {
 /** `users.name` and `users.paternal_last_name` are VarChar(50). */
 const NAME_MAX = 50;
 
+const APPLE_RELAY_SUFFIX = '@privaterelay.appleid.com';
+
 function isUniqueViolation(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -167,7 +169,7 @@ export class SocialAccountResolver {
       data: {
         user_id: userId,
         email,
-        name: (identity.givenName ?? email.split('@')[0]).slice(0, NAME_MAX),
+        name: this.displayName(identity, email),
         paternal_last_name: identity.familyName?.slice(0, NAME_MAX) ?? null,
         email_verified: true,
         user_image: identity.picture ?? null,
@@ -178,6 +180,20 @@ export class SocialAccountResolver {
     });
     this.logger.log(`Created user ${userId} from ${provider}`);
     return { userId, created: true, linked: false, revokedPriorAccess: false };
+  }
+
+  /**
+   * Name for a brand-new user. Falls back to the email local part, except for
+   * Apple private-relay addresses: their local part is random noise, so the
+   * name stays empty and post-registration asks for it.
+   */
+  private displayName(
+    identity: VerifiedIdentity,
+    email: string,
+  ): string | null {
+    if (identity.givenName) return identity.givenName.slice(0, NAME_MAX);
+    if (email.toLowerCase().endsWith(APPLE_RELAY_SUFFIX)) return null;
+    return email.split('@')[0].slice(0, NAME_MAX);
   }
 
   /**

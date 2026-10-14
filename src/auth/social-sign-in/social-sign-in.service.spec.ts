@@ -212,7 +212,10 @@ describe('SocialSignInService', () => {
   });
 
   it('stores the Apple refresh token after exchanging the authorization code', async () => {
-    appleTokens.exchangeCode.mockResolvedValue({ refreshToken: 'rt-1' });
+    appleTokens.exchangeCode.mockResolvedValue({
+      refreshToken: 'rt-1',
+      sub: 'a-1',
+    });
     await service.signIn('apple', {
       idToken: 't',
       nonce: 'n',
@@ -225,6 +228,49 @@ describe('SocialSignInService', () => {
       },
       data: { refreshToken: 'rt-1' },
     });
+  });
+
+  it('skips the refresh token when the code belongs to a different Apple identity', async () => {
+    appleTokens.exchangeCode.mockResolvedValue({
+      refreshToken: 'rt-other',
+      sub: 'someone-else',
+    });
+    await expect(
+      service.signIn('apple', {
+        idToken: 't',
+        nonce: 'n',
+        authorizationCode: 'code',
+      }),
+    ).resolves.toMatchObject({ accessToken: 'sacdia-jwt' });
+    expect(prisma.account.update).not.toHaveBeenCalled();
+  });
+
+  it('skips the refresh token when Apple returned no id_token sub', async () => {
+    appleTokens.exchangeCode.mockResolvedValue({
+      refreshToken: 'rt-1',
+      sub: null,
+    });
+    await service.signIn('apple', {
+      idToken: 't',
+      nonce: 'n',
+      authorizationCode: 'code',
+    });
+    expect(prisma.account.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects an email longer than the users.email column before resolving', async () => {
+    google.verify.mockResolvedValue({
+      ...identity,
+      email: `${'a'.repeat(95)}@example.com`,
+    });
+    const error = await service
+      .signIn('google', { idToken: 't', nonce: 'n' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppUnauthorizedException);
+    expect((error as AppUnauthorizedException).code).toBe(
+      ErrorCode.AUTH_INVALID_TOKEN,
+    );
+    expect(resolver.resolve).not.toHaveBeenCalled();
   });
 
   it('still signs in when the Apple code exchange fails', async () => {

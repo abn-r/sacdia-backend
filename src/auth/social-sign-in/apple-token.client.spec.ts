@@ -52,6 +52,7 @@ describe('AppleTokenClient', () => {
 
     await expect(client.exchangeCode('auth-code')).resolves.toEqual({
       refreshToken: 'rt-1',
+      sub: null,
     });
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -61,6 +62,32 @@ describe('AppleTokenClient', () => {
     expect(body.get('code')).toBe('auth-code');
     expect(body.get('client_id')).toBe('app.sacdia.mobile');
     expect(body.get('client_secret')).toEqual(expect.any(String));
+  });
+
+  it('returns the sub of the id_token Apple sends with the refresh token', async () => {
+    const payload = Buffer.from(JSON.stringify({ sub: '001234.abcd.5678' }));
+    const idToken = `e30.${payload.toString('base64url')}.sig`;
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ refresh_token: 'rt-1', id_token: idToken }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(client.exchangeCode('auth-code')).resolves.toEqual({
+      refreshToken: 'rt-1',
+      sub: '001234.abcd.5678',
+    });
+  });
+
+  it('returns a null sub when the id_token is absent', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ refresh_token: 'rt-1' }), { status: 200 }),
+    );
+    await expect(client.exchangeCode('auth-code')).resolves.toEqual({
+      refreshToken: 'rt-1',
+      sub: null,
+    });
   });
 
   it('throws when the token endpoint answers non-2xx', async () => {

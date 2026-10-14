@@ -49,6 +49,9 @@ export interface SocialSignInResult {
 /** Access JWT lifetime. Mirrors `AuthService.JWT_TTL_SECONDS` (private there). */
 const JWT_TTL_SECONDS = 28800;
 
+/** `users.email` is VarChar(100). */
+const EMAIL_MAX = 100;
+
 @Injectable()
 export class SocialSignInService {
   private readonly logger = new Logger(SocialSignInService.name);
@@ -82,6 +85,15 @@ export class SocialSignInService {
         `${provider} sign-in rejected — unverified or missing email (sub ${truncateSub(verified.sub)})`,
       );
       throw new AppUnauthorizedException(ErrorCode.AUTH_OAUTH_EMAIL_UNVERIFIED);
+    }
+
+    // users.email is VarChar(100); a longer address would fail the insert with
+    // a 500. No real mailbox is that long, so treat it as a bad token.
+    if (verified.email.length > EMAIL_MAX) {
+      this.logger.warn(
+        `${provider} sign-in rejected — email longer than ${EMAIL_MAX} chars (sub ${truncateSub(verified.sub)})`,
+      );
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
     }
 
     const identity: VerifiedIdentity =
@@ -161,7 +173,16 @@ export class SocialSignInService {
     code: string,
   ): Promise<void> {
     try {
-      const { refreshToken } = await this.appleTokens.exchangeCode(code);
+      const { refreshToken, sub: codeSub } =
+        await this.appleTokens.exchangeCode(code);
+      if (codeSub !== sub) {
+        // The code must belong to the identity that just signed in; otherwise
+        // we would attach someone else's refresh token to this account.
+        this.logger.warn(
+          `Apple code exchange skipped — code subject does not match the id token (sub ${truncateSub(sub)})`,
+        );
+        return;
+      }
       if (!refreshToken) {
         this.logger.warn(
           `Apple code exchange returned no refresh token (sub ${truncateSub(sub)})`,

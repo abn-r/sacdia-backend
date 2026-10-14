@@ -1,5 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AppleTokenClient } from '../src/auth/social-sign-in/apple-token.client';
@@ -18,6 +20,8 @@ describe('Social sign-in E2E', () => {
 
   const googleVerifier = { provider: 'google', verify: jest.fn() };
   const appleVerifier = { provider: 'apple', verify: jest.fn() };
+  // The route is capped at 5/min per IP; the suite must not depend on that.
+  const mockThrottlerGuard = { canActivate: jest.fn().mockReturnValue(true) };
   const appleTokens = { exchangeCode: jest.fn(), revoke: jest.fn() };
   const betterAuth = {
     createSession: jest.fn().mockResolvedValue({
@@ -43,6 +47,10 @@ describe('Social sign-in E2E', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
+      .overrideProvider(APP_GUARD)
+      .useValue(mockThrottlerGuard)
+      .overrideGuard(ThrottlerGuard)
+      .useValue(mockThrottlerGuard)
       .overrideProvider(BetterAuthService)
       .useValue(betterAuth)
       .overrideProvider(GOOGLE_ID_TOKEN_VERIFIER)

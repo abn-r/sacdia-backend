@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SignJWT, importPKCS8 } from 'jose';
+import { SignJWT, decodeJwt, importPKCS8 } from 'jose';
 import { AppServiceUnavailableException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 
@@ -69,8 +69,15 @@ export class AppleTokenClient {
       .sign(key);
   }
 
-  /** Returns null when Apple did not include a refresh token. */
-  async exchangeCode(code: string): Promise<{ refreshToken: string | null }> {
+  /**
+   * `refreshToken` is null when Apple did not include one. `sub` is the subject
+   * of the `id_token` in the same response, so the caller can check the code
+   * belongs to the identity that just signed in. It is decoded without checking
+   * the signature: the token came straight from Apple over TLS.
+   */
+  async exchangeCode(
+    code: string,
+  ): Promise<{ refreshToken: string | null; sub: string | null }> {
     const response = await this.post('token', APPLE_TOKEN_URL, {
       grant_type: 'authorization_code',
       code,
@@ -79,6 +86,7 @@ export class AppleTokenClient {
     return {
       refreshToken:
         typeof body.refresh_token === 'string' ? body.refresh_token : null,
+      sub: subjectOf(body.id_token),
     };
   }
 
@@ -143,9 +151,12 @@ export class AppleTokenClient {
    */
   private async readJson(
     response: Response,
-  ): Promise<{ refresh_token?: unknown }> {
+  ): Promise<{ refresh_token?: unknown; id_token?: unknown }> {
     try {
-      return (await response.json()) as { refresh_token?: unknown };
+      return (await response.json()) as {
+        refresh_token?: unknown;
+        id_token?: unknown;
+      };
     } catch (cause) {
       // Match on `name`, not `instanceof`: undici raises these from another
       // realm (and under Jest's vm sandbox), so the constructors differ.
@@ -173,6 +184,16 @@ export class AppleTokenClient {
     const value = this.config.get<string>(name);
     if (!value) throw new Error(`${name} is not configured`);
     return value;
+  }
+}
+
+function subjectOf(idToken: unknown): string | null {
+  if (typeof idToken !== 'string') return null;
+  try {
+    const { sub } = decodeJwt(idToken);
+    return typeof sub === 'string' && sub.length > 0 ? sub : null;
+  } catch {
+    return null;
   }
 }
 
