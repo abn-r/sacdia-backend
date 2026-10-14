@@ -412,6 +412,27 @@ describe('CatalogsService', () => {
       );
     });
 
+    it('labels a calendar year by its UTC dates, whatever the server timezone', async () => {
+      const originalTz = process.env.TZ;
+      process.env.TZ = 'America/Mexico_City';
+      try {
+        mockPrismaService.ecclesiastical_years.findMany.mockResolvedValue([
+          {
+            year_id: 1,
+            start_date: new Date('2026-01-01T00:00:00.000Z'),
+            end_date: new Date('2026-12-31T00:00:00.000Z'),
+            active: true,
+          },
+        ]);
+
+        const [year] = await service.getEcclesiasticalYears();
+
+        expect(year.name).toBe('2026');
+      } finally {
+        process.env.TZ = originalTz;
+      }
+    });
+
     it('should return empty array when no ecclesiastical years exist', async () => {
       mockPrismaService.ecclesiastical_years.findMany.mockResolvedValue([]);
 
