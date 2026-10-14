@@ -37,6 +37,10 @@ export class AppleIdTokenVerifier implements IdTokenVerifier {
   }
 
   async verify(idToken: string, nonce: string): Promise<VerifiedIdentity> {
+    if (typeof nonce !== 'string' || nonce.length === 0) {
+      this.logger.warn('apple id token rejected — missing nonce');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
+    }
     if (!this.options.bundleId) {
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
     }

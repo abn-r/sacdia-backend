@@ -36,6 +36,10 @@ export class GoogleIdTokenVerifier implements IdTokenVerifier {
   }
 
   async verify(idToken: string, nonce: string): Promise<VerifiedIdentity> {
+    if (typeof nonce !== 'string' || nonce.length === 0) {
+      this.logger.warn('google id token rejected — missing nonce');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
+    }
     if (this.options.audiences.length === 0) {
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
     }
@@ -57,7 +61,7 @@ export class GoogleIdTokenVerifier implements IdTokenVerifier {
     }
     // Google passes the nonce through untouched (Apple hashes it, see
     // AppleIdTokenVerifier). A missing nonce is a replayable token: reject.
-    if (payload.nonce !== nonce) {
+    if (typeof payload.nonce !== 'string' || payload.nonce !== nonce) {
       this.logger.warn(
         `google id token rejected — nonce mismatch (sub ${truncateSub(payload.sub)})`,
       );

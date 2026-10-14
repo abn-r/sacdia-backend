@@ -66,9 +66,11 @@ describe('AppleIdTokenVerifier', () => {
     });
   });
 
-  const rejects = async (token: string, usedNonce = nonce) => {
+  // An explicit `undefined` must reach verify(), so no default parameter here.
+  const rejects = async (token: string, ...override: [string?]) => {
+    const usedNonce = override.length > 0 ? override[0] : nonce;
     const error = await verifier
-      .verify(token, usedNonce)
+      .verify(token, usedNonce as string)
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppUnauthorizedException);
     expect((error as AppUnauthorizedException).code).toBe(
@@ -103,6 +105,14 @@ describe('AppleIdTokenVerifier', () => {
 
   it('rejects an unknown signing key', async () => {
     await rejects(await fixture.signWithUnknownKey(validClaims()));
+  });
+
+  it('rejects a missing nonce instead of throwing a TypeError', async () => {
+    await rejects(await fixture.sign(validClaims()), undefined);
+  });
+
+  it('rejects an empty nonce', async () => {
+    await rejects(await fixture.sign(validClaims()), '');
   });
 
   it('rejects everything when APPLE_BUNDLE_ID is empty', async () => {

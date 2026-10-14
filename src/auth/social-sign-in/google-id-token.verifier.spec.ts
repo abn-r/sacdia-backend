@@ -75,9 +75,11 @@ describe('GoogleIdTokenVerifier', () => {
     });
   });
 
-  const rejects = async (token: string, usedNonce = nonce) => {
+  // An explicit `undefined` must reach verify(), so no default parameter here.
+  const rejects = async (token: string, ...override: [string?]) => {
+    const usedNonce = override.length > 0 ? override[0] : nonce;
     const error = await verifier
-      .verify(token, usedNonce)
+      .verify(token, usedNonce as string)
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppUnauthorizedException);
     expect((error as AppUnauthorizedException).code).toBe(
@@ -127,6 +129,15 @@ describe('GoogleIdTokenVerifier', () => {
     expect((error as AppServiceUnavailableException).code).toBe(
       ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE,
     );
+  });
+
+  it('rejects a token without nonce claim when the caller passes no nonce', async () => {
+    const { nonce: _omit, ...claims } = validClaims();
+    await rejects(await fixture.sign(claims), undefined);
+  });
+
+  it('rejects an empty nonce', async () => {
+    await rejects(await fixture.sign({ ...validClaims(), nonce: '' }), '');
   });
 
   it('rejects everything when no audience is configured', async () => {
