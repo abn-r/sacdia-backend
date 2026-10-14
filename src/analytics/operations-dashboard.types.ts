@@ -1,17 +1,11 @@
 export type OperationsDashboardScopeLevel =
-  | 'all'
-  | 'division'
-  | 'union'
-  | 'local_field';
+  'all' | 'division' | 'union' | 'local_field' | 'coordinator';
 
 export type OperationsDashboardChildLevel =
-  | 'division'
-  | 'union'
-  | 'local_field'
-  | 'club';
+  'division' | 'union' | 'local_field' | 'club';
 
 export type OperationsDashboardScopePathNode = {
-  level: Exclude<OperationsDashboardScopeLevel, 'all'>;
+  level: Exclude<OperationsDashboardScopeLevel, 'all' | 'coordinator'>;
   id: number;
   name: string;
 };
@@ -21,6 +15,11 @@ export type ResolvedOperationsDashboardScope = {
   id: number | null;
   name: string;
   path: OperationsDashboardScopePathNode[];
+  /**
+   * Only for level 'coordinator': the actor's assigned club sections.
+   * Sorted ascending, deduplicated, never empty.
+   */
+  section_ids?: number[];
 };
 
 export type OperationsDashboardScopeFilters = {
@@ -120,6 +119,8 @@ export function getOperationsDashboardChildLevel(
     case 'union':
       return 'local_field';
     case 'local_field':
+      return 'club';
+    case 'coordinator':
       return 'club';
   }
 }

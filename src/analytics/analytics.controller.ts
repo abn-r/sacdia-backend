@@ -134,12 +134,16 @@ export class AnalyticsController {
     'assistant-union',
     'director-lf',
     'assistant-lf',
+    'coordinator',
+    'zone-coordinator',
+    'general-coordinator',
   )
   @ApiOperation({
     summary: 'Dashboard operativo jerárquico',
     description:
       'Indicadores operativos agregados con alcance forzado en servidor. ' +
-      'Solo super-admin ve el sistema; administradores y liderazgos DIA, Unión y Campo solo su territorio y descendientes.',
+      'Solo super-admin ve el sistema; administradores y liderazgos DIA, Unión y Campo solo su territorio y descendientes. ' +
+      'Coordinadores: solo sus secciones asignadas, con desglose por club.',
   })
   @ApiExtraModels(OperationsDashboardDto)
   @ApiOkResponse({

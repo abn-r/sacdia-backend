@@ -39,12 +39,16 @@ describe('AnalyticsController operations dashboard', () => {
       'assistant-union',
       'director-lf',
       'assistant-lf',
+      'coordinator',
+      'zone-coordinator',
+      'general-coordinator',
     ]);
     expect(Reflect.getMetadata(DECORATORS.API_EXTRA_MODELS, handler)).toContain(
       OperationsDashboardDto,
     );
     const operation = Reflect.getMetadata(DECORATORS.API_OPERATION, handler);
     expect(operation.description).toContain('Solo super-admin ve el sistema');
+    expect(operation.description).toContain('Coordinadores');
     expect(operation.description).not.toContain('Administrador ve el sistema');
   });
 

@@ -34,6 +34,16 @@ const globalScope: ResolvedOperationsDashboardScope = {
   path: [],
 };
 
+const coordinatorScope = (
+  sectionIds: number[],
+): ResolvedOperationsDashboardScope => ({
+  level: 'coordinator',
+  id: null,
+  name: 'Secciones asignadas',
+  path: [],
+  section_ids: sectionIds,
+});
+
 const emptyRaw = (): OperationsDashboardRawSnapshot => ({
   children: [],
   administrative: [],
@@ -243,5 +253,45 @@ describe('OperationsDashboardService', () => {
 
     expect(repository.loadSnapshot).toHaveBeenCalledTimes(2);
     expect(refreshed.meta.cached).toBe(false);
+  });
+
+  it('never shares a cached snapshot between coordinators with different sections', async () => {
+    scopeService.resolve
+      .mockResolvedValueOnce(coordinatorScope([12, 15]))
+      .mockResolvedValueOnce(coordinatorScope([12, 40]))
+      .mockResolvedValueOnce(coordinatorScope([12, 15]));
+
+    const first = await service.getDashboard('coordinator-a', {});
+    const second = await service.getDashboard('coordinator-b', {});
+    const third = await service.getDashboard('coordinator-c', {});
+
+    expect(repository.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(first.meta.cached).toBe(false);
+    expect(second.meta.cached).toBe(false);
+    expect(third.meta.cached).toBe(true);
+    expect(third.meta.scope).toEqual(
+      expect.not.objectContaining({ section_ids: expect.anything() }),
+    );
+  });
+
+  it("serves the caller's scope label on a cache hit", async () => {
+    scopeService.resolve
+      .mockResolvedValueOnce({
+        ...coordinatorScope([12, 15]),
+        name: 'Zona Norte',
+      })
+      .mockResolvedValueOnce(coordinatorScope([12, 15]));
+
+    await service.getDashboard('coordinator-a', {});
+    const second = await service.getDashboard('coordinator-b', {});
+
+    expect(repository.loadSnapshot).toHaveBeenCalledTimes(1);
+    expect(second.meta.cached).toBe(true);
+    expect(second.meta.scope).toEqual({
+      level: 'coordinator',
+      id: null,
+      name: 'Secciones asignadas',
+      path: [],
+    });
   });
 });
