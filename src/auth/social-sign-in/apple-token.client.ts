@@ -75,7 +75,7 @@ export class AppleTokenClient {
       grant_type: 'authorization_code',
       code,
     });
-    const body = (await response.json()) as { refresh_token?: unknown };
+    const body = await this.readJson(response);
     return {
       refreshToken:
         typeof body.refresh_token === 'string' ? body.refresh_token : null,
@@ -133,6 +133,40 @@ export class AppleTokenClient {
       );
     }
     return response;
+  }
+
+  /**
+   * `fetch` resolves once the headers arrive, so the body can still fail: a
+   * 200 that is not JSON (SyntaxError) or the 10 s abort firing mid-body
+   * (TimeoutError / AbortError). Both mean Apple is misbehaving, not that the
+   * caller sent something wrong, so they surface as 503 like a network error.
+   */
+  private async readJson(
+    response: Response,
+  ): Promise<{ refresh_token?: unknown }> {
+    try {
+      return (await response.json()) as { refresh_token?: unknown };
+    } catch (cause) {
+      // Match on `name`, not `instanceof`: undici raises these from another
+      // realm (and under Jest's vm sandbox), so the constructors differ.
+      const { name, message } = (cause ?? {}) as {
+        name?: unknown;
+        message?: unknown;
+      };
+      if (
+        name === 'SyntaxError' ||
+        name === 'TimeoutError' ||
+        name === 'AbortError'
+      ) {
+        this.logger.warn(
+          `Apple token endpoint body unreadable: ${String(name)}: ${String(message)}`,
+        );
+        throw new AppServiceUnavailableException(
+          ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE,
+        );
+      }
+      throw cause;
+    }
   }
 
   private required(name: string): string {

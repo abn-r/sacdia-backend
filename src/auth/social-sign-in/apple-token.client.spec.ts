@@ -126,6 +126,31 @@ describe('AppleTokenClient', () => {
     );
   });
 
+  it('maps a non-JSON 200 body to 503 AUTH_OAUTH_PROVIDER_UNAVAILABLE', async () => {
+    fetchMock.mockResolvedValue(new Response('not json', { status: 200 }));
+    const error = await client.exchangeCode('code').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppServiceUnavailableException);
+    expect((error as AppServiceUnavailableException).code).toBe(
+      ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE,
+    );
+  });
+
+  it('maps a timeout while reading the body to 503 AUTH_OAUTH_PROVIDER_UNAVAILABLE', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.reject(
+          new DOMException('The operation timed out', 'TimeoutError'),
+        ),
+    });
+    const error = await client.exchangeCode('code').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppServiceUnavailableException);
+    expect((error as AppServiceUnavailableException).code).toBe(
+      ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE,
+    );
+  });
+
   it('throws a clear error when the Apple key config is missing', async () => {
     const bare = new AppleTokenClient(new ConfigService({}), fetchMock);
     await expect(bare.clientSecret()).rejects.toThrow('APPLE_TEAM_ID');
