@@ -388,10 +388,6 @@ export const envValidationSchema = Joi.object({
   FIREBASE_PRIVATE_KEY: Joi.string().allow('').optional(),
   FIREBASE_CLIENT_EMAIL: Joi.string().email().allow('').optional(),
 
-  // OAuth providers (Better Auth browser flow — removed in B4)
-  GOOGLE_CLIENT_ID: Joi.string().allow('').optional(),
-  GOOGLE_CLIENT_SECRET: Joi.string().allow('').optional(),
-  APPLE_CLIENT_ID: Joi.string().allow('').optional(),
   // Native social sign-in (POST /auth/oauth/:provider/token)
   // Comma-separated Google client IDs accepted as `aud`. Must include the
   // Web client ID the app passes as serverClientId.
@@ -402,10 +398,6 @@ export const envValidationSchema = Joi.object({
   APPLE_TEAM_ID: Joi.string().allow('').optional(),
   APPLE_KEY_ID: Joi.string().allow('').optional(),
   APPLE_PRIVATE_KEY: Joi.string().allow('').optional(),
-  // Exact OAuth redirect URLs. Also feeds Better Auth trustedOrigins
-  // (http(s) → origin; custom schemes stay exact).
-  // Falls back to ALLOWED_ORIGINS when not set.
-  ALLOWED_OAUTH_REDIRECT_URLS: Joi.string().optional(),
 
   // Sentry
   SENTRY_DSN: Joi.string().uri().allow('').optional(),

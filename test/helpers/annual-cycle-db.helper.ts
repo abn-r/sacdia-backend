@@ -98,9 +98,8 @@ export function installIsolatedProcessEnv(): void {
     process.env.QR_JWT_SECRET !== process.env.BETTER_AUTH_SECRET
       ? process.env.QR_JWT_SECRET
       : 'test-qr-jwt-secret-32-chars-xxxx';
-  process.env.GOOGLE_CLIENT_ID ??= 'test-google-client-id';
-  process.env.GOOGLE_CLIENT_SECRET ??= 'test-google-client-secret';
-  process.env.APPLE_CLIENT_ID ??= 'test.apple.client';
+  process.env.GOOGLE_OAUTH_AUDIENCES ??= 'test-google-client-id';
+  process.env.APPLE_BUNDLE_ID ??= 'test.apple.client';
   process.env.APPLE_TEAM_ID ??= 'TESTTEAM01';
   process.env.APPLE_KEY_ID ??= 'TESTKEY01';
   process.env.APPLE_PRIVATE_KEY ??=
@@ -743,8 +742,6 @@ const ANNUAL_CYCLE_BETTER_AUTH_MOCK = {
   signJwt: jest.fn().mockReturnValue('fake-jwt'),
   resetPasswordForEmail: jest.fn(),
   updatePasswordById: jest.fn(),
-  getOAuthUrl: jest.fn(),
-  handleOAuthCallback: jest.fn(),
   enrollTotp: jest.fn(),
   verifyTotp: jest.fn(),
   disableTotp: jest.fn(),

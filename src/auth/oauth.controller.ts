@@ -1,9 +1,7 @@
 import {
   Controller,
-  Post,
   Get,
   Delete,
-  Body,
   Param,
   UseGuards,
   Request,
@@ -17,137 +15,23 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { OAuthService } from './oauth.service';
-import { OAuthInitiateDto } from './dto/oauth-initiate.dto';
-import { OAuthCallbackDto } from './dto/oauth-callback.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { Public } from '../common/decorators/public.decorator';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { namedThrottle } from '../config/throttler.helpers';
 
 /**
- * OAuthController — Better Auth edition (W3-008 Part 3)
+ * OAuthController — connected providers.
  *
- * ## Endpoint changes from Supabase → BA
- *
- * | Old (Supabase)                          | New (BA)                               |
- * |-----------------------------------------|----------------------------------------|
- * | GET  /auth/oauth/callback?access_token= | POST /auth/oauth/callback (body)       |
- * | GET  /auth/oauth/providers → { google_connected: bool, ... } | GET /auth/oauth/providers → string[] |
- * | DELETE /auth/oauth/:provider (flag-only) | DELETE /auth/oauth/:provider (real delete) |
- *
- * ## OAuth flow (browser-facing BA callback)
- *
- * 1. Client POSTs to `POST /auth/oauth/google` or `POST /auth/oauth/apple`.
- * 2. Server returns `{ url }` — client redirects browser there.
- * 3. Provider authenticates user and redirects to BA callback:
- *    `GET {BETTER_AUTH_BASE_URL}/api/auth/callback/{provider}?code=...&state=...`
- * 4. BA processes the exchange, creates/updates `users` + `accounts` rows,
- *    sets a `better-auth.session_token` cookie, and redirects to `callbackURL`.
- * 5. Client reads the session token from the cookie and POSTs it to
- *    `POST /auth/oauth/callback` to receive a SACDIA HS256 JWT.
+ * Sign-in lives in SocialSignInController (`POST /auth/oauth/:provider/token`).
+ * This controller only lists and unlinks providers for the authenticated user.
  */
 @ApiTags('OAuth')
 @Controller('auth/oauth')
 @SkipPermissions()
-// Auth-grade: 5/min on every OAuth route (initiate, callback, unlink).
-// Public routes key by IP; JWT routes key by user. Same budget as login.
+// Auth-grade: 5/min on every OAuth route. JWT routes key by user.
 @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
 export class OAuthController {
   constructor(private readonly oauthService: OAuthService) {}
-
-  // ---------------------------------------------------------------------------
-  // OAuth initiation
-  // ---------------------------------------------------------------------------
-
-  @Public()
-  @Post('google')
-  @ApiResponse({ status: 400, description: 'Redirect URL inválida o faltante' })
-  @ApiOperation({
-    summary: 'Iniciar autenticación con Google',
-    description:
-      'Retorna la URL de autorización de Google. ' +
-      'El cliente debe redirigir el browser del usuario a esta URL. ' +
-      'Better Auth maneja el code exchange en su callback interno.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'URL de OAuth generada',
-    schema: {
-      example: {
-        url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=...',
-      },
-    },
-  })
-  @ApiResponse({ status: 500, description: 'Error al generar URL de OAuth' })
-  async googleSignIn(@Body() dto: OAuthInitiateDto) {
-    return this.oauthService.initiateGoogleSignIn(dto.redirectUrl);
-  }
-
-  @Public()
-  @Post('apple')
-  @ApiResponse({ status: 400, description: 'Redirect URL inválida o faltante' })
-  @ApiOperation({
-    summary: 'Iniciar autenticación con Apple',
-    description:
-      'Retorna la URL de autorización de Apple. ' +
-      'El cliente debe redirigir el browser del usuario a esta URL. ' +
-      'Better Auth maneja el code exchange en su callback interno.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'URL de OAuth generada',
-    schema: {
-      example: {
-        url: 'https://appleid.apple.com/auth/authorize?client_id=...',
-      },
-    },
-  })
-  @ApiResponse({ status: 500, description: 'Error al generar URL de OAuth' })
-  async appleSignIn(@Body() dto: OAuthInitiateDto) {
-    return this.oauthService.initiateAppleSignIn(dto.redirectUrl);
-  }
-
-  // ---------------------------------------------------------------------------
-  // OAuth callback finalisation
-  // ---------------------------------------------------------------------------
-
-  @Public()
-  @Post('callback')
-  @ApiOperation({
-    summary: 'Finalizar callback de OAuth',
-    description:
-      'Finaliza el flujo OAuth después de que Better Auth procesó el code exchange. ' +
-      'El cliente envía el opaque session token (de la cookie `better-auth.session_token` ' +
-      'o del fragment de la callbackURL). ' +
-      'Retorna un SACDIA JWT (HS256) listo para usar como Bearer token.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Autenticación OAuth exitosa',
-    schema: {
-      example: {
-        accessToken: 'eyJhbGc...',
-        sessionToken: 'ba_opaque_session_token',
-        user: {
-          id: 'uuid-123',
-          email: 'user@gmail.com',
-          name: 'Juan',
-          paternal_last_name: 'Pérez',
-          maternal_last_name: 'González',
-          avatar: 'https://r2.sacdia.app/profiles/...',
-          connectedProviders: ['google'],
-        },
-        needsPostRegistration: true,
-      },
-    },
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Session token inválido o expirado',
-  })
-  async handleCallback(@Body() dto: OAuthCallbackDto) {
-    return this.oauthService.handleCallback(dto);
-  }
 
   // ---------------------------------------------------------------------------
   // Connected providers

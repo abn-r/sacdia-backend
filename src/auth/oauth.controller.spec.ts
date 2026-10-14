@@ -6,9 +6,6 @@ describe('OAuthController', () => {
   let controller: OAuthController;
 
   const mockOAuthService = {
-    initiateGoogleSignIn: jest.fn(),
-    initiateAppleSignIn: jest.fn(),
-    handleCallback: jest.fn(),
     getConnectedProviders: jest.fn(),
     disconnectProvider: jest.fn(),
   };
@@ -37,34 +34,25 @@ describe('OAuthController', () => {
     }
   });
 
-  it('should delegate Google sign-in to OAuthService', async () => {
-    const dto = { redirectUrl: 'sacdia://oauth/callback' };
-    const expected = { url: 'https://accounts.google.com/o/oauth2/v2/auth' };
-    mockOAuthService.initiateGoogleSignIn.mockResolvedValue(expected);
+  it('should delegate connected providers to OAuthService', async () => {
+    mockOAuthService.getConnectedProviders.mockResolvedValue(['google']);
 
-    await expect(controller.googleSignIn(dto)).resolves.toEqual(expected);
-    expect(mockOAuthService.initiateGoogleSignIn).toHaveBeenCalledWith(
-      dto.redirectUrl,
-    );
+    await expect(
+      controller.getConnectedProviders({ user: { user_id: 'u-1' } }),
+    ).resolves.toEqual(['google']);
+    expect(mockOAuthService.getConnectedProviders).toHaveBeenCalledWith('u-1');
   });
 
-  it('should delegate Apple sign-in to OAuthService', async () => {
-    const dto = { redirectUrl: 'sacdia://oauth/callback' };
-    const expected = { url: 'https://appleid.apple.com/auth/authorize' };
-    mockOAuthService.initiateAppleSignIn.mockResolvedValue(expected);
+  it('should delegate provider disconnection to OAuthService', async () => {
+    const expected = { success: true };
+    mockOAuthService.disconnectProvider.mockResolvedValue(expected);
 
-    await expect(controller.appleSignIn(dto)).resolves.toEqual(expected);
-    expect(mockOAuthService.initiateAppleSignIn).toHaveBeenCalledWith(
-      dto.redirectUrl,
+    await expect(
+      controller.disconnectProvider('apple', { user: { user_id: 'u-1' } }),
+    ).resolves.toEqual(expected);
+    expect(mockOAuthService.disconnectProvider).toHaveBeenCalledWith(
+      'u-1',
+      'apple',
     );
-  });
-
-  it('should delegate OAuth callback to OAuthService', async () => {
-    const dto = { sessionToken: 'ba-session', provider: 'google' };
-    const expected = { accessToken: 'jwt' };
-    mockOAuthService.handleCallback.mockResolvedValue(expected);
-
-    await expect(controller.handleCallback(dto)).resolves.toEqual(expected);
-    expect(mockOAuthService.handleCallback).toHaveBeenCalledWith(dto);
   });
 });

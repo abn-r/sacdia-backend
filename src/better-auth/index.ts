@@ -7,7 +7,6 @@ export type {
   BaAuthResult,
   BaTotpEnrollResult,
   BaAssuranceLevel,
-  BaOAuthUrlResult,
 } from './better-auth.service';
 export { createBetterAuth } from './better-auth.config';
 export type { BetterAuthInstance } from './better-auth.config';
