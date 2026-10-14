@@ -86,6 +86,17 @@ export function createBetterAuth(
     // Same source as OAuth initiate. http(s) entries become origins (BA API);
     // custom schemes stay exact. Exact path check remains in OAuthService.
     trustedOrigins: resolveBetterAuthTrustedOrigins(),
+    advanced: {
+      database: {
+        // BA 1.7 validates the Prisma schema before every adapter call and
+        // rejects the request on mismatch. Our users table keeps SACDIA names
+        // (user_id, email_verified), BA does not honour user.fields.id in that
+        // check, and TOTP lives in our own code instead of the twoFactor
+        // tables — so the check always fails. BetterAuthService writes users
+        // and sessions directly through Prisma; BA only runs the OAuth flow.
+        validateSchema: false,
+      },
+    },
   }) as unknown as ReturnType<typeof betterAuth>;
 }
 
