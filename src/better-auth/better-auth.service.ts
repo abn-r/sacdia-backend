@@ -99,6 +99,8 @@ export interface IBetterAuthService {
     name: string,
   ): Promise<BaAuthResult>;
   signInWithPassword(email: string, password: string): Promise<BaAuthResult>;
+  /** Creates a 7-day opaque session for an already-authenticated user. */
+  createSession(userId: string): Promise<BaSession>;
   refreshSession(sessionToken: string): Promise<BaAuthResult>;
   signOut(sessionToken: string): Promise<void>;
   resetPasswordForEmail(email: string, redirectTo?: string): Promise<void>;
@@ -237,7 +239,7 @@ export class BetterAuthService implements IBetterAuthService {
    * Creates a new session row in the DB for the given userId.
    * Returns the session record mapped to BaSession.
    */
-  private async createSession(userId: string): Promise<BaSession> {
+  async createSession(userId: string): Promise<BaSession> {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + SESSION_DURATION_MS);
     const dbSession = await this.prisma.session.create({
