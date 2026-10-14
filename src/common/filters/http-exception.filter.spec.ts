@@ -117,6 +117,36 @@ describe('HttpExceptionFilter — request body sanitization', () => {
     expect(logged.requestBody?.session_token).toBe('[REDACTED]');
   });
 
+  it('should redact social sign-in credentials (idToken, nonce, authorizationCode)', () => {
+    const host = buildHost('/api/v1/auth/oauth/apple/token', {
+      idToken: 'eyJhbGciOi.id.token',
+      nonce: 'raw-nonce-replayable',
+      authorizationCode: 'apple-auth-code',
+      authorization_code: 'apple-auth-code-snake',
+      fullName: { givenName: 'Ana' },
+    });
+    const exception = new HttpException(
+      'Unauthorized',
+      HttpStatus.UNAUTHORIZED,
+    );
+
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+
+    try {
+      filter.catch(exception, host);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+
+    const logged = loggedPayloads[0] as any;
+    expect(logged.requestBody?.idToken).toBe('[REDACTED]');
+    expect(logged.requestBody?.nonce).toBe('[REDACTED]');
+    expect(logged.requestBody?.authorizationCode).toBe('[REDACTED]');
+    expect(logged.requestBody?.authorization_code).toBe('[REDACTED]');
+    expect(logged.requestBody?.fullName?.givenName).toBe('Ana');
+  });
+
   it('should redact nested sensitive fields', () => {
     const host = buildHost('/api/v1/auth/mfa/enroll', {
       user: {
