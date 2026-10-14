@@ -357,10 +357,17 @@ export const envValidationSchema = Joi.object({
   FIREBASE_PRIVATE_KEY: Joi.string().allow('').optional(),
   FIREBASE_CLIENT_EMAIL: Joi.string().email().allow('').optional(),
 
-  // OAuth providers
+  // OAuth providers (Better Auth browser flow — removed in B4)
   GOOGLE_CLIENT_ID: Joi.string().allow('').optional(),
   GOOGLE_CLIENT_SECRET: Joi.string().allow('').optional(),
   APPLE_CLIENT_ID: Joi.string().allow('').optional(),
+  // Native social sign-in (POST /auth/oauth/:provider/token)
+  // Comma-separated Google client IDs accepted as `aud`. Must include the
+  // Web client ID the app passes as serverClientId.
+  GOOGLE_OAUTH_AUDIENCES: Joi.string().allow('').optional(),
+  // `aud` of Apple id tokens and client_id of the Apple token endpoint.
+  APPLE_BUNDLE_ID: Joi.string().allow('').optional(),
+  // Sign in with Apple key (.p8) used to sign the per-call client_secret.
   APPLE_TEAM_ID: Joi.string().allow('').optional(),
   APPLE_KEY_ID: Joi.string().allow('').optional(),
   APPLE_PRIVATE_KEY: Joi.string().allow('').optional(),
