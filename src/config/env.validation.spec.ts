@@ -534,3 +534,29 @@ describe('envValidationSchema throttler fail-open', () => {
     expect(validate({ THROTTLER_FAIL_OPEN: 'maybe' }).error).toBeDefined();
   });
 });
+
+describe('REDIS_BOOT_OPTIONAL validation', () => {
+  it('defaults to false', () => {
+    const { error, value } = validate();
+
+    expect(error).toBeUndefined();
+    expect(value.REDIS_BOOT_OPTIONAL).toBe(false);
+  });
+
+  it.each([
+    ['true', true],
+    ['false', false],
+    [true, true],
+  ])('coerces %p to %p', (raw, expected) => {
+    const { error, value } = validate({ REDIS_BOOT_OPTIONAL: raw });
+
+    expect(error).toBeUndefined();
+    expect(value.REDIS_BOOT_OPTIONAL).toBe(expected);
+  });
+
+  it('rejects non-boolean values', () => {
+    const { error } = validate({ REDIS_BOOT_OPTIONAL: 'maybe' });
+
+    expect(error?.message).toContain('REDIS_BOOT_OPTIONAL');
+  });
+});

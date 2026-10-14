@@ -411,4 +411,10 @@ Los endpoints de listado soportan: \`?page=1&limit=20\`
   console.log(`📍 Base URL: http://localhost:${port}/api/v1`);
   console.log(`🔒 Security: Helmet, Rate Limiting, Compression enabled`);
 }
-bootstrap().catch(console.error);
+bootstrap().catch((error: unknown) => {
+  // A failed bootstrap must not leave a zombie process with no listening
+  // port: exit non-zero so the platform (Render) restarts it and reports the
+  // real failure instead of "No open ports detected".
+  console.error('Bootstrap failed; exiting with code 1', error);
+  process.exit(1);
+});

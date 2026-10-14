@@ -193,6 +193,12 @@ export const envValidationSchema = Joi.object({
     .integer()
     .positive()
     .default(5000),
+  // false (default): a Redis outage during boot (cache probe / throttler
+  // readiness) aborts startup in production. true: log an error and boot
+  // anyway; the Redis-backed stores keep reconnecting in the background.
+  // Runtime behaviour while Redis is down is governed by
+  // AUTH_BLACKLIST_DEGRADED_MODE and THROTTLER_REDIS_FALLBACK.
+  REDIS_BOOT_OPTIONAL: Joi.boolean().default(false),
 
   // Rate limiting when Redis errors at runtime: false (default) surfaces the
   // Redis error as a 500 so throttling is never bypassed; true lets requests

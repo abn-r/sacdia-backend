@@ -5,7 +5,11 @@ jest.mock('redis', () => ({
 }));
 
 import { Logger } from '@nestjs/common';
-import { RedisThrottlerStorage } from './redis-throttler.storage';
+import {
+  RedisThrottlerStorage,
+  THROTTLER_REDIS_CONNECT_TIMEOUT_MS,
+  throttlerReconnectStrategy,
+} from './redis-throttler.storage';
 
 describe('RedisThrottlerStorage', () => {
   const client = {
@@ -40,10 +44,36 @@ describe('RedisThrottlerStorage', () => {
       RESP: 2,
       socket: {
         keepAliveInitialDelay: 5000,
+        connectTimeout: THROTTLER_REDIS_CONNECT_TIMEOUT_MS,
+        reconnectStrategy: throttlerReconnectStrategy,
       },
       commandOptions: {
         timeout: undefined,
       },
+    });
+  });
+
+  it('bounds the connect attempt so an unreachable host cannot hang forever', () => {
+    new RedisThrottlerStorage('redis://localhost:6379');
+
+    const options = mockCreateClient.mock.calls[0][0];
+    expect(options.socket.connectTimeout).toBe(5_000);
+  });
+
+  describe('throttlerReconnectStrategy', () => {
+    it('never gives up: always returns a delay, never an Error', () => {
+      for (const retries of [0, 1, 5, 10, 100, 10_000]) {
+        const delay = throttlerReconnectStrategy(retries);
+        expect(typeof delay).toBe('number');
+        expect(delay).toBeGreaterThan(0);
+      }
+    });
+
+    it('backs off exponentially but stays capped (jitter < 100 ms)', () => {
+      expect(throttlerReconnectStrategy(0)).toBeLessThan(200);
+      expect(throttlerReconnectStrategy(1)).toBeGreaterThanOrEqual(200);
+      expect(throttlerReconnectStrategy(50)).toBeLessThan(3_100);
+      expect(throttlerReconnectStrategy(50)).toBeGreaterThanOrEqual(3_000);
     });
   });
 
@@ -79,6 +109,64 @@ describe('RedisThrottlerStorage', () => {
     expect(client.connect).toHaveBeenCalledTimes(1);
     expect(client.ping).not.toHaveBeenCalled();
     expect(client.eval).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('RedisThrottlerStorage hot-path connect bound', () => {
+  const client = {
+    isOpen: false,
+    isReady: false,
+    connect: jest.fn(),
+    disconnect: jest.fn(),
+    ping: jest.fn(),
+    eval: jest.fn(),
+    quit: jest.fn(),
+    on: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.clearAllMocks();
+    client.isOpen = false;
+    client.isReady = false;
+    mockCreateClient.mockReturnValue(client);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('fails the request instead of hanging when connect never resolves', async () => {
+    client.connect.mockReturnValue(new Promise(() => undefined));
+    const storage = new RedisThrottlerStorage('redis://localhost:6379', {
+      connectWaitMs: 2_000,
+    });
+
+    const pending = storage.increment('ip:1', 1000, 3, 60000, 'short');
+    const assertion = expect(pending).rejects.toThrow('connect timed out');
+    await jest.advanceTimersByTimeAsync(2_000);
+
+    await assertion;
+    expect(client.eval).not.toHaveBeenCalled();
+  });
+
+  it('does not bound assertReady itself (its caller owns the readiness timeout)', async () => {
+    let resolveConnect!: () => void;
+    client.connect.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveConnect = resolve;
+      }),
+    );
+    client.ping.mockResolvedValue('PONG');
+    const storage = new RedisThrottlerStorage('redis://localhost:6379', {
+      connectWaitMs: 2_000,
+    });
+
+    const ready = storage.assertReady();
+    await jest.advanceTimersByTimeAsync(60_000);
+    resolveConnect();
+
+    await expect(ready).resolves.toBeUndefined();
   });
 });
 
