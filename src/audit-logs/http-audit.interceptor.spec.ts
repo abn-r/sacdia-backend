@@ -1,4 +1,4 @@
-import { CallHandler, ExecutionContext } from '@nestjs/common';
+import { CallHandler, ExecutionContext, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { lastValueFrom, of, throwError } from 'rxjs';
 import { AppException } from '../common/errors/app.exception';
@@ -130,6 +130,52 @@ describe('HttpAuditInterceptor', () => {
     );
     await runInterceptor(makeRequest({ url: '/api/v1/health', params: {} }));
     expect(recordEvent).not.toHaveBeenCalled();
+  });
+
+  describe('request log line (AuditLog context)', () => {
+    let logSpy: jest.SpyInstance;
+    let warnSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      const logger = (interceptor as unknown as { logger: Logger }).logger;
+      logSpy = jest.spyOn(logger, 'log').mockImplementation(() => undefined);
+      warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    });
+
+    it.each(['/api/v1/health', '/health'])(
+      'does not log successful health probes (%s)',
+      async (url) => {
+        await runInterceptor(makeRequest({ method: 'GET', url, params: {} }));
+        expect(logSpy).not.toHaveBeenCalled();
+        expect(warnSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    it('still logs failed health probes', async () => {
+      await runInterceptor(
+        makeRequest({ method: 'GET', url: '/api/v1/health', params: {} }),
+        failingNext(new Error('boom')),
+      );
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps logging /api/v1/health/details', async () => {
+      await runInterceptor(
+        makeRequest({
+          method: 'GET',
+          url: '/api/v1/health/details',
+          params: {},
+        }),
+      );
+      expect(logSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps logging other routes', async () => {
+      await runInterceptor(
+        makeRequest({ method: 'GET', url: '/api/v1/users/me', params: {} }),
+      );
+      expect(logSpy).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('records failures with result=failed and the HTTP status', async () => {
