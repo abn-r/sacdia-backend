@@ -179,6 +179,13 @@ describe('OperationsDashboardRepository', () => {
       expect(query.values).toEqual(expect.arrayContaining([12, 15, 40]));
     }
 
+    // role assignments, transfers, class validations, honors and annual
+    // folders: every queue branch must carry the coordinator section filter.
+    const queueQuery = queries.find((q) => q.sql.includes('WITH queue_items'));
+    const scopedBranches =
+      (queueQuery?.sql.split('cs.club_section_id IN (?,?,?)').length ?? 1) - 1;
+    expect(scopedBranches).toBe(5);
+
     expect(JSON.stringify(prisma.$queryRaw.mock.calls)).not.toContain('ANY(');
   });
 
