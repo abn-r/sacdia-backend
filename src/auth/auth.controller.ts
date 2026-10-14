@@ -425,7 +425,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Eliminar cuenta del usuario autenticado',
     description:
-      'Elimina de forma permanente la cuenta. Requiere contraseña actual para confirmación. ' +
+      'Elimina de forma permanente la cuenta. Requiere la contraseña actual o un id token reciente de Google/Apple vinculado a la cuenta. ' +
       'Revoca todas las sesiones, anonimiza PII y elimina archivos de almacenamiento. ' +
       'Requerido por Apple App Store guideline 5.1.1(v).',
   })
@@ -449,7 +449,9 @@ export class AuthController {
   ): Promise<void> {
     await this.accountDeletionService.deleteAccount(
       user.userId,
-      dto.password,
+      dto.password !== undefined
+        ? { password: dto.password }
+        : { provider: dto.provider!, idToken: dto.idToken!, nonce: dto.nonce! },
       ip,
     );
   }

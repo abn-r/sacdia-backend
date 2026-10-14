@@ -14,6 +14,17 @@ import {
   AppUnauthorizedException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AppleTokenClient } from './social-sign-in/apple-token.client';
+import {
+  APPLE_ID_TOKEN_VERIFIER,
+  GOOGLE_ID_TOKEN_VERIFIER,
+  type IdTokenVerifier,
+  type SocialProvider,
+} from './social-sign-in/social-sign-in.types';
+
+export type DeleteAccountReauth =
+  | { password: string }
+  | { provider: SocialProvider; idToken: string; nonce: string };
 
 /**
  * Handles the full account deletion lifecycle for self-service requests
@@ -22,7 +33,8 @@ import { ErrorCode } from '../common/errors/error-codes';
  * Required by Apple App Store guideline 5.1.1(v).
  *
  * Flow:
- *   1. Re-authenticate: verify current password against credential account
+ *   1. Re-authenticate: current password, or a fresh provider id token for a
+ *      linked account; revoke the Apple refresh token when present
  *   2. In a single DB transaction:
  *      a. Revoke all BA sessions (DELETE FROM sessions WHERE user_id = ?)
  *      b. Soft-delete user (active = false)
@@ -43,27 +55,34 @@ import { ErrorCode } from '../common/errors/error-codes';
 export class AccountDeletionService {
   private readonly logger = new Logger(AccountDeletionService.name);
 
+  private readonly verifiers: Record<SocialProvider, IdTokenVerifier>;
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly emailService: EmailService,
-  ) {}
+    @Inject(GOOGLE_ID_TOKEN_VERIFIER) google: IdTokenVerifier,
+    @Inject(APPLE_ID_TOKEN_VERIFIER) apple: IdTokenVerifier,
+    private readonly appleTokens: AppleTokenClient,
+  ) {
+    this.verifiers = { google, apple };
+  }
 
   /**
-   * Delete the account for the given userId after re-authenticating with password.
+   * Delete the account for the given userId after re-authenticating.
    *
    * @param userId - The user_id of the authenticated caller (from JWT sub)
-   * @param password - Current password provided in request body for re-auth
+   * @param reauth - Current password, or a fresh provider id token + nonce
    * @param ipAddress - Caller IP for audit log (optional)
    */
   async deleteAccount(
     userId: string,
-    password: string,
+    reauth: DeleteAccountReauth,
     ipAddress?: string,
   ): Promise<void> {
     // -------------------------------------------------------------------------
-    // 1. Load user and credential account
+    // 1. Load user and linked accounts, re-authenticate
     // -------------------------------------------------------------------------
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
@@ -87,27 +106,62 @@ export class AccountDeletionService {
       });
     }
 
-    // Re-authenticate: require credential account with a valid password
-    const credentialAccount = await this.prisma.account.findFirst({
-      where: { userId, providerId: 'credential' },
-      select: { password: true },
+    const accounts = await this.prisma.account.findMany({
+      where: { userId },
+      select: {
+        providerId: true,
+        accountId: true,
+        password: true,
+        refreshToken: true,
+      },
     });
 
-    if (!credentialAccount || !credentialAccount.password) {
-      // User signed up via OAuth only — no password set.
-      // For OAuth-only users, skip password re-auth (they can't supply one).
-      // The JWT guard already verified identity; this is acceptable for GDPR compliance.
-      this.logger.warn(
-        `Account deletion requested for OAuth-only user ${userId} — skipping password re-auth`,
-      );
-    } else {
+    if ('password' in reauth) {
+      const credential = accounts.find((a) => a.providerId === 'credential');
+      if (!credential?.password) {
+        // Social-only account: the client must re-auth with the provider.
+        throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_PASSWORD);
+      }
       const isPasswordValid = await bcrypt.compare(
-        password,
-        credentialAccount.password,
+        reauth.password,
+        credential.password,
       );
       if (!isPasswordValid) {
         throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_PASSWORD);
       }
+    } else {
+      const identity = await this.verifiers[reauth.provider].verify(
+        reauth.idToken,
+        reauth.nonce,
+      );
+      const linked = accounts.some(
+        (a) => a.providerId === reauth.provider && a.accountId === identity.sub,
+      );
+      if (!linked) {
+        this.logger.warn(
+          `Account deletion re-auth rejected for ${userId} — ${reauth.provider} token belongs to another subject`,
+        );
+        throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 1b. Revoke Sign in with Apple (App Store 5.1.1(v)). Best effort: a
+    //     failure is logged and the deletion continues.
+    // -------------------------------------------------------------------------
+    const apple = accounts.find((a) => a.providerId === 'apple');
+    if (apple?.refreshToken) {
+      try {
+        await this.appleTokens.revoke(apple.refreshToken);
+      } catch (error) {
+        this.logger.warn(
+          `Apple token revoke failed for ${userId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    } else if (apple) {
+      this.logger.warn(
+        `Apple account for ${userId} has no refresh token — skipping revoke`,
+      );
     }
 
     // -------------------------------------------------------------------------

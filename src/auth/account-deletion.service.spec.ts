@@ -8,6 +8,11 @@ import {
 } from '../common/services/file-storage.service';
 import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AppleTokenClient } from './social-sign-in/apple-token.client';
+import {
+  APPLE_ID_TOKEN_VERIFIER,
+  GOOGLE_ID_TOKEN_VERIFIER,
+} from './social-sign-in/social-sign-in.types';
 
 jest.mock('bcryptjs');
 const bcryptMock = bcrypt as jest.Mocked<typeof bcrypt>;
@@ -22,7 +27,7 @@ const mockPrisma = {
     update: jest.fn(),
   },
   account: {
-    findFirst: jest.fn(),
+    findMany: jest.fn(),
     deleteMany: jest.fn(),
   },
   session: {
@@ -36,6 +41,17 @@ const mockPrisma = {
   },
   $transaction: jest.fn(),
 };
+
+const credentialAccount = {
+  providerId: 'credential',
+  accountId: USER_ID,
+  password: HASHED,
+  refreshToken: null,
+};
+
+const mockGoogleVerifier = { provider: 'google', verify: jest.fn() };
+const mockAppleVerifier = { provider: 'apple', verify: jest.fn() };
+const mockAppleTokens = { revoke: jest.fn() };
 
 const mockFileStorage = {
   extractKeyFromPublicUrl: jest.fn(),
@@ -63,6 +79,9 @@ describe('AccountDeletionService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorage },
         { provide: EmailService, useValue: mockEmailService },
+        { provide: GOOGLE_ID_TOKEN_VERIFIER, useValue: mockGoogleVerifier },
+        { provide: APPLE_ID_TOKEN_VERIFIER, useValue: mockAppleVerifier },
+        { provide: AppleTokenClient, useValue: mockAppleTokens },
       ],
     }).compile();
 
@@ -82,9 +101,7 @@ describe('AccountDeletionService', () => {
         user_image: 'profiles/avatar.jpg',
       });
 
-      mockPrisma.account.findFirst.mockResolvedValue({
-        password: HASHED,
-      });
+      mockPrisma.account.findMany.mockResolvedValue([credentialAccount]);
 
       (bcryptMock.compare as jest.Mock).mockResolvedValue(true);
 
@@ -97,19 +114,19 @@ describe('AccountDeletionService', () => {
 
     it('should complete without throwing', async () => {
       await expect(
-        service.deleteAccount(USER_ID, PASSWORD, '127.0.0.1'),
+        service.deleteAccount(USER_ID, { password: PASSWORD }, '127.0.0.1'),
       ).resolves.toBeUndefined();
     });
 
     it('should revoke all BA sessions inside transaction', async () => {
-      await service.deleteAccount(USER_ID, PASSWORD);
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
       expect(mockPrisma.session.deleteMany).toHaveBeenCalledWith({
         where: { userId: USER_ID },
       });
     });
 
     it('should deactivate FCM tokens inside transaction', async () => {
-      await service.deleteAccount(USER_ID, PASSWORD);
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
       expect(mockPrisma.user_fcm_tokens.updateMany).toHaveBeenCalledWith({
         where: { user_id: USER_ID },
         data: { active: false },
@@ -117,7 +134,7 @@ describe('AccountDeletionService', () => {
     });
 
     it('should soft-delete and anonymize PII on users row', async () => {
-      await service.deleteAccount(USER_ID, PASSWORD);
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
       const updateCall = mockPrisma.users.update.mock.calls[0][0];
       expect(updateCall.where.user_id).toBe(USER_ID);
       expect(updateCall.data.active).toBe(false);
@@ -127,14 +144,14 @@ describe('AccountDeletionService', () => {
     });
 
     it('should delete credential account row', async () => {
-      await service.deleteAccount(USER_ID, PASSWORD);
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
       expect(mockPrisma.account.deleteMany).toHaveBeenCalledWith({
         where: { userId: USER_ID },
       });
     });
 
     it('should write an account_deletion_log entry', async () => {
-      await service.deleteAccount(USER_ID, PASSWORD);
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
       expect(mockPrisma.account_deletion_log.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ user_id: USER_ID }),
@@ -148,7 +165,7 @@ describe('AccountDeletionService', () => {
       );
       mockFileStorage.deleteMany.mockResolvedValue(undefined);
 
-      await service.deleteAccount(USER_ID, PASSWORD);
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
 
       // Give the fire-and-forget microtask a tick to settle
       await Promise.resolve();
@@ -166,7 +183,7 @@ describe('AccountDeletionService', () => {
       mockFileStorage.deleteMany.mockRejectedValue(new Error('R2 down'));
 
       await expect(
-        service.deleteAccount(USER_ID, PASSWORD),
+        service.deleteAccount(USER_ID, { password: PASSWORD }),
       ).resolves.toBeUndefined();
     });
   });
@@ -180,7 +197,7 @@ describe('AccountDeletionService', () => {
       mockPrisma.users.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.deleteAccount(USER_ID, PASSWORD),
+        service.deleteAccount(USER_ID, { password: PASSWORD }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_ACCOUNT_NOT_FOUND });
     });
 
@@ -193,7 +210,7 @@ describe('AccountDeletionService', () => {
       });
 
       await expect(
-        service.deleteAccount(USER_ID, PASSWORD),
+        service.deleteAccount(USER_ID, { password: PASSWORD }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_ACCOUNT_ALREADY_DELETED });
     });
 
@@ -204,32 +221,12 @@ describe('AccountDeletionService', () => {
         active: true,
         user_image: null,
       });
-      mockPrisma.account.findFirst.mockResolvedValue({ password: HASHED });
+      mockPrisma.account.findMany.mockResolvedValue([credentialAccount]);
       (bcryptMock.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
-        service.deleteAccount(USER_ID, PASSWORD),
+        service.deleteAccount(USER_ID, { password: PASSWORD }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_PASSWORD });
-    });
-
-    it('should skip password check for OAuth-only users (no credential account)', async () => {
-      mockPrisma.users.findUnique.mockResolvedValue({
-        user_id: USER_ID,
-        email: 'user@sacdia.app',
-        active: true,
-        user_image: null,
-      });
-      mockPrisma.account.findFirst.mockResolvedValue(null);
-      mockPrisma.session.deleteMany.mockResolvedValue({ count: 0 });
-      mockPrisma.user_fcm_tokens.updateMany.mockResolvedValue({ count: 0 });
-      mockPrisma.users.update.mockResolvedValue({});
-      mockPrisma.account.deleteMany.mockResolvedValue({ count: 0 });
-      mockPrisma.account_deletion_log.create.mockResolvedValue({});
-
-      // Should NOT throw — OAuth user, no password to verify
-      await expect(
-        service.deleteAccount(USER_ID, PASSWORD),
-      ).resolves.toBeUndefined();
     });
   });
 
@@ -244,7 +241,7 @@ describe('AccountDeletionService', () => {
       active: true,
       user_image: null,
     });
-    mockPrisma.account.findFirst.mockResolvedValue({ password: HASHED });
+    mockPrisma.account.findMany.mockResolvedValue([credentialAccount]);
     (bcryptMock.compare as jest.Mock).mockResolvedValue(true);
     mockPrisma.session.deleteMany.mockResolvedValue({ count: 0 });
     mockPrisma.user_fcm_tokens.updateMany.mockResolvedValue({ count: 0 });
@@ -252,9 +249,161 @@ describe('AccountDeletionService', () => {
     mockPrisma.account.deleteMany.mockResolvedValue({ count: 0 });
     mockPrisma.account_deletion_log.create.mockResolvedValue({});
 
-    await service.deleteAccount(USER_ID, PASSWORD);
+    await service.deleteAccount(USER_ID, { password: PASSWORD });
 
     // Confirm $transaction was called once
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  describe('re-authentication with a provider id token', () => {
+    const activeUser = {
+      user_id: USER_ID,
+      email: 'ana@example.com',
+      active: true,
+      user_image: null,
+    };
+
+    it('deletes when the id token belongs to a linked account', async () => {
+      mockPrisma.users.findUnique.mockResolvedValue(activeUser);
+      mockPrisma.account.findMany.mockResolvedValue([
+        {
+          providerId: 'google',
+          accountId: 'g-1',
+          password: null,
+          refreshToken: null,
+        },
+      ]);
+      mockGoogleVerifier.verify.mockResolvedValue({
+        provider: 'google',
+        sub: 'g-1',
+        email: 'ana@example.com',
+        emailVerified: true,
+      });
+
+      await expect(
+        service.deleteAccount(
+          USER_ID,
+          { provider: 'google', idToken: 't', nonce: 'n' },
+          '1.1.1.1',
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(mockGoogleVerifier.verify).toHaveBeenCalledWith('t', 'n');
+      expect(mockPrisma.users.update).toHaveBeenCalled();
+    });
+
+    it('rejects an id token for a different subject', async () => {
+      mockPrisma.users.findUnique.mockResolvedValue(activeUser);
+      mockPrisma.account.findMany.mockResolvedValue([
+        {
+          providerId: 'google',
+          accountId: 'g-1',
+          password: null,
+          refreshToken: null,
+        },
+      ]);
+      mockGoogleVerifier.verify.mockResolvedValue({
+        provider: 'google',
+        sub: 'someone-else',
+        email: 'x@example.com',
+        emailVerified: true,
+      });
+
+      await expect(
+        service.deleteAccount(USER_ID, {
+          provider: 'google',
+          idToken: 't',
+          nonce: 'n',
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_TOKEN });
+      expect(mockPrisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a provider that is not linked to the account', async () => {
+      mockPrisma.users.findUnique.mockResolvedValue(activeUser);
+      mockPrisma.account.findMany.mockResolvedValue([credentialAccount]);
+      mockAppleVerifier.verify.mockResolvedValue({
+        provider: 'apple',
+        sub: 'a-1',
+        email: 'ana@example.com',
+        emailVerified: true,
+      });
+
+      await expect(
+        service.deleteAccount(USER_ID, {
+          provider: 'apple',
+          idToken: 't',
+          nonce: 'n',
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_TOKEN });
+    });
+
+    it('rejects a password re-auth when the account has no password', async () => {
+      mockPrisma.users.findUnique.mockResolvedValue(activeUser);
+      mockPrisma.account.findMany.mockResolvedValue([
+        {
+          providerId: 'google',
+          accountId: 'g-1',
+          password: null,
+          refreshToken: null,
+        },
+      ]);
+
+      await expect(
+        service.deleteAccount(USER_ID, { password: PASSWORD }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_PASSWORD });
+    });
+  });
+
+  describe('Apple token revocation', () => {
+    const activeUser = {
+      user_id: USER_ID,
+      email: 'ana@example.com',
+      active: true,
+      user_image: null,
+    };
+
+    beforeEach(() => {
+      mockPrisma.users.findUnique.mockResolvedValue(activeUser);
+      mockPrisma.account.findMany.mockResolvedValue([
+        {
+          providerId: 'apple',
+          accountId: 'a-1',
+          password: null,
+          refreshToken: 'rt-1',
+        },
+      ]);
+      mockAppleVerifier.verify.mockResolvedValue({
+        provider: 'apple',
+        sub: 'a-1',
+        email: 'ana@example.com',
+        emailVerified: true,
+      });
+    });
+
+    it('revokes the Apple refresh token before deleting', async () => {
+      mockAppleTokens.revoke.mockResolvedValue(undefined);
+      await service.deleteAccount(USER_ID, {
+        provider: 'apple',
+        idToken: 't',
+        nonce: 'n',
+      });
+      expect(mockAppleTokens.revoke).toHaveBeenCalledWith('rt-1');
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+
+    it('still deletes when the revoke fails', async () => {
+      mockAppleTokens.revoke.mockRejectedValue(
+        new Error('Apple token endpoint 400'),
+      );
+      await expect(
+        service.deleteAccount(USER_ID, {
+          provider: 'apple',
+          idToken: 't',
+          nonce: 'n',
+        }),
+      ).resolves.toBeUndefined();
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
   });
 });
