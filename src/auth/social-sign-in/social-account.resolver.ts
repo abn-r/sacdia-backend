@@ -10,6 +10,12 @@ export interface ResolvedSocialAccount {
   created: boolean;
   /** The provider was attached to an existing email account in this call. */
   linked: boolean;
+  /**
+   * The existing account never verified its email, so its sessions and every
+   * credential/provider link were deleted. The caller must also invalidate the
+   * JWTs already issued to that previous holder.
+   */
+  revokedPriorAccess: boolean;
 }
 
 /** `users.name` and `users.paternal_last_name` are VarChar(50). */
@@ -52,7 +58,12 @@ export class SocialAccountResolver {
     });
     if (account) {
       await this.syncPicture(tx, account.userId, identity.picture);
-      return { userId: account.userId, created: false, linked: false };
+      return {
+        userId: account.userId,
+        created: false,
+        linked: false,
+        revokedPriorAccess: false,
+      };
     }
 
     // 2. Same email already registered → link
@@ -62,6 +73,13 @@ export class SocialAccountResolver {
       select: { user_id: true, email_verified: true, user_image: true },
     });
     if (existing) {
+      const revokedPriorAccess = !existing.email_verified;
+      if (revokedPriorAccess) {
+        // D3: the unverified holder never proved the address. Whoever registered
+        // it keeps nothing: no sessions, no password, no other provider links.
+        await tx.session.deleteMany({ where: { userId: existing.user_id } });
+        await tx.account.deleteMany({ where: { userId: existing.user_id } });
+      }
       await tx.account.create({
         data: {
           id: randomUUID(),
@@ -70,11 +88,7 @@ export class SocialAccountResolver {
           userId: existing.user_id,
         },
       });
-      if (!existing.email_verified) {
-        // D3: the unverified password holder never proved the address.
-        await tx.account.deleteMany({
-          where: { userId: existing.user_id, providerId: 'credential' },
-        });
+      if (revokedPriorAccess) {
         await tx.users.update({
           where: { user_id: existing.user_id },
           data: {
@@ -83,7 +97,7 @@ export class SocialAccountResolver {
           },
         });
         this.logger.warn(
-          `Linked ${provider} to unverified account ${existing.user_id} — credential removed`,
+          `Linked ${provider} to unverified account ${existing.user_id} — prior sessions and accounts removed`,
         );
       } else {
         await this.syncPicture(
@@ -96,7 +110,12 @@ export class SocialAccountResolver {
       this.logger.log(
         `Linked ${provider} to existing user ${existing.user_id}`,
       );
-      return { userId: existing.user_id, created: false, linked: true };
+      return {
+        userId: existing.user_id,
+        created: false,
+        linked: true,
+        revokedPriorAccess,
+      };
     }
 
     // 3. New user
@@ -115,7 +134,7 @@ export class SocialAccountResolver {
       data: { id: randomUUID(), accountId: sub, providerId: provider, userId },
     });
     this.logger.log(`Created user ${userId} from ${provider}`);
-    return { userId, created: true, linked: false };
+    return { userId, created: true, linked: false, revokedPriorAccess: false };
   }
 
   /** Keeps `user_image` in step with the provider photo (Google changes it). */

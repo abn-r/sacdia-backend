@@ -12,6 +12,7 @@ describe('SocialAccountResolver', () => {
       create: jest.fn(),
       deleteMany: jest.fn(),
     },
+    session: { deleteMany: jest.fn() },
     users: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
     users_pr: { findUnique: jest.fn(), create: jest.fn() },
     users_roles: { findFirst: jest.fn(), create: jest.fn() },
@@ -61,6 +62,7 @@ describe('SocialAccountResolver', () => {
       userId: 'user-1',
       created: false,
       linked: false,
+      revokedPriorAccess: false,
     });
     expect(tx.account.findUnique).toHaveBeenCalledWith({
       where: {
@@ -86,6 +88,7 @@ describe('SocialAccountResolver', () => {
       userId: 'user-1',
       created: false,
       linked: true,
+      revokedPriorAccess: false,
     });
     expect(tx.account.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -95,20 +98,40 @@ describe('SocialAccountResolver', () => {
       }),
     });
     expect(tx.account.deleteMany).not.toHaveBeenCalled();
+    expect(tx.session.deleteMany).not.toHaveBeenCalled();
   });
 
-  it('drops the password when linking to an unverified local account', async () => {
+  it('revokes sessions and every prior account when linking to an unverified local account', async () => {
     tx.account.findUnique.mockResolvedValue(null);
     tx.users.findUnique.mockResolvedValue({
       ...existingUser,
       email_verified: false,
     });
-
-    await resolver.resolve(identity);
-
-    expect(tx.account.deleteMany).toHaveBeenCalledWith({
-      where: { userId: 'user-1', providerId: 'credential' },
+    const order: string[] = [];
+    tx.session.deleteMany.mockImplementation(async () => {
+      order.push('sessions');
     });
+    tx.account.deleteMany.mockImplementation(async () => {
+      order.push('accounts');
+    });
+    tx.account.create.mockImplementation(async () => {
+      order.push('create');
+    });
+
+    await expect(resolver.resolve(identity)).resolves.toEqual({
+      userId: 'user-1',
+      created: false,
+      linked: true,
+      revokedPriorAccess: true,
+    });
+
+    expect(tx.session.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+    });
+    expect(tx.account.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+    });
+    expect(order).toEqual(['sessions', 'accounts', 'create']);
     expect(tx.users.update).toHaveBeenCalledWith({
       where: { user_id: 'user-1' },
       data: expect.objectContaining({ email_verified: true }),
@@ -127,7 +150,11 @@ describe('SocialAccountResolver', () => {
 
     const result = await resolver.resolve(identity);
 
-    expect(result).toMatchObject({ created: true, linked: false });
+    expect(result).toMatchObject({
+      created: true,
+      linked: false,
+      revokedPriorAccess: false,
+    });
     expect(tx.users.create).toHaveBeenCalledWith({
       data: {
         user_id: result.userId,

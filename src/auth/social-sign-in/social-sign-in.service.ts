@@ -7,6 +7,7 @@ import {
   StorageBucketAlias,
 } from '../../common/services/file-storage.service';
 import type { FileStorageService } from '../../common/services/file-storage.service';
+import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppleTokenClient } from './apple-token.client';
 import type { SocialTokenSignInDto } from './dto/social-token-sign-in.dto';
@@ -45,6 +46,9 @@ export interface SocialSignInResult {
   needsPostRegistration: boolean;
 }
 
+/** Access JWT lifetime. Mirrors `AuthService.JWT_TTL_SECONDS` (private there). */
+const JWT_TTL_SECONDS = 28800;
+
 @Injectable()
 export class SocialSignInService {
   private readonly logger = new Logger(SocialSignInService.name);
@@ -60,6 +64,7 @@ export class SocialSignInService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly tokenBlacklist: TokenBlacklistService,
   ) {
     this.verifiers = { google, apple };
   }
@@ -88,10 +93,18 @@ export class SocialSignInService {
           }
         : verified;
 
-    const { userId, created, linked } = await this.resolver.resolve(identity);
+    const { userId, created, linked, revokedPriorAccess } =
+      await this.resolver.resolve(identity);
 
     if (provider === 'apple' && dto.authorizationCode) {
       await this.storeAppleRefreshToken(identity.sub, dto.authorizationCode);
+    }
+
+    if (revokedPriorAccess) {
+      // The resolver deleted the previous holder's sessions; their access JWTs
+      // stay valid until expiry unless the user is blacklisted. Do it before
+      // signing so the new JWT (iat >= blacklist time) is not caught by it.
+      await this.tokenBlacklist.blacklistAllUserTokens(userId, JWT_TTL_SECONDS);
     }
 
     // Same rule as password login: with TOTP enrolled the JWT is mfa_pending

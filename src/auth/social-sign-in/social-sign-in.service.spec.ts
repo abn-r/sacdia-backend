@@ -3,6 +3,7 @@ import { BetterAuthService } from '../../better-auth/better-auth.service';
 import { AppUnauthorizedException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
+import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppleTokenClient } from './apple-token.client';
 import { SocialAccountResolver } from './social-account.resolver';
@@ -29,6 +30,7 @@ describe('SocialSignInService', () => {
     signJwt: jest.fn().mockReturnValue('sacdia-jwt'),
     hasTotpEnabled: jest.fn(),
   };
+  const tokenBlacklist = { blacklistAllUserTokens: jest.fn() };
   const prisma = {
     users: { findUnique: jest.fn() },
     users_pr: { findUnique: jest.fn() },
@@ -60,6 +62,7 @@ describe('SocialSignInService', () => {
       userId: 'user-1',
       created: false,
       linked: false,
+      revokedPriorAccess: false,
     });
     prisma.users.findUnique.mockResolvedValue({
       user_id: 'user-1',
@@ -85,6 +88,7 @@ describe('SocialSignInService', () => {
         { provide: BetterAuthService, useValue: betterAuth },
         { provide: PrismaService, useValue: prisma },
         { provide: FILE_STORAGE_SERVICE, useValue: fileStorage },
+        { provide: TokenBlacklistService, useValue: tokenBlacklist },
       ],
     }).compile();
     service = module.get(SocialSignInService);
@@ -128,6 +132,33 @@ describe('SocialSignInService', () => {
       true,
       'sess-1',
     );
+  });
+
+  it('blacklists prior JWTs before signing when prior access was revoked', async () => {
+    resolver.resolve.mockResolvedValue({
+      userId: 'user-1',
+      created: false,
+      linked: true,
+      revokedPriorAccess: true,
+    });
+    await service.signIn('google', { idToken: 't', nonce: 'n' });
+    expect(tokenBlacklist.blacklistAllUserTokens).toHaveBeenCalledWith(
+      'user-1',
+      28800,
+    );
+    const blacklistOrder =
+      tokenBlacklist.blacklistAllUserTokens.mock.invocationCallOrder[0];
+    expect(blacklistOrder).toBeLessThan(
+      betterAuth.createSession.mock.invocationCallOrder[0],
+    );
+    expect(blacklistOrder).toBeLessThan(
+      betterAuth.signJwt.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not blacklist anything on a regular sign-in', async () => {
+    await service.signIn('google', { idToken: 't', nonce: 'n' });
+    expect(tokenBlacklist.blacklistAllUserTokens).not.toHaveBeenCalled();
   });
 
   it('flags post-registration for a new user', async () => {
