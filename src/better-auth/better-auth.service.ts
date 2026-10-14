@@ -99,6 +99,8 @@ export interface IBetterAuthService {
     name: string,
   ): Promise<BaAuthResult>;
   signInWithPassword(email: string, password: string): Promise<BaAuthResult>;
+  /** Creates a 7-day opaque session for an already-authenticated user. */
+  createSession(userId: string): Promise<BaSession>;
   refreshSession(sessionToken: string): Promise<BaAuthResult>;
   signOut(sessionToken: string): Promise<void>;
   resetPasswordForEmail(email: string, redirectTo?: string): Promise<void>;
@@ -161,6 +163,11 @@ export const PASSWORD_RESET_IDENTIFIER_PREFIX = 'password-reset:';
 
 export function passwordResetIdentifier(email: string): string {
   return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`;
+}
+
+/** `verification.identifier` of a user's TOTP secret and backup codes. */
+export function totpIdentifier(userId: string): string {
+  return `totp:${userId}`;
 }
 
 /**
@@ -237,7 +244,7 @@ export class BetterAuthService implements IBetterAuthService {
    * Creates a new session row in the DB for the given userId.
    * Returns the session record mapped to BaSession.
    */
-  private async createSession(userId: string): Promise<BaSession> {
+  async createSession(userId: string): Promise<BaSession> {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + SESSION_DURATION_MS);
     const dbSession = await this.prisma.session.create({
@@ -711,10 +718,6 @@ export class BetterAuthService implements IBetterAuthService {
 
   // -- Private TOTP helpers --------------------------------------------------
 
-  private totpIdentifier(userId: string): string {
-    return `totp:${userId}`;
-  }
-
   private mfaSessionIdentifier(sessionId: string): string {
     return `mfa-session:${sessionId}`;
   }
@@ -799,7 +802,7 @@ export class BetterAuthService implements IBetterAuthService {
     const { plain: plainCodes, hashed: hashedCodes } =
       await this.generateBackupCodes();
 
-    const identifier = this.totpIdentifier(userId);
+    const identifier = totpIdentifier(userId);
     const value = JSON.stringify({ secret, backupCodes: hashedCodes });
     const expiresAt = new Date('2099-01-01T00:00:00.000Z');
     const now = new Date();
@@ -835,7 +838,7 @@ export class BetterAuthService implements IBetterAuthService {
     userId: string,
     code: string,
   ): Promise<{ verified: boolean }> {
-    const identifier = this.totpIdentifier(userId);
+    const identifier = totpIdentifier(userId);
     const record = await this.prisma.verification.findFirst({
       where: { identifier },
     });
@@ -877,7 +880,7 @@ export class BetterAuthService implements IBetterAuthService {
   async disableTotp(userId: string, password: string): Promise<void> {
     await this.verifyUserPassword(userId, password);
 
-    const identifier = this.totpIdentifier(userId);
+    const identifier = totpIdentifier(userId);
     await this.prisma.verification.deleteMany({ where: { identifier } });
 
     this.logger.log(`TOTP disabled for user: ${userId}`);
@@ -888,7 +891,7 @@ export class BetterAuthService implements IBetterAuthService {
    * Checks for existence of the totp:{userId} record in the verification table.
    */
   async hasTotpEnabled(userId: string): Promise<{ enabled: boolean }> {
-    const identifier = this.totpIdentifier(userId);
+    const identifier = totpIdentifier(userId);
     const record = await this.prisma.verification.findFirst({
       where: { identifier },
       select: { id: true },

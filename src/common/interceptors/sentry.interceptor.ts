@@ -21,6 +21,11 @@ const SENSITIVE_BODY_FIELDS = new Set([
   'refreshToken',
   'access_token',
   'accessToken',
+  'idToken',
+  'id_token',
+  'nonce',
+  'authorizationCode',
+  'authorization_code',
   'blood',
   'birthday',
   'allergies',
@@ -40,7 +45,7 @@ function redactHeaders(
   return result;
 }
 
-function redactBody(body: unknown): unknown {
+export function redactBody(body: unknown): unknown {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return body;
   }

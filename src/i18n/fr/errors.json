@@ -200,6 +200,7 @@
   "AUTH_OAUTH_PROVIDER_NOT_CONNECTED": "Le fournisseur OAuth n'est pas connecté à ce compte",
   "AUTH_OAUTH_EMAIL_UNVERIFIED": "Le fournisseur n'a pas renvoyé d'adresse e-mail vérifiée",
   "AUTH_OAUTH_PROVIDER_UNAVAILABLE": "Le fournisseur de connexion est temporairement indisponible",
+  "AUTH_OAUTH_PROVIDER_ALREADY_LINKED": "Ce compte est déjà lié à une autre identité de ce fournisseur",
   "AUTH_SESSION_NOT_FOUND": "Session introuvable ou déjà expirée",
   "AUTH_SESSION_NOT_OWNED": "Vous n'êtes pas propriétaire de cette session",
   "AUTH_SESSION_IS_CURRENT": "Vous ne pouvez pas révoquer votre session actuelle via ce point de terminaison. Utilisez POST /auth/logout",

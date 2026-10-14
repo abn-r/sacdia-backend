@@ -203,6 +203,7 @@
   "AUTH_OAUTH_PROVIDER_NOT_CONNECTED": "OAuth provider is not connected to this account",
   "AUTH_OAUTH_EMAIL_UNVERIFIED": "The provider did not return a verified email address",
   "AUTH_OAUTH_PROVIDER_UNAVAILABLE": "The sign-in provider is temporarily unavailable",
+  "AUTH_OAUTH_PROVIDER_ALREADY_LINKED": "This sign-in provider is already linked to this account with a different identity",
   "AUTH_SESSION_NOT_FOUND": "Session not found or already expired",
   "AUTH_SESSION_NOT_OWNED": "You do not own this session",
   "AUTH_SESSION_IS_CURRENT": "Cannot revoke your current session via this endpoint. Use POST /auth/logout instead",

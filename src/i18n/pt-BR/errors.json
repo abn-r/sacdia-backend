@@ -200,6 +200,7 @@
   "AUTH_OAUTH_PROVIDER_NOT_CONNECTED": "O provedor OAuth não está conectado a esta conta",
   "AUTH_OAUTH_EMAIL_UNVERIFIED": "O provedor não retornou um e-mail verificado",
   "AUTH_OAUTH_PROVIDER_UNAVAILABLE": "O provedor de login está temporariamente indisponível",
+  "AUTH_OAUTH_PROVIDER_ALREADY_LINKED": "Esta conta já está vinculada a outra identidade deste provedor",
   "AUTH_SESSION_NOT_FOUND": "Sessão não encontrada ou já expirada",
   "AUTH_SESSION_NOT_OWNED": "Você não é o proprietário desta sessão",
   "AUTH_SESSION_IS_CURRENT": "Você não pode revogar sua sessão atual por este endpoint. Use POST /auth/logout",

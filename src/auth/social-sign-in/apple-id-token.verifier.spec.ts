@@ -91,6 +91,11 @@ describe('AppleIdTokenVerifier', () => {
     await rejects(await fixture.sign({ ...validClaims(), iat }));
   });
 
+  it('rejects a token issued in the future beyond the clock tolerance', async () => {
+    const iat = Math.floor(Date.now() / 1000) + 120;
+    await rejects(await fixture.sign({ ...validClaims(), iat }));
+  });
+
   it('accepts a token issued 9 minutes ago', async () => {
     const iat = Math.floor(Date.now() / 1000) - 9 * 60;
     const token = await fixture.sign({ ...validClaims(), iat });
