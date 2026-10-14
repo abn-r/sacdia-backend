@@ -358,9 +358,13 @@ describe('OperationsDashboardScopeService', () => {
   });
 
   it('falls back to the generic name for mixed assignments or an unknown zone', async () => {
-    authorizationContext.resolveUserAuthorization.mockResolvedValue(
-      resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
-    );
+    authorizationContext.resolveUserAuthorization
+      .mockResolvedValueOnce(
+        resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
+      )
+      .mockResolvedValueOnce(
+        resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
+      );
     coordinationService.resolveCoordinatorScope.mockResolvedValueOnce(
       coordinatorScope({
         sectionIds: [12],
@@ -399,9 +403,16 @@ describe('OperationsDashboardScopeService', () => {
   });
 
   it('rejects any territorial filter for a coordinator before resolving sections', async () => {
-    authorizationContext.resolveUserAuthorization.mockResolvedValue(
-      resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
-    );
+    authorizationContext.resolveUserAuthorization
+      .mockResolvedValueOnce(
+        resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
+      )
+      .mockResolvedValueOnce(
+        resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
+      )
+      .mockResolvedValueOnce(
+        resolvedAuth({ roles: ['coordinator'], localFieldId: 100 }),
+      );
 
     for (const filters of [
       { localFieldId: 100 },
