@@ -1,7 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 import { exportPKCS8, generateKeyPair, jwtVerify } from 'jose';
+import { AppServiceUnavailableException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 import {
   AppleTokenClient,
+  AppleTokenError,
   APPLE_TOKEN_URL,
   APPLE_REVOKE_URL,
 } from './apple-token.client';
@@ -64,7 +67,14 @@ describe('AppleTokenClient', () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 }),
     );
-    await expect(client.exchangeCode('bad')).rejects.toThrow('invalid_grant');
+    const error = await client.exchangeCode('bad').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppleTokenError);
+    expect(error).toMatchObject({
+      operation: 'token',
+      status: 400,
+      error: 'invalid_grant',
+      message: 'Apple token endpoint 400: invalid_grant',
+    });
   });
 
   it('revokes a refresh token', async () => {
@@ -79,7 +89,41 @@ describe('AppleTokenClient', () => {
 
   it('throws when revoke answers non-2xx', async () => {
     fetchMock.mockResolvedValue(new Response('nope', { status: 400 }));
-    await expect(client.revoke('rt-1')).rejects.toThrow('400');
+    const error = await client.revoke('rt-1').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppleTokenError);
+    expect(error).toMatchObject({
+      operation: 'revoke',
+      status: 400,
+      error: null,
+    });
+    expect((error as AppleTokenError).message).toContain(
+      'Apple revoke endpoint 400',
+    );
+  });
+
+  it('passes a timeout signal to fetch', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+    await client.revoke('rt-1');
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('maps a network failure to 503 AUTH_OAUTH_PROVIDER_UNAVAILABLE', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    const error = await client.exchangeCode('code').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppServiceUnavailableException);
+    expect((error as AppServiceUnavailableException).code).toBe(
+      ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE,
+    );
+  });
+
+  it('maps a fetch timeout to 503 AUTH_OAUTH_PROVIDER_UNAVAILABLE', async () => {
+    fetchMock.mockRejectedValue(
+      new DOMException('The operation timed out', 'TimeoutError'),
+    );
+    await expect(client.revoke('rt-1')).rejects.toBeInstanceOf(
+      AppServiceUnavailableException,
+    );
   });
 
   it('throws a clear error when the Apple key config is missing', async () => {
