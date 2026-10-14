@@ -201,6 +201,8 @@
   "AUTH_OAUTH_PROVIDER_INVALID": "Proveedor OAuth inválido",
   "AUTH_OAUTH_ONLY_AUTH_METHOD": "No podés desconectar el único método de autenticación. Configurá una contraseña primero",
   "AUTH_OAUTH_PROVIDER_NOT_CONNECTED": "El proveedor OAuth no está conectado a esta cuenta",
+  "AUTH_OAUTH_EMAIL_UNVERIFIED": "El proveedor no devolvió un correo verificado",
+  "AUTH_OAUTH_PROVIDER_UNAVAILABLE": "El proveedor de inicio de sesión no está disponible por el momento",
   "AUTH_SESSION_NOT_FOUND": "Sesión no encontrada o ya expirada",
   "AUTH_SESSION_NOT_OWNED": "No sos el propietario de esta sesión",
   "AUTH_SESSION_IS_CURRENT": "No podés revocar tu sesión actual desde este endpoint. Usá POST /auth/logout",
