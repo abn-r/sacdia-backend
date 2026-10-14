@@ -1,15 +1,8 @@
 export type OperationsDashboardScopeLevel =
-  | 'all'
-  | 'division'
-  | 'union'
-  | 'local_field'
-  | 'coordinator';
+  'all' | 'division' | 'union' | 'local_field' | 'coordinator';
 
 export type OperationsDashboardChildLevel =
-  | 'division'
-  | 'union'
-  | 'local_field'
-  | 'club';
+  'division' | 'union' | 'local_field' | 'club';
 
 export type OperationsDashboardScopePathNode = {
   level: Exclude<OperationsDashboardScopeLevel, 'all' | 'coordinator'>;

@@ -150,7 +150,8 @@ export class OperationsDashboardScopeService {
       this.denyOutsideScope();
     }
 
-    const scope = await this.coordinationService.resolveCoordinatorScope(actorId);
+    const scope =
+      await this.coordinationService.resolveCoordinatorScope(actorId);
     const sectionIds = [...new Set(scope.club_section_ids)].sort(
       (a, b) => a - b,
     );

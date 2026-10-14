@@ -408,16 +408,19 @@ describe('OperationsDashboardScopeService', () => {
       { unionId: 10 },
       { divisionId: 1 },
     ]) {
-      await expect(service.resolve('coordinator', filters)).rejects.toMatchObject(
-        { code: ErrorCode.GUARD_PERMISSION_DENIED },
-      );
+      await expect(
+        service.resolve('coordinator', filters),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
     }
     expect(coordinationService.resolveCoordinatorScope).not.toHaveBeenCalled();
   });
 
   it('prefers a broader territorial role over a coordinator role', async () => {
     authorizationContext.resolveUserAuthorization.mockResolvedValueOnce(
-      resolvedAuth({ roles: ['coordinator', 'director-lf'], localFieldId: 100 }),
+      resolvedAuth({
+        roles: ['coordinator', 'director-lf'],
+        localFieldId: 100,
+      }),
     );
 
     await expect(service.resolve('director', {})).resolves.toMatchObject({

@@ -146,16 +146,28 @@ describe('OperationsDashboardRepository', () => {
       values: query.values as unknown[],
     }));
 
-    const childrenQuery = queries.find((q) => q.sql.includes('SELECT DISTINCT c.club_id AS id'));
-    expect(childrenQuery?.sql).toContain('INNER JOIN club_sections cs ON cs.main_club_id = c.club_id');
+    const childrenQuery = queries.find((q) =>
+      q.sql.includes('SELECT DISTINCT c.club_id AS id'),
+    );
+    expect(childrenQuery?.sql).toContain(
+      'INNER JOIN club_sections cs ON cs.main_club_id = c.club_id',
+    );
     expect(childrenQuery?.sql).toContain('cs.club_section_id IN (?,?,?)');
     expect(childrenQuery?.values).toEqual([12, 15, 40]);
 
-    const administrativeQuery = queries.find((q) => q.sql.includes('AS inactive'));
+    const administrativeQuery = queries.find((q) =>
+      q.sql.includes('AS inactive'),
+    );
     expect(administrativeQuery?.sql).toContain('c.club_id IN (');
-    expect(administrativeQuery?.sql).toContain('SELECT cs2.main_club_id FROM club_sections cs2');
-    expect(administrativeQuery?.sql).toContain('cs2.club_section_id IN (?,?,?)');
-    expect(administrativeQuery?.values).toEqual(expect.arrayContaining([12, 15, 40]));
+    expect(administrativeQuery?.sql).toContain(
+      'SELECT cs2.main_club_id FROM club_sections cs2',
+    );
+    expect(administrativeQuery?.sql).toContain(
+      'cs2.club_section_id IN (?,?,?)',
+    );
+    expect(administrativeQuery?.values).toEqual(
+      expect.arrayContaining([12, 15, 40]),
+    );
 
     const sectionScopedQueries = queries.filter(
       (q) => q !== childrenQuery && q !== administrativeQuery,
