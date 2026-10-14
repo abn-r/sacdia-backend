@@ -7,6 +7,10 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import { EmailService } from '../common/email/email.service';
+import {
+  AppServiceUnavailableException,
+  AppUnauthorizedException,
+} from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import { totpIdentifier } from '../better-auth/better-auth.service';
@@ -69,6 +73,13 @@ const mockFileStorage = {
 const mockEmailService = {
   sendAccountDeletionConfirmed: jest.fn().mockResolvedValue(undefined),
 };
+
+/** A rejected re-auth must not have touched Apple, the DB or the blacklist. */
+function expectNothingRevokedOrDeleted() {
+  expect(mockAppleTokens.revoke).not.toHaveBeenCalled();
+  expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  expect(mockTokenBlacklist.blacklistAllUserTokens).not.toHaveBeenCalled();
+}
 
 describe('AccountDeletionService', () => {
   let service: AccountDeletionService;
@@ -208,6 +219,7 @@ describe('AccountDeletionService', () => {
       await expect(
         service.deleteAccount(USER_ID, { password: PASSWORD }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_ACCOUNT_NOT_FOUND });
+      expectNothingRevokedOrDeleted();
     });
 
     it('should throw BadRequestException when account is already deleted', async () => {
@@ -221,6 +233,7 @@ describe('AccountDeletionService', () => {
       await expect(
         service.deleteAccount(USER_ID, { password: PASSWORD }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_ACCOUNT_ALREADY_DELETED });
+      expectNothingRevokedOrDeleted();
     });
 
     it('should throw UnauthorizedException when password is wrong', async () => {
@@ -236,6 +249,7 @@ describe('AccountDeletionService', () => {
       await expect(
         service.deleteAccount(USER_ID, { password: PASSWORD }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_PASSWORD });
+      expectNothingRevokedOrDeleted();
     });
   });
 
@@ -325,6 +339,7 @@ describe('AccountDeletionService', () => {
           nonce: 'n',
         }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_TOKEN });
+      expectNothingRevokedOrDeleted();
       expect(mockPrisma.users.update).not.toHaveBeenCalled();
     });
 
@@ -345,6 +360,7 @@ describe('AccountDeletionService', () => {
           nonce: 'n',
         }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_TOKEN });
+      expectNothingRevokedOrDeleted();
     });
 
     it('rejects a password re-auth when the account has no password', async () => {
@@ -361,6 +377,7 @@ describe('AccountDeletionService', () => {
       await expect(
         service.deleteAccount(USER_ID, { password: PASSWORD }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_PASSWORD });
+      expectNothingRevokedOrDeleted();
     });
   });
 
@@ -399,6 +416,61 @@ describe('AccountDeletionService', () => {
       });
       expect(mockAppleTokens.revoke).toHaveBeenCalledWith('rt-1');
       expect(mockPrisma.$transaction).toHaveBeenCalled();
+      expect(mockAppleTokens.revoke.mock.invocationCallOrder[0]).toBeLessThan(
+        mockPrisma.$transaction.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('does not revoke when the id token belongs to another subject', async () => {
+      mockAppleVerifier.verify.mockResolvedValue({
+        provider: 'apple',
+        sub: 'someone-else',
+        email: 'x@example.com',
+        emailVerified: true,
+      });
+
+      await expect(
+        service.deleteAccount(USER_ID, {
+          provider: 'apple',
+          idToken: 't',
+          nonce: 'n',
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_TOKEN });
+      expectNothingRevokedOrDeleted();
+    });
+
+    it('does not revoke or delete when the verifier rejects the token', async () => {
+      mockAppleVerifier.verify.mockRejectedValue(
+        new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN),
+      );
+
+      await expect(
+        service.deleteAccount(USER_ID, {
+          provider: 'apple',
+          idToken: 't',
+          nonce: 'n',
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_TOKEN });
+      expectNothingRevokedOrDeleted();
+    });
+
+    it('does not revoke or delete when the provider is unavailable', async () => {
+      mockAppleVerifier.verify.mockRejectedValue(
+        new AppServiceUnavailableException(
+          ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE,
+        ),
+      );
+
+      await expect(
+        service.deleteAccount(USER_ID, {
+          provider: 'apple',
+          idToken: 't',
+          nonce: 'n',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE,
+      });
+      expectNothingRevokedOrDeleted();
     });
 
     it('still deletes when the revoke fails', async () => {
