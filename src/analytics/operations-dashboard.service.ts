@@ -128,10 +128,14 @@ export class OperationsDashboardService {
     year: EcclesiasticalYearRecord,
     reportingMonth: ReportingMonth | null,
   ): string {
+    const scopeKey =
+      scope.level === 'coordinator'
+        ? (scope.section_ids ?? []).join(',')
+        : String(scope.id ?? 'all');
     return [
       'operations-dashboard',
       scope.level,
-      scope.id ?? 'all',
+      scopeKey,
       year.year_id,
       reportingMonth?.year ?? 'none',
       reportingMonth?.month ?? 'none',

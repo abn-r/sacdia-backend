@@ -83,7 +83,12 @@ export function mapOperationsDashboard({
       cached: false,
       cache_ttl_seconds: 60,
       definitions_version: '1',
-      scope,
+      scope: {
+        level: scope.level,
+        id: scope.id,
+        name: scope.name,
+        path: scope.path,
+      },
       period: {
         ecclesiastical_year: {
           id: ecclesiasticalYear.year_id,
