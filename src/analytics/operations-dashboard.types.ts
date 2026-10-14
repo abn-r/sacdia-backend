@@ -12,7 +12,7 @@ export type OperationsDashboardChildLevel =
   | 'club';
 
 export type OperationsDashboardScopePathNode = {
-  level: Exclude<OperationsDashboardScopeLevel, 'all'>;
+  level: Exclude<OperationsDashboardScopeLevel, 'all' | 'coordinator'>;
   id: number;
   name: string;
 };

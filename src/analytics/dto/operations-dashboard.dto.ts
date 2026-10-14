@@ -74,8 +74,10 @@ export class OperationsDashboardScopePathNodeDto {
 }
 
 export class OperationsDashboardScopeDto {
-  @ApiProperty({ enum: ['all', 'division', 'union', 'local_field'] })
-  level!: 'all' | 'division' | 'union' | 'local_field';
+  @ApiProperty({
+    enum: ['all', 'division', 'union', 'local_field', 'coordinator'],
+  })
+  level!: 'all' | 'division' | 'union' | 'local_field' | 'coordinator';
 
   @ApiProperty({ type: Number, nullable: true })
   id!: number | null;
