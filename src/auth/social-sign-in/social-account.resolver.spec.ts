@@ -84,6 +84,58 @@ describe('SocialAccountResolver', () => {
     });
   });
 
+  it('keeps the stored photo for a returning user who already has one', async () => {
+    tx.account.findUnique.mockResolvedValue({ userId: 'user-1' });
+    tx.users.findUnique.mockResolvedValue({
+      ...existingUser,
+      user_image: 'profiles/uploaded.jpg',
+    });
+
+    await resolver.resolve(identity);
+
+    expect(tx.users.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the stored photo when linking a verified user who already has one', async () => {
+    tx.account.findUnique.mockResolvedValue(null);
+    tx.users.findUnique.mockResolvedValue({
+      ...existingUser,
+      user_image: 'profiles/uploaded.jpg',
+    });
+
+    await resolver.resolve(identity);
+
+    expect(tx.users.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the stored photo when linking an unverified user who already has one', async () => {
+    tx.account.findUnique.mockResolvedValue(null);
+    tx.users.findUnique.mockResolvedValue({
+      ...existingUser,
+      email_verified: false,
+      user_image: 'profiles/uploaded.jpg',
+    });
+
+    await resolver.resolve(identity);
+
+    expect(tx.users.update).toHaveBeenCalledWith({
+      where: { user_id: 'user-1' },
+      data: { email_verified: true },
+    });
+  });
+
+  it('fills an empty photo when linking a verified user', async () => {
+    tx.account.findUnique.mockResolvedValue(null);
+    tx.users.findUnique.mockResolvedValue(existingUser);
+
+    await resolver.resolve(identity);
+
+    expect(tx.users.update).toHaveBeenCalledWith({
+      where: { user_id: 'user-1' },
+      data: { user_image: identity.picture },
+    });
+  });
+
   it('links by email when the account is new and the email exists', async () => {
     tx.account.findUnique.mockResolvedValue(null);
     tx.users.findUnique.mockResolvedValue(existingUser);

@@ -59,7 +59,7 @@ export class SocialAccountResolver {
       select: { userId: true },
     });
     if (account) {
-      await this.syncPicture(tx, account.userId, identity.picture);
+      await this.fillPictureIfEmpty(tx, account.userId, identity.picture);
       return {
         userId: account.userId,
         created: false,
@@ -110,14 +110,16 @@ export class SocialAccountResolver {
           where: { user_id: existing.user_id },
           data: {
             email_verified: true,
-            ...(identity.picture ? { user_image: identity.picture } : {}),
+            ...(identity.picture && !existing.user_image
+              ? { user_image: identity.picture }
+              : {}),
           },
         });
         this.logger.warn(
           `Linked ${provider} to unverified account ${existing.user_id} — prior sessions and accounts removed`,
         );
       } else {
-        await this.syncPicture(
+        await this.fillPictureIfEmpty(
           tx,
           existing.user_id,
           identity.picture,
@@ -154,8 +156,12 @@ export class SocialAccountResolver {
     return { userId, created: true, linked: false, revokedPriorAccess: false };
   }
 
-  /** Keeps `user_image` in step with the provider photo (Google changes it). */
-  private async syncPicture(
+  /**
+   * Seeds `user_image` from the provider photo only while the user has none.
+   * Never overwrites: post-registration stores the user's own upload (an R2
+   * key) in the same column, and that choice must survive the next sign-in.
+   */
+  private async fillPictureIfEmpty(
     tx: Prisma.TransactionClient,
     userId: string,
     picture: string | undefined,
@@ -169,12 +175,11 @@ export class SocialAccountResolver {
       });
       current = user?.user_image ?? null;
     }
-    if (picture !== current) {
-      await tx.users.update({
-        where: { user_id: userId },
-        data: { user_image: picture },
-      });
-    }
+    if (current) return;
+    await tx.users.update({
+      where: { user_id: userId },
+      data: { user_image: picture },
+    });
   }
 
   /**
