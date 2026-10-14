@@ -31,9 +31,7 @@ describe('mapIdTokenError', () => {
   ])('maps %s to 401 AUTH_INVALID_TOKEN', (_label, cause) => {
     const mapped = mapIdTokenError(cause, logger, 'google');
     expect(mapped).toBeInstanceOf(AppUnauthorizedException);
-    expect((mapped as AppUnauthorizedException).code).toBe(
-      ErrorCode.AUTH_INVALID_TOKEN,
-    );
+    expect(mapped.code).toBe(ErrorCode.AUTH_INVALID_TOKEN);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('google id token rejected'),
     );
@@ -42,16 +40,18 @@ describe('mapIdTokenError', () => {
   it('maps a JWKS timeout to 503 AUTH_OAUTH_PROVIDER_UNAVAILABLE', () => {
     const mapped = mapIdTokenError(new errors.JWKSTimeout(), logger, 'apple');
     expect(mapped).toBeInstanceOf(AppServiceUnavailableException);
-    expect((mapped as AppServiceUnavailableException).code).toBe(
-      ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE,
-    );
+    expect(mapped.code).toBe(ErrorCode.AUTH_OAUTH_PROVIDER_UNAVAILABLE);
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining('apple JWKS unavailable'),
     );
   });
 
   it('maps a network failure (non-jose error) to 503', () => {
-    const mapped = mapIdTokenError(new TypeError('fetch failed'), logger, 'google');
+    const mapped = mapIdTokenError(
+      new TypeError('fetch failed'),
+      logger,
+      'google',
+    );
     expect(mapped).toBeInstanceOf(AppServiceUnavailableException);
   });
 });

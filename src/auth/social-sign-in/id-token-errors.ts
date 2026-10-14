@@ -22,8 +22,13 @@ export function mapIdTokenError(
   logger: Logger,
   provider: SocialProvider,
 ): AppUnauthorizedException | AppServiceUnavailableException {
-  if (cause instanceof errors.JOSEError && !(cause instanceof errors.JWKSTimeout)) {
-    logger.warn(`${provider} id token rejected — ${cause.code}: ${cause.message}`);
+  if (
+    cause instanceof errors.JOSEError &&
+    !(cause instanceof errors.JWKSTimeout)
+  ) {
+    logger.warn(
+      `${provider} id token rejected — ${cause.code}: ${cause.message}`,
+    );
     return new AppUnauthorizedException(ErrorCode.AUTH_INVALID_TOKEN);
   }
   const message = cause instanceof Error ? cause.message : String(cause);
