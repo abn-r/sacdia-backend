@@ -25,6 +25,8 @@ export interface DashboardSummaryDto {
   user_role: string | null;
   current_class_name: string | null;
   current_class_id: number | null;
+  /** `investiture_status` of the current-class enrollment (e.g. INVESTIDO). */
+  investiture_status: string | null;
   class_progress: number;
   honors_completed: number;
   honors_in_progress: number;
@@ -61,15 +63,20 @@ export class DashboardService {
           where: { active: true },
           select: { validate: true },
         },
+        // Current class canon (shared with the app's Clases tab, which reads
+        // GET /users/:userId/classes): the most recent ACTIVE operational
+        // enrollment by enrollment_date. Inactive rows were superseded when
+        // the class was re-selected and are never "current".
         enrollments: {
           where: { active: true, record_kind: 'OPERATIONAL' },
-          orderBy: { created_at: 'desc' },
+          orderBy: [{ enrollment_date: 'desc' }, { enrollment_id: 'desc' }],
           take: 1,
           select: {
             enrollment_id: true,
             user_id: true,
             class_id: true,
             ecclesiastical_year_id: true,
+            investiture_status: true,
             classes: {
               select: {
                 class_id: true,
@@ -144,6 +151,7 @@ export class DashboardService {
       user_role: userRole,
       current_class_name: enrollment?.classes.name ?? null,
       current_class_id: enrollment?.class_id ?? null,
+      investiture_status: enrollment?.investiture_status ?? null,
       class_progress: eligibility?.overall_progress ?? 0,
       honors_completed: honorsCompleted,
       honors_in_progress: honorsInProgress,
@@ -155,9 +163,7 @@ export class DashboardService {
   // Private helpers
   // ----------------------------------------
 
-  private pickActiveClubAssignment<
-    T extends { assignment_id: string },
-  >(
+  private pickActiveClubAssignment<T extends { assignment_id: string }>(
     userId: string,
     storedAssignmentId: string | null | undefined,
     activeAssignments: T[],

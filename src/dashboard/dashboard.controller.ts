@@ -34,6 +34,8 @@ export class DashboardController {
         club_type: 'Conquistadores',
         user_role: 'member',
         current_class_name: 'Amigo',
+        current_class_id: 1,
+        investiture_status: 'IN_PROGRESS',
         class_progress: 40,
         honors_completed: 3,
         honors_in_progress: 1,
