@@ -61,6 +61,9 @@ function parseDeviceName(userAgent: string | null): string | null {
   if (ua.includes('chrome')) return 'Chrome';
   if (ua.includes('safari')) return 'Safari';
   if (ua.includes('mozilla')) return 'Browser';
+  // Flutter's default HttpClient UA ("Dart/3.11 (dart:io)") carries no
+  // platform, so device_type stays 'unknown' but we can still name the client.
+  if (ua.startsWith('dart/')) return 'App SACDIA';
   return null;
 }
 
