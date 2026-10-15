@@ -79,13 +79,19 @@ export class TokenBlacklistService {
    * Útil para logout de todas las sesiones.
    * @param userId - ID del usuario
    * @param expiresInSeconds - TTL del registro
+   * @param options.includeCurrentSecond - `iat` has one-second granularity, so
+   *   by default a token issued in the same second as the revocation survives
+   *   (this lets flows that re-issue a token right away keep it). Set it when
+   *   no new token can follow (e.g. account deletion) to revoke those too.
    */
   async blacklistAllUserTokens(
     userId: string,
     expiresInSeconds: number = 86400,
+    options: { includeCurrentSecond?: boolean } = {},
   ): Promise<void> {
     const key = `${this.BLACKLIST_PREFIX}user:${userId}:all`;
-    const timestampSeconds = Math.floor(Date.now() / 1000);
+    const timestampSeconds =
+      Math.floor(Date.now() / 1000) + (options.includeCurrentSecond ? 1 : 0);
     await this.guardedWrite(() =>
       this.cacheManager.set(
         key,

@@ -15,6 +15,7 @@ import {
 } from '../common/decorators/audit.decorator';
 import { AuditLogsService } from './audit-logs.service';
 import { resolveClientIp } from '../config/client-ip';
+import { isHealthProbePath } from './health-probe-path';
 import {
   getAuditContext,
   getAuditCorrelationId,
@@ -100,6 +101,12 @@ export class HttpAuditInterceptor implements NestInterceptor {
     status: 'success' | 'error',
     error?: Error,
   ): void {
+    // Successful liveness probes (polled every few seconds by the platform)
+    // are noise; failures are still logged so an unhealthy API stays visible.
+    if (status === 'success' && isHealthProbePath(request.url)) {
+      return;
+    }
+
     const entry = {
       timestamp: new Date().toISOString(),
       userId: request.user?.user_id || 'anonymous',

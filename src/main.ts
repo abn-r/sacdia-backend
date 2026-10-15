@@ -5,7 +5,7 @@
 // skipped even when REDIS_URL is present in .env.
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
-import { VersioningType } from '@nestjs/common';
+import { Logger as NestLogger, VersioningType } from '@nestjs/common';
 import { I18nValidationPipe, I18nValidationExceptionFilter } from 'nestjs-i18n';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -24,6 +24,7 @@ import {
   urlencodedBodyLimitForPath,
 } from './config/request-body-limits';
 import { resolveTrustProxyHops } from './config/trust-proxy';
+import { buildCorsOriginCallback } from './config/cors.config';
 import express from 'express';
 // NOTE: HttpExceptionFilter and AllExceptionsFilter are registered via APP_FILTER
 // in CommonModule so they receive I18nService via DI. Do NOT use useGlobalFilters()
@@ -259,17 +260,9 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: (origin, callback) => {
-      // Allow requests without an Origin header (health checks, server-to-server,
-      // curl, mobile clients). CORS is a browser-only mechanism — non-browser
-      // requests never send Origin, so blocking them here only breaks health
-      // checks and legitimate API consumers. Auth is enforced by JWT guards.
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
+    // Disallowed origins get no CORS headers (browser blocks) instead of an
+    // Error that Express would turn into a logged 500 on the preflight.
+    origin: buildCorsOriginCallback(allowedOrigins, new NestLogger('Cors')),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
