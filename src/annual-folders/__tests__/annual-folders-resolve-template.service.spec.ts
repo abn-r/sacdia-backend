@@ -332,6 +332,18 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
       });
     });
 
+    it('collapses the year label for a calendar ecclesiastical year', async () => {
+      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue({
+        start_date: new Date('2026-01-01T00:00:00Z'),
+        end_date: new Date('2026-12-31T00:00:00Z'),
+      });
+      mockPrismaService.folder_templates.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getTemplateAvailabilityForEnrollment(ENROLLMENT_ID),
+      ).resolves.toMatchObject({ year_label: '2026' });
+    });
+
     it('reports the template as unavailable when the enrollment does not exist', async () => {
       mockPrismaService.club_enrollments.findUnique.mockResolvedValue(null);
 

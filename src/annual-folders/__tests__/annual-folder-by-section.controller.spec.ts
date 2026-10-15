@@ -101,7 +101,7 @@ describe('AnnualFolderBySectionController', () => {
       {
         template_available: false,
         club_type_name: 'Guías Mayores',
-        year_label: '2026-2026',
+        year_label: '2026',
       },
     );
 
@@ -112,7 +112,7 @@ describe('AnnualFolderBySectionController', () => {
       data: {
         template_available: false,
         club_type_name: 'Guías Mayores',
-        year_label: '2026-2026',
+        year_label: '2026',
       },
     });
     expect(

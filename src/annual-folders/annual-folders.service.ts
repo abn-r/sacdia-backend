@@ -31,6 +31,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import { ecclesiasticalYearName } from '../common/services/ecclesiastical-year.service';
 import {
   buildEvidenceDisplayNameForFile,
   resolveEvidenceFileExtension,
@@ -69,11 +70,7 @@ const TEMPLATE_DETAIL_INCLUDE = {
 };
 
 type EvaluationQueueStatus =
-  | 'needs_review'
-  | 'submitted'
-  | 'preapproved'
-  | 'evaluated'
-  | 'all';
+  'needs_review' | 'submitted' | 'preapproved' | 'evaluated' | 'all';
 
 type FolderAccessContext = {
   clubId: number;
@@ -231,9 +228,12 @@ export class AnnualFoldersService {
       currentStatus !== folder_template_status_enum.DRAFT &&
       !archiveRequested
     ) {
-      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED, {
-        status: currentStatus,
-      });
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED,
+        {
+          status: currentStatus,
+        },
+      );
     }
 
     const nextOwnerUnionId =
@@ -2256,9 +2256,12 @@ export class AnnualFoldersService {
   ): void {
     const status = this.resolveTemplateLifecycleStatus(template);
     if (status !== folder_template_status_enum.DRAFT) {
-      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED, {
-        status,
-      });
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED,
+        {
+          status,
+        },
+      );
     }
   }
 
@@ -2603,9 +2606,7 @@ export class AnnualFoldersService {
 
     return {
       clubTypeName: clubType?.name ?? String(clubTypeId),
-      yearLabel: year
-        ? `${year.start_date.getUTCFullYear()}-${year.end_date.getUTCFullYear()}`
-        : String(yearId),
+      yearLabel: year ? ecclesiasticalYearName(year) : String(yearId),
     };
   }
 
@@ -2644,9 +2645,7 @@ export class AnnualFoldersService {
   private clubTypeToCamporeeIncludesColumn(
     clubTypeId: number,
   ):
-    | 'includes_adventurers'
-    | 'includes_pathfinders'
-    | 'includes_master_guides' {
+    'includes_adventurers' | 'includes_pathfinders' | 'includes_master_guides' {
     switch (clubTypeId) {
       case 1:
         return 'includes_adventurers';
@@ -3349,6 +3348,6 @@ export class AnnualFoldersService {
     ) {
       return 'Año eclesiástico';
     }
-    return `${start.getUTCFullYear()}-${end.getUTCFullYear()}`;
+    return ecclesiasticalYearName({ start_date: start, end_date: end });
   }
 }
