@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ActivitiesService } from './activities.service';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
@@ -32,6 +33,9 @@ describe('ActivitiesService', () => {
     users: {
       findMany: jest.fn(),
     },
+    classes: {
+      findMany: jest.fn(),
+    },
     ecclesiastical_years: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
@@ -46,6 +50,7 @@ describe('ActivitiesService', () => {
     },
     activity_instances: {
       createMany: jest.fn(),
+      findMany: jest.fn(),
     },
     club_role_assignments: {
       findFirst: jest.fn(),
@@ -292,7 +297,56 @@ describe('ActivitiesService', () => {
         instances: [],
         audience: 'all',
         audience_classes: [],
+        attendee_profiles: [],
       });
+      expect(mockPrismaService.users.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should include attendee profiles in attendee order with signed avatars', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue({
+        activity_id: 1,
+        name: 'Campamento',
+        attendees: ['user-2', 'user-1', 'user-missing'],
+      });
+      mockPrismaService.users.findMany.mockResolvedValue([
+        {
+          user_id: 'user-1',
+          name: 'Juan',
+          paternal_last_name: 'Pérez',
+          maternal_last_name: null,
+          user_image: 'profiles/juan.jpg',
+        },
+        {
+          user_id: 'user-2',
+          name: 'María',
+          paternal_last_name: 'López',
+          maternal_last_name: null,
+          user_image: null,
+        },
+      ]);
+      mockFileStorageService.getSignedDownloadUrl.mockResolvedValueOnce(
+        'https://signed.example/profiles/juan.jpg',
+      );
+
+      const result: any = await service.findOne(1);
+
+      expect(result.attendees).toEqual(['user-2', 'user-1', 'user-missing']);
+      expect(result.attendee_profiles).toEqual([
+        {
+          user_id: 'user-2',
+          name: 'María',
+          paternal_last_name: 'López',
+          maternal_last_name: null,
+          user_image: null,
+        },
+        {
+          user_id: 'user-1',
+          name: 'Juan',
+          paternal_last_name: 'Pérez',
+          maternal_last_name: null,
+          user_image: 'https://signed.example/profiles/juan.jpg',
+        },
+      ]);
     });
 
     it('should throw NotFoundException when not found', async () => {
@@ -428,6 +482,72 @@ describe('ActivitiesService', () => {
         audience: 'all',
         audience_classes: [],
       });
+    });
+
+    it('should persist a new audience validated against the active sections', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValueOnce({
+        activity_id: 1,
+        club_section_id: 10,
+        is_joint: false,
+        club_sections: { main_club_id: 1 },
+      });
+      mockPrismaService.activity_instances.findMany.mockResolvedValueOnce([
+        { club_section_id: 10 },
+      ]);
+      mockPrismaService.club_sections.findMany.mockResolvedValueOnce([
+        { club_type_id: 2 },
+      ]);
+      mockPrismaService.classes.findMany
+        .mockResolvedValueOnce([{ class_id: 5 }, { class_id: 6 }])
+        .mockResolvedValue([]);
+      mockPrismaService.activities.update.mockResolvedValue({
+        activity_id: 1,
+        activity_instances: [],
+      });
+
+      await service.update(1, { audience: 'classes', classes: [5, 6] });
+
+      expect(mockPrismaService.classes.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            class_id: { in: [5, 6] },
+            club_type_id: { in: [2] },
+          }),
+        }),
+      );
+      expect(mockPrismaService.activities.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            audience: 'classes',
+            classes: [5, 6],
+          }),
+        }),
+      );
+    });
+
+    it('should clear classes when the audience goes back to all', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValueOnce({
+        activity_id: 1,
+        club_section_id: 10,
+        is_joint: false,
+        club_sections: { main_club_id: 1 },
+      });
+      mockPrismaService.activity_instances.findMany.mockResolvedValueOnce([]);
+      mockPrismaService.activities.update.mockResolvedValue({
+        activity_id: 1,
+        activity_instances: [],
+      });
+
+      await service.update(1, { audience: 'all' });
+
+      expect(mockPrismaService.activities.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            audience: 'all',
+            classes: Prisma.JsonNull,
+          }),
+        }),
+      );
     });
 
     it('should throw NotFoundException when activity does not exist', async () => {
@@ -589,9 +709,7 @@ describe('ActivitiesService', () => {
 
       expect(result).toEqual({ activity_id: 4, status: 'going' });
       expect(mockPrismaService.$executeRawUnsafe).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'jsonb_build_object($1::text, $2::text)',
-        ),
+        expect.stringContaining('jsonb_build_object($1::text, $2::text)'),
         'user-going',
         'going',
         4,
@@ -607,9 +725,7 @@ describe('ActivitiesService', () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
         year_id: 9,
       });
-      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(
-        null,
-      );
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
 
       await expect(
         service.setRsvp(4, 'outsider', 'not_going'),
@@ -980,7 +1096,11 @@ describe('ActivitiesService', () => {
     });
 
     it('preview expands weekly Sundays inside the ecclesiastical year', async () => {
-      const result = await service.previewActivitySeries(1, baseDto as any, now);
+      const result = await service.previewActivitySeries(
+        1,
+        baseDto as any,
+        now,
+      );
 
       expect(result.count).toBe(4);
       expect(result.dates).toEqual([
@@ -1073,7 +1193,9 @@ describe('ActivitiesService', () => {
         mockPrismaService.activities.createManyAndReturn,
       ).toHaveBeenCalledTimes(1);
       expect(mockPrismaService.activities.create).not.toHaveBeenCalled();
-      expect(mockPrismaService.activity_instances.createMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.activity_instances.createMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.arrayContaining([
             expect.objectContaining({

@@ -226,7 +226,49 @@ export class ActivitiesService {
       }
     }
 
-    return this.presentActivity(activity);
+    const presented = await this.presentActivity(activity);
+    return {
+      ...presented,
+      attendee_profiles: await this.loadAttendeeProfiles(
+        stringIdList(activity.attendees),
+      ),
+    };
+  }
+
+  /**
+   * Resolves display data (name + signed avatar) for attendee user ids,
+   * preserving the order of `userIds`. Unknown ids are dropped.
+   */
+  private async loadAttendeeProfiles(userIds: string[]) {
+    if (userIds.length === 0) return [];
+
+    const users = await this.prisma.users.findMany({
+      where: { user_id: { in: userIds } },
+      select: {
+        user_id: true,
+        name: true,
+        paternal_last_name: true,
+        maternal_last_name: true,
+        user_image: true,
+      },
+    });
+    const byId = new Map(users.map((user) => [user.user_id, user]));
+
+    return Promise.all(
+      userIds
+        .map((id) => byId.get(id))
+        .filter((user): user is (typeof users)[number] => Boolean(user))
+        .map(async (user) => ({
+          ...user,
+          user_image:
+            typeof user.user_image === 'string'
+              ? await this.resolvePrivateAssetUrl(
+                  StorageBucketAlias.USER_PROFILES,
+                  user.user_image,
+                )
+              : user.user_image,
+        })),
+    );
   }
 
   private async presentActivity(activity: any) {
@@ -581,8 +623,11 @@ export class ActivitiesService {
       updateData.activity_type_id = dto.activity_type_id;
     if (dto.link_meet !== undefined) updateData.link_meet = dto.link_meet;
     if (dto.active !== undefined) updateData.active = dto.active;
-    if (dto.classes !== undefined)
-      updateData.classes = dto.classes as Prisma.InputJsonValue;
+    const audienceSectionIds =
+      dto.audience !== undefined
+        ? await this.activeSectionIds(activityId, existing.club_section_id)
+        : [];
+    await this.applyAudienceUpdate(updateData, dto, audienceSectionIds);
 
     const updated = await this.prisma.activities.update({
       where: { activity_id: activityId },
@@ -667,8 +712,7 @@ export class ActivitiesService {
       scalarUpdateData.activity_type_id = dto.activity_type_id;
     if (dto.link_meet !== undefined) scalarUpdateData.link_meet = dto.link_meet;
     if (dto.active !== undefined) scalarUpdateData.active = dto.active;
-    if (dto.classes !== undefined)
-      scalarUpdateData.classes = dto.classes as Prisma.InputJsonValue;
+    await this.applyAudienceUpdate(scalarUpdateData, dto, uniqueSectionIds);
 
     await this.prisma.$transaction([
       // 1. Soft-delete all currently active instances for this activity
@@ -762,8 +806,7 @@ export class ActivitiesService {
       scalarUpdateData.activity_type_id = dto.activity_type_id;
     if (dto.link_meet !== undefined) scalarUpdateData.link_meet = dto.link_meet;
     if (dto.active !== undefined) scalarUpdateData.active = dto.active;
-    if (dto.classes !== undefined)
-      scalarUpdateData.classes = dto.classes as Prisma.InputJsonValue;
+    await this.applyAudienceUpdate(scalarUpdateData, dto, [ownerSectionId]);
 
     await this.prisma.$transaction([
       // Deactivate all instances except the owner's
@@ -1104,6 +1147,47 @@ export class ActivitiesService {
     };
   }
 
+  /**
+   * Writes audience/classes for an update. When `audience` is sent it is
+   * validated like on create (classes must belong to the sections' club
+   * types). Without `audience`, a bare `classes` list keeps the legacy
+   * pass-through behaviour.
+   */
+  private async applyAudienceUpdate(
+    target: Record<string, unknown>,
+    dto: UpdateActivityDto,
+    sectionIds: number[],
+  ) {
+    if (dto.audience !== undefined) {
+      const resolved = await this.resolveActivityAudience(
+        dto.audience,
+        dto.classes,
+        sectionIds,
+      );
+      target.audience = resolved.audience;
+      target.classes = resolved.classes;
+      return;
+    }
+    if (dto.classes !== undefined) {
+      target.classes = dto.classes;
+    }
+  }
+
+  private async activeSectionIds(
+    activityId: number,
+    ownerSectionId: number | null,
+  ): Promise<number[]> {
+    const rows = await this.prisma.activity_instances.findMany({
+      where: { activity_id: activityId, active: true },
+      select: { club_section_id: true },
+    });
+    const ids = rows
+      .map((row) => row.club_section_id)
+      .filter((id): id is number => id !== null);
+    if (ids.length === 0 && ownerSectionId) ids.push(ownerSectionId);
+    return [...new Set(ids)];
+  }
+
   private async resolveActivityAudience(
     audience: string | undefined,
     classIds: number[] | undefined,
@@ -1218,31 +1302,7 @@ export class ActivitiesService {
       return { activity_id: activityId, attendees: [] };
     }
 
-    const attendees = await this.prisma.users.findMany({
-      where: {
-        user_id: { in: attendeeIds },
-      },
-      select: {
-        user_id: true,
-        name: true,
-        paternal_last_name: true,
-        maternal_last_name: true,
-        user_image: true,
-      },
-    });
-
-    const signedAttendees = await Promise.all(
-      attendees.map(async (attendee) => ({
-        ...attendee,
-        user_image:
-          typeof attendee.user_image === 'string'
-            ? await this.resolvePrivateAssetUrl(
-                StorageBucketAlias.USER_PROFILES,
-                attendee.user_image,
-              )
-            : attendee.user_image,
-      })),
-    );
+    const signedAttendees = await this.loadAttendeeProfiles(attendeeIds);
 
     return {
       activity_id: activityId,
