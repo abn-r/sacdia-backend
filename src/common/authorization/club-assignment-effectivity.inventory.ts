@@ -27,7 +27,7 @@ const baseline = {
     'historicalWhere|allowlist|1|d56c9a4907fd',
   'admin/admin-reference.service.ts': 'effectiveWhere|T09|1|f9e0a7b798f8',
   'admin/admin-users.service.ts': 'effectiveWhere|T09|4|d435f7ee3328',
-  'analytics/analytics.service.ts': 'effectiveWhere|T09|9|1b4524a7aaa5',
+  'analytics/analytics.service.ts': 'effectiveWhere|T09|8|d2f63b529d82',
   'analytics/operations-dashboard.repository.ts':
     'effectiveWhere|T09|5|b1e4bbcd3060',
   'annual-folders/annual-folders.service.ts':
@@ -65,7 +65,7 @@ const baseline = {
   'coordination/coordination.service.ts': 'effectiveWhere|T08|1|9a134e551821',
   'dashboard/dashboard.service.ts': 'effectiveWhere|T08|1|1667aa7452cd',
   'evidence-review/evidence-review.service.ts':
-    'effectiveWhere|T09|2|02f5cfc40df4',
+    'effectiveWhere|T09|3|bd0ef8dee119',
   'field-payment-orders/fulfillment/camporee-fulfillment.service.ts':
     'effectiveWhere|T09|1|937b312a4f96',
   'field-payment-orders/fulfillment/insurance-fulfillment.service.ts':
