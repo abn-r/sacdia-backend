@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualFoldersService } from '../annual-folders.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AppNotFoundException } from '../../common/errors/app.exception';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import { ErrorCode } from '../../common/errors/error-codes';
 
@@ -154,6 +155,12 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
     folder_templates: {
       findFirst: jest.fn(),
     },
+    club_types: {
+      findUnique: jest.fn(),
+    },
+    ecclesiastical_years: {
+      findUnique: jest.fn(),
+    },
     // Simulate $transaction by immediately executing the callback with mockTx.
     $transaction: jest.fn((cb: (tx: typeof mockTx) => Promise<unknown>) =>
       cb(mockTx),
@@ -182,6 +189,14 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
 
     service = module.get<AnnualFoldersService>(AnnualFoldersService);
 
+    // Default: labels used by ANNUAL_FOLDER_TEMPLATE_NO_MATCH messages
+    mockPrismaService.club_types.findUnique.mockResolvedValue({
+      name: 'Conquistadores',
+    });
+    mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue({
+      start_date: new Date('2025-10-01T00:00:00Z'),
+      end_date: new Date('2026-09-30T00:00:00Z'),
+    });
     // Default: no existing folder
     mockPrismaService.annual_folders.findUnique.mockResolvedValue(null);
     // Default: enrollment exists
@@ -271,6 +286,74 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
       service.createFolderForEnrollment(ENROLLMENT_ID),
     ).rejects.toMatchObject({
       code: ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH,
+    });
+  });
+
+  it('describes the missing template with club type name and year label instead of ids', async () => {
+    mockPrismaService.folder_templates.findFirst.mockResolvedValue(null);
+
+    const error = await service
+      .createFolderForEnrollment(ENROLLMENT_ID)
+      .catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(AppNotFoundException);
+    expect((error as AppNotFoundException).getResponse().namedArgs).toEqual({
+      clubTypeId: 2,
+      yearId: 1,
+      clubTypeName: 'Conquistadores',
+      yearLabel: '2025-2026',
+    });
+  });
+
+  describe('getTemplateAvailabilityForEnrollment', () => {
+    it('reports the template as available when one resolves for the club', async () => {
+      mockPrismaService.folder_templates.findFirst.mockResolvedValueOnce(
+        mockUnionTemplate,
+      );
+
+      await expect(
+        service.getTemplateAvailabilityForEnrollment(ENROLLMENT_ID),
+      ).resolves.toEqual({
+        template_available: true,
+        club_type_name: 'Conquistadores',
+        year_label: '2025-2026',
+      });
+    });
+
+    it('reports the template as unavailable when neither union nor LF publishes one', async () => {
+      mockPrismaService.folder_templates.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getTemplateAvailabilityForEnrollment(ENROLLMENT_ID),
+      ).resolves.toEqual({
+        template_available: false,
+        club_type_name: 'Conquistadores',
+        year_label: '2025-2026',
+      });
+    });
+
+    it('collapses the year label for a calendar ecclesiastical year', async () => {
+      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue({
+        start_date: new Date('2026-01-01T00:00:00Z'),
+        end_date: new Date('2026-12-31T00:00:00Z'),
+      });
+      mockPrismaService.folder_templates.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getTemplateAvailabilityForEnrollment(ENROLLMENT_ID),
+      ).resolves.toMatchObject({ year_label: '2026' });
+    });
+
+    it('reports the template as unavailable when the enrollment does not exist', async () => {
+      mockPrismaService.club_enrollments.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.getTemplateAvailabilityForEnrollment(ENROLLMENT_ID),
+      ).resolves.toEqual({
+        template_available: false,
+        club_type_name: null,
+        year_label: null,
+      });
     });
   });
 

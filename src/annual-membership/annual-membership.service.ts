@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
+import {
+  EcclesiasticalYearService,
+  ecclesiasticalYearName,
+} from '../common/services/ecclesiastical-year.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AnnualMembershipPolicyService } from './annual-membership-policy.service';
@@ -23,7 +26,6 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 
-
 export type SuggestedClass = {
   status: 'pending' | 'blocked' | 'resolved' | 'complete';
   class_id?: number;
@@ -35,6 +37,8 @@ export interface ContinuationListItem {
   name: string;
   base_section_id: number;
   ecclesiastical_year_id: number;
+  /** Human label of the year ("2025-2026" / "2026"); the id is internal. */
+  ecclesiastical_year_name: string;
   annual_status: 'not_enrolled';
   current_role: string | null;
   eligibility: 'eligible' | 'blocked';
@@ -43,11 +47,7 @@ export interface ContinuationListItem {
 }
 
 export type ContinuationOutcome =
-  | 'enrolled'
-  | 'path_complete'
-  | 'already_enrolled'
-  | 'blocked'
-  | 'failed';
+  'enrolled' | 'path_complete' | 'already_enrolled' | 'blocked' | 'failed';
 
 export interface ContinuationUserResult {
   user_id: string;
@@ -201,22 +201,29 @@ export class AnnualMembershipService {
           userId: row.user_id,
           name: row.name ?? '',
           sectionId,
-          yearId: currentYear.year_id,
-          currentRole: this._currentRole(destHistorical, row.user_id, currentYear.year_id),
+          year: currentYear,
+          currentRole: this._currentRole(
+            destHistorical,
+            row.user_id,
+            currentYear.year_id,
+          ),
         }),
       );
     }
 
-    const extraIds = [
-      ...new Set(historical.map((row) => row.user_id)),
-    ].filter(
+    const extraIds = [...new Set(historical.map((row) => row.user_id))].filter(
       (userId) =>
-        !byUser.has(userId) && !enrolledHere.has(userId) && !directorHere.has(userId),
+        !byUser.has(userId) &&
+        !enrolledHere.has(userId) &&
+        !directorHere.has(userId),
     );
 
     for (const userId of extraIds) {
       try {
-        const base = await this.membershipPolicy.resolveBase(this.prisma, userId);
+        const base = await this.membershipPolicy.resolveBase(
+          this.prisma,
+          userId,
+        );
         if (base.baseSectionId !== sectionId) {
           continue;
         }
@@ -231,8 +238,12 @@ export class AnnualMembershipService {
           userId,
           name: this._formatName(hist?.users),
           sectionId,
-          yearId: currentYear.year_id,
-          currentRole: this._currentRole(destHistorical, userId, currentYear.year_id),
+          year: currentYear,
+          currentRole: this._currentRole(
+            destHistorical,
+            userId,
+            currentYear.year_id,
+          ),
         }),
       );
     }
@@ -437,7 +448,9 @@ export class AnnualMembershipService {
       );
 
       if (result.outcome === 'enrolled' || result.outcome === 'path_complete') {
-        await this.authorizationContext.invalidateUserAuthorizationCache(params.userId);
+        await this.authorizationContext.invalidateUserAuthorizationCache(
+          params.userId,
+        );
         await this.auditLogs.recordEvent({
           entity_type: 'annual_membership',
           entity_id: params.userId,
@@ -647,7 +660,9 @@ export class AnnualMembershipService {
     return this._outcome(params, 'enrolled', null, enrollmentId);
   }
 
-  private originTypeNameForDest(destTypeName: string | null | undefined): string | null {
+  private originTypeNameForDest(
+    destTypeName: string | null | undefined,
+  ): string | null {
     if (destTypeName === 'Conquistadores') {
       return 'Aventureros';
     }
@@ -667,7 +682,9 @@ export class AnnualMembershipService {
     enrolledHere: Set<string>;
     directorHere: Set<string>;
   }): Promise<ContinuationListItem[]> {
-    const originName = this.originTypeNameForDest(params.destSection.club_types?.name);
+    const originName = this.originTypeNameForDest(
+      params.destSection.club_types?.name,
+    );
     if (!originName || params.destSection.main_club_id == null) {
       return [];
     }
@@ -747,7 +764,7 @@ export class AnnualMembershipService {
           userId: graduate.user_id,
           name: this._formatName(graduate.users),
           sectionId: params.destSection.club_section_id,
-          yearId: params.year.year_id,
+          year: params.year,
           currentRole: null,
         }),
       );
@@ -901,14 +918,15 @@ export class AnnualMembershipService {
     userId: string;
     name: string;
     sectionId: number;
-    yearId: number;
+    year: CurrentYear;
     currentRole: string | null;
   }): ContinuationListItem {
     return {
       user_id: params.userId,
       name: params.name,
       base_section_id: params.sectionId,
-      ecclesiastical_year_id: params.yearId,
+      ecclesiastical_year_id: params.year.year_id,
+      ecclesiastical_year_name: ecclesiasticalYearName(params.year),
       annual_status: 'not_enrolled',
       current_role: params.currentRole,
       eligibility: 'eligible',
@@ -933,9 +951,7 @@ export class AnnualMembershipService {
     return operational?.roles?.role_name ?? null;
   }
 
-  private _formatName(
-    users?: HistoricalAssignmentRow['users'],
-  ): string {
+  private _formatName(users?: HistoricalAssignmentRow['users']): string {
     return [users?.name, users?.paternal_last_name, users?.maternal_last_name]
       .filter(Boolean)
       .join(' ')

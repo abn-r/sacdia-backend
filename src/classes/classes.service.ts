@@ -881,6 +881,9 @@ export class ClassesService {
         cross_type_enrollment: true,
         record_kind: true,
         investiture_date: true,
+        // Inactive rows were superseded by a class re-selection; clients use
+        // this flag to never treat them as the current class.
+        active: true,
         created_at: true,
         modified_at: true,
         classes: {

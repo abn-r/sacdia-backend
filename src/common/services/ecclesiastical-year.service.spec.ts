@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { EcclesiasticalYearService } from './ecclesiastical-year.service';
+import {
+  EcclesiasticalYearService,
+  ecclesiasticalYearName,
+} from './ecclesiastical-year.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ZonedBusinessTimeService } from '../clock/zoned-business-time.service';
 import { ErrorCode } from '../errors/error-codes';
@@ -155,5 +158,31 @@ describe('EcclesiasticalYearService', () => {
     await expect(service.getCurrentYear()).rejects.toMatchObject({
       code: ErrorCode.ECCLESIASTICAL_YEAR_AMBIGUOUS,
     });
+  });
+});
+
+describe('ecclesiasticalYearName', () => {
+  it('labels a calendar year with its single year', () => {
+    expect(
+      ecclesiasticalYearName({
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+      }),
+    ).toBe('2026');
+  });
+
+  it('labels a year spanning two calendar years as a range', () => {
+    expect(
+      ecclesiasticalYearName({
+        start_date: new Date('2025-09-01'),
+        end_date: new Date('2026-08-31'),
+      }),
+    ).toBe('2025-2026');
+  });
+
+  it('falls back to the start year when end_date is missing', () => {
+    expect(
+      ecclesiasticalYearName({ start_date: new Date('2026-01-01') }),
+    ).toBe('2026');
   });
 });

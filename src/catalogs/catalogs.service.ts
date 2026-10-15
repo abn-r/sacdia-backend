@@ -7,6 +7,7 @@ import {
 } from './catalog-cache.service';
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ecclesiasticalYearName } from '../common/services/ecclesiastical-year.service';
 
 type GetUnionsFilters = {
   countryId?: number;
@@ -141,9 +142,7 @@ export class CatalogsService {
       if (!filters.divisionId) {
         return unions;
       }
-      return unions.filter(
-        (union) => union.division_id === filters.divisionId,
-      );
+      return unions.filter((union) => union.division_id === filters.divisionId);
     }
 
     if (filters.countryId && !filters.divisionId) {
@@ -397,18 +396,9 @@ export class CatalogsService {
     end_date: Date;
     active: boolean;
   }) {
-    // `@db.Date` columns arrive as UTC midnight: read the UTC year so the
-    // server timezone cannot shift Jan 1 into the previous year.
-    const startYear = row.start_date.getUTCFullYear();
-    const endYear = row.end_date.getUTCFullYear();
-    // A year that spans two calendar years reads "2025-2026"; a calendar year
-    // (Jan → Dec) reads "2026".
-    const name =
-      startYear !== endYear ? `${startYear}-${endYear}` : `${startYear}`;
-
     return {
       ecclesiastical_year_id: row.year_id,
-      name,
+      name: ecclesiasticalYearName(row),
       start_date: row.start_date,
       end_date: row.end_date,
       active: row.active,

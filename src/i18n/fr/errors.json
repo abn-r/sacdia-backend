@@ -13,7 +13,7 @@
   "ANNUAL_FOLDER_TEMPLATE_NOT_FOUND": "Modèle de dossier avec l’ID {id} introuvable",
   "ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND": "Section du modèle avec l’ID {id} introuvable",
   "ANNUAL_FOLDER_SECTION_HAS_EVIDENCES": "Impossible de supprimer une section qui contient déjà des pièces justificatives",
-  "ANNUAL_FOLDER_TEMPLATE_NO_MATCH": "Aucun modèle de dossier trouvé pour le club de type {clubTypeId} et l’année {yearId}",
+  "ANNUAL_FOLDER_TEMPLATE_NO_MATCH": "Aucun modèle de dossier annuel n’est encore publié pour {clubTypeName} pour l’année ecclésiastique {yearLabel}.",
   "ANNUAL_FOLDER_ALREADY_EXISTS": "Un dossier annuel existe déjà pour cette inscription",
   "ANNUAL_FOLDER_NOT_FOUND": "Dossier annuel avec l’ID {id} introuvable",
   "ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND": "Inscription de club avec l’ID {id} introuvable",

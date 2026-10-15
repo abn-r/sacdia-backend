@@ -31,6 +31,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import { ecclesiasticalYearName } from '../common/services/ecclesiastical-year.service';
 import {
   buildEvidenceDisplayNameForFile,
   resolveEvidenceFileExtension,
@@ -69,11 +70,7 @@ const TEMPLATE_DETAIL_INCLUDE = {
 };
 
 type EvaluationQueueStatus =
-  | 'needs_review'
-  | 'submitted'
-  | 'preapproved'
-  | 'evaluated'
-  | 'all';
+  'needs_review' | 'submitted' | 'preapproved' | 'evaluated' | 'all';
 
 type FolderAccessContext = {
   clubId: number;
@@ -231,9 +228,12 @@ export class AnnualFoldersService {
       currentStatus !== folder_template_status_enum.DRAFT &&
       !archiveRequested
     ) {
-      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED, {
-        status: currentStatus,
-      });
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED,
+        {
+          status: currentStatus,
+        },
+      );
     }
 
     const nextOwnerUnionId =
@@ -612,10 +612,7 @@ export class AnnualFoldersService {
     });
 
     if (!template) {
-      throw new AppNotFoundException(
-        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH,
-        { clubTypeId, yearId },
-      );
+      throw await this.templateNoMatchException(clubTypeId, yearId);
     }
 
     return template;
@@ -2259,9 +2256,12 @@ export class AnnualFoldersService {
   ): void {
     const status = this.resolveTemplateLifecycleStatus(template);
     if (status !== folder_template_status_enum.DRAFT) {
-      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED, {
-        status,
-      });
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED,
+        {
+          status,
+        },
+      );
     }
   }
 
@@ -2528,9 +2528,105 @@ export class AnnualFoldersService {
       return { template: lfTemplate, resolvedVia: 'local_field' };
     }
 
-    throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH, {
+    throw await this.templateNoMatchException(clubTypeId, yearId);
+  }
+
+  /**
+   * Whether a folder can be created for the enrollment right now, i.e. a
+   * published (active) template resolves for its club type and year.
+   *
+   * Used by the app to decide if the "create folder" action should be offered
+   * instead of letting the user hit ANNUAL_FOLDER_TEMPLATE_NO_MATCH.
+   */
+  async getTemplateAvailabilityForEnrollment(enrollmentId: string): Promise<{
+    template_available: boolean;
+    club_type_name: string | null;
+    year_label: string | null;
+  }> {
+    const enrollment = await this.prisma.club_enrollments.findUnique({
+      where: { club_enrollment_id: enrollmentId },
+      select: {
+        ecclesiastical_year_id: true,
+        club_section: { select: { club_type_id: true } },
+      },
+    });
+
+    if (!enrollment) {
+      return {
+        template_available: false,
+        club_type_name: null,
+        year_label: null,
+      };
+    }
+
+    const { clubTypeName, yearLabel } = await this.describeTemplateTarget(
+      enrollment.club_section.club_type_id,
+      enrollment.ecclesiastical_year_id,
+    );
+
+    let templateAvailable = true;
+    try {
+      await this.resolveTemplateForClub(enrollmentId, undefined);
+    } catch (err: unknown) {
+      // Template missing, or the club has no parent/local field: creation
+      // would fail either way, so the action is not available.
+      if (err instanceof AppNotFoundException) {
+        templateAvailable = false;
+      } else {
+        throw err;
+      }
+    }
+
+    return {
+      template_available: templateAvailable,
+      club_type_name: clubTypeName,
+      year_label: yearLabel,
+    };
+  }
+
+  /**
+   * Human-readable club type name and ecclesiastical year label (e.g.
+   * "Guías Mayores", "2025-2026"). Falls back to the raw ids when a row is
+   * missing so messages never end up empty.
+   */
+  private async describeTemplateTarget(
+    clubTypeId: number,
+    yearId: number,
+  ): Promise<{ clubTypeName: string; yearLabel: string }> {
+    const [clubType, year] = await Promise.all([
+      this.prisma.club_types.findUnique({
+        where: { club_type_id: clubTypeId },
+        select: { name: true },
+      }),
+      this.prisma.ecclesiastical_years.findUnique({
+        where: { year_id: yearId },
+        select: { start_date: true, end_date: true },
+      }),
+    ]);
+
+    return {
+      clubTypeName: clubType?.name ?? String(clubTypeId),
+      yearLabel: year ? ecclesiasticalYearName(year) : String(yearId),
+    };
+  }
+
+  /**
+   * ANNUAL_FOLDER_TEMPLATE_NO_MATCH with user-facing args (club type name and
+   * year label). Raw ids are kept for logs/clients that need them.
+   */
+  private async templateNoMatchException(
+    clubTypeId: number,
+    yearId: number,
+  ): Promise<AppNotFoundException> {
+    const { clubTypeName, yearLabel } = await this.describeTemplateTarget(
       clubTypeId,
       yearId,
+    );
+    return new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH, {
+      clubTypeId,
+      yearId,
+      clubTypeName,
+      yearLabel,
     });
   }
 
@@ -2549,9 +2645,7 @@ export class AnnualFoldersService {
   private clubTypeToCamporeeIncludesColumn(
     clubTypeId: number,
   ):
-    | 'includes_adventurers'
-    | 'includes_pathfinders'
-    | 'includes_master_guides' {
+    'includes_adventurers' | 'includes_pathfinders' | 'includes_master_guides' {
     switch (clubTypeId) {
       case 1:
         return 'includes_adventurers';
@@ -3254,6 +3348,6 @@ export class AnnualFoldersService {
     ) {
       return 'Año eclesiástico';
     }
-    return `${start.getUTCFullYear()}-${end.getUTCFullYear()}`;
+    return ecclesiasticalYearName({ start_date: start, end_date: end });
   }
 }

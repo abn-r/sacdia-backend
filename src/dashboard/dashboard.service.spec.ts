@@ -114,8 +114,14 @@ describe('DashboardService', () => {
         paternal_last_name: 'Pérez',
         maternal_last_name: 'García',
         user_image: 'https://cdn.example.com/avatar.jpg',
-        users_pr: { active_club_assignment_id: assignmentClubCentral.assignment_id },
-        users_honors: [{ validate: true }, { validate: true }, { validate: false }],
+        users_pr: {
+          active_club_assignment_id: assignmentClubCentral.assignment_id,
+        },
+        users_honors: [
+          { validate: true },
+          { validate: true },
+          { validate: false },
+        ],
         enrollments: [amigoEnrollment],
         club_role_assignments: [
           {
@@ -447,10 +453,84 @@ describe('DashboardService', () => {
 
       expect(
         mockRequirementEligibilityService.calculateForEnrollmentRecord,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({ enrollment_id: 1 }),
-      );
+      ).toHaveBeenCalledWith(expect.objectContaining({ enrollment_id: 1 }));
       expectSingleUserRoundTrip();
+    });
+  });
+
+  // ----------------------------------------
+  // Current class canon: investiture_status + selection rule
+  // ----------------------------------------
+  describe('current class investiture status', () => {
+    it('returns investiture_status of the current active operational enrollment', async () => {
+      const userId = 'user-uuid-006';
+
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        name: 'Carlos',
+        paternal_last_name: 'Mendoza',
+        maternal_last_name: null,
+        user_image: null,
+        users_pr: null,
+        users_honors: [],
+        enrollments: [
+          {
+            enrollment_id: 2,
+            user_id: userId,
+            class_id: 13,
+            ecclesiastical_year_id: 1,
+            investiture_status: 'INVESTIDO',
+            classes: {
+              class_id: 13,
+              name: 'Guía Mayor',
+              club_type_id: 3,
+              advanced_enabled: false,
+            },
+            ecclesiastical_year: {
+              year_id: 1,
+              start_date: new Date('2026-01-01'),
+            },
+          },
+        ],
+        club_role_assignments: [],
+      });
+      mockPrismaService.activities.findMany.mockResolvedValue([]);
+      mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValue(
+        { overall_progress: 100 },
+      );
+
+      const result = await service.getSummary(userId);
+
+      expect(result.current_class_name).toBe('Guía Mayor');
+      expect(result.investiture_status).toBe('INVESTIDO');
+      expect(mockPrismaService.users.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            enrollments: expect.objectContaining({
+              where: { active: true, record_kind: 'OPERATIONAL' },
+              orderBy: [{ enrollment_date: 'desc' }, { enrollment_id: 'desc' }],
+              select: expect.objectContaining({ investiture_status: true }),
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('returns null investiture_status when there is no current class', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        name: 'Sin',
+        paternal_last_name: 'Clase',
+        maternal_last_name: null,
+        user_image: null,
+        users_pr: null,
+        users_honors: [],
+        enrollments: [],
+        club_role_assignments: [],
+      });
+
+      const result = await service.getSummary('user-uuid-007');
+
+      expect(result.current_class_name).toBeNull();
+      expect(result.investiture_status).toBeNull();
     });
   });
 });

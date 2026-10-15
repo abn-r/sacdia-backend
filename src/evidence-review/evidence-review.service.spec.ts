@@ -22,6 +22,7 @@ describe('EvidenceReviewService', () => {
     honor_requirements: { findMany: jest.fn() },
     user_honor_requirement_progress: { findMany: jest.fn() },
     validation_logs: { findMany: jest.fn() },
+    club_role_assignments: { findMany: jest.fn() },
     $queryRawUnsafe: jest.fn(),
     $transaction: jest.fn(),
     investiture_authorization_people: { findFirst: jest.fn() },
@@ -79,6 +80,7 @@ describe('EvidenceReviewService', () => {
     mockPrisma.honor_requirements.findMany.mockResolvedValue([]);
     mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([]);
     mockPrisma.validation_logs.findMany.mockResolvedValue([]);
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([]);
     mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
     mockFileStorage.getSignedDownloadUrl.mockImplementation(
       (_bucket: StorageBucketAlias, value: string) =>
@@ -157,6 +159,92 @@ describe('EvidenceReviewService', () => {
       section_name: 'Descubrimiento espiritual',
       entity_description: 'Fe y estudio',
       module_name: 'Crecimiento espiritual',
+    });
+  });
+
+  it('adds the member club section (not the class section) to pending items', async () => {
+    mockCoordinationService.resolveCoordinatorLikeSectionScope.mockResolvedValue(
+      [12],
+    );
+    mockPrisma.class_section_progress.findMany.mockResolvedValue([
+      {
+        section_progress_id: 11,
+        status: 'SUBMITTED',
+        user_id: 'user-1',
+        class_id: 5,
+        module_id: 12,
+        section_id: 99,
+        submitted_at: new Date('2026-06-01T10:00:00.000Z'),
+        validated_at: null,
+        rejection_reason: null,
+        users: { user_id: 'user-1', name: 'Ana', paternal_last_name: 'Pérez' },
+        classes: { name: 'Amigo', description: null },
+        evidence_files: [],
+      },
+      {
+        section_progress_id: 12,
+        status: 'SUBMITTED',
+        user_id: 'user-2',
+        class_id: 5,
+        module_id: 12,
+        section_id: 99,
+        submitted_at: new Date('2026-06-02T10:00:00.000Z'),
+        validated_at: null,
+        rejection_reason: null,
+        users: { user_id: 'user-2', name: 'Luis', paternal_last_name: 'Gómez' },
+        classes: { name: 'Amigo', description: null },
+        evidence_files: [],
+      },
+    ]);
+    mockPrisma.class_sections.findMany.mockResolvedValue([
+      {
+        section_id: 99,
+        name: 'Completar el Curso Básico de Conquistadores',
+        description: null,
+      },
+    ]);
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      {
+        user_id: 'user-1',
+        club_section_id: 12,
+        club_sections: {
+          club_types: { name: 'Conquistadores' },
+          clubs: { name: 'Club Orión' },
+        },
+      },
+      {
+        user_id: 'user-1',
+        club_section_id: 13,
+        club_sections: {
+          club_types: { name: 'Aventureros' },
+          clubs: { name: 'Club Orión' },
+        },
+      },
+    ]);
+
+    const result = await service.getPending('coordinator-1', 'class', 1, 20);
+
+    expect(mockPrisma.club_role_assignments.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          user_id: { in: ['user-1', 'user-2'] },
+          active: true,
+          status: 'active',
+          club_section_id: { in: [12] },
+        },
+        orderBy: { start_date: 'desc' },
+      }),
+    );
+    expect(result.data[0]).toMatchObject({
+      section_name: 'Completar el Curso Básico de Conquistadores',
+      club_section_id: 12,
+      club_name: 'Club Orión',
+      club_section_name: 'Conquistadores',
+    });
+    expect(result.data[1]).toMatchObject({
+      club_section_id: null,
+      club_name: null,
+      club_section_name: null,
     });
   });
 

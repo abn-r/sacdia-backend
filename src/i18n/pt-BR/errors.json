@@ -13,7 +13,7 @@
   "ANNUAL_FOLDER_TEMPLATE_NOT_FOUND": "Modelo de pasta com ID {id} não encontrado",
   "ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND": "Seção do modelo com ID {id} não encontrada",
   "ANNUAL_FOLDER_SECTION_HAS_EVIDENCES": "Não é possível excluir uma seção que já possui evidências enviadas",
-  "ANNUAL_FOLDER_TEMPLATE_NO_MATCH": "Nenhum modelo encontrado para o clube com tipo {clubTypeId} e ano {yearId}",
+  "ANNUAL_FOLDER_TEMPLATE_NO_MATCH": "Ainda não há um modelo de pasta anual publicado para {clubTypeName} no ano eclesiástico {yearLabel}.",
   "ANNUAL_FOLDER_ALREADY_EXISTS": "Já existe uma pasta anual para esta inscrição",
   "ANNUAL_FOLDER_NOT_FOUND": "Pasta anual com ID {id} não encontrada",
   "ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND": "Inscrição de clube com ID {id} não encontrada",

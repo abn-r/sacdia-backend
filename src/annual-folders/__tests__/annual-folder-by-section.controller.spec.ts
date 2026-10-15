@@ -8,6 +8,7 @@ describe('AnnualFolderBySectionController', () => {
   const annualFoldersService = {
     getFolderByEnrollment: jest.fn(),
     createFolderForEnrollment: jest.fn(),
+    getTemplateAvailabilityForEnrollment: jest.fn(),
   };
 
   const clubEnrollmentsService = {
@@ -92,6 +93,48 @@ describe('AnnualFolderBySectionController', () => {
     });
     expect(
       annualFoldersService.createFolderForEnrollment,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('reports template availability for the current enrollment of the section', async () => {
+    annualFoldersService.getTemplateAvailabilityForEnrollment.mockResolvedValue(
+      {
+        template_available: false,
+        club_type_name: 'Guías Mayores',
+        year_label: '2026',
+      },
+    );
+
+    await expect(
+      controller.getTemplateAvailabilityBySection(2),
+    ).resolves.toEqual({
+      status: 'success',
+      data: {
+        template_available: false,
+        club_type_name: 'Guías Mayores',
+        year_label: '2026',
+      },
+    });
+    expect(
+      annualFoldersService.getTemplateAvailabilityForEnrollment,
+    ).toHaveBeenCalledWith(enrollmentId);
+  });
+
+  it('reports no template availability when the section has no current enrollment', async () => {
+    clubEnrollmentsService.findCurrentBySectionId.mockResolvedValue(null);
+
+    await expect(
+      controller.getTemplateAvailabilityBySection(2),
+    ).resolves.toEqual({
+      status: 'success',
+      data: {
+        template_available: false,
+        club_type_name: null,
+        year_label: null,
+      },
+    });
+    expect(
+      annualFoldersService.getTemplateAvailabilityForEnrollment,
     ).not.toHaveBeenCalled();
   });
 });

@@ -20,7 +20,11 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
-import { AuthorizationResource, GlobalRoles } from '../common/decorators';
+import {
+  AuthorizationResource,
+  GlobalRoles,
+  SkipPermissions,
+} from '../common/decorators';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import {
   GlobalRolesGuard,
@@ -214,6 +218,9 @@ export class CoordinationController {
   constructor(private readonly coordinationService: CoordinationService) {}
 
   @Get('me/scope')
+  // Self-scoped read: only resolves the caller's own assignments (req.user.sub),
+  // so it needs a valid JWT but no RBAC permission.
+  @SkipPermissions()
   @ApiOperation({
     summary: 'Resolver el alcance efectivo de coordinación del usuario actual',
   })
