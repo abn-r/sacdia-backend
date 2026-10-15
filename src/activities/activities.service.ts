@@ -1181,7 +1181,9 @@ export class ActivitiesService {
       where: { activity_id: activityId, active: true },
       select: { club_section_id: true },
     });
-    const ids = rows.map((row) => row.club_section_id);
+    const ids = rows
+      .map((row) => row.club_section_id)
+      .filter((id): id is number => id !== null);
     if (ids.length === 0 && ownerSectionId) ids.push(ownerSectionId);
     return [...new Set(ids)];
   }
