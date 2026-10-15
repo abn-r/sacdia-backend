@@ -1,9 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import 'multer';
-import {
-  AppNotFoundException,
-} from '../common/errors/app.exception';
+import { AppNotFoundException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
@@ -13,6 +11,7 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { PrismaService } from '../prisma/prisma.service';
 import { assertTransition, FieldPaymentOrderStatus } from './state-machine';
 import { extensionFromMime, ProofMime } from './proof-file-validation.pipe';
+import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
 
 export const PROOF_BUCKET = StorageBucketAlias.EVIDENCE_FILES;
 export const PROOF_SIGNED_URL_TTL_SECONDS = 900; // 15 min, same as materials
@@ -63,7 +62,9 @@ export class FieldPaymentOrderProofService {
         data: {
           field_payment_order_id: order.field_payment_order_id,
           r2_key: uploaded.key,
-          file_name: file.originalname ?? `proof.${extensionFromMime(mime)}`,
+          file_name:
+            decodeMultipartFileName(file.originalname) ??
+            `proof.${extensionFromMime(mime)}`,
           mime_type: mime,
           size_bytes: file.size,
           status: 'SUBMITTED',

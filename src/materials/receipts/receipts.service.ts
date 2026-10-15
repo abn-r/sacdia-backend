@@ -29,6 +29,7 @@ import {
   type ReceiptMime,
 } from './receipt-file-validation.pipe';
 import type { OrderDto } from '../orders/dto/order.dto';
+import { decodeMultipartFileName } from '../../common/utils/multipart-file-name';
 
 // ---------------------------------------------------------------------------
 // Bucket alias used for all receipt uploads
@@ -174,7 +175,8 @@ export class ReceiptsService {
     );
 
     // Persist the original file name from multipart upload (not trusted for extension derivation)
-    const originalFileName = file.originalname ?? `${objectUuid}.${ext}`;
+    const originalFileName =
+      decodeMultipartFileName(file.originalname) ?? `${objectUuid}.${ext}`;
 
     // Step 2: Insert comprobante row
     // If this fails, the R2 object is orphaned — log for manual cleanup (v1 design decision §6)

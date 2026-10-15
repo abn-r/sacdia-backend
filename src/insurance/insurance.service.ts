@@ -19,6 +19,7 @@ import {
   LOCAL_FIELD_ROLES,
   toTerritoryId,
 } from '../common/authorization/actor-territory-scope';
+import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
 
 type InsuranceMutationInput = {
   insurance_type?: string;
@@ -738,7 +739,7 @@ export class InsuranceService {
 
     return {
       url: uploaded.url,
-      name: file.originalname || key,
+      name: decodeMultipartFileName(file.originalname) || key,
     };
   }
 

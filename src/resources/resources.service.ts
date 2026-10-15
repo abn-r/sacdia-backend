@@ -31,6 +31,7 @@ import { escapeLikeWildcards } from '../common/utils/escape-like';
 import type { ResourceQueryDto } from './dto/resource-query.dto';
 import { GenerateUploadUrlDto } from './dto/generate-upload-url.dto';
 import type { CreateResourceFromUploadedDto } from './dto/create-resource-from-uploaded.dto';
+import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
 
 /** TTL de URLs firmadas de descarga: 1 hora */
 const SIGNED_URL_TTL_SECONDS = 3600;
@@ -149,7 +150,7 @@ export class ResourcesService {
         { contentType: file.mimetype },
       );
 
-      fileName = file.originalname;
+      fileName = decodeMultipartFileName(file.originalname);
       fileSize = file.size;
       fileMimeType = file.mimetype;
 
@@ -654,7 +655,7 @@ export class ResourcesService {
       );
 
       updateData.file_key = uploaded.key;
-      updateData.file_name = file.originalname;
+      updateData.file_name = decodeMultipartFileName(file.originalname);
       updateData.file_size = file.size;
       updateData.file_mime_type = file.mimetype;
     }
@@ -1005,10 +1006,10 @@ export class ResourcesService {
 
     return Boolean(
       globalScope &&
-        !globalScope.division &&
-        !globalScope.country &&
-        !globalScope.union &&
-        !globalScope.local_field,
+      !globalScope.division &&
+      !globalScope.country &&
+      !globalScope.union &&
+      !globalScope.local_field,
     );
   }
 
