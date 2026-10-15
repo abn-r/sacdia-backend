@@ -347,15 +347,19 @@ async function main() {
       accessPanel: false, // club users only use the mobile app
     });
 
-    // A director keeps the section it already holds this year (idempotent
-    // re-runs); otherwise it takes a section with a vacant director slot.
+    // A director keeps the section it currently holds this year (idempotent
+    // re-runs); otherwise it takes a section with a vacant director slot. An
+    // ended director assignment is not reused: its section may already have
+    // another director, so reactivating it would hit the slot trigger.
     const isDirector = spec.roleName === 'director';
     const existingAssignment = await prisma.club_role_assignments.findFirst({
       where: {
         user_id,
         role_id: roleId,
         ecclesiastical_year_id: YEAR_ID,
-        ...(isDirector ? {} : { club_section_id: CLUB_SECTION_ID }),
+        ...(isDirector
+          ? { active: true, status: { in: ['active', 'designated'] } }
+          : { club_section_id: CLUB_SECTION_ID }),
       },
       orderBy: { start_date: 'desc' },
     });
