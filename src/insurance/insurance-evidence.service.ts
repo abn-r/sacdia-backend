@@ -12,6 +12,7 @@ import {
   type FileStorageService,
 } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
 
 const MAX_PURCHASE_PROOF_SIZE = 10 * 1024 * 1024;
 const PURCHASE_PROOF_MIMES = [
@@ -104,7 +105,9 @@ export class InsuranceEvidenceService {
     );
     return {
       fileKey: uploaded.key,
-      fileName: validFile.originalname ?? `purchase-proof.${extension}`,
+      fileName:
+        decodeMultipartFileName(validFile.originalname) ??
+        `purchase-proof.${extension}`,
       mimeType,
       fileSize: validFile.size,
     };

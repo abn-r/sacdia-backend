@@ -31,10 +31,10 @@ import {
   CATALOG_CACHE_KEYS,
   FINANCE_CACHE_NAMESPACE,
 } from '../catalogs/catalog-cache.service';
+import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
 
 type FinanceSectionFilter =
-  | { club_section_id: { in: number[] } }
-  | { club_section_id: number };
+  { club_section_id: { in: number[] } } | { club_section_id: number };
 
 type FinancePeriodTotals = {
   totalIncome: number;
@@ -798,7 +798,7 @@ export class FinancesService {
         data: {
           finance_id: financeId,
           file_url: uploaded.url,
-          file_name: file.originalname || objectKey,
+          file_name: decodeMultipartFileName(file.originalname) || objectKey,
           file_type: file.mimetype,
           file_size: file.size,
           uploaded_by_id: performedBy,

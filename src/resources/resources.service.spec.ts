@@ -224,6 +224,51 @@ describe('ResourcesService file replacement', () => {
     ]);
   });
 
+  it('stores the UTF-8 file name when multer decodes an accented name as latin1', async () => {
+    const prisma = {
+      resources: {
+        findUnique: jest.fn().mockResolvedValue({
+          resource_id: 'res-1',
+          resource_type: 'document',
+          scope_level: 'system',
+          scope_id: null,
+          file_key: 'system/system/old.pdf',
+        }),
+        update: jest.fn().mockResolvedValue({ resource_id: 'res-1' }),
+      },
+    };
+    const fileStorage = {
+      upload: jest.fn().mockResolvedValue({
+        key: 'system/system/new.pdf',
+        url: 'https://r2.example/new.pdf',
+      }),
+      deleteMany: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ResourcesService(
+      prisma as any,
+      { resolveCurrent: jest.fn() } as unknown as InstitutionalHierarchyService,
+      fileStorage as any,
+    );
+
+    await service.update(
+      'res-1',
+      {},
+      {
+        buffer: Buffer.from('%PDF-1.4\n'),
+        originalname: Buffer.from('Guía IRÉ.pdf', 'utf8').toString('latin1'),
+        mimetype: 'application/pdf',
+        size: 9,
+      } as Express.Multer.File,
+      unscopedGlobalAdmin,
+    );
+
+    expect(prisma.resources.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ file_name: 'Guía IRÉ.pdf' }),
+      }),
+    );
+  });
+
   it('does not issue signed URLs for inactive resources', async () => {
     const service = new ResourcesService(
       {

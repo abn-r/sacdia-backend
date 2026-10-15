@@ -19,6 +19,7 @@ import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
 } from '../catalogs/catalog-cache.service';
+import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
 
 type InventoryEvidenceRow = {
   inventory_evidence_file_id: number;
@@ -451,7 +452,7 @@ export class InventoryService {
         data: {
           inventory_id: inventoryId,
           file_url: uploaded.url,
-          file_name: file.originalname || objectKey,
+          file_name: decodeMultipartFileName(file.originalname) || objectKey,
           file_type: file.mimetype,
           file_size: file.size,
           uploaded_by_id: performedBy,

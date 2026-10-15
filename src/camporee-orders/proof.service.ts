@@ -11,6 +11,7 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { PrismaService } from '../prisma/prisma.service';
 import { assertTransition, type CamporeeOrderStatus } from './state-machine';
 import { extensionFromMime, ProofMime } from './proof-file-validation.pipe';
+import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
 
 export const PROOF_BUCKET = StorageBucketAlias.EVIDENCE_FILES;
 export const PROOF_SIGNED_URL_TTL_SECONDS = 900; // 15 min, same as materials / FPO
@@ -75,7 +76,9 @@ export class CamporeeOrderProofService {
         data: {
           order_id: order.camporee_order_id,
           r2_key: uploaded.key,
-          file_name: file.originalname ?? `proof.${extensionFromMime(mime)}`,
+          file_name:
+            decodeMultipartFileName(file.originalname) ??
+            `proof.${extensionFromMime(mime)}`,
           mime_type: mime,
           size_bytes: file.size,
           status: 'SUBMITTED',
