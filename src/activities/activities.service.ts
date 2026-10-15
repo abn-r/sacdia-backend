@@ -623,8 +623,11 @@ export class ActivitiesService {
       updateData.activity_type_id = dto.activity_type_id;
     if (dto.link_meet !== undefined) updateData.link_meet = dto.link_meet;
     if (dto.active !== undefined) updateData.active = dto.active;
-    if (dto.classes !== undefined)
-      updateData.classes = dto.classes as Prisma.InputJsonValue;
+    const audienceSectionIds =
+      dto.audience !== undefined
+        ? await this.activeSectionIds(activityId, existing.club_section_id)
+        : [];
+    await this.applyAudienceUpdate(updateData, dto, audienceSectionIds);
 
     const updated = await this.prisma.activities.update({
       where: { activity_id: activityId },
@@ -709,8 +712,7 @@ export class ActivitiesService {
       scalarUpdateData.activity_type_id = dto.activity_type_id;
     if (dto.link_meet !== undefined) scalarUpdateData.link_meet = dto.link_meet;
     if (dto.active !== undefined) scalarUpdateData.active = dto.active;
-    if (dto.classes !== undefined)
-      scalarUpdateData.classes = dto.classes as Prisma.InputJsonValue;
+    await this.applyAudienceUpdate(scalarUpdateData, dto, uniqueSectionIds);
 
     await this.prisma.$transaction([
       // 1. Soft-delete all currently active instances for this activity
@@ -804,8 +806,7 @@ export class ActivitiesService {
       scalarUpdateData.activity_type_id = dto.activity_type_id;
     if (dto.link_meet !== undefined) scalarUpdateData.link_meet = dto.link_meet;
     if (dto.active !== undefined) scalarUpdateData.active = dto.active;
-    if (dto.classes !== undefined)
-      scalarUpdateData.classes = dto.classes as Prisma.InputJsonValue;
+    await this.applyAudienceUpdate(scalarUpdateData, dto, [ownerSectionId]);
 
     await this.prisma.$transaction([
       // Deactivate all instances except the owner's
@@ -1144,6 +1145,45 @@ export class ActivitiesService {
       isBoard: Boolean(board),
       classId: enrollment?.class_id ?? null,
     };
+  }
+
+  /**
+   * Writes audience/classes for an update. When `audience` is sent it is
+   * validated like on create (classes must belong to the sections' club
+   * types). Without `audience`, a bare `classes` list keeps the legacy
+   * pass-through behaviour.
+   */
+  private async applyAudienceUpdate(
+    target: Record<string, unknown>,
+    dto: UpdateActivityDto,
+    sectionIds: number[],
+  ) {
+    if (dto.audience !== undefined) {
+      const resolved = await this.resolveActivityAudience(
+        dto.audience,
+        dto.classes,
+        sectionIds,
+      );
+      target.audience = resolved.audience;
+      target.classes = resolved.classes;
+      return;
+    }
+    if (dto.classes !== undefined) {
+      target.classes = dto.classes;
+    }
+  }
+
+  private async activeSectionIds(
+    activityId: number,
+    ownerSectionId: number | null,
+  ): Promise<number[]> {
+    const rows = await this.prisma.activity_instances.findMany({
+      where: { activity_id: activityId, active: true },
+      select: { club_section_id: true },
+    });
+    const ids = rows.map((row) => row.club_section_id);
+    if (ids.length === 0 && ownerSectionId) ids.push(ownerSectionId);
+    return [...new Set(ids)];
   }
 
   private async resolveActivityAudience(
