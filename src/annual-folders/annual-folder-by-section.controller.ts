@@ -108,6 +108,52 @@ export class AnnualFolderBySectionController {
     return { status: 'success', data };
   }
 
+  @Get('template-availability')
+  @RequirePermissions('evidence_folders:read')
+  @AuthorizationResource({ type: 'club_section', idParam: 'sectionId' })
+  @ApiOperation({
+    summary:
+      'Check whether an annual evidence folder can be created for a club section',
+    description:
+      'Resolves the current ecclesiastical-year enrollment for the section and reports whether a published template exists for its club type and year. ' +
+      'Lets clients offer the create action only when POST would succeed instead of surfacing ANNUAL_FOLDER_TEMPLATE_NO_MATCH.',
+  })
+  @ApiParam({
+    name: 'sectionId',
+    description: 'Club section ID (integer)',
+    example: 1,
+    type: Number,
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      '{ template_available, club_type_name, year_label }. template_available is false when there is no current enrollment.',
+  })
+  async getTemplateAvailabilityBySection(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+  ) {
+    const enrollment =
+      await this.clubEnrollmentsService.findCurrentBySectionId(sectionId);
+
+    if (!enrollment) {
+      return {
+        status: 'success',
+        data: {
+          template_available: false,
+          club_type_name: null,
+          year_label: null,
+        },
+      };
+    }
+
+    const data =
+      await this.annualFoldersService.getTemplateAvailabilityForEnrollment(
+        enrollment.club_enrollment_id,
+      );
+
+    return { status: 'success', data };
+  }
+
   @Post()
   @RequirePermissions('evidence_folders:update')
   @AuthorizationResource({ type: 'club_section', idParam: 'sectionId' })
