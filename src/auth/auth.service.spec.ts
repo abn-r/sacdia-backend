@@ -238,12 +238,14 @@ describe('AuthService', () => {
       });
       mockPrismaService.verification.create.mockResolvedValue({});
 
-      const result = await service.register(registerDto);
+      const context = { ipAddress: '203.0.113.7', userAgent: 'Dart/3.11' };
+      const result = await service.register(registerDto, context);
 
       expect(mockBetterAuthService.createUser).toHaveBeenCalledWith(
         registerDto.email,
         registerDto.password,
         registerDto.name,
+        context,
       );
       expect(mockTx.users_pr.create).toHaveBeenCalled();
       expect(mockTx.users_roles.create).toHaveBeenCalled();
@@ -375,8 +377,14 @@ describe('AuthService', () => {
         ],
       });
 
-      const result = await service.login(loginDto);
+      const context = { ipAddress: '203.0.113.7', userAgent: 'Dart/3.11' };
+      const result = await service.login(loginDto, context);
 
+      expect(mockBetterAuthService.signInWithPassword).toHaveBeenCalledWith(
+        loginDto.email,
+        loginDto.password,
+        context,
+      );
       expect(result).toEqual({
         status: 'success',
         data: {

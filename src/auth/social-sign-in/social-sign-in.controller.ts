@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import { Body, Controller, Param, Post, Req } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
@@ -6,6 +6,10 @@ import { SkipPermissions } from '../../common/decorators/skip-permissions.decora
 import { AppBadRequestException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { namedThrottle } from '../../config/throttler.helpers';
+import {
+  sessionContextFromRequest,
+  type SessionContextRequest,
+} from '../session-request-context';
 import { SocialTokenSignInDto } from './dto/social-token-sign-in.dto';
 import { SocialSignInService } from './social-sign-in.service';
 import { SOCIAL_PROVIDERS, isSocialProvider } from './social-sign-in.types';
@@ -69,6 +73,7 @@ export class SocialSignInController {
   async signIn(
     @Param('provider') provider: string,
     @Body() dto: SocialTokenSignInDto,
+    @Req() req: SessionContextRequest,
   ) {
     if (!isSocialProvider(provider)) {
       throw new AppBadRequestException(ErrorCode.AUTH_OAUTH_PROVIDER_INVALID, {
@@ -79,7 +84,11 @@ export class SocialSignInController {
     // No global response wrapper exists: wrap by hand, like AuthService.login.
     return {
       status: 'success' as const,
-      data: await this.socialSignIn.signIn(provider, dto),
+      data: await this.socialSignIn.signIn(
+        provider,
+        dto,
+        sessionContextFromRequest(req),
+      ),
     };
   }
 }

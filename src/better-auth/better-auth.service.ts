@@ -67,16 +67,34 @@ export interface BaAssuranceLevel {
 // Service interface (all auth operations SACDIA needs)
 // ---------------------------------------------------------------------------
 
+/**
+ * Request metadata stored on the session row so GET /auth/sessions can show
+ * the device and IP. Both fields are optional: internal callers (admin invite)
+ * have no client request.
+ */
+export interface SessionRequestContext {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 export interface IBetterAuthService {
   // -- Auth ------------------------------------------------------------------
   createUser(
     email: string,
     password: string,
     name: string,
+    context?: SessionRequestContext,
   ): Promise<BaAuthResult>;
-  signInWithPassword(email: string, password: string): Promise<BaAuthResult>;
+  signInWithPassword(
+    email: string,
+    password: string,
+    context?: SessionRequestContext,
+  ): Promise<BaAuthResult>;
   /** Creates a 7-day opaque session for an already-authenticated user. */
-  createSession(userId: string): Promise<BaSession>;
+  createSession(
+    userId: string,
+    context?: SessionRequestContext,
+  ): Promise<BaSession>;
   refreshSession(sessionToken: string): Promise<BaAuthResult>;
   signOut(sessionToken: string): Promise<void>;
   resetPasswordForEmail(email: string, redirectTo?: string): Promise<void>;
@@ -205,7 +223,10 @@ export class BetterAuthService implements IBetterAuthService {
    * Creates a new session row in the DB for the given userId.
    * Returns the session record mapped to BaSession.
    */
-  async createSession(userId: string): Promise<BaSession> {
+  async createSession(
+    userId: string,
+    context?: SessionRequestContext,
+  ): Promise<BaSession> {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + SESSION_DURATION_MS);
     const dbSession = await this.prisma.session.create({
@@ -214,6 +235,8 @@ export class BetterAuthService implements IBetterAuthService {
         token: generateToken(),
         userId,
         expiresAt,
+        ipAddress: context?.ipAddress ?? null,
+        userAgent: context?.userAgent ?? null,
       },
     });
     return mapDbSessionToBaSession(dbSession);
@@ -240,6 +263,7 @@ export class BetterAuthService implements IBetterAuthService {
     email: string,
     password: string,
     name: string,
+    context?: SessionRequestContext,
   ): Promise<BaAuthResult> {
     // Public register must not say "email already in use". Same code as login
     // plus dummy hash so the timing matches a real create. Admin invite still
@@ -282,7 +306,7 @@ export class BetterAuthService implements IBetterAuthService {
     });
 
     // 5. Create session
-    const session = await this.createSession(userId);
+    const session = await this.createSession(userId, context);
 
     const user = mapDbUserToBaUser(dbUser);
     const accessToken = this.signJwt(user, false, session.id);
@@ -303,6 +327,7 @@ export class BetterAuthService implements IBetterAuthService {
   async signInWithPassword(
     email: string,
     password: string,
+    context?: SessionRequestContext,
   ): Promise<BaAuthResult> {
     // 1. Find user
     const dbUser = await this.prisma.users.findUnique({ where: { email } });
@@ -331,7 +356,7 @@ export class BetterAuthService implements IBetterAuthService {
     const { enabled: mfaEnabled } = await this.hasTotpEnabled(dbUser.user_id);
 
     // 5. Create session + sign JWT
-    const session = await this.createSession(dbUser.user_id);
+    const session = await this.createSession(dbUser.user_id, context);
     const user = mapDbUserToBaUser(dbUser);
     const accessToken = this.signJwt(user, mfaEnabled, session.id);
 

@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   Ip,
+  Req,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
@@ -37,6 +38,10 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { namedThrottle } from '../config/throttler.helpers';
+import {
+  sessionContextFromRequest,
+  type SessionContextRequest,
+} from './session-request-context';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -66,8 +71,14 @@ export class AuthController {
       'Mismo código que login fallido (`AUTH_INVALID_CREDENTIALS`). ' +
       'También cubre email ya registrado — no se revela existencia.',
   })
-  async register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  async register(
+    @Body() registerDto: RegisterDto,
+    @Req() req: SessionContextRequest,
+  ) {
+    return this.authService.register(
+      registerDto,
+      sessionContextFromRequest(req),
+    );
   }
 
   @Public()
@@ -106,8 +117,8 @@ export class AuthController {
     status: 401,
     description: 'Credenciales inválidas',
   })
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(@Body() loginDto: LoginDto, @Req() req: SessionContextRequest) {
+    return this.authService.login(loginDto, sessionContextFromRequest(req));
   }
 
   @Public()

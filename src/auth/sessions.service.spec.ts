@@ -137,6 +137,17 @@ describe('SessionsService', () => {
       expect(result.sessions[0].device_name).toBe('Chrome');
     });
 
+    it('names the Flutter app client from its Dart User-Agent', async () => {
+      mockPrisma.session.findMany.mockResolvedValue([
+        makeRow({ userAgent: 'Dart/3.11 (dart:io)' }),
+      ]);
+
+      const result = await service.listSessions(USER_ID, null);
+
+      expect(result.sessions[0].device_type).toBe('unknown');
+      expect(result.sessions[0].device_name).toBe('App SACDIA');
+    });
+
     it('returns unknown device when userAgent is null', async () => {
       mockPrisma.session.findMany.mockResolvedValue([
         makeRow({ userAgent: null }),

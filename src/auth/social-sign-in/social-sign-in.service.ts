@@ -1,5 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { BetterAuthService } from '../../better-auth/better-auth.service';
+import {
+  BetterAuthService,
+  type SessionRequestContext,
+} from '../../better-auth/better-auth.service';
 import { AppUnauthorizedException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import {
@@ -75,6 +78,7 @@ export class SocialSignInService {
   async signIn(
     provider: SocialProvider,
     dto: SocialTokenSignInDto,
+    context?: SessionRequestContext,
   ): Promise<SocialSignInResult> {
     const verified = await this.verifiers[provider].verify(
       dto.idToken,
@@ -123,7 +127,7 @@ export class SocialSignInService {
     // until POST /auth/mfa/verify upgrades it.
     const { enabled: mfaEnabled } =
       await this.betterAuth.hasTotpEnabled(userId);
-    const session = await this.betterAuth.createSession(userId);
+    const session = await this.betterAuth.createSession(userId, context);
     const [user, userPr, accounts] = await Promise.all([
       this.prisma.users.findUnique({ where: { user_id: userId } }),
       this.prisma.users_pr.findUnique({ where: { user_id: userId } }),

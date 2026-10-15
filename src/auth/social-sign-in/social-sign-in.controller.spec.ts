@@ -30,16 +30,23 @@ describe('SocialSignInController', () => {
   it('delegates a known provider and wraps the result like /auth/login', async () => {
     service.signIn.mockResolvedValue({ accessToken: 'jwt' });
     const dto = { idToken: 't', nonce: 'n' };
-    await expect(controller.signIn('google', dto)).resolves.toEqual({
+    const req = {
+      ip: '198.51.100.4',
+      headers: { 'user-agent': 'Dart/3.11 (dart:io)' },
+    };
+    await expect(controller.signIn('google', dto, req)).resolves.toEqual({
       status: 'success',
       data: { accessToken: 'jwt' },
     });
-    expect(service.signIn).toHaveBeenCalledWith('google', dto);
+    expect(service.signIn).toHaveBeenCalledWith('google', dto, {
+      ipAddress: '198.51.100.4',
+      userAgent: 'Dart/3.11 (dart:io)',
+    });
   });
 
   it('rejects an unknown provider with AUTH_OAUTH_PROVIDER_INVALID', async () => {
     await expect(
-      controller.signIn('facebook', { idToken: 't', nonce: 'n' }),
+      controller.signIn('facebook', { idToken: 't', nonce: 'n' }, {}),
     ).rejects.toMatchObject({
       code: ErrorCode.AUTH_OAUTH_PROVIDER_INVALID,
     });
