@@ -37,6 +37,7 @@ import {
   AppUnauthorizedException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { LegalService } from '../legal/legal.service';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -81,9 +82,18 @@ export class AuthService {
     private readonly fileStorage: FileStorageService,
     private readonly emailService: EmailService,
     private readonly config: ConfigService,
+    private readonly legalService: LegalService,
   ) {}
 
   async register(dto: RegisterDto, context?: SessionRequestContext) {
+    // 0. Validate the accepted legal versions BEFORE any user is created: a
+    //    mismatch must leave no users/account/session row behind.
+    const accepted = {
+      terms: dto.accepted_terms_version,
+      privacy: dto.accepted_privacy_version,
+    };
+    this.legalService.assertCurrentVersions(accepted);
+
     // 1. Create user in Better Auth (outside transaction — BA manages its own DB writes).
     //    BA creates the row in `users` (mapped via prismaAdapter: user_id, user_image, etc.)
     //    and creates a BA session token.
@@ -136,6 +146,14 @@ export class AuthService {
             role_id: userRole.role_id,
           },
         });
+
+        // 2d. Record Terms/Privacy acceptance (append-only evidence)
+        await this.legalService.recordOnRegister(
+          tx,
+          baResult.user.id,
+          accepted,
+          context,
+        );
       });
     } catch (dbError) {
       // Rollback: revoke BA session so the user isn't left in a half-created state.
@@ -553,7 +571,9 @@ export class AuthService {
       );
       await this.prisma.session.deleteMany({ where: { userId } });
       await this.blacklistUserTokensBestEffort(userId, 'password_reset');
-      this.logger.log(`Password reset confirmed; sessions revoked for ${userId}`);
+      this.logger.log(
+        `Password reset confirmed; sessions revoked for ${userId}`,
+      );
       return {
         success: true,
         message: 'Contraseña actualizada. Inicie sesión de nuevo',
@@ -629,9 +649,11 @@ export class AuthService {
   async getProfile(userId: string) {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
-    const signedUserImage = await this.resolvePrivateProfilePicture(
-      resolved.profile.user_image,
-    );
+    const [signedUserImage, legal] = await Promise.all([
+      this.resolvePrivateProfilePicture(resolved.profile.user_image),
+      // Outside the authorization cache: acceptance must reflect the DB right away.
+      this.legalService.getStatus(userId),
+    ]);
 
     return {
       status: 'success',
@@ -644,6 +666,7 @@ export class AuthService {
         club: resolved.legacy.club,
         club_context: resolved.legacy.club_context,
         authorization: resolved.authorization,
+        legal,
       },
     };
   }

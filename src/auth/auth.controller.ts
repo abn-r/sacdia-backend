@@ -361,6 +361,36 @@ export class AuthController {
               example: true,
               description: 'Indica si el usuario completó el post-registro.',
             },
+            legal: {
+              type: 'object',
+              description:
+                'Estado de aceptación de Términos y Privacidad para las versiones vigentes.',
+              properties: {
+                requires_acceptance: { type: 'boolean', example: false },
+                documents: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      document_type: { type: 'string', example: 'terms' },
+                      version: { type: 'string', example: '1.0.0-store' },
+                      url: {
+                        type: 'string',
+                        example: 'https://sacdia.com/terms',
+                      },
+                      accepted: { type: 'boolean', example: true },
+                      accepted_at: {
+                        type: 'string',
+                        format: 'date-time',
+                        nullable: true,
+                        example: '2026-10-15T22:01:00.000Z',
+                      },
+                    },
+                  },
+                },
+              },
+              required: ['requires_acceptance', 'documents'],
+            },
           },
           required: [
             'user_id',
@@ -369,6 +399,7 @@ export class AuthController {
             'permissions',
             'authorization',
             'post_register_complete',
+            'legal',
           ],
         },
       },
