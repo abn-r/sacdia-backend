@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   Prisma,
+  evidence_validation_enum,
+  honor_validation_status_enum,
   investiture_status_enum,
   investiture_action_enum,
 } from '@prisma/client';
@@ -127,6 +129,22 @@ export class AnalyticsService {
         }
       : {};
 
+    // Evidence review queue scope: mirrors EvidenceReviewService
+    // (active member assignment in a scoped club section).
+    const pendingReviewUserFilter = scopedClubSectionIds
+      ? {
+          users: {
+            club_role_assignments: {
+              some: {
+                club_section_id: { in: scopedClubSectionIds },
+                active: true,
+                status: 'active',
+              },
+            },
+          },
+        }
+      : {};
+
     const [
       pipelineGroups,
       classSectionsPending,
@@ -150,45 +168,24 @@ export class AnalyticsService {
         _count: { enrollment_id: true },
       }),
 
-      // 2a. Class section progress pending validation
+      // 2a. Class section progress awaiting review. Same filter as
+      // GET /evidence-review/pending so the KPI matches the review queue.
       this.prisma.class_section_progress.count({
         where: {
-          status: 'PENDING',
+          status: evidence_validation_enum.SUBMITTED,
           active: true,
-          ...(scopedClubSectionIds
-            ? {
-                enrollments: {
-                  users: {
-                    club_role_assignments: {
-                      some: {
-                        club_section_id: { in: scopedClubSectionIds },
-                        active: true,
-                      },
-                    },
-                  },
-                },
-              }
-            : {}),
+          submitted_at: { not: null },
+          ...pendingReviewUserFilter,
         },
       }),
 
-      // 2b. User honors pending validation
+      // 2b. User honors awaiting review (same filter as the review queue).
       this.prisma.users_honors.count({
         where: {
-          validation_status: 'PENDING_REVIEW',
+          validation_status: honor_validation_status_enum.PENDING_REVIEW,
           active: true,
-          ...(scopedClubSectionIds
-            ? {
-                users: {
-                  club_role_assignments: {
-                    some: {
-                      club_section_id: { in: scopedClubSectionIds },
-                      active: true,
-                    },
-                  },
-                },
-              }
-            : {}),
+          submitted_at: { not: null },
+          ...pendingReviewUserFilter,
         },
       }),
 
