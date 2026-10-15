@@ -25,6 +25,22 @@ export type EcclesiasticalYear = {
   modified_at: Date | null;
 };
 
+/**
+ * Human label for an ecclesiastical year: "2025-2026" when it spans two
+ * calendar years, "2026" for a calendar year (Jan → Dec).
+ *
+ * `@db.Date` columns arrive as UTC midnight, so the UTC year is read to keep
+ * the server timezone from shifting Jan 1 into the previous year.
+ */
+export function ecclesiasticalYearName(year: {
+  start_date: Date;
+  end_date?: Date | null;
+}): string {
+  const startYear = year.start_date.getUTCFullYear();
+  const endYear = year.end_date?.getUTCFullYear() ?? startYear;
+  return startYear !== endYear ? `${startYear}-${endYear}` : `${startYear}`;
+}
+
 export function ecclesiasticalCalendarRevision(
   year: Pick<
     EcclesiasticalYear,

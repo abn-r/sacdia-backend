@@ -190,6 +190,7 @@ describe('AnnualMembershipService', () => {
             name: 'Luis Pérez Soto',
             base_section_id: GM_SECTION_ID,
             ecclesiastical_year_id: YEAR_ID_CURRENT,
+            ecclesiastical_year_name: '2026',
             annual_status: 'not_enrolled',
             eligibility: 'eligible',
             blocked_reason: null,
