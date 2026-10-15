@@ -534,6 +534,7 @@
   "LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND": "Relationship type not found",
   "LEGAL_REP_OWNER_NOT_FOUND": "User not found",
   "LEGAL_REP_NOT_FOUND": "Legal representative not found",
+  "LEGAL_VERSION_MISMATCH": "The legal documents have been updated. Please review and accept the current version.",
   "CERT_NOT_FOUND": "Certification not found",
   "CERT_ALREADY_ENROLLED": "User is already enrolled in this certification",
   "CERT_ELIGIBILITY_REQUIRED": "Only invested Senior Guides can enroll in certifications",

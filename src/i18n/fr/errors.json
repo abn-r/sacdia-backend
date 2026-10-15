@@ -529,6 +529,7 @@
   "LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND": "Type de relation introuvable",
   "LEGAL_REP_OWNER_NOT_FOUND": "Utilisateur introuvable",
   "LEGAL_REP_NOT_FOUND": "Représentant légal introuvable",
+  "LEGAL_VERSION_MISMATCH": "Les documents juridiques ont été mis à jour. Veuillez consulter et accepter la version en vigueur.",
   "CERT_NOT_FOUND": "Certification introuvable",
   "CERT_ALREADY_ENROLLED": "L'utilisateur est déjà inscrit dans cette certification",
   "CERT_ELIGIBILITY_REQUIRED": "Seuls les Guides Supérieurs investis peuvent s'inscrire aux certifications",

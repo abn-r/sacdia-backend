@@ -60,6 +60,7 @@ import { ScoringCategoriesModule } from './scoring-categories/scoring-categories
 import { MemberOfMonthModule } from './member-of-month/member-of-month.module';
 import { AchievementsModule } from './achievements/achievements.module';
 import { DataExportModule } from './data-export/data-export.module';
+import { LegalModule } from './legal/legal.module';
 import { EmailModule } from './common/email/email.module';
 import { QrModule } from './qr/qr.module';
 import { SupportModule } from './support/support.module';
@@ -256,6 +257,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     MemberOfMonthModule,
     AchievementsModule,
     DataExportModule,
+    LegalModule,
     EmailModule,
     QrModule,
     SupportModule,

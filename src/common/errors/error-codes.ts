@@ -710,6 +710,9 @@ export enum ErrorCode {
   LEGAL_REP_OWNER_NOT_FOUND = 'LEGAL_REP_OWNER_NOT_FOUND',
   LEGAL_REP_NOT_FOUND = 'LEGAL_REP_NOT_FOUND',
 
+  // ── Legal Acceptance ───────────────────────────────────────────────────────
+  LEGAL_VERSION_MISMATCH = 'LEGAL_VERSION_MISMATCH',
+
   // ── Certifications ─────────────────────────────────────────────────────────
   CERT_NOT_FOUND = 'CERT_NOT_FOUND',
   CERT_ALREADY_ENROLLED = 'CERT_ALREADY_ENROLLED',
