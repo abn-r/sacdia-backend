@@ -292,7 +292,56 @@ describe('ActivitiesService', () => {
         instances: [],
         audience: 'all',
         audience_classes: [],
+        attendee_profiles: [],
       });
+      expect(mockPrismaService.users.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should include attendee profiles in attendee order with signed avatars', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue({
+        activity_id: 1,
+        name: 'Campamento',
+        attendees: ['user-2', 'user-1', 'user-missing'],
+      });
+      mockPrismaService.users.findMany.mockResolvedValue([
+        {
+          user_id: 'user-1',
+          name: 'Juan',
+          paternal_last_name: 'Pérez',
+          maternal_last_name: null,
+          user_image: 'profiles/juan.jpg',
+        },
+        {
+          user_id: 'user-2',
+          name: 'María',
+          paternal_last_name: 'López',
+          maternal_last_name: null,
+          user_image: null,
+        },
+      ]);
+      mockFileStorageService.getSignedDownloadUrl.mockResolvedValueOnce(
+        'https://signed.example/profiles/juan.jpg',
+      );
+
+      const result: any = await service.findOne(1);
+
+      expect(result.attendees).toEqual(['user-2', 'user-1', 'user-missing']);
+      expect(result.attendee_profiles).toEqual([
+        {
+          user_id: 'user-2',
+          name: 'María',
+          paternal_last_name: 'López',
+          maternal_last_name: null,
+          user_image: null,
+        },
+        {
+          user_id: 'user-1',
+          name: 'Juan',
+          paternal_last_name: 'Pérez',
+          maternal_last_name: null,
+          user_image: 'https://signed.example/profiles/juan.jpg',
+        },
+      ]);
     });
 
     it('should throw NotFoundException when not found', async () => {

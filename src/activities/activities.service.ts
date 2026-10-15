@@ -226,7 +226,49 @@ export class ActivitiesService {
       }
     }
 
-    return this.presentActivity(activity);
+    const presented = await this.presentActivity(activity);
+    return {
+      ...presented,
+      attendee_profiles: await this.loadAttendeeProfiles(
+        stringIdList(activity.attendees),
+      ),
+    };
+  }
+
+  /**
+   * Resolves display data (name + signed avatar) for attendee user ids,
+   * preserving the order of `userIds`. Unknown ids are dropped.
+   */
+  private async loadAttendeeProfiles(userIds: string[]) {
+    if (userIds.length === 0) return [];
+
+    const users = await this.prisma.users.findMany({
+      where: { user_id: { in: userIds } },
+      select: {
+        user_id: true,
+        name: true,
+        paternal_last_name: true,
+        maternal_last_name: true,
+        user_image: true,
+      },
+    });
+    const byId = new Map(users.map((user) => [user.user_id, user]));
+
+    return Promise.all(
+      userIds
+        .map((id) => byId.get(id))
+        .filter((user): user is (typeof users)[number] => Boolean(user))
+        .map(async (user) => ({
+          ...user,
+          user_image:
+            typeof user.user_image === 'string'
+              ? await this.resolvePrivateAssetUrl(
+                  StorageBucketAlias.USER_PROFILES,
+                  user.user_image,
+                )
+              : user.user_image,
+        })),
+    );
   }
 
   private async presentActivity(activity: any) {
@@ -1218,31 +1260,7 @@ export class ActivitiesService {
       return { activity_id: activityId, attendees: [] };
     }
 
-    const attendees = await this.prisma.users.findMany({
-      where: {
-        user_id: { in: attendeeIds },
-      },
-      select: {
-        user_id: true,
-        name: true,
-        paternal_last_name: true,
-        maternal_last_name: true,
-        user_image: true,
-      },
-    });
-
-    const signedAttendees = await Promise.all(
-      attendees.map(async (attendee) => ({
-        ...attendee,
-        user_image:
-          typeof attendee.user_image === 'string'
-            ? await this.resolvePrivateAssetUrl(
-                StorageBucketAlias.USER_PROFILES,
-                attendee.user_image,
-              )
-            : attendee.user_image,
-      })),
-    );
+    const signedAttendees = await this.loadAttendeeProfiles(attendeeIds);
 
     return {
       activity_id: activityId,
