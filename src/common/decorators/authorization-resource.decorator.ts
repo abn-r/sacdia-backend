@@ -26,6 +26,27 @@ export type AuthorizationResourceType =
 
 export type AuthorizationResourceValueSource = 'param' | 'query' | 'body';
 
+export type AuthorizationTenantBindingKind =
+  | 'club'
+  | 'club_section'
+  | 'local_field'
+  | 'union'
+  | 'camporee'
+  | 'union_camporee';
+
+/**
+ * Binds a tenant identifier carried by the request (param, query or body) to
+ * the actor's assignment / territory scope. Enforced by `PermissionsGuard`
+ * after the resource-type check, for every resource type. A missing value is
+ * rejected unless `optional` is set.
+ */
+export type AuthorizationTenantBinding = {
+  kind: AuthorizationTenantBindingKind;
+  source: AuthorizationResourceValueSource;
+  field: string;
+  optional?: boolean;
+};
+
 export type AuthorizationResourceMetadata = {
   type: AuthorizationResourceType;
   idParam?: string;
@@ -43,6 +64,7 @@ export type AuthorizationResourceMetadata = {
    * drafting/submission...): coordinators review, they do not run clubs.
    */
   coordinatorSections?: boolean;
+  bind?: AuthorizationTenantBinding[];
 };
 
 export function AuthorizationResource(

@@ -31,6 +31,23 @@ Viven en `src/common/decorators/`:
 
 Para `user` (y `active_assignment` con `ownerParam`), el propietario del recurso pasa sin evaluar permisos. Para un no propietario, los permisos del rol global base `user` (`BASE_GLOBAL_ROLE_NAME`, lo tiene toda cuenta) NO cuentan: necesita otro rol global, un permiso directo (`users_permissions`) o una de las rutas de miembro de sección del club activo. Por eso el rol base no debe recibir permisos que solo usan rutas propietarias (lo vigila `src/rbac/base-user-role-cross-user-grants.migration.spec.ts`).
 
+### Binding de tenant (`bind`)
+
+`global`, `user` y `active_assignment` no resuelven un recurso propio: solo verifican el permiso. Si la ruta recibe un identificador de tenant (club, sección, campo local, unión, camporee), decláralo en `bind` y el guard lo ata al alcance del actor después del chequeo de `type` (aplica a cualquier `type`):
+
+```typescript
+@AuthorizationResource({
+  type: 'club',
+  clubIdParam: 'clubId',
+  bind: [{ kind: 'club_section', source: 'body', field: 'club_section_id' }],
+})
+```
+
+- `kind`: `club`, `club_section` (debe pertenecer al `:clubId` de la ruta si existe; 404 si no), `local_field`, `union`, `camporee`, `union_camporee` (estricto: solo el territorio organizador, sin el fallback de participación de `type: 'union_camporee'`).
+- `source`: `param`, `query` o `body`. Valor ausente o no entero positivo → 403, salvo `optional: true`.
+- El bypass de propietario no omite `bind`.
+- `tenant-binding-inventory.spec.ts` falla si una ruta `global`/`user`/`active_assignment` con parámetro de tenant en el path no declara `bind`. Las rutas legacy están congeladas en `tenant-binding-allowlist.ts`; no agregues rutas nuevas ahí.
+
 El contexto de autorización (grants globales, de club y territoriales) lo resuelve `AuthorizationContextService` (`src/common/services/authorization-context.service.ts`) y se cachea 5 minutos.
 
 En e2e, `E2E_PASSTHROUGH_PERMISSIONS=true` desactiva `PermissionsGuard` solo con `NODE_ENV=test` (Jest y el job e2e del CI); con cualquier otro `NODE_ENV` se ignora.
