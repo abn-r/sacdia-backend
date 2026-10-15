@@ -32,6 +32,11 @@ const BCRYPT_ROUNDS = 12;
 const LOCAL_FIELD_ID = 4;   // ACV - Asociación Centro de Veracruz
 const UNION_ID = 20;         // IOMU - Unión Mexicana Interoceánica
 const CLUB_SECTION_ID = 1;   // Club 1, Guías Mayores (has active annual folder)
+// The core seed already seats director@sacdia.com in CLUB_SECTION_ID, and the
+// DB allows one active director per section and year (trigger
+// enforce_club_role_slot_limits + uniq_cra_director_status_section_year,
+// migration 20260908180000_director_year_slots). director-club therefore goes
+// to the first active section of LOCAL_FIELD_ID with no director that year.
 const YEAR_ID = 1;           // Active ecclesiastical year (2026-01-01 → 2026-12-31)
 
 // ---------- User definitions ----------
@@ -110,6 +115,61 @@ const CLUB_USERS: ClubUserSpec[] = [
 ];
 
 // ---------- Helpers ----------
+
+/**
+ * True when the DB rejected an assignment because the role slot is taken:
+ * trigger enforce_club_role_slot_limits (23514) or the director partial
+ * unique index (23505). Prisma wraps the driver error, so check the code,
+ * the nested driver code and the message.
+ */
+function isRoleSlotConflict(err: unknown): boolean {
+  const e = err as {
+    code?: string;
+    meta?: { code?: string; driverAdapterError?: { cause?: { originalCode?: string } } };
+    message?: string;
+  };
+  const codes = [
+    e?.code,
+    e?.meta?.code,
+    e?.meta?.driverAdapterError?.cause?.originalCode,
+  ];
+  if (codes.some((code) => code === '23514' || code === '23505' || code === 'P2002')) {
+    return true;
+  }
+  return /23514|23505|Maximum overlapping role assignments|overlaps an existing secretary\/treasurer|uniq_cra_director_status_section_year/.test(
+    e?.message ?? '',
+  );
+}
+
+/**
+ * Section for a new director-club assignment: the first active section of
+ * LOCAL_FIELD_ID with no active/designated director in YEAR_ID. Resolved at
+ * runtime because section ids differ between Neon branches.
+ */
+async function resolveVacantDirectorSectionId(directorRoleId: string): Promise<number> {
+  const section = await prisma.club_sections.findFirst({
+    where: {
+      active: true,
+      clubs: { local_field_id: LOCAL_FIELD_ID },
+      club_role_assignments: {
+        none: {
+          role_id: directorRoleId,
+          ecclesiastical_year_id: YEAR_ID,
+          active: true,
+          status: { in: ['active', 'designated'] },
+        },
+      },
+    },
+    orderBy: { club_section_id: 'asc' },
+    select: { club_section_id: true },
+  });
+  if (!section) {
+    throw new Error(
+      `No active section in local field ${LOCAL_FIELD_ID} without a director for year ${YEAR_ID}.`,
+    );
+  }
+  return section.club_section_id;
+}
 
 async function resolveRoleId(roleName: string, category: 'GLOBAL' | 'CLUB'): Promise<string> {
   const role = await prisma.roles.findFirst({
@@ -287,41 +347,59 @@ async function main() {
       accessPanel: false, // club users only use the mobile app
     });
 
-    // Upsert club_role_assignment — use findFirst + create/update to avoid ugly compound key
+    // A director keeps the section it already holds this year (idempotent
+    // re-runs); otherwise it takes a section with a vacant director slot.
+    const isDirector = spec.roleName === 'director';
     const existingAssignment = await prisma.club_role_assignments.findFirst({
       where: {
         user_id,
         role_id: roleId,
-        club_section_id: CLUB_SECTION_ID,
         ecclesiastical_year_id: YEAR_ID,
+        ...(isDirector ? {} : { club_section_id: CLUB_SECTION_ID }),
       },
+      orderBy: { start_date: 'desc' },
     });
+    const sectionId =
+      existingAssignment?.club_section_id ??
+      (isDirector ? await resolveVacantDirectorSectionId(roleId) : CLUB_SECTION_ID);
 
-    if (existingAssignment) {
-      await prisma.club_role_assignments.update({
-        where: { assignment_id: existingAssignment.assignment_id },
-        data: {
-          active: true,
-          status: 'active',
-          end_date: null,
-        },
-      });
-    } else {
-      await prisma.club_role_assignments.create({
-        data: {
-          user_id,
-          role_id: roleId,
-          club_section_id: CLUB_SECTION_ID,
-          ecclesiastical_year_id: YEAR_ID,
-          start_date: assignmentStartDate,
-          active: true,
-          status: 'active',
-        },
-      });
+    // Upsert club_role_assignment — use findFirst + create/update to avoid ugly compound key
+    try {
+      if (existingAssignment) {
+        await prisma.club_role_assignments.update({
+          where: { assignment_id: existingAssignment.assignment_id },
+          data: {
+            active: true,
+            status: 'active',
+            end_date: null,
+          },
+        });
+      } else {
+        await prisma.club_role_assignments.create({
+          data: {
+            user_id,
+            role_id: roleId,
+            club_section_id: sectionId,
+            ecclesiastical_year_id: YEAR_ID,
+            start_date: assignmentStartDate,
+            active: true,
+            status: 'active',
+          },
+        });
+      }
+    } catch (err) {
+      if (!isRoleSlotConflict(err)) throw err;
+      // Another seed already holds this slot (e.g. the core seed's
+      // secretary/treasurer in section 1). The user and credentials exist;
+      // only the role assignment is skipped.
+      console.warn(
+        `  ⚠ ${spec.email.padEnd(32)} → ${spec.roleName.padEnd(18)} skipped: slot taken in section ${sectionId}, year ${YEAR_ID}`,
+      );
+      continue;
     }
 
     console.log(
-      `  ✓ ${spec.email.padEnd(32)} → ${spec.roleName.padEnd(18)} (section: ${CLUB_SECTION_ID}, year: ${YEAR_ID})`,
+      `  ✓ ${spec.email.padEnd(32)} → ${spec.roleName.padEnd(18)} (section: ${sectionId}, year: ${YEAR_ID})`,
     );
   }
 
