@@ -19,9 +19,11 @@ import {
   IsIn,
   ArrayMaxSize,
   ValidateNested,
+  IsNotEmpty,
+  MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 function IsAfterOrEqualDate(
   property: string,
@@ -50,9 +52,21 @@ function IsAfterOrEqualDate(
   };
 }
 
+const trimString = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value;
+
+/** Same rule as the app form: required, at least 3 chars after trimming. */
+const ACTIVITY_NAME_MIN_LENGTH = 3;
+
 export class CreateActivityDto {
-  @ApiProperty({ description: 'Nombre de la actividad' })
+  @ApiProperty({
+    description: 'Nombre de la actividad',
+    minLength: ACTIVITY_NAME_MIN_LENGTH,
+  })
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty()
+  @MinLength(ACTIVITY_NAME_MIN_LENGTH)
   declare name: string;
 
   @ApiPropertyOptional({ description: 'Descripción de la actividad' })
@@ -199,9 +213,12 @@ export class CreateActivityDto {
 }
 
 export class UpdateActivityDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ minLength: ACTIVITY_NAME_MIN_LENGTH })
   @IsOptional()
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty()
+  @MinLength(ACTIVITY_NAME_MIN_LENGTH)
   name?: string;
 
   @ApiPropertyOptional()
@@ -324,7 +341,9 @@ export class RecurrenceDto {
   @IsIn(['interval', 'weekly'])
   declare kind: 'interval' | 'weekly';
 
-  @ApiPropertyOptional({ description: 'Cada N días (1-365). Requerido si kind=interval.' })
+  @ApiPropertyOptional({
+    description: 'Cada N días (1-365). Requerido si kind=interval.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -347,7 +366,8 @@ export class RecurrenceDto {
   weekdays?: number[];
 
   @ApiPropertyOptional({
-    description: 'Fecha límite inclusive (YYYY-MM-DD). Si se omite, fin del año eclesiástico activo.',
+    description:
+      'Fecha límite inclusive (YYYY-MM-DD). Si se omite, fin del año eclesiástico activo.',
   })
   @IsOptional()
   @IsDateString()
