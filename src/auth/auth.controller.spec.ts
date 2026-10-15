@@ -60,9 +60,17 @@ describe('AuthController', () => {
       const expected = { success: true };
       mockAuthService.register.mockResolvedValue(expected);
 
-      const result = await controller.register(dto);
+      const req = {
+        ip: '203.0.113.7',
+        headers: { 'user-agent': 'Dart/3.11 (dart:io)' },
+      };
 
-      expect(mockAuthService.register).toHaveBeenCalledWith(dto);
+      const result = await controller.register(dto, req);
+
+      expect(mockAuthService.register).toHaveBeenCalledWith(dto, {
+        ipAddress: '203.0.113.7',
+        userAgent: 'Dart/3.11 (dart:io)',
+      });
       expect(result).toEqual(expected);
     });
   });
@@ -76,9 +84,17 @@ describe('AuthController', () => {
       const expected = { status: 'success' };
       mockAuthService.login.mockResolvedValue(expected);
 
-      const result = await controller.login(dto);
+      const req = {
+        ip: '203.0.113.7',
+        headers: { 'user-agent': 'Dart/3.11 (dart:io)' },
+      };
 
-      expect(mockAuthService.login).toHaveBeenCalledWith(dto);
+      const result = await controller.login(dto, req);
+
+      expect(mockAuthService.login).toHaveBeenCalledWith(dto, {
+        ipAddress: '203.0.113.7',
+        userAgent: 'Dart/3.11 (dart:io)',
+      });
       expect(result).toEqual(expected);
     });
   });

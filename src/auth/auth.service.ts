@@ -7,7 +7,10 @@ import {
 import { randomBytes, randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { BetterAuthService } from '../better-auth/better-auth.service';
+import {
+  BetterAuthService,
+  type SessionRequestContext,
+} from '../better-auth/better-auth.service';
 import { isPresentedAccessJwtForUser } from './presented-access-jwt';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -80,7 +83,7 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, context?: SessionRequestContext) {
     // 1. Create user in Better Auth (outside transaction — BA manages its own DB writes).
     //    BA creates the row in `users` (mapped via prismaAdapter: user_id, user_image, etc.)
     //    and creates a BA session token.
@@ -88,6 +91,7 @@ export class AuthService {
       dto.email,
       dto.password,
       dto.name,
+      context,
     );
 
     // 2. Complete SACDIA-specific post-registration state in a Prisma transaction.
@@ -202,7 +206,7 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, context?: SessionRequestContext) {
     const maskedEmail = maskEmail(dto.email);
 
     // 1. Authenticate with Better Auth
@@ -213,6 +217,7 @@ export class AuthService {
       baResult = await this.betterAuthService.signInWithPassword(
         dto.email,
         dto.password,
+        context,
       );
     } catch (error) {
       this.logger.warn(

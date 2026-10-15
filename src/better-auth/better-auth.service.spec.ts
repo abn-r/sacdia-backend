@@ -369,6 +369,36 @@ describe('BetterAuthService', () => {
         session: expect.objectContaining({ token: 'raw-opaque-session-token' }),
         accessToken: 'mocked-sacdia-jwt',
       });
+      expect(mockSessionCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({ ipAddress: null, userAgent: null }),
+      });
+    });
+
+    it('should persist the request IP and User-Agent on the session row', async () => {
+      const { svc } = buildService();
+
+      const bcrypt = require('bcryptjs');
+      const realHash = await bcrypt.hash('Password123!', 12);
+
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue({
+        ...mockDbAccount,
+        password: realHash,
+      });
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await svc.signInWithPassword('test@example.com', 'Password123!', {
+        ipAddress: '203.0.113.7',
+        userAgent: 'Dart/3.11 (dart:io)',
+      });
+
+      expect(mockSessionCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          userId: mockDbUser.user_id,
+          ipAddress: '203.0.113.7',
+          userAgent: 'Dart/3.11 (dart:io)',
+        }),
+      });
     });
 
     it('should throw UnauthorizedException when user is not found', async () => {

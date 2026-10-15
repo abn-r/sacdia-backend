@@ -96,8 +96,9 @@ describe('SocialSignInService', () => {
   });
 
   it('returns the old OAuth callback payload plus the login token fields', async () => {
+    const context = { ipAddress: '198.51.100.4', userAgent: 'Dart/3.11' };
     await expect(
-      service.signIn('google', { idToken: 't', nonce: 'n' }),
+      service.signIn('google', { idToken: 't', nonce: 'n' }, context),
     ).resolves.toEqual({
       accessToken: 'sacdia-jwt',
       sessionToken: 'opaque-token',
@@ -116,7 +117,7 @@ describe('SocialSignInService', () => {
       needsPostRegistration: false,
     });
     expect(google.verify).toHaveBeenCalledWith('t', 'n');
-    expect(betterAuth.createSession).toHaveBeenCalledWith('user-1');
+    expect(betterAuth.createSession).toHaveBeenCalledWith('user-1', context);
     expect(betterAuth.signJwt).toHaveBeenCalledWith(
       { id: 'user-1', email: 'ana@example.com' },
       false,
@@ -194,7 +195,10 @@ describe('SocialSignInService', () => {
         expect(errorLog).toHaveBeenCalledTimes(1);
         expect(String(errorLog.mock.calls[0][0])).toContain('user-1');
         expect(String(errorLog.mock.calls[0][0])).not.toContain('@');
-        expect(betterAuth.createSession).toHaveBeenCalledWith('user-1');
+        expect(betterAuth.createSession).toHaveBeenCalledWith(
+          'user-1',
+          undefined,
+        );
       } finally {
         errorLog.mockRestore();
         tokenBlacklist.blacklistAllUserTokens.mockReset();
