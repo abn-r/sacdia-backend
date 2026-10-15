@@ -74,6 +74,10 @@ export type EvidenceItem = {
   member_is_deleted: boolean;
   member_id: string;
   entity_name: string;
+  /**
+   * Class curriculum section (class evidence) or honor name (honor evidence).
+   * NOT the member's club section — see `club_section_name`.
+   */
   section_name: string;
   entity_description: string | null;
   module_name: string | null;
@@ -81,6 +85,20 @@ export type EvidenceItem = {
   submitted_at: Date | null;
   validated_at: Date | null;
   rejection_reason: string | null;
+} & MemberClubSection;
+
+/** Club section where the member holds an active assignment (within scope). */
+export type MemberClubSection = {
+  club_section_id: number | null;
+  club_name: string | null;
+  /** Club type of the section (e.g. "Conquistadores"). */
+  club_section_name: string | null;
+};
+
+const NO_CLUB_SECTION: MemberClubSection = {
+  club_section_id: null,
+  club_name: null,
+  club_section_name: null,
 };
 
 export type EvidenceFile = {
@@ -310,8 +328,14 @@ export class EvidenceReviewService {
     } satisfies Prisma.class_section_progressFindManyArgs;
 
     const records = await this.prisma.class_section_progress.findMany(query);
-    const { sectionsById, modulesById } =
-      await this.resolveClassCatalogs(records);
+    const [{ sectionsById, modulesById }, clubSectionsByUser] =
+      await Promise.all([
+        this.resolveClassCatalogs(records),
+        this.resolveMemberClubSections(
+          records.map((r) => r.user_id),
+          scopedClubSectionIds,
+        ),
+      ]);
 
     return records.map((r) => {
       const section = sectionsById.get(r.section_id);
@@ -332,6 +356,7 @@ export class EvidenceReviewService {
         submitted_at: r.submitted_at,
         validated_at: r.validated_at,
         rejection_reason: r.rejection_reason,
+        ...(clubSectionsByUser.get(r.user_id) ?? NO_CLUB_SECTION),
       };
     });
   }
@@ -377,6 +402,10 @@ export class EvidenceReviewService {
     } satisfies Prisma.users_honorsFindManyArgs;
 
     const records = await this.prisma.users_honors.findMany(query);
+    const clubSectionsByUser = await this.resolveMemberClubSections(
+      records.map((r) => r.user_id),
+      scopedClubSectionIds,
+    );
 
     return records.map((r) => {
       // Use evidence_files count when available (post-migration); fall back to
@@ -403,6 +432,7 @@ export class EvidenceReviewService {
         submitted_at: r.submitted_at,
         validated_at: r.validated_at,
         rejection_reason: r.rejection_reason,
+        ...(clubSectionsByUser.get(r.user_id) ?? NO_CLUB_SECTION),
       };
     });
   }
@@ -620,9 +650,11 @@ export class EvidenceReviewService {
       );
     }
 
-    const { sectionsById, modulesById } = await this.resolveClassCatalogs([
-      record,
-    ]);
+    const [{ sectionsById, modulesById }, clubSectionsByUser] =
+      await Promise.all([
+        this.resolveClassCatalogs([record]),
+        this.resolveMemberClubSections([record.user_id], scopedClubSectionIds),
+      ]);
     const section = sectionsById.get(record.section_id);
     const module = modulesById.get(record.module_id);
 
@@ -655,6 +687,7 @@ export class EvidenceReviewService {
       submitted_at: record.submitted_at,
       validated_at: record.validated_at,
       rejection_reason: record.rejection_reason,
+      ...(clubSectionsByUser.get(record.user_id) ?? NO_CLUB_SECTION),
       files,
       validated_by_name: record.validated_by_user
         ? buildMemberName(record.validated_by_user)
@@ -704,7 +737,10 @@ export class EvidenceReviewService {
       );
     }
 
-    const honorReviewPacket = await this.buildHonorReviewPacket(record);
+    const [honorReviewPacket, clubSectionsByUser] = await Promise.all([
+      this.buildHonorReviewPacket(record),
+      this.resolveMemberClubSections([record.user_id], scopedClubSectionIds),
+    ]);
     const files = this.dedupeFiles([
       ...(honorReviewPacket.completed_format_file
         ? [honorReviewPacket.completed_format_file]
@@ -728,6 +764,7 @@ export class EvidenceReviewService {
       submitted_at: record.submitted_at,
       validated_at: record.validated_at,
       rejection_reason: record.rejection_reason,
+      ...(clubSectionsByUser.get(record.user_id) ?? NO_CLUB_SECTION),
       files,
       validated_by_name: record.validator
         ? buildMemberName(record.validator)
@@ -1320,6 +1357,55 @@ export class EvidenceReviewService {
     actorId: string,
   ): Promise<number[] | undefined> {
     return this.coordinationService.resolveCoordinatorLikeSectionScope(actorId);
+  }
+
+  /**
+   * Club section per member, from the same active assignments that put the
+   * evidence in the reviewer's scope. Latest assignment wins when a member
+   * holds several.
+   */
+  private async resolveMemberClubSections(
+    userIds: string[],
+    scopedClubSectionIds?: number[],
+  ): Promise<Map<string, MemberClubSection>> {
+    const uniqueUserIds = [...new Set(userIds)];
+    if (uniqueUserIds.length === 0 || scopedClubSectionIds?.length === 0) {
+      return new Map();
+    }
+
+    const assignments = await this.prisma.club_role_assignments.findMany({
+      where: {
+        user_id: { in: uniqueUserIds },
+        active: true,
+        status: 'active',
+        club_section_id:
+          scopedClubSectionIds === undefined
+            ? { not: null }
+            : { in: scopedClubSectionIds },
+      },
+      orderBy: { start_date: 'desc' },
+      select: {
+        user_id: true,
+        club_section_id: true,
+        club_sections: {
+          select: {
+            club_types: { select: { name: true } },
+            clubs: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    const byUser = new Map<string, MemberClubSection>();
+    for (const assignment of assignments) {
+      if (byUser.has(assignment.user_id)) continue;
+      byUser.set(assignment.user_id, {
+        club_section_id: assignment.club_section_id,
+        club_name: assignment.club_sections?.clubs?.name ?? null,
+        club_section_name: assignment.club_sections?.club_types?.name ?? null,
+      });
+    }
+    return byUser;
   }
 
   private buildUserSectionScopeWhere(
