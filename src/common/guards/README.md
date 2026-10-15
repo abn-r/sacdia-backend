@@ -31,6 +31,8 @@ Viven en `src/common/decorators/`:
 
 Para `user` (y `active_assignment` con `ownerParam`), el propietario del recurso pasa sin evaluar permisos. Para un no propietario, los permisos del rol global base `user` (`BASE_GLOBAL_ROLE_NAME`, lo tiene toda cuenta) NO cuentan: necesita otro rol global, un permiso directo (`users_permissions`) o una de las rutas de miembro de sección del club activo. Por eso el rol base no debe recibir permisos que solo usan rutas propietarias (lo vigila `src/rbac/base-user-role-cross-user-grants.migration.spec.ts`).
 
+`union_camporee` (y `camporee_event` de un camporee de unión) admite al territorio organizador y, como fallback, a actores de campo local (`admin`, `assistant-admin`, `director-lf`, `assistant-lf`) o de club activo solo si su campo local participa en ese camporee (`union_camporee_local_fields` con `active = true`). Un `camporee_venue` con `scope: 'union'` no tiene camporee concreto, así que no aplica el fallback.
+
 ### Binding de tenant (`bind`)
 
 `global`, `user` y `active_assignment` no resuelven un recurso propio: solo verifican el permiso. Si la ruta recibe un identificador de tenant (club, sección, campo local, unión, camporee), decláralo en `bind` y el guard lo ata al alcance del actor después del chequeo de `type` (aplica a cualquier `type`):

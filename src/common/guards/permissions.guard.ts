@@ -82,6 +82,11 @@ type ResolvedUnionCamporeeScope = {
   unionId: number;
   divisionId?: number | null;
   countryId: number | null;
+  /**
+   * Set when the scope comes from a concrete union camporee. Only then can a
+   * participating local field be admitted by validateUnionCamporeeScope.
+   */
+  unionCamporeeId?: number | null;
 };
 
 /**
@@ -1362,6 +1367,7 @@ export class PermissionsGuard implements CanActivate {
           unionId: camporee.union_id,
           divisionId: hierarchy.division_id,
           countryId: camporee.unions?.country_id ?? null,
+          unionCamporeeId: event.union_camporee_id,
         },
       };
     }
@@ -1532,13 +1538,14 @@ export class PermissionsGuard implements CanActivate {
       unionId: camporee.union_id,
       divisionId: hierarchy.division_id,
       countryId: camporee.unions?.country_id ?? null,
+      unionCamporeeId: camporeeId,
     };
   }
 
-  private validateUnionCamporeeScope(
+  private async validateUnionCamporeeScope(
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedUnionCamporeeScope,
-  ): boolean {
+  ): Promise<boolean> {
     if (
       this.authorizationContext.canAccessHierarchyScope(
         resolved,
@@ -1553,12 +1560,40 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    // Local-field-level actors (admin, director-lf, assistant-lf)
-    // and club-assignment actors with a local field are permitted through —
-    // the service layer enforces that the local field participates in this
-    // union camporee via union_camporee_local_fields.
-    const globalScope = resolved.authorization.effective.scope.global;
-    const globalLocalFieldId = globalScope.local_field?.id;
+    // Local-field-level actors (admin, director-lf, assistant-lf) and
+    // club-assignment actors are admitted only when their local field
+    // participates in this union camporee (active union_camporee_local_fields
+    // row). Scopes without a concrete camporee (union venues) never qualify.
+    const participantLocalFieldId =
+      this.resolveUnionCamporeeParticipantLocalFieldId(resolved);
+
+    if (
+      typeof resourceScope.unionCamporeeId === 'number' &&
+      typeof participantLocalFieldId === 'number'
+    ) {
+      const participation =
+        await this.prisma.union_camporee_local_fields.findFirst({
+          where: {
+            union_camporee_lf_id: resourceScope.unionCamporeeId,
+            local_field_id: participantLocalFieldId,
+            active: true,
+          },
+          select: { local_field_id: true },
+        });
+
+      if (participation) {
+        return true;
+      }
+    }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+  }
+
+  private resolveUnionCamporeeParticipantLocalFieldId(
+    resolved: ResolvedAuthorizationProfile,
+  ): number | undefined {
+    const globalLocalFieldId =
+      resolved.authorization.effective.scope.global.local_field?.id;
 
     if (
       typeof globalLocalFieldId === 'number' &&
@@ -1567,7 +1602,7 @@ export class PermissionsGuard implements CanActivate {
         this.hasGlobalRole(resolved, 'director-lf') ||
         this.hasGlobalRole(resolved, 'assistant-lf'))
     ) {
-      return true;
+      return globalLocalFieldId;
     }
 
     const activeAssignmentId =
@@ -1577,11 +1612,9 @@ export class PermissionsGuard implements CanActivate {
     );
     const activeGrantLocalFieldId = activeGrant?.scope.local_field?.id;
 
-    if (typeof activeGrantLocalFieldId === 'number') {
-      return true;
-    }
-
-    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+    return typeof activeGrantLocalFieldId === 'number'
+      ? activeGrantLocalFieldId
+      : undefined;
   }
 
   private toHierarchyScope(
