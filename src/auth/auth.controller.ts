@@ -34,6 +34,7 @@ import { UpdatePasswordDto } from './dto/update-password.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import type { AuthPrincipal } from './acting-for/auth-principal';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
@@ -397,6 +398,38 @@ export class AuthController {
               },
               required: ['requires_acceptance', 'documents'],
             },
+            acting_for: {
+              type: 'object',
+              nullable: true,
+              description:
+                'Solo cuando se envía X-Acting-For: tutor actuando por un dependiente.',
+              properties: {
+                actor_user_id: { type: 'string', example: 'guardian-uuid' },
+                dependent_user_id: {
+                  type: 'string',
+                  example: 'dependent-uuid',
+                },
+                guardianship_id: {
+                  type: 'string',
+                  example: 'guardianship-uuid',
+                },
+                consent_status: {
+                  type: 'string',
+                  enum: ['pending', 'verified'],
+                },
+                scopes: { type: 'array', items: { type: 'string' } },
+              },
+            },
+            family: {
+              type: 'object',
+              nullable: true,
+              description:
+                'Resumen de tutoría del usuario. Null mientras se actúa por un dependiente.',
+              properties: {
+                is_guardian: { type: 'boolean', example: true },
+                dependents_count: { type: 'number', example: 2 },
+              },
+            },
           },
           required: [
             'user_id',
@@ -412,8 +445,8 @@ export class AuthController {
       required: ['status', 'data'],
     },
   })
-  async getProfile(@CurrentUser() user: { userId: string }) {
-    return this.authService.getProfile(user.userId);
+  async getProfile(@CurrentUser() user: AuthPrincipal) {
+    return this.authService.getProfile(user.userId, user);
   }
 
   @Patch('me/context')

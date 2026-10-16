@@ -256,13 +256,16 @@ describe('AuthController', () => {
 
   describe('getProfile', () => {
     it('should use current user userId and delegate to authService.getProfile', async () => {
-      const currentUser = { userId: 'user-123' };
+      const currentUser = { userId: 'user-123' } as any;
       const expected = { status: 'success' };
       mockAuthService.getProfile.mockResolvedValue(expected);
 
       const result = await controller.getProfile(currentUser);
 
-      expect(mockAuthService.getProfile).toHaveBeenCalledWith('user-123');
+      expect(mockAuthService.getProfile).toHaveBeenCalledWith(
+        'user-123',
+        currentUser,
+      );
       expect(result).toEqual(expected);
     });
   });

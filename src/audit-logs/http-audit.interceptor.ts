@@ -109,7 +109,11 @@ export class HttpAuditInterceptor implements NestInterceptor {
 
     const entry = {
       timestamp: new Date().toISOString(),
-      userId: request.user?.user_id || 'anonymous',
+      // While a guardian acts for a dependent the log shows `guardian>dependent`.
+      userId:
+        request.user?.acting_for && request.user?.actor_sub
+          ? `${request.user.actor_sub}>${request.user.user_id}`
+          : request.user?.user_id || 'anonymous',
       method: request.method,
       url: this.sanitizeUrl(request.url),
       ip: this.getClientIp(request),

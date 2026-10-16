@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { ErrorCode } from '../common/errors/error-codes';
 import { classifyLocalFieldTimezone } from '../common/validators/iana-timezone.validator';
+import { getAuditContext, runWithAuditContext } from './audit-request-context';
 import {
   CriticalAuditEvent,
   CriticalAuditWriterService,
@@ -230,5 +231,59 @@ describe('CriticalAuditWriterService', () => {
       { status: 'fulfilled', value: { replayed: false } },
       { status: 'rejected', reason: { code: ErrorCode.AUDIT_WRITE_FAILED } },
     ]);
+  });
+
+  describe('acting for a dependent', () => {
+    const actingFor = {
+      actorUserId: 'guardian-1',
+      subjectUserId: 'dependent-1',
+      guardianshipId: 'gs-1',
+      kind: 'guardian_acting' as const,
+    };
+
+    const writeActing = async (input: CriticalAuditEvent) => {
+      const tx = auditTx();
+      tx.audit_logs.findUnique.mockResolvedValue(null);
+      tx.audit_logs.create.mockResolvedValue({ audit_log_id: 9n });
+      await runWithAuditContext(async () => {
+        const context = getAuditContext();
+        if (context) context.actingFor = actingFor;
+        await writer.write(tx, input);
+      });
+      return tx.audit_logs.create.mock.calls[0][0].data;
+    };
+
+    it('attributes an event whose actor is the dependent to the guardian', async () => {
+      const data = await writeActing({
+        ...event(),
+        actor: { ...event().actor, userId: 'dependent-1' },
+        target: { userId: null, scope: {} },
+      });
+
+      expect(data).toMatchObject({
+        actor_user_id: 'guardian-1',
+        actor_kind: 'guardian_acting',
+        target_user_id: 'dependent-1',
+      });
+    });
+
+    it('does not override a third-party actor', async () => {
+      const data = await writeActing(event());
+
+      expect(data).toMatchObject({
+        actor_user_id: 'actor-1',
+        actor_kind: 'user',
+        target_user_id: 'target-1',
+      });
+    });
+
+    it('leaves system events alone', async () => {
+      const data = await writeActing({
+        ...event(),
+        actor: { kind: 'system', userId: null, roleName: null, scope: {} },
+      });
+
+      expect(data).toMatchObject({ actor_user_id: null, actor_kind: 'system' });
+    });
   });
 });

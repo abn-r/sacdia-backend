@@ -17,10 +17,34 @@ import {
 import {
   ACCESS_JWT_AUDIENCE,
   ACCESS_JWT_ISSUER,
+  DEVICE_AUDIENCE,
   QR_MEMBER_AUDIENCE,
   isAccessJwtClaims,
   jwtAudienceIncludes,
 } from '../../common/constants/jwt-audiences';
+import { setAuditActingFor } from '../../audit-logs/audit-request-context';
+import {
+  actingForForbidden,
+  actingForHeaderInvalid,
+} from '../acting-for/acting-for.errors';
+import type { ActingGrant } from '../acting-for/acting-for.cache';
+import { ActingForResolver } from '../acting-for/acting-for.resolver';
+import {
+  ACTING_GRANT_MEMO,
+  type AuthPrincipal,
+} from '../acting-for/auth-principal';
+
+/** Header a guardian sends to act for one of their dependents. */
+export const ACTING_FOR_HEADER = 'x-acting-for';
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface ActingGrantMemo {
+  guardianId: string;
+  dependentId: string;
+  grant: ActingGrant;
+}
 
 export interface JwtPayload {
   sub: string; // user_id
@@ -61,6 +85,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     configService: ConfigService,
     private readonly tokenBlacklistService: TokenBlacklistService,
     private readonly prisma: PrismaService,
+    private readonly actingForResolver: ActingForResolver,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -80,7 +105,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     );
   }
 
-  async validate(req: Request, payload: JwtPayload) {
+  async validate(req: Request, payload: JwtPayload): Promise<AuthPrincipal> {
+    if (jwtAudienceIncludes(payload.aud, DEVICE_AUDIENCE)) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_device_audience_rejected',
+          sub: payload.sub,
+        }),
+      );
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
+    }
+
     if (jwtAudienceIncludes(payload.aud, QR_MEMBER_AUDIENCE)) {
       this.logger.warn(
         JSON.stringify({
@@ -141,14 +176,130 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       await this.applyDegradedMode(payload);
     }
 
-    return {
+    const basePrincipal: AuthPrincipal = {
       sub: payload.sub,
       userId: payload.sub,
       user_id: payload.sub,
       email: payload.email ?? null,
       mfa_pending: payload.mfa_pending ?? false,
       sid: payload.sid ?? null,
+      kind: 'user',
+      actor_sub: payload.sub,
+      acting_for: false,
+      scopes: null,
     };
+
+    const dependentId = this.readActingForHeader(req);
+    if (dependentId === null) {
+      return basePrincipal;
+    }
+
+    return this.buildActingPrincipal(req, payload, basePrincipal, dependentId);
+  }
+
+  /**
+   * Reads `X-Acting-For`. Absent => null (behavior unchanged). Repeated or
+   * non-UUID values => 400, so a malformed header never silently means "me".
+   */
+  private readActingForHeader(req: Request): string | null {
+    const raw = req.headers?.[ACTING_FOR_HEADER];
+    if (raw === undefined) {
+      return null;
+    }
+    if (typeof raw !== 'string' || !UUID_PATTERN.test(raw)) {
+      throw actingForHeaderInvalid();
+    }
+    return raw.toLowerCase();
+  }
+
+  /**
+   * Substitutes the principal: `sub`/`userId` become the dependent, `actor_sub`
+   * stays the guardian. Every refusal is the SAME 403 (nothing to enumerate);
+   * the real cause only goes to the `acting_for_denied` log.
+   */
+  private async buildActingPrincipal(
+    req: Request,
+    payload: JwtPayload,
+    basePrincipal: AuthPrincipal,
+    dependentId: string,
+  ): Promise<AuthPrincipal> {
+    // An aal1 (password-only) token must not act for anyone, and acting for
+    // yourself is meaningless: both are refused before touching the database.
+    if (payload.mfa_pending) {
+      this.logActingDenied(payload.sub, dependentId, 'mfa_pending');
+      throw actingForForbidden();
+    }
+    if (dependentId === payload.sub.toLowerCase()) {
+      this.logActingDenied(payload.sub, dependentId, 'header_equals_sub');
+      throw actingForForbidden();
+    }
+
+    // A local @UseGuards(JwtAuthGuard) re-runs validate() on the same request:
+    // reuse the first lookup instead of repeating it.
+    const memoHolder = req as Request & {
+      [ACTING_GRANT_MEMO]?: ActingGrantMemo;
+    };
+    const memo = memoHolder[ACTING_GRANT_MEMO];
+    let grant: ActingGrant | undefined;
+    if (
+      memo &&
+      memo.guardianId === payload.sub &&
+      memo.dependentId === dependentId
+    ) {
+      grant = memo.grant;
+    } else {
+      const resolution = await this.actingForResolver.resolve(
+        payload.sub,
+        dependentId,
+      );
+      if (!resolution.granted) {
+        this.logActingDenied(payload.sub, dependentId, resolution.cause);
+        throw actingForForbidden();
+      }
+      grant = resolution.grant;
+      memoHolder[ACTING_GRANT_MEMO] = {
+        guardianId: payload.sub,
+        dependentId,
+        grant,
+      };
+    }
+
+    setAuditActingFor({
+      actorUserId: payload.sub,
+      subjectUserId: dependentId,
+      guardianshipId: grant.guardianshipId,
+      kind: 'guardian_acting',
+    });
+
+    return {
+      ...basePrincipal,
+      sub: dependentId,
+      userId: dependentId,
+      user_id: dependentId,
+      email: null,
+      mfa_pending: false,
+      kind: 'guardian_acting',
+      actor_sub: payload.sub,
+      acting_for: true,
+      scopes: grant.scopes,
+      guardianship_id: grant.guardianshipId,
+      consent_status: grant.consentStatus,
+    };
+  }
+
+  private logActingDenied(
+    guardianId: string,
+    dependentId: string,
+    cause: string,
+  ): void {
+    this.logger.warn(
+      JSON.stringify({
+        event: 'acting_for_denied',
+        guardian: guardianId,
+        dependent: dependentId,
+        cause,
+      }),
+    );
   }
 
   /**

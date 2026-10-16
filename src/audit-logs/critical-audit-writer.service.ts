@@ -4,6 +4,7 @@ import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import type { BusinessDate } from '../common/clock/zoned-business-time.service';
 import type { CanonicalGeographicIanaTimezone } from '../common/timezone/canonical-geographic-iana-timezone';
+import { applyActingForAttribution } from './acting-for-attribution';
 import { markExplicitAuditRecorded } from './audit-request-context';
 
 type AuditTransaction = {
@@ -124,6 +125,18 @@ export class CriticalAuditWriterService {
   }
 
   private data(event: CriticalAuditEvent): Prisma.audit_logsCreateArgs['data'] {
+    // A guardian acting for a dependent is the real actor of this event; the
+    // dependent becomes the target. Third-party actors are never overridden.
+    // Only actor/target are touched: the stored shape is compared on replay.
+    const attributed = applyActingForAttribution(
+      {
+        actor_user_id: event.actor.userId,
+        actor_kind: event.actor.kind,
+        target_user_id: event.target.userId,
+      },
+      { withRequestContext: false },
+    );
+
     return {
       entity_type: event.entityType,
       entity_id: event.entityId,
@@ -131,11 +144,11 @@ export class CriticalAuditWriterService {
       event_key: event.eventKey,
       club_id: event.clubId ?? null,
       summary: event.summary ?? null,
-      actor_user_id: event.actor.userId,
-      actor_kind: event.actor.kind,
+      actor_user_id: attributed.actor_user_id ?? null,
+      actor_kind: attributed.actor_kind ?? event.actor.kind,
       actor_role_name: event.actor.roleName,
       actor_scope: event.actor.scope as Prisma.InputJsonValue,
-      target_user_id: event.target.userId,
+      target_user_id: attributed.target_user_id ?? null,
       target_scope: event.target.scope as Prisma.InputJsonValue,
       effective_at: event.effectiveAt ?? null,
       correlation_id: event.correlationId ?? null,

@@ -853,6 +853,11 @@ export enum ErrorCode {
   GUARD_ASSIGNMENT_SCOPE_INVALID = 'GUARD_ASSIGNMENT_SCOPE_INVALID',
   GUARD_ASSIGNMENT_NOT_FOUND = 'GUARD_ASSIGNMENT_NOT_FOUND',
 
+  // ── Acting for (guardian acts as a dependent) ──────────────────────────────
+  ACTING_FOR_HEADER_INVALID = 'ACTING_FOR_HEADER_INVALID',
+  ACTING_FOR_FORBIDDEN = 'ACTING_FOR_FORBIDDEN',
+  ACTING_FOR_SCOPE_DENIED = 'ACTING_FOR_SCOPE_DENIED',
+
   // ── File Validation ───────────────────────────────────────────────────────
   FILE_TOO_LARGE = 'FILE_TOO_LARGE',
   FILE_TYPE_INVALID = 'FILE_TYPE_INVALID',

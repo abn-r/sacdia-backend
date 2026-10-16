@@ -68,6 +68,9 @@ describe('AuthService', () => {
     session: {
       deleteMany: jest.fn(),
     },
+    guardianships: {
+      count: jest.fn().mockResolvedValue(0),
+    },
   };
 
   // -------------------------------------------------------------------------
@@ -967,6 +970,98 @@ describe('AuthService', () => {
       await expect(service.getProfile('missing-user')).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+
+    describe('acting_for and family', () => {
+      const resolvedProfile = (userId: string) => ({
+        profile: {
+          user_id: userId,
+          email: null,
+          name: 'Ana',
+          paternal_last_name: 'Perez',
+          maternal_last_name: null,
+          user_image: null,
+        },
+        post_register_complete: false,
+        authorization: {
+          grants: { global_roles: [], club_assignments: [] },
+          active_assignment: { assignment_id: null },
+          effective: { permissions: [], scope: { global: {}, club: null } },
+        },
+        legacy: {
+          roles: ['user'],
+          permissions: [],
+          club: null,
+          club_context: {
+            active_assignment_id: null,
+            active: null,
+            available: [],
+          },
+        },
+      });
+
+      it('exposes acting_for and hides family while a guardian acts for a dependent', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedProfile('dependent-1'),
+        );
+
+        const result = await service.getProfile('dependent-1', {
+          acting_for: true,
+          actor_sub: 'guardian-1',
+          guardianship_id: 'gs-1',
+          consent_status: 'pending',
+          scopes: ['self:read', 'profile:write'],
+        });
+
+        expect(result.data.acting_for).toEqual({
+          actor_user_id: 'guardian-1',
+          dependent_user_id: 'dependent-1',
+          guardianship_id: 'gs-1',
+          consent_status: 'pending',
+          scopes: ['self:read', 'profile:write'],
+        });
+        expect(result.data.family).toBeNull();
+        expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
+      });
+
+      it('returns acting_for null and the family summary for a regular user', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedProfile('guardian-1'),
+        );
+        mockPrismaService.guardianships.count.mockResolvedValueOnce(2);
+
+        const result = await service.getProfile('guardian-1', {
+          acting_for: false,
+          actor_sub: 'guardian-1',
+          scopes: null,
+        });
+
+        expect(result.data.acting_for).toBeNull();
+        expect(result.data.family).toEqual({
+          is_guardian: true,
+          dependents_count: 2,
+        });
+        expect(mockPrismaService.guardianships.count).toHaveBeenCalledWith({
+          where: expect.objectContaining({
+            guardian_user_id: 'guardian-1',
+            is_custodian: false,
+            is_test_data: false,
+          }),
+        });
+      });
+
+      it('reports is_guardian false when the user has no dependents', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedProfile('user-1'),
+        );
+
+        const result = await service.getProfile('user-1');
+
+        expect(result.data.family).toEqual({
+          is_guardian: false,
+          dependents_count: 0,
+        });
+      });
     });
 
     it('should return email null (no 500) for a profile without email', async () => {

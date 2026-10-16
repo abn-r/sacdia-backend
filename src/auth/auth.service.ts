@@ -38,6 +38,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { LegalService } from '../legal/legal.service';
+import type { AuthPrincipal } from './acting-for/auth-principal';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -646,13 +647,26 @@ export class AuthService {
     }
   }
 
-  async getProfile(userId: string) {
+  async getProfile(
+    userId: string,
+    principal?: Pick<
+      AuthPrincipal,
+      | 'acting_for'
+      | 'actor_sub'
+      | 'guardianship_id'
+      | 'consent_status'
+      | 'scopes'
+    >,
+  ) {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
-    const [signedUserImage, legal] = await Promise.all([
+    const acting = principal?.acting_for === true;
+    const [signedUserImage, legal, family] = await Promise.all([
       this.resolvePrivateProfilePicture(resolved.profile.user_image),
       // Outside the authorization cache: acceptance must reflect the DB right away.
       this.legalService.getStatus(userId),
+      // Hidden while acting: a dependent has no family of its own to show.
+      acting ? Promise.resolve(null) : this.loadFamilySummary(userId),
     ]);
 
     return {
@@ -667,7 +681,43 @@ export class AuthService {
         club_context: resolved.legacy.club_context,
         authorization: resolved.authorization,
         legal,
+        acting_for: acting
+          ? {
+              actor_user_id: principal.actor_sub,
+              dependent_user_id: userId,
+              guardianship_id: principal.guardianship_id ?? null,
+              consent_status: principal.consent_status ?? null,
+              scopes: principal.scopes ?? [],
+            }
+          : null,
+        family,
       },
+    };
+  }
+
+  /**
+   * Guardian summary for GET /auth/me. Mirrors the active-dependent rule used
+   * by the dependent limit: non-custodian, non-test, pending|verified, and the
+   * dependent is not frozen or purged.
+   */
+  private async loadFamilySummary(
+    userId: string,
+  ): Promise<{ is_guardian: boolean; dependents_count: number }> {
+    const dependentsCount = await this.prisma.guardianships.count({
+      where: {
+        guardian_user_id: userId,
+        is_custodian: false,
+        is_test_data: false,
+        consent_status: { in: ['pending', 'verified'] },
+        dependent: {
+          dependent_profile: { is: { frozen_at: null, purged_at: null } },
+        },
+      },
+    });
+
+    return {
+      is_guardian: dependentsCount > 0,
+      dependents_count: dependentsCount,
     };
   }
 

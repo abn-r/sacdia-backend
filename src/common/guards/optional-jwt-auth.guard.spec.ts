@@ -3,10 +3,11 @@ import {
   AppServiceUnavailableException,
   AppUnauthorizedException,
 } from '../errors/app.exception';
+import { Reflector } from '@nestjs/core';
 import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
 
 describe('OptionalJwtAuthGuard', () => {
-  const guard = new OptionalJwtAuthGuard();
+  const guard = new OptionalJwtAuthGuard(new Reflector());
   const context = {} as any;
 
   it('attaches the user when authentication succeeds', () => {

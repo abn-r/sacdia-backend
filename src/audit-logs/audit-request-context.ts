@@ -10,10 +10,22 @@ import type { NextFunction, Request, Response } from 'express';
  * - `explicitAuditRecorded` is the dedup flag: when a service writes a rich
  *   domain event during the request, the HTTP interceptor skips its generic
  *   row so the operation produces one meaningful entry instead of two.
+ * - `actingFor` is set by JwtStrategy when a guardian acts for a dependent, so
+ *   `recordEvent` and the critical writer attribute the row to the real actor.
  */
+export interface AuditActingFor {
+  /** The real person (guardian). */
+  actorUserId: string;
+  /** The profile being acted for (dependent): `request.user.sub`. */
+  subjectUserId: string;
+  guardianshipId: string;
+  kind: 'guardian_acting';
+}
+
 export interface AuditRequestContext {
   correlationId: string;
   explicitAuditRecorded: boolean;
+  actingFor?: AuditActingFor;
 }
 
 const storage = new AsyncLocalStorage<AuditRequestContext>();
@@ -37,6 +49,17 @@ export function getAuditContext(): AuditRequestContext | undefined {
 
 export function getAuditCorrelationId(): string | undefined {
   return storage.getStore()?.correlationId;
+}
+
+export function getAuditActingFor(): AuditActingFor | undefined {
+  return storage.getStore()?.actingFor;
+}
+
+export function setAuditActingFor(actingFor: AuditActingFor): void {
+  const context = storage.getStore();
+  if (context) {
+    context.actingFor = actingFor;
+  }
 }
 
 export function markExplicitAuditRecorded(): void {

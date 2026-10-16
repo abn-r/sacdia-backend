@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AppNotFoundException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
+import { applyActingForAttribution } from './acting-for-attribution';
 import {
   getAuditCorrelationId,
   markExplicitAuditRecorded,
@@ -14,6 +15,8 @@ export interface RecordEventDto {
   action: 'CREATED' | 'UPDATED' | 'DELETED' | (string & {});
   club_id?: number;
   actor_user_id?: string;
+  /** Profile the event is about; filled with the dependent while a guardian acts. */
+  target_user_id?: string;
   summary?: string;
   changes?: Record<string, unknown>;
   result?: 'succeeded' | 'failed';
@@ -22,7 +25,8 @@ export interface RecordEventDto {
   request_context?: Record<string, unknown>;
   /** Defaults to the ambient request correlation id when available. */
   correlation_id?: string;
-  actor_kind?: 'user' | 'anonymous' | 'system';
+  actor_kind?:
+    'user' | 'anonymous' | 'system' | 'guardian_acting' | 'linked_device';
 }
 
 export interface AuditLogItem {
@@ -92,7 +96,10 @@ export class AuditLogsService {
    * Fire-and-forget event recorder. Errors are swallowed and logged so
    * callers are never blocked by audit-log failures.
    */
-  async recordEvent(dto: RecordEventDto): Promise<void> {
+  async recordEvent(input: RecordEventDto): Promise<void> {
+    // While a guardian acts for a dependent, the actor is the guardian and the
+    // dependent is the target (see applyActingForAttribution).
+    const dto = applyActingForAttribution(input);
     const source = dto.source ?? 'service';
     // Domain events mark the request context up front (even if the insert
     // fails) so the HTTP interceptor never emits a redundant generic row.
@@ -107,6 +114,7 @@ export class AuditLogsService {
           action: dto.action,
           club_id: dto.club_id ?? null,
           actor_user_id: dto.actor_user_id ?? null,
+          target_user_id: dto.target_user_id ?? null,
           summary: dto.summary ?? null,
           changes:
             dto.changes !== undefined
@@ -190,8 +198,7 @@ export class AuditLogsService {
    */
   async listAdmin(opts: ListAdminOpts = {}): Promise<ListAdminResult> {
     const limit = Math.min(opts.limit ?? 50, 100);
-    const cursor =
-      opts.cursor !== undefined ? BigInt(opts.cursor) : undefined;
+    const cursor = opts.cursor !== undefined ? BigInt(opts.cursor) : undefined;
 
     const createdAt: Prisma.DateTimeFilter = {};
     if (opts.from) createdAt.gte = parseDateBound(opts.from, 'start');
@@ -205,9 +212,7 @@ export class AuditLogsService {
         ...(opts.result ? { result: opts.result } : {}),
         ...(opts.source ? { source: opts.source } : {}),
         ...(opts.club_id !== undefined ? { club_id: opts.club_id } : {}),
-        ...(opts.correlation_id
-          ? { correlation_id: opts.correlation_id }
-          : {}),
+        ...(opts.correlation_id ? { correlation_id: opts.correlation_id } : {}),
         ...(Object.keys(createdAt).length > 0 ? { created_at: createdAt } : {}),
         ...(cursor !== undefined ? { audit_log_id: { lt: cursor } } : {}),
       },
@@ -342,5 +347,5 @@ function asJsonObject(
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
-  return value as Record<string, unknown>;
+  return value;
 }

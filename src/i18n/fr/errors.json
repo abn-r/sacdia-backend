@@ -778,5 +778,8 @@
   "CERTIFICATE_IMPORT_HONOR_INSTRUCTOR_NOT_ALLOWED": "Les lignes de classe n'ont pas d'instructeur de spécialité",
   "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "Le type de club ne correspond pas à la classe choisie",
   "CERTIFICATE_IMPORT_BATCH_NOT_DELETABLE": "Seul un brouillon sans demande institutionnelle peut être supprimé",
-  "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "La lecture OCR est encore en cours. Réessayez dans quelques secondes."
+  "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "La lecture OCR est encore en cours. Réessayez dans quelques secondes.",
+  "ACTING_FOR_HEADER_INVALID": "L'en-tête X-Acting-For n'est pas valide",
+  "ACTING_FOR_FORBIDDEN": "Vous n'avez pas accès à ce profil",
+  "ACTING_FOR_SCOPE_DENIED": "Cette action n'est pas disponible lorsque vous agissez au nom d'un autre profil"
 }

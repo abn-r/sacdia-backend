@@ -791,5 +791,8 @@
   "CERTIFICATE_IMPORT_HONOR_INSTRUCTOR_NOT_ALLOWED": "Class rows do not take a honor instructor",
   "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "The club type does not match the selected class",
   "CERTIFICATE_IMPORT_BATCH_NOT_DELETABLE": "Only a draft without institutional requests can be deleted",
-  "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "The OCR read is still running. Try again in a few seconds."
+  "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "The OCR read is still running. Try again in a few seconds.",
+  "ACTING_FOR_HEADER_INVALID": "The X-Acting-For header is not valid",
+  "ACTING_FOR_FORBIDDEN": "You do not have access to this profile",
+  "ACTING_FOR_SCOPE_DENIED": "This action is not available while acting on behalf of another profile"
 }

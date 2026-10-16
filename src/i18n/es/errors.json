@@ -791,5 +791,8 @@
   "CERTIFICATE_IMPORT_HONOR_INSTRUCTOR_NOT_ALLOWED": "Las filas de clase no llevan instructor de especialidad",
   "CERTIFICATE_IMPORT_CLASS_CLUB_TYPE_MISMATCH": "El tipo de club no coincide con la clase elegida",
   "CERTIFICATE_IMPORT_BATCH_NOT_DELETABLE": "Solo se puede eliminar un borrador sin solicitudes institucionales",
-  "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "La lectura OCR sigue en curso. Inténtalo de nuevo en unos segundos."
+  "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "La lectura OCR sigue en curso. Inténtalo de nuevo en unos segundos.",
+  "ACTING_FOR_HEADER_INVALID": "El encabezado X-Acting-For no es válido",
+  "ACTING_FOR_FORBIDDEN": "No tienes acceso a este perfil",
+  "ACTING_FOR_SCOPE_DENIED": "Esta acción no está disponible mientras actúas en nombre de otro perfil"
 }
