@@ -85,6 +85,11 @@ export class MembershipRequestsController {
       'Forbidden — requires club_members:approve permission for this club',
   })
   @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'MR_CONSENT_NOT_VERIFIED: the requester is a minor whose guardian consent is not verified yet (or the request was already processed)',
+  })
   async approve(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,

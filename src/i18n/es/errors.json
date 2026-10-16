@@ -570,6 +570,7 @@
   "FCM_TOKEN_FORBIDDEN": "Solo podés desregistrar tus propios tokens",
   "MR_NOT_FOUND": "Solicitud de membresía no encontrada",
   "MR_ALREADY_PENDING": "La solicitud ya fue procesada",
+  "MR_CONSENT_NOT_VERIFIED": "El consentimiento del tutor de este menor aún no está verificado",
   "ANNUAL_CONTINUATION_USER_NOT_IN_ORIGIN": "Uno o más user_id no están presentes en la lista del año de origen para esta sección",
   "ANNUAL_ENROLL_NOT_GHOST": "El usuario no tiene una asignación inactiva (fantasma) en ningún club — la autoinscripción anual no está disponible",
   "ANNUAL_ENROLL_SECTION_INVALID": "La sección de club indicada no pertenece al mismo club que la asignación inactiva del usuario",

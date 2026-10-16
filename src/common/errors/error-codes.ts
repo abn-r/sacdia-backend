@@ -773,6 +773,7 @@ export enum ErrorCode {
   // ── Membership Requests ────────────────────────────────────────────────────
   MR_NOT_FOUND = 'MR_NOT_FOUND',
   MR_ALREADY_PENDING = 'MR_ALREADY_PENDING',
+  MR_CONSENT_NOT_VERIFIED = 'MR_CONSENT_NOT_VERIFIED',
 
   // ── Annual Membership (continuation + ghost self-enroll) ──────────────────
   ANNUAL_CONTINUATION_USER_NOT_IN_ORIGIN = 'ANNUAL_CONTINUATION_USER_NOT_IN_ORIGIN',

@@ -565,6 +565,7 @@
   "FCM_TOKEN_FORBIDDEN": "Você só pode cancelar o registro dos seus próprios tokens",
   "MR_NOT_FOUND": "Solicitação de adesão não encontrada",
   "MR_ALREADY_PENDING": "A solicitação já foi processada",
+  "MR_CONSENT_NOT_VERIFIED": "O consentimento do responsável deste menor ainda não foi verificado",
   "ANNUAL_CONTINUATION_USER_NOT_IN_ORIGIN": "Um ou mais user_ids não estão presentes na lista do ano de origem para esta seção",
   "ANNUAL_ENROLL_NOT_GHOST": "O usuário não possui uma atribuição inativa (fantasma) em nenhum clube — a auto-inscrição anual não está disponível",
   "ANNUAL_ENROLL_SECTION_INVALID": "A seção de clube indicada não pertence ao mesmo clube que a atribuição inativa do usuário",

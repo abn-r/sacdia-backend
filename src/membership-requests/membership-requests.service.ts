@@ -9,6 +9,8 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ConsentGateService } from './consent-gate.service';
 
 const MEMBERSHIP_REQUEST_REVIEWER_ROLES = [
   'director',
@@ -16,6 +18,16 @@ const MEMBERSHIP_REQUEST_REVIEWER_ROLES = [
   'secretary',
   'secretary-treasurer',
 ] as const;
+
+/** Default pending timeout (system_config membership.pending_timeout_days). */
+const DEFAULT_PENDING_TIMEOUT_DAYS = 8;
+
+/**
+ * Requests of a dependent whose guardian consent is still pending live this
+ * long (ruling #11518): the paper form travels through the guardian and the
+ * director, so the normal timeout is too short.
+ */
+export const DEPENDENT_CONSENT_PENDING_TIMEOUT_DAYS = 30;
 
 export type PendingMembershipRequestNotificationInput = {
   userId: string;
@@ -33,6 +45,8 @@ export class MembershipRequestsService {
     private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly notificationsService: NotificationsService,
     private readonly roleEligibility: ClubRoleEligibilityService,
+    private readonly consentGate: ConsentGateService,
+    private readonly auditLogs: AuditLogsService,
   ) {}
 
   /**
@@ -75,9 +89,13 @@ export class MembershipRequestsService {
    * prevent TOCTOU races where concurrent approvals both pass a prior findFirst
    * check and both succeed.
    *
-   * NOTE (audit trail): approvedById is accepted but not persisted — the schema
-   * does not have approved_by_id / approved_at columns on club_role_assignments.
-   * A separate migration is required to close this audit gap.
+   * Dependents (users with a dependent_profiles row) can only be approved once
+   * a guardian's consent is verified (409 MR_CONSENT_NOT_VERIFIED); the check
+   * runs inside the transaction.
+   *
+   * Audit trail: the schema has no approved_by_id / approved_at columns on
+   * club_role_assignments, so the reviewer is recorded in audit_logs as
+   * `membership_request.approved` (actor = reviewer).
    */
   async approve(
     clubSectionId: number,
@@ -96,6 +114,7 @@ export class MembershipRequestsService {
           select: { user_id: true, roles: { select: { role_name: true } } },
         });
         if (pending) {
+          await this.consentGate.assertApprovable(tx, pending.user_id);
           await this.roleEligibility.assertAssignment({
             userId: pending.user_id,
             roleName: pending.roles.role_name,
@@ -139,6 +158,8 @@ export class MembershipRequestsService {
       assignment!.user_id,
     );
 
+    this.recordReviewAudit('approved', assignment!, approvedById);
+
     this.emitRealtimeInvalidation(
       assignment!.club_section_id,
       assignment!.assignment_id,
@@ -157,9 +178,9 @@ export class MembershipRequestsService {
    * prevent TOCTOU races where concurrent rejections both pass a prior findFirst
    * check and both succeed.
    *
-   * NOTE (audit trail): rejectedById is accepted but not persisted — the schema
-   * does not have rejected_by_id / rejected_at columns on club_role_assignments.
-   * A separate migration is required to close this audit gap.
+   * Audit trail: the reviewer is recorded in audit_logs as
+   * `membership_request.rejected` (actor = reviewer); club_role_assignments has
+   * no rejected_by_id / rejected_at columns.
    */
   async reject(
     clubSectionId: number,
@@ -209,6 +230,8 @@ export class MembershipRequestsService {
     await this.authorizationContext.invalidateUserAuthorizationCache(
       assignment!.user_id,
     );
+
+    this.recordReviewAudit('rejected', assignment!, rejectedById);
 
     this.emitRealtimeInvalidation(
       assignment!.club_section_id,
@@ -323,28 +346,69 @@ export class MembershipRequestsService {
   }
 
   /**
-   * Auto-expire pending requests older than configured days.
-   * Reads timeout from system_config (key: 'membership.pending_timeout_days').
-   * Defaults to 8 days if not configured.
+   * Auto-expire stale pending requests.
+   *
+   * The base timeout comes from system_config (key
+   * 'membership.pending_timeout_days', default 8 days). Dependents are the
+   * exception (FP-40, rulings A1/A11):
+   *  - guardian consent NOT verified: the request lives 30 days from creation;
+   *  - consent verified: the clock restarts, i.e. the base timeout is measured
+   *    from max(created_at, verified_at), so a request that waited weeks for the
+   *    paper form is not expired the moment the director verifies it;
+   *  - everybody else: the base timeout from creation, unchanged.
    */
   async expireStaleRequests(): Promise<number> {
     const config = await this.prisma.system_config.findUnique({
       where: { config_key: 'membership.pending_timeout_days' },
     });
 
-    const timeoutDays = config ? parseInt(config.config_value, 10) : 8;
+    const timeoutDays = config
+      ? parseInt(config.config_value, 10)
+      : DEFAULT_PENDING_TIMEOUT_DAYS;
 
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - timeoutDays);
+    const now = new Date();
+    const baseCutoff = this.daysAgo(now, timeoutDays);
+    const consentPendingCutoff = this.daysAgo(
+      now,
+      Math.max(timeoutDays, DEPENDENT_CONSENT_PENDING_TIMEOUT_DAYS),
+    );
 
     const { count, userIds } = await this.prisma.$transaction(async (tx) => {
-      const where = {
-        status: 'pending',
-        active: true,
-        created_at: { lt: cutoff },
-      };
+      // Nothing can expire before the base cutoff: dependents only get MORE time.
+      const candidates = await tx.club_role_assignments.findMany({
+        where: {
+          status: 'pending',
+          active: true,
+          created_at: { lt: baseCutoff },
+        },
+        select: { assignment_id: true, user_id: true, created_at: true },
+      });
+      if (candidates.length === 0) return { count: 0, userIds: [] as string[] };
+
+      const consent = await this.consentGate.loadDependentConsent(tx, [
+        ...new Set(candidates.map(({ user_id }) => user_id)),
+      ]);
+
+      const expirableIds = candidates
+        .filter(({ user_id, created_at }) => {
+          const state = consent.get(user_id);
+          if (!state) return true; // not a dependent: base timeout
+          if (!state.verifiedAt) return created_at < consentPendingCutoff;
+          // Verified: the base timeout restarts at verification.
+          const clockStart =
+            state.verifiedAt > created_at ? state.verifiedAt : created_at;
+          return clockStart < baseCutoff;
+        })
+        .map(({ assignment_id }) => assignment_id);
+      if (expirableIds.length === 0)
+        return { count: 0, userIds: [] as string[] };
+
       const affected = await tx.club_role_assignments.updateManyAndReturn({
-        where,
+        where: {
+          assignment_id: { in: expirableIds },
+          status: 'pending',
+          active: true,
+        },
         data: {
           status: 'expired',
           modified_at: new Date(),
@@ -364,6 +428,49 @@ export class MembershipRequestsService {
       ),
     );
     return count;
+  }
+
+  private daysAgo(from: Date, days: number): Date {
+    const cutoff = new Date(from);
+    cutoff.setDate(cutoff.getDate() - days);
+    return cutoff;
+  }
+
+  /**
+   * Reviewer audit (FP-20): who approved/rejected, on whom, in which section.
+   * a failing audit insert is logged and can never undo a review.
+   */
+  private recordReviewAudit(
+    outcome: 'approved' | 'rejected',
+    assignment: {
+      assignment_id: string;
+      user_id: string;
+      club_section_id: number | null;
+    },
+    reviewerId: string,
+  ): void {
+    void this.auditLogs
+      .recordEvent({
+        entity_type: 'membership_request',
+        entity_id: assignment.assignment_id,
+        action: outcome,
+        actor_user_id: reviewerId,
+        actor_kind: 'user',
+        target_user_id: assignment.user_id,
+        summary: `Solicitud de membresía ${outcome === 'approved' ? 'aprobada' : 'rechazada'}`,
+        changes: {
+          club_section_id: assignment.club_section_id,
+          from_status: 'pending',
+          to_status: outcome === 'approved' ? 'active' : 'rejected',
+        },
+      })
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Review audit failed for assignment ${assignment.assignment_id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
   }
 
   private emitRealtimeInvalidation(

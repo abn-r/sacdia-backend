@@ -7,6 +7,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { AppForbiddenException } from '../common/errors/app.exception';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ConsentGateService } from './consent-gate.service';
 
 describe('MembershipRequestsService', () => {
   let service: MembershipRequestsService;
@@ -34,6 +36,15 @@ describe('MembershipRequestsService', () => {
     },
     users_pr: {
       update: jest.fn().mockResolvedValue({}),
+    },
+    // Adults are the default: no dependent_profiles row, so the consent gate is a no-op.
+    dependent_profiles: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    guardianships: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
     },
   });
 
@@ -69,6 +80,10 @@ describe('MembershipRequestsService', () => {
     assertAssignment: jest.fn(),
   };
 
+  const mockAuditLogs = {
+    recordEvent: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     mockRoleEligibility.assertAssignment.mockReset().mockResolvedValue({
@@ -97,6 +112,9 @@ describe('MembershipRequestsService', () => {
         },
         { provide: NotificationsService, useValue: mockNotificationsService },
         { provide: ClubRoleEligibilityService, useValue: mockRoleEligibility },
+        // Real gate: it only talks to the transaction client, which is mocked.
+        ConsentGateService,
+        { provide: AuditLogsService, useValue: mockAuditLogs },
       ],
     }).compile();
 
@@ -219,6 +237,156 @@ describe('MembershipRequestsService', () => {
         userId,
       );
     });
+    describe('consent gate (FP-39)', () => {
+      const dependentProfile = { user_id: userId };
+
+      it('blocks a dependent with pending consent with 409 and activates nothing', async () => {
+        transactionMock.dependent_profiles.findUnique.mockResolvedValue(
+          dependentProfile,
+        );
+        transactionMock.guardianships.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, actorId),
+        ).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).not.toHaveBeenCalled();
+        expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
+        expect(mockAuditLogs.recordEvent).not.toHaveBeenCalled();
+      });
+
+      it('only counts a real verified row: revoked and test rows are excluded by the query', async () => {
+        transactionMock.dependent_profiles.findUnique.mockResolvedValue(
+          dependentProfile,
+        );
+        transactionMock.guardianships.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, actorId),
+        ).rejects.toMatchObject({ code: ErrorCode.MR_CONSENT_NOT_VERIFIED });
+
+        expect(transactionMock.guardianships.findFirst).toHaveBeenCalledWith({
+          where: {
+            dependent_user_id: userId,
+            consent_status: 'verified',
+            is_test_data: false,
+          },
+          select: { guardianship_id: true },
+        });
+      });
+
+      it('approves a dependent once consent is verified', async () => {
+        transactionMock.dependent_profiles.findUnique.mockResolvedValue(
+          dependentProfile,
+        );
+        transactionMock.guardianships.findFirst.mockResolvedValue({
+          guardianship_id: 'g-1',
+        });
+
+        await service.approve(10, pendingAssignment.assignment_id, actorId);
+
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not touch adults: no guardianship lookup at all', async () => {
+        await service.approve(10, pendingAssignment.assignment_id, actorId);
+
+        expect(transactionMock.guardianships.findFirst).not.toHaveBeenCalled();
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).toHaveBeenCalledTimes(1);
+      });
+
+      it('checks consent inside the approving transaction, before activating', async () => {
+        transactionMock.dependent_profiles.findUnique.mockResolvedValue(
+          dependentProfile,
+        );
+        transactionMock.guardianships.findFirst.mockResolvedValue({
+          guardianship_id: 'g-1',
+        });
+
+        await service.approve(10, pendingAssignment.assignment_id, actorId);
+
+        expect(
+          transactionMock.guardianships.findFirst.mock.invocationCallOrder[0],
+        ).toBeLessThan(
+          transactionMock.club_role_assignments.updateMany.mock
+            .invocationCallOrder[0],
+        );
+        expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('reviewer audit (FP-20)', () => {
+      it('records membership_request.approved with the reviewer as actor', async () => {
+        await service.approve(10, pendingAssignment.assignment_id, actorId);
+
+        expect(mockAuditLogs.recordEvent).toHaveBeenCalledTimes(1);
+        expect(mockAuditLogs.recordEvent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            entity_type: 'membership_request',
+            entity_id: pendingAssignment.assignment_id,
+            action: 'approved',
+            actor_user_id: actorId,
+            actor_kind: 'user',
+            target_user_id: userId,
+            changes: expect.objectContaining({
+              club_section_id: 10,
+              to_status: 'active',
+            }),
+          }),
+        );
+      });
+
+      it('records membership_request.rejected with the reviewer as actor', async () => {
+        const reviewerId = '5b0d6bd6-1f5b-4ca4-a2a0-8f2d2a1d9e11';
+
+        await service.reject(
+          10,
+          pendingAssignment.assignment_id,
+          reviewerId,
+          'No',
+        );
+
+        expect(mockAuditLogs.recordEvent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            entity_type: 'membership_request',
+            action: 'rejected',
+            actor_user_id: reviewerId,
+            target_user_id: userId,
+          }),
+        );
+      });
+
+      it('does not audit a review that changed nothing', async () => {
+        transactionMock.club_role_assignments.updateMany.mockResolvedValue({
+          count: 0,
+        });
+
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, actorId),
+        ).rejects.toMatchObject({ code: ErrorCode.MR_ALREADY_PENDING });
+        expect(mockAuditLogs.recordEvent).not.toHaveBeenCalled();
+      });
+
+      it('does not let a failing audit insert undo the review', async () => {
+        mockAuditLogs.recordEvent.mockRejectedValueOnce(
+          new Error('audit down'),
+        );
+
+        // recordEvent is fire-and-forget; the review still succeeds.
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, actorId),
+        ).resolves.toBeDefined();
+      });
+    });
   });
 
   describe('cancelPendingForUser', () => {
@@ -313,18 +481,65 @@ describe('MembershipRequestsService', () => {
   });
 
   describe('expireStaleRequests', () => {
-    it('versions exactly the unique user IDs returned by the bulk write', async () => {
-      transactionMock.club_role_assignments.updateManyAndReturn.mockResolvedValue(
-        [
-          { user_id: userId },
-          { user_id: '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99' },
-          { user_id: userId },
-        ],
+    const DAY = 24 * 60 * 60 * 1000;
+    const daysAgo = (days: number) => new Date(Date.now() - days * DAY);
+    const dependentId = '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99';
+    const otherAdultId = '7c1b5b44-0f3e-4f4a-9a77-4a9c1b1f0c11';
+
+    /** Wires the candidate rows and the dependents' consent for one cron run. */
+    const arrange = (opts: {
+      candidates: Array<{
+        assignment_id: string;
+        user_id: string;
+        created_at: Date;
+      }>;
+      dependents?: string[];
+      verified?: Array<{ dependent_user_id: string; verified_at: Date }>;
+    }) => {
+      transactionMock.club_role_assignments.findMany.mockResolvedValue(
+        opts.candidates,
       );
+      transactionMock.dependent_profiles.findMany.mockResolvedValue(
+        (opts.dependents ?? []).map((user_id) => ({ user_id })),
+      );
+      transactionMock.guardianships.findMany.mockResolvedValue(
+        opts.verified ?? [],
+      );
+      transactionMock.club_role_assignments.updateManyAndReturn.mockImplementation(
+        ({ where }: { where: { assignment_id: { in: string[] } } }) =>
+          Promise.resolve(
+            opts.candidates
+              .filter((c) => where.assignment_id.in.includes(c.assignment_id))
+              .map((c) => ({ user_id: c.user_id })),
+          ),
+      );
+    };
+
+    const expiredIds = (): string[] => {
+      const calls =
+        transactionMock.club_role_assignments.updateManyAndReturn.mock.calls;
+      if (calls.length === 0) return [];
+      return (calls[0][0] as { where: { assignment_id: { in: string[] } } })
+        .where.assignment_id.in;
+    };
+
+    it('versions exactly the unique user IDs returned by the bulk write', async () => {
+      arrange({
+        candidates: [
+          { assignment_id: 'a1', user_id: userId, created_at: daysAgo(9) },
+          {
+            assignment_id: 'a2',
+            user_id: dependentId,
+            created_at: daysAgo(40),
+          },
+          { assignment_id: 'a3', user_id: userId, created_at: daysAgo(12) },
+        ],
+        dependents: [dependentId],
+      });
 
       await expect(service.expireStaleRequests()).resolves.toBe(3);
 
-      const expectedUserIds = [userId, '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99'];
+      const expectedUserIds = [userId, dependentId];
       expect(mockAuthorizationContextVersion.bumpMany).toHaveBeenCalledTimes(1);
       expect(mockAuthorizationContextVersion.bumpMany).toHaveBeenCalledWith(
         transactionMock,
@@ -350,16 +565,25 @@ describe('MembershipRequestsService', () => {
       expect(
         transactionMock.club_role_assignments.updateManyAndReturn,
       ).toHaveBeenCalledWith(
-        expect.objectContaining({ select: { user_id: true } }),
+        expect.objectContaining({
+          where: {
+            assignment_id: { in: ['a1', 'a2', 'a3'] },
+            status: 'pending',
+            active: true,
+          },
+          select: { user_id: true },
+        }),
       );
-      expect(
-        transactionMock.club_role_assignments.findMany,
-      ).not.toHaveBeenCalled();
     });
 
-    it('does not bump or clean up when the bulk write returns no rows', async () => {
+    it('does not bump or clean up when nothing is stale', async () => {
+      arrange({ candidates: [] });
+
       await expect(service.expireStaleRequests()).resolves.toBe(0);
 
+      expect(
+        transactionMock.club_role_assignments.updateManyAndReturn,
+      ).not.toHaveBeenCalled();
       expect(mockAuthorizationContextVersion.bumpMany).not.toHaveBeenCalled();
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
@@ -367,9 +591,11 @@ describe('MembershipRequestsService', () => {
     });
 
     it('rolls back the bulk write before cleanup when a returned user bump fails', async () => {
-      transactionMock.club_role_assignments.updateManyAndReturn.mockResolvedValue(
-        [{ user_id: userId }],
-      );
+      arrange({
+        candidates: [
+          { assignment_id: 'a1', user_id: userId, created_at: daysAgo(9) },
+        ],
+      });
       mockAuthorizationContextVersion.bumpMany.mockRejectedValueOnce(
         new Error('version write failed'),
       );
@@ -381,6 +607,195 @@ describe('MembershipRequestsService', () => {
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();
+    });
+
+    it('queries only pending requests older than the 8-day base cutoff by default', async () => {
+      arrange({ candidates: [] });
+
+      await service.expireStaleRequests();
+
+      const where = (
+        transactionMock.club_role_assignments.findMany.mock.calls[0][0] as {
+          where: { status: string; active: boolean; created_at: { lt: Date } };
+        }
+      ).where;
+      expect(where).toMatchObject({ status: 'pending', active: true });
+      const ageDays = (Date.now() - where.created_at.lt.getTime()) / DAY;
+      expect(ageDays).toBeGreaterThan(7.99);
+      expect(ageDays).toBeLessThan(8.01);
+    });
+
+    it('honors system_config for the base timeout', async () => {
+      mockPrismaService.system_config.findUnique.mockResolvedValue({
+        config_value: '5',
+      });
+      arrange({
+        candidates: [
+          { assignment_id: 'a1', user_id: userId, created_at: daysAgo(6) },
+        ],
+      });
+
+      await service.expireStaleRequests();
+
+      expect(expiredIds()).toEqual(['a1']);
+    });
+
+    describe('dependents with pending consent (FP-40, A1/A11)', () => {
+      it('keeps a 9-day-old pending-consent request (30-day window)', async () => {
+        arrange({
+          candidates: [
+            {
+              assignment_id: 'dep-9d',
+              user_id: dependentId,
+              created_at: daysAgo(9),
+            },
+          ],
+          dependents: [dependentId],
+        });
+
+        await expect(service.expireStaleRequests()).resolves.toBe(0);
+        expect(expiredIds()).toEqual([]);
+      });
+
+      it('expires a 31-day-old pending-consent request', async () => {
+        arrange({
+          candidates: [
+            {
+              assignment_id: 'dep-31d',
+              user_id: dependentId,
+              created_at: daysAgo(31),
+            },
+          ],
+          dependents: [dependentId],
+        });
+
+        await expect(service.expireStaleRequests()).resolves.toBe(1);
+        expect(expiredIds()).toEqual(['dep-31d']);
+      });
+
+      it('expires a 9-day-old request of a NON-dependent (8-day rule)', async () => {
+        arrange({
+          candidates: [
+            {
+              assignment_id: 'adult-9d',
+              user_id: otherAdultId,
+              created_at: daysAgo(9),
+            },
+          ],
+        });
+
+        await expect(service.expireStaleRequests()).resolves.toBe(1);
+        expect(expiredIds()).toEqual(['adult-9d']);
+      });
+
+      it('mixed batch: only the adult and the 31-day dependent expire', async () => {
+        arrange({
+          candidates: [
+            {
+              assignment_id: 'adult-9d',
+              user_id: otherAdultId,
+              created_at: daysAgo(9),
+            },
+            {
+              assignment_id: 'dep-9d',
+              user_id: dependentId,
+              created_at: daysAgo(9),
+            },
+            {
+              assignment_id: 'dep-31d',
+              user_id: '3a8f7c42-1d2a-4c55-8f0e-6d6b2a4f9d10',
+              created_at: daysAgo(31),
+            },
+          ],
+          dependents: [dependentId, '3a8f7c42-1d2a-4c55-8f0e-6d6b2a4f9d10'],
+        });
+
+        await expect(service.expireStaleRequests()).resolves.toBe(2);
+        expect(expiredIds()).toEqual(['adult-9d', 'dep-31d']);
+      });
+    });
+
+    describe('dependents with verified consent (clock restarts, A11)', () => {
+      it('keeps an old request verified 3 days ago (8 days counted from verification)', async () => {
+        arrange({
+          candidates: [
+            {
+              assignment_id: 'dep-old',
+              user_id: dependentId,
+              created_at: daysAgo(20),
+            },
+          ],
+          dependents: [dependentId],
+          verified: [
+            { dependent_user_id: dependentId, verified_at: daysAgo(3) },
+          ],
+        });
+
+        await expect(service.expireStaleRequests()).resolves.toBe(0);
+        expect(expiredIds()).toEqual([]);
+      });
+
+      it('expires a verified request once 8 days passed since verification', async () => {
+        arrange({
+          candidates: [
+            {
+              assignment_id: 'dep-old',
+              user_id: dependentId,
+              created_at: daysAgo(40),
+            },
+          ],
+          dependents: [dependentId],
+          verified: [
+            { dependent_user_id: dependentId, verified_at: daysAgo(9) },
+          ],
+        });
+
+        await expect(service.expireStaleRequests()).resolves.toBe(1);
+        expect(expiredIds()).toEqual(['dep-old']);
+      });
+
+      it('uses the latest verification when several guardians verified', async () => {
+        arrange({
+          candidates: [
+            {
+              assignment_id: 'dep-old',
+              user_id: dependentId,
+              created_at: daysAgo(40),
+            },
+          ],
+          dependents: [dependentId],
+          verified: [
+            { dependent_user_id: dependentId, verified_at: daysAgo(20) },
+            { dependent_user_id: dependentId, verified_at: daysAgo(2) },
+          ],
+        });
+
+        await expect(service.expireStaleRequests()).resolves.toBe(0);
+      });
+
+      it('queries only real verified rows (no test data)', async () => {
+        arrange({
+          candidates: [
+            {
+              assignment_id: 'd',
+              user_id: dependentId,
+              created_at: daysAgo(9),
+            },
+          ],
+          dependents: [dependentId],
+        });
+
+        await service.expireStaleRequests();
+
+        expect(transactionMock.guardianships.findMany).toHaveBeenCalledWith({
+          where: {
+            dependent_user_id: { in: [dependentId] },
+            consent_status: 'verified',
+            is_test_data: false,
+          },
+          select: { dependent_user_id: true, verified_at: true },
+        });
+      });
     });
   });
 

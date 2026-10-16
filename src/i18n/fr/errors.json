@@ -565,6 +565,7 @@
   "FCM_TOKEN_FORBIDDEN": "Vous ne pouvez annuler que l'enregistrement de vos propres jetons",
   "MR_NOT_FOUND": "Demande d'adhésion introuvable",
   "MR_ALREADY_PENDING": "La demande a déjà été traitée",
+  "MR_CONSENT_NOT_VERIFIED": "Le consentement du tuteur de ce mineur n'a pas encore été vérifié",
   "ANNUAL_CONTINUATION_USER_NOT_IN_ORIGIN": "Un ou plusieurs identifiants utilisateur ne figurent pas dans la liste de l'année d'origine pour cette section",
   "ANNUAL_ENROLL_REQUIRES_DIRECTIVE": "L'inscription annuelle est effectuée par la direction du club. Cette action n'est pas disponible pour le titulaire du profil",
   "ANNUAL_ENROLL_NOT_GHOST": "L'utilisateur n'a pas d'affectation inactive (fantôme) dans un club — l'auto-inscription annuelle n'est pas disponible",

@@ -570,6 +570,7 @@
   "FCM_TOKEN_FORBIDDEN": "You can only unregister your own tokens",
   "MR_NOT_FOUND": "Membership request not found",
   "MR_ALREADY_PENDING": "Request already processed",
+  "MR_CONSENT_NOT_VERIFIED": "This minor's guardian consent has not been verified yet",
   "ANNUAL_CONTINUATION_USER_NOT_IN_ORIGIN": "One or more user IDs are not present in the origin year list for this section",
   "ANNUAL_ENROLL_NOT_GHOST": "User does not have an inactive (ghost) assignment in any club — annual self-enrollment is not available",
   "ANNUAL_ENROLL_SECTION_INVALID": "The provided club section does not belong to the same club as the user's inactive assignment",
