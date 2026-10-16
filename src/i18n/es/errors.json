@@ -519,6 +519,7 @@
   "POST_REG_PERSONAL_INFO_INCOMPLETE": "Debe completar la información personal (género, cumpleaños, bautismo)",
   "POST_REG_EMERGENCY_CONTACT_REQUIRED": "Debe agregar al menos un contacto de emergencia",
   "POST_REG_LEGAL_REP_REQUIRED": "Los menores de 18 años deben registrar un representante legal",
+  "POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT": "Solo las personas mayores de edad pueden registrarse únicamente como tutores",
   "POST_REG_CLUB_NOT_FOUND": "Club no encontrado",
   "POST_REG_CLASS_NOT_FOUND": "Clase no encontrada o inactiva",
   "POST_REG_CLASS_NOT_ELIGIBLE": "La clase seleccionada no corresponde a la edad del usuario y al tipo de club seleccionado para el año eclesiástico actual",

@@ -514,6 +514,7 @@
   "POST_REG_PERSONAL_INFO_INCOMPLETE": "Vous devez compléter les informations personnelles (genre, anniversaire, baptême)",
   "POST_REG_EMERGENCY_CONTACT_REQUIRED": "Vous devez ajouter au moins un contact d'urgence",
   "POST_REG_LEGAL_REP_REQUIRED": "Les mineurs de 18 ans doivent enregistrer un représentant légal",
+  "POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT": "Seuls les adultes peuvent s'inscrire uniquement comme tuteur",
   "POST_REG_CLUB_NOT_FOUND": "Club introuvable",
   "POST_REG_CLASS_NOT_FOUND": "Classe introuvable ou inactive",
   "POST_REG_CLASS_NOT_ELIGIBLE": "La classe sélectionnée ne correspond pas à l'âge de l'utilisateur ni au type de club sélectionné pour l'année ecclésiastique actuelle",

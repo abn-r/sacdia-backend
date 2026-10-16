@@ -226,6 +226,11 @@ const NEVER_SCOPE: Array<{
     pattern: /^[A-Z]+ \/users\/:userId\/legal-representative/,
   },
   {
+    label: 'guardian-only post-registration exit',
+    pattern:
+      /^POST \/users\/:userId\/post-registration\/step-3\/guardian-only$/,
+  },
+  {
     label: 'requires-legal-representative',
     pattern: /^GET \/users\/:userId\/requires-legal-representative$/,
   },

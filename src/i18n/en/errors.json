@@ -519,6 +519,7 @@
   "POST_REG_PERSONAL_INFO_INCOMPLETE": "You must complete personal information (gender, birthday, baptism)",
   "POST_REG_EMERGENCY_CONTACT_REQUIRED": "You must add at least one emergency contact",
   "POST_REG_LEGAL_REP_REQUIRED": "Minors under 18 must register a legal representative",
+  "POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT": "Only adults can register as guardian-only",
   "POST_REG_CLUB_NOT_FOUND": "Club not found",
   "POST_REG_CLASS_NOT_FOUND": "Class not found or inactive",
   "POST_REG_CLASS_NOT_ELIGIBLE": "The selected class does not match the user's age and selected club type for the current ecclesiastical year",
