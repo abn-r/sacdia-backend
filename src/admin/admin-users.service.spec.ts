@@ -291,6 +291,43 @@ describe('AdminUsersService', () => {
   });
 
   describe('listUsers', () => {
+    it('returns email null without failing for a user with no email', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+        }),
+      );
+      mockPrismaService.users.findMany.mockResolvedValue([
+        {
+          user_id: 'dep-1',
+          email: null,
+          name: 'Ana',
+          paternal_last_name: 'Pérez',
+          maternal_last_name: null,
+          user_image: null,
+          active: true,
+          access_app: true,
+          access_panel: false,
+          country_id: 1,
+          union_id: 10,
+          local_field_id: 20,
+          created_at: new Date('2026-01-01'),
+          countries: { country_id: 1, name: 'México' },
+          unions: { union_id: 10, name: 'UMN' },
+          local_fields: { local_field_id: 20, union_id: 10, name: 'Campo A' },
+          users_roles: [{ roles: { role_name: 'user' } }],
+          users_pr: [],
+        },
+      ]);
+      mockPrismaService.users.count.mockResolvedValue(1);
+
+      const result = await service.listUsers('actor-super', buildListQuery());
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].email).toBeNull();
+      expect(result.data[0].is_deleted).toBe(false);
+    });
+
     it('should allow super-admin with ALL scope', async () => {
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization({
@@ -1041,10 +1078,7 @@ describe('AdminUsersService', () => {
         expect(mockPrismaService.users.findFirst).toHaveBeenCalledWith(
           expect.objectContaining({
             where: {
-              AND: [
-                { user_id: 'user-in-field' },
-                { local_field_id: 3 },
-              ],
+              AND: [{ user_id: 'user-in-field' }, { local_field_id: 3 }],
             },
             select: { user_id: true },
           }),

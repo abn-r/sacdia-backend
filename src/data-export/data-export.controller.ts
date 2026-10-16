@@ -32,7 +32,7 @@ import { resolveClientIp } from '../config/client-ip';
 
 interface JwtUser {
   sub: string;
-  email: string;
+  email: string | null;
 }
 
 @ApiTags('data-export')

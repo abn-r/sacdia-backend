@@ -477,5 +477,14 @@ describe('DataExportService', () => {
 
       expect(uploadedPayload().legal_acceptances).toEqual([]);
     });
+
+    it('skips the ready email, without a failure, when the user has no email', async () => {
+      arrangeExport([]);
+
+      const result = await service.runExport(exportId, userId);
+
+      expect(result.failed).toBeUndefined();
+      expect(mockEmailService.sendDataExportReady).not.toHaveBeenCalled();
+    });
   });
 });

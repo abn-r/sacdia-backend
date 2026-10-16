@@ -24,7 +24,8 @@ import {
 
 export interface JwtPayload {
   sub: string; // user_id
-  email: string;
+  /** Null when the subject has no email (dependent profiles). */
+  email: string | null;
   /**
    * Access JWTs require iss=https://api.sacdia.app and aud=sacdia:access.
    * QR member tokens set aud=sacdia:qr-member and must not authenticate API routes.
@@ -144,7 +145,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       sub: payload.sub,
       userId: payload.sub,
       user_id: payload.sub,
-      email: payload.email,
+      email: payload.email ?? null,
       mfa_pending: payload.mfa_pending ?? false,
       sid: payload.sid ?? null,
     };

@@ -816,6 +816,15 @@ export class AuthService {
       };
     }
 
+    // Dependent profiles have no email: there is nothing to verify.
+    if (!dbUser.email) {
+      return {
+        success: true,
+        message: 'La cuenta no tiene correo electrónico',
+        skipped: true,
+      };
+    }
+
     await this.createAndLogVerificationToken(dbUser.email);
 
     return {

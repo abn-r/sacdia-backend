@@ -969,6 +969,43 @@ describe('AuthService', () => {
       );
     });
 
+    it('should return email null (no 500) for a profile without email', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: {
+            user_id: 'dependent-1',
+            email: null,
+            name: 'Ana',
+            paternal_last_name: 'Perez',
+            maternal_last_name: null,
+            user_image: null,
+          },
+          post_register_complete: false,
+          authorization: {
+            grants: { global_roles: [], club_assignments: [] },
+            active_assignment: { assignment_id: null },
+            effective: { permissions: [], scope: { global: {}, club: null } },
+          },
+          legacy: {
+            roles: ['user'],
+            permissions: [],
+            club: null,
+            club_context: {
+              active_assignment_id: null,
+              active: null,
+              available: [],
+            },
+          },
+        },
+      );
+
+      const result = await service.getProfile('dependent-1');
+
+      expect(result.status).toBe('success');
+      expect(result.data.email).toBeNull();
+      expect(result.data.name).toBe('Ana');
+    });
+
     it('should return profile with canonical authorization and legacy fields', async () => {
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         {
@@ -1705,6 +1742,22 @@ describe('AuthService', () => {
         success: true,
         message: 'El email ya está verificado',
         alreadyVerified: true,
+      });
+      expect(mockPrismaService.verification.create).not.toHaveBeenCalled();
+    });
+
+    it('should skip silently (no token, no email enqueued) when the account has no email', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        email: null,
+        email_verified: false,
+      });
+
+      const result = await service.sendVerificationEmail('dependent-1');
+
+      expect(result).toEqual({
+        success: true,
+        message: 'La cuenta no tiene correo electrónico',
+        skipped: true,
       });
       expect(mockPrismaService.verification.create).not.toHaveBeenCalled();
     });

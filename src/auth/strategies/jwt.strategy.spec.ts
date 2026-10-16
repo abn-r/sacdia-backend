@@ -61,6 +61,17 @@ describe('JwtStrategy', () => {
     jest.restoreAllMocks();
   });
 
+  it('keeps email null when the token carries no email (dependent subject)', async () => {
+    const strategy = buildStrategy();
+
+    const result = await strategy.validate(
+      buildReq('valid-token'),
+      accessPayload({ email: null }),
+    );
+
+    expect(result).toMatchObject({ sub: 'user-123', email: null });
+  });
+
   it('should return user payload when token is valid and not revoked', async () => {
     const strategy = buildStrategy();
 

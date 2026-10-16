@@ -339,7 +339,13 @@ export class AuthController {
           type: 'object',
           properties: {
             user_id: { type: 'string', example: 'user-uuid' },
-            email: { type: 'string', example: 'usuario@sacdia.app' },
+            email: {
+              type: 'string',
+              nullable: true,
+              example: 'usuario@sacdia.app',
+              description:
+                'Null para perfiles dependientes (menores sin cuenta propia).',
+            },
             name: { type: 'string', example: 'Juan' },
             roles: {
               type: 'array',
