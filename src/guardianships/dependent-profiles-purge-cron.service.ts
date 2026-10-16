@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
+import { isCertificateImportObjectKey } from '../certificate-bulk-imports/certificate-import-file-ref';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
 import {
@@ -26,18 +27,23 @@ export interface PurgeSummary {
  * profile is anonymized AND its personal data is hard-deleted).
  *
  * Per dependent:
- *   1. R2 objects first: consent evidence files and the profile picture. If R2
- *      fails the dependent is left untouched (nothing deleted in the DB,
- *      `purged_at` NOT set) so the next run retries it, and the run is
- *      reported as failed.
+ *   1. R2 objects first: consent evidence files, the profile picture and the
+ *      class / honor evidence files (class section evidence, honor requirement
+ *      evidence and the honor certificate / document / images). If R2 fails the
+ *      dependent is left untouched (nothing deleted in the DB, `purged_at` NOT
+ *      set) so the next run retries it, and the run is reported as failed.
  *   2. One transaction: anonymize the users row (email stays NULL,
  *      active=false), delete health data (allergies, diseases, medicines),
- *      emergency contacts and the consent evidence rows, null IP/user agent on
- *      the legal acceptances, set `dependent_profiles.purged_at`.
+ *      emergency contacts, the consent evidence rows, the class / honor
+ *      evidence rows and the notification inbox rows, blank the honor file
+ *      columns, null the external holder's name / phone on the guardianship
+ *      rows, null IP/user agent on the legal acceptances, set
+ *      `dependent_profiles.purged_at`.
  *
  * The users row is NOT hard-deleted (foreign keys from class progress, audit
  * and the guardianship rows kept for legal history). The guardianship rows
- * stay as evidence of who held the child.
+ * stay as evidence of who held the child, minus the external holder's contact
+ * data; the class / honor progress rows stay, minus every file attached to them.
  */
 @Injectable()
 export class DependentProfilesPurgeCronService {
@@ -134,32 +140,9 @@ export class DependentProfilesPurgeCronService {
 
   private async purgeOne(dependentId: string, now: Date): Promise<void> {
     // R2 first: if it fails nothing else changed and the next run retries.
-    const [evidence, user] = await Promise.all([
-      this.prisma.guardianship_consent_evidences.findMany({
-        where: { guardianship: { dependent_user_id: dependentId } },
-        select: { file_key: true },
-      }),
-      this.prisma.users.findUnique({
-        where: { user_id: dependentId },
-        select: { user_image: true },
-      }),
-    ]);
-
-    const evidenceKeys = evidence.map((row) => row.file_key);
-    if (evidenceKeys.length > 0) {
-      await this.fileStorage.deleteMany(
-        StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
-        evidenceKeys,
-      );
-    }
-    if (user?.user_image) {
-      const key = this.fileStorage.extractKeyFromPublicUrl(
-        StorageBucketAlias.USER_PROFILES,
-        user.user_image,
-      );
-      await this.fileStorage.deleteMany(StorageBucketAlias.USER_PROFILES, [
-        key ?? user.user_image,
-      ]);
+    const targets = await this.collectStorageTargets(dependentId);
+    for (const [bucket, keys] of targets) {
+      await this.fileStorage.deleteMany(bucket, [...keys]);
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -190,6 +173,32 @@ export class DependentProfilesPurgeCronService {
       await tx.guardianship_consent_evidences.deleteMany({
         where: { guardianship: { dependent_user_id: dependentId } },
       });
+      // Class section evidence and honor evidence files (objects already gone).
+      await tx.evidence_files.deleteMany({
+        where: {
+          OR: [
+            { class_section_progress: { is: { user_id: dependentId } } },
+            { users_honors: { is: { user_id: dependentId } } },
+          ],
+        },
+      });
+      await tx.requirement_evidence.deleteMany({
+        where: { progress: { users_honors: { user_id: dependentId } } },
+      });
+      // The honor record stays; the files attached to it do not.
+      await tx.users_honors.updateMany({
+        where: { user_id: dependentId },
+        data: { certificate: '', document: null, images: [] },
+      });
+      await tx.notification_deliveries.deleteMany({
+        where: { user_id: dependentId },
+      });
+      // Who held the child stays on record; the external holder's contact data
+      // does not.
+      await tx.guardianships.updateMany({
+        where: { dependent_user_id: dependentId },
+        data: { external_name: null, external_phone: null },
+      });
       await tx.legal_acceptances.updateMany({
         where: { user_id: dependentId },
         data: { ip_address: null, user_agent: null },
@@ -201,5 +210,98 @@ export class DependentProfilesPurgeCronService {
     });
 
     await this.actingForCache.bump(dependentId);
+  }
+
+  /**
+   * Every R2 object that belongs to the dependent, grouped by bucket. LINK
+   * evidence is an external URL and has no object. Values may be public URLs
+   * or bare keys, so the key is extracted when the value is a URL of the
+   * bucket and used as is otherwise.
+   */
+  private async collectStorageTargets(
+    dependentId: string,
+  ): Promise<Map<StorageBucketAlias, Set<string>>> {
+    const [consentEvidence, user, evidenceFiles, requirementEvidence, honors] =
+      await Promise.all([
+        this.prisma.guardianship_consent_evidences.findMany({
+          where: { guardianship: { dependent_user_id: dependentId } },
+          select: { file_key: true },
+        }),
+        this.prisma.users.findUnique({
+          where: { user_id: dependentId },
+          select: { user_image: true },
+        }),
+        this.prisma.evidence_files.findMany({
+          where: {
+            OR: [
+              { class_section_progress: { is: { user_id: dependentId } } },
+              { users_honors: { is: { user_id: dependentId } } },
+            ],
+          },
+          select: { file_url: true, section_progress_id: true },
+        }),
+        this.prisma.requirement_evidence.findMany({
+          where: { progress: { users_honors: { user_id: dependentId } } },
+          select: { url: true, evidence_type: true },
+        }),
+        this.prisma.users_honors.findMany({
+          where: { user_id: dependentId },
+          select: { certificate: true, document: true, images: true },
+        }),
+      ]);
+
+    const targets = new Map<StorageBucketAlias, Set<string>>();
+    const add = (bucket: StorageBucketAlias, key: string | null) => {
+      if (!key) return;
+      const keys = targets.get(bucket) ?? new Set<string>();
+      keys.add(key);
+      targets.set(bucket, keys);
+    };
+    const addValue = (bucket: StorageBucketAlias, value: unknown) => {
+      if (typeof value !== 'string' || value.trim() === '') return;
+      add(
+        bucket,
+        this.fileStorage.extractKeyFromPublicUrl(bucket, value) ?? value,
+      );
+    };
+    // Honor files uploaded through a certificate import live in their own bucket.
+    const honorBucket = (fallback: StorageBucketAlias, value: unknown) =>
+      typeof value === 'string' && isCertificateImportObjectKey(value)
+        ? StorageBucketAlias.CERTIFICATE_IMPORTS
+        : fallback;
+
+    for (const row of consentEvidence) {
+      add(StorageBucketAlias.GUARDIANSHIP_EVIDENCE, row.file_key);
+    }
+    addValue(StorageBucketAlias.USER_PROFILES, user?.user_image);
+
+    for (const file of evidenceFiles) {
+      addValue(
+        file.section_progress_id !== null
+          ? StorageBucketAlias.CLASS_EVIDENCE
+          : honorBucket(StorageBucketAlias.USERS_HONORS, file.file_url),
+        file.file_url,
+      );
+    }
+    for (const evidence of requirementEvidence) {
+      if (evidence.evidence_type !== 'LINK') {
+        addValue(StorageBucketAlias.EVIDENCE_FILES, evidence.url);
+      }
+    }
+    for (const honor of honors) {
+      addValue(
+        honorBucket(StorageBucketAlias.USERS_HONORS_CERT, honor.certificate),
+        honor.certificate,
+      );
+      addValue(
+        honorBucket(StorageBucketAlias.USERS_HONORS, honor.document),
+        honor.document,
+      );
+      const images: unknown[] = Array.isArray(honor.images) ? honor.images : [];
+      for (const image of images) {
+        addValue(honorBucket(StorageBucketAlias.USERS_HONORS, image), image);
+      }
+    }
+    return targets;
   }
 }

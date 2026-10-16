@@ -18,6 +18,11 @@ function setup() {
       deleteMany: jest.fn().mockResolvedValue({}),
     },
     legal_acceptances: { updateMany: jest.fn().mockResolvedValue({}) },
+    evidence_files: { deleteMany: jest.fn().mockResolvedValue({}) },
+    requirement_evidence: { deleteMany: jest.fn().mockResolvedValue({}) },
+    users_honors: { updateMany: jest.fn().mockResolvedValue({}) },
+    notification_deliveries: { deleteMany: jest.fn().mockResolvedValue({}) },
+    guardianships: { updateMany: jest.fn().mockResolvedValue({}) },
     dependent_profiles: { update: jest.fn().mockResolvedValue({}) },
   };
   const prisma: any = {
@@ -26,6 +31,9 @@ function setup() {
       findMany: jest.fn().mockResolvedValue([]),
     },
     users: { findUnique: jest.fn().mockResolvedValue({ user_image: null }) },
+    evidence_files: { findMany: jest.fn().mockResolvedValue([]) },
+    requirement_evidence: { findMany: jest.fn().mockResolvedValue([]) },
+    users_honors: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)),
   };
   const lock = {
@@ -39,7 +47,7 @@ function setup() {
   const cache = { bump: jest.fn().mockResolvedValue(undefined) };
   const fileStorage = {
     deleteMany: jest.fn().mockResolvedValue(undefined),
-    extractKeyFromPublicUrl: jest.fn(),
+    extractKeyFromPublicUrl: jest.fn().mockReturnValue(null),
   };
   const service = new DependentProfilesPurgeCronService(
     prisma,
@@ -304,5 +312,175 @@ describe('DependentProfilesPurgeCronService purge action (ruling A9)', () => {
       .mockResolvedValue([]);
     prisma.$transaction.mockRejectedValueOnce(new Error('deadlock'));
     expect(await service.purgeDue()).toEqual({ purged: 0, failed: 1 });
+  });
+});
+
+describe('DependentProfilesPurgeCronService evidence, inbox and holder data (ruling S7)', () => {
+  const dueOnce = (prisma: any) =>
+    prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+
+  /** Public URL -> key, the way R2FileStorageService does it. */
+  const keyFromUrl = (_bucket: StorageBucketAlias, url: string) =>
+    url.startsWith('https://cdn/') ? url.slice('https://cdn/'.length) : null;
+
+  it('scopes every read to the dependent', async () => {
+    const { service, prisma } = setup();
+    dueOnce(prisma);
+
+    await service.purgeDue();
+
+    expect(prisma.evidence_files.findMany.mock.calls[0][0].where).toEqual({
+      OR: [
+        { class_section_progress: { is: { user_id: D1 } } },
+        { users_honors: { is: { user_id: D1 } } },
+      ],
+    });
+    expect(prisma.requirement_evidence.findMany.mock.calls[0][0].where).toEqual(
+      { progress: { users_honors: { user_id: D1 } } },
+    );
+    expect(prisma.users_honors.findMany.mock.calls[0][0].where).toEqual({
+      user_id: D1,
+    });
+  });
+
+  it('deletes class evidence, honor requirement evidence and honor files from their buckets', async () => {
+    const { service, prisma, fileStorage } = setup();
+    dueOnce(prisma);
+    fileStorage.extractKeyFromPublicUrl.mockImplementation(keyFromUrl);
+    prisma.evidence_files.findMany.mockResolvedValue([
+      {
+        file_url: 'https://cdn/class-evidence/1-1.jpg',
+        section_progress_id: 7,
+      },
+      { file_url: 'https://cdn/honor/legacy.jpg', section_progress_id: null },
+    ]);
+    prisma.requirement_evidence.findMany.mockResolvedValue([
+      {
+        url: 'https://cdn/requirement_evidence/u/1/2/3.png',
+        evidence_type: 'IMAGE',
+      },
+      { url: 'requirement_evidence/u/1/2/4.pdf', evidence_type: 'FILE' },
+      { url: 'https://youtu.be/external', evidence_type: 'LINK' },
+    ]);
+    prisma.users_honors.findMany.mockResolvedValue([
+      {
+        certificate: 'https://cdn/cert-1.pdf',
+        document: 'https://cdn/doc-1.pdf',
+        images: ['https://cdn/img-1.jpg', 'https://cdn/img-2.jpg'],
+      },
+      { certificate: '', document: null, images: [] },
+    ]);
+
+    await service.purgeDue();
+
+    const deleted = (bucket: StorageBucketAlias) =>
+      fileStorage.deleteMany.mock.calls
+        .filter(([alias]: any[]) => alias === bucket)
+        .flatMap(([, keys]: any[]) => keys)
+        .sort();
+    expect(deleted(StorageBucketAlias.CLASS_EVIDENCE)).toEqual([
+      'class-evidence/1-1.jpg',
+    ]);
+    expect(deleted(StorageBucketAlias.EVIDENCE_FILES)).toEqual([
+      'requirement_evidence/u/1/2/3.png',
+      'requirement_evidence/u/1/2/4.pdf',
+    ]);
+    expect(deleted(StorageBucketAlias.USERS_HONORS_CERT)).toEqual([
+      'cert-1.pdf',
+    ]);
+    expect(deleted(StorageBucketAlias.USERS_HONORS)).toEqual([
+      'doc-1.pdf',
+      'honor/legacy.jpg',
+      'img-1.jpg',
+      'img-2.jpg',
+    ]);
+    // A LINK is an external URL: no object, nothing to delete.
+    for (const [, keys] of fileStorage.deleteMany.mock.calls) {
+      expect(keys).not.toContain('https://youtu.be/external');
+    }
+  });
+
+  it('sends certificate-import objects to their own bucket', async () => {
+    const { service, prisma, fileStorage } = setup();
+    dueOnce(prisma);
+    const importKey = `batches/${'a'.repeat(8)}-aaaa-4aaa-8aaa-${'a'.repeat(12)}/sealed/f-1.pdf`;
+    prisma.users_honors.findMany.mockResolvedValue([
+      { certificate: importKey, document: null, images: [] },
+    ]);
+
+    await service.purgeDue();
+
+    expect(fileStorage.deleteMany).toHaveBeenCalledWith(
+      StorageBucketAlias.CERTIFICATE_IMPORTS,
+      [importKey],
+    );
+  });
+
+  it('removes duplicates and never calls a bucket that has nothing to delete', async () => {
+    const { service, prisma, fileStorage } = setup();
+    dueOnce(prisma);
+    prisma.evidence_files.findMany.mockResolvedValue([
+      { file_url: 'k/a.jpg', section_progress_id: 1 },
+      { file_url: 'k/a.jpg', section_progress_id: 2 },
+    ]);
+
+    await service.purgeDue();
+
+    expect(fileStorage.deleteMany).toHaveBeenCalledTimes(1);
+    expect(fileStorage.deleteMany).toHaveBeenCalledWith(
+      StorageBucketAlias.CLASS_EVIDENCE,
+      ['k/a.jpg'],
+    );
+  });
+
+  it('an R2 failure on class evidence leaves the whole dependent untouched', async () => {
+    const { service, prisma, tx, fileStorage, cache } = setup();
+    dueOnce(prisma);
+    prisma.evidence_files.findMany.mockResolvedValue([
+      { file_url: 'k/a.jpg', section_progress_id: 1 },
+    ]);
+    fileStorage.deleteMany.mockRejectedValue(new Error('R2 down'));
+
+    expect(await service.purgeDue()).toEqual({ purged: 0, failed: 1 });
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.evidence_files.deleteMany).not.toHaveBeenCalled();
+    expect(tx.notification_deliveries.deleteMany).not.toHaveBeenCalled();
+    expect(cache.bump).not.toHaveBeenCalled();
+  });
+
+  it('in ONE transaction deletes the evidence rows and inbox rows and blanks holder contact data and honor files', async () => {
+    const { service, prisma, tx } = setup();
+    dueOnce(prisma);
+
+    await service.purgeDue();
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.evidence_files.deleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { class_section_progress: { is: { user_id: D1 } } },
+          { users_honors: { is: { user_id: D1 } } },
+        ],
+      },
+    });
+    expect(tx.requirement_evidence.deleteMany).toHaveBeenCalledWith({
+      where: { progress: { users_honors: { user_id: D1 } } },
+    });
+    expect(tx.users_honors.updateMany).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+      data: { certificate: '', document: null, images: [] },
+    });
+    expect(tx.notification_deliveries.deleteMany).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+    });
+    expect(tx.guardianships.updateMany).toHaveBeenCalledWith({
+      where: { dependent_user_id: D1 },
+      data: { external_name: null, external_phone: null },
+    });
+    // The guardianship rows themselves are kept as legal history.
+    expect(tx.guardianships).not.toHaveProperty('deleteMany');
   });
 });
