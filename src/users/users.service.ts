@@ -20,6 +20,8 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { ageToday } from '../common/age/age.util';
+import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 
 @Injectable()
 export class UsersService {
@@ -30,6 +32,7 @@ export class UsersService {
     private prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly countryAgePolicy: CountryAgePolicyService,
   ) {}
 
   private async ensureUserExists(userId: string) {
@@ -906,34 +909,38 @@ export class UsersService {
     };
   }
 
-  async calculateAge(userId: string): Promise<number | null> {
+  /**
+   * Age today in the user's country reference zone, plus that country's age of
+   * majority. `null` when the user does not exist or has no birthday.
+   */
+  private async resolveAgeContext(
+    userId: string,
+  ): Promise<{ age: number; ageOfMajority: number } | null> {
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
-      select: { birthday: true },
+      select: { birthday: true, country_id: true },
     });
 
     if (!user || !user.birthday) {
       return null;
     }
 
-    const today = new Date();
-    const birthDate = new Date(user.birthday);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
+    const policy = await this.countryAgePolicy.getPolicy(user.country_id);
 
-    if (
-      monthDiff < 0 ||
-      (monthDiff === 0 && today.getDate() < birthDate.getDate())
-    ) {
-      age--;
-    }
+    return {
+      age: ageToday(user.birthday, policy.timeZone),
+      ageOfMajority: policy.ageOfMajority,
+    };
+  }
 
-    return age;
+  async calculateAge(userId: string): Promise<number | null> {
+    const context = await this.resolveAgeContext(userId);
+    return context?.age ?? null;
   }
 
   async requiresLegalRepresentative(userId: string): Promise<boolean> {
-    const age = await this.calculateAge(userId);
-    return age !== null && age < 18;
+    const context = await this.resolveAgeContext(userId);
+    return context !== null && context.age < context.ageOfMajority;
   }
 
   private async rollbackUploadedObjects(

@@ -339,7 +339,11 @@ export class AdminGeographyService {
 
     this.logMutation('update', 'countries', countryId, actorId);
 
-    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.COUNTRIES);
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.COUNTRIES,
+      // The age policy (cutoffs + reference zone) lives on the country row.
+      CATALOG_CACHE_KEYS.COUNTRY_AGE_POLICY(countryId),
+    ]);
 
     return result;
   }
@@ -660,7 +664,7 @@ export class AdminGeographyService {
     const result = await this.prisma.$transaction(async (tx) => {
       const existing = await this.lockLocalFieldForUpdate(tx, localFieldId);
       const timezone = timezoneWasProvided
-        ? dto.timezone ?? null
+        ? (dto.timezone ?? null)
         : existing.timezone;
       const active = dto.active ?? existing.active;
       const validTimezone = this.requireLocalFieldTimezone(timezone, active);

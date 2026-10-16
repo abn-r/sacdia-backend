@@ -360,6 +360,15 @@ describe('AdminGeographyService', () => {
       );
     });
 
+    it('TC05b - update invalidates the countries catalog and the age policy cache of that country', async () => {
+      await service.updateCountry(1, { name: 'Chile' }, ACTOR_ID);
+
+      expect(cacheMock.invalidateMany).toHaveBeenCalledWith([
+        CATALOG_CACHE_KEYS.COUNTRIES,
+        CATALOG_CACHE_KEYS.COUNTRY_AGE_POLICY(1),
+      ]);
+    });
+
     it('TC06 - validation error for locale "es" → error propagates before tx', async () => {
       translationMock.validateTranslations.mockImplementation(() => {
         throw new AppBadRequestException(ErrorCode.TRANSLATIONS_ES_NOT_ALLOWED);

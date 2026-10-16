@@ -31,6 +31,8 @@ import { AuthorizationContextVersionService } from './authorization/authorizatio
 import { EcclesiasticalYearService } from './services/ecclesiastical-year.service';
 import { ClubCycleReadinessService } from './services/club-cycle-readiness.service';
 import { ProcessMemoryLoggerService } from './observability/process-memory-logger.service';
+import { CatalogsModule } from '../catalogs/catalogs.module';
+import { CountryAgePolicyService } from './age/country-age-policy.service';
 
 @Global()
 @Module({
@@ -48,6 +50,8 @@ import { ProcessMemoryLoggerService } from './observability/process-memory-logge
     BetterAuthModule,
     // NotificationsModule provides NotificationsService (used by CronAlertService for in-app alerts).
     NotificationsModule,
+    // CatalogsModule provides CatalogCacheService (used by CountryAgePolicyService).
+    CatalogsModule,
   ],
   providers: [
     // ==========================================
@@ -95,6 +99,7 @@ import { ProcessMemoryLoggerService } from './observability/process-memory-logge
     AuthorizationContextVersionService,
     EcclesiasticalYearService,
     ClubCycleReadinessService,
+    CountryAgePolicyService,
     // ==========================================
     // EXCEPTION FILTERS — registered via DI so I18nService can be injected.
     // Order: AllExceptionsFilter registered FIRST (lower priority),
@@ -132,6 +137,7 @@ import { ProcessMemoryLoggerService } from './observability/process-memory-logge
     AuthorizationContextVersionService,
     EcclesiasticalYearService,
     ClubCycleReadinessService,
+    CountryAgePolicyService,
   ],
 })
 export class CommonModule {}

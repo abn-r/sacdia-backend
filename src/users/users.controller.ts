@@ -347,10 +347,13 @@ export class UsersController {
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Verificar si el usuario requiere representante legal',
+    deprecated: true,
+    description:
+      'Deprecated: los representantes legales son de solo lectura (reemplazados por guardianships). La mayoría de edad se toma del país del usuario.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Si requiere (edad < 18) o no',
+    description: 'Si requiere (edad < mayoría de edad del país) o no',
   })
   async requiresLegalRepresentative(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -365,7 +368,7 @@ export class UsersController {
         required,
         userAge: age,
         reason: required
-          ? 'Usuario es menor de 18 años'
+          ? 'Usuario es menor de edad'
           : 'Usuario es mayor de edad',
       },
     };

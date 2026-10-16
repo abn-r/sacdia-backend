@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AppBadRequestException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
+import { ageAt } from '../age/age.util';
 
 export type ClassResolutionYear = {
   year_id: number;
@@ -38,10 +39,7 @@ export class ClassAssignmentResolverService {
       );
     }
 
-    const ageAtYearStart = this.calculateAgeAtDate(
-      user.birthday,
-      params.currentYear.start_date,
-    );
+    const ageAtYearStart = ageAt(user.birthday, params.currentYear.start_date);
 
     const expectedClass = await tx.classes.findFirst({
       where: {
@@ -156,20 +154,6 @@ export class ClassAssignmentResolverService {
   }
 
   ageAtDate(birthday: Date, referenceDate: Date): number {
-    return this.calculateAgeAtDate(birthday, referenceDate);
-  }
-
-  private calculateAgeAtDate(birthday: Date, referenceDate: Date): number {
-    let age = referenceDate.getUTCFullYear() - birthday.getUTCFullYear();
-    const monthDiff = referenceDate.getUTCMonth() - birthday.getUTCMonth();
-
-    if (
-      monthDiff < 0 ||
-      (monthDiff === 0 && referenceDate.getUTCDate() < birthday.getUTCDate())
-    ) {
-      age--;
-    }
-
-    return age;
+    return ageAt(birthday, referenceDate);
   }
 }
