@@ -89,10 +89,12 @@ describe('Phase 3 permission cleanup — seed files', () => {
       }
     });
 
-    it('grants user_honors:submit to the user and member roles', () => {
-      // After Phase 3 these roles must retain a write capability on
-      // user_honors — Phase 1+2 added submit to higher roles but missed user
-      // and member; Phase 3 closes that gap.
+    it('grants user_honors:submit to the member role but not to the base user role', () => {
+      // Phase 3 gave member a write capability on user_honors. The GLOBAL
+      // base `user` role must NOT hold it: its owner-aware routes already
+      // admit the owner through the guard owner bypass, so a base grant only
+      // ever let a signed-in user write someone else's honors
+      // (20261016100000_base_user_role_drop_cross_user_grants).
       const userBlock = extractRoleBlock(
         rolePermissionsSeedWithoutComments,
         'user',
@@ -101,7 +103,7 @@ describe('Phase 3 permission cleanup — seed files', () => {
         rolePermissionsSeedWithoutComments,
         'member',
       );
-      expect(userBlock).toContain("'user_honors:submit'");
+      expect(userBlock).not.toContain("'user_honors:submit'");
       expect(memberBlock).toContain("'user_honors:submit'");
     });
 
@@ -152,7 +154,9 @@ describe('Phase 3 permission cleanup — seed files', () => {
       expect(adminBlock).toContain("p.permission_name <> 'audit:read'");
       expect(superAdminBlock).toContain('CROSS JOIN permissions p');
       expect(superAdminBlock).not.toContain('p.permission_name IN');
-      expect(superAdminBlock).not.toContain("p.permission_name <> 'audit:read'");
+      expect(superAdminBlock).not.toContain(
+        "p.permission_name <> 'audit:read'",
+      );
 
       const adminGrantIndex = rolePermissionsSeedWithoutComments.indexOf(
         "WHERE r.role_name = 'admin'",
