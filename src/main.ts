@@ -18,7 +18,10 @@ import { timeoutMiddleware } from './common/middleware/timeout.middleware';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { auditContextMiddleware } from './audit-logs/audit-request-context';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
-import { shouldExposeI18nValidationDetails } from './config/i18n-validation-details';
+import {
+  GLOBAL_VALIDATION_PIPE_OPTIONS,
+  shouldExposeI18nValidationDetails,
+} from './config/i18n-validation-details';
 import {
   jsonBodyLimitForPath,
   urlencodedBodyLimitForPath,
@@ -278,11 +281,7 @@ async function bootstrap() {
   // below can translate class-validator messages via nestjs-i18n.
   app.useGlobalPipes(
     new SanitizePipe(), // XSS Sanitization
-    new I18nValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-    }),
+    new I18nValidationPipe(GLOBAL_VALIDATION_PIPE_OPTIONS),
   );
 
   // ==========================================

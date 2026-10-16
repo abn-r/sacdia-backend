@@ -2,10 +2,7 @@ import { type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from './permissions.guard';
 import { AuthorizationContextService } from '../services/authorization-context.service';
-import {
-  AUTHORIZATION_RESOURCE_KEY,
-  PERMISSIONS_KEY,
-} from '../decorators';
+import { AUTHORIZATION_RESOURCE_KEY, PERMISSIONS_KEY } from '../decorators';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SKIP_PERMISSIONS_KEY } from '../decorators/skip-permissions.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -339,9 +336,7 @@ describe('PermissionsGuard', () => {
       return undefined;
     });
 
-    await expect(
-      guard.canActivate(createContext({})),
-    ).resolves.toBe(true);
+    await expect(guard.canActivate(createContext({}))).resolves.toBe(true);
   });
 
   it('allows @SkipPermissions() routes without a permission catalog entry', async () => {
@@ -374,25 +369,38 @@ describe('PermissionsGuard', () => {
     }
   });
 
-  it('ignores e2e passthrough when NODE_ENV is production', async () => {
-    const previousFlag = process.env.E2E_PASSTHROUGH_PERMISSIONS;
-    const previousNodeEnv = process.env.NODE_ENV;
-    process.env.E2E_PASSTHROUGH_PERMISSIONS = 'true';
-    process.env.NODE_ENV = 'production';
-
-    try {
-      await expect(
-        guard.canActivate(createContext({ user: { sub: 'user-123' } })),
-      ).rejects.toMatchObject({ code: ErrorCode.GUARD_RBAC_MISCONFIGURATION });
-    } finally {
-      if (previousFlag === undefined) {
-        delete process.env.E2E_PASSTHROUGH_PERMISSIONS;
+  it.each(['production', 'development', 'staging', undefined])(
+    'ignores e2e passthrough when NODE_ENV is %s',
+    async (nodeEnv) => {
+      const previousFlag = process.env.E2E_PASSTHROUGH_PERMISSIONS;
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.E2E_PASSTHROUGH_PERMISSIONS = 'true';
+      if (nodeEnv === undefined) {
+        delete process.env.NODE_ENV;
       } else {
-        process.env.E2E_PASSTHROUGH_PERMISSIONS = previousFlag;
+        process.env.NODE_ENV = nodeEnv;
       }
-      process.env.NODE_ENV = previousNodeEnv;
-    }
-  });
+
+      try {
+        await expect(
+          guard.canActivate(createContext({ user: { sub: 'user-123' } })),
+        ).rejects.toMatchObject({
+          code: ErrorCode.GUARD_RBAC_MISCONFIGURATION,
+        });
+      } finally {
+        if (previousFlag === undefined) {
+          delete process.env.E2E_PASSTHROUGH_PERMISSIONS;
+        } else {
+          process.env.E2E_PASSTHROUGH_PERMISSIONS = previousFlag;
+        }
+        if (previousNodeEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = previousNodeEnv;
+        }
+      }
+    },
+  );
 
   it('allows a global resource when the user has the global permission', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
