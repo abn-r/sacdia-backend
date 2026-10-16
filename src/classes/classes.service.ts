@@ -40,6 +40,7 @@ import {
   type ClassRequirementEligibilityResult,
 } from './class-requirement-eligibility.service';
 import pLimit from 'p-limit';
+import { GuardianNotificationsService } from '../guardianships/guardian-notifications.service';
 
 // Concurrency cap for the evidence URL presign fan-out in getUserProgress.
 // Worst case: 10 sections × 20 evidence files = 200 concurrent HMAC presigns
@@ -69,6 +70,7 @@ export class ClassesService {
     private readonly classProgressAccess: ClassProgressAccessService,
     private readonly requirementEligibility: ClassRequirementEligibilityService,
     private readonly classEnrollmentPolicy: ClassEnrollmentPolicyService,
+    private readonly guardianNotifications: GuardianNotificationsService,
   ) {}
 
   private async lockPendingInvestitureProgress(
@@ -1543,6 +1545,14 @@ export class ClassesService {
       StorageBucketAlias.CLASS_EVIDENCE,
       created.file_url,
     );
+
+    // After the upload committed. A guardian acting for the child is not told
+    // about their own action (the service decides); it never throws.
+    void this.guardianNotifications.onDependentEvidenceUploaded({
+      dependentUserId: targetUserId,
+      kind: 'class_section',
+      actorUserId,
+    });
 
     return this.mapEvidenceFile(created, signedUrl);
   }

@@ -29,6 +29,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { DependentPushRouterService } from './dependent-push-router.service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,6 +81,7 @@ const mockPrismaService = {
     update: jest.fn(),
   },
   notification_deliveries: {
+    create: jest.fn(),
     createMany: jest.fn(),
   },
   $transaction: jest.fn(),
@@ -91,6 +93,12 @@ const mockFcmTokensService = {
 
 const mockPreferencesService = {
   filterAllowedUsers: jest.fn(),
+};
+
+const mockDependentPushRouter = {
+  routeAndSend: jest
+    .fn()
+    .mockResolvedValue({ successCount: 0, failureCount: 0 }),
 };
 
 describe('NotificationsProcessor — realtime.invalidate', () => {
@@ -115,6 +123,10 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
         {
           provide: NotificationPreferencesService,
           useValue: mockPreferencesService,
+        },
+        {
+          provide: DependentPushRouterService,
+          useValue: mockDependentPushRouter,
         },
       ],
     }).compile();
@@ -378,6 +390,10 @@ describe('NotificationsProcessor — send-to-club-members', () => {
           provide: NotificationPreferencesService,
           useValue: mockPreferencesService,
         },
+        {
+          provide: DependentPushRouterService,
+          useValue: mockDependentPushRouter,
+        },
       ],
     }).compile();
 
@@ -585,6 +601,10 @@ describe('NotificationsProcessor — broadcast-chunk', () => {
           provide: NotificationPreferencesService,
           useValue: mockPreferencesService,
         },
+        {
+          provide: DependentPushRouterService,
+          useValue: mockDependentPushRouter,
+        },
       ],
     }).compile();
 
@@ -717,5 +737,251 @@ describe('NotificationsProcessor — broadcast-chunk', () => {
     ).not.toHaveBeenCalled();
     expect(mockPrismaService.user_fcm_tokens.findMany).not.toHaveBeenCalled();
     expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Dependent push routing (family profiles): pushes to a minor go to guardians
+// =============================================================================
+
+describe('NotificationsProcessor — dependent push routing', () => {
+  let processor: NotificationsProcessor;
+  let mockSendEachForMulticast: jest.Mock;
+  let firebaseAdminMock: any;
+
+  const DEPENDENT_ID = '00000000-0000-0000-0000-0000000000d1';
+
+  beforeEach(async () => {
+    firebaseAdminMock = jest.requireMock(
+      '../config/firebase-admin.module',
+    ).firebaseAdmin;
+    mockSendEachForMulticast = jest.fn().mockResolvedValue({
+      successCount: 0,
+      failureCount: 0,
+      responses: [],
+    });
+    (firebaseAdminMock.getMessaging as jest.Mock).mockReturnValue({
+      sendEachForMulticast: mockSendEachForMulticast,
+    });
+
+    jest.clearAllMocks();
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
+
+    mockPrismaService.$transaction.mockImplementation(
+      (fn: (tx: any) => Promise<any>) => fn(mockPrismaService),
+    );
+    mockPrismaService.notification_logs.create.mockResolvedValue({
+      log_id: 99,
+    });
+    mockPrismaService.notification_logs.update.mockResolvedValue({});
+    mockPrismaService.notification_deliveries.createMany.mockResolvedValue({
+      count: 1,
+    });
+    // A dependent has NO tokens of its own.
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+    mockPreferencesService.isAllowedForUser = jest.fn().mockResolvedValue(true);
+    mockPreferencesService.filterAllowedUsers.mockImplementation(
+      async (userIds: string[]) => new Set(userIds),
+    );
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        NotificationsProcessor,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FcmTokensService, useValue: mockFcmTokensService },
+        {
+          provide: NotificationPreferencesService,
+          useValue: mockPreferencesService,
+        },
+        {
+          provide: DependentPushRouterService,
+          useValue: mockDependentPushRouter,
+        },
+      ],
+    }).compile();
+
+    processor = module.get<NotificationsProcessor>(NotificationsProcessor);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
+  });
+
+  it('send-to-user: routes to guardians even though the dependent has no tokens, inbox untouched', async () => {
+    const result = await processor.process({
+      id: 'job-user',
+      name: 'send-to-user',
+      data: {
+        userId: DEPENDENT_ID,
+        title: 'Clase aprobada',
+        body: 'Buen trabajo',
+        data: { type: 'x' },
+        sentBy: ACTOR_ID,
+        source: 'validation:honor_approved',
+      },
+    } as any);
+
+    // The inbox delivery stays on the dependent.
+    expect(
+      mockPrismaService.notification_deliveries.create,
+    ).toHaveBeenCalledWith({
+      data: { log_id: 99, user_id: DEPENDENT_ID },
+    });
+    expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledWith(
+      [DEPENDENT_ID],
+      {
+        title: 'Clase aprobada',
+        body: 'Buen trabajo',
+        data: { type: 'x' },
+        source: 'validation:honor_approved',
+      },
+      expect.any(Function),
+      expect.stringContaining('handleSendToUser'),
+    );
+    expect(result).toMatchObject({ skippedPush: true });
+  });
+
+  it('the sender handed to the router is the processor multicast (token cleanup preserved)', async () => {
+    mockSendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 0,
+      responses: [{ success: true }],
+    });
+    mockDependentPushRouter.routeAndSend.mockImplementationOnce(
+      async (_ids: string[], payload: any, send: any) =>
+        send(['guardian-token'], `Ana · ${payload.title}`, payload.body, {
+          dependent_user_id: DEPENDENT_ID,
+        }),
+    );
+
+    await processor.process({
+      id: 'job-user-2',
+      name: 'send-to-user',
+      data: {
+        userId: DEPENDENT_ID,
+        title: 'Hola',
+        body: 'Mundo',
+        sentBy: ACTOR_ID,
+        source: 'activities:created',
+      },
+    } as any);
+
+    expect(mockSendEachForMulticast).toHaveBeenCalledWith({
+      tokens: ['guardian-token'],
+      notification: { title: 'Ana · Hola', body: 'Mundo' },
+      data: { dependent_user_id: DEPENDENT_ID },
+    });
+  });
+
+  it('does not route when FCM is not configured', async () => {
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue([]);
+    await processor.process({
+      id: 'job-user-3',
+      name: 'send-to-user',
+      data: {
+        userId: DEPENDENT_ID,
+        title: 'T',
+        body: 'B',
+        sentBy: ACTOR_ID,
+      },
+    } as any);
+    expect(mockDependentPushRouter.routeAndSend).not.toHaveBeenCalled();
+  });
+
+  it('send-to-club-members: routes the allowed members once', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: DEPENDENT_ID },
+      { user_id: MEMBER_ID_A },
+    ]);
+
+    await processor.process(makeClubMembersJob() as any);
+
+    expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledTimes(1);
+    expect(mockDependentPushRouter.routeAndSend.mock.calls[0][0]).toEqual([
+      DEPENDENT_ID,
+      MEMBER_ID_A,
+    ]);
+  });
+
+  it('send-to-section-role: routes the allowed role holders', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: DEPENDENT_ID },
+    ]);
+
+    await processor.process({
+      id: 'job-role',
+      name: 'send-to-section-role',
+      data: {
+        clubSectionId: 5,
+        roleNames: ['member'],
+        title: 'T',
+        body: 'B',
+        source: 'activities:created',
+      },
+    } as any);
+
+    expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledWith(
+      [DEPENDENT_ID],
+      expect.objectContaining({ title: 'T', source: 'activities:created' }),
+      expect.any(Function),
+      expect.stringContaining('handleSendToSectionRole'),
+    );
+  });
+
+  it('broadcast-chunk: ONE router call for the whole chunk (batched guardian query)', async () => {
+    const userIds = Array.from({ length: 50 }, (_, idx) => `u-${idx}`);
+
+    await processor.process(
+      makeBroadcastChunkJob({
+        logId: 7,
+        userIds,
+        title: 'Aviso',
+        body: 'Para todos',
+      }) as any,
+    );
+
+    expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledTimes(1);
+    expect(mockDependentPushRouter.routeAndSend.mock.calls[0][0]).toHaveLength(
+      50,
+    );
+  });
+
+  it('broadcast: routes every allowed user in one call', async () => {
+    mockPrismaService.users = {
+      findMany: jest
+        .fn()
+        .mockResolvedValue([
+          { user_id: DEPENDENT_ID },
+          { user_id: MEMBER_ID_A },
+        ]),
+    };
+
+    await processor.process({
+      id: 'job-bc',
+      name: 'broadcast',
+      data: { title: 'T', body: 'B', sentBy: ACTOR_ID },
+    } as any);
+
+    expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledTimes(1);
+    expect(mockDependentPushRouter.routeAndSend.mock.calls[0][0]).toEqual([
+      DEPENDENT_ID,
+      MEMBER_ID_A,
+    ]);
+  });
+
+  it('silent realtime invalidation is NEVER routed to guardians', async () => {
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+      { token: 'member-token' },
+    ]);
+    mockSendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 0,
+      responses: [{ success: true }],
+    });
+
+    await processor.process(makeJob(makePayload()) as any);
+
+    expect(mockDependentPushRouter.routeAndSend).not.toHaveBeenCalled();
   });
 });

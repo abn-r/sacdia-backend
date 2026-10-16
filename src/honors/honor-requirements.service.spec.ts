@@ -27,6 +27,10 @@ describe('HonorRequirementsService change tracking', () => {
     upload: jest.fn(),
   };
 
+  const guardianNotifications = {
+    onDependentEvidenceUploaded: jest.fn().mockResolvedValue(undefined),
+  };
+
   let service: HonorRequirementsService;
 
   beforeEach(() => {
@@ -40,6 +44,7 @@ describe('HonorRequirementsService change tracking', () => {
     service = new HonorRequirementsService(
       mockPrisma as any,
       fileStorage as any,
+      guardianNotifications as any,
     );
     mockPrisma.honor_requirements.findUnique.mockResolvedValue({
       requirement_id: 7,
@@ -96,6 +101,12 @@ describe('HonorRequirementsService change tracking', () => {
       where: { user_honor_id: 10 },
       data: { modified_at: expect.any(Date) },
     });
+    expect(
+      guardianNotifications.onDependentEvidenceUploaded,
+    ).toHaveBeenCalledWith({
+      dependentUserId: 'user-1',
+      kind: 'honor_requirement',
+    });
   });
 
   it('stores uploaded requirement evidence with a sequential display filename', async () => {
@@ -142,6 +153,28 @@ describe('HonorRequirementsService change tracking', () => {
         }),
       }),
     );
+    expect(
+      guardianNotifications.onDependentEvidenceUploaded,
+    ).toHaveBeenCalledWith({
+      dependentUserId: 'user-1',
+      kind: 'honor_requirement',
+    });
+  });
+
+  it('does not notify guardians when the evidence limit blocks the upload', async () => {
+    mockPrisma.user_honor_requirement_progress.upsert.mockResolvedValue({
+      progress_id: 99,
+      user_honor_id: 10,
+      requirement_id: 7,
+    });
+    mockPrisma.requirement_evidence.count.mockResolvedValue(99);
+
+    await expect(
+      service.addEvidenceLink('user-1', 20, 7, 'https://example.com/e'),
+    ).rejects.toMatchObject({ code: 'HONOR_EVIDENCE_MAX_REACHED' });
+    expect(
+      guardianNotifications.onDependentEvidenceUploaded,
+    ).not.toHaveBeenCalled();
   });
 
   it('blocks progress update when honor is pending review', async () => {

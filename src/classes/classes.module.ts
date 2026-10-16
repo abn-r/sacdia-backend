@@ -20,6 +20,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { CoordinationModule } from '../coordination/coordination.module';
 import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-eligibility.module';
+import { GuardianshipsModule } from '../guardianships/guardianships.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-el
     AchievementsModule,
     CoordinationModule,
     ClubRoleEligibilityModule,
+    GuardianshipsModule,
   ],
   controllers: [
     ClassesController,

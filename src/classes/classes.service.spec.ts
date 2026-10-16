@@ -1,3 +1,4 @@
+import { GuardianNotificationsService } from '../guardianships/guardian-notifications.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClassesService } from './classes.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +12,10 @@ import { ClassProgressAccessService } from './class-progress-access.service';
 import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
 import { ClassEnrollmentPolicyService } from './class-enrollment-policy.service';
 import { AppForbiddenException } from '../common/errors/app.exception';
+
+const mockGuardianNotifications = {
+  onDependentEvidenceUploaded: jest.fn().mockResolvedValue(undefined),
+};
 
 describe('ClassesService', () => {
   let service: ClassesService;
@@ -223,6 +228,10 @@ describe('ClassesService', () => {
         {
           provide: ClassEnrollmentPolicyService,
           useValue: mockClassEnrollmentPolicyService,
+        },
+        {
+          provide: GuardianNotificationsService,
+          useValue: mockGuardianNotifications,
         },
       ],
     }).compile();
@@ -1211,6 +1220,14 @@ describe('ClassesService', () => {
         classId: 7,
         ecclesiasticalYearId: 2026,
       });
+      // Guardians of the target are told AFTER the upload, except the actor.
+      expect(
+        mockGuardianNotifications.onDependentEvidenceUploaded,
+      ).toHaveBeenCalledWith({
+        dependentUserId: 'member-1',
+        kind: 'class_section',
+        actorUserId: 'counselor-1',
+      });
     });
 
     it('submits delegated evidence under the target enrollment and records the actor as submitter', async () => {
@@ -1365,6 +1382,10 @@ describe('ClassesService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.CLASS_PROGRESS_LOCKED,
       });
+      // A rejected upload never reaches the guardians.
+      expect(
+        mockGuardianNotifications.onDependentEvidenceUploaded,
+      ).not.toHaveBeenCalled();
     });
 
     it.each(['INVESTIDO', 'EXPIRED'])(

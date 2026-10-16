@@ -4,6 +4,7 @@ import { LegalModule } from '../legal/legal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DependentClaimCodesController } from './dependent-claim-codes.controller';
+import { GuardianNotificationsService } from './guardian-notifications.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
 import { GuardianshipsController } from './guardianships.controller';
 import { GuardianshipsService } from './guardianships.service';
@@ -21,11 +22,13 @@ import { LinkCodesService } from './link-codes.service';
     GuardianshipsService,
     LinkCodesService,
     GuardianshipLifecycleService,
+    GuardianNotificationsService,
   ],
   exports: [
     GuardianshipsService,
     GuardianshipLifecycleService,
     LinkCodesService,
+    GuardianNotificationsService,
   ],
 })
 export class GuardianshipsModule {}

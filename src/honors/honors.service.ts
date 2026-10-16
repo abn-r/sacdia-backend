@@ -51,6 +51,7 @@ import {
   CATALOG_CACHE_KEYS,
   HONORS_CACHE_NAMESPACE,
 } from '../catalogs/catalog-cache.service';
+import { GuardianNotificationsService } from '../guardianships/guardian-notifications.service';
 
 // Cap concurrent presign calls for USERS_HONORS bucket images. A single honor
 // detail request resolves certificate + document + N image URLs. Without the
@@ -108,6 +109,7 @@ export class HonorsService {
     private readonly masterHonorsEvaluator: MasterHonorsEvaluatorService,
     private readonly catalogCache: CatalogCacheService,
     private readonly instructors: InstructorsService,
+    private readonly guardianNotifications: GuardianNotificationsService,
   ) {}
 
   // ========================================
@@ -1190,6 +1192,13 @@ export class HonorsService {
     ) {
       await this.cleanupPreviousDocument(previousDocumentUrl);
     }
+
+    // After the files committed; never throws and stays silent for a guardian
+    // acting for the child.
+    void this.guardianNotifications.onDependentEvidenceUploaded({
+      dependentUserId: userId,
+      kind: 'honor',
+    });
 
     return {
       status: 'success',

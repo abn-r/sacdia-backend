@@ -54,6 +54,10 @@ describe('notification-source-map', () => {
         'requests:assignment_rejected',
         // approvals — membership requests
         'membership_requests:new_request',
+        // approvals — family profiles
+        'family:custody_transferred',
+        'family:evidence_uploaded',
+        'family:consent_verified',
         // achievements — master honors
         'master_honors:awarded',
         'master_honors:recovered',

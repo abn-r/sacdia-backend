@@ -8,6 +8,7 @@ import { NotificationsService } from './notifications.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { NotificationCategorySettingsService } from './notification-category-settings.service';
 import { FcmTokensService } from './fcm-tokens.service';
+import { DependentPushRouterService } from './dependent-push-router.service';
 import {
   NotificationsProcessor,
   NOTIFICATIONS_QUEUE,
@@ -55,6 +56,7 @@ function isRedisConfigured(): boolean {
     NotificationPreferencesService,
     NotificationCategorySettingsService,
     FcmTokensService,
+    DependentPushRouterService,
     ...(isRedisConfigured() && isBullmqWorkerEnabled('notifications')
       ? [NotificationsProcessor]
       : []),
