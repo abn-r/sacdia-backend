@@ -525,6 +525,11 @@ export class AuthController {
     description: 'Contraseña incorrecta o token inválido',
   })
   @ApiResponse({
+    status: 409,
+    description:
+      'AUTH_DELETE_DEPENDENTS_ACK_REQUIRED — tienes menores a tu cargo: consulta GET /guardianships/me/deletion-impact y reenvía con acknowledge_dependents=true',
+  })
+  @ApiResponse({
     status: 429,
     description: 'Demasiadas solicitudes — límite de 3 por hora',
   })
@@ -539,6 +544,7 @@ export class AuthController {
         ? { password: dto.password }
         : { provider: dto.provider!, idToken: dto.idToken!, nonce: dto.nonce! },
       ip,
+      { acknowledgeDependents: dto.acknowledge_dependents === true },
     );
   }
 

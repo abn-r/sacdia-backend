@@ -805,5 +805,6 @@
   "GUARDIANSHIP_LINK_CODE_LOCKED": "Too many link code attempts. Try again later",
   "GUARDIANSHIP_ALREADY_GUARDIAN": "You are already a guardian of this minor",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "You cannot revoke this guardianship",
-  "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "The selected relationship is not valid"
+  "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "The selected relationship is not valid",
+  "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "You must acknowledge what will happen to the minors in your care before deleting your account"
 }

@@ -792,5 +792,6 @@
   "GUARDIANSHIP_LINK_CODE_LOCKED": "Trop de tentatives avec un code de liaison. Réessayez plus tard",
   "GUARDIANSHIP_ALREADY_GUARDIAN": "Vous êtes déjà tuteur de ce mineur",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "Vous ne pouvez pas révoquer cette tutelle",
-  "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "Le lien de parenté sélectionné n'est pas valide"
+  "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "Le lien de parenté sélectionné n'est pas valide",
+  "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "Vous devez confirmer ce qu'il adviendra des mineurs à votre charge avant de supprimer votre compte"
 }

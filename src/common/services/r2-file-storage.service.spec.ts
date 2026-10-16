@@ -175,6 +175,52 @@ describe('R2FileStorageService', () => {
     });
   });
 
+  describe('GUARDIANSHIP_EVIDENCE — private consent-form bucket', () => {
+    const evidenceEnv = {
+      R2_BUCKET_GUARDIANSHIP_EVIDENCE: 'sacdia-guardianship-evidence',
+      R2_PUBLIC_URL_GUARDIANSHIP_EVIDENCE: 'https://priv-evidence.r2.dev',
+    };
+
+    it('uploads under the default guardianships/consent prefix', async () => {
+      const configured = await buildService(evidenceEnv);
+      mockS3Send.mockResolvedValueOnce({});
+
+      const result = await configured.upload(
+        StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+        'gs-1/a.pdf',
+        Buffer.from('%PDF'),
+        { contentType: 'application/pdf', overwrite: true },
+      );
+
+      expect(result.key).toBe('guardianships/consent/gs-1/a.pdf');
+      const command = mockS3Send.mock.calls[0][0] as PutObjectCommand;
+      expect(command.input.Bucket).toBe('sacdia-guardianship-evidence');
+    });
+
+    it('never exposes a public URL: the bucket is private', async () => {
+      const configured = await buildService(evidenceEnv);
+      expect(() =>
+        configured.resolvePublicUrl(
+          StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+          'gs-1/a.pdf',
+        ),
+      ).toThrow();
+    });
+
+    it('fails closed when the bucket env vars are not configured', async () => {
+      // `service` was built without them: the API boots, evidence does not work.
+      await expect(
+        service.upload(
+          StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+          'gs-1/a.pdf',
+          Buffer.from('%PDF'),
+          { contentType: 'application/pdf' },
+        ),
+      ).rejects.toBeDefined();
+      expect(mockS3Send).not.toHaveBeenCalled();
+    });
+  });
+
   // =========================================================================
   // upload — Bug #1 regression: URL must include keyPrefix
   // =========================================================================

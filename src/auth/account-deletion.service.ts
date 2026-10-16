@@ -8,14 +8,17 @@ import {
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { Inject } from '@nestjs/common';
 import { EmailService } from '../common/email/email.service';
+import { HttpStatus } from '@nestjs/common';
 import {
   AppBadRequestException,
+  AppException,
   AppNotFoundException,
   AppUnauthorizedException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import { totpIdentifier } from '../better-auth/better-auth.service';
+import { GuardianshipLifecycleService } from '../guardianships/guardianship-lifecycle.service';
 import { AppleTokenClient } from './social-sign-in/apple-token.client';
 import {
   APPLE_ID_TOKEN_VERIFIER,
@@ -34,6 +37,15 @@ export type DeleteAccountReauth =
   | { password: string }
   | { provider: SocialProvider; idToken: string; nonce: string };
 
+export interface DeleteAccountOptions {
+  /**
+   * The user saw what happens to each minor in their care (see
+   * GET /guardianships/me/deletion-impact) and accepts it. Required when
+   * dependents exist.
+   */
+  acknowledgeDependents?: boolean;
+}
+
 /**
  * Handles the full account deletion lifecycle for self-service requests
  * from the mobile app Settings > Danger Zone.
@@ -43,7 +55,12 @@ export type DeleteAccountReauth =
  * Flow:
  *   1. Re-authenticate: current password, or a fresh provider id token for a
  *      linked account; revoke the Apple refresh token when present
+ *   1c. Guardians: if the user has dependents and did not acknowledge them,
+ *      409 AUTH_DELETE_DEPENDENTS_ACK_REQUIRED and NOTHING changes
  *   2. In a single DB transaction:
+ *      0. Detach the user as guardian ('guardian_account_closed'): each minor
+ *         goes to another guardian, to club custody, or is frozen for 90 days.
+ *         A failure here rolls back the whole deletion.
  *      a. Revoke all BA sessions (DELETE FROM sessions WHERE user_id = ?)
  *      b. Soft-delete user (active = false)
  *      c. Anonymize PII fields to comply with GDPR/data minimization
@@ -76,6 +93,7 @@ export class AccountDeletionService {
     @Inject(APPLE_ID_TOKEN_VERIFIER) apple: IdTokenVerifier,
     private readonly appleTokens: AppleTokenClient,
     private readonly tokenBlacklist: TokenBlacklistService,
+    private readonly guardianshipLifecycle: GuardianshipLifecycleService,
   ) {
     this.verifiers = { google, apple };
   }
@@ -91,6 +109,7 @@ export class AccountDeletionService {
     userId: string,
     reauth: DeleteAccountReauth,
     ipAddress?: string,
+    options: DeleteAccountOptions = {},
   ): Promise<void> {
     // -------------------------------------------------------------------------
     // 1. Load user and linked accounts, re-authenticate
@@ -157,6 +176,24 @@ export class AccountDeletionService {
     }
 
     // -------------------------------------------------------------------------
+    // 1c. Guardians must acknowledge their dependents BEFORE anything is
+    //     revoked or deleted (Apple revoke included). The count is only for
+    //     logs and the dev-only `details`; clients read the minors and their
+    //     outcomes from GET /guardianships/me/deletion-impact.
+    // -------------------------------------------------------------------------
+    if (options.acknowledgeDependents !== true) {
+      const impact = await this.guardianshipLifecycle.deletionImpact(userId);
+      if (impact.dependents.length > 0) {
+        throw new AppException(
+          ErrorCode.AUTH_DELETE_DEPENDENTS_ACK_REQUIRED,
+          HttpStatus.CONFLICT,
+          undefined,
+          { dependents_count: impact.dependents.length },
+        );
+      }
+    }
+
+    // -------------------------------------------------------------------------
     // 1b. Revoke Sign in with Apple (App Store 5.1.1(v)). Best effort: a
     //     failure is logged and the deletion continues.
     // -------------------------------------------------------------------------
@@ -183,7 +220,16 @@ export class AccountDeletionService {
     const anonymizedEmail = `deleted-${userId}@sacdia.deleted`;
     const now = new Date();
 
-    await this.prisma.$transaction(async (tx) => {
+    const detached = await this.prisma.$transaction(async (tx) => {
+      // 2-pre. The guardian leaves every minor in its care in the SAME
+      //        transaction: if any outcome cannot be applied the account stays.
+      const detachedDependents =
+        await this.guardianshipLifecycle.detachGuardian(
+          tx,
+          userId,
+          'guardian_account_closed',
+        );
+
       // 2a. Revoke all BA sessions
       await tx.session.deleteMany({ where: { userId } });
 
@@ -238,7 +284,14 @@ export class AccountDeletionService {
           completed_at: now,
         },
       });
+
+      return detachedDependents;
     });
+
+    // The deletion committed: moved/frozen dependents lose the guardian's
+    // acting access on their next request, and club directors hear about
+    // custody. Never throws.
+    await this.guardianshipLifecycle.afterCommit(detached);
 
     // -------------------------------------------------------------------------
     // 2b. End every access JWT. JwtStrategy does not check users.active, so

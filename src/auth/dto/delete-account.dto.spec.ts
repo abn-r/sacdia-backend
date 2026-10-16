@@ -56,4 +56,38 @@ describe('DeleteAccountDto', () => {
     ).not.toHaveLength(0);
     expect(await errorsFor({ idToken: 't', nonce: 'n' })).not.toHaveLength(0);
   });
+
+  describe('acknowledge_dependents', () => {
+    it('is optional', async () => {
+      expect(await errorsFor({ password: 'MyPassword123!' })).toHaveLength(0);
+    });
+
+    it('accepts a boolean with either re-auth branch', async () => {
+      expect(
+        await errorsFor({
+          password: 'MyPassword123!',
+          acknowledge_dependents: true,
+        }),
+      ).toHaveLength(0);
+      expect(
+        await errorsFor({
+          provider: 'apple',
+          idToken: 't',
+          nonce: 'n',
+          acknowledge_dependents: false,
+        }),
+      ).toHaveLength(0);
+    });
+
+    it('rejects a non boolean', async () => {
+      for (const value of ['true', 1, {}, []]) {
+        expect(
+          await errorsFor({
+            password: 'MyPassword123!',
+            acknowledge_dependents: value,
+          }),
+        ).not.toHaveLength(0);
+      }
+    });
+  });
 });

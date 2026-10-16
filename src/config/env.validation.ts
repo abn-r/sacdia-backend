@@ -337,6 +337,13 @@ export const envValidationSchema = Joi.object({
   R2_PUBLIC_URL_CERTIFICATE_IMPORTS: Joi.string().uri().optional(),
   R2_KEY_PREFIX_CERTIFICATE_IMPORTS: Joi.string().allow('').optional(),
 
+  // Private parental-consent evidence (family profiles). Optional so the API
+  // boots without the bucket; the evidence endpoints fail closed until it is
+  // configured. The bucket MUST be private: only signed URLs are ever served.
+  R2_BUCKET_GUARDIANSHIP_EVIDENCE: Joi.string().optional(),
+  R2_PUBLIC_URL_GUARDIANSHIP_EVIDENCE: Joi.string().uri().optional(),
+  R2_KEY_PREFIX_GUARDIANSHIP_EVIDENCE: Joi.string().allow('').optional(),
+
   // Extra https hosts for certificate-bulk-import file_url (comma-separated).
   // Hosts from R2_PUBLIC_URL_* are always included. Loopback/private IPs
   // are dropped even if listed here.

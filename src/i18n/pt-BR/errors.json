@@ -792,5 +792,6 @@
   "GUARDIANSHIP_LINK_CODE_LOCKED": "Muitas tentativas com código de vinculação. Tente novamente mais tarde",
   "GUARDIANSHIP_ALREADY_GUARDIAN": "Você já é responsável por este menor",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "Você não pode revogar esta tutoria",
-  "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "O parentesco selecionado não é válido"
+  "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "O parentesco selecionado não é válido",
+  "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "Você precisa confirmar o que acontecerá com os menores sob seus cuidados antes de excluir sua conta"
 }

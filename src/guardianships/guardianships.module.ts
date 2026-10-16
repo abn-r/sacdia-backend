@@ -4,6 +4,7 @@ import { LegalModule } from '../legal/legal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DependentClaimCodesController } from './dependent-claim-codes.controller';
+import { DependentProfilesPurgeCronService } from './dependent-profiles-purge-cron.service';
 import { GuardianNotificationsService } from './guardian-notifications.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
 import { GuardianshipsController } from './guardianships.controller';
@@ -23,6 +24,7 @@ import { LinkCodesService } from './link-codes.service';
     LinkCodesService,
     GuardianshipLifecycleService,
     GuardianNotificationsService,
+    DependentProfilesPurgeCronService,
   ],
   exports: [
     GuardianshipsService,

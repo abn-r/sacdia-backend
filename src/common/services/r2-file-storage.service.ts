@@ -717,6 +717,18 @@ export class R2FileStorageService implements FileStorageService {
           ),
           isPublic: false,
         };
+      case StorageBucketAlias.GUARDIANSHIP_EVIDENCE:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_GUARDIANSHIP_EVIDENCE'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_GUARDIANSHIP_EVIDENCE',
+          ),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_GUARDIANSHIP_EVIDENCE',
+            'guardianships/consent',
+          ),
+          isPublic: false,
+        };
       default:
         throw new AppInternalServerErrorException(
           ErrorCode.R2_VALIDATION_FAILED,
