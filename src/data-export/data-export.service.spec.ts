@@ -27,6 +27,8 @@ const mockPrisma = {
   notification_preferences: { findMany: jest.fn() },
   evidence_files: { findMany: jest.fn() },
   legal_acceptances: { findMany: jest.fn() },
+  guardianships: { findMany: jest.fn() },
+  dependent_profiles: { findUnique: jest.fn() },
 };
 
 const mockFileStorage = {
@@ -424,6 +426,8 @@ describe('DataExportService', () => {
         model.findMany.mockResolvedValue([]);
       }
       mockPrisma.legal_acceptances.findMany.mockResolvedValue(legalRows);
+      mockPrisma.guardianships.findMany.mockResolvedValue([]);
+      mockPrisma.dependent_profiles.findUnique.mockResolvedValue(null);
       mockFileStorage.upload.mockResolvedValue({
         key: `${userId}/${exportId}.json`,
       });
@@ -435,7 +439,7 @@ describe('DataExportService', () => {
       return JSON.parse((buffer as Buffer).toString('utf-8'));
     }
 
-    it('includes legal_acceptances and bumps schema_version to 1.1.0', async () => {
+    it('includes legal_acceptances and bumps schema_version to 1.2.0', async () => {
       const rows = [
         {
           document_type: 'terms',
@@ -464,10 +468,78 @@ describe('DataExportService', () => {
         orderBy: { accepted_at: 'desc' },
       });
       const payload = uploadedPayload();
-      expect(payload.export_metadata.schema_version).toBe('1.1.0');
+      expect(payload.export_metadata.schema_version).toBe('1.2.0');
       expect(payload.legal_acceptances).toEqual([
         { ...rows[0], accepted_at: '2026-10-15T22:01:00.000Z' },
       ]);
+    });
+
+    it('exports guardianships as dependent and as guardian without tokens or evidence keys', async () => {
+      arrangeExport([]);
+      const base = {
+        custodian_club_id: null,
+        is_custodian: false,
+        consent_status: 'verified',
+        sworn_declaration_at: null,
+        verification_method: 'director_paper_form',
+        verified_at: new Date('2026-10-16T10:00:00.000Z'),
+        revoked_at: null,
+        revoked_reason: null,
+        created_at: new Date('2026-10-15T10:00:00.000Z'),
+        relationship_type: { name: 'Madre' },
+      };
+      mockPrisma.guardianships.findMany.mockResolvedValue([
+        {
+          ...base,
+          guardianship_id: 'g-1',
+          dependent_user_id: userId,
+          guardian_user_id: 'guardian-1',
+          is_primary: true,
+        },
+        {
+          ...base,
+          guardianship_id: 'g-2',
+          dependent_user_id: 'child-1',
+          guardian_user_id: userId,
+          is_primary: false,
+        },
+      ]);
+      mockPrisma.dependent_profiles.findUnique.mockResolvedValue({
+        created_by_user_id: 'guardian-1',
+        created_at: new Date('2026-10-15T10:00:00.000Z'),
+        frozen_at: null,
+        purge_after: null,
+      });
+
+      await service.runExport(exportId, userId);
+
+      const select = mockPrisma.guardianships.findMany.mock.calls[0][0].select;
+      expect(select).not.toHaveProperty('external_name');
+      expect(select).not.toHaveProperty('external_phone');
+      expect(select).not.toHaveProperty('consent_evidences');
+      const payload = uploadedPayload();
+      expect(payload.family.as_dependent).toHaveLength(1);
+      expect(payload.family.as_dependent[0]).toMatchObject({
+        guardianship_id: 'g-1',
+        relationship_type: 'Madre',
+      });
+      expect(payload.family.as_guardian).toHaveLength(1);
+      expect(payload.family.as_guardian[0].guardianship_id).toBe('g-2');
+      expect(payload.family.dependent_profile.created_by_user_id).toBe(
+        'guardian-1',
+      );
+    });
+
+    it('exports an empty family block for a user without guardianships', async () => {
+      arrangeExport([]);
+
+      await service.runExport(exportId, userId);
+
+      expect(uploadedPayload().family).toEqual({
+        dependent_profile: null,
+        as_dependent: [],
+        as_guardian: [],
+      });
     });
 
     it('exports an empty legal_acceptances list for a user with none', async () => {

@@ -72,6 +72,8 @@ const baseline = {
     'effectiveWhere|T09|1|937b312a4f96',
   'field-payment-orders/insurance-reassignments.service.ts':
     'effectiveWhere|T09|1|257d0ba772be',
+  'guardianships/guardianship-queries.ts':
+    'workflowWhere|allowlist|3|5acfc142566f',
   'honors/honor-validation-workflow.service.ts':
     'effectiveWhere|T08|1|73e3474e6bd8',
   'honors/honors.service.ts': 'effectiveWhere|T08|2|61643760d639',

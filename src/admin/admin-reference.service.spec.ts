@@ -142,6 +142,7 @@ const makePrismaMock = () => ({
   users_diseases: { count: jest.fn() },
   users_medicines: { count: jest.fn() },
   legal_representatives: { count: jest.fn() },
+  guardianships: { count: jest.fn() },
   club_sections: { count: jest.fn() },
   club_role_assignments: { count: jest.fn() },
   activities: { count: jest.fn() },
@@ -965,6 +966,54 @@ describe('AdminReferenceService', () => {
         undefined,
         ['name', 'description'],
       );
+    });
+  });
+
+  describe('deleteRelationshipType', () => {
+    beforeEach(() => {
+      prismaMock.relationship_types.findUnique.mockResolvedValue(
+        baseRelationshipType,
+      );
+      prismaMock.relationship_types.update.mockResolvedValue({
+        ...baseRelationshipType,
+        active: false,
+      });
+      prismaMock.legal_representatives.count.mockResolvedValue(0);
+      prismaMock.guardianships.count.mockResolvedValue(0);
+    });
+
+    it('deactivates a relationship type nobody references', async () => {
+      await service.deleteRelationshipType('uuid-rel-type-1', ACTOR_ID);
+
+      expect(prismaMock.relationship_types.update).toHaveBeenCalledWith({
+        where: { relationship_type_id: 'uuid-rel-type-1' },
+        data: { active: false, modified_at: expect.any(Date) },
+      });
+    });
+
+    it('refuses while a legal representative uses it', async () => {
+      prismaMock.legal_representatives.count.mockResolvedValue(1);
+
+      await expect(
+        service.deleteRelationshipType('uuid-rel-type-1', ACTOR_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_RELATIONSHIP_TYPE_IN_USE,
+      });
+      expect(prismaMock.relationship_types.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses while a guardianship uses it (FP-81)', async () => {
+      prismaMock.guardianships.count.mockResolvedValue(2);
+
+      await expect(
+        service.deleteRelationshipType('uuid-rel-type-1', ACTOR_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_RELATIONSHIP_TYPE_IN_USE,
+      });
+      expect(prismaMock.guardianships.count).toHaveBeenCalledWith({
+        where: { relationship_type_id: 'uuid-rel-type-1' },
+      });
+      expect(prismaMock.relationship_types.update).not.toHaveBeenCalled();
     });
   });
 

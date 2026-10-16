@@ -794,5 +794,16 @@
   "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "The OCR read is still running. Try again in a few seconds.",
   "ACTING_FOR_HEADER_INVALID": "The X-Acting-For header is not valid",
   "ACTING_FOR_FORBIDDEN": "You do not have access to this profile",
-  "ACTING_FOR_SCOPE_DENIED": "This action is not available while acting on behalf of another profile"
+  "ACTING_FOR_SCOPE_DENIED": "This action is not available while acting on behalf of another profile",
+  "GUARDIANSHIP_NOT_FOUND": "Family profile not found",
+  "GUARDIANSHIP_DEPENDENT_AGE_OUT_OF_RANGE": "The birth date does not belong to a minor who can be registered from My family",
+  "GUARDIANSHIP_GUARDIAN_NOT_ADULT": "You must be an adult to register a minor",
+  "GUARDIANSHIP_GUARDIAN_BIRTHDAY_REQUIRED": "Complete your birth date to register a minor",
+  "GUARDIANSHIP_DEPENDENT_LIMIT_REACHED": "You reached the maximum number of minors you can register",
+  "GUARDIANSHIP_GUARDIAN_LIMIT_REACHED": "This minor already has the maximum number of guardians",
+  "GUARDIANSHIP_LINK_CODE_INVALID": "The link code is not valid",
+  "GUARDIANSHIP_LINK_CODE_LOCKED": "Too many link code attempts. Try again later",
+  "GUARDIANSHIP_ALREADY_GUARDIAN": "You are already a guardian of this minor",
+  "GUARDIANSHIP_REVOKE_FORBIDDEN": "You cannot revoke this guardianship",
+  "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "The selected relationship is not valid"
 }

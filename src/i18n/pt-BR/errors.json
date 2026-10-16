@@ -781,5 +781,16 @@
   "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "A leitura OCR ainda está em andamento. Tente novamente em alguns segundos.",
   "ACTING_FOR_HEADER_INVALID": "O cabeçalho X-Acting-For não é válido",
   "ACTING_FOR_FORBIDDEN": "Você não tem acesso a este perfil",
-  "ACTING_FOR_SCOPE_DENIED": "Esta ação não está disponível enquanto você atua em nome de outro perfil"
+  "ACTING_FOR_SCOPE_DENIED": "Esta ação não está disponível enquanto você atua em nome de outro perfil",
+  "GUARDIANSHIP_NOT_FOUND": "Perfil familiar não encontrado",
+  "GUARDIANSHIP_DEPENDENT_AGE_OUT_OF_RANGE": "A data de nascimento não corresponde a um menor que pode ser registrado em Minha família",
+  "GUARDIANSHIP_GUARDIAN_NOT_ADULT": "Você precisa ser maior de idade para registrar um menor",
+  "GUARDIANSHIP_GUARDIAN_BIRTHDAY_REQUIRED": "Preencha sua data de nascimento para registrar um menor",
+  "GUARDIANSHIP_DEPENDENT_LIMIT_REACHED": "Você atingiu o máximo de menores que pode registrar",
+  "GUARDIANSHIP_GUARDIAN_LIMIT_REACHED": "Este menor já tem o máximo de responsáveis permitidos",
+  "GUARDIANSHIP_LINK_CODE_INVALID": "O código de vinculação não é válido",
+  "GUARDIANSHIP_LINK_CODE_LOCKED": "Muitas tentativas com código de vinculação. Tente novamente mais tarde",
+  "GUARDIANSHIP_ALREADY_GUARDIAN": "Você já é responsável por este menor",
+  "GUARDIANSHIP_REVOKE_FORBIDDEN": "Você não pode revogar esta tutoria",
+  "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "O parentesco selecionado não é válido"
 }

@@ -81,6 +81,8 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   'requests:assignment_rejected': 'approvals',
   // Membership requests
   'membership_requests:new_request': 'approvals',
+  // Family profiles: a minor under club custody (director notification)
+  'family:custody_transferred': 'approvals',
   // Member-of-month (director notification = approval-adjacent)
   'units:member_of_month': 'approvals',
   'units:member_of_month_director': 'approvals',

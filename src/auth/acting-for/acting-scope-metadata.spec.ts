@@ -192,12 +192,11 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
  * Routes (or families) that MUST NEVER carry a scope: credentials, sessions,
  * MFA, account deletion, data export, push tokens, guardianship management and
  * everything staff/admin/club facing. Each pattern must match at least one
- * discovered route unless flagged `optional`.
+ * discovered route (a renamed route must not silently drop out of the list).
  */
 const NEVER_SCOPE: Array<{
   label: string;
   pattern: RegExp;
-  optional?: boolean;
 }> = [
   { label: 'update-password', pattern: /^POST \/auth\/update-password$/ },
   { label: 'account deletion', pattern: /^DELETE \/auth\/me$/ },
@@ -217,7 +216,10 @@ const NEVER_SCOPE: Array<{
   {
     label: 'guardianship management',
     pattern: /^[A-Z]+ \/guardianships(\/|$)/,
-    optional: true,
+  },
+  {
+    label: 'director claim codes',
+    pattern: /^POST \/club-sections\/:clubSectionId\/dependents\//,
   },
   {
     label: 'legal representative',
@@ -290,12 +292,9 @@ describe('acting-scope metadata snapshot', () => {
   });
 
   describe('never-scope denylist', () => {
-    it.each(NEVER_SCOPE.filter((n) => !n.optional))(
-      '$label matches at least one route',
-      ({ pattern }) => {
-        expect(routes.some((r) => pattern.test(r.key))).toBe(true);
-      },
-    );
+    it.each(NEVER_SCOPE)('$label matches at least one route', ({ pattern }) => {
+      expect(routes.some((r) => pattern.test(r.key))).toBe(true);
+    });
 
     it.each(NEVER_SCOPE)(
       '$label carries no scope and is denied for a verified guardian',

@@ -117,7 +117,32 @@ describe('LegalAcceptanceController', () => {
       'user-1',
       { terms: '1.0.0-store', privacy: '1.0.0-store' },
       expect.objectContaining({ userAgent: 'SACDIA/1.0' }),
+      null,
     );
     expect(result).toEqual({ status: 'success', data: status });
+  });
+
+  it('POST while acting records the guardian (actor_sub) as the one who accepted', async () => {
+    mockLegalService.accept.mockResolvedValue({
+      requires_acceptance: false,
+      documents: [],
+    });
+    const req = {
+      // Substituted principal: sub is the dependent, actor_sub the guardian.
+      user: { sub: 'child-1', actor_sub: 'guardian-1', acting_for: true },
+      headers: {},
+      ip: '203.0.113.45',
+      socket: { remoteAddress: '127.0.0.1' },
+    };
+    await controller.accept(req, {
+      terms_version: '1.0.0-store',
+      privacy_version: '1.0.0-store',
+    });
+    expect(mockLegalService.accept).toHaveBeenCalledWith(
+      'child-1',
+      { terms: '1.0.0-store', privacy: '1.0.0-store' },
+      expect.any(Object),
+      'guardian-1',
+    );
   });
 });

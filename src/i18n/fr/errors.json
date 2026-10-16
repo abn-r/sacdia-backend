@@ -781,5 +781,16 @@
   "CERTIFICATE_IMPORT_OCR_IN_PROGRESS": "La lecture OCR est encore en cours. Réessayez dans quelques secondes.",
   "ACTING_FOR_HEADER_INVALID": "L'en-tête X-Acting-For n'est pas valide",
   "ACTING_FOR_FORBIDDEN": "Vous n'avez pas accès à ce profil",
-  "ACTING_FOR_SCOPE_DENIED": "Cette action n'est pas disponible lorsque vous agissez au nom d'un autre profil"
+  "ACTING_FOR_SCOPE_DENIED": "Cette action n'est pas disponible lorsque vous agissez au nom d'un autre profil",
+  "GUARDIANSHIP_NOT_FOUND": "Profil familial introuvable",
+  "GUARDIANSHIP_DEPENDENT_AGE_OUT_OF_RANGE": "La date de naissance ne correspond pas à un mineur pouvant être inscrit depuis Ma famille",
+  "GUARDIANSHIP_GUARDIAN_NOT_ADULT": "Vous devez être majeur pour inscrire un mineur",
+  "GUARDIANSHIP_GUARDIAN_BIRTHDAY_REQUIRED": "Renseignez votre date de naissance pour inscrire un mineur",
+  "GUARDIANSHIP_DEPENDENT_LIMIT_REACHED": "Vous avez atteint le nombre maximal de mineurs que vous pouvez inscrire",
+  "GUARDIANSHIP_GUARDIAN_LIMIT_REACHED": "Ce mineur a déjà le nombre maximal de tuteurs autorisés",
+  "GUARDIANSHIP_LINK_CODE_INVALID": "Le code de liaison n'est pas valide",
+  "GUARDIANSHIP_LINK_CODE_LOCKED": "Trop de tentatives avec un code de liaison. Réessayez plus tard",
+  "GUARDIANSHIP_ALREADY_GUARDIAN": "Vous êtes déjà tuteur de ce mineur",
+  "GUARDIANSHIP_REVOKE_FORBIDDEN": "Vous ne pouvez pas révoquer cette tutelle",
+  "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "Le lien de parenté sélectionné n'est pas valide"
 }

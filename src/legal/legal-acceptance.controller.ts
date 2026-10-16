@@ -25,7 +25,9 @@ import { AcceptLegalDocumentsDto } from './dto/accept-legal-documents.dto';
 import { LegalService } from './legal.service';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
-type LegalRequest = SessionContextRequest & { user: { sub: string } };
+type LegalRequest = SessionContextRequest & {
+  user: { sub: string; actor_sub?: string; acting_for?: boolean };
+};
 
 @ApiTags('legal')
 @Controller('users/me')
@@ -75,6 +77,9 @@ export class LegalAcceptanceController {
         req.user.sub,
         { terms: dto.terms_version, privacy: dto.privacy_version },
         sessionContextFromRequest(req),
+        // While a guardian acts for a dependent the subject is the child, but
+        // the person who accepted is the guardian (legal evidence).
+        req.user.acting_for ? req.user.actor_sub : null,
       ),
     };
   }

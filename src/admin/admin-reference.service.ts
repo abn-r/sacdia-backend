@@ -365,11 +365,18 @@ export class AdminReferenceService {
   async deleteRelationshipType(relationshipTypeId: string, actorId: string) {
     await this.ensureRelationshipTypeExists(relationshipTypeId);
 
-    const inUseCount = await this.prisma.legal_representatives.count({
-      where: { relationship_type_id: relationshipTypeId },
-    });
+    // Legacy legal representatives and the guardianships that replace them
+    // both reference the relationship type: either one blocks the delete.
+    const [legalRepresentativeCount, guardianshipCount] = await Promise.all([
+      this.prisma.legal_representatives.count({
+        where: { relationship_type_id: relationshipTypeId },
+      }),
+      this.prisma.guardianships.count({
+        where: { relationship_type_id: relationshipTypeId },
+      }),
+    ]);
 
-    if (inUseCount > 0) {
+    if (legalRepresentativeCount + guardianshipCount > 0) {
       throw new AppConflictException(ErrorCode.ADMIN_RELATIONSHIP_TYPE_IN_USE, {
         id: relationshipTypeId,
       });

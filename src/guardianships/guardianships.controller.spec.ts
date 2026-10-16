@@ -1,0 +1,117 @@
+import { Test } from '@nestjs/testing';
+import { ACTING_SCOPE_KEY } from '../auth/acting-for/acting-scope.decorator';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { DependentClaimCodesController } from './dependent-claim-codes.controller';
+import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
+import { GuardianshipsController } from './guardianships.controller';
+import { GuardianshipsService } from './guardianships.service';
+import { LinkCodesService } from './link-codes.service';
+
+const USER = { sub: 'guardian-1' };
+
+describe('GuardianshipsController', () => {
+  const guardianships = {
+    listForGuardian: jest.fn().mockResolvedValue({ dependents: [] }),
+    createDependent: jest.fn().mockResolvedValue({ user_id: 'd-1' }),
+    getDetailForGuardian: jest.fn().mockResolvedValue({ user_id: 'd-1' }),
+  };
+  const linkCodes = {
+    issueSecondGuardianCode: jest.fn().mockResolvedValue({ code: 'AAAA-BBBB' }),
+    redeem: jest.fn().mockResolvedValue({ user_id: 'd-1' }),
+    issueDirectorClaimCode: jest.fn().mockResolvedValue({ code: 'CCCC-DDDD' }),
+  };
+  const lifecycle = {
+    deletionImpact: jest.fn().mockResolvedValue({ dependents: [] }),
+    revoke: jest.fn().mockResolvedValue({ guardianship_id: 'g-1' }),
+  };
+
+  let controller: GuardianshipsController;
+  let claimController: DependentClaimCodesController;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module = await Test.createTestingModule({
+      controllers: [GuardianshipsController, DependentClaimCodesController],
+      providers: [
+        { provide: GuardianshipsService, useValue: guardianships },
+        { provide: LinkCodesService, useValue: linkCodes },
+        { provide: GuardianshipLifecycleService, useValue: lifecycle },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+    controller = module.get(GuardianshipsController);
+    claimController = module.get(DependentClaimCodesController);
+  });
+
+  it('wraps every response in the success envelope', async () => {
+    expect(await controller.list(USER)).toEqual({
+      status: 'success',
+      data: { dependents: [] },
+    });
+    expect(await controller.deletionImpact(USER)).toEqual({
+      status: 'success',
+      data: { dependents: [] },
+    });
+  });
+
+  it('creates a dependent for the token subject with the request context', async () => {
+    const dto = { name: 'Ana' } as never;
+    const req = {
+      headers: { 'user-agent': 'SACDIA/1.0' },
+      ip: '203.0.113.9',
+    } as never;
+    await controller.create(USER, dto, req);
+    expect(guardianships.createDependent).toHaveBeenCalledWith(
+      'guardian-1',
+      dto,
+      expect.any(Object),
+    );
+  });
+
+  it('issues, redeems and revokes as the token subject', async () => {
+    await controller.issueLinkCode(USER, 'd-1', { purpose: 'second_guardian' });
+    expect(linkCodes.issueSecondGuardianCode).toHaveBeenCalledWith(
+      'guardian-1',
+      'd-1',
+    );
+
+    const redeem = { code: 'X' } as never;
+    await controller.redeem(USER, redeem);
+    expect(linkCodes.redeem).toHaveBeenCalledWith('guardian-1', redeem);
+
+    await controller.revoke(USER, 'g-1', { reason: 'guardian_left' });
+    expect(lifecycle.revoke).toHaveBeenCalledWith(
+      'guardian-1',
+      'g-1',
+      'guardian_left',
+    );
+  });
+
+  it('delegates the director claim code to the service with the section', async () => {
+    await claimController.issue(5, 'd-1', USER);
+    expect(linkCodes.issueDirectorClaimCode).toHaveBeenCalledWith(
+      'guardian-1',
+      5,
+      'd-1',
+    );
+  });
+
+  it('declares NO acting scope anywhere: every route is denied while acting', () => {
+    for (const target of [
+      GuardianshipsController,
+      DependentClaimCodesController,
+    ]) {
+      expect(Reflect.getMetadata(ACTING_SCOPE_KEY, target)).toBeUndefined();
+      for (const name of Object.getOwnPropertyNames(target.prototype)) {
+        if (name === 'constructor') continue;
+        expect(
+          Reflect.getMetadata(ACTING_SCOPE_KEY, target.prototype[name]),
+        ).toBeUndefined();
+      }
+    }
+  });
+});
