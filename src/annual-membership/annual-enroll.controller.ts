@@ -22,6 +22,7 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('annual-membership')
 @Controller('users/:userId/membership')
@@ -33,6 +34,7 @@ export class AnnualEnrollController {
   ) {}
 
   @Post('annual-enroll')
+  @ActingScope('registration:write')
   @RequirePermissions('registration:complete')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
@@ -45,7 +47,8 @@ export class AnnualEnrollController {
   @ApiParam({ name: 'userId', type: String, description: 'UUID del usuario' })
   @ApiResponse({
     status: 403,
-    description: '403 ANNUAL_ENROLL_REQUIRES_DIRECTIVE — D01 pendiente; la directiva inscribe',
+    description:
+      '403 ANNUAL_ENROLL_REQUIRES_DIRECTIVE — D01 pendiente; la directiva inscribe',
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async annualEnroll(

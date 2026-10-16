@@ -42,6 +42,7 @@ import {
   Public,
   RequirePermissions,
 } from '../common/decorators';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 // ========================================
 // CATÁLOGO DE REQUISITOS DE HONORES (Público)
@@ -97,6 +98,7 @@ export class UserHonorRequirementsController {
   ) {}
 
   @Get(':honorId/requirements/progress')
+  @ActingScope('self:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:read')
   @ApiOperation({
@@ -123,6 +125,7 @@ export class UserHonorRequirementsController {
   }
 
   @Patch(':honorId/requirements/progress/batch')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:submit')
   @ApiOperation({
@@ -156,6 +159,7 @@ export class UserHonorRequirementsController {
   }
 
   @Patch(':honorId/requirements/:requirementId/progress')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:submit')
   @ApiOperation({
@@ -188,6 +192,7 @@ export class UserHonorRequirementsController {
   }
 
   @Post(':honorId/requirements/:requirementId/evidence/upload')
+  @ActingScope('evidence:upload')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
@@ -230,6 +235,7 @@ export class UserHonorRequirementsController {
   }
 
   @Post(':honorId/requirements/:requirementId/evidence/link')
+  @ActingScope('evidence:upload')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @ApiOperation({ summary: 'Agregar enlace como evidencia para un requisito' })
@@ -259,6 +265,7 @@ export class UserHonorRequirementsController {
   }
 
   @Get(':honorId/requirements/:requirementId/evidence')
+  @ActingScope('self:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:read')
   @ApiOperation({ summary: 'Listar evidencias de un requisito' })
@@ -289,6 +296,7 @@ export class UserHonorRequirementsController {
   }
 
   @Delete(':honorId/requirements/:requirementId/evidence/:evidenceId')
+  @ActingScope('evidence:upload')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:delete')
   @ApiOperation({ summary: 'Eliminar una evidencia de un requisito' })

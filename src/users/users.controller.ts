@@ -41,6 +41,7 @@ import {
   SensitiveUserSubresource,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('users')
 @Controller('users')
@@ -50,6 +51,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get(':userId')
+  @ActingScope('self:read')
   @RequirePermissions('users:read_detail')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Obtener información de un usuario' })
@@ -60,6 +62,7 @@ export class UsersController {
   }
 
   @Get(':userId/allergies')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener alergias activas del usuario' })
   @ApiResponse({
@@ -81,6 +84,7 @@ export class UsersController {
   }
 
   @Get(':userId/diseases')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener enfermedades activas del usuario' })
   @ApiResponse({
@@ -102,6 +106,7 @@ export class UsersController {
   }
 
   @Get(':userId/medicines')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener medicamentos activos del usuario' })
   @ApiResponse({
@@ -123,6 +128,7 @@ export class UsersController {
   }
 
   @Patch(':userId')
+  @ActingScope('profile:write')
   @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Actualizar información personal del usuario' })
@@ -136,6 +142,7 @@ export class UsersController {
   }
 
   @Put(':userId/allergies')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar alergias del usuario',
@@ -168,6 +175,7 @@ export class UsersController {
   }
 
   @Put(':userId/diseases')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar enfermedades del usuario',
@@ -200,6 +208,7 @@ export class UsersController {
   }
 
   @Put(':userId/medicines')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar medicamentos del usuario',
@@ -232,6 +241,7 @@ export class UsersController {
   }
 
   @Delete(':userId/allergies/:allergyId')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar alergia del usuario (borrado lógico)',
@@ -251,6 +261,7 @@ export class UsersController {
   }
 
   @Delete(':userId/diseases/:diseaseId')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar enfermedad del usuario (borrado lógico)',
@@ -270,6 +281,7 @@ export class UsersController {
   }
 
   @Delete(':userId/medicines/:medicineId')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar medicamento del usuario (borrado lógico)',
@@ -289,6 +301,7 @@ export class UsersController {
   }
 
   @Post(':userId/profile-picture')
+  @ActingScope('profile:write')
   @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
@@ -320,6 +333,7 @@ export class UsersController {
   }
 
   @Delete(':userId/profile-picture')
+  @ActingScope('profile:write')
   @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Eliminar foto de perfil' })
@@ -330,6 +344,7 @@ export class UsersController {
   }
 
   @Get(':userId/age')
+  @ActingScope('self:read')
   @RequirePermissions('users:read_detail')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Calcular edad del usuario' })

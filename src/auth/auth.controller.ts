@@ -43,6 +43,7 @@ import {
   sessionContextFromRequest,
   type SessionContextRequest,
 } from './session-request-context';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -326,6 +327,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @ActingScope('self:read')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener perfil del usuario autenticado' })
@@ -450,6 +452,7 @@ export class AuthController {
   }
 
   @Patch('me/context')
+  @ActingScope('profile:write')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
@@ -471,6 +474,7 @@ export class AuthController {
   }
 
   @Get('profile/completion-status')
+  @ActingScope('self:read')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener estado del post-registro' })

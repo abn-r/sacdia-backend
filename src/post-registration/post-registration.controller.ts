@@ -25,6 +25,7 @@ import {
   AuthorizationResource,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -51,6 +52,7 @@ export class PostRegistrationController {
   }
 
   @Get('photo-status')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('post_registration', 'read')
   @ApiOperation({
     summary: 'Verificar si el usuario tiene foto de perfil subida',
@@ -66,6 +68,7 @@ export class PostRegistrationController {
   }
 
   @Get('status')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('post_registration', 'read')
   @ApiOperation({ summary: 'Obtener estado del post-registro' })
   @ApiResponse({ status: 200, description: 'Estado actual' })
@@ -85,6 +88,7 @@ export class PostRegistrationController {
   }
 
   @Post('step-1/complete')
+  @ActingScope('registration:write')
   @RequirePermissions('registration:complete')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
@@ -113,6 +117,7 @@ export class PostRegistrationController {
   }
 
   @Post('step-2/complete')
+  @ActingScope('registration:write')
   @RequirePermissions('registration:complete')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
@@ -142,6 +147,7 @@ export class PostRegistrationController {
   }
 
   @Post('step-3/complete')
+  @ActingScope('registration:write')
   @RequirePermissions('registration:complete')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
@@ -176,6 +182,7 @@ export class PostRegistrationController {
   }
 
   @Post('membership-request/cancel')
+  @ActingScope('registration:write')
   @RequirePermissions('registration:complete')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)

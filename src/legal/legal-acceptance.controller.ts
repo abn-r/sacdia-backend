@@ -23,6 +23,7 @@ import {
 } from '../auth/session-request-context';
 import { AcceptLegalDocumentsDto } from './dto/accept-legal-documents.dto';
 import { LegalService } from './legal.service';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 type LegalRequest = SessionContextRequest & { user: { sub: string } };
 
@@ -39,6 +40,7 @@ export class LegalAcceptanceController {
    * Acceptance status of the authenticated user for the CURRENT versions.
    */
   @Get('legal-acceptance')
+  @ActingScope('self:read')
   @Throttle(namedThrottle({ ttl: 60000, limit: 30 }))
   @ApiOperation({ summary: 'Legal acceptance status of the current user' })
   @ApiResponse({ status: 200, description: 'LegalStatus block' })
@@ -54,6 +56,7 @@ export class LegalAcceptanceController {
    * Accepts the current Terms and Privacy versions. Idempotent.
    */
   @Post('legal-acceptance')
+  @ActingScope('legal:accept')
   @HttpCode(200)
   @Throttle(namedThrottle({ ttl: 60000, limit: 10 }))
   @ApiOperation({ summary: 'Accept the current legal documents' })
