@@ -794,5 +794,7 @@
   "GUARDIANSHIP_ALREADY_GUARDIAN": "Vous êtes déjà tuteur de ce mineur",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "Vous ne pouvez pas révoquer cette tutelle",
   "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "Le lien de parenté sélectionné n'est pas valide",
-  "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "Vous devez confirmer ce qu'il adviendra des mineurs à votre charge avant de supprimer votre compte"
+  "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "Vous devez confirmer ce qu'il adviendra des mineurs à votre charge avant de supprimer votre compte",
+  "AUTH_REGISTRATION_AGE_BELOW_MINIMUM": "Vous n'avez pas l'âge minimum pour créer un compte. Demandez à votre tuteur de vous inscrire depuis Ma famille",
+  "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "La date de naissance indique que vous n'avez pas l'âge minimum pour avoir un compte"
 }

@@ -35,9 +35,12 @@ import {
   AppBadRequestException,
   AppNotFoundException,
   AppUnauthorizedException,
+  AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { LegalService } from '../legal/legal.service';
+import { ageToday, parseCalendarDate } from '../common/age/age.util';
+import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import type { AuthPrincipal } from './acting-for/auth-principal';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
@@ -84,7 +87,27 @@ export class AuthService {
     private readonly emailService: EmailService,
     private readonly config: ConfigService,
     private readonly legalService: LegalService,
+    private readonly countryAgePolicy: CountryAgePolicyService,
   ) {}
+
+  private async assertRegistrationAge(dto: RegisterDto): Promise<void> {
+    if (!dto.birthday) return;
+
+    const birthday = parseCalendarDate(dto.birthday);
+    if (!birthday) {
+      // The DTO already validated the shape; an unparsable date never passes.
+      throw new AppUnprocessableEntityException(
+        ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+      );
+    }
+
+    const policy = await this.countryAgePolicy.getPolicy(dto.country_id);
+    if (ageToday(birthday, policy.timeZone) < policy.minSelfLoginAge) {
+      throw new AppUnprocessableEntityException(
+        ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+      );
+    }
+  }
 
   async register(dto: RegisterDto, context?: SessionRequestContext) {
     // 0. Validate the accepted legal versions BEFORE any user is created: a
@@ -94,6 +117,13 @@ export class AuthService {
       privacy: dto.accepted_privacy_version,
     };
     this.legalService.assertCurrentVersions(accepted);
+
+    // 0b. Age gate (FP-23): a person below the country's minimum self-login
+    //     age cannot hold an account; their guardian registers them from
+    //     "Mi familia". Runs BEFORE createUser so nothing is created. The
+    //     birthday is optional here (API clients can omit it); the authoritative
+    //     gate is UsersService.update (FP-24).
+    await this.assertRegistrationAge(dto);
 
     // 1. Create user in Better Auth (outside transaction — BA manages its own DB writes).
     //    BA creates the row in `users` (mapped via prismaAdapter: user_id, user_image, etc.)

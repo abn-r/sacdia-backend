@@ -22,6 +22,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ClubCycleReadinessService } from '../common/services/club-cycle-readiness.service';
 import { LegalService } from '../legal/legal.service';
+import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -171,7 +172,16 @@ describe('AuthService', () => {
     getStatus: jest.fn(),
   };
 
+  const mockCountryAgePolicy = {
+    getPolicy: jest.fn(),
+  };
+
   beforeEach(async () => {
+    mockCountryAgePolicy.getPolicy.mockReset().mockResolvedValue({
+      minSelfLoginAge: 13,
+      ageOfMajority: 18,
+      timeZone: 'America/Mexico_City',
+    });
     mockLegalService.assertCurrentVersions.mockReset();
     mockLegalService.getStatus.mockResolvedValue(LEGAL_STATUS);
     mockLegalService.recordOnRegister.mockResolvedValue(undefined);
@@ -218,6 +228,7 @@ describe('AuthService', () => {
         },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: LegalService, useValue: mockLegalService },
+        { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
       ],
     }).compile();
 
@@ -315,6 +326,98 @@ describe('AuthService', () => {
             complete: false,
           }),
         }),
+      });
+    });
+
+    describe('age gate (FP-23)', () => {
+      const yearsAgo = (years: number, extraDays = 0): string => {
+        const d = new Date();
+        d.setUTCFullYear(d.getUTCFullYear() - years);
+        d.setUTCDate(d.getUTCDate() + extraDays);
+        return d.toISOString().slice(0, 10);
+      };
+
+      const stubSuccessfulCreate = () => {
+        mockBetterAuthService.createUser.mockResolvedValue(mockBaResult);
+        mockTx.users_pr.create.mockResolvedValue({ user_id: 'user-123' });
+        mockTx.roles.findFirst.mockResolvedValue({
+          role_id: 1,
+          role_name: 'user',
+        });
+        mockTx.users_roles.create.mockResolvedValue({
+          user_id: 'user-123',
+          role_id: 1,
+        });
+        mockPrismaService.verification.create.mockResolvedValue({});
+      };
+
+      it('blocks a 12-year-old with 422 and creates no rows', async () => {
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(12) }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+          status: 422,
+        });
+
+        expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+        expect(mockLegalService.recordOnRegister).not.toHaveBeenCalled();
+      });
+
+      it('lets a user who turned 13 yesterday register', async () => {
+        stubSuccessfulCreate();
+
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(13, -1) }),
+        ).resolves.toMatchObject({ success: true });
+        expect(mockBetterAuthService.createUser).toHaveBeenCalled();
+      });
+
+      it('blocks a user who turns 13 tomorrow', async () => {
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(13, 2) }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+        });
+        expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
+      });
+
+      it('uses the selected country policy (min 16 blocks a 14-year-old)', async () => {
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 16,
+          ageOfMajority: 18,
+          timeZone: 'America/Mexico_City',
+        });
+
+        await expect(
+          service.register({
+            ...registerDto,
+            birthday: yearsAgo(14),
+            country_id: 9,
+          }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+        });
+        expect(mockCountryAgePolicy.getPolicy).toHaveBeenCalledWith(9);
+        expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
+      });
+
+      it('does not gate when the birthday is omitted (FP-24 is authoritative)', async () => {
+        stubSuccessfulCreate();
+
+        await service.register(registerDto);
+
+        expect(mockCountryAgePolicy.getPolicy).not.toHaveBeenCalled();
+        expect(mockBetterAuthService.createUser).toHaveBeenCalled();
+      });
+
+      it('rejects an unparsable calendar date before creating anything', async () => {
+        await expect(
+          service.register({ ...registerDto, birthday: '2017-02-31' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+        });
+        expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
       });
     });
 

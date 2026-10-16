@@ -7,6 +7,7 @@ import {
   Delete,
   Param,
   Body,
+  Req,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -42,6 +43,7 @@ import {
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
+import type { AuthPrincipal } from '../auth/acting-for/auth-principal';
 
 @ApiTags('users')
 @Controller('users')
@@ -134,11 +136,17 @@ export class UsersController {
   @ApiOperation({ summary: 'Actualizar información personal del usuario' })
   @ApiResponse({ status: 200, description: 'Usuario actualizado' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({
+    status: 422,
+    description:
+      'USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE: self-edit birthday below the country minimum age',
+  })
   async update(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() updateUserDto: UpdateUserDto,
+    @Req() req: { user?: AuthPrincipal },
   ) {
-    return this.usersService.update(userId, updateUserDto);
+    return this.usersService.update(userId, updateUserDto, req.user);
   }
 
   @Put(':userId/allergies')

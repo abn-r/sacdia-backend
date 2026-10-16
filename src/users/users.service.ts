@@ -3,6 +3,7 @@ import {
   AppBadRequestException,
   AppInternalServerErrorException,
   AppNotFoundException,
+  AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,7 +21,8 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
-import { ageToday } from '../common/age/age.util';
+import { ageToday, parseCalendarDate } from '../common/age/age.util';
+import type { AuthPrincipal } from '../auth/acting-for/auth-principal';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 
 @Injectable()
@@ -249,10 +251,56 @@ export class UsersService {
     return { status: 'success', data: user };
   }
 
-  async update(userId: string, updateUserDto: UpdateUserDto) {
+  /**
+   * FP-24 (authoritative self-edit age gate). A person who holds their own
+   * account (any sign-in method, social included) cannot set a birthday that
+   * puts them below the country's minimum self-login age: that person must be a
+   * managed dependent instead. Only the account holder editing THEMSELVES is
+   * gated; a guardian acting for a dependent (kind 'guardian_acting') and
+   * admin edits of someone else are not.
+   */
+  private async assertSelfBirthdayAllowed(
+    userId: string,
+    birthdayInput: string,
+    countryId: number | null,
+  ): Promise<void> {
+    const parsed =
+      parseCalendarDate(birthdayInput.slice(0, 10)) ?? new Date(birthdayInput);
+    // An unparsable value is the DTO's problem (IsDateString), not this gate.
+    if (Number.isNaN(parsed.getTime())) return;
+
+    const holdsAccount =
+      (await this.prisma.account.count({ where: { userId } })) > 0;
+    if (!holdsAccount) return;
+
+    const policy = await this.countryAgePolicy.getPolicy(countryId);
+    if (ageToday(parsed, policy.timeZone) < policy.minSelfLoginAge) {
+      throw new AppUnprocessableEntityException(
+        ErrorCode.USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE,
+      );
+    }
+  }
+
+  async update(
+    userId: string,
+    updateUserDto: UpdateUserDto,
+    actor?: Pick<AuthPrincipal, 'sub' | 'kind'>,
+  ) {
     // Validar que el usuario existe
     const existingUser = await this.ensureUserExists(userId);
     this.assertNoSelfServiceGeographyUpdate(updateUserDto);
+
+    if (
+      updateUserDto.birthday !== undefined &&
+      actor?.kind === 'user' &&
+      actor.sub === userId
+    ) {
+      await this.assertSelfBirthdayAllowed(
+        userId,
+        updateUserDto.birthday,
+        existingUser.country_id,
+      );
+    }
 
     // Validar baptism_date solo si baptism es true
     if (updateUserDto.baptism === false && updateUserDto.baptism_date) {

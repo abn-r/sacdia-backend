@@ -4,6 +4,7 @@ import {
   calendarDateIn,
   DEFAULT_AGE_TIMEZONE,
   isBirthdayInFuture,
+  parseCalendarDate,
 } from './age.util';
 
 const day = (iso: string): Date => new Date(`${iso}T00:00:00.000Z`);
@@ -97,6 +98,22 @@ describe('age.util', () => {
       ).toBe(false);
       expect(isBirthdayInFuture(day('2026-10-17'), 'UTC', now)).toBe(false);
       expect(isBirthdayInFuture(day('2017-04-02'), 'UTC', now)).toBe(false);
+    });
+  });
+
+  describe('parseCalendarDate', () => {
+    it('parses a strict YYYY-MM-DD into UTC midnight', () => {
+      expect(parseCalendarDate('2012-02-29')).toEqual(day('2012-02-29'));
+    });
+
+    it.each([
+      '2017-02-31',
+      '2027-02-29',
+      '2017-4-2',
+      '2017-04-02T00:00:00Z',
+      '',
+    ])('returns null for %j', (value) => {
+      expect(parseCalendarDate(value)).toBeNull();
     });
   });
 });

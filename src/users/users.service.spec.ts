@@ -81,6 +81,9 @@ describe('UsersService', () => {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
     },
+    account: {
+      count: jest.fn(),
+    },
   };
 
   const mockFileStorageService = {
@@ -897,6 +900,92 @@ describe('UsersService', () => {
       );
       expect(result.status).toBe('success');
       expect(result.message).toBe('Usuario actualizado exitosamente');
+    });
+
+    describe('self-edit birthday age gate (FP-24)', () => {
+      const yearsAgo = (years: number, extraDays = 0): string => {
+        const d = new Date();
+        d.setUTCFullYear(d.getUTCFullYear() - years);
+        d.setUTCDate(d.getUTCDate() + extraDays);
+        return d.toISOString().slice(0, 10);
+      };
+      const selfUser = { sub: 'u1', kind: 'user' as const };
+
+      beforeEach(() => {
+        mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
+        mockPrismaService.users.update.mockResolvedValue(updatedUserRow);
+        mockPrismaService.unions.findUnique.mockResolvedValue({
+          union_id: 2,
+          country_id: 1,
+        });
+        mockPrismaService.local_fields.findUnique.mockResolvedValue({
+          local_field_id: 3,
+          union_id: 2,
+        });
+        mockPrismaService.account.count.mockResolvedValue(1);
+      });
+
+      it('blocks an account holder setting a 10-year-old birthday and saves nothing', async () => {
+        await expect(
+          service.update('u1', { birthday: yearsAgo(10) }, selfUser),
+        ).rejects.toMatchObject({
+          code: ErrorCode.USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE,
+          status: 422,
+        });
+        expect(mockPrismaService.users.update).not.toHaveBeenCalled();
+      });
+
+      it('allows an account holder aged 13 or more', async () => {
+        await service.update('u1', { birthday: yearsAgo(13, -1) }, selfUser);
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+      });
+
+      it('uses the user country policy (min 16 blocks a 14-year-old)', async () => {
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 16,
+          ageOfMajority: 18,
+          timeZone: 'America/Mexico_City',
+        });
+
+        await expect(
+          service.update('u1', { birthday: yearsAgo(14) }, selfUser),
+        ).rejects.toMatchObject({
+          code: ErrorCode.USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE,
+        });
+        expect(mockCountryAgePolicy.getPolicy).toHaveBeenCalledWith(1);
+      });
+
+      it('does not block a guardian acting for a dependent', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(10) },
+          { sub: 'u1', kind: 'guardian_acting' },
+        );
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+        expect(mockPrismaService.account.count).not.toHaveBeenCalled();
+      });
+
+      it('does not block a third party editing another user (admin)', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(10) },
+          { sub: 'admin-1', kind: 'user' },
+        );
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+      });
+
+      it('does not block a target without an account (dependent)', async () => {
+        mockPrismaService.account.count.mockResolvedValue(0);
+
+        await service.update('u1', { birthday: yearsAgo(10) }, selfUser);
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+      });
+
+      it('does not run when no birthday is submitted or no actor is provided', async () => {
+        await service.update('u1', { gender: 'M' }, selfUser);
+        await service.update('u1', { birthday: yearsAgo(10) });
+        expect(mockPrismaService.account.count).not.toHaveBeenCalled();
+      });
     });
 
     it('TC-U02 - error: user not found → NotFoundException', async () => {

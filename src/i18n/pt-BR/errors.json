@@ -794,5 +794,7 @@
   "GUARDIANSHIP_ALREADY_GUARDIAN": "Você já é responsável por este menor",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "Você não pode revogar esta tutoria",
   "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "O parentesco selecionado não é válido",
-  "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "Você precisa confirmar o que acontecerá com os menores sob seus cuidados antes de excluir sua conta"
+  "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "Você precisa confirmar o que acontecerá com os menores sob seus cuidados antes de excluir sua conta",
+  "AUTH_REGISTRATION_AGE_BELOW_MINIMUM": "Você não tem a idade mínima para criar uma conta. Peça ao seu responsável que registre você em Minha família",
+  "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "A data de nascimento indica que você não tem a idade mínima para ter uma conta própria"
 }

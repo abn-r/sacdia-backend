@@ -50,3 +50,28 @@ describe('RegisterDto legal versions', () => {
     },
   );
 });
+
+describe('RegisterDto birthday and country_id (age gate)', () => {
+  it('stays valid without birthday and country_id (optional server-side)', async () => {
+    expect(await errorsFor(base)).toHaveLength(0);
+  });
+
+  it('accepts a YYYY-MM-DD birthday and an integer country_id', async () => {
+    expect(
+      await errorsFor({ ...base, birthday: '2005-04-02', country_id: 1 }),
+    ).toHaveLength(0);
+  });
+
+  it.each(['2005-4-2', '2005/04/02', '2005-02-31', '2005-04-02T00:00:00Z', ''])(
+    'rejects the birthday %j',
+    async (birthday) => {
+      const errors = await errorsFor({ ...base, birthday });
+      expect(errors.map((e) => e.property)).toContain('birthday');
+    },
+  );
+
+  it('rejects a non-integer country_id', async () => {
+    const errors = await errorsFor({ ...base, country_id: 'mx' });
+    expect(errors.map((e) => e.property)).toContain('country_id');
+  });
+});

@@ -7,6 +7,7 @@ import {
   ageToday,
   calendarDateIn,
   isBirthdayInFuture,
+  parseCalendarDate,
 } from '../common/age/age.util';
 import {
   CountryAgePolicyService,
@@ -73,20 +74,6 @@ type SummaryRow = Prisma.guardianshipsGetPayload<{
 const VISIBLE_DEPENDENT = {
   dependent_profile: { is: { frozen_at: null, purged_at: null } },
 } as const satisfies Prisma.usersWhereInput;
-
-function parseBirthday(value: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  const valid =
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day;
-  return valid ? date : null;
-}
 
 function unprocessable(code: ErrorCode): AppException {
   return new AppException(code, HttpStatus.UNPROCESSABLE_ENTITY);
@@ -163,7 +150,7 @@ export class GuardianshipsService {
     const { countryId, policy } = await this.assertAdult(guardianId);
     await this.assertRelationshipType(dto.relationship_type_id);
 
-    const birthday = parseBirthday(dto.birthday);
+    const birthday = parseCalendarDate(dto.birthday);
     if (!birthday || isBirthdayInFuture(birthday, policy.timeZone)) {
       throw unprocessable(ErrorCode.GUARDIANSHIP_DEPENDENT_AGE_OUT_OF_RANGE);
     }

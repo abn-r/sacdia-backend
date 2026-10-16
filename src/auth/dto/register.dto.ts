@@ -1,6 +1,15 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsNotEmpty, IsString, MaxLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsEmail,
+  IsInt,
+  IsISO8601,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNewPassword } from '../password-policy';
 import { LEGAL_VERSION_MAX_LENGTH } from '../../legal/legal-documents.constants';
 import { trimLegalVersion } from '../../legal/dto/legal-version.transform';
@@ -51,4 +60,26 @@ export class RegisterDto {
   @IsNotEmpty()
   @MaxLength(LEGAL_VERSION_MAX_LENGTH)
   declare accepted_privacy_version: string;
+
+  @ApiPropertyOptional({
+    example: '2005-04-02',
+    description:
+      'Fecha de nacimiento (YYYY-MM-DD). Si se envía y la edad es menor al mínimo del país (13 por defecto) el registro se rechaza con 422 AUTH_REGISTRATION_AGE_BELOW_MINIMUM. La app lo exige; la validación autoritativa es PATCH /users/:userId.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'birthday must be a YYYY-MM-DD date',
+  })
+  @IsISO8601({ strict: true }, { message: 'birthday must be a valid date' })
+  birthday?: string;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'País (define la edad mínima de la cuenta). Solo se usa para validar la edad; si se omite aplica el valor por defecto (13).',
+  })
+  @IsOptional()
+  @IsInt()
+  country_id?: number;
 }
