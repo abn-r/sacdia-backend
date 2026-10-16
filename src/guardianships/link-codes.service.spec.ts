@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { ErrorCode } from '../common/errors/error-codes';
+import { LinkCodeFailureCounter } from './link-code-failure-counter';
 import { LinkCodesService } from './link-codes.service';
 import {
   deriveLinkCodeKey,
@@ -44,6 +45,7 @@ function setup() {
   const updates: Array<{ model: string; args: any }> = [];
 
   const tx: any = {
+    $executeRaw: jest.fn().mockResolvedValue(1),
     guardianship_link_codes: {
       findFirst: jest.fn().mockResolvedValue(codeRow()),
       updateMany: jest.fn().mockImplementation(async (args: any) => {
@@ -87,13 +89,8 @@ function setup() {
     }),
   };
 
-  const store = new Map<string, { value: unknown; ttl?: number }>();
-  const cache = {
-    get: jest.fn(async (key: string) => store.get(key)?.value),
-    set: jest.fn(async (key: string, value: unknown, ttl?: number) => {
-      store.set(key, { value, ttl });
-    }),
-  };
+  // A cache without a Redis store: the counter uses its in-process window.
+  const failures = new LinkCodeFailureCounter({ stores: [] } as any);
   const config = { get: jest.fn().mockReturnValue(SECRET) };
   const actingForCache = { bump: jest.fn().mockResolvedValue(undefined) };
   const guardianships = {
@@ -105,7 +102,7 @@ function setup() {
   const service = new LinkCodesService(
     prisma,
     config as any,
-    cache as any,
+    failures,
     actingForCache as any,
     guardianships as any,
   );
@@ -113,8 +110,7 @@ function setup() {
     service,
     prisma,
     tx,
-    cache,
-    store,
+    failures,
     actingForCache,
     guardianships,
     committed,
@@ -387,7 +383,7 @@ describe('LinkCodesService.redeem: second guardian', () => {
   ])(
     'answers %s with the same 400 and counts a failure',
     async (_label, kind) => {
-      const { service, tx, prisma, store } = setup();
+      const { service, tx, prisma, failures } = setup();
       if (kind === 'none') {
         tx.guardianship_link_codes.findFirst.mockResolvedValue(null);
       }
@@ -399,9 +395,7 @@ describe('LinkCodesService.redeem: second guardian', () => {
       );
       expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_INVALID);
       expect(error?.getStatus?.()).toBe(400);
-      expect(store.get(`linkcode:fail:${REDEEMER}`)?.value).toMatchObject({
-        count: 1,
-      });
+      expect(await failures.current(REDEEMER)).toBe(1);
       if (kind === 'bad') {
         expect(prisma.$transaction).not.toHaveBeenCalled();
       }
@@ -409,7 +403,7 @@ describe('LinkCodesService.redeem: second guardian', () => {
   );
 
   it('409 ALREADY_GUARDIAN rolls back: the code is NOT consumed and no failure is counted', async () => {
-    const { service, tx, committed, store } = setup();
+    const { service, tx, committed, failures } = setup();
     tx.guardianships.findFirst
       .mockResolvedValueOnce({
         guardianship_id: 'g-inv',
@@ -422,7 +416,7 @@ describe('LinkCodesService.redeem: second guardian', () => {
     expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_ALREADY_GUARDIAN);
     expect(error?.getStatus?.()).toBe(409);
     expect(committed.codeConsumed).toBe(false);
-    expect(store.has(`linkcode:fail:${REDEEMER}`)).toBe(false);
+    expect(await failures.current(REDEEMER)).toBe(0);
   });
 
   it('409 GUARDIAN_LIMIT_REACHED at 4 guardians also leaves the code unconsumed', async () => {
@@ -482,6 +476,63 @@ describe('LinkCodesService.redeem: second guardian', () => {
   });
 });
 
+describe('LinkCodesService.redeem: self-redeem (four-eyes)', () => {
+  it.each([
+    ['second_guardian', INVITER, 'second-guardian invite'],
+    ['director_claim', DIRECTOR, 'director claim code'],
+  ])(
+    'refuses to redeem a %s code the redeemer issued: 403, nothing consumed or created',
+    async (purpose, issuer, _label) => {
+      const { service, tx, committed, failures, actingForCache } = setup();
+      tx.guardianship_link_codes.findFirst.mockResolvedValue(
+        codeRow({ purpose, issued_by_user_id: issuer }),
+      );
+
+      const error = await errorOf(service.redeem(issuer, redeemDto()));
+
+      expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_SELF_REDEEM);
+      expect(error?.getStatus?.()).toBe(403);
+      expect(tx.guardianship_link_codes.updateMany).not.toHaveBeenCalled();
+      expect(tx.guardianships.create).not.toHaveBeenCalled();
+      expect(tx.guardianships.updateMany).not.toHaveBeenCalled();
+      expect(committed.codeConsumed).toBe(false);
+      expect(actingForCache.bump).not.toHaveBeenCalled();
+      // It is not a wrong guess: the brute-force counter stays untouched.
+      expect(await failures.current(issuer)).toBe(0);
+    },
+  );
+
+  it('still lets someone else redeem the same code afterwards', async () => {
+    const { service, tx, created } = setup();
+    tx.guardianships.findFirst
+      .mockResolvedValueOnce({
+        guardianship_id: 'g-inv',
+        consent_status: 'pending',
+      })
+      .mockResolvedValueOnce(null);
+    await service.redeem(REDEEMER, redeemDto());
+    expect(created).toHaveLength(1);
+  });
+
+  it('locks the dependent before consuming the code', async () => {
+    const { service, tx } = setup();
+    tx.$executeRaw = jest.fn().mockResolvedValue(1);
+    tx.guardianships.findFirst
+      .mockResolvedValueOnce({
+        guardianship_id: 'g-inv',
+        consent_status: 'pending',
+      })
+      .mockResolvedValueOnce(null);
+
+    await service.redeem(REDEEMER, redeemDto());
+
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.guardianship_link_codes.updateMany.mock.invocationCallOrder[0],
+    );
+  });
+});
+
 describe('LinkCodesService.redeem: lockout', () => {
   const T0 = 1_800_000_000_000;
   let nowSpy: jest.SpyInstance;
@@ -527,12 +578,10 @@ describe('LinkCodesService.redeem: lockout', () => {
   });
 
   it('the window is anchored at the FIRST failure and later failures never extend it', async () => {
-    const { service, tx, store } = setup();
+    const { service, tx, failures } = setup();
     await failTimes(service, tx, 1, T0);
     await failTimes(service, tx, 9, T0 + 23 * HOUR);
-
-    // The TTL of the last write is what is LEFT of the first failure's window.
-    expect(store.get(`linkcode:fail:${REDEEMER}`)?.ttl).toBe(HOUR);
+    expect(await failures.current(REDEEMER)).toBe(10);
 
     // Still locked at 23h59.
     nowSpy.mockReturnValue(T0 + 24 * HOUR - 1);
@@ -545,10 +594,7 @@ describe('LinkCodesService.redeem: lockout', () => {
     expect((await errorOf(service.redeem(REDEEMER, redeemDto())))?.code).toBe(
       ErrorCode.GUARDIANSHIP_LINK_CODE_INVALID,
     );
-    expect(store.get(`linkcode:fail:${REDEEMER}`)?.value).toMatchObject({
-      count: 1,
-      first_at: T0 + 24 * HOUR,
-    });
+    expect(await failures.current(REDEEMER)).toBe(1);
   });
 
   it('keeps counters per user', async () => {
@@ -562,9 +608,11 @@ describe('LinkCodesService.redeem: lockout', () => {
   });
 
   it('does not lock anyone out when the cache is down', async () => {
-    const { service, tx, cache } = setup();
-    cache.get.mockRejectedValue(new Error('redis down'));
-    cache.set.mockRejectedValue(new Error('redis down'));
+    const { service, tx, failures } = setup();
+    jest.spyOn(failures, 'current').mockRejectedValue(new Error('redis down'));
+    jest
+      .spyOn(failures, 'increment')
+      .mockRejectedValue(new Error('redis down'));
     tx.guardianship_link_codes.findFirst.mockResolvedValue(null);
     const error = await errorOf(service.redeem(REDEEMER, redeemDto()));
     expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_INVALID);

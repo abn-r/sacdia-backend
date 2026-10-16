@@ -1,8 +1,6 @@
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import type { Cache } from 'cache-manager';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import {
   AppConflictException,
@@ -17,15 +15,16 @@ import {
   NOT_REVOKED,
   countActiveGuardians,
   hasLiveAssignmentInSection,
+  lockDependent,
 } from './guardianship-queries';
 import {
   DIRECTOR_CLAIM_CODE_TTL_MS,
-  LINK_CODE_FAILURE_WINDOW_MS,
   LINK_CODE_MAX_FAILURES,
   MAX_GUARDIANS_PER_DEPENDENT,
   SECOND_GUARDIAN_CODE_TTL_MS,
   type LinkCodePurpose,
 } from './guardianships.constants';
+import { LinkCodeFailureCounter } from './link-code-failure-counter';
 import { GuardianshipsService } from './guardianships.service';
 import type { DependentSummary } from './guardianships.types';
 import {
@@ -36,11 +35,6 @@ import {
   isWellFormedLinkCode,
   normalizeLinkCode,
 } from './link-code.util';
-
-interface FailureRecord {
-  count: number;
-  first_at: number;
-}
 
 export interface IssuedLinkCode {
   code: string;
@@ -76,7 +70,7 @@ export class LinkCodesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    private readonly failures: LinkCodeFailureCounter,
     private readonly actingForCache: ActingForCache,
     private readonly guardianships: GuardianshipsService,
   ) {}
@@ -293,6 +287,21 @@ export class LinkCodesService {
       throw invalidCode();
     }
 
+    // Four-eyes: nobody redeems a code they issued. Checked before the code is
+    // consumed, and the throw rolls the transaction back, so the code survives
+    // for the person it was meant for. Not a code failure: it does not feed the
+    // brute-force counter.
+    if (code.issued_by_user_id === userId) {
+      throw new AppException(
+        ErrorCode.GUARDIANSHIP_LINK_CODE_SELF_REDEEM,
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    // From here the guardian set of this child is being decided: serialize with
+    // leave / revoke / account deletion so none of them reads a half-state.
+    await lockDependent(tx, code.dependent_user_id);
+
     // Atomic single use: of two concurrent redeems exactly one gets count 1.
     const consumed = await tx.guardianship_link_codes.updateMany({
       where: {
@@ -444,20 +453,9 @@ export class LinkCodesService {
   // Brute-force lockout (Redis, best effort)
   // ---------------------------------------------------------------------------
 
-  private failureKey(userId: string): string {
-    return `linkcode:fail:${userId}`;
-  }
-
   private async isLockedOut(userId: string): Promise<boolean> {
     try {
-      const record = await this.cache.get<FailureRecord>(
-        this.failureKey(userId),
-      );
-      return (
-        !!record &&
-        record.count >= LINK_CODE_MAX_FAILURES &&
-        record.first_at + LINK_CODE_FAILURE_WINDOW_MS > Date.now()
-      );
+      return (await this.failures.current(userId)) >= LINK_CODE_MAX_FAILURES;
     } catch (error) {
       // The throttler still bounds attempts; do not lock everyone out on a
       // cache outage.
@@ -471,23 +469,13 @@ export class LinkCodesService {
   }
 
   /**
-   * The window is anchored at the FIRST failure: later failures keep counting
-   * but never extend it, so the lockout clears 24h after the first one.
+   * Atomic increment (see LinkCodeFailureCounter). The window is anchored at
+   * the FIRST failure: later failures keep counting but never extend it, so the
+   * lockout clears 24h after the first one.
    */
   private async recordFailure(userId: string): Promise<void> {
-    const key = this.failureKey(userId);
-    const now = Date.now();
     try {
-      const current = await this.cache.get<FailureRecord>(key);
-      const live =
-        current && current.first_at + LINK_CODE_FAILURE_WINDOW_MS > now
-          ? current
-          : null;
-      const next: FailureRecord = live
-        ? { count: live.count + 1, first_at: live.first_at }
-        : { count: 1, first_at: now };
-      const remainingMs = next.first_at + LINK_CODE_FAILURE_WINDOW_MS - now;
-      await this.cache.set(key, next, Math.max(remainingMs, 1));
+      await this.failures.increment(userId);
     } catch (error) {
       this.logger.warn(
         `Link code failure not recorded: ${

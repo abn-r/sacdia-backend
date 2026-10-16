@@ -14,6 +14,7 @@ import {
   NOT_REVOKED,
   displayName,
   findLiveAssignment,
+  lockDependent,
   type Db,
 } from './guardianship-queries';
 import {
@@ -95,12 +96,32 @@ export class GuardianshipLifecycleService {
     userId: string,
     reason: GuardianshipRevokedReason,
   ): Promise<DetachResult[]> {
+    const where = {
+      guardian_user_id: userId,
+      is_custodian: false,
+      ...NOT_REVOKED,
+    } satisfies Prisma.guardianshipsWhereInput;
+
+    // Which dependents are touched is only a hint until their locks are held.
+    const candidates = await tx.guardianships.findMany({
+      where,
+      select: { dependent_user_id: true },
+    });
+    if (candidates.length === 0) {
+      return [];
+    }
+
+    // Ascending id order: two guardians deleting at once never deadlock.
+    const dependentIds = [
+      ...new Set(candidates.map((candidate) => candidate.dependent_user_id)),
+    ].sort();
+    for (const dependentId of dependentIds) {
+      await lockDependent(tx, dependentId);
+    }
+
+    // Re-read under the locks: a concurrent leave may have revoked rows since.
     const rows = await tx.guardianships.findMany({
-      where: {
-        guardian_user_id: userId,
-        is_custodian: false,
-        ...NOT_REVOKED,
-      },
+      where,
       orderBy: { created_at: 'asc' },
       select: DETACHABLE_SELECT,
     });
@@ -119,6 +140,10 @@ export class GuardianshipLifecycleService {
   ): Promise<DetachResult> {
     const now = new Date();
     const dependentId = row.dependent_user_id;
+
+    // Callers lock before they read `row`; this keeps the guarantee for any
+    // other caller (re-entrant within the transaction).
+    await lockDependent(tx, dependentId);
 
     await tx.guardianships.update({
       where: { guardianship_id: row.guardianship_id },
@@ -273,6 +298,16 @@ export class GuardianshipLifecycleService {
     dependent_outcome: DependentOutcome;
   }> {
     const result = await this.prisma.$transaction(async (tx) => {
+      // Lock the dependent BEFORE reading anything the decision depends on.
+      const probe = await tx.guardianships.findUnique({
+        where: { guardianship_id: guardianshipId },
+        select: { dependent_user_id: true },
+      });
+      if (!probe) {
+        throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+      }
+      await lockDependent(tx, probe.dependent_user_id);
+
       const target = await tx.guardianships.findFirst({
         where: {
           guardianship_id: guardianshipId,

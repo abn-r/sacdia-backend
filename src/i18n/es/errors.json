@@ -805,6 +805,7 @@
   "GUARDIANSHIP_GUARDIAN_LIMIT_REACHED": "Este menor ya tiene el máximo de tutores permitidos",
   "GUARDIANSHIP_LINK_CODE_INVALID": "El código de vinculación no es válido",
   "GUARDIANSHIP_LINK_CODE_LOCKED": "Demasiados intentos con código de vinculación. Inténtalo de nuevo más tarde",
+  "GUARDIANSHIP_LINK_CODE_SELF_REDEEM": "No puedes canjear un código de vinculación que emitiste tú",
   "GUARDIANSHIP_ALREADY_GUARDIAN": "Ya eres tutor de este menor",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "No puedes revocar esta tutoría",
   "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "El parentesco seleccionado no es válido",

@@ -19,6 +19,22 @@ export const ACTIVE_USER_GUARDIAN = {
   guardian_user_id: { not: null },
 } as const satisfies Prisma.guardianshipsWhereInput;
 
+/**
+ * Serializes every guardianship mutation that decides "who holds this child"
+ * (leave, revoke, account deletion, redeem) per dependent, for the rest of the
+ * transaction. Under READ COMMITTED two guardians leaving at the same moment
+ * would each still see the other as active and both rows would end up revoked
+ * with no custody row and no freeze (an orphaned dependent). Re-entrant inside
+ * one transaction. When one transaction locks several dependents, lock them in
+ * ascending id order so two such transactions cannot deadlock.
+ */
+export async function lockDependent(
+  tx: Prisma.TransactionClient,
+  dependentId: string,
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`guardianships:dependent:${dependentId}`}))`;
+}
+
 export function displayName(
   user: { name: string | null; paternal_last_name: string | null } | null,
 ): string {

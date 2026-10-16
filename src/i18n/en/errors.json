@@ -805,6 +805,7 @@
   "GUARDIANSHIP_GUARDIAN_LIMIT_REACHED": "This minor already has the maximum number of guardians",
   "GUARDIANSHIP_LINK_CODE_INVALID": "The link code is not valid",
   "GUARDIANSHIP_LINK_CODE_LOCKED": "Too many link code attempts. Try again later",
+  "GUARDIANSHIP_LINK_CODE_SELF_REDEEM": "You cannot redeem a link code you issued yourself",
   "GUARDIANSHIP_ALREADY_GUARDIAN": "You are already a guardian of this minor",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "You cannot revoke this guardianship",
   "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "The selected relationship is not valid",

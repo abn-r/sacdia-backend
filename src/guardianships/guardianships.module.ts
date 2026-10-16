@@ -9,6 +9,7 @@ import { GuardianNotificationsService } from './guardian-notifications.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
 import { GuardianshipsController } from './guardianships.controller';
 import { GuardianshipsService } from './guardianships.service';
+import { LinkCodeFailureCounter } from './link-code-failure-counter';
 import { LinkCodesService } from './link-codes.service';
 
 /**
@@ -22,6 +23,7 @@ import { LinkCodesService } from './link-codes.service';
   providers: [
     GuardianshipsService,
     LinkCodesService,
+    LinkCodeFailureCounter,
     GuardianshipLifecycleService,
     GuardianNotificationsService,
     DependentProfilesPurgeCronService,

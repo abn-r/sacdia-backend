@@ -792,6 +792,7 @@
   "GUARDIANSHIP_GUARDIAN_LIMIT_REACHED": "Ce mineur a déjà le nombre maximal de tuteurs autorisés",
   "GUARDIANSHIP_LINK_CODE_INVALID": "Le code de liaison n'est pas valide",
   "GUARDIANSHIP_LINK_CODE_LOCKED": "Trop de tentatives avec un code de liaison. Réessayez plus tard",
+  "GUARDIANSHIP_LINK_CODE_SELF_REDEEM": "Vous ne pouvez pas utiliser un code de liaison que vous avez émis vous-même",
   "GUARDIANSHIP_ALREADY_GUARDIAN": "Vous êtes déjà tuteur de ce mineur",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "Vous ne pouvez pas révoquer cette tutelle",
   "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "Le lien de parenté sélectionné n'est pas valide",

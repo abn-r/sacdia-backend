@@ -22,7 +22,9 @@ function row(overrides: Record<string, unknown> = {}) {
 
 function setup() {
   const tx: any = {
+    $executeRaw: jest.fn().mockResolvedValue(1),
     guardianships: {
+      findUnique: jest.fn().mockResolvedValue({ dependent_user_id: DEP }),
       findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockResolvedValue({}),
@@ -243,6 +245,10 @@ describe('GuardianshipLifecycleService.detachGuardian / afterCommit', () => {
     const { service, tx } = setup();
     tx.guardianships.findMany
       .mockResolvedValueOnce([
+        { dependent_user_id: 'dep-b' },
+        { dependent_user_id: 'dep-a' },
+      ])
+      .mockResolvedValueOnce([
         row({ guardianship_id: 'gs-a', dependent_user_id: 'dep-a' }),
         row({ guardianship_id: 'gs-b', dependent_user_id: 'dep-b' }),
       ])
@@ -262,6 +268,39 @@ describe('GuardianshipLifecycleService.detachGuardian / afterCommit', () => {
       'guardian_account_closed',
       'guardian_account_closed',
     ]);
+  });
+
+  it('locks every touched dependent in ascending id order, then re-reads the rows under the locks', async () => {
+    const { service, tx } = setup();
+    tx.guardianships.findMany
+      .mockResolvedValueOnce([
+        { dependent_user_id: 'dep-b' },
+        { dependent_user_id: 'dep-a' },
+        { dependent_user_id: 'dep-a' },
+      ])
+      .mockResolvedValueOnce([]);
+
+    await service.detachGuardian(tx, G1, 'guardian_account_closed');
+
+    const keys = tx.$executeRaw.mock.calls.map((call: any[]) => call[1]);
+    expect(keys).toEqual([
+      'guardianships:dependent:dep-a',
+      'guardianships:dependent:dep-b',
+    ]);
+    // candidates, then the authoritative read after the locks
+    expect(tx.guardianships.findMany).toHaveBeenCalledTimes(2);
+    expect(tx.$executeRaw.mock.invocationCallOrder[1]).toBeLessThan(
+      tx.guardianships.findMany.mock.invocationCallOrder[1],
+    );
+  });
+
+  it('does nothing (and takes no lock) for a guardian without dependents', async () => {
+    const { service, tx } = setup();
+    tx.guardianships.findMany.mockResolvedValueOnce([]);
+    await expect(
+      service.detachGuardian(tx, G1, 'guardian_account_closed'),
+    ).resolves.toEqual([]);
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
 
   it('bumps the epoch of every touched dependent and notifies custody directors', async () => {
@@ -326,6 +365,31 @@ describe('GuardianshipLifecycleService.revoke', () => {
     expect(prisma.$transaction.mock.invocationCallOrder[0]).toBeLessThan(
       cache.bump.mock.invocationCallOrder[0],
     );
+  });
+
+  it('locks the dependent BEFORE reading the rows the decision depends on', async () => {
+    const { service, tx } = setup();
+    tx.guardianships.findFirst.mockResolvedValue(row());
+    tx.guardianships.findMany.mockResolvedValue([
+      { guardianship_id: 'other', is_primary: true },
+    ]);
+
+    await service.revoke(G1, 'gs-1', 'guardian_left');
+
+    expect(tx.$executeRaw.mock.calls[0][1]).toBe(
+      `guardianships:dependent:${DEP}`,
+    );
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.guardianships.findFirst.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('an unknown guardianship id is 404 without taking a lock', async () => {
+    const { service, tx } = setup();
+    tx.guardianships.findUnique.mockResolvedValue(null);
+    const error = await errorOf(service.revoke(G1, 'gs-x', 'guardian_left'));
+    expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
 
   it('a stranger gets 404, never a hint that the row exists', async () => {
