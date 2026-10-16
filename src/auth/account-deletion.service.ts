@@ -221,6 +221,14 @@ export class AccountDeletionService {
       // 2d. Remove credential account password hash (hard-delete account row)
       await tx.account.deleteMany({ where: { userId } });
 
+      // 2d-bis. Erase the IP and device kept with each legal acceptance; the
+      //         acceptance itself (document, version, date) stays on the
+      //         anonymized user as consent history.
+      await tx.legal_acceptances.updateMany({
+        where: { user_id: userId },
+        data: { ip_address: null, user_agent: null },
+      });
+
       // 2e. Audit log in account_deletion_log
       await tx.account_deletion_log.create({
         data: {
