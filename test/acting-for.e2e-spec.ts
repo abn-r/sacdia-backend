@@ -35,6 +35,8 @@ const GUARDIAN_ID = '00000000-0000-4000-8000-0000000000a1';
 const OTHER_GUARDIAN_ID = '00000000-0000-4000-8000-0000000000a2';
 const DEPENDENT_ID = '00000000-0000-4000-8000-0000000000d1';
 const FOREIGN_DEPENDENT_ID = '00000000-0000-4000-8000-0000000000d2';
+/** A second dependent of the SAME guardian (cross-dependent checks). */
+const SIBLING_DEPENDENT_ID = '00000000-0000-4000-8000-0000000000d3';
 const RANDOM_ID = '00000000-0000-4000-8000-0000000000ff';
 const RELATIONSHIP_ID = '00000000-0000-4000-8000-0000000000e1';
 
@@ -157,7 +159,8 @@ describe('Acting-for E2E', () => {
         }
         if (
           where.guardian_user_id === GUARDIAN_ID &&
-          where.dependent_user_id === DEPENDENT_ID &&
+          (where.dependent_user_id === DEPENDENT_ID ||
+            where.dependent_user_id === SIBLING_DEPENDENT_ID) &&
           grantedStatus !== null &&
           !args?.orderBy
         ) {
@@ -355,6 +358,70 @@ describe('Acting-for E2E', () => {
       );
     }
     expect(new Set(bodies).size).toBe(1);
+  });
+
+  describe('cross-dependent isolation (FP-12)', () => {
+    const statusOf = (dependentId: string) =>
+      `/api/v1/users/${dependentId}/post-registration/status`;
+
+    it('acting for one dependent can never read or write another dependent of the same guardian', async () => {
+      // Both dependents are legitimately the guardian's: each header works on
+      // its own dependent...
+      const own = await request(app.getHttpServer())
+        .get(statusOf(SIBLING_DEPENDENT_ID))
+        .set(acting(GUARDIAN_ID, SIBLING_DEPENDENT_ID));
+      expect(own.status).toBe(200);
+
+      // ...but a header for D1 on a path of D3 (and the reverse) is denied.
+      for (const [header, path] of [
+        [DEPENDENT_ID, SIBLING_DEPENDENT_ID],
+        [SIBLING_DEPENDENT_ID, DEPENDENT_ID],
+      ]) {
+        const read = await request(app.getHttpServer())
+          .get(statusOf(path))
+          .set(acting(GUARDIAN_ID, header));
+        expect(read.status).toBe(403);
+        // Owner check on the substituted principal, not a missing header.
+        expect(errorCode(read.body)).toBe('GUARD_PERMISSION_DENIED');
+
+        const profile = await request(app.getHttpServer())
+          .get(`/api/v1/users/${path}`)
+          .set(acting(GUARDIAN_ID, header));
+        expect(profile.status).toBe(403);
+
+        const write = await request(app.getHttpServer())
+          .patch(`/api/v1/users/${path}`)
+          .set(acting(GUARDIAN_ID, header))
+          .send({ name: 'Otro' });
+        expect(write.status).toBe(403);
+      }
+      // Nothing was written for the sibling through the wrong header.
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('acting for a dependent and addressing a stranger is denied too', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/users/${FOREIGN_DEPENDENT_ID}`)
+        .set(acting(GUARDIAN_ID, DEPENDENT_ID));
+      expect(response.status).toBe(403);
+    });
+  });
+
+  describe('@Public routes ignore the header (FP-08)', () => {
+    it.each([
+      ['malformed', 'not-a-uuid'],
+      ['foreign', FOREIGN_DEPENDENT_ID],
+    ])(
+      'a %s X-Acting-For on GET /legal/current is ignored',
+      async (_kind, value) => {
+        const response = await request(app.getHttpServer())
+          .get('/api/v1/legal/current')
+          .set({ ...bearer(GUARDIAN_ID), 'X-Acting-For': value });
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.documents).toBeDefined();
+      },
+    );
   });
 
   it('a malformed header is a 400, not a 401', async () => {
