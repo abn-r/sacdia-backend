@@ -472,7 +472,7 @@ async function upsertUserWithCredential(
     },
   });
 
-  return { userId: user.user_id, email: user.email };
+  return { userId: user.user_id, email: params.email };
 }
 
 async function upsertClubAssignment(

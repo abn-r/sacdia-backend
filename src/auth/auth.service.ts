@@ -895,9 +895,14 @@ export class AuthService {
    * email through other means (e.g., resend flow).
    */
   private async createAndLogVerificationToken(
-    email: string,
+    email: string | null,
     userName?: string,
   ): Promise<void> {
+    // Dependent profiles have no email: nothing to verify, nothing to log.
+    if (!email) {
+      return;
+    }
+
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 

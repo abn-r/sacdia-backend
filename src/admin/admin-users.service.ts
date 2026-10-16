@@ -434,7 +434,7 @@ interface MinimalPostRegistrationBlock {
 
 interface AdminUserListItem {
   user_id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   paternal_last_name: string | null;
   maternal_last_name: string | null;
@@ -647,11 +647,9 @@ export class AdminUsersService {
         section_name: assignment.club_sections?.club_types?.name ?? null,
         district_id:
           assignment.club_sections?.clubs?.districlub_type_id ?? null,
-        district_name:
-          assignment.club_sections?.clubs?.districts?.name ?? null,
+        district_name: assignment.club_sections?.clubs?.districts?.name ?? null,
         church_id: assignment.club_sections?.clubs?.church_id ?? null,
-        church_name:
-          assignment.club_sections?.clubs?.churches?.name ?? null,
+        church_name: assignment.club_sections?.clubs?.churches?.name ?? null,
         start_date: assignment.start_date,
         end_date: assignment.end_date,
         ecclesiastical_year: assignment.ecclesiastical_year,

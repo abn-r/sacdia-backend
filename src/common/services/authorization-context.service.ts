@@ -1,5 +1,8 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { AppNotFoundException, AppUnauthorizedException } from '../errors/app.exception';
+import {
+  AppNotFoundException,
+  AppUnauthorizedException,
+} from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -116,7 +119,7 @@ export type LegacyAssignmentContext = {
 export type ResolvedAuthorizationProfile = {
   profile: {
     user_id: string;
-    email: string;
+    email: string | null;
     name: string | null;
     paternal_last_name: string | null;
     maternal_last_name: string | null;
@@ -302,10 +305,9 @@ export class AuthorizationContextService {
       : 'none';
 
     try {
-      const cached =
-        await this.cacheManager.get<AuthContextCacheEnvelope | ResolvedAuthorizationProfile>(
-          cacheKey,
-        );
+      const cached = await this.cacheManager.get<
+        AuthContextCacheEnvelope | ResolvedAuthorizationProfile
+      >(cacheKey);
       if (this.isFreshEnvelope(cached, calendarRevision)) {
         this.logger.debug(`Auth context cache HIT  — ${cacheKey}`);
         return cached.payload;
@@ -731,8 +733,7 @@ export class AuthorizationContextService {
     }
 
     const clubId = assignment.club_sections?.clubs?.club_id;
-    const cycleAllows =
-      clubId == null || cycleReady.get(clubId) !== false;
+    const cycleAllows = clubId == null || cycleReady.get(clubId) !== false;
 
     const isOperational =
       assignment.status === 'active' &&
@@ -877,7 +878,11 @@ export class AuthorizationContextService {
   }
 
   private isFreshEnvelope(
-    cached: AuthContextCacheEnvelope | ResolvedAuthorizationProfile | null | undefined,
+    cached:
+      | AuthContextCacheEnvelope
+      | ResolvedAuthorizationProfile
+      | null
+      | undefined,
     calendarRevision: string,
   ): cached is AuthContextCacheEnvelope {
     if (cached == null || typeof cached !== 'object') {
@@ -893,7 +898,9 @@ export class AuthorizationContextService {
     if (currentYear == null) {
       return AUTH_CONTEXT_TTL_MS;
     }
-    const endDate = currentYear.end_date.toISOString().slice(0, 10) as BusinessDate;
+    const endDate = currentYear.end_date
+      .toISOString()
+      .slice(0, 10) as BusinessDate;
     const boundary = this.zonedBusinessTime.startOfNextBusinessDate(
       endDate,
       ECCLESIASTICAL_YEAR_TIMEZONE,

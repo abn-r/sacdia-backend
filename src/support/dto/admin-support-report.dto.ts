@@ -6,8 +6,8 @@ export class AdminSupportReportUserDto {
   @ApiProperty({ example: '104a2549-2056-4b9b-aaeb-51d8fd43191d' })
   userId!: string;
 
-  @ApiProperty({ example: 'abner@example.com' })
-  email!: string;
+  @ApiProperty({ example: 'abner@example.com', type: String, nullable: true })
+  email!: string | null;
 
   @ApiPropertyOptional({ example: 'Abner Reyes Ramírez' })
   name!: string | null;

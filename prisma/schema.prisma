@@ -817,6 +817,7 @@ model clubs {
   camporee_supply_plans      camporee_supply_plans[]
   activity_series            activity_series[]
   club_year_transitions      club_year_transitions[]
+  guardianships_custodian    guardianships[]              @relation("guardianships_custodian")
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
   @@index([church_id], map: "idx_clubs_church_id")
@@ -868,6 +869,7 @@ model club_sections {
   section_rankings            SectionRanking[]
   material_orders             MaterialOrder[]
   coordinator_assignments     coordinator_assignments[]
+  guardianship_link_codes     guardianship_link_codes[]
   camporee_score_judge_assignments camporee_event_judge_assignments[]
   camporee_score_submissions       camporee_event_score_submissions[]
   camporee_score_section_results   camporee_event_section_results[]
@@ -1074,6 +1076,10 @@ model countries {
   active       Boolean                  @default(false)
   created_at   DateTime?                @default(now()) @db.Timestamptz(6)
   modified_at  DateTime?                @default(now()) @db.Timestamptz(6)
+  // Family-profiles age policy (migration 20261016120000). Code defaults: 13 / 18 / America/Mexico_City.
+  minor_self_login_min_age Int          @default(13) @db.SmallInt
+  age_of_majority          Int          @default(18) @db.SmallInt
+  age_reference_timezone   String?      @db.VarChar(64)
   unions       unions[]
   users        users[]
   translations countries_translations[]
@@ -2523,7 +2529,7 @@ model users {
   paternal_last_name                   String?                               @db.VarChar(50)
   maternal_last_name                   String?                               @db.VarChar(50)
   active                               Boolean                               @default(true)
-  email                                String                                @unique @db.VarChar(100)
+  email                                String?                               @unique @db.VarChar(100)
   gender                               String?                               @db.VarChar
   birthday                             DateTime?                             @db.Date
   blood                                blood_type?
@@ -2649,6 +2655,16 @@ model users {
   data_export_requests                 data_export_requests[]
   legal_acceptances                    legal_acceptances[]                   @relation("legal_acceptance_user")
   legal_acceptances_given              legal_acceptances[]                   @relation("legal_acceptance_accepted_by")
+  // family-profiles relations
+  dependent_profile                    dependent_profiles?                   @relation("dependent_profile_user")
+  dependent_profiles_created           dependent_profiles[]                  @relation("dependent_profile_creator")
+  guardianships_as_dependent           guardianships[]                       @relation("guardianship_dependent")
+  guardianships_as_guardian            guardianships[]                       @relation("guardianship_guardian")
+  guardianships_verified               guardianships[]                       @relation("guardianship_verifier")
+  guardianship_link_codes_as_dependent guardianship_link_codes[]             @relation("link_code_dependent")
+  guardianship_link_codes_issued       guardianship_link_codes[]             @relation("link_code_issuer")
+  guardianship_link_codes_consumed     guardianship_link_codes[]             @relation("link_code_consumer")
+  guardianship_consent_evidences_uploaded guardianship_consent_evidences[]    @relation("consent_evidence_uploader")
   support_reports                      support_reports[]
   enrollment_rankings                  EnrollmentRanking[]
   // materiales relations
@@ -3716,6 +3732,7 @@ model relationship_types {
   modified_at           DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
   emergency_contacts    emergency_contacts[]
   legal_representatives legal_representatives[]
+  guardianships         guardianships[]
   translations          relationship_types_translations[]
 
   @@index([name], map: "idx_relationship_types_name")
@@ -6571,4 +6588,94 @@ model camporee_supply_folio_counters {
   local_field local_fields @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@id([local_field_id, year])
+}
+
+/**
+ * Family profiles (Phase 2). Dependents (<13) are users rows without an account
+ * row. Partial unique indexes and partial indexes live ONLY in migration
+ * 20261016120000_family_profiles (Prisma cannot express them), following the
+ * users GIN precedent: uq_guardianships_active_pair, uq_guardianships_active_primary,
+ * uq_guardianships_active_custodian, idx_dependent_profiles_purge,
+ * idx_guardianships_guardian_active, idx_guardianships_custodian_club,
+ * uq_guardianship_consent_evidences_current and
+ * idx_guardianship_link_codes_dependent_open.
+ */
+model dependent_profiles {
+  user_id            String    @id(map: "dependent_profiles_pkey") @db.Uuid
+  created_by_user_id String    @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  frozen_at          DateTime? @db.Timestamptz(6)
+  purge_after        DateTime? @db.Timestamptz(6)
+  purged_at          DateTime? @db.Timestamptz(6)
+
+  user       users @relation("dependent_profile_user", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "dependent_profiles_user_id_fkey")
+  created_by users @relation("dependent_profile_creator", fields: [created_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "dependent_profiles_created_by_user_id_fkey")
+}
+
+model guardianships {
+  guardianship_id            String    @id(map: "guardianships_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dependent_user_id          String    @db.Uuid
+  guardian_user_id           String?   @db.Uuid
+  is_custodian               Boolean   @default(false)
+  custodian_club_id          Int?
+  relationship_type_id       String?   @db.Uuid
+  is_primary                 Boolean   @default(false)
+  consent_status             String    @default("pending") @db.VarChar(16)
+  sworn_declaration_at       DateTime? @db.Timestamptz(6)
+  invited_by_guardianship_id String?   @db.Uuid
+  verified_by_user_id        String?   @db.Uuid
+  verification_method        String?   @db.VarChar(32)
+  verified_at                DateTime? @db.Timestamptz(6)
+  revoked_at                 DateTime? @db.Timestamptz(6)
+  revoked_reason             String?   @db.VarChar(32)
+  external_name              String?   @db.VarChar(150)
+  external_phone             String?   @db.VarChar(20)
+  is_test_data               Boolean   @default(false)
+  created_at                 DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  dependent         users               @relation("guardianship_dependent", fields: [dependent_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianships_dependent_user_id_fkey")
+  guardian          users?              @relation("guardianship_guardian", fields: [guardian_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianships_guardian_user_id_fkey")
+  verifier          users?              @relation("guardianship_verifier", fields: [verified_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianships_verified_by_user_id_fkey")
+  custodian_club    clubs?              @relation("guardianships_custodian", fields: [custodian_club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianships_custodian_club_id_fkey")
+  relationship_type relationship_types? @relation(fields: [relationship_type_id], references: [relationship_type_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianships_relationship_type_id_fkey")
+  invited_by        guardianships?      @relation("guardianship_invites", fields: [invited_by_guardianship_id], references: [guardianship_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianships_invited_by_guardianship_id_fkey")
+  invitees          guardianships[]     @relation("guardianship_invites")
+  consent_evidences guardianship_consent_evidences[]
+
+  @@index([dependent_user_id], map: "idx_guardianships_dependent")
+}
+
+model guardianship_consent_evidences {
+  evidence_id         String    @id(map: "guardianship_consent_evidences_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  guardianship_id     String    @db.Uuid
+  file_key            String    @db.VarChar(512)
+  content_type        String    @db.VarChar(64)
+  size_bytes          Int
+  uploaded_by_user_id String    @db.Uuid
+  uploaded_at         DateTime  @default(now()) @db.Timestamptz(6)
+  superseded_at       DateTime? @db.Timestamptz(6)
+  purged_at           DateTime? @db.Timestamptz(6)
+
+  guardianship guardianships @relation(fields: [guardianship_id], references: [guardianship_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianship_consent_evidences_guardianship_id_fkey")
+  uploaded_by  users         @relation("consent_evidence_uploader", fields: [uploaded_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianship_consent_evidences_uploaded_by_user_id_fkey")
+}
+
+model guardianship_link_codes {
+  link_code_id               String    @id(map: "guardianship_link_codes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code_hash                  String    @unique(map: "guardianship_link_codes_code_hash_key") @db.Char(64)
+  dependent_user_id          String    @db.Uuid
+  purpose                    String    @db.VarChar(24)
+  issued_by_user_id          String    @db.Uuid
+  issued_for_club_section_id Int?
+  expires_at                 DateTime  @db.Timestamptz(6)
+  consumed_at                DateTime? @db.Timestamptz(6)
+  consumed_by_user_id        String?   @db.Uuid
+  revoked_at                 DateTime? @db.Timestamptz(6)
+  created_at                 DateTime  @default(now()) @db.Timestamptz(6)
+
+  dependent    users          @relation("link_code_dependent", fields: [dependent_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianship_link_codes_dependent_user_id_fkey")
+  issuer       users          @relation("link_code_issuer", fields: [issued_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianship_link_codes_issued_by_user_id_fkey")
+  consumer     users?         @relation("link_code_consumer", fields: [consumed_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianship_link_codes_consumed_by_user_id_fkey")
+  club_section club_sections? @relation(fields: [issued_for_club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction, map: "guardianship_link_codes_issued_for_club_section_id_fkey")
 }
