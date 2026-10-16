@@ -21,6 +21,7 @@ import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ClubCycleReadinessService } from '../common/services/club-cycle-readiness.service';
+import { LegalService } from '../legal/legal.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -141,7 +142,36 @@ describe('AuthService', () => {
     sendPasswordReset: jest.fn().mockResolvedValue(undefined),
   };
 
+  const LEGAL_STATUS = {
+    requires_acceptance: false,
+    documents: [
+      {
+        document_type: 'terms',
+        version: '1.0.0-store',
+        url: 'https://sacdia.com/terms',
+        accepted: true,
+        accepted_at: '2026-10-15T22:01:00.000Z',
+      },
+      {
+        document_type: 'privacy',
+        version: '1.0.0-store',
+        url: 'https://sacdia.com/privacy',
+        accepted: true,
+        accepted_at: '2026-10-15T22:01:00.000Z',
+      },
+    ],
+  };
+
+  const mockLegalService = {
+    assertCurrentVersions: jest.fn(),
+    recordOnRegister: jest.fn().mockResolvedValue(undefined),
+    getStatus: jest.fn(),
+  };
+
   beforeEach(async () => {
+    mockLegalService.assertCurrentVersions.mockReset();
+    mockLegalService.getStatus.mockResolvedValue(LEGAL_STATUS);
+    mockLegalService.recordOnRegister.mockResolvedValue(undefined);
     mockTokenBlacklistService.blacklistToken.mockResolvedValue(undefined);
     mockPrismaService.$transaction.mockImplementation(
       async (callback: (tx: typeof mockTx) => Promise<unknown>) =>
@@ -184,6 +214,7 @@ describe('AuthService', () => {
           useValue: mockEmailService,
         },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: LegalService, useValue: mockLegalService },
       ],
     }).compile();
 
@@ -210,7 +241,10 @@ describe('AuthService', () => {
       name: 'Juan',
       paternal_last_name: 'Garcia',
       maternal_last_name: 'Lopez',
+      accepted_terms_version: '1.0.0-store',
+      accepted_privacy_version: '1.0.0-store',
     };
+    const acceptedVersions = { terms: '1.0.0-store', privacy: '1.0.0-store' };
 
     const mockBaResult = {
       user: {
@@ -249,6 +283,15 @@ describe('AuthService', () => {
       );
       expect(mockTx.users_pr.create).toHaveBeenCalled();
       expect(mockTx.users_roles.create).toHaveBeenCalled();
+      expect(mockLegalService.assertCurrentVersions).toHaveBeenCalledWith(
+        acceptedVersions,
+      );
+      expect(mockLegalService.recordOnRegister).toHaveBeenCalledWith(
+        mockTx,
+        'user-123',
+        acceptedVersions,
+        context,
+      );
       expect(result).toMatchObject({
         success: true,
         userId: 'user-123',
@@ -270,6 +313,44 @@ describe('AuthService', () => {
           }),
         }),
       });
+    });
+
+    it('should reject a legal version mismatch BEFORE creating any user', async () => {
+      mockLegalService.assertCurrentVersions.mockImplementation(() => {
+        throw new AppBadRequestException(ErrorCode.LEGAL_VERSION_MISMATCH);
+      });
+
+      await expect(
+        service.register({ ...registerDto, accepted_terms_version: '0.9' }),
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_VERSION_MISMATCH });
+
+      expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      expect(mockLegalService.recordOnRegister).not.toHaveBeenCalled();
+    });
+
+    it('should revoke BA session when recording the legal acceptance fails', async () => {
+      mockBetterAuthService.createUser.mockResolvedValue(mockBaResult);
+      mockBetterAuthService.signOut.mockResolvedValue(undefined);
+      mockTx.users_pr.create.mockResolvedValue({ user_id: 'user-123' });
+      mockTx.roles.findFirst.mockResolvedValue({
+        role_id: 1,
+        role_name: 'user',
+      });
+      mockTx.users_roles.create.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
+      mockLegalService.recordOnRegister.mockRejectedValue(
+        new Error('legal insert failed'),
+      );
+
+      await expect(service.register(registerDto)).rejects.toThrow(
+        'legal insert failed',
+      );
+      expect(mockBetterAuthService.signOut).toHaveBeenCalledWith(
+        mockBaResult.session.token,
+      );
     });
 
     it('should throw when BA createUser fails', async () => {
@@ -983,6 +1064,30 @@ describe('AuthService', () => {
         },
       });
       expect(result.data.post_register_complete).toBe(true);
+      expect(mockLegalService.getStatus).toHaveBeenCalledWith('user-123');
+      expect(result.data.legal).toEqual(LEGAL_STATUS);
+    });
+
+    it('should expose a pending legal status for users who have not accepted', async () => {
+      const pending = { ...LEGAL_STATUS, requires_acceptance: true };
+      mockLegalService.getStatus.mockResolvedValue(pending);
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: { user_id: 'user-123', user_image: null },
+          post_register_complete: true,
+          authorization: {},
+          legacy: {
+            roles: ['user'],
+            permissions: [],
+            club: null,
+            club_context: { active_assignment_id: null, active: null },
+          },
+        },
+      );
+
+      const result = await service.getProfile('user-123');
+
+      expect(result.data.legal.requires_acceptance).toBe(true);
     });
 
     it('should prioritize active context from authorization resolver', async () => {

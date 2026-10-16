@@ -366,6 +366,7 @@ export class DataExportService {
         sessions,
         notificationPreferences,
         evidenceFiles,
+        legalAcceptances,
       ] = await Promise.all([
         this.prisma.users.findUnique({
           where: { user_id: userId },
@@ -505,6 +506,19 @@ export class DataExportService {
             user_honor_id: true,
           },
         }),
+
+        this.prisma.legal_acceptances.findMany({
+          where: { user_id: userId },
+          select: {
+            document_type: true,
+            document_version: true,
+            accepted_at: true,
+            method: true,
+            ip_address: true,
+            user_agent: true,
+          },
+          orderBy: { accepted_at: 'desc' },
+        }),
       ]);
 
       // Step 4: Build JSON payload
@@ -513,7 +527,7 @@ export class DataExportService {
           export_id: exportId,
           generated_at: new Date().toISOString(),
           format: 'json',
-          schema_version: '1.0.0',
+          schema_version: '1.1.0',
           app_version: process.env.npm_package_version ?? 'unknown',
           notice:
             'Evidence files (documents, images) are not included in this export. ' +
@@ -537,6 +551,7 @@ export class DataExportService {
           user_agent: s.userAgent,
         })),
         notification_preferences: notificationPreferences,
+        legal_acceptances: legalAcceptances,
         evidence_files_metadata: evidenceFiles,
       };
 

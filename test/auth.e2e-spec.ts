@@ -189,6 +189,9 @@ describe('Auth E2E Tests', () => {
         ],
         club_role_assignments: [],
       } as any);
+      // /auth/me now includes the legal status; the fake user id is not a UUID,
+      // so the legal_acceptances lookup is stubbed like the users lookup above.
+      jest.spyOn(prisma.legal_acceptances, 'findMany').mockResolvedValue([]);
 
       const refreshRes = await request(app.getHttpServer())
         .post('/api/v1/auth/refresh')
@@ -205,6 +208,7 @@ describe('Auth E2E Tests', () => {
         .expect((res) => {
           expect(res.body.status).toBe('success');
           expect(res.body.data.user_id).toBe('test-user-id');
+          expect(res.body.data.legal.requires_acceptance).toBe(true);
         });
     });
 

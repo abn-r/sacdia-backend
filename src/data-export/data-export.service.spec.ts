@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ErrorCode } from '../common/errors/error-codes';
 import { DataExportService } from './data-export.service';
+import { StorageBucketAlias } from '../common/services/file-storage.service';
 
 const mockPrisma = {
   data_export_requests: {
@@ -16,11 +17,22 @@ const mockPrisma = {
     updateMany: jest.fn(),
     deleteMany: jest.fn(),
   },
+  users: { findUnique: jest.fn() },
+  users_honors: { findMany: jest.fn() },
+  class_section_progress: { findMany: jest.fn() },
+  club_role_assignments: { findMany: jest.fn() },
+  user_fcm_tokens: { findMany: jest.fn() },
+  notification_deliveries: { findMany: jest.fn() },
+  session: { findMany: jest.fn() },
+  notification_preferences: { findMany: jest.fn() },
+  evidence_files: { findMany: jest.fn() },
+  legal_acceptances: { findMany: jest.fn() },
 };
 
 const mockFileStorage = {
   getSignedDownloadUrl: jest.fn(),
   deleteMany: jest.fn(),
+  upload: jest.fn(),
 };
 
 const mockQueue = {
@@ -377,6 +389,93 @@ describe('DataExportService', () => {
 
       const result = await service.getDownloadUrl(userId, exportId);
       expect(result.url).toBe('https://signed-url');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // runExport — payload
+  // -------------------------------------------------------------------------
+
+  describe('runExport payload', () => {
+    const exportId = 'exp-1';
+    const userId = 'user-1';
+
+    function arrangeExport(legalRows: unknown[]) {
+      mockPrisma.data_export_requests.findUnique.mockResolvedValueOnce({
+        export_id: exportId,
+        user_id: userId,
+        status: 'pending',
+      });
+      mockPrisma.data_export_requests.update.mockResolvedValue({});
+      mockPrisma.users.findUnique.mockResolvedValue({
+        user_id: userId,
+        email: null,
+      });
+      for (const model of [
+        mockPrisma.users_honors,
+        mockPrisma.class_section_progress,
+        mockPrisma.club_role_assignments,
+        mockPrisma.user_fcm_tokens,
+        mockPrisma.notification_deliveries,
+        mockPrisma.session,
+        mockPrisma.notification_preferences,
+        mockPrisma.evidence_files,
+      ]) {
+        model.findMany.mockResolvedValue([]);
+      }
+      mockPrisma.legal_acceptances.findMany.mockResolvedValue(legalRows);
+      mockFileStorage.upload.mockResolvedValue({
+        key: `${userId}/${exportId}.json`,
+      });
+    }
+
+    function uploadedPayload() {
+      const [bucket, , buffer] = mockFileStorage.upload.mock.calls[0];
+      expect(bucket).toBe(StorageBucketAlias.DATA_EXPORTS);
+      return JSON.parse((buffer as Buffer).toString('utf-8'));
+    }
+
+    it('includes legal_acceptances and bumps schema_version to 1.1.0', async () => {
+      const rows = [
+        {
+          document_type: 'terms',
+          document_version: '1.0.0-store',
+          accepted_at: new Date('2026-10-15T22:01:00.000Z'),
+          method: 'register_checkbox',
+          ip_address: '203.0.113.45',
+          user_agent: 'SACDIA/1.0',
+        },
+      ];
+      arrangeExport(rows);
+
+      const result = await service.runExport(exportId, userId);
+
+      expect(result.failed).toBeUndefined();
+      expect(mockPrisma.legal_acceptances.findMany).toHaveBeenCalledWith({
+        where: { user_id: userId },
+        select: {
+          document_type: true,
+          document_version: true,
+          accepted_at: true,
+          method: true,
+          ip_address: true,
+          user_agent: true,
+        },
+        orderBy: { accepted_at: 'desc' },
+      });
+      const payload = uploadedPayload();
+      expect(payload.export_metadata.schema_version).toBe('1.1.0');
+      expect(payload.legal_acceptances).toEqual([
+        { ...rows[0], accepted_at: '2026-10-15T22:01:00.000Z' },
+      ]);
+    });
+
+    it('exports an empty legal_acceptances list for a user with none', async () => {
+      arrangeExport([]);
+
+      await service.runExport(exportId, userId);
+
+      expect(uploadedPayload().legal_acceptances).toEqual([]);
     });
   });
 });

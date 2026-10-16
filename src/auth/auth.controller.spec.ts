@@ -56,6 +56,8 @@ describe('AuthController', () => {
         name: 'Juan',
         paternal_last_name: 'Garcia',
         maternal_last_name: 'Lopez',
+        accepted_terms_version: '1.0.0-store',
+        accepted_privacy_version: '1.0.0-store',
       };
       const expected = { success: true };
       mockAuthService.register.mockResolvedValue(expected);
