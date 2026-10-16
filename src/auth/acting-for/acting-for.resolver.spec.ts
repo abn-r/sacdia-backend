@@ -82,6 +82,7 @@ describe('ActingForResolver', () => {
           is_custodian: false,
           is_test_data: false,
           consent_status: { in: ['pending', 'verified'] },
+          guardian: { active: true },
           dependent: {
             active: true,
             account: { none: {} },
@@ -192,6 +193,7 @@ describe('ActingForResolver', () => {
       consent_status: 'pending',
       is_custodian: false,
       is_test_data: false,
+      guardian: { active: true },
       dependent: {
         active: true,
         account: [],
@@ -217,6 +219,11 @@ describe('ActingForResolver', () => {
         'custodian_or_external',
       ],
       ['test placeholder', diagnostic({ is_test_data: true }), 'test_data'],
+      [
+        'deleted or deactivated guardian',
+        diagnostic({ guardian: { active: false } }),
+        'guardian_inactive',
+      ],
       [
         'inactive dependent',
         diagnostic({
@@ -289,16 +296,17 @@ describe('ActingForResolver', () => {
     it('stores a grant for 60s and a denial for 10s under the epoch key', async () => {
       prisma.guardianships.findFirst.mockResolvedValue(guardianshipRow());
       await resolver.resolve(GUARDIAN, DEPENDENT);
-      const grantKey = `acting:v1:${DEPENDENT}:0:${GUARDIAN}`;
+      const epoch = fake.store.get(`acting:epoch:${DEPENDENT}`);
+      const grantKey = `acting:v1:${DEPENDENT}:${String(epoch)}:${GUARDIAN}`;
       expect(fake.ttls.get(grantKey)).toBe(ACTING_GRANT_TTL_MS);
       expect(ACTING_GRANT_TTL_MS).toBe(60_000);
 
       const other = '33333333-3333-4333-8333-333333333333';
       prisma.guardianships.findFirst.mockResolvedValue(null);
       await resolver.resolve(other, DEPENDENT);
-      expect(fake.ttls.get(`acting:v1:${DEPENDENT}:0:${other}`)).toBe(
-        ACTING_DENIAL_TTL_MS,
-      );
+      expect(
+        fake.ttls.get(`acting:v1:${DEPENDENT}:${String(epoch)}:${other}`),
+      ).toBe(ACTING_DENIAL_TTL_MS);
       expect(ACTING_DENIAL_TTL_MS).toBe(10_000);
     });
 
@@ -306,8 +314,11 @@ describe('ActingForResolver', () => {
       prisma.guardianships.findFirst.mockResolvedValue(guardianshipRow());
       await resolver.resolve(GUARDIAN, DEPENDENT);
 
+      const before = fake.store.get(`acting:epoch:${DEPENDENT}`) as number;
       await actingCache.bump(DEPENDENT);
-      expect(fake.store.get(`acting:epoch:${DEPENDENT}`)).toBe(Date.now());
+      expect(fake.store.get(`acting:epoch:${DEPENDENT}`)).toBeGreaterThan(
+        before,
+      );
 
       // The guardianship was revoked meanwhile: the new epoch must not see the old grant.
       prisma.guardianships.findFirst.mockReset();
@@ -327,6 +338,87 @@ describe('ActingForResolver', () => {
       await expect(resolver.resolve(GUARDIAN, DEPENDENT)).resolves.toEqual({
         granted: false,
         cause: 'revoked',
+      });
+    });
+
+    describe('a missing epoch is a cache miss, never epoch 0', () => {
+      it('ignores a stale payload left under the old epoch value and reads the database', async () => {
+        // Epoch key gone (30-day expiry / flush), but an old grant survives
+        // under the value 0 that a defaulting implementation would use.
+        fake.store.set(`acting:v1:${DEPENDENT}:0:${GUARDIAN}`, {
+          granted: true,
+          grant: {
+            guardianshipId: 'revoked-long-ago',
+            consentStatus: 'verified',
+            scopes: GUARDIAN_VERIFIED_SCOPES,
+          },
+        });
+        prisma.guardianships.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(null);
+
+        await expect(resolver.resolve(GUARDIAN, DEPENDENT)).resolves.toEqual({
+          granted: false,
+          cause: 'no_guardianship',
+        });
+        expect(prisma.guardianships.findFirst).toHaveBeenCalled();
+      });
+
+      it('mints a fresh epoch BEFORE the database read and caches under it', async () => {
+        const order: string[] = [];
+        fake.mocks.set.mockImplementation(
+          (key: string, value: unknown, ttl?: number) => {
+            order.push(key.startsWith('acting:epoch:') ? 'epoch' : 'payload');
+            fake.store.set(key, value);
+            fake.ttls.set(key, ttl);
+            return Promise.resolve(undefined);
+          },
+        );
+        prisma.guardianships.findFirst.mockImplementation(() => {
+          order.push('db');
+          return Promise.resolve(guardianshipRow());
+        });
+
+        await resolver.resolve(GUARDIAN, DEPENDENT);
+
+        expect(order).toEqual(['epoch', 'db', 'payload']);
+        const epoch = fake.store.get(`acting:epoch:${DEPENDENT}`);
+        expect(epoch).toBeGreaterThan(0);
+        expect(fake.store.has(`acting:v1:${DEPENDENT}:0:${GUARDIAN}`)).toBe(
+          false,
+        );
+
+        // The second request hits the new epoch's payload.
+        prisma.guardianships.findFirst.mockClear();
+        await resolver.resolve(GUARDIAN, DEPENDENT);
+        expect(prisma.guardianships.findFirst).not.toHaveBeenCalled();
+      });
+
+      it('a mutation that bumps between the mint and the write orphans the payload', async () => {
+        prisma.guardianships.findFirst.mockImplementation(async () => {
+          // Committed and bumped while this request was reading.
+          await actingCache.bump(DEPENDENT);
+          return guardianshipRow();
+        });
+        await resolver.resolve(GUARDIAN, DEPENDENT);
+
+        // Next request sees the newer epoch: the payload cached above is gone.
+        prisma.guardianships.findFirst.mockReset();
+        prisma.guardianships.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(null);
+        await expect(resolver.resolve(GUARDIAN, DEPENDENT)).resolves.toEqual({
+          granted: false,
+          cause: 'no_guardianship',
+        });
+      });
+
+      it('epochs never repeat inside one process, even in the same millisecond', async () => {
+        await actingCache.bump(DEPENDENT);
+        const first = fake.store.get(`acting:epoch:${DEPENDENT}`) as number;
+        await actingCache.bump(DEPENDENT);
+        const second = fake.store.get(`acting:epoch:${DEPENDENT}`) as number;
+        expect(second).toBeGreaterThan(first);
       });
     });
 

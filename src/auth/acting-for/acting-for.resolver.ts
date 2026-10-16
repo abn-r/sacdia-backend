@@ -25,6 +25,9 @@ import {
  * Phase 3 supervised login is not locked out. Once an `account` row exists for
  * the dependent, acting stops working.
  *
+ * The guardian must still be an active user. (Adulthood is checked when the
+ * guardianship is created or redeemed, not on every request.)
+ *
  * Failure policy: a Redis error falls back to the database; a database error is
  * a 503 (AUTH_REVOCATION_CHECK_UNAVAILABLE). It never fails open.
  */
@@ -45,9 +48,15 @@ export class ActingForResolver {
     let epoch: number | null;
     try {
       epoch = await this.cache.getEpoch(dependentId);
-      const cached = await this.cache.get(dependentId, epoch, guardianId);
-      if (cached) {
-        return cached;
+      if (epoch === null) {
+        // No epoch stored (expired, flushed, evicted): a cache miss. Mint a new
+        // one now, before the database read, and read no payload under it.
+        epoch = await this.cache.initEpoch(dependentId);
+      } else {
+        const cached = await this.cache.get(dependentId, epoch, guardianId);
+        if (cached) {
+          return cached;
+        }
       }
     } catch (error) {
       // No usable cache: skip the write-back below and decide from the database.
@@ -90,6 +99,8 @@ export class ActingForResolver {
           is_custodian: false,
           is_test_data: false,
           consent_status: { in: ['pending', 'verified'] },
+          // A deleted or deactivated guardian cannot act, whatever the row says.
+          guardian: { active: true },
           dependent: {
             active: true,
             account: { none: {} },
@@ -164,6 +175,7 @@ export class ActingForResolver {
           consent_status: true,
           is_custodian: true,
           is_test_data: true,
+          guardian: { select: { active: true } },
           dependent: {
             select: {
               active: true,
@@ -180,6 +192,7 @@ export class ActingForResolver {
       if (row.is_custodian) return 'custodian_or_external';
       if (row.is_test_data) return 'test_data';
       if (row.consent_status === 'revoked') return 'revoked';
+      if (!row.guardian?.active) return 'guardian_inactive';
       if (!row.dependent.active) return 'dependent_inactive';
       if (row.dependent.account.length > 0) return 'has_account';
       if (!row.dependent.dependent_profile) return 'no_dependent_profile';

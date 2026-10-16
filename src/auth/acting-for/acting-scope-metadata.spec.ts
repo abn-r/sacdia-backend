@@ -30,7 +30,10 @@ interface RouteInfo {
   fullPath: string;
   controller: AnyFn;
   handler: AnyFn;
+  /** What the policy actually enforces: the handler's scope, else the class's. */
   scope: ActingForScope | undefined;
+  handlerScope: ActingForScope | undefined;
+  classScope: ActingForScope | undefined;
 }
 
 const SRC_ROOT = path.resolve(__dirname, '../..');
@@ -83,8 +86,13 @@ function collectRoutes(): RouteInfo[] {
         const methodPaths = Array.isArray(methodPath)
           ? methodPath
           : [methodPath];
-        const scope = Reflect.getMetadata(ACTING_SCOPE_KEY, handler) as
+        const handlerScope = Reflect.getMetadata(ACTING_SCOPE_KEY, handler) as
           ActingForScope | undefined;
+        const classScope = Reflect.getMetadata(ACTING_SCOPE_KEY, exported) as
+          ActingForScope | undefined;
+        // Same resolution as readActingScope (handler wins over class), so a
+        // class-level decorator can never hide from the equality check below.
+        const scope = handlerScope ?? classScope;
         for (const base of bases) {
           for (const mp of methodPaths) {
             const fullPath = joinPaths(base, mp);
@@ -96,6 +104,8 @@ function collectRoutes(): RouteInfo[] {
               controller: exported,
               handler,
               scope,
+              handlerScope,
+              classScope,
             });
           }
         }
@@ -267,6 +277,17 @@ describe('acting-scope metadata snapshot', () => {
 
   it('discovers a realistic number of routes (scanner sanity)', () => {
     expect(routes.length).toBeGreaterThan(500);
+  });
+
+  it('no controller declares a class-level @ActingScope (every route must opt in individually)', () => {
+    const offenders = [
+      ...new Set(
+        routes
+          .filter((route) => route.classScope !== undefined)
+          .map((route) => (route.controller as { name: string }).name),
+      ),
+    ];
+    expect(offenders).toEqual([]);
   });
 
   it('declares exactly the expected scoped routes (nothing gained, nothing lost)', () => {

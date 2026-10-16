@@ -9,6 +9,7 @@ export type ActingDenyCause =
   | 'custodian_or_external'
   | 'test_data'
   | 'dependent_inactive'
+  | 'guardian_inactive'
   | 'has_account'
   | 'no_dependent_profile'
   | 'frozen'
@@ -40,10 +41,16 @@ const ACTING_EPOCH_TTL_MS = 2_592_000_000; // 30 days
  * orphans every cached decision about that dependent in one write (no SCAN).
  * All methods throw on cache failure: the resolver decides to fall back to the
  * database, so the cache can never turn into an allow.
+ *
+ * A MISSING epoch (30-day expiry, Redis flush or eviction) is a cache miss, not
+ * epoch 0: payloads written under an older epoch of the same value could
+ * resurrect a revoked grant. The resolver mints a fresh epoch (`initEpoch`)
+ * BEFORE it reads the database and never reads a payload under it.
  */
 @Injectable()
 export class ActingForCache {
   private readonly logger = new Logger(ActingForCache.name);
+  private lastEpoch = 0;
 
   constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache) {}
 
@@ -59,12 +66,36 @@ export class ActingForCache {
     return `acting:v1:${dependentId}:${epoch}:${guardianId}`;
   }
 
-  async getEpoch(dependentId: string): Promise<number> {
+  /** Strictly increasing inside the process even within one millisecond. */
+  private nextEpoch(): number {
+    this.lastEpoch = Math.max(Date.now(), this.lastEpoch + 1);
+    return this.lastEpoch;
+  }
+
+  /** The current epoch, or `null` when none is stored (treat as a cache miss). */
+  async getEpoch(dependentId: string): Promise<number | null> {
     const raw = await this.cache.get<number | string>(
       this.epochKey(dependentId),
     );
     const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : raw;
-    return typeof parsed === 'number' && Number.isFinite(parsed) ? parsed : 0;
+    return typeof parsed === 'number' && Number.isFinite(parsed)
+      ? parsed
+      : null;
+  }
+
+  /**
+   * Stores a brand-new epoch for a dependent that has none and returns it.
+   * Call it before the database read that the payload will be cached from, so a
+   * mutation committing in between bumps past it and orphans that payload.
+   */
+  async initEpoch(dependentId: string): Promise<number> {
+    const epoch = this.nextEpoch();
+    await this.cache.set(
+      this.epochKey(dependentId),
+      epoch,
+      ACTING_EPOCH_TTL_MS,
+    );
+    return epoch;
   }
 
   async get(
@@ -100,7 +131,7 @@ export class ActingForCache {
     try {
       await this.cache.set(
         this.epochKey(dependentId),
-        Date.now(),
+        this.nextEpoch(),
         ACTING_EPOCH_TTL_MS,
       );
     } catch (error) {
