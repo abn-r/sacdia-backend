@@ -57,6 +57,7 @@ describe('ActivitiesService', () => {
       findMany: jest.fn(),
     },
     $executeRaw: jest.fn(),
+    $queryRaw: jest.fn(),
     $executeRawUnsafe: jest.fn(),
     $transaction: jest.fn(),
   };
@@ -195,6 +196,35 @@ describe('ActivitiesService', () => {
       expect(result.data).toEqual([]);
       expect(result.meta.total).toBe(0);
       expect(mockPrismaService.activities.findMany).not.toHaveBeenCalled();
+    });
+
+    it('matches class-audience activities without a json array filter', async () => {
+      // `classes` is a json column: Prisma turns array_contains into `@>`,
+      // which Postgres only has for jsonb ("operator does not exist").
+      mockPrismaService.clubs.findUnique.mockResolvedValue({
+        club_id: 1,
+        club_sections: [{ club_section_id: 1, club_type_id: 1 }],
+      });
+      jest
+        .spyOn(service as any, 'resolveActivityViewer')
+        .mockResolvedValue({ isBoard: false, classId: 13 });
+      mockPrismaService.$queryRaw.mockResolvedValue([{ activity_id: 7 }]);
+      mockPrismaService.activities.findMany.mockResolvedValue([]);
+      mockPrismaService.activities.count.mockResolvedValue(0);
+
+      await service.findByClub(1, { active: true }, undefined, 1, 'user-1');
+
+      const where =
+        mockPrismaService.activities.findMany.mock.calls[0][0].where;
+      expect(where.AND).toEqual([
+        {
+          OR: [
+            { audience: 'all' },
+            { audience: 'classes', activity_id: { in: [7] } },
+          ],
+        },
+      ]);
+      expect(JSON.stringify(where)).not.toContain('array_contains');
     });
 
     it('should filter by active flag when provided (member path)', async () => {
