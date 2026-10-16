@@ -66,7 +66,7 @@ function setup(options: { guardianBirthday?: string | null } = {}) {
 
   const calls: string[] = [];
   const tx = {
-    $queryRaw: jest.fn().mockResolvedValue([]),
+    $executeRaw: jest.fn().mockResolvedValue(0),
     guardianships: {
       count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockResolvedValue({}),
@@ -227,7 +227,7 @@ describe('GuardianshipsService.createDependent', () => {
   it('serializes concurrent creates of one guardian with an advisory lock', async () => {
     const { service, tx } = setup();
     await service.createDependent(GUARDIAN, dto());
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
   it('inherits the guardian country on the dependent', async () => {

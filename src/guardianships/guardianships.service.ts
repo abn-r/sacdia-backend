@@ -165,7 +165,7 @@ export class GuardianshipsService {
 
     await this.prisma.$transaction(async (tx) => {
       // Serialize concurrent creates of the same guardian so the limit holds.
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`guardianships:create:${guardianId}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`guardianships:create:${guardianId}`}))`;
 
       const activeDependents = await tx.guardianships.count({
         where: {
