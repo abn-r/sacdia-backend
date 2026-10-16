@@ -172,7 +172,7 @@ export class ActivitiesService {
         viewerUserId,
         userSectionId,
       );
-      const audienceFilter = this.audienceWhere(viewer);
+      const audienceFilter = await this.audienceWhere(viewer);
       if (audienceFilter) {
         where.AND = [audienceFilter];
       }
@@ -1091,16 +1091,24 @@ export class ActivitiesService {
     return year?.year_id ?? null;
   }
 
-  private audienceWhere(viewer: {
+  private async audienceWhere(viewer: {
     isBoard: boolean;
     classId: number | null;
-  }): Prisma.activitiesWhereInput | null {
+  }): Promise<Prisma.activitiesWhereInput | null> {
     if (viewer.isBoard) return null;
     const or: Prisma.activitiesWhereInput[] = [{ audience: 'all' }];
     if (viewer.classId != null) {
+      // `classes` is a json (not jsonb) column, so Prisma's array_contains
+      // compiles to `@>` and Postgres rejects it. Match with a jsonb cast.
+      const rows = await this.prisma.$queryRaw<{ activity_id: number }[]>`
+        SELECT activity_id FROM activities
+        WHERE audience = 'classes'
+          AND jsonb_typeof(classes::jsonb) = 'array'
+          AND classes::jsonb @> ${JSON.stringify([viewer.classId])}::jsonb
+      `;
       or.push({
         audience: 'classes',
-        classes: { array_contains: [viewer.classId] },
+        activity_id: { in: rows.map((row) => row.activity_id) },
       });
     }
     return { OR: or };
@@ -1232,7 +1240,9 @@ export class ActivitiesService {
       select: { class_id: true },
     });
     if (found.length !== ids.length) {
-      throw new AppBadRequestException(ErrorCode.ACTIVITY_AUDIENCE_CLASS_INVALID);
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_AUDIENCE_CLASS_INVALID,
+      );
     }
 
     return { audience: 'classes', classes: ids };
@@ -1802,8 +1812,7 @@ export class ActivitiesService {
           linkMeet: series.link_meet,
           additionalData: series.additional_data,
           audience: parseActivityAudience(series.audience),
-          classes:
-            (series.classes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+          classes: (series.classes as Prisma.InputJsonValue) ?? Prisma.JsonNull,
           ownerSectionId: series.club_section_id,
           isJoint: series.is_joint,
         });
@@ -1958,14 +1967,18 @@ export class ActivitiesService {
     };
   }
 
-  private normalizeRecurrence(recurrence: CreateActivitySeriesDto['recurrence']) {
+  private normalizeRecurrence(
+    recurrence: CreateActivitySeriesDto['recurrence'],
+  ) {
     if (recurrence.kind === 'interval') {
       const intervalDays = recurrence.interval_days;
       if (
         !intervalDays ||
         (recurrence.weekdays && recurrence.weekdays.length > 0)
       ) {
-        throw new AppBadRequestException(ErrorCode.ACTIVITY_SERIES_INVALID_RULE);
+        throw new AppBadRequestException(
+          ErrorCode.ACTIVITY_SERIES_INVALID_RULE,
+        );
       }
       return { kind: 'interval' as const, intervalDays };
     }
