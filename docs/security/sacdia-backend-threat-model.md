@@ -72,7 +72,7 @@ The dominant abuse path is **confused-deputy use of the member QR JWT as an API 
 | Sentry | Error telemetry with redaction | `src/main.ts:49-125` |
 | Render | Build, `prisma migrate deploy`, process | `render.yaml` |
 
-CI/dev only: GitHub Actions (`ci.yml`), Jest e2e `E2E_PASSTHROUGH_PERMISSIONS` (blocked when `NODE_ENV=production`).
+CI/dev only: GitHub Actions (`ci.yml`), Jest e2e `E2E_PASSTHROUGH_PERMISSIONS` (honored only when `NODE_ENV=test`).
 
 ### Data flows and trust boundaries
 
@@ -147,7 +147,7 @@ flowchart TD
 
 - No assumed access to Render/Neon/Redis dashboards or `.env`.
 - No assumed RCE via template engines (API is JSON, no `res.render` of user templates).
-- No assumed ability to set `E2E_PASSTHROUGH_PERMISSIONS` in production (`permissions.guard.ts:74-78`).
+- `E2E_PASSTHROUGH_PERMISSIONS` is ignored outside `NODE_ENV=test`, including deployed servers running with `NODE_ENV=development` (`permissions.guard.ts:74-84`).
 - No Node inspector in `start:prod`.
 - Clients cannot choose R2 object keys on certification/payment-proof flows (server-generated).
 

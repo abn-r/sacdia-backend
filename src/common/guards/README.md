@@ -33,7 +33,7 @@ Para `user` (y `active_assignment` con `ownerParam`), el propietario del recurso
 
 El contexto de autorización (grants globales, de club y territoriales) lo resuelve `AuthorizationContextService` (`src/common/services/authorization-context.service.ts`) y se cachea 5 minutos.
 
-En e2e, `E2E_PASSTHROUGH_PERMISSIONS=true` desactiva `PermissionsGuard` (nunca con `NODE_ENV=production`).
+En e2e, `E2E_PASSTHROUGH_PERMISSIONS=true` desactiva `PermissionsGuard` solo con `NODE_ENV=test` (Jest y el job e2e del CI); con cualquier otro `NODE_ENV` se ignora.
 
 ## Guards de ruta (opt-in con `@UseGuards`)
 
