@@ -74,9 +74,11 @@ const SECTION_MEMBER_PROFILE_GATE_PERMISSIONS = new Set([
 /** E2E-only. Nest cannot rebind APP_GUARD via overrideGuard(PermissionsGuard). */
 export const E2E_PASSTHROUGH_PERMISSIONS_ENV = 'E2E_PASSTHROUGH_PERMISSIONS';
 
+// Only NODE_ENV=test (Jest and the CI e2e job) may bypass RBAC. Deployed
+// servers can run with NODE_ENV=development, so "not production" is not enough.
 function isE2ePermissionsPassthrough(): boolean {
   return (
-    process.env.NODE_ENV !== 'production' &&
+    process.env.NODE_ENV === 'test' &&
     process.env[E2E_PASSTHROUGH_PERMISSIONS_ENV] === 'true'
   );
 }
