@@ -48,6 +48,9 @@ const mockPrisma = {
   account_deletion_log: {
     create: jest.fn(),
   },
+  legal_acceptances: {
+    updateMany: jest.fn(),
+  },
   $transaction: jest.fn(),
 };
 
@@ -167,6 +170,14 @@ describe('AccountDeletionService', () => {
       await service.deleteAccount(USER_ID, { password: PASSWORD });
       expect(mockPrisma.account.deleteMany).toHaveBeenCalledWith({
         where: { userId: USER_ID },
+      });
+    });
+
+    it('should erase IP and user agent from legal acceptances', async () => {
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
+      expect(mockPrisma.legal_acceptances.updateMany).toHaveBeenCalledWith({
+        where: { user_id: USER_ID },
+        data: { ip_address: null, user_agent: null },
       });
     });
 
