@@ -59,6 +59,18 @@ type ResolvedUnionCamporeeScope = {
   countryId: number | null;
 };
 
+/**
+ * GLOBAL base role that every account receives at sign-up (see auth.service
+ * and social-account.resolver). Its grants describe what a user may do with
+ * their OWN data, so on an owner-aware resource they amount to "any signed-in
+ * user". The owner already passes through the owner bypass, which means these
+ * grants would only ever be consulted for a non-owner: they must never
+ * authorize access to another user's object. A non-owner needs a non-base
+ * source: another global role, a direct grant, or one of the club-scoped
+ * section-member paths.
+ */
+export const BASE_GLOBAL_ROLE_NAME = 'user';
+
 const SECTION_MEMBER_PROFILE_READ_PERMISSIONS = new Set([
   'users:read_detail',
   'classes:read',
@@ -328,7 +340,11 @@ export class PermissionsGuard implements CanActivate {
     resource: AuthorizationResourceMetadata,
     sensitiveUserSubresource?: SensitiveUserSubresourceMetadata,
   ): boolean {
-    const globalPermissions = this.getGlobalPermissions(resolved);
+    // Reached only after the owner bypass failed: on an owner-aware resource
+    // the actor is a non-owner here, so the base role does not count.
+    const globalPermissions = this.getGlobalPermissions(resolved, {
+      excludeBaseRole: this.isOwnerAwareResource(resource),
+    });
 
     if (resource.type === 'user' && sensitiveUserSubresource) {
       return this.hasSensitiveUserSubresourcePermissions(
@@ -382,11 +398,16 @@ export class PermissionsGuard implements CanActivate {
 
   private getGlobalPermissions(
     resolved: ResolvedAuthorizationProfile,
+    { excludeBaseRole }: { excludeBaseRole: boolean },
   ): Set<string> {
     return new Set([
-      ...resolved.authorization.grants.global_roles.flatMap(
-        (grant) => grant.permissions,
-      ),
+      ...resolved.authorization.grants.global_roles
+        .filter(
+          (grant) =>
+            !excludeBaseRole ||
+            grant.role_name.toLowerCase() !== BASE_GLOBAL_ROLE_NAME,
+        )
+        .flatMap((grant) => grant.permissions),
       ...(resolved.authorization.grants.direct_permissions ?? []),
     ]);
   }
@@ -708,20 +729,25 @@ export class PermissionsGuard implements CanActivate {
     return request.params?.[ownerParam] === userId;
   }
 
+  /** Resources that belong to the user named by `ownerParam`. */
+  private isOwnerAwareResource(
+    resource: AuthorizationResourceMetadata,
+  ): boolean {
+    return (
+      resource.type === 'user' ||
+      (resource.type === 'active_assignment' && Boolean(resource.ownerParam))
+    );
+  }
+
   private canBypassForResourceOwner(
     request: any,
     userId: string,
     resource: AuthorizationResourceMetadata,
   ): boolean {
-    if (resource.type === 'user') {
-      return this.isResourceOwner(request, userId, resource);
-    }
-
-    if (resource.type === 'active_assignment' && resource.ownerParam) {
-      return this.isResourceOwner(request, userId, resource);
-    }
-
-    return false;
+    return (
+      this.isOwnerAwareResource(resource) &&
+      this.isResourceOwner(request, userId, resource)
+    );
   }
 
   private async resolveActivityScope(
