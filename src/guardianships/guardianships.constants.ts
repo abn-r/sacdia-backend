@@ -9,6 +9,10 @@ export const MAX_GUARDIANS_PER_DEPENDENT = 4;
  * never by id: `relationship_types.relationship_type_id` is a random UUID per
  * environment while `name` is unique and seeded (prisma/seed.ts). The ORDER
  * here is the display order of `GET /guardianships/relationship-types`.
+ *
+ * prisma/seed.ts seeds the combined 'Abuelo/a' and 'Tío/a'; some databases
+ * also hold the split forms. Both are allowed so every environment offers
+ * grandparents and uncles/aunts; the endpoint only returns rows that exist.
  */
 export const GUARDIAN_RELATIONSHIP_TYPE_NAMES = [
   'Padre',
@@ -16,8 +20,10 @@ export const GUARDIAN_RELATIONSHIP_TYPE_NAMES = [
   'Tutor Legal',
   'Abuelo',
   'Abuela',
+  'Abuelo/a',
   'Tío',
   'Tía',
+  'Tío/a',
   'Hermano/a Mayor',
   'Otro',
 ] as const;
