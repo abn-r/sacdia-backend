@@ -2752,6 +2752,24 @@ describe('ClubsService', () => {
         ).toHaveBeenCalled();
       });
 
+      it('gates a PATCH carrying status active even when the pre-read says the row is already active (S-N2: the row may have gone back to pending since)', async () => {
+        useGateOnRootClient('unverified');
+        mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+          ...pendingRequest,
+          status: 'active',
+        });
+
+        await expect(
+          service.updateRoleAssignment('request-1', { status: 'active' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+        expect(
+          mockPrismaService.club_role_assignments.update,
+        ).not.toHaveBeenCalled();
+      });
+
       it('never gates a write that does not activate (ending a dependent role)', async () => {
         useGateOnRootClient('unverified');
         mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({

@@ -857,10 +857,15 @@ export class ClubsService {
           db: tx,
         });
       }
-      if (becomesActive) {
+      if (becomesActive || dto.status === 'active') {
         // e.g. PATCH {status:'active'} on a dependent's pending request.
+        // `existing` was read outside this transaction: the row may have gone
+        // back to pending since, so a PATCH that WRITES status 'active' is
+        // gated whatever the stale read says (verify 2c-r2 S-N2).
         await assertAssignmentActivationAllowed(tx, existing.user_id);
       }
+      // activation-gate: existing.user_id
+      // activation-gate-when: only a PATCH that writes status 'active' (or changes the role of an active row) activates; every other PATCH, e.g. ending a role, must not need consent
       const updated = await tx.club_role_assignments.update({
         where: { assignment_id: assignmentId },
         data: updateData,
