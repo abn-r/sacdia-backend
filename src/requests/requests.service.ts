@@ -11,8 +11,29 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
+import {
+  type ActorSectionScopePermissions,
+  clubSectionScopeWhere,
+  isActorSectionScopeEmpty,
+} from '../common/authorization/actor-section-scope';
+import { ActorSectionScopeService } from '../coordination/actor-section-scope.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
+
+/**
+ * Reading other people's requests: club staff who approve them
+ * (`requests:review`), coordinators of the section and territorial roles.
+ */
+export const REQUESTS_READ_SCOPE: ActorSectionScopePermissions = {
+  club: 'requests:review',
+  global: 'requests:read',
+};
+
+/** Creating or deciding requests: approvers only. */
+export const REQUESTS_REVIEW_SCOPE: ActorSectionScopePermissions = {
+  club: 'requests:review',
+  global: 'requests:review',
+};
 
 @Injectable()
 export class RequestsService {
@@ -34,6 +55,7 @@ export class RequestsService {
     private readonly authorizationContext: AuthorizationContextService,
     private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly roleEligibility: ClubRoleEligibilityService,
+    private readonly actorSectionScope: ActorSectionScopeService,
   ) {}
 
   // ========================================
@@ -229,7 +251,14 @@ export class RequestsService {
       },
     });
 
-    if (!request) {
+    if (
+      !request ||
+      !(await this.canActOnSection(
+        reviewerId,
+        request.to_section_id,
+        REQUESTS_REVIEW_SCOPE,
+      ))
+    ) {
       throw new AppNotFoundException(ErrorCode.REQUEST_TRANSFER_NOT_FOUND);
     }
 
@@ -238,8 +267,6 @@ export class RequestsService {
         ErrorCode.REQUEST_TRANSFER_ALREADY_REVIEWED,
       );
     }
-
-    await this.assertCanReadTransferSection(reviewerId, request.to_section_id);
 
     let result;
     let affectedAuthorizationUserIds: string[] = [];
@@ -420,10 +447,15 @@ export class RequestsService {
     }
 
     if (filters?.sectionId) {
-      await this.assertCanReadTransferSection(
-        filters.userId,
-        filters.sectionId,
-      );
+      if (
+        !(await this.canActOnSection(
+          filters.userId,
+          filters.sectionId,
+          REQUESTS_READ_SCOPE,
+        ))
+      ) {
+        throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+      }
       where.OR = [
         { from_section_id: filters.sectionId },
         { to_section_id: filters.sectionId },
@@ -475,7 +507,6 @@ export class RequestsService {
             user_id: true,
             name: true,
             paternal_last_name: true,
-            email: true,
           },
         },
         from_section: {
@@ -500,53 +531,49 @@ export class RequestsService {
       },
     });
 
-    if (!request) {
+    if (!request || !(await this.canReadTransfer(viewerId, request))) {
       throw new AppNotFoundException(ErrorCode.REQUEST_TRANSFER_NOT_FOUND);
-    }
-
-    if (request.user_id !== viewerId) {
-      await this.assertCanReadTransferSection(viewerId, request.to_section_id);
     }
 
     return request;
   }
 
-  private async assertCanReadTransferSection(
+  /** Owner, or staff whose read scope covers the origin or destination. */
+  private async canReadTransfer(
     viewerId: string,
+    request: {
+      user_id: string;
+      from_section_id: number;
+      to_section_id: number;
+    },
+  ): Promise<boolean> {
+    if (request.user_id === viewerId) {
+      return true;
+    }
+
+    const scope = await this.actorSectionScope.resolve(
+      viewerId,
+      REQUESTS_READ_SCOPE,
+    );
+    return (
+      (await this.actorSectionScope.includesSection(
+        scope,
+        request.to_section_id,
+      )) ||
+      (await this.actorSectionScope.includesSection(
+        scope,
+        request.from_section_id,
+      ))
+    );
+  }
+
+  private async canActOnSection(
+    actorId: string,
     sectionId: number,
-  ) {
-    const section = await this.prisma.club_sections.findUnique({
-      where: { club_section_id: sectionId },
-      select: { main_club_id: true },
-    });
-
-    if (!section || typeof section.main_club_id !== 'number') {
-      throw new AppNotFoundException(
-        ErrorCode.REQUEST_TRANSFER_SECTION_NOT_FOUND,
-      );
-    }
-
-    if (
-      await this.authorizationContext.canManageClub(
-        viewerId,
-        section.main_club_id,
-      )
-    ) {
-      return;
-    }
-
-    const authorization =
-      await this.authorizationContext.resolveUserAuthorization(viewerId);
-    const canReadSection =
-      authorization.authorization.grants.club_assignments.some(
-        (assignment) =>
-          assignment.status === 'active' &&
-          assignment.section.club_section_id === sectionId,
-      );
-
-    if (!canReadSection) {
-      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
-    }
+    permissions: ActorSectionScopePermissions,
+  ): Promise<boolean> {
+    const scope = await this.actorSectionScope.resolve(actorId, permissions);
+    return this.actorSectionScope.includesSection(scope, sectionId);
   }
 
   // ========================================
@@ -559,6 +586,18 @@ export class RequestsService {
     roleId: string,
     requestedBy: string,
   ) {
+    // Only an approver of the section may request a role there. Outside the
+    // scope the section does not exist for this actor (no enumeration).
+    if (
+      !(await this.canActOnSection(
+        requestedBy,
+        sectionId,
+        REQUESTS_REVIEW_SCOPE,
+      ))
+    ) {
+      throw new AppNotFoundException(ErrorCode.REQUEST_SECTION_NOT_FOUND);
+    }
+
     // Validate section exists
     const section = await this.prisma.club_sections.findUnique({
       where: { club_section_id: sectionId },
@@ -683,7 +722,14 @@ export class RequestsService {
       },
     });
 
-    if (!request) {
+    if (
+      !request ||
+      !(await this.canActOnSection(
+        approverId,
+        request.club_section_id,
+        REQUESTS_REVIEW_SCOPE,
+      ))
+    ) {
       throw new AppNotFoundException(ErrorCode.REQUEST_ASSIGNMENT_NOT_FOUND);
     }
 
@@ -869,22 +915,34 @@ export class RequestsService {
     return result;
   }
 
-  async getAssignmentRequests(filters?: {
+  async getAssignmentRequests(filters: {
+    actorId: string;
     status?: string;
     sectionId?: number;
   }) {
-    const where: Record<string, unknown> = {};
-
-    if (filters?.status) {
-      where.status = filters.status;
-    }
-
-    if (filters?.sectionId) {
-      where.club_section_id = filters.sectionId;
-    }
+    const scope = await this.actorSectionScope.resolve(
+      filters.actorId,
+      REQUESTS_READ_SCOPE,
+    );
+    // Own requests (as target or requester) plus those of sections in scope.
+    const visibility: Prisma.role_assignment_requestsWhereInput = scope.all
+      ? {}
+      : {
+          OR: [
+            { user_id: filters.actorId },
+            { requested_by: filters.actorId },
+            ...(isActorSectionScopeEmpty(scope)
+              ? []
+              : [{ club_section: clubSectionScopeWhere(scope) }]),
+          ],
+        };
 
     return this.prisma.role_assignment_requests.findMany({
-      where,
+      where: {
+        ...visibility,
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.sectionId ? { club_section_id: filters.sectionId } : {}),
+      },
       include: {
         user: {
           select: {
@@ -919,7 +977,7 @@ export class RequestsService {
     });
   }
 
-  async getAssignmentRequest(requestId: string) {
+  async getAssignmentRequest(requestId: string, viewerId: string) {
     const request = await this.prisma.role_assignment_requests.findUnique({
       where: { request_id: requestId },
       include: {
@@ -928,7 +986,6 @@ export class RequestsService {
             user_id: true,
             name: true,
             paternal_last_name: true,
-            email: true,
           },
         },
         role: { select: { role_id: true, role_name: true } },
@@ -955,7 +1012,17 @@ export class RequestsService {
       },
     });
 
-    if (!request) {
+    const isParty =
+      request?.user_id === viewerId || request?.requested_by === viewerId;
+    if (
+      !request ||
+      (!isParty &&
+        !(await this.canActOnSection(
+          viewerId,
+          request.club_section_id,
+          REQUESTS_READ_SCOPE,
+        )))
+    ) {
       throw new AppNotFoundException(ErrorCode.REQUEST_ASSIGNMENT_NOT_FOUND);
     }
 

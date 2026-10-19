@@ -6,6 +6,7 @@ import { AuthorizationContextVersionService } from '../common/authorization/auth
 import { ErrorCode } from '../common/errors/error-codes';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { ActorSectionScopeService } from '../coordination/actor-section-scope.service';
 
 describe('RequestsService', () => {
   const createTransactionMock = () => ({
@@ -141,6 +142,11 @@ describe('RequestsService', () => {
     assertAssignment: jest.fn(),
   };
 
+  const actorSectionScope = {
+    resolve: jest.fn(),
+    includesSection: jest.fn(),
+  };
+
   let service: RequestsService;
 
   beforeEach(() => {
@@ -149,6 +155,15 @@ describe('RequestsService', () => {
       allowed: true,
     });
     authorizationContext.canManageClub.mockResolvedValue(false);
+    actorSectionScope.resolve.mockResolvedValue({
+      all: false,
+      sectionIds: [20],
+      clubs: null,
+    });
+    actorSectionScope.includesSection.mockImplementation(
+      (scope: { sectionIds: number[] }, sectionId: number) =>
+        Promise.resolve(scope.sectionIds.includes(sectionId)),
+    );
     transactionMock = createTransactionMock();
     prisma.$transaction.mockImplementation(
       (
@@ -197,6 +212,7 @@ describe('RequestsService', () => {
       authorizationContext as unknown as AuthorizationContextService,
       authorizationContextVersion as unknown as AuthorizationContextVersionService,
       roleEligibility as unknown as ClubRoleEligibilityService,
+      actorSectionScope as unknown as ActorSectionScopeService,
     );
   });
 
@@ -346,39 +362,45 @@ describe('RequestsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('rejects review when the reviewer is not active in the destination section', async () => {
-      authorizationContext.canManageClub.mockResolvedValueOnce(false);
-      authorizationContext.resolveUserAuthorization.mockResolvedValueOnce({
-        authorization: {
-          grants: {
-            club_assignments: [
-              {
-                status: 'active',
-                section: { club_section_id: 99 },
-              },
-            ],
-          },
-        },
+    it('answers 404 when the destination section is outside the reviewer scope', async () => {
+      actorSectionScope.resolve.mockResolvedValueOnce({
+        all: false,
+        sectionIds: [99],
+        clubs: null,
       });
 
       await expect(
         service.reviewTransfer('transfer-1', 'reviewer-1', 'approved'),
       ).rejects.toMatchObject({
-        code: ErrorCode.GUARD_PERMISSION_DENIED,
+        code: ErrorCode.REQUEST_TRANSFER_NOT_FOUND,
       });
 
       expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(actorSectionScope.resolve).toHaveBeenCalledWith('reviewer-1', {
+        club: 'requests:review',
+        global: 'requests:review',
+      });
     });
 
-    it('allows review when the reviewer can manage the destination club', async () => {
-      authorizationContext.canManageClub.mockResolvedValueOnce(true);
-      authorizationContext.resolveUserAuthorization.mockResolvedValueOnce({
-        authorization: {
-          grants: {
-            club_assignments: [],
-          },
-        },
+    it('checks scope before revealing that a request was already reviewed', async () => {
+      prisma.club_transfer_requests.findUnique.mockResolvedValueOnce({
+        transfer_request_id: 'transfer-1',
+        user_id: 'user-1',
+        from_section_id: 10,
+        to_section_id: 77,
+        status: 'approved',
       });
+
+      await expect(
+        service.reviewTransfer('transfer-1', 'reviewer-1', 'approved'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.REQUEST_TRANSFER_NOT_FOUND,
+      });
+    });
+
+    it('allows review when the destination section is in the reviewer scope', async () => {
+      actorSectionScope.resolve.mockResolvedValueOnce({ all: true });
+      actorSectionScope.includesSection.mockResolvedValueOnce(true);
 
       await service.reviewTransfer('transfer-1', 'reviewer-1', 'approved');
 

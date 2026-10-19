@@ -58,10 +58,14 @@ const baseline = {
   'clubs/clubs.service.ts': 'effectiveWhere|T08|9|59a919b6fc32',
   'clubs/director-designation.service.ts':
     'workflowWhere|allowlist|2|b32d443733e9',
+  'common/authorization/actor-section-scope.ts':
+    'effectiveWhere|T09|1|38b239a32e23',
   'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|32d48d679749',
   'common/guards/permissions.guard.ts': 'effectiveWhere|T08|3|2bd237ed53eb',
   'common/services/authorization-context.service.ts':
     'effectiveWhere|T08|1|388da81fc937',
+  'coordination/actor-section-scope.service.ts':
+    'effectiveWhere|T09|1|fcb522b8aa1c',
   'coordination/coordination.service.ts': 'effectiveWhere|T08|1|9a134e551821',
   'dashboard/dashboard.service.ts': 'effectiveWhere|T08|1|1667aa7452cd',
   'evidence-review/evidence-review.service.ts':
@@ -110,7 +114,7 @@ const baseline = {
     'effectiveWhere|T09|2|13fb6223b7d5',
   'support/support.service.ts': 'effectiveWhere|T09|1|1048e37fdce1',
   'units/units.service.ts': 'effectiveWhere|T08|1|46d392950956',
-  'validation/validation.service.ts': 'effectiveWhere|T09|1|eda675bb9c5c',
+  'validation/validation.service.ts': 'effectiveWhere|T09|1|0e83c7546cf5',
   'year-cut/year-cut.service.ts': 'workflowWhere|allowlist|5|6bd1f33a51dc',
 } as const;
 

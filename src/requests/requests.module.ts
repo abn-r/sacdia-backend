@@ -4,9 +4,15 @@ import { RequestsService } from './requests.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-eligibility.module';
+import { CoordinationModule } from '../coordination/coordination.module';
 
 @Module({
-  imports: [PrismaModule, NotificationsModule, ClubRoleEligibilityModule],
+  imports: [
+    PrismaModule,
+    NotificationsModule,
+    ClubRoleEligibilityModule,
+    CoordinationModule,
+  ],
   controllers: [RequestsController],
   providers: [RequestsService],
   exports: [RequestsService],

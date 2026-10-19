@@ -75,7 +75,8 @@ export class RequestsController {
   @RequirePermissions('requests:read')
   @ApiOperation({
     summary: 'Listar solicitudes de transferencia',
-    description: 'Lista solicitudes de transferencia con filtros opcionales',
+    description:
+      'Sin sectionId lista las solicitudes propias. Con sectionId lista las de esa sección (origen o destino) si está dentro del alcance del actor; si no, 403',
   })
   @ApiQuery({
     name: 'status',
@@ -111,7 +112,7 @@ export class RequestsController {
   @ApiOperation({
     summary: 'Obtener solicitud de transferencia',
     description:
-      'Obtiene una solicitud de transferencia con todas sus relaciones',
+      'Obtiene una solicitud de transferencia con sus relaciones. La ven el solicitante o el personal cuyo alcance cubre la sección de origen o destino',
   })
   @ApiParam({ name: 'requestId', type: String })
   @ApiResponse({
@@ -120,7 +121,7 @@ export class RequestsController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Solicitud no encontrada',
+    description: 'Solicitud no encontrada o fuera del alcance del actor',
   })
   async getTransferRequest(
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -143,7 +144,8 @@ export class RequestsController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Solicitud no encontrada',
+    description:
+      'Solicitud no encontrada o la sección destino está fuera del alcance del revisor',
   })
   @ApiResponse({
     status: 409,
@@ -176,7 +178,8 @@ export class RequestsController {
   @ApiResponse({ status: 201, description: 'Solicitud creada' })
   @ApiResponse({
     status: 404,
-    description: 'Sección, usuario o rol no encontrado',
+    description:
+      'Sección (o fuera del alcance del solicitante), usuario o rol no encontrado',
   })
   @ApiResponse({
     status: 409,
@@ -200,7 +203,7 @@ export class RequestsController {
   @ApiOperation({
     summary: 'Listar solicitudes de asignación de rol',
     description:
-      'Lista solicitudes de asignación de rol con filtros opcionales',
+      'Lista las solicitudes propias (como destinatario o solicitante) y las de secciones dentro del alcance del actor: secciones donde aprueba, secciones coordinadas o su territorio. Filtros opcionales',
   })
   @ApiQuery({
     name: 'status',
@@ -219,11 +222,13 @@ export class RequestsController {
     description: 'Lista de solicitudes de asignación',
   })
   async getAssignmentRequests(
+    @CurrentUser() user: { user_id: string },
     @Query('status') status?: string,
     @Query('sectionId', new ParseIntPipe({ optional: true }))
     sectionId?: number,
   ) {
     return this.requestsService.getAssignmentRequests({
+      actorId: user.user_id,
       status,
       sectionId,
     });
@@ -234,7 +239,7 @@ export class RequestsController {
   @ApiOperation({
     summary: 'Obtener solicitud de asignación de rol',
     description:
-      'Obtiene una solicitud de asignación de rol con todas sus relaciones',
+      'Obtiene una solicitud de asignación de rol con sus relaciones. La ven el destinatario, el solicitante o el personal cuyo alcance cubre la sección',
   })
   @ApiParam({ name: 'requestId', type: String })
   @ApiResponse({
@@ -243,12 +248,13 @@ export class RequestsController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Solicitud no encontrada',
+    description: 'Solicitud no encontrada o fuera del alcance del actor',
   })
   async getAssignmentRequest(
     @Param('requestId', ParseUUIDPipe) requestId: string,
+    @CurrentUser() user: { user_id: string },
   ) {
-    return this.requestsService.getAssignmentRequest(requestId);
+    return this.requestsService.getAssignmentRequest(requestId, user.user_id);
   }
 
   @Post('assignments/:requestId/review')
@@ -265,7 +271,8 @@ export class RequestsController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Solicitud no encontrada',
+    description:
+      'Solicitud no encontrada o la sección está fuera del alcance del revisor',
   })
   @ApiResponse({
     status: 409,
