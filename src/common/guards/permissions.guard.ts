@@ -33,6 +33,13 @@ import {
   getSensitiveUserSubresourcePolicy,
 } from './sensitive-user-subresource-policy';
 
+/**
+ * Same shape `ParseUUIDPipe` accepts (and Postgres `uuid` parses). Stricter
+ * `isUUID(…, 'all')` rejects non-RFC variants that are valid ids in the DB.
+ */
+const UUID_PARAM_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type AuthorizationSectionType = 'adventurers' | 'pathfinders' | 'master_guilds';
 
 type ResolvedInstanceScope = {
@@ -532,7 +539,7 @@ export class PermissionsGuard implements CanActivate {
 
     if (
       typeof targetUserId !== 'string' ||
-      targetUserId.length === 0 ||
+      !UUID_PARAM_PATTERN.test(targetUserId) ||
       targetUserId === actorUserId
     ) {
       return false;
@@ -1366,7 +1373,7 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const assignmentId = String(
+    const assignmentId = this.getOptionalUuidValue(
       this.getRequestValue(
         request,
         'param',
@@ -1403,7 +1410,7 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const assignmentId = String(
+    const assignmentId = this.getOptionalUuidValue(
       this.getRequestValue(
         request,
         'param',
@@ -1572,9 +1579,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope[]> {
-    const memberId = String(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'memberId') ??
-        '',
+    const memberId = this.getOptionalUuidValue(
+      this.getRequestValue(request, 'param', resource.idParam ?? 'memberId'),
     );
 
     if (!memberId) {
@@ -1713,6 +1719,23 @@ export class PermissionsGuard implements CanActivate {
     }
 
     return parsed;
+  }
+
+  /**
+   * Guards run before `ParseUUIDPipe`, so a malformed id would otherwise reach
+   * a `@db.Uuid` lookup and surface as a 500. Missing/empty → `null` (callers
+   * keep their own 403); present but not a UUID → 400.
+   */
+  private getOptionalUuidValue(value: unknown): string | null {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+
+    if (typeof value !== 'string' || !UUID_PARAM_PATTERN.test(value)) {
+      throw new AppBadRequestException(ErrorCode.GUARD_ID_PARAM_INVALID);
+    }
+
+    return value;
   }
 
   private requireMainClubId(

@@ -618,6 +618,7 @@
   "GUARD_USER_ID_PARAM_MISSING": "ID do usuário não encontrado nos parâmetros da solicitação",
   "GUARD_ASSIGNMENT_SCOPE_INVALID": "Você não tem uma atribuição ativa para esta instância",
   "GUARD_ASSIGNMENT_NOT_FOUND": "Atribuição de clube não encontrada",
+  "GUARD_ID_PARAM_INVALID": "O identificador do recurso é inválido",
   "FILE_TOO_LARGE": "O arquivo excede o tamanho máximo permitido",
   "FILE_TYPE_INVALID": "Tipo de arquivo não permitido",
   "FILE_REQUIRED": "Um arquivo é obrigatório",
