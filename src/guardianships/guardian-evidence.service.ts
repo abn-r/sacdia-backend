@@ -2,7 +2,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import 'multer';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { Prisma } from '@prisma/client';
+import {
+  AuditLogsService,
+  type RecordEventDto,
+} from '../audit-logs/audit-logs.service';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -93,6 +97,9 @@ interface EvidenceTarget {
  *   revocation, i.e. a new guardianship).
  * - Files are only ever served through signed URLs (TTL 900 s) and every read is
  *   audited. No public URL exists for this bucket.
+ * - The audit is fail closed: a read whose audit row cannot be written returns
+ *   no URL, an upload whose audit row cannot be written is rolled back (both
+ *   503 GUARDIANSHIP_EVIDENCE_UNAVAILABLE). Logs carry ids, never object keys.
  * - Fail closed: while the bucket is not configured every operation is a 503
  *   and the rest of the API keeps working.
  */
@@ -345,7 +352,7 @@ export class GuardianEvidenceService {
           },
           data: { superseded_at: now },
         });
-        return tx.guardianship_consent_evidences.create({
+        const row = await tx.guardianship_consent_evidences.create({
           data: {
             guardianship_id: target.guardianshipId,
             file_key: uploaded.key,
@@ -356,26 +363,30 @@ export class GuardianEvidenceService {
           },
           select: { evidence_id: true, uploaded_at: true },
         });
+        // Same transaction: no audit row, no stored form.
+        await this.auditOrUnavailable(
+          {
+            entity_type: 'guardianship_consent_evidence',
+            entity_id: row.evidence_id,
+            action: 'uploaded',
+            actor_user_id: uploaderId,
+            target_user_id: target.dependentUserId,
+            summary: 'Ficha de consentimiento subida',
+            changes: {
+              guardianship_id: target.guardianshipId,
+              content_type: file.mimetype,
+              size_bytes: file.size ?? file.buffer.length,
+              via,
+            },
+          },
+          tx,
+        );
+        return row;
       });
     } catch (error) {
-      await this.discardObject(uploaded.key);
+      await this.discardObject(uploaded.key, target.guardianshipId);
       throw error;
     }
-
-    await this.auditLogs.recordEvent({
-      entity_type: 'guardianship_consent_evidence',
-      entity_id: created.evidence_id,
-      action: 'uploaded',
-      actor_user_id: uploaderId,
-      target_user_id: target.dependentUserId,
-      summary: 'Ficha de consentimiento subida',
-      changes: {
-        guardianship_id: target.guardianshipId,
-        content_type: file.mimetype,
-        size_bytes: file.size ?? file.buffer.length,
-        via,
-      },
-    });
 
     return {
       evidence_id: created.evidence_id,
@@ -433,7 +444,10 @@ export class GuardianEvidenceService {
     return evidence;
   }
 
-  /** Every read is audited BEFORE the signed URL leaves the server. */
+  /**
+   * Every read is audited BEFORE the signed URL leaves the server; when the
+   * audit row cannot be written the URL is dropped (fail closed).
+   */
   private async signAndAudit(
     evidence: CurrentEvidence,
     target: EvidenceTarget,
@@ -446,7 +460,7 @@ export class GuardianEvidenceService {
       { expiresInSeconds: CONSENT_EVIDENCE_SIGNED_URL_TTL_SECONDS },
     );
 
-    await this.auditLogs.recordEvent({
+    await this.auditOrUnavailable({
       entity_type: 'guardianship_consent_evidence',
       entity_id: evidence.evidence_id,
       action: 'read',
@@ -464,15 +478,45 @@ export class GuardianEvidenceService {
     };
   }
 
-  /** The row was not written: do not leave an orphan object behind. */
-  private async discardObject(key: string): Promise<void> {
+  /**
+   * Fail-closed audit of a consent-form operation (verify 2c W3). The log line
+   * names ids only (S1: never the object key).
+   */
+  private async auditOrUnavailable(
+    event: RecordEventDto,
+    db?: Prisma.TransactionClient,
+  ): Promise<void> {
+    try {
+      await (db
+        ? this.auditLogs.recordEventOrThrow(event, db)
+        : this.auditLogs.recordEventOrThrow(event));
+    } catch (error) {
+      this.logger.error(
+        `Consent evidence ${event.action} not audited (evidence ${event.entity_id}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw new AppServiceUnavailableException(
+        ErrorCode.GUARDIANSHIP_EVIDENCE_UNAVAILABLE,
+      );
+    }
+  }
+
+  /**
+   * The row was not written: do not leave an orphan object behind. The log
+   * line names the guardianship, never the object key (S1).
+   */
+  private async discardObject(
+    key: string,
+    guardianshipId: string,
+  ): Promise<void> {
     try {
       await this.storage.deleteMany(StorageBucketAlias.GUARDIANSHIP_EVIDENCE, [
         key,
       ]);
     } catch (error) {
       this.logger.warn(
-        `Could not remove orphan consent evidence object ${key}: ${
+        `Could not remove an orphan consent evidence object of guardianship ${guardianshipId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

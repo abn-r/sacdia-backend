@@ -97,6 +97,32 @@ export class AuditLogsService {
    * callers are never blocked by audit-log failures.
    */
   async recordEvent(input: RecordEventDto): Promise<void> {
+    const data = this.toAuditRow(input);
+    try {
+      await this.prisma.audit_logs.create({ data });
+    } catch (err) {
+      this.logger.warn(
+        `[AuditLogs] Failed to record event ${data.action} ${data.entity_type}/${data.entity_id}: ${String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Fail-closed recorder: same row as {@link recordEvent}, but a failed insert
+   * is rethrown so the caller can refuse the operation (e.g. never hand out a
+   * signed URL of a minor's consent form whose read was not audited). Pass a
+   * transaction client to commit the row together with the domain write.
+   */
+  async recordEventOrThrow(
+    input: RecordEventDto,
+    db: Pick<Prisma.TransactionClient, 'audit_logs'> = this.prisma,
+  ): Promise<void> {
+    await db.audit_logs.create({ data: this.toAuditRow(input) });
+  }
+
+  private toAuditRow(
+    input: RecordEventDto,
+  ): Prisma.audit_logsUncheckedCreateInput {
     // While a guardian acts for a dependent, the actor is the guardian and the
     // dependent is the target (see applyActingForAttribution).
     const dto = applyActingForAttribution(input);
@@ -106,35 +132,27 @@ export class AuditLogsService {
     if (source === 'service') {
       markExplicitAuditRecorded();
     }
-    try {
-      await this.prisma.audit_logs.create({
-        data: {
-          entity_type: dto.entity_type,
-          entity_id: dto.entity_id,
-          action: dto.action,
-          club_id: dto.club_id ?? null,
-          actor_user_id: dto.actor_user_id ?? null,
-          target_user_id: dto.target_user_id ?? null,
-          summary: dto.summary ?? null,
-          changes:
-            dto.changes !== undefined
-              ? (dto.changes as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
-          result: dto.result ?? 'succeeded',
-          source,
-          request_context:
-            dto.request_context !== undefined
-              ? (dto.request_context as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
-          correlation_id: dto.correlation_id ?? getAuditCorrelationId() ?? null,
-          actor_kind: dto.actor_kind ?? 'user',
-        },
-      });
-    } catch (err) {
-      this.logger.warn(
-        `[AuditLogs] Failed to record event ${dto.action} ${dto.entity_type}/${dto.entity_id}: ${String(err)}`,
-      );
-    }
+    return {
+      entity_type: dto.entity_type,
+      entity_id: dto.entity_id,
+      action: dto.action,
+      club_id: dto.club_id ?? null,
+      actor_user_id: dto.actor_user_id ?? null,
+      target_user_id: dto.target_user_id ?? null,
+      summary: dto.summary ?? null,
+      changes:
+        dto.changes !== undefined
+          ? (dto.changes as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+      result: dto.result ?? 'succeeded',
+      source,
+      request_context:
+        dto.request_context !== undefined
+          ? (dto.request_context as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+      correlation_id: dto.correlation_id ?? getAuditCorrelationId() ?? null,
+      actor_kind: dto.actor_kind ?? 'user',
+    };
   }
 
   /**

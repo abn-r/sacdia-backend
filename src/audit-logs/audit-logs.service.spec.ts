@@ -299,6 +299,57 @@ describe('AuditLogsService', () => {
     });
   });
 
+  /**
+   * Fail-closed variant (verify 2c W3): for events whose absence would be a
+   * compliance gap (reads of a minor's consent form), the caller must know the
+   * row was not written.
+   */
+  describe('recordEventOrThrow', () => {
+    const event = {
+      entity_type: 'guardianship_consent_evidence',
+      entity_id: 'ev-1',
+      action: 'read',
+      actor_user_id: 'director-1',
+      target_user_id: 'dependent-1',
+    };
+
+    it('rethrows a failed insert instead of swallowing it', async () => {
+      mockPrisma.audit_logs.create.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(service.recordEventOrThrow(event)).rejects.toThrow(
+        'db down',
+      );
+    });
+
+    it('writes with the given transaction client, same row shape as recordEvent', async () => {
+      const tx = { audit_logs: { create: jest.fn().mockResolvedValue({}) } };
+
+      await service.recordEventOrThrow(event, tx as never);
+
+      expect(mockPrisma.audit_logs.create).not.toHaveBeenCalled();
+      expect(tx.audit_logs.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          entity_type: 'guardianship_consent_evidence',
+          entity_id: 'ev-1',
+          action: 'read',
+          actor_user_id: 'director-1',
+          target_user_id: 'dependent-1',
+          result: 'succeeded',
+          source: 'service',
+          actor_kind: 'user',
+        }),
+      });
+    });
+
+    it('marks the dedup flag like recordEvent', async () => {
+      mockPrisma.audit_logs.create.mockResolvedValue({});
+      await runWithAuditContext(async () => {
+        await service.recordEventOrThrow(event);
+        expect(getAuditContext()?.explicitAuditRecorded).toBe(true);
+      });
+    });
+  });
+
   describe('listByClub', () => {
     const makeRow = (id: bigint, actorId: string | null = null) => ({
       audit_log_id: id,

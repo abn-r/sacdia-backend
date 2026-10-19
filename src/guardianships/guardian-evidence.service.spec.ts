@@ -94,7 +94,11 @@ function setup(options: { bucket?: string | undefined } = {}) {
     deleteMany: jest.fn().mockResolvedValue(undefined),
     getSignedDownloadUrl: jest.fn().mockResolvedValue('https://signed/x'),
   };
-  const audit: any = { recordEvent: jest.fn().mockResolvedValue(undefined) };
+  // Evidence audit is fail closed (W3): only the throwing variant is used.
+  const audit: any = {
+    recordEvent: jest.fn().mockResolvedValue(undefined),
+    recordEventOrThrow: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new GuardianEvidenceService(prisma, config, storage, audit);
 
   /** guardian row found, then the dependent's primary consent row. */
@@ -363,13 +367,13 @@ describe('GuardianEvidenceService', () => {
       expect(tx.guardianship_consent_evidences.create).not.toHaveBeenCalled();
     });
 
-    it('audits the upload with the real actor and the dependent as target', async () => {
-      const { service, audit, asGuardian } = setup();
+    it('audits the upload with the real actor and the dependent as target, in the upload transaction', async () => {
+      const { service, audit, tx, asGuardian } = setup();
       asGuardian();
 
       await service.uploadForGuardian(GUARDIAN, DEPENDENT, pdf());
 
-      expect(audit.recordEvent).toHaveBeenCalledWith(
+      expect(audit.recordEventOrThrow).toHaveBeenCalledWith(
         expect.objectContaining({
           entity_type: 'guardianship_consent_evidence',
           entity_id: 'ev-new',
@@ -377,7 +381,9 @@ describe('GuardianEvidenceService', () => {
           actor_user_id: GUARDIAN,
           target_user_id: DEPENDENT,
         }),
+        tx,
       );
+      expect(audit.recordEvent).not.toHaveBeenCalled();
     });
   });
 
@@ -468,6 +474,112 @@ describe('GuardianEvidenceService', () => {
     });
   });
 
+  /**
+   * verify 2c W3: reading or storing a minor's consent form without its audit
+   * row is not allowed. If the audit write fails, no signed URL leaves the
+   * server and the upload is rolled back (503, the object is removed). S1: the
+   * logs carry ids only, never the object key.
+   */
+  describe('audit is fail closed (W3) and logs carry no object key (S1)', () => {
+    const KEY = `guardianships/consent/${CONSENT_ROW}/obj.pdf`;
+
+    it.each([
+      [
+        'guardian read',
+        (t: ReturnType<typeof setup>) => {
+          t.asGuardian();
+          return t.service.getForGuardian(GUARDIAN, DEPENDENT);
+        },
+      ],
+      [
+        'director read',
+        (t: ReturnType<typeof setup>) => {
+          t.asDirector();
+          return t.service.getForDirector(DIRECTOR, SECTION, ASSIGNMENT);
+        },
+      ],
+      [
+        'admin read',
+        (t: ReturnType<typeof setup>) => {
+          t.prisma.guardianships.findFirst.mockResolvedValue({
+            guardianship_id: CONSENT_ROW,
+            dependent_user_id: DEPENDENT,
+          });
+          return t.service.getForAdmin(DIRECTOR, DEPENDENT, CONSENT_ROW);
+        },
+      ],
+    ])(
+      '%s: the audit write fails -> 503 GUARDIANSHIP_EVIDENCE_UNAVAILABLE and no URL is returned',
+      async (_label, run) => {
+        const t = setup();
+        t.prisma.guardianship_consent_evidences.findFirst.mockResolvedValue(
+          currentEvidence(),
+        );
+        t.audit.recordEventOrThrow.mockRejectedValue(new Error('audit down'));
+        const logged: string[] = [];
+        jest
+          .spyOn(Logger.prototype, 'error')
+          .mockImplementation((message: unknown) => {
+            logged.push(String(message));
+          });
+
+        const error = await rejection(run(t));
+
+        expect(codeOf(error)).toBe(ErrorCode.GUARDIANSHIP_EVIDENCE_UNAVAILABLE);
+        expect((error as AppException).getStatus()).toBe(503);
+        expect(JSON.stringify(error)).not.toContain('https://signed/x');
+        expect(logged.join('\n')).toContain('ev-1');
+        expect(logged.join('\n')).not.toContain(KEY);
+      },
+    );
+
+    it('upload: the audit write fails -> 503, nothing committed and the object is removed', async () => {
+      const t = setup();
+      t.asGuardian();
+      t.audit.recordEventOrThrow.mockRejectedValue(new Error('audit down'));
+
+      const error = await rejection(
+        t.service.uploadForGuardian(GUARDIAN, DEPENDENT, pdf()),
+      );
+
+      expect(codeOf(error)).toBe(ErrorCode.GUARDIANSHIP_EVIDENCE_UNAVAILABLE);
+      expect((error as AppException).getStatus()).toBe(503);
+      // Written inside the transaction that created the row: it rolls back.
+      expect(t.audit.recordEventOrThrow).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'uploaded' }),
+        t.tx,
+      );
+      expect(t.storage.deleteMany).toHaveBeenCalledWith(
+        StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+        [KEY],
+      );
+    });
+
+    it('S1: a failed orphan cleanup logs the guardianship id, never the object key', async () => {
+      const t = setup();
+      t.asGuardian();
+      t.tx.guardianship_consent_evidences.create.mockRejectedValue(
+        new Error('unique violation'),
+      );
+      t.storage.deleteMany.mockRejectedValue(new Error('r2 down'));
+      const warned: string[] = [];
+      jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation((message: unknown) => {
+          warned.push(String(message));
+        });
+
+      await expect(
+        t.service.uploadForGuardian(GUARDIAN, DEPENDENT, pdf()),
+      ).rejects.toThrow('unique violation');
+
+      expect(warned).toHaveLength(1);
+      expect(warned[0]).toContain(CONSENT_ROW);
+      expect(warned[0]).not.toContain(KEY);
+      expect(warned[0]).not.toContain('obj.pdf');
+    });
+  });
+
   describe('guardian read', () => {
     it('returns a 900 s signed URL (never a public one) and audits the read', async () => {
       const { service, prisma, storage, audit, asGuardian } = setup();
@@ -490,7 +602,7 @@ describe('GuardianEvidenceService', () => {
         content_type: 'application/pdf',
         uploaded_at: '2026-10-19T10:00:00.000Z',
       });
-      expect(audit.recordEvent).toHaveBeenCalledWith(
+      expect(audit.recordEventOrThrow).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'read',
           actor_user_id: GUARDIAN,
@@ -529,7 +641,7 @@ describe('GuardianEvidenceService', () => {
 
       expect(codeOf(error)).toBe(ErrorCode.GUARDIANSHIP_EVIDENCE_NOT_FOUND);
       expect(storage.getSignedDownloadUrl).not.toHaveBeenCalled();
-      expect(audit.recordEvent).not.toHaveBeenCalled();
+      expect(audit.recordEventOrThrow).not.toHaveBeenCalled();
     });
   });
 
@@ -546,11 +658,12 @@ describe('GuardianEvidenceService', () => {
         guardianship_id: CONSENT_ROW,
         uploaded_by_user_id: DIRECTOR,
       });
-      expect(audit.recordEvent).toHaveBeenCalledWith(
+      expect(audit.recordEventOrThrow).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'uploaded',
           changes: expect.objectContaining({ via: 'director' }),
         }),
+        tx,
       );
     });
 
@@ -654,7 +767,7 @@ describe('GuardianEvidenceService', () => {
         uploaded_at: '2026-10-19T10:00:00.000Z',
         uploaded_by_display_name: 'María Pérez',
       });
-      expect(audit.recordEvent).toHaveBeenCalledWith(
+      expect(audit.recordEventOrThrow).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'read',
           actor_user_id: DIRECTOR,
@@ -708,7 +821,7 @@ describe('GuardianEvidenceService', () => {
         content_type: 'application/pdf',
         uploaded_at: '2026-10-19T10:00:00.000Z',
       });
-      expect(audit.recordEvent).toHaveBeenCalledWith(
+      expect(audit.recordEventOrThrow).toHaveBeenCalledWith(
         expect.objectContaining({
           actor_user_id: 'admin-1',
           changes: { guardianship_id: CONSENT_ROW, via: 'admin' },
