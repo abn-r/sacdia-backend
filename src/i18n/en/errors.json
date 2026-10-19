@@ -809,6 +809,7 @@
   "GUARDIANSHIP_ALREADY_GUARDIAN": "You are already a guardian of this minor",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "You cannot revoke this guardianship",
   "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "The selected relationship is not valid",
+  "GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED": "That relationship to the minor is not allowed. Choose one of the listed options",
   "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "You must acknowledge what will happen to the minors in your care before deleting your account",
   "AUTH_REGISTRATION_AGE_BELOW_MINIMUM": "You are below the minimum age to create an account. Ask your guardian to register you from My family",
   "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "The birthday indicates you are below the minimum age to hold your own account",

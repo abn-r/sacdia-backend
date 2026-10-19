@@ -4,6 +4,24 @@ export const MAX_DEPENDENTS_PER_GUARDIAN = 10;
 /** A dependent can have at most this many active guardians (ruling A6). */
 export const MAX_GUARDIANS_PER_DEPENDENT = 4;
 
+/**
+ * What the guardian is to the minor ("yo soy su..."). Matched by catalog NAME,
+ * never by id: `relationship_types.relationship_type_id` is a random UUID per
+ * environment while `name` is unique and seeded (prisma/seed.ts). The ORDER
+ * here is the display order of `GET /guardianships/relationship-types`.
+ */
+export const GUARDIAN_RELATIONSHIP_TYPE_NAMES = [
+  'Padre',
+  'Madre',
+  'Tutor Legal',
+  'Abuelo',
+  'Abuela',
+  'Tío',
+  'Tía',
+  'Hermano/a Mayor',
+  'Otro',
+] as const;
+
 export const SECOND_GUARDIAN_CODE_TTL_MS = 72 * 60 * 60 * 1000;
 export const DIRECTOR_CLAIM_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 

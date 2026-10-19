@@ -460,6 +460,20 @@ describe('LinkCodesService.redeem: second guardian', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('refuses a disallowed relationship type before touching the code', async () => {
+    const { service, prisma, guardianships } = setup();
+    guardianships.assertRelationshipType.mockRejectedValue(
+      Object.assign(new Error('x'), {
+        code: ErrorCode.GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED,
+      }),
+    );
+    const error = await errorOf(service.redeem(REDEEMER, redeemDto()));
+    expect(error?.code).toBe(
+      ErrorCode.GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('is invalid when the inviter left after issuing the code', async () => {
     const { service, tx, committed } = setup();
     tx.guardianships.findFirst.mockResolvedValueOnce(null);

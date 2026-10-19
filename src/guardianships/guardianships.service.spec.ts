@@ -2,6 +2,7 @@ import { calendarDateIn } from '../common/age/age.util';
 import { DEFAULT_COUNTRY_AGE_POLICY } from '../common/age/country-age-policy.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { LegalService } from '../legal/legal.service';
+import { GUARDIAN_RELATIONSHIP_TYPE_NAMES } from './guardianships.constants';
 import { GuardianshipsService } from './guardianships.service';
 
 const TZ = DEFAULT_COUNTRY_AGE_POLICY.timeZone;
@@ -99,7 +100,8 @@ function setup(options: { guardianBirthday?: string | null } = {}) {
     relationship_types: {
       findFirst: jest
         .fn()
-        .mockResolvedValue({ relationship_type_id: REL_TYPE }),
+        .mockResolvedValue({ relationship_type_id: REL_TYPE, name: 'Madre' }),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     guardianships: {
       findFirst: jest.fn(),
@@ -373,6 +375,109 @@ describe('GuardianshipsService.createDependent', () => {
       );
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
+
+    it.each(GUARDIAN_RELATIONSHIP_TYPE_NAMES)(
+      'accepts the allowed relationship %s',
+      async (name) => {
+        const { service, prisma } = setup();
+        prisma.relationship_types.findFirst.mockResolvedValue({
+          relationship_type_id: REL_TYPE,
+          name,
+        });
+        await expect(
+          service.createDependent(GUARDIAN, dto()),
+        ).resolves.toBeDefined();
+        expect(prisma.relationship_types.findFirst).toHaveBeenCalledWith({
+          where: { relationship_type_id: REL_TYPE, active: true },
+          select: { relationship_type_id: true, name: true },
+        });
+      },
+    );
+
+    it.each(['Esposa', 'Esposo', 'Cuñado', 'Hijo', 'Suegra'])(
+      'rejects the real but disallowed relationship %s with 400 NOT_ALLOWED',
+      async (name) => {
+        const { service, prisma } = setup();
+        prisma.relationship_types.findFirst.mockResolvedValue({
+          relationship_type_id: REL_TYPE,
+          name,
+        });
+        const error = await service
+          .createDependent(GUARDIAN, dto())
+          .catch((e) => e);
+        expect(error.code).toBe(
+          ErrorCode.GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED,
+        );
+        expect(error.getStatus()).toBe(400);
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it('matches by exact name: a lookalike is not allowed', async () => {
+      const { service, prisma } = setup();
+      prisma.relationship_types.findFirst.mockResolvedValue({
+        relationship_type_id: REL_TYPE,
+        name: 'padre',
+      });
+      expect(await codeOf(service.createDependent(GUARDIAN, dto()))).toBe(
+        ErrorCode.GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED,
+      );
+    });
+
+    it('rejects an inactive allowed type (the lookup filters active) with INVALID', async () => {
+      const { service, prisma } = setup();
+      // An inactive "Padre" is filtered out by `active: true`, so no row.
+      prisma.relationship_types.findFirst.mockResolvedValue(null);
+      expect(await codeOf(service.createDependent(GUARDIAN, dto()))).toBe(
+        ErrorCode.GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID,
+      );
+      expect(prisma.relationship_types.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { relationship_type_id: REL_TYPE, active: true },
+        }),
+      );
+    });
+  });
+});
+
+describe('GuardianshipsService.listGuardianRelationshipTypes', () => {
+  const row = (name: string) => ({
+    relationship_type_id: `id-${name}`,
+    name,
+    description: null,
+  });
+
+  it('queries only active rows whose name is in the allowlist', async () => {
+    const { service, prisma } = setup();
+    await service.listGuardianRelationshipTypes();
+    expect(prisma.relationship_types.findMany).toHaveBeenCalledWith({
+      where: {
+        active: true,
+        name: { in: [...GUARDIAN_RELATIONSHIP_TYPE_NAMES] },
+      },
+      select: { relationship_type_id: true, name: true, description: true },
+    });
+  });
+
+  it('returns the rows in allowlist order, not DB order', async () => {
+    const { service, prisma } = setup();
+    prisma.relationship_types.findMany.mockResolvedValue(
+      ['Otro', 'Tía', 'Madre', 'Hermano/a Mayor', 'Padre', 'Abuelo'].map(row),
+    );
+    const result = await service.listGuardianRelationshipTypes();
+    expect(result.map((r) => r.name)).toEqual([
+      'Padre',
+      'Madre',
+      'Abuelo',
+      'Tía',
+      'Hermano/a Mayor',
+      'Otro',
+    ]);
+    expect(Object.keys(result[0]).sort()).toEqual([
+      'description',
+      'name',
+      'relationship_type_id',
+    ]);
   });
 });
 

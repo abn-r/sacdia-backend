@@ -18,7 +18,10 @@ export class RedeemLinkCodeDto {
   @MaxLength(32)
   declare code: string;
 
-  @ApiProperty({ description: 'relationship_types.relationship_type_id' })
+  @ApiProperty({
+    description:
+      'relationship_types.relationship_type_id. Must be one of GET /guardianships/relationship-types, otherwise 400 GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED',
+  })
   @IsUUID()
   declare relationship_type_id: string;
 

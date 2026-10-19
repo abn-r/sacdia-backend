@@ -31,7 +31,10 @@ import {
   loadClubMemberships,
   type Db,
 } from './guardianship-queries';
-import { MAX_DEPENDENTS_PER_GUARDIAN } from './guardianships.constants';
+import {
+  GUARDIAN_RELATIONSHIP_TYPE_NAMES,
+  MAX_DEPENDENTS_PER_GUARDIAN,
+} from './guardianships.constants';
 import type {
   DependentDetail,
   DependentGuardianEntry,
@@ -79,6 +82,10 @@ type SummaryRow = Prisma.guardianshipsGetPayload<{
   select: typeof SUMMARY_SELECT;
 }>;
 
+function isGuardianRelationshipTypeName(name: string): boolean {
+  return (GUARDIAN_RELATIONSHIP_TYPE_NAMES as readonly string[]).includes(name);
+}
+
 function unprocessable(code: ErrorCode): AppException {
   return new AppException(code, HttpStatus.UNPROCESSABLE_ENTITY);
 }
@@ -119,20 +126,55 @@ export class GuardianshipsService {
     return { countryId: user.country_id, policy };
   }
 
-  /** Throws 400 when the relationship type does not exist or is inactive. */
+  /**
+   * "What the guardian is to the minor". Throws 400 when the row does not exist
+   * or is inactive (INVALID) and 400 when it is a real catalog row whose name
+   * is outside GUARDIAN_RELATIONSHIP_TYPE_NAMES, e.g. Esposa (NOT_ALLOWED).
+   * The allowlist is by NAME: ids are random per environment.
+   */
   async assertRelationshipType(
     relationshipTypeId: string,
     db: Db = this.prisma,
   ): Promise<void> {
     const found = await db.relationship_types.findFirst({
       where: { relationship_type_id: relationshipTypeId, active: true },
-      select: { relationship_type_id: true },
+      select: { relationship_type_id: true, name: true },
     });
     if (!found) {
       throw new AppBadRequestException(
         ErrorCode.GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID,
       );
     }
+    if (!isGuardianRelationshipTypeName(found.name)) {
+      throw new AppBadRequestException(
+        ErrorCode.GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED,
+      );
+    }
+  }
+
+  /**
+   * Active catalog rows a guardian may pick, in allowlist order. Same item
+   * shape as `GET /catalogs/relationship-types` (which does not localize).
+   */
+  async listGuardianRelationshipTypes(): Promise<
+    {
+      relationship_type_id: string;
+      name: string;
+      description: string | null;
+    }[]
+  > {
+    const rows = await this.prisma.relationship_types.findMany({
+      where: {
+        active: true,
+        name: { in: [...GUARDIAN_RELATIONSHIP_TYPE_NAMES] },
+      },
+      select: { relationship_type_id: true, name: true, description: true },
+    });
+    const order = (name: string) =>
+      GUARDIAN_RELATIONSHIP_TYPE_NAMES.indexOf(
+        name as (typeof GUARDIAN_RELATIONSHIP_TYPE_NAMES)[number],
+      );
+    return rows.sort((a, b) => order(a.name) - order(b.name));
   }
 
   // ---------------------------------------------------------------------------

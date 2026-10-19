@@ -809,6 +809,7 @@
   "GUARDIANSHIP_ALREADY_GUARDIAN": "Ya eres tutor de este menor",
   "GUARDIANSHIP_REVOKE_FORBIDDEN": "No puedes revocar esta tutoría",
   "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "El parentesco seleccionado no es válido",
+  "GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED": "Ese parentesco con el menor no está permitido. Elige una de las opciones de la lista",
   "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "Debes confirmar lo que ocurrirá con los menores a tu cargo antes de eliminar tu cuenta",
   "AUTH_REGISTRATION_AGE_BELOW_MINIMUM": "No tienes la edad mínima para crear una cuenta. Pide a tu tutor que te registre desde Mi familia",
   "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "La fecha de nacimiento indica que no tienes la edad mínima para tener una cuenta propia",
