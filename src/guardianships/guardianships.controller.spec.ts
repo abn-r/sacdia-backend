@@ -15,6 +15,11 @@ describe('GuardianshipsController', () => {
     listForGuardian: jest.fn().mockResolvedValue({ dependents: [] }),
     createDependent: jest.fn().mockResolvedValue({ user_id: 'd-1' }),
     getDetailForGuardian: jest.fn().mockResolvedValue({ user_id: 'd-1' }),
+    listGuardianRelationshipTypes: jest
+      .fn()
+      .mockResolvedValue([
+        { relationship_type_id: 'r-1', name: 'Padre', description: null },
+      ]),
   };
   const linkCodes = {
     issueSecondGuardianCode: jest.fn().mockResolvedValue({ code: 'AAAA-BBBB' }),
@@ -62,6 +67,13 @@ describe('GuardianshipsController', () => {
     expect(await controller.deletionImpact(USER)).toEqual({
       status: 'success',
       data: { dependents: [] },
+    });
+  });
+
+  it('lists the guardian relationship types inside the success envelope', async () => {
+    expect(await controller.listRelationshipTypes()).toEqual({
+      status: 'success',
+      data: [{ relationship_type_id: 'r-1', name: 'Padre', description: null }],
     });
   });
 

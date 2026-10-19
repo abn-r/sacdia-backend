@@ -73,6 +73,24 @@ export class GuardianshipsController {
     private readonly evidence: GuardianEvidenceService,
   ) {}
 
+  @Get('relationship-types')
+  @ApiOperation({
+    summary: 'Relationships a guardian may declare to a minor',
+    description:
+      'Active relationship_types a guardian can pick as "yo soy su..." when creating a dependent, redeeming a link code or joining as second guardian, in display order (Padre, Madre, Tutor Legal, Abuelo, Abuela, Tío, Tía, Hermano/a Mayor, Otro). Items have the same shape as GET /catalogs/relationship-types. Any other relationship_type_id is rejected with GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      '{ status: "success", data: [{ relationship_type_id, name, description }] }',
+  })
+  async listRelationshipTypes() {
+    return {
+      status: 'success',
+      data: await this.guardianships.listGuardianRelationshipTypes(),
+    };
+  }
+
   @Get('me/dependents')
   @ApiOperation({ summary: 'List the dependents of the current guardian' })
   @ApiResponse({ status: 200, description: '{ dependents, limits }' })
@@ -95,6 +113,11 @@ export class GuardianshipsController {
     status: 422,
     description:
       'GUARDIANSHIP_DEPENDENT_AGE_OUT_OF_RANGE, GUARDIANSHIP_GUARDIAN_NOT_ADULT or GUARDIANSHIP_GUARDIAN_BIRTHDAY_REQUIRED',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID (unknown or inactive id) or GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED (not in the guardian allowlist)',
   })
   @ApiResponse({
     status: 409,
@@ -226,7 +249,11 @@ export class GuardianshipsController {
     summary: 'Redeem a link code and become a guardian of the minor',
   })
   @ApiResponse({ status: 201, description: 'DependentSummary' })
-  @ApiResponse({ status: 400, description: 'GUARDIANSHIP_LINK_CODE_INVALID' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'GUARDIANSHIP_LINK_CODE_INVALID, GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID or GUARDIANSHIP_RELATIONSHIP_TYPE_NOT_ALLOWED',
+  })
   @ApiResponse({ status: 409, description: 'GUARDIANSHIP_ALREADY_GUARDIAN' })
   @ApiResponse({ status: 429, description: 'GUARDIANSHIP_LINK_CODE_LOCKED' })
   async redeem(
