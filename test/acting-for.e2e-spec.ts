@@ -209,10 +209,21 @@ describe('Acting-for E2E', () => {
           date_completed: null,
         }),
       }),
-      relationship_types: createModelMock({
-        findFirst: jest
+      clubs: createModelMock({
+        findUnique: jest
           .fn()
-          .mockResolvedValue({ relationship_type_id: RELATIONSHIP_ID }),
+          .mockResolvedValue({ club_id: 7, club_sections: [] }),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      }),
+      club_sections: createModelMock({
+        findMany: jest.fn().mockResolvedValue([]),
+      }),
+      relationship_types: createModelMock({
+        findFirst: jest.fn().mockResolvedValue({
+          relationship_type_id: RELATIONSHIP_ID,
+          name: 'Madre',
+        }),
       }),
       roles: createModelMock({
         findFirst: jest.fn().mockResolvedValue({ role_id: 'role-user' }),
@@ -332,6 +343,86 @@ describe('Acting-for E2E', () => {
 
     expect(response.status).toBe(403);
     expect(errorCode(response.body)).toBe('ACTING_FOR_SCOPE_DENIED');
+  });
+
+  describe('post-registration step 3 reads while acting (pending guardianship)', () => {
+    beforeEach(() => {
+      grantedStatus = 'pending';
+    });
+
+    it('GET /clubs?localFieldId= (club picker) is reachable', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/clubs?localFieldId=4')
+        .set(acting(GUARDIAN_ID, DEPENDENT_ID));
+
+      expect(errorCode(response.body)).not.toBe('ACTING_FOR_SCOPE_DENIED');
+      expect(response.status).toBe(200);
+    });
+
+    it('GET /clubs/:clubId/sections (sections of the picked club) is reachable', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/clubs/7/sections')
+        .set(acting(GUARDIAN_ID, DEPENDENT_ID));
+
+      expect(errorCode(response.body)).not.toBe('ACTING_FOR_SCOPE_DENIED');
+      expect(response.status).toBe(200);
+    });
+
+    it.each([
+      '/api/v1/catalogs/countries',
+      '/api/v1/catalogs/local-fields?unionId=1',
+      '/api/v1/catalogs/relationship-types',
+      '/api/v1/catalogs/allergies',
+      '/api/v1/catalogs/diseases',
+      '/api/v1/catalogs/medicines',
+      '/api/v1/legal/current',
+    ])('public read %s keeps working with the header', async (url) => {
+      const response = await request(app.getHttpServer())
+        .get(url)
+        .set(acting(GUARDIAN_ID, DEPENDENT_ID));
+
+      expect(errorCode(response.body)).not.toBe('ACTING_FOR_SCOPE_DENIED');
+      expect(response.status).toBe(200);
+    });
+
+    it.each([
+      '/api/v1/catalogs/unions?countryId=1',
+      '/api/v1/classes?clubTypeId=1',
+    ])(
+      'public read %s is not blocked by the acting scope (the Prisma double has no data for it)',
+      async (url) => {
+        const response = await request(app.getHttpServer())
+          .get(url)
+          .set(acting(GUARDIAN_ID, DEPENDENT_ID));
+
+        expect(errorCode(response.body)).not.toBe('ACTING_FOR_SCOPE_DENIED');
+        expect([401, 403]).not.toContain(response.status);
+      },
+    );
+
+    it.each([
+      'GET /api/v1/clubs/7',
+      'GET /api/v1/clubs/7/overview',
+      'GET /api/v1/clubs/7/leadership',
+      'GET /api/v1/clubs/7/sections/3',
+      'GET /api/v1/clubs/7/sections/3/members',
+    ])('every other club route stays denied: %s', async (route) => {
+      const [, url] = route.split(' ');
+      const response = await request(app.getHttpServer())
+        .get(url)
+        .set(acting(GUARDIAN_ID, DEPENDENT_ID));
+
+      expect(response.status).toBe(403);
+      expect(errorCode(response.body)).toBe('ACTING_FOR_SCOPE_DENIED');
+    });
+
+    it('without the header GET /clubs is unchanged (no scope check)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/clubs?localFieldId=4')
+        .set(bearer(GUARDIAN_ID));
+
+      expect(response.status).toBe(200);
+    });
   });
 
   it('guardian endpoints cannot be used while acting', async () => {
