@@ -15,6 +15,7 @@ import {
   displayName,
   findLiveAssignment,
   lockDependent,
+  lockDependentsAscending,
   type Db,
 } from './guardianship-queries';
 import {
@@ -112,12 +113,10 @@ export class GuardianshipLifecycleService {
     }
 
     // Ascending id order: two guardians deleting at once never deadlock.
-    const dependentIds = [
-      ...new Set(candidates.map((candidate) => candidate.dependent_user_id)),
-    ].sort();
-    for (const dependentId of dependentIds) {
-      await lockDependent(tx, dependentId);
-    }
+    await lockDependentsAscending(
+      tx,
+      candidates.map((candidate) => candidate.dependent_user_id),
+    );
 
     // Re-read under the locks: a concurrent leave may have revoked rows since.
     const rows = await tx.guardianships.findMany({

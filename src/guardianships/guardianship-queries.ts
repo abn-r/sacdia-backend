@@ -89,14 +89,32 @@ export async function findConsentRow(
  * transaction. Under READ COMMITTED two guardians leaving at the same moment
  * would each still see the other as active and both rows would end up revoked
  * with no custody row and no freeze (an orphaned dependent). Re-entrant inside
- * one transaction. When one transaction locks several dependents, lock them in
- * ascending id order so two such transactions cannot deadlock.
+ * one transaction. When one transaction locks several dependents, lock them
+ * through {@link lockDependentsAscending} (ascending id order) so two such
+ * transactions cannot deadlock.
  */
 export async function lockDependent(
   tx: Prisma.TransactionClient,
   dependentId: string,
 ): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`guardianships:dependent:${dependentId}`}))`;
+}
+
+/**
+ * THE way to take the locks of several dependents in one transaction: every
+ * such path (account deletion, the year cut, ...) acquires them in ONE global
+ * order, ascending dependent user_id, so two of them can never wait on each
+ * other. Duplicates are locked once. Returns the ids in the order locked.
+ */
+export async function lockDependentsAscending(
+  tx: Prisma.TransactionClient,
+  dependentIds: Iterable<string>,
+): Promise<string[]> {
+  const ordered = [...new Set(dependentIds)].sort();
+  for (const dependentId of ordered) {
+    await lockDependent(tx, dependentId);
+  }
+  return ordered;
 }
 
 export function displayName(

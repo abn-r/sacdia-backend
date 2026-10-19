@@ -1,7 +1,10 @@
 import type { Prisma } from '@prisma/client';
 import { AppConflictException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import { lockDependent } from '../guardianships/guardianship-queries';
+import {
+  lockDependent,
+  lockDependentsAscending,
+} from '../guardianships/guardianship-queries';
 
 /**
  * The ONE rule every write that makes a `club_role_assignments` row ACTIVE must
@@ -54,4 +57,32 @@ export async function assertAssignmentActivationAllowed(
   if (!(await isAssignmentActivationAllowed(tx, userId))) {
     throw new AppConflictException(ErrorCode.MR_CONSENT_NOT_VERIFIED);
   }
+}
+
+/**
+ * For a transaction that will gate SEVERAL users (the year cut): take the
+ * advisory lock of every dependent among `userIds` up front, in ascending
+ * user_id order (the global order, see {@link lockDependentsAscending}). The
+ * later {@link isAssignmentActivationAllowed} calls then only re-enter locks
+ * this transaction already holds, whatever order they run in. Adults take no
+ * lock. Call it before the transaction's first write.
+ *
+ * `userIds` is a hint read inside the same transaction: a user who becomes a
+ * dependent after this call is locked by the gate on demand, not in order.
+ */
+export async function lockActivationDependentsAscending(
+  tx: Prisma.TransactionClient,
+  userIds: Iterable<string>,
+): Promise<string[]> {
+  const unique = [...new Set(userIds)];
+  if (unique.length === 0) return [];
+
+  const profiles = await tx.dependent_profiles.findMany({
+    where: { user_id: { in: unique } },
+    select: { user_id: true },
+  });
+  return lockDependentsAscending(
+    tx,
+    profiles.map((profile) => profile.user_id),
+  );
 }

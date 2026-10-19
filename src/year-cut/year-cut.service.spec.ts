@@ -146,6 +146,7 @@ function makePrismaMock() {
     // Consent gate: adults by default (no dependent_profiles row).
     dependent_profiles: {
       findUnique: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     guardianships: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -554,6 +555,145 @@ describe('YearCutService', () => {
           data: expect.objectContaining({ status: 'completed' }),
         }),
       );
+    });
+  });
+
+  describe('dependent advisory locks are taken in ONE ascending order', () => {
+    const DEP_A = 'dep-a-uuid';
+    const DEP_B = 'dep-b-uuid';
+    const DEP_C = 'dep-c-uuid';
+    const DEP_PREFIX = 'guardianships:dependent:';
+
+    beforeEach(() => {
+      prisma.club_role_assignments.create.mockResolvedValue({
+        assignment_id: 'new-assignment',
+      });
+    });
+
+    function planFor(successor: string, sectionId: number) {
+      return {
+        ...scheduledCqPlan(),
+        succession_id: `plan-${successor}`,
+        club_section_id: sectionId,
+        successor_user_id: successor,
+      };
+    }
+
+    /** Dependent lock keys in acquisition order (club lock excluded). */
+    function dependentLockIds(): string[] {
+      return prisma.$executeRaw.mock.calls
+        .map((call: unknown[]) => call[1])
+        .filter(
+          (key: unknown): key is string =>
+            typeof key === 'string' && key.startsWith(DEP_PREFIX),
+        )
+        .map((key) => key.slice(DEP_PREFIX.length));
+    }
+
+    function firstOccurrences(ids: string[]): string[] {
+      return [...new Set(ids)];
+    }
+
+    function markAsDependents(...ids: string[]) {
+      const dependents = new Set(ids);
+      prisma.dependent_profiles.findMany.mockImplementation(
+        (args: { where: { user_id: { in: string[] } } }) =>
+          Promise.resolve(
+            args.where.user_id.in
+              .filter((id) => dependents.has(id))
+              .map((id) => ({ user_id: id })),
+          ),
+      );
+      prisma.dependent_profiles.findUnique.mockImplementation(
+        (args: { where: { user_id: string } }) =>
+          Promise.resolve(
+            dependents.has(args.where.user_id)
+              ? { user_id: args.where.user_id }
+              : null,
+          ),
+      );
+      prisma.guardianships.findFirst.mockResolvedValue({
+        guardianship_id: 'g-1',
+      });
+    }
+
+    it('activates plans of several dependent successors acquiring their locks in ascending user_id order, whatever the plan order', async () => {
+      markAsDependents(DEP_A, DEP_B, DEP_C);
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        planFor(DEP_C, 101),
+        planFor(DEP_A, 102),
+        planFor(DEP_B, 103),
+      ]);
+
+      const summary = await service.applyCut();
+
+      expect(summary.activated).toBe(3);
+      const acquired = dependentLockIds();
+      expect(firstOccurrences(acquired)).toEqual([DEP_A, DEP_B, DEP_C]);
+      // The whole ascending batch is taken before any gate call re-enters a
+      // lock (so the later per-plan locks are re-entrant, not new acquisitions).
+      expect(acquired.slice(0, 3)).toEqual([DEP_A, DEP_B, DEP_C]);
+    });
+
+    it('takes the dependent locks before the first club_role_assignments write', async () => {
+      markAsDependents(DEP_A, DEP_B);
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        planFor(DEP_B, 101),
+        planFor(DEP_A, 102),
+      ]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        expiredCqDirector(),
+      ]);
+      prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.applyCut();
+
+      const firstDependentLock = prisma.$executeRaw.mock.calls.findIndex(
+        (call: unknown[]) =>
+          typeof call[1] === 'string' && call[1].startsWith(DEP_PREFIX),
+      );
+      expect(firstDependentLock).toBeGreaterThanOrEqual(0);
+      const lockOrder =
+        prisma.$executeRaw.mock.invocationCallOrder[firstDependentLock];
+      expect(lockOrder).toBeLessThan(
+        prisma.club_role_assignments.updateMany.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('also orders the locks of type-graduate candidates together with the plan successors', async () => {
+      markAsDependents('dep-z-uuid', 'dep-m-uuid', DEP_A);
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        planFor(DEP_A, 101),
+      ]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        expiredCqDirector({
+          assignment_id: 'assign-z',
+          user_id: 'dep-z-uuid',
+        }),
+        expiredCqDirector({
+          assignment_id: 'assign-m',
+          user_id: 'dep-m-uuid',
+        }),
+      ]);
+      prisma.club_role_assignments.updateMany.mockResolvedValue({ count: 2 });
+
+      await service.applyCut();
+
+      expect(firstOccurrences(dependentLockIds())).toEqual([
+        DEP_A,
+        'dep-m-uuid',
+        'dep-z-uuid',
+      ]);
+    });
+
+    it('does not lock adults', async () => {
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        planFor(USER_SUCCESSOR, 101),
+      ]);
+
+      await service.applyCut();
+
+      expect(dependentLockIds()).toEqual([]);
     });
   });
 
