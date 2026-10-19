@@ -37,6 +37,16 @@ const REMOVED_PERMISSIONS = [
   'user_honors:delete',
 ] as const;
 
+/**
+ * Removed permissions that no route uses anymore. Family profiles made legal
+ * representatives read-only (the POST/PATCH/DELETE routes were removed), so
+ * `legal_representative:update` backs no route; removing it from the base
+ * role is still correct.
+ */
+const ROUTE_RETIRED_PERMISSIONS: ReadonlySet<string> = new Set([
+  'legal_representative:update',
+]);
+
 /** Base-role grants that must survive (global / club-scoped / UI gating). */
 const KEPT_PERMISSIONS = [
   'users:read',
@@ -287,9 +297,12 @@ describe('role-permissions seed keeps the base user role off cross-user routes',
         const users = routes.filter((route) =>
           route.permissions.includes(removed),
         );
+        // A permission whose routes were later retired is still safe to
+        // remove; it must then be listed as retired (and stay unused).
+        const retired = ROUTE_RETIRED_PERMISSIONS.has(removed);
         expect({ removed, used: users.length > 0 }).toEqual({
           removed,
-          used: true,
+          used: !retired,
         });
         expect({
           removed,
