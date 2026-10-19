@@ -38,6 +38,45 @@ describe('fileBufferMatchesDeclaredMime', () => {
     ).toBe(false);
   });
 
+  // S4: a WebP file is a RIFF container: "RIFF" at 0 AND "WEBP" at 8.
+  const webp = (riff: number[]) =>
+    Buffer.from([...riff, 0x24, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50]);
+
+  it('accepts a real WebP header (RIFF....WEBP)', () => {
+    expect(
+      fileBufferMatchesDeclaredMime(
+        makeFile({
+          mimetype: 'image/webp',
+          buffer: webp([0x52, 0x49, 0x46, 0x46]),
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects "WEBP" at offset 8 without the RIFF header', () => {
+    expect(
+      fileBufferMatchesDeclaredMime(
+        makeFile({
+          mimetype: 'image/webp',
+          buffer: webp([0x4d, 0x5a, 0x90, 0x00]),
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects a RIFF container that is not WebP (e.g. WAVE)', () => {
+    expect(
+      fileBufferMatchesDeclaredMime(
+        makeFile({
+          mimetype: 'image/webp',
+          buffer: Buffer.from([
+            0x52, 0x49, 0x46, 0x46, 0x24, 0, 0, 0, 0x57, 0x41, 0x56, 0x45,
+          ]),
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it('rejects a missing buffer', () => {
     expect(
       fileBufferMatchesDeclaredMime(
@@ -60,8 +99,6 @@ describe('FileValidationPipe', () => {
   it('rejects MIME spoofing', () => {
     expect(() =>
       pipe.transform(makeFile({ mimetype: 'image/jpeg', buffer: pngBuffer })),
-    ).toThrow(
-      expect.objectContaining({ code: ErrorCode.FILE_TYPE_INVALID }),
-    );
+    ).toThrow(expect.objectContaining({ code: ErrorCode.FILE_TYPE_INVALID }));
   });
 });
