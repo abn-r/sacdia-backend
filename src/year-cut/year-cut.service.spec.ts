@@ -143,6 +143,13 @@ function makePrismaMock() {
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    // Consent gate: adults by default (no dependent_profiles row).
+    dependent_profiles: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    guardianships: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     $executeRaw: jest.fn().mockResolvedValue(1),
     $transaction: jest.fn(),
   };
@@ -407,6 +414,56 @@ describe('YearCutService', () => {
           userId: USER_INELIGIBLE,
         }),
       );
+    });
+
+    it('skips a successor who is a dependent without verified consent (MR_CONSENT_NOT_VERIFIED) and keeps the cut going', async () => {
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        scheduledCqPlan(),
+      ]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      prisma.dependent_profiles.findUnique.mockResolvedValue({
+        user_id: USER_SUCCESSOR,
+      });
+      prisma.guardianships.findFirst.mockResolvedValue(null);
+      const warn = jest.spyOn(
+        (service as unknown as { logger: { warn: jest.Mock } }).logger,
+        'warn',
+      );
+
+      const summary = await service.applyCut();
+
+      expect(summary.activated).toBe(0);
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+      expect(prisma.director_succession_plans.update).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(ErrorCode.MR_CONSENT_NOT_VERIFIED),
+      );
+      expect(notifications.sendToGlobalRole).toHaveBeenCalledWith(
+        ['super-admin', 'admin'],
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({ successionId: PLAN_CQ_2026 }),
+        undefined,
+        'admin:year_cut_director_plan_skipped',
+      );
+    });
+
+    it('activates the plan of a dependent successor with verified consent', async () => {
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        scheduledCqPlan(),
+      ]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      prisma.dependent_profiles.findUnique.mockResolvedValue({
+        user_id: USER_SUCCESSOR,
+      });
+      prisma.guardianships.findFirst.mockResolvedValue({
+        guardianship_id: 'g-1',
+      });
+
+      const summary = await service.applyCut();
+
+      expect(summary.activated).toBe(1);
+      expect(prisma.club_role_assignments.create).toHaveBeenCalledTimes(1);
     });
 
     it('notifies admins and the local field when an ineligible plan is skipped', async () => {

@@ -12,6 +12,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
 
 @Injectable()
 export class RequestsService {
@@ -267,6 +268,9 @@ export class RequestsService {
             db: tx,
           });
         }
+        // The membership becomes active in ANOTHER section: a dependent needs
+        // verified guardian consent there too (family-profiles).
+        await assertAssignmentActivationAllowed(tx, request.user_id);
 
         // Update all active role assignments from old section to new section
         const affectedAssignments =
@@ -714,6 +718,9 @@ export class RequestsService {
           clubSectionId: request.club_section_id,
           db: tx,
         });
+
+        // A dependent needs verified guardian consent before any active role.
+        await assertAssignmentActivationAllowed(tx, request.user_id);
 
         // Create the club_role_assignment
         const assignment = await tx.club_role_assignments.create({

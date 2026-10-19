@@ -19,6 +19,10 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import {
+  assertAssignmentActivationAllowed,
+  isAssignmentActivationAllowed,
+} from '../membership-requests/assignment-activation-gate';
 import { Prisma } from '@prisma/client';
 import {
   PaginationDto,
@@ -75,6 +79,8 @@ const CLASS_POLICY_BLOCKED_CODES = new Set<string>([
   ErrorCode.CLASS_NOT_AVAILABLE_FOR_YEAR,
   ErrorCode.CLASS_NOT_FOUND,
   ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+  // A dependent without verified guardian consent cannot become active.
+  ErrorCode.MR_CONSENT_NOT_VERIFIED,
 ]);
 
 type CurrentYear = {
@@ -390,6 +396,14 @@ export class AnnualMembershipService {
       return 'skipped';
     }
 
+    // Year cut runs club-wide in one transaction: skip, never throw.
+    if (!(await isAssignmentActivationAllowed(tx, params.userId))) {
+      this.logger.warn(
+        `AnnualMembership: type jump skipped for user ${params.userId} into section ${params.destSectionId} (${ErrorCode.MR_CONSENT_NOT_VERIFIED})`,
+      );
+      return 'skipped';
+    }
+
     if (existingMember?.status === 'inactive') {
       await tx.club_role_assignments.update({
         where: { assignment_id: existingMember.assignment_id },
@@ -533,6 +547,7 @@ export class AnnualMembershipService {
 
     if (existingMember?.status === 'inactive') {
       await this._assertMemberPlacement(tx, params);
+      await assertAssignmentActivationAllowed(tx, params.userId);
       await tx.club_role_assignments.update({
         where: { assignment_id: existingMember.assignment_id },
         data: { status: 'active' },
@@ -597,6 +612,7 @@ export class AnnualMembershipService {
         return this._outcome(params, 'already_enrolled');
       }
 
+      await assertAssignmentActivationAllowed(tx, params.userId);
       await tx.club_role_assignments.update({
         where: { assignment_id: ensured.assignment_id },
         data: { status: 'active' },
@@ -611,6 +627,7 @@ export class AnnualMembershipService {
         );
       }
 
+      await assertAssignmentActivationAllowed(tx, params.userId);
       await tx.club_role_assignments.create({
         data: {
           user_id: params.userId,

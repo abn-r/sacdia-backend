@@ -69,6 +69,14 @@ function makePrismaMock() {
       create: jest.fn(),
       update: jest.fn(),
     },
+    // Consent gate: adults by default (no dependent_profiles row).
+    dependent_profiles: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    guardianships: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    $executeRaw: jest.fn().mockResolvedValue(1),
     $transaction: jest.fn(),
   };
 }
@@ -129,9 +137,14 @@ describe('AnnualMembershipService', () => {
         { provide: PrismaService, useValue: prisma },
         {
           provide: EcclesiasticalYearService,
-          useValue: { getCurrentYear: jest.fn().mockResolvedValue(CURRENT_YEAR) },
+          useValue: {
+            getCurrentYear: jest.fn().mockResolvedValue(CURRENT_YEAR),
+          },
         },
-        { provide: AuthorizationContextVersionService, useValue: authContextVersion },
+        {
+          provide: AuthorizationContextVersionService,
+          useValue: authContextVersion,
+        },
         { provide: AuthorizationContextService, useValue: authContext },
         { provide: NextClassResolver, useValue: nextClassResolver },
         { provide: ClassEnrollmentPolicyService, useValue: classPolicy },
@@ -152,12 +165,14 @@ describe('AnnualMembershipService', () => {
       main_club_id: MAIN_CLUB_ID,
       active: true,
     });
-    prisma.roles.findFirst.mockImplementation(async (args: { where?: { role_name?: string } }) => {
-      if (args?.where?.role_name === 'director') {
-        return { role_id: DIRECTOR_ROLE_ID };
-      }
-      return { role_id: MEMBER_ROLE_ID };
-    });
+    prisma.roles.findFirst.mockImplementation(
+      async (args: { where?: { role_name?: string } }) => {
+        if (args?.where?.role_name === 'director') {
+          return { role_id: DIRECTOR_ROLE_ID };
+        }
+        return { role_id: MEMBER_ROLE_ID };
+      },
+    );
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -176,7 +191,10 @@ describe('AnnualMembershipService', () => {
       ]);
       prisma.club_role_assignments.findMany.mockResolvedValue([]);
 
-      const result = await service.listContinuations(GM_SECTION_ID, pagination());
+      const result = await service.listContinuations(
+        GM_SECTION_ID,
+        pagination(),
+      );
 
       expect(membershipPolicy.listNotEnrolled).toHaveBeenCalledWith(
         expect.anything(),
@@ -218,7 +236,11 @@ describe('AnnualMembershipService', () => {
           status: 'ended',
           active: false,
           ecclesiastical_year_id: 2024,
-          users: { name: 'Marta', paternal_last_name: 'Díaz', maternal_last_name: 'Ruiz' },
+          users: {
+            name: 'Marta',
+            paternal_last_name: 'Díaz',
+            maternal_last_name: 'Ruiz',
+          },
           roles: { role_name: 'member' },
         },
       ]);
@@ -228,7 +250,10 @@ describe('AnnualMembershipService', () => {
         clubTypeName: 'Guías Mayores',
       });
 
-      const result = await service.listContinuations(GM_SECTION_ID, pagination());
+      const result = await service.listContinuations(
+        GM_SECTION_ID,
+        pagination(),
+      );
 
       expect(result.data).toEqual(
         expect.arrayContaining([
@@ -252,12 +277,19 @@ describe('AnnualMembershipService', () => {
           active: true,
           ecclesiastical_year_id: YEAR_ID_CURRENT,
           club_section_id: CQ_SECTION_ID,
-          users: { name: 'Ana', paternal_last_name: 'Directora', maternal_last_name: 'CQ' },
+          users: {
+            name: 'Ana',
+            paternal_last_name: 'Directora',
+            maternal_last_name: 'CQ',
+          },
           roles: { role_name: 'director' },
         },
       ]);
 
-      const result = await service.listContinuations(GM_SECTION_ID, pagination());
+      const result = await service.listContinuations(
+        GM_SECTION_ID,
+        pagination(),
+      );
 
       expect(result.data).toEqual(
         expect.arrayContaining([
@@ -446,17 +478,33 @@ describe('AnnualMembershipService', () => {
           outcome: 'failed',
         }),
       );
-      expect(authContext.invalidateUserAuthorizationCache).not.toHaveBeenCalled();
+      expect(
+        authContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
     });
 
     it('returns per-user outcomes and does not abort the batch', async () => {
       prisma.club_role_assignments.findFirst.mockImplementation(
         async (args: { where?: { user_id?: string; role_id?: string } }) => {
-          if (args?.where?.role_id === MEMBER_ROLE_ID && args.where.user_id === USER_A) {
-            return { assignment_id: 'a-inactive', status: 'inactive', role_id: MEMBER_ROLE_ID };
+          if (
+            args?.where?.role_id === MEMBER_ROLE_ID &&
+            args.where.user_id === USER_A
+          ) {
+            return {
+              assignment_id: 'a-inactive',
+              status: 'inactive',
+              role_id: MEMBER_ROLE_ID,
+            };
           }
-          if (args?.where?.role_id === MEMBER_ROLE_ID && args.where.user_id === USER_RETURNED) {
-            return { assignment_id: 'already', status: 'active', role_id: MEMBER_ROLE_ID };
+          if (
+            args?.where?.role_id === MEMBER_ROLE_ID &&
+            args.where.user_id === USER_RETURNED
+          ) {
+            return {
+              assignment_id: 'already',
+              status: 'active',
+              role_id: MEMBER_ROLE_ID,
+            };
           }
           return null;
         },
@@ -469,7 +517,10 @@ describe('AnnualMembershipService', () => {
       );
 
       expect(result.results).toHaveLength(2);
-      expect(result.results.map((row) => row.user_id)).toEqual([USER_A, USER_RETURNED]);
+      expect(result.results.map((row) => row.user_id)).toEqual([
+        USER_A,
+        USER_RETURNED,
+      ]);
       expect(result.results[0].outcome).toBe('enrolled');
       expect(result.results[1].outcome).toBe('already_enrolled');
     });
@@ -480,7 +531,9 @@ describe('AnnualMembershipService', () => {
           where?: { status?: string | { in?: string[] }; role_id?: string };
         }) => {
           const statusIn =
-            typeof args?.where?.status === 'object' ? args.where.status.in : undefined;
+            typeof args?.where?.status === 'object'
+              ? args.where.status.in
+              : undefined;
           if (statusIn?.includes('pending') || statusIn?.includes('rejected')) {
             return { assignment_id: 'pending-row', status: 'pending' };
           }
@@ -488,7 +541,11 @@ describe('AnnualMembershipService', () => {
         },
       );
 
-      const result = await service.continueUsers(GM_SECTION_ID, [USER_A], ACTOR_ID);
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_A],
+        ACTOR_ID,
+      );
 
       expect(result.results[0].outcome).toBe('blocked');
       expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
@@ -635,7 +692,9 @@ describe('AnnualMembershipService', () => {
       );
 
       expect(result.results[0].outcome).toBe('failed');
-      expect(authContext.invalidateUserAuthorizationCache).not.toHaveBeenCalled();
+      expect(
+        authContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
     });
 
     it('GET surfaces configuration_error as suggested_class blocked', async () => {
@@ -648,7 +707,10 @@ describe('AnnualMembershipService', () => {
         code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
       });
 
-      const result = await service.listContinuations(GM_SECTION_ID, pagination());
+      const result = await service.listContinuations(
+        GM_SECTION_ID,
+        pagination(),
+      );
 
       expect(result.data[0].suggested_class).toEqual({
         status: 'blocked',
@@ -728,7 +790,10 @@ describe('AnnualMembershipService', () => {
       ]);
       nextClassResolver.resolve.mockImplementation(jumpResolve);
 
-      const result = await service.listContinuations(CQ_SECTION_ID, pagination());
+      const result = await service.listContinuations(
+        CQ_SECTION_ID,
+        pagination(),
+      );
 
       expect(result.data).toEqual(
         expect.arrayContaining([
@@ -743,7 +808,8 @@ describe('AnnualMembershipService', () => {
         result.data.some(
           (row) =>
             row.suggested_class.status === 'blocked' &&
-            row.suggested_class.code === ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+            row.suggested_class.code ===
+              ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
         ),
       ).toBe(false);
     });
@@ -758,7 +824,11 @@ describe('AnnualMembershipService', () => {
           active: true,
           ecclesiastical_year_id: YEAR_ID_CURRENT,
           club_section_id: CQ_SECTION_ID,
-          users: { name: 'Eva', paternal_last_name: 'Ávila', maternal_last_name: 'Cruz' },
+          users: {
+            name: 'Eva',
+            paternal_last_name: 'Ávila',
+            maternal_last_name: 'Cruz',
+          },
           roles: { role_name: 'member' },
         },
       ]);
@@ -767,9 +837,14 @@ describe('AnnualMembershipService', () => {
       ]);
       nextClassResolver.resolve.mockImplementation(jumpResolve);
 
-      const result = await service.listContinuations(CQ_SECTION_ID, pagination());
+      const result = await service.listContinuations(
+        CQ_SECTION_ID,
+        pagination(),
+      );
 
-      expect(result.data.map((row) => row.user_id)).not.toContain(USER_AV_GRADUATE);
+      expect(result.data.map((row) => row.user_id)).not.toContain(
+        USER_AV_GRADUATE,
+      );
     });
 
     it('GET CQ does not list an R04 GM returner who is not an AV graduate', async () => {
@@ -779,9 +854,14 @@ describe('AnnualMembershipService', () => {
       prisma.enrollments.findMany.mockResolvedValue([]);
       nextClassResolver.resolve.mockImplementation(jumpResolve);
 
-      const result = await service.listContinuations(CQ_SECTION_ID, pagination());
+      const result = await service.listContinuations(
+        CQ_SECTION_ID,
+        pagination(),
+      );
 
-      expect(result.data.map((row) => row.user_id)).not.toContain(USER_RETURNED);
+      expect(result.data.map((row) => row.user_id)).not.toContain(
+        USER_RETURNED,
+      );
     });
 
     it('GET CQ does not list an age-9 AV graduate as eligible', async () => {
@@ -791,16 +871,24 @@ describe('AnnualMembershipService', () => {
       prisma.enrollments.findMany.mockResolvedValue([
         {
           user_id: USER_AV_TOO_YOUNG,
-          users: { name: 'Nico', paternal_last_name: 'Luna', maternal_last_name: 'Sol' },
+          users: {
+            name: 'Nico',
+            paternal_last_name: 'Luna',
+            maternal_last_name: 'Sol',
+          },
         },
       ]);
       nextClassResolver.resolve.mockImplementation(jumpResolve);
 
-      const result = await service.listContinuations(CQ_SECTION_ID, pagination());
-
-      expect(result.data.find((row) => row.user_id === USER_AV_TOO_YOUNG)?.eligibility).not.toBe(
-        'eligible',
+      const result = await service.listContinuations(
+        CQ_SECTION_ID,
+        pagination(),
       );
+
+      expect(
+        result.data.find((row) => row.user_id === USER_AV_TOO_YOUNG)
+          ?.eligibility,
+      ).not.toBe('eligible');
     });
 
     it('POST CQ enrolls the AV graduate as member+class without rewriting origin history', async () => {
@@ -1174,7 +1262,223 @@ describe('AnnualMembershipService', () => {
       expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
       expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
       expect(prisma.enrollments.create).not.toHaveBeenCalled();
-      expect(authContext.invalidateUserAuthorizationCache).not.toHaveBeenCalled();
+      expect(
+        authContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * family-profiles C1/C2: annual continuation and the year-cut type jump make
+   * a member assignment ACTIVE, so a dependent needs verified guardian consent.
+   * The bulk endpoint reports it per user (outcome blocked, MR_CONSENT_NOT_VERIFIED)
+   * and the batch goes on; the year-cut path skips the user without throwing.
+   */
+  describe('consent gate on activation (family-profiles)', () => {
+    const DEPENDENT = 'dependent-minor-uuid';
+
+    const asDependent = (verified: boolean) => {
+      prisma.dependent_profiles.findUnique.mockResolvedValue({
+        user_id: DEPENDENT,
+      });
+      prisma.guardianships.findFirst.mockResolvedValue(
+        verified ? { guardianship_id: 'g-1' } : null,
+      );
+    };
+
+    const reactivate = () =>
+      prisma.club_role_assignments.findFirst.mockResolvedValueOnce({
+        assignment_id: 'inactive-member-2026',
+        user_id: DEPENDENT,
+        status: 'inactive',
+        role_id: MEMBER_ROLE_ID,
+      });
+
+    it('continueUsers blocks reactivating an unverified dependent (MR_CONSENT_NOT_VERIFIED) and writes nothing', async () => {
+      asDependent(false);
+      reactivate();
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [DEPENDENT],
+        ACTOR_ID,
+      );
+
+      expect(result.results).toEqual([
+        expect.objectContaining({
+          user_id: DEPENDENT,
+          outcome: 'blocked',
+          error_code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+        }),
+      ]);
+      expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
+      expect(authContextVersion.bumpMany).not.toHaveBeenCalled();
+      expect(auditLogs.recordEvent).not.toHaveBeenCalled();
+    });
+
+    it('continueUsers blocks activating the base-section placeholder of an unverified dependent', async () => {
+      asDependent(false);
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [DEPENDENT],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        outcome: 'blocked',
+        error_code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+      });
+      expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+    });
+
+    it('continueUsers blocks creating an active member for an unverified dependent (type jump)', async () => {
+      asDependent(false);
+      // Same AV -> CQ jump as "POST CQ enrolls the AV graduate".
+      prisma.club_sections.findUnique.mockResolvedValue({
+        club_section_id: CQ_SECTION_ID,
+        main_club_id: MAIN_CLUB_ID,
+        active: true,
+        club_type_id: CQ_TYPE_ID,
+        club_types: { name: 'Conquistadores' },
+      });
+      prisma.club_types.findFirst.mockResolvedValue({
+        club_type_id: AV_TYPE_ID,
+        name: 'Aventureros',
+      });
+      prisma.club_sections.findFirst.mockResolvedValue({
+        club_section_id: AV_SECTION_ID,
+        main_club_id: MAIN_CLUB_ID,
+        club_type_id: AV_TYPE_ID,
+        active: true,
+      });
+      prisma.classes.findFirst.mockResolvedValue({
+        class_id: 118,
+        display_order: 18,
+        club_type_id: AV_TYPE_ID,
+      });
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      membershipPolicy.resolveBase.mockResolvedValue({
+        clubId: MAIN_CLUB_ID,
+        baseSectionId: AV_SECTION_ID,
+        clubTypeName: 'Aventureros',
+      });
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'next_class',
+        class_id: CLASS_CQ_AGE,
+        display_order: 1,
+        club_type_id: CQ_TYPE_ID,
+        club_section_id: CQ_SECTION_ID,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+        crossed_type: true,
+      });
+
+      const result = await service.continueUsers(
+        CQ_SECTION_ID,
+        [DEPENDENT],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        outcome: 'blocked',
+        error_code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+      });
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+    });
+
+    it('continueUsers enrolls a verified dependent after the per-dependent lock', async () => {
+      asDependent(true);
+      reactivate();
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [DEPENDENT],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({ outcome: 'enrolled' });
+      expect(prisma.$executeRaw).toHaveBeenCalled();
+      expect(prisma.club_role_assignments.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'active' }),
+        }),
+      );
+    });
+
+    it('continueUsers enrolls an adult without a consent lookup', async () => {
+      reactivate();
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [USER_RETURNED],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({ outcome: 'enrolled' });
+      expect(prisma.guardianships.findFirst).not.toHaveBeenCalled();
+    });
+
+    describe('writeTypeJumpEnrollment (year-cut path)', () => {
+      const year = CURRENT_YEAR as never;
+      const stubJump = () => {
+        prisma.club_sections.findUnique.mockResolvedValue({
+          club_section_id: CQ_SECTION_ID,
+          main_club_id: MAIN_CLUB_ID,
+          active: true,
+          club_types: { name: 'Conquistadores' },
+        });
+        prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+        prisma.club_types.findFirst.mockResolvedValue({
+          club_type_id: AV_TYPE_ID,
+        });
+        prisma.club_sections.findFirst.mockResolvedValue({
+          club_section_id: AV_SECTION_ID,
+        });
+        prisma.club_role_assignments.create.mockResolvedValue({
+          assignment_id: 'new',
+        });
+        nextClassResolver.resolve.mockResolvedValue({
+          kind: 'next_class',
+          class_id: CLASS_CQ_AGE,
+          display_order: 1,
+          club_type_id: CQ_TYPE_ID,
+          club_section_id: CQ_SECTION_ID,
+          ecclesiastical_year_id: YEAR_ID_CURRENT,
+          crossed_type: true,
+        });
+      };
+
+      it('skips an unverified dependent without throwing and writes nothing', async () => {
+        stubJump();
+        asDependent(false);
+
+        const outcome = await service.writeTypeJumpEnrollment(prisma as never, {
+          userId: DEPENDENT,
+          destSectionId: CQ_SECTION_ID,
+          year,
+        });
+
+        expect(outcome).toBe('skipped');
+        expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+        expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
+        expect(authContextVersion.bumpMany).not.toHaveBeenCalled();
+      });
+
+      it('enrolls a verified dependent', async () => {
+        stubJump();
+        asDependent(true);
+
+        const outcome = await service.writeTypeJumpEnrollment(prisma as never, {
+          userId: DEPENDENT,
+          destSectionId: CQ_SECTION_ID,
+          year,
+        });
+
+        expect(outcome).toBe('enrolled');
+        expect(prisma.club_role_assignments.create).toHaveBeenCalledTimes(1);
+      });
     });
   });
 });
