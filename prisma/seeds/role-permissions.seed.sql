@@ -52,9 +52,18 @@ WHERE role_permissions.permission_id = p.permission_id
 -- USER role (GLOBAL)
 -- ============================
 -- Minimum permissions for a registered user NOT yet in a club (or between clubs).
--- Can manage own profile, personal data, trajectory (honors/classes),
--- browse catalogs, handle post-registration, and view dashboard.
--- Total: 21
+-- Browse catalogs, see the Classes tab, handle post-registration and view
+-- dashboard.
+--
+-- NEVER grant here a permission whose routes are owner-aware
+-- (`@AuthorizationResource({ type: 'user' })` / `@SensitiveUserSubresource`):
+-- own profile, health, emergency contacts, legal representative,
+-- post-registration status and honors. The owner already reaches them through
+-- the PermissionsGuard owner bypass, so a grant on this role only ever applies
+-- to OTHER users' data (any signed-in account). The guard also ignores this
+-- role for non-owners (BASE_GLOBAL_ROLE_NAME), and migration
+-- 20261016100000_base_user_role_drop_cross_user_grants removed the old grants.
+-- Total: 10 (+ resources:read, resource_categories:read further below)
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -71,29 +80,17 @@ WHERE r.role_name = 'user'
   AND r.active = true
   AND p.active = true
   AND p.permission_name IN (
-    -- Profile & personal data
+    -- Users (GET /admin/users is also gated by @GlobalRoles)
     'users:read',
-    'users:update_profile',
-    'emergency_contacts:read',
-    'emergency_contacts:update',
-    'health:read',
-    'health:update',
-    'legal_representative:read',
-    'legal_representative:update',
 
-    -- Classes & honors (own trajectory)
+    -- Classes (app Classes tab gating; own progress route is not owner-aware)
     'classes:read',
-    'user_honors:read',
-    'user_honors:create',
-    'user_honors:submit',
-    'user_honors:delete',
 
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
 
     -- Post-registration (club enrollment)
-    'post_registration:read',
     'clubs:read',
     'club_sections:read',
 

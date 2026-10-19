@@ -66,6 +66,8 @@ describe('PermissionsGuard', () => {
 
   const createResolved = ({
     globalPermissions = [],
+    globalRoleName = 'admin',
+    extraGlobalRoles = [],
     activeClubPermissions = [],
     directPermissions = [],
     clubId = 10,
@@ -80,6 +82,8 @@ describe('PermissionsGuard', () => {
     globalDivisionId,
   }: {
     globalPermissions?: string[];
+    globalRoleName?: string;
+    extraGlobalRoles?: { role_name: string; permissions: string[] }[];
     activeClubPermissions?: string[];
     directPermissions?: string[];
     clubId?: number;
@@ -97,7 +101,7 @@ describe('PermissionsGuard', () => {
       grants: {
         global_roles: [
           {
-            role_name: 'admin',
+            role_name: globalRoleName,
             permissions: globalPermissions,
             scope: {
               ...(globalDivisionId
@@ -110,6 +114,7 @@ describe('PermissionsGuard', () => {
                 : {}),
             },
           },
+          ...extraGlobalRoles.map((role) => ({ ...role, scope: {} })),
         ],
         direct_permissions: directPermissions,
         club_assignments: [
@@ -1696,5 +1701,408 @@ describe('PermissionsGuard', () => {
       );
       expect(result).toBe(true);
     });
+  });
+
+  describe('base user role never authorizes access to another user (BOLA)', () => {
+    /** Grants the GLOBAL `user` role held before 20261016100000. */
+    const LEGACY_BASE_ROLE_PERMISSIONS = [
+      'users:read',
+      'users:update_profile',
+      'emergency_contacts:read',
+      'emergency_contacts:update',
+      'health:read',
+      'health:update',
+      'legal_representative:read',
+      'legal_representative:update',
+      'classes:read',
+      'user_honors:read',
+      'user_honors:create',
+      'user_honors:submit',
+      'user_honors:delete',
+      'catalogs:read',
+      'certifications:read',
+      'post_registration:read',
+      'clubs:read',
+      'club_sections:read',
+      'requests:read',
+      'dashboard:read',
+      'achievements:read',
+      'validation:read',
+    ];
+
+    type UserRoute = {
+      route: string;
+      permission: string;
+      sensitive?: { family: string; mode: 'read' | 'update' };
+    };
+
+    const sensitive = (
+      route: string,
+      family: string,
+      mode: 'read' | 'update',
+    ): UserRoute => ({
+      route,
+      permission: `${family}:${mode}`,
+      sensitive: { family, mode },
+    });
+
+    /** Owner-aware routes whose permission the base role used to satisfy. */
+    const USER_ROUTES: UserRoute[] = [
+      { route: 'PATCH /users/:userId', permission: 'users:update_profile' },
+      {
+        route: 'POST /users/:userId/profile-picture',
+        permission: 'users:update_profile',
+      },
+      sensitive('GET /users/:userId/allergies', 'health', 'read'),
+      sensitive('PUT /users/:userId/allergies', 'health', 'update'),
+      sensitive('GET /users/:userId/diseases', 'health', 'read'),
+      sensitive('PUT /users/:userId/diseases', 'health', 'update'),
+      sensitive('GET /users/:userId/medicines', 'health', 'read'),
+      sensitive('PUT /users/:userId/medicines', 'health', 'update'),
+      sensitive(
+        'GET /users/:userId/emergency-contacts',
+        'emergency_contacts',
+        'read',
+      ),
+      sensitive(
+        'POST /users/:userId/emergency-contacts',
+        'emergency_contacts',
+        'update',
+      ),
+      sensitive(
+        'GET /users/:userId/legal-representative',
+        'legal_representative',
+        'read',
+      ),
+      sensitive(
+        'PATCH /users/:userId/legal-representative',
+        'legal_representative',
+        'update',
+      ),
+      sensitive(
+        'GET /users/:userId/post-registration/status',
+        'post_registration',
+        'read',
+      ),
+      // `post_registration:update` was never a base grant; the route was
+      // reachable through the legacy `users:update_profile` fallback.
+      sensitive(
+        'post-registration update (legacy fallback)',
+        'post_registration',
+        'update',
+      ),
+      { route: 'GET /users/:userId/honors', permission: 'user_honors:read' },
+      { route: 'POST /users/:userId/honors', permission: 'user_honors:create' },
+      {
+        route: 'PATCH /users/:userId/honors/:honorId',
+        permission: 'user_honors:submit',
+      },
+      {
+        route: 'DELETE /users/:userId/honors/:honorId',
+        permission: 'user_honors:delete',
+      },
+      { route: 'GET /users/:userId/classes', permission: 'classes:read' },
+      {
+        route: 'GET /validation/eligibility/:userId',
+        permission: 'validation:read',
+      },
+    ];
+
+    const mockUserRoute = ({ permission, sensitive }: UserRoute): void => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY) {
+          return { permissions: [permission], mode: 'all' };
+        }
+        if (key === AUTHORIZATION_RESOURCE_KEY) {
+          return { type: 'user', ownerParam: 'userId' };
+        }
+        if (key === SENSITIVE_USER_SUBRESOURCE_KEY) {
+          return sensitive;
+        }
+        return undefined;
+      });
+    };
+
+    const otherUserContext = () =>
+      createContext({
+        user: { sub: 'attacker-1' },
+        params: { userId: 'victim-1' },
+      });
+
+    it.each(USER_ROUTES.map((route) => [route.route, route] as const))(
+      'denies a non-owner holding only the base user role: %s',
+      async (_label, route) => {
+        mockUserRoute(route);
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          createResolved({
+            globalRoleName: 'user',
+            globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+          }),
+        );
+
+        await expect(
+          guard.canActivate(otherUserContext()),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      },
+    );
+
+    it.each(USER_ROUTES.map((route) => [route.route, route] as const))(
+      'still lets the owner through without resolving permissions: %s',
+      async (_label, route) => {
+        mockUserRoute(route);
+
+        await expect(
+          guard.canActivate(
+            createContext({
+              user: { sub: 'victim-1' },
+              params: { userId: 'victim-1' },
+            }),
+          ),
+        ).resolves.toBe(true);
+        expect(
+          mockAuthorizationContext.resolveUserAuthorization,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(USER_ROUTES.map((route) => [route.route, route] as const))(
+      'allows a global admin role that grants the permission itself: %s',
+      async (_label, route) => {
+        mockUserRoute(route);
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          createResolved({
+            globalRoleName: 'admin',
+            globalPermissions: [route.permission],
+            extraGlobalRoles: [
+              { role_name: 'user', permissions: LEGACY_BASE_ROLE_PERMISSIONS },
+            ],
+          }),
+        );
+
+        await expect(guard.canActivate(otherUserContext())).resolves.toBe(true);
+      },
+    );
+
+    it.each(['super-admin', 'assistant-admin', 'director-lf', 'director-dia'])(
+      'allows the %s global role to update another user profile',
+      async (roleName) => {
+        mockUserRoute(USER_ROUTES[0]);
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          createResolved({
+            globalRoleName: roleName,
+            globalPermissions: ['users:update_profile'],
+          }),
+        );
+
+        await expect(guard.canActivate(otherUserContext())).resolves.toBe(true);
+      },
+    );
+
+    it('keeps the legacy users:* fallback when it comes from a non-base global role', async () => {
+      mockUserRoute(
+        sensitive('PUT /users/:userId/allergies', 'health', 'update'),
+      );
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalRoleName: 'assistant-admin',
+          globalPermissions: ['users:update_profile'],
+        }),
+      );
+
+      await expect(guard.canActivate(otherUserContext())).resolves.toBe(true);
+    });
+
+    it('denies a staff role that lacks the permission even if the base role has it', async () => {
+      // coordinator has users:read_detail but no users:update_profile: the
+      // write used to pass only because the same account holds the base role.
+      mockUserRoute(USER_ROUTES[0]);
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalRoleName: 'coordinator',
+          globalPermissions: ['users:read_detail', 'classes:read'],
+          extraGlobalRoles: [
+            { role_name: 'user', permissions: LEGACY_BASE_ROLE_PERMISSIONS },
+          ],
+        }),
+      );
+
+      await expect(guard.canActivate(otherUserContext())).rejects.toMatchObject(
+        { code: ErrorCode.GUARD_PERMISSION_DENIED },
+      );
+    });
+
+    it('matches the base role name case-insensitively', async () => {
+      mockUserRoute(USER_ROUTES[0]);
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalRoleName: 'User',
+          globalPermissions: ['users:update_profile'],
+        }),
+      );
+
+      await expect(guard.canActivate(otherUserContext())).rejects.toMatchObject(
+        { code: ErrorCode.GUARD_PERMISSION_DENIED },
+      );
+    });
+
+    it('honors a direct per-user grant (non-base source) for a non-owner', async () => {
+      mockUserRoute(USER_ROUTES[0]);
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalRoleName: 'user',
+          globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+          directPermissions: ['users:update_profile'],
+        }),
+      );
+
+      await expect(guard.canActivate(otherUserContext())).resolves.toBe(true);
+    });
+
+    it('lets section staff read an active member health record through the section path', async () => {
+      mockUserRoute(
+        sensitive('GET /users/:userId/allergies', 'health', 'read'),
+      );
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalRoleName: 'user',
+          globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+          activeClubPermissions: ['health:read'],
+          instanceId: 22,
+        }),
+      );
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'active-assignment-1',
+      });
+
+      await expect(guard.canActivate(otherUserContext())).resolves.toBe(true);
+    });
+
+    it.each([
+      ['GET /users/:userId/honors', 'user_honors:read'],
+      ['GET /users/:userId/classes', 'classes:read'],
+    ])(
+      'lets section staff open %s of a member through the profile path',
+      async (route, permission) => {
+        mockUserRoute({ route, permission });
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          createResolved({
+            globalRoleName: 'user',
+            globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+            activeClubPermissions: ['club_roles:read'],
+            instanceId: 22,
+          }),
+        );
+        mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+          assignment_id: 'active-assignment-1',
+        });
+
+        await expect(guard.canActivate(otherUserContext())).resolves.toBe(true);
+      },
+    );
+
+    it('denies section staff writing a member health record (no club write path)', async () => {
+      // Before the fix this passed via the base role (legacy fallback).
+      mockUserRoute(
+        sensitive('PUT /users/:userId/allergies', 'health', 'update'),
+      );
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalRoleName: 'user',
+          globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+          activeClubPermissions: ['health:update', 'club_roles:read'],
+          instanceId: 22,
+        }),
+      );
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'active-assignment-1',
+      });
+
+      await expect(guard.canActivate(otherUserContext())).rejects.toMatchObject(
+        { code: ErrorCode.GUARD_PERMISSION_DENIED },
+      );
+    });
+
+    it('denies a non-owner on an owner-aware active_assignment route via the base role, owner still passes', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY) {
+          return { permissions: ['classes:submit_progress'], mode: 'all' };
+        }
+        if (key === AUTHORIZATION_RESOURCE_KEY) {
+          return { type: 'active_assignment', ownerParam: 'userId' };
+        }
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalRoleName: 'user',
+          globalPermissions: ['classes:submit_progress'],
+        }),
+      );
+
+      await expect(guard.canActivate(otherUserContext())).rejects.toMatchObject(
+        { code: ErrorCode.GUARD_PERMISSION_DENIED },
+      );
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'victim-1' },
+            params: { userId: 'victim-1' },
+          }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('keeps club permissions working on owner-aware active_assignment routes', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY) {
+          return { permissions: ['classes:submit_progress'], mode: 'all' };
+        }
+        if (key === AUTHORIZATION_RESOURCE_KEY) {
+          return { type: 'active_assignment', ownerParam: 'userId' };
+        }
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalRoleName: 'user',
+          globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+          activeClubPermissions: ['classes:submit_progress'],
+        }),
+      );
+
+      await expect(guard.canActivate(otherUserContext())).resolves.toBe(true);
+    });
+
+    it.each([
+      ['global', { type: 'global' }, 'catalogs:read'],
+      [
+        'active_assignment without owner',
+        { type: 'active_assignment' },
+        'validation:read',
+      ],
+    ] as const)(
+      'still counts the base role on non-owner-aware %s routes',
+      async (_label, resource, permission) => {
+        mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+          if (key === PERMISSIONS_KEY) {
+            return { permissions: [permission], mode: 'all' };
+          }
+          if (key === AUTHORIZATION_RESOURCE_KEY) {
+            return resource;
+          }
+          return undefined;
+        });
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          createResolved({
+            globalRoleName: 'user',
+            globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+          }),
+        );
+
+        await expect(
+          guard.canActivate(createContext({ user: { sub: 'user-1' } })),
+        ).resolves.toBe(true);
+      },
+    );
   });
 });
