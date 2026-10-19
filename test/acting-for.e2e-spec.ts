@@ -127,8 +127,9 @@ describe('Acting-for E2E', () => {
     consent_status: 'pending',
     verified_at: null,
     relationship_type: { relationship_type_id: RELATIONSHIP_ID, name: 'Madre' },
-    consent_evidences: [],
     dependent: {
+      // The signed form hangs on the consent (primary) row of the dependent.
+      guardianships_as_dependent: [{ consent_evidences: [] }],
       user_id: DEPENDENT_ID,
       name: 'Ana',
       paternal_last_name: 'Pérez',
@@ -340,6 +341,112 @@ describe('Acting-for E2E', () => {
 
     expect(response.status).toBe(403);
     expect(errorCode(response.body)).toBe('ACTING_FOR_SCOPE_DENIED');
+  });
+
+  describe('consent evidence (2c)', () => {
+    const evidenceUrl = `/api/v1/guardianships/me/dependents/${DEPENDENT_ID}/consent-evidence`;
+    const pdf = Buffer.from('%PDF-1.7 signed form');
+
+    it('both guardian routes are denied while acting (no ActingScope)', async () => {
+      const upload = await request(app.getHttpServer())
+        .post(evidenceUrl)
+        .set(acting(GUARDIAN_ID, DEPENDENT_ID))
+        .attach('file', pdf, {
+          filename: 'f.pdf',
+          contentType: 'application/pdf',
+        });
+      const read = await request(app.getHttpServer())
+        .get(evidenceUrl)
+        .set(acting(GUARDIAN_ID, DEPENDENT_ID));
+
+      for (const response of [upload, read]) {
+        expect(response.status).toBe(403);
+        expect(errorCode(response.body)).toBe('ACTING_FOR_SCOPE_DENIED');
+      }
+    });
+
+    it('the app boots without the private bucket and the endpoints fail closed with 503', async () => {
+      const upload = await request(app.getHttpServer())
+        .post(evidenceUrl)
+        .set(bearer(GUARDIAN_ID))
+        .attach('file', pdf, {
+          filename: 'f.pdf',
+          contentType: 'application/pdf',
+        });
+      const read = await request(app.getHttpServer())
+        .get(evidenceUrl)
+        .set(bearer(GUARDIAN_ID));
+      const unrelated = await request(app.getHttpServer())
+        .get('/api/v1/guardianships/me/dependents')
+        .set(bearer(GUARDIAN_ID));
+
+      expect(upload.status).toBe(503);
+      expect(errorCode(upload.body)).toBe('GUARDIANSHIP_EVIDENCE_UNAVAILABLE');
+      expect(read.status).toBe(503);
+      expect(errorCode(read.body)).toBe('GUARDIANSHIP_EVIDENCE_UNAVAILABLE');
+      // The rest of the API keeps working.
+      expect(unrelated.status).toBe(200);
+    });
+
+    it('rejects a spoofed type and a missing file before touching storage', async () => {
+      const spoofed = await request(app.getHttpServer())
+        .post(evidenceUrl)
+        .set(bearer(GUARDIAN_ID))
+        .attach('file', Buffer.from([0x4d, 0x5a, 0x90, 0x00]), {
+          filename: 'f.jpg',
+          contentType: 'image/jpeg',
+        });
+      const heic = await request(app.getHttpServer())
+        .post(evidenceUrl)
+        .set(bearer(GUARDIAN_ID))
+        .attach('file', Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70]), {
+          filename: 'f.heic',
+          contentType: 'image/heic',
+        });
+      const missing = await request(app.getHttpServer())
+        .post(evidenceUrl)
+        .set(bearer(GUARDIAN_ID))
+        .field('note', 'no file');
+
+      expect(spoofed.status).toBe(400);
+      expect(errorCode(spoofed.body)).toBe('FILE_TYPE_INVALID');
+      expect(heic.status).toBe(400);
+      expect(errorCode(heic.body)).toBe('FILE_TYPE_INVALID');
+      expect(missing.status).toBe(400);
+    });
+
+    it('a user without club_members:approve cannot use the director routes (403)', async () => {
+      const assignment = '00000000-0000-4000-8000-0000000000c1';
+      const base = `/api/v1/club-sections/12/membership-requests/${assignment}`;
+      const upload = await request(app.getHttpServer())
+        .post(`${base}/consent-evidence`)
+        .set(bearer(GUARDIAN_ID))
+        .attach('file', pdf, {
+          filename: 'f.pdf',
+          contentType: 'application/pdf',
+        });
+      const read = await request(app.getHttpServer())
+        .get(`${base}/consent-evidence`)
+        .set(bearer(GUARDIAN_ID));
+      const verify = await request(app.getHttpServer())
+        .post(`${base}/verify-consent`)
+        .set(bearer(GUARDIAN_ID))
+        .send({ confirm_paper_form_reviewed: true, approve: true });
+
+      for (const response of [upload, read, verify]) {
+        expect(response.status).toBe(403);
+      }
+    });
+
+    it('a non-admin cannot read the admin evidence route (403)', async () => {
+      const response = await request(app.getHttpServer())
+        .get(
+          `/api/v1/admin/users/${DEPENDENT_ID}/guardianships/00000000-0000-4000-8000-0000000000b1/consent-evidence`,
+        )
+        .set(bearer(GUARDIAN_ID));
+
+      expect(response.status).toBe(403);
+    });
   });
 
   it('a pending grant cannot reach classes:write routes', async () => {
