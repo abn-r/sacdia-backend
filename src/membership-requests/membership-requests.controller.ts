@@ -103,7 +103,7 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 409,
     description:
-      'MR_CONSENT_NOT_VERIFIED: the requester is a minor whose guardian consent is not verified yet (or the request was already processed)',
+      'MR_CONSENT_NOT_VERIFIED: the requester is a minor whose guardian consent is not verified yet. MR_ALREADY_PENDING: the request was already processed',
   })
   async approve(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
