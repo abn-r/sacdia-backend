@@ -26,6 +26,7 @@ import type { SessionRequestContext } from '../better-auth/better-auth.service';
 import type { CreateDependentDto } from './dto';
 import {
   NOT_REVOKED,
+  VISIBLE_DEPENDENT,
   displayName,
   loadClubMemberships,
   type Db,
@@ -46,13 +47,21 @@ const SUMMARY_SELECT = {
   relationship_type: {
     select: { relationship_type_id: true, name: true },
   },
-  consent_evidences: {
-    where: { superseded_at: null, purged_at: null },
-    select: { evidence_id: true },
-    take: 1,
-  },
   dependent: {
     select: {
+      // The signed form hangs on the dependent's consent row (the active
+      // primary holder), so every guardian sees the same `evidence_uploaded`.
+      guardianships_as_dependent: {
+        where: { is_primary: true, is_test_data: false, ...NOT_REVOKED },
+        take: 1,
+        select: {
+          consent_evidences: {
+            where: { superseded_at: null, purged_at: null },
+            select: { evidence_id: true },
+            take: 1,
+          },
+        },
+      },
       user_id: true,
       name: true,
       paternal_last_name: true,
@@ -69,11 +78,6 @@ const SUMMARY_SELECT = {
 type SummaryRow = Prisma.guardianshipsGetPayload<{
   select: typeof SUMMARY_SELECT;
 }>;
-
-/** A dependent a guardian can still see: not frozen and not purged. */
-const VISIBLE_DEPENDENT = {
-  dependent_profile: { is: { frozen_at: null, purged_at: null } },
-} as const satisfies Prisma.usersWhereInput;
 
 function unprocessable(code: ErrorCode): AppException {
   return new AppException(code, HttpStatus.UNPROCESSABLE_ENTITY);
@@ -380,7 +384,9 @@ export class GuardianshipsService {
           relationship_type: row.relationship_type,
           consent_status: row.consent_status as 'pending' | 'verified',
           verified_at: row.verified_at ? row.verified_at.toISOString() : null,
-          evidence_uploaded: row.consent_evidences.length > 0,
+          evidence_uploaded:
+            (dependent.guardianships_as_dependent[0]?.consent_evidences
+              .length ?? 0) > 0,
         },
         club_membership: memberships.get(dependent.user_id) ?? null,
       } satisfies DependentSummary;

@@ -798,5 +798,8 @@
   "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "O parentesco selecionado não é válido",
   "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "Você precisa confirmar o que acontecerá com os menores sob seus cuidados antes de excluir sua conta",
   "AUTH_REGISTRATION_AGE_BELOW_MINIMUM": "Você não tem a idade mínima para criar uma conta. Peça ao seu responsável que registre você em Minha família",
-  "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "A data de nascimento indica que você não tem a idade mínima para ter uma conta própria"
+  "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "A data de nascimento indica que você não tem a idade mínima para ter uma conta própria",
+  "GUARDIANSHIP_EVIDENCE_NOT_FOUND": "Nenhuma ficha de consentimento assinada foi enviada ainda",
+  "GUARDIANSHIP_EVIDENCE_REQUIRED": "Envie a ficha de consentimento assinada antes de verificar o consentimento",
+  "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "As fichas de consentimento não podem ser armazenadas nem consultadas no momento. Tente novamente mais tarde"
 }

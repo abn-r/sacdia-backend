@@ -7,9 +7,15 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-eligibility.module';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ConsentGateService } from './consent-gate.service';
+import { GuardianshipsModule } from '../guardianships/guardianships.module';
 
 @Module({
-  imports: [PrismaModule, NotificationsModule, ClubRoleEligibilityModule],
+  imports: [
+    PrismaModule,
+    NotificationsModule,
+    ClubRoleEligibilityModule,
+    GuardianshipsModule,
+  ],
   controllers: [MembershipRequestsController],
   providers: [
     MembershipRequestsService,

@@ -295,6 +295,31 @@ describe('certificate import file host allowlist', () => {
   });
 });
 
+describe('guardianship evidence bucket (private, optional at boot)', () => {
+  it('boots without any R2_*_GUARDIANSHIP_EVIDENCE variable: the endpoints fail closed instead', () => {
+    const { error } = validate();
+
+    expect(error).toBeUndefined();
+  });
+
+  it('accepts the bucket name alone (the public URL is never needed)', () => {
+    const { error } = validate({
+      R2_BUCKET_GUARDIANSHIP_EVIDENCE: 'sacdia-guardianship-evidence',
+    });
+
+    expect(error).toBeUndefined();
+  });
+
+  it('accepts a custom key prefix', () => {
+    const { error } = validate({
+      R2_BUCKET_GUARDIANSHIP_EVIDENCE: 'sacdia-guardianship-evidence',
+      R2_KEY_PREFIX_GUARDIANSHIP_EVIDENCE: 'custom/consent',
+    });
+
+    expect(error).toBeUndefined();
+  });
+});
+
 describe('timezone bootstrap environment validation', () => {
   it.each(['development', 'test'])(
     'permits bootstrap only in %s',

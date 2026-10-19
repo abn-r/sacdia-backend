@@ -19,6 +19,70 @@ export const ACTIVE_USER_GUARDIAN = {
   guardian_user_id: { not: null },
 } as const satisfies Prisma.guardianshipsWhereInput;
 
+/** A dependent that can still be managed: not frozen and not purged. */
+export const VISIBLE_DEPENDENT = {
+  dependent_profile: { is: { frozen_at: null, purged_at: null } },
+} as const satisfies Prisma.usersWhereInput;
+
+export interface SectionAssignment {
+  assignment_id: string;
+  club_section_id: number | null;
+  user_id: string;
+  status: string | null;
+  active: boolean;
+}
+
+/**
+ * A membership assignment addressed through its section, WITHOUT any status
+ * or activity filter: callers decide what each state means (the consent
+ * endpoints accept a pending request, a read also an approved one).
+ */
+export async function findSectionAssignment(
+  db: Db,
+  clubSectionId: number,
+  assignmentId: string,
+): Promise<SectionAssignment | null> {
+  return db.club_role_assignments.findFirst({
+    where: { assignment_id: assignmentId, club_section_id: clubSectionId },
+    select: {
+      assignment_id: true,
+      club_section_id: true,
+      user_id: true,
+      status: true,
+      active: true,
+    },
+  });
+}
+
+/**
+ * The row that carries the dependent's consent: the active PRIMARY holder, a
+ * guardian or club custody (never seeded test data, which never counts as
+ * consent). There is at most one (`uq_guardianships_active_primary`). The
+ * signed form and its verification both live on this row.
+ */
+export async function findConsentRow(
+  db: Db,
+  dependentId: string,
+): Promise<{
+  guardianship_id: string;
+  is_custodian: boolean;
+  dependent_user_id: string;
+} | null> {
+  return db.guardianships.findFirst({
+    where: {
+      dependent_user_id: dependentId,
+      is_primary: true,
+      is_test_data: false,
+      ...NOT_REVOKED,
+    },
+    select: {
+      guardianship_id: true,
+      is_custodian: true,
+      dependent_user_id: true,
+    },
+  });
+}
+
 /**
  * Serializes every guardianship mutation that decides "who holds this child"
  * (leave, revoke, account deletion, redeem) per dependent, for the rest of the

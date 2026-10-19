@@ -798,5 +798,8 @@
   "GUARDIANSHIP_RELATIONSHIP_TYPE_INVALID": "Le lien de parenté sélectionné n'est pas valide",
   "AUTH_DELETE_DEPENDENTS_ACK_REQUIRED": "Vous devez confirmer ce qu'il adviendra des mineurs à votre charge avant de supprimer votre compte",
   "AUTH_REGISTRATION_AGE_BELOW_MINIMUM": "Vous n'avez pas l'âge minimum pour créer un compte. Demandez à votre tuteur de vous inscrire depuis Ma famille",
-  "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "La date de naissance indique que vous n'avez pas l'âge minimum pour avoir un compte"
+  "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "La date de naissance indique que vous n'avez pas l'âge minimum pour avoir un compte",
+  "GUARDIANSHIP_EVIDENCE_NOT_FOUND": "Aucune fiche de consentement signée n'a encore été téléversée",
+  "GUARDIANSHIP_EVIDENCE_REQUIRED": "Téléversez la fiche de consentement signée avant de vérifier le consentement",
+  "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "Les fiches de consentement ne peuvent pas être enregistrées ni consultées pour le moment. Réessayez plus tard"
 }

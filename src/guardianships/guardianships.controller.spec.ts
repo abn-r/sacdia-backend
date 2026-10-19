@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ACTING_SCOPE_KEY } from '../auth/acting-for/acting-scope.decorator';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { DependentClaimCodesController } from './dependent-claim-codes.controller';
+import { GuardianEvidenceService } from './guardian-evidence.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
 import { GuardianshipsController } from './guardianships.controller';
 import { GuardianshipsService } from './guardianships.service';
@@ -25,6 +26,11 @@ describe('GuardianshipsController', () => {
     revoke: jest.fn().mockResolvedValue({ guardianship_id: 'g-1' }),
   };
 
+  const evidence = {
+    uploadForGuardian: jest.fn().mockResolvedValue({ evidence_id: 'ev-1' }),
+    getForGuardian: jest.fn().mockResolvedValue({ url: 'https://signed/x' }),
+  };
+
   let controller: GuardianshipsController;
   let claimController: DependentClaimCodesController;
 
@@ -36,6 +42,7 @@ describe('GuardianshipsController', () => {
         { provide: GuardianshipsService, useValue: guardianships },
         { provide: LinkCodesService, useValue: linkCodes },
         { provide: GuardianshipLifecycleService, useValue: lifecycle },
+        { provide: GuardianEvidenceService, useValue: evidence },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -89,6 +96,36 @@ describe('GuardianshipsController', () => {
       'g-1',
       'guardian_left',
     );
+  });
+
+  it('uploads and reads the consent form as the token subject', async () => {
+    const file = { mimetype: 'application/pdf' } as never;
+
+    expect(await controller.uploadConsentEvidence(USER, 'd-1', file)).toEqual({
+      status: 'success',
+      data: { evidence_id: 'ev-1' },
+    });
+    expect(evidence.uploadForGuardian).toHaveBeenCalledWith(
+      'guardian-1',
+      'd-1',
+      file,
+    );
+
+    expect(await controller.getConsentEvidence(USER, 'd-1')).toEqual({
+      status: 'success',
+      data: { url: 'https://signed/x' },
+    });
+    expect(evidence.getForGuardian).toHaveBeenCalledWith('guardian-1', 'd-1');
+  });
+
+  it('limits consent form uploads to 20 per hour on every throttler tier', () => {
+    const handler = GuardianshipsController.prototype.uploadConsentEvidence;
+    for (const tier of ['short', 'medium', 'long']) {
+      expect(Reflect.getMetadata(`THROTTLER:LIMIT${tier}`, handler)).toBe(20);
+      expect(Reflect.getMetadata(`THROTTLER:TTL${tier}`, handler)).toBe(
+        3_600_000,
+      );
+    }
   });
 
   it('delegates the director claim code to the service with the section', async () => {

@@ -7,29 +7,38 @@ import {
   ParseUUIDPipe,
   Post,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import 'multer';
 import {
   sessionContextFromRequest,
   type SessionContextRequest,
 } from '../auth/session-request-context';
 import { namedThrottle } from '../config/throttler.helpers';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import { CurrentUser } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { JwtAuthGuard } from '../common/guards';
+import { ConsentEvidenceFilePipe } from './consent-evidence-file.pipe';
 import {
   CreateDependentDto,
   IssueLinkCodeDto,
   RedeemLinkCodeDto,
   RevokeGuardianshipDto,
 } from './dto';
+import { GuardianEvidenceService } from './guardian-evidence.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
 import { GuardianshipsService } from './guardianships.service';
 import { LinkCodesService } from './link-codes.service';
@@ -61,6 +70,7 @@ export class GuardianshipsController {
     private readonly guardianships: GuardianshipsService,
     private readonly linkCodes: LinkCodesService,
     private readonly lifecycle: GuardianshipLifecycleService,
+    private readonly evidence: GuardianEvidenceService,
   ) {}
 
   @Get('me/dependents')
@@ -119,6 +129,68 @@ export class GuardianshipsController {
         user.sub,
         dependentId,
       ),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/consent-evidence')
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 20 }))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOperation({
+    summary: 'Upload the signed consent form of a dependent (photo or PDF)',
+    description:
+      'JPEG, PNG, WebP or PDF up to 10 MB, multipart field `file`. HEIC is rejected: convert to JPEG first. The form only waits for the director; it never verifies the consent. A new upload supersedes the previous one.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '{ evidence_id, content_type, size_bytes, uploaded_at }',
+  })
+  @ApiResponse({ status: 404, description: 'GUARDIANSHIP_NOT_FOUND' })
+  @ApiResponse({
+    status: 503,
+    description:
+      'GUARDIANSHIP_EVIDENCE_UNAVAILABLE: the private bucket is not configured',
+  })
+  async uploadConsentEvidence(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @UploadedFile(new ConsentEvidenceFilePipe()) file: Express.Multer.File,
+  ) {
+    return {
+      status: 'success',
+      data: await this.evidence.uploadForGuardian(user.sub, dependentId, file),
+    };
+  }
+
+  @Get('me/dependents/:dependentId/consent-evidence')
+  @ApiOperation({
+    summary: 'Signed URL (15 min) of the current signed consent form',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ url, expires_in, content_type, uploaded_at }',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'GUARDIANSHIP_NOT_FOUND or GUARDIANSHIP_EVIDENCE_NOT_FOUND',
+  })
+  @ApiResponse({
+    status: 503,
+    description: 'GUARDIANSHIP_EVIDENCE_UNAVAILABLE',
+  })
+  async getConsentEvidence(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.evidence.getForGuardian(user.sub, dependentId),
     };
   }
 

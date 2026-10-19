@@ -720,7 +720,9 @@ export class R2FileStorageService implements FileStorageService {
       case StorageBucketAlias.GUARDIANSHIP_EVIDENCE:
         return {
           bucket: this.getRequiredEnv('R2_BUCKET_GUARDIANSHIP_EVIDENCE'),
-          publicBaseUrl: this.getRequiredEnv(
+          // PRIVATE bucket: nothing is ever served from a public URL, so the
+          // public base URL is optional (only the bucket name is required).
+          publicBaseUrl: this.getOptionalEnv(
             'R2_PUBLIC_URL_GUARDIANSHIP_EVIDENCE',
           ),
           keyPrefix: this.getOptionalEnv(

@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { ActingForModule } from '../auth/acting-for/acting-for.module';
 import { LegalModule } from '../legal/legal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DependentClaimCodesController } from './dependent-claim-codes.controller';
 import { DependentProfilesPurgeCronService } from './dependent-profiles-purge-cron.service';
+import { GuardianEvidenceService } from './guardian-evidence.service';
 import { GuardianNotificationsService } from './guardian-notifications.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
 import { GuardianshipsController } from './guardianships.controller';
@@ -18,7 +20,13 @@ import { LinkCodesService } from './link-codes.service';
  * CountryAgePolicyService (CommonModule) and CACHE_MANAGER are global.
  */
 @Module({
-  imports: [PrismaModule, ActingForModule, LegalModule, NotificationsModule],
+  imports: [
+    PrismaModule,
+    ActingForModule,
+    AuditLogsModule,
+    LegalModule,
+    NotificationsModule,
+  ],
   controllers: [GuardianshipsController, DependentClaimCodesController],
   providers: [
     GuardianshipsService,
@@ -26,6 +34,7 @@ import { LinkCodesService } from './link-codes.service';
     LinkCodeFailureCounter,
     GuardianshipLifecycleService,
     GuardianNotificationsService,
+    GuardianEvidenceService,
     DependentProfilesPurgeCronService,
   ],
   exports: [
@@ -33,6 +42,7 @@ import { LinkCodesService } from './link-codes.service';
     GuardianshipLifecycleService,
     LinkCodesService,
     GuardianNotificationsService,
+    GuardianEvidenceService,
   ],
 })
 export class GuardianshipsModule {}

@@ -31,6 +31,7 @@ import {
 import {
   AuthorizationResource,
   RequirePermissions,
+  SensitiveUserSubresource,
   GlobalRoles,
   type GlobalRoleType,
 } from '../common/decorators';
@@ -48,6 +49,7 @@ import {
   UpdateAdminUserDto,
   UpdateUserApprovalDto,
 } from './dto';
+import { GuardianEvidenceService } from '../guardianships/guardian-evidence.service';
 import { AdminUsersService, type BulkUsersResult } from './admin-users.service';
 
 const BULK_ALLOWED_MIME_TYPES = new Set([
@@ -86,7 +88,10 @@ export const USER_MANAGEMENT_ROLES: readonly GlobalRoleType[] = [
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminUsersController {
-  constructor(private readonly adminUsersService: AdminUsersService) {}
+  constructor(
+    private readonly adminUsersService: AdminUsersService,
+    private readonly guardianEvidence: GuardianEvidenceService,
+  ) {}
 
   private getActorId(
     request: ExpressRequest & { user: { sub: string } },
@@ -233,6 +238,51 @@ export class AdminUsersController {
     const data = await this.adminUsersService.getUserById(
       this.getActorId(req),
       userId,
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('users/:userId/guardianships/:guardianshipId/consent-evidence')
+  @GlobalRoles(...USER_MANAGEMENT_ROLES)
+  @SensitiveUserSubresource('legal_representative', 'read')
+  @ApiOperation({
+    summary:
+      'URL firmada (15 min) de la ficha de consentimiento firmada de un menor',
+    description:
+      'Requiere users:read_detail o legal_representative:read. El usuario debe estar dentro del alcance territorial del actor y la tutoría debe pertenecer a ese usuario como menor. Cada lectura queda auditada.',
+  })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiParam({ name: 'guardianshipId', type: String })
+  @ApiResponse({
+    status: 200,
+    description: '{ url, expires_in, content_type, uploaded_at }',
+  })
+  @ApiResponse({ status: 403, description: 'Sin permiso sensible' })
+  @ApiResponse({
+    status: 404,
+    description:
+      'ADMIN_USER_NOT_FOUND, GUARDIANSHIP_NOT_FOUND o GUARDIANSHIP_EVIDENCE_NOT_FOUND',
+  })
+  @ApiResponse({
+    status: 503,
+    description: 'GUARDIANSHIP_EVIDENCE_UNAVAILABLE',
+  })
+  async getGuardianshipConsentEvidence(
+    @Request() req: ExpressRequest & { user: { sub: string } },
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('guardianshipId', ParseUUIDPipe) guardianshipId: string,
+  ): Promise<{
+    status: string;
+    data: Awaited<ReturnType<GuardianEvidenceService['getForAdmin']>>;
+  }> {
+    const actorId = this.getActorId(req);
+    // Same territorial cut as the user detail: field staff only reach users of
+    // their own scope.
+    await this.adminUsersService.assertUserInActorScope(actorId, userId);
+    const data = await this.guardianEvidence.getForAdmin(
+      actorId,
+      userId,
+      guardianshipId,
     );
     return { status: 'success', data };
   }

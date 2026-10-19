@@ -21,6 +21,7 @@ import { AdminCronAlertsService } from './admin-cron-alerts.service';
 import { MasterHonorsQueueModule } from '../honors/master-honors-queue.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CoordinationModule } from '../coordination/coordination.module';
+import { GuardianshipsModule } from '../guardianships/guardianships.module';
 
 @Module({
   imports: [
@@ -36,6 +37,8 @@ import { CoordinationModule } from '../coordination/coordination.module';
     MasterHonorsQueueModule,
     NotificationsModule,
     CoordinationModule,
+    // GuardianEvidenceService: signed read of a minor's consent form.
+    GuardianshipsModule,
   ],
   controllers: [
     AdminAuthController,

@@ -43,8 +43,10 @@ function summaryRow(dependentId: string) {
     consent_status: 'pending',
     verified_at: null,
     relationship_type: { relationship_type_id: REL_TYPE, name: 'Madre' },
-    consent_evidences: [],
     dependent: {
+      guardianships_as_dependent: [{ consent_evidences: [] }] as Array<{
+        consent_evidences: Array<{ evidence_id: string }>;
+      }>,
       user_id: dependentId,
       name: 'Ana',
       paternal_last_name: 'Pérez',
@@ -431,7 +433,9 @@ describe('GuardianshipsService reads', () => {
   it('flags evidence_uploaded and frozen in the summary', async () => {
     const { service, prisma } = setup();
     const row = summaryRow('d-1');
-    row.consent_evidences = [{ evidence_id: 'e-1' }] as never;
+    row.dependent.guardianships_as_dependent = [
+      { consent_evidences: [{ evidence_id: 'e-1' }] },
+    ];
     row.dependent.dependent_profile = { frozen_at: new Date() } as never;
     prisma.guardianships.findMany.mockResolvedValue([row]);
 
