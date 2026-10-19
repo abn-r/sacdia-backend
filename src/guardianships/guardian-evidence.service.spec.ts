@@ -49,6 +49,8 @@ function setup(options: { bucket?: string | undefined } = {}) {
     }),
     guardianships: {
       findFirst: jest.fn().mockResolvedValue({ guardianship_id: CONSENT_ROW }),
+      // verified consent rows of the dependent (W1): none by default
+      count: jest.fn().mockResolvedValue(0),
     },
     guardianship_consent_evidences: {
       updateMany: jest.fn().mockImplementation(() => {
@@ -69,6 +71,8 @@ function setup(options: { bucket?: string | undefined } = {}) {
     guardianships: {
       // own guardian row, then the consent (primary) row
       findFirst: jest.fn(),
+      // verified consent rows of the dependent (W1): none by default
+      count: jest.fn().mockResolvedValue(0),
     },
     club_role_assignments: { findFirst: jest.fn() },
     dependent_profiles: {
@@ -374,6 +378,93 @@ describe('GuardianEvidenceService', () => {
           target_user_id: DEPENDENT,
         }),
       );
+    });
+  });
+
+  /**
+   * verify 2c W1: once the consent is verified, the verified form must stay
+   * the current one. A new upload (guardian or director) is a 409; replacing
+   * the form needs a revocation (a new guardianship) first.
+   */
+  describe('upload after the consent is verified (W1)', () => {
+    const verifiedWhere = {
+      where: {
+        dependent_user_id: DEPENDENT,
+        consent_status: 'verified',
+        is_test_data: false,
+      },
+    };
+
+    it('guardian: 409 GUARDIANSHIP_CONSENT_ALREADY_VERIFIED, nothing stored', async () => {
+      const { service, prisma, storage, tx, asGuardian } = setup();
+      asGuardian();
+      prisma.guardianships.count.mockResolvedValue(1);
+
+      const error = await rejection(
+        service.uploadForGuardian(GUARDIAN, DEPENDENT, pdf()),
+      );
+
+      expect(codeOf(error)).toBe(
+        ErrorCode.GUARDIANSHIP_CONSENT_ALREADY_VERIFIED,
+      );
+      expect((error as AppException).getStatus()).toBe(409);
+      expect(prisma.guardianships.count).toHaveBeenCalledWith(verifiedWhere);
+      expect(storage.upload).not.toHaveBeenCalled();
+      expect(
+        tx.guardianship_consent_evidences.updateMany,
+      ).not.toHaveBeenCalled();
+      expect(tx.guardianship_consent_evidences.create).not.toHaveBeenCalled();
+    });
+
+    it('director: 409 for a request still pending after the consent was verified (e.g. approve_error)', async () => {
+      const { service, prisma, storage, tx, asDirector } = setup();
+      asDirector();
+      prisma.guardianships.count.mockResolvedValue(1);
+
+      const error = await rejection(
+        service.uploadForDirector(DIRECTOR, SECTION, ASSIGNMENT, pdf()),
+      );
+
+      expect(codeOf(error)).toBe(
+        ErrorCode.GUARDIANSHIP_CONSENT_ALREADY_VERIFIED,
+      );
+      expect(storage.upload).not.toHaveBeenCalled();
+      expect(tx.guardianship_consent_evidences.create).not.toHaveBeenCalled();
+    });
+
+    it('verified between the check and the lock: 409 under the lock, the verified form is not superseded and the object is removed', async () => {
+      const { service, storage, tx, calls, asGuardian } = setup();
+      asGuardian();
+      tx.guardianships.count.mockImplementation(() => {
+        calls.push('verified?');
+        return Promise.resolve(1);
+      });
+
+      const error = await rejection(
+        service.uploadForGuardian(GUARDIAN, DEPENDENT, pdf()),
+      );
+
+      expect(codeOf(error)).toBe(
+        ErrorCode.GUARDIANSHIP_CONSENT_ALREADY_VERIFIED,
+      );
+      expect(calls).toEqual(['lock', 'verified?']);
+      expect(tx.guardianships.count).toHaveBeenCalledWith(verifiedWhere);
+      expect(
+        tx.guardianship_consent_evidences.updateMany,
+      ).not.toHaveBeenCalled();
+      expect(storage.deleteMany).toHaveBeenCalledWith(
+        StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+        [`guardianships/consent/${CONSENT_ROW}/obj.pdf`],
+      );
+    });
+
+    it('a pending consent still accepts a new form (supersede)', async () => {
+      const { service, tx, asGuardian } = setup();
+      asGuardian();
+
+      await service.uploadForGuardian(GUARDIAN, DEPENDENT, pdf());
+
+      expect(tx.guardianship_consent_evidences.create).toHaveBeenCalledTimes(1);
     });
   });
 

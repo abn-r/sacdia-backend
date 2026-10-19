@@ -165,7 +165,7 @@ export class MembershipRequestsController {
   @ApiOperation({
     summary: 'Subir la ficha de consentimiento firmada de un menor',
     description:
-      'Foto o PDF (JPEG, PNG, WebP, PDF; hasta 10 MB, campo multipart `file`). HEIC se rechaza: la app lo convierte a JPEG. Reemplaza la ficha vigente sin borrar la anterior. No verifica el consentimiento: usa verify-consent.',
+      'Foto o PDF (JPEG, PNG, WebP, PDF; hasta 10 MB, campo multipart `file`). HEIC se rechaza: la app lo convierte a JPEG. Mientras el consentimiento está pendiente reemplaza la ficha vigente sin borrar la anterior; ya verificado responde 409. No verifica el consentimiento: usa verify-consent.',
   })
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiParam({ name: 'assignmentId', type: String })
@@ -177,6 +177,11 @@ export class MembershipRequestsController {
     status: 404,
     description:
       'MR_NOT_FOUND (solicitud inexistente, de otra sección o ya procesada) o GUARDIANSHIP_NOT_FOUND (no es un menor)',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'GUARDIANSHIP_CONSENT_ALREADY_VERIFIED: el consentimiento ya está verificado; la ficha verificada no se reemplaza',
   })
   @ApiResponse({
     status: 503,

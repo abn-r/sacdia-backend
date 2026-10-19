@@ -5,6 +5,7 @@ import 'multer';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
   AppBadRequestException,
+  AppConflictException,
   AppNotFoundException,
   AppServiceUnavailableException,
 } from '../common/errors/app.exception';
@@ -15,6 +16,7 @@ import {
   type FileStorageService,
 } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import type { Db } from './guardianship-queries';
 import { CONSENT_EVIDENCE_MIME_TYPES } from './consent-evidence-file.pipe';
 import {
   ACTIVE_USER_GUARDIAN,
@@ -86,6 +88,9 @@ interface EvidenceTarget {
  *   it for the custodian four-eyes rule.
  * - A re-upload supersedes the previous current row but KEEPS its object (legal
  *   history). At most one row is current (`uq_guardianship_consent_evidences_current`).
+ * - Once the consent is verified the verified form stays the current one: a new
+ *   upload is a 409 GUARDIANSHIP_CONSENT_ALREADY_VERIFIED (replacing it needs a
+ *   revocation, i.e. a new guardianship).
  * - Files are only ever served through signed URLs (TTL 900 s) and every read is
  *   audited. No public URL exists for this bucket.
  * - Fail closed: while the bucket is not configured every operation is a 503
@@ -304,6 +309,9 @@ export class GuardianEvidenceService {
     }
     const extension = EXTENSION_BY_MIME[file.mimetype];
 
+    // Fail fast before storing anything; re-checked under the lock below.
+    await this.assertConsentNotVerified(this.prisma, target.dependentUserId);
+
     const uploaded = await this.storage.upload(
       StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
       `${target.guardianshipId}/${randomUUID()}.${extension}`,
@@ -325,6 +333,8 @@ export class GuardianEvidenceService {
         if (!live) {
           throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
         }
+        // A verification that won the lock keeps its form current.
+        await this.assertConsentNotVerified(tx, target.dependentUserId);
 
         const now = new Date();
         await tx.guardianship_consent_evidences.updateMany({
@@ -373,6 +383,28 @@ export class GuardianEvidenceService {
       size_bytes: file.size ?? file.buffer.length,
       uploaded_at: created.uploaded_at.toISOString(),
     };
+  }
+
+  /**
+   * Same notion of "verified" as the approve gate: any real (non-test) row of
+   * the dependent with consent_status verified.
+   */
+  private async assertConsentNotVerified(
+    db: Db,
+    dependentUserId: string,
+  ): Promise<void> {
+    const verified = await db.guardianships.count({
+      where: {
+        dependent_user_id: dependentUserId,
+        consent_status: 'verified',
+        is_test_data: false,
+      },
+    });
+    if (verified > 0) {
+      throw new AppConflictException(
+        ErrorCode.GUARDIANSHIP_CONSENT_ALREADY_VERIFIED,
+      );
+    }
   }
 
   private async requireCurrent(

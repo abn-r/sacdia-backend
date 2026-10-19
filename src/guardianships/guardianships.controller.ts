@@ -145,13 +145,18 @@ export class GuardianshipsController {
   @ApiOperation({
     summary: 'Upload the signed consent form of a dependent (photo or PDF)',
     description:
-      'JPEG, PNG, WebP or PDF up to 10 MB, multipart field `file`. HEIC is rejected: convert to JPEG first. The form only waits for the director; it never verifies the consent. A new upload supersedes the previous one.',
+      'JPEG, PNG, WebP or PDF up to 10 MB, multipart field `file`. HEIC is rejected: convert to JPEG first. The form only waits for the director; it never verifies the consent. A new upload supersedes the previous one while the consent is pending; once verified it is a 409.',
   })
   @ApiResponse({
     status: 201,
     description: '{ evidence_id, content_type, size_bytes, uploaded_at }',
   })
   @ApiResponse({ status: 404, description: 'GUARDIANSHIP_NOT_FOUND' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'GUARDIANSHIP_CONSENT_ALREADY_VERIFIED: the consent is verified, the verified form cannot be replaced',
+  })
   @ApiResponse({
     status: 503,
     description:

@@ -803,5 +803,6 @@
   "GUARDIANSHIP_EVIDENCE_REQUIRED": "Envie a ficha de consentimento assinada antes de verificar o consentimento",
   "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "As fichas de consentimento não podem ser armazenadas nem consultadas no momento. Tente novamente mais tarde",
   "GUARDIANSHIP_CUSTODIAN_SELF_VERIFY": "Um menor sob custódia do clube deve ser verificado por outra pessoa autorizada do clube, não por quem enviou a ficha nem por quem o recebeu em custódia",
-  "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirme que você revisou a ficha em papel assinada antes de verificar o consentimento"
+  "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirme que você revisou a ficha em papel assinada antes de verificar o consentimento",
+  "GUARDIANSHIP_CONSENT_ALREADY_VERIFIED": "O consentimento do responsável deste menor já foi verificado: a ficha assinada não pode mais ser substituída"
 }
