@@ -24,6 +24,13 @@ const KIND_TEXT: Record<DependentEvidenceKind, string> = {
 };
 
 export const EVIDENCE_UPLOADED_SOURCE = 'family:evidence_uploaded';
+export const CONSENT_VERIFIED_SOURCE = 'family:consent_verified';
+
+export interface DependentConsentVerifiedInput {
+  dependentUserId: string;
+  /** The director who verified; never notified about their own action. */
+  verifierUserId: string;
+}
 
 /**
  * Tells a dependent's guardians that evidence was uploaded FOR the child.
@@ -113,6 +120,72 @@ export class GuardianNotificationsService {
     } catch (error) {
       this.logger.warn(
         `Evidence-upload notification failed for ${input.dependentUserId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+  /**
+   * Tells every active guardian that the director verified the consent, so the
+   * child can now enroll in classes and honors. One-way and informational (no
+   * chat). Best effort: it never throws, call it AFTER the verification
+   * committed.
+   */
+  async onConsentVerified(input: DependentConsentVerifiedInput): Promise<void> {
+    try {
+      const dependent = await this.prisma.users.findFirst({
+        where: {
+          user_id: input.dependentUserId,
+          active: true,
+          account: { none: {} },
+          dependent_profile: { is: { frozen_at: null, purged_at: null } },
+        },
+        select: {
+          name: true,
+          guardianships_as_dependent: {
+            where: ACTIVE_USER_GUARDIAN,
+            select: { guardian_user_id: true },
+          },
+        },
+      });
+      if (!dependent) {
+        return;
+      }
+
+      const recipients = [
+        ...new Set(
+          dependent.guardianships_as_dependent
+            .map((row) => row.guardian_user_id)
+            .filter(
+              (id): id is string => id !== null && id !== input.verifierUserId,
+            ),
+        ),
+      ];
+      if (recipients.length === 0) {
+        return;
+      }
+
+      const first = (dependent.name ?? '').trim().split(/\s+/)[0] || 'Tu menor';
+      await Promise.allSettled(
+        recipients.map((guardianId) =>
+          this.notifications.sendToUser(
+            {
+              userId: guardianId,
+              title: `${first} · consentimiento verificado`,
+              body: 'El club verificó la ficha de consentimiento firmada.',
+              data: {
+                type: 'dependent_consent_verified',
+                dependent_user_id: input.dependentUserId,
+              },
+            },
+            'system',
+            CONSENT_VERIFIED_SOURCE,
+          ),
+        ),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Consent-verified notification failed for ${input.dependentUserId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

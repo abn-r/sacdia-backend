@@ -51,9 +51,14 @@ export class MembershipRequestsService {
 
   /**
    * List pending membership requests for a club section.
+   *
+   * Each item carries a `consent` block: `null` for adults, and for dependents
+   * (minors without an account) the consent status, whether the signed form is
+   * uploaded and who the guardians are. The blocks come from ONE batched read
+   * for the whole page. `users.email` is null for dependents.
    */
   async listPending(clubSectionId: number) {
-    return this.prisma.club_role_assignments.findMany({
+    const requests = await this.prisma.club_role_assignments.findMany({
       where: {
         club_section_id: clubSectionId,
         status: 'pending',
@@ -79,6 +84,14 @@ export class MembershipRequestsService {
       },
       orderBy: { created_at: 'asc' },
     });
+
+    const consent = await this.consentGate.loadConsentBlocks(this.prisma, [
+      ...new Set(requests.map((request) => request.user_id)),
+    ]);
+    return requests.map((request) => ({
+      ...request,
+      consent: consent.get(request.user_id) ?? null,
+    }));
   }
 
   /**
@@ -322,12 +335,17 @@ export class MembershipRequestsService {
   async notifyNewRequestCreated(
     input: PendingMembershipRequestNotificationInput,
   ): Promise<void> {
+    const consentPending = await this.hasConsentPending(input.userId);
     void this.notificationsService
       .sendToSectionRole(
         input.clubSectionId,
         [...MEMBERSHIP_REQUEST_REVIEWER_ROLES],
-        'Nueva persona esperando aprobación',
-        'Hay una solicitud de membresía lista para revisar en tu sección.',
+        consentPending
+          ? 'Menor · consentimiento pendiente'
+          : 'Nueva persona esperando aprobación',
+        consentPending
+          ? 'Hay una solicitud de un menor lista para revisar. Verifica la ficha de consentimiento firmada antes de aprobarla.'
+          : 'Hay una solicitud de membresía lista para revisar en tu sección.',
         {
           type: 'membership_request_created',
           userId: input.userId,
@@ -343,6 +361,27 @@ export class MembershipRequestsService {
           }`,
         );
       });
+  }
+
+  /**
+   * Is the requester a minor whose guardian consent is not verified yet? A
+   * failed lookup only costs the specific copy, never the notification.
+   */
+  private async hasConsentPending(userId: string): Promise<boolean> {
+    try {
+      const consent = await this.consentGate.loadDependentConsent(this.prisma, [
+        userId,
+      ]);
+      const state = consent.get(userId);
+      return state !== undefined && state.verifiedAt === null;
+    } catch (error) {
+      this.logger.warn(
+        `Consent lookup for the new-request notification failed (${userId}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    }
   }
 
   /**

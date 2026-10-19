@@ -801,5 +801,7 @@
   "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "La date de naissance indique que vous n'avez pas l'âge minimum pour avoir un compte",
   "GUARDIANSHIP_EVIDENCE_NOT_FOUND": "Aucune fiche de consentement signée n'a encore été téléversée",
   "GUARDIANSHIP_EVIDENCE_REQUIRED": "Téléversez la fiche de consentement signée avant de vérifier le consentement",
-  "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "Les fiches de consentement ne peuvent pas être enregistrées ni consultées pour le moment. Réessayez plus tard"
+  "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "Les fiches de consentement ne peuvent pas être enregistrées ni consultées pour le moment. Réessayez plus tard",
+  "GUARDIANSHIP_CUSTODIAN_SELF_VERIFY": "Un mineur sous la garde du club doit être vérifié par une autre personne autorisée du club, pas par celle qui a téléversé la fiche ni par celle qui l'a pris en charge",
+  "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirmez que vous avez examiné la fiche papier signée avant de vérifier le consentement"
 }

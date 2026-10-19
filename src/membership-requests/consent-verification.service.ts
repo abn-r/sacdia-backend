@@ -1,0 +1,444 @@
+import { Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
+import {
+  getAuditCorrelationId,
+  markExplicitAuditRecorded,
+} from '../audit-logs/audit-request-context';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
+import { GuardianNotificationsService } from '../guardianships/guardian-notifications.service';
+import {
+  NOT_REVOKED,
+  findSectionAssignment,
+  lockDependent,
+} from '../guardianships/guardianship-queries';
+import { PrismaService } from '../prisma/prisma.service';
+import type { VerifyConsentDto } from './dto';
+import { MembershipRequestsService } from './membership-requests.service';
+
+export interface VerifiedGuardianship {
+  guardianship_id: string;
+  consent_status: 'verified';
+  verified_at: string;
+  verified_by_user_id: string | null;
+  verification_method: string | null;
+}
+
+export interface VerifyConsentResult {
+  guardianship: VerifiedGuardianship;
+  /** The approved request when `approve` was asked and succeeded, else null. */
+  assignment: unknown;
+  /**
+   * Set when `approve` was asked and approving failed AFTER the consent was
+   * committed: the code of the failure. The consent stays verified and
+   * calling verify-consent again retries only the approval.
+   */
+  approve_error: string | null;
+}
+
+/** Revoked reasons that mean "this guardian handed the child over to the club". */
+const CUSTODY_TRIGGER_REASONS = ['guardian_left', 'guardian_account_closed'];
+
+const VERIFY_ROW_SELECT = {
+  guardianship_id: true,
+  dependent_user_id: true,
+  guardian_user_id: true,
+  is_custodian: true,
+  consent_status: true,
+  verification_method: true,
+  verified_at: true,
+  verified_by_user_id: true,
+  consent_evidences: {
+    where: { superseded_at: null, purged_at: null },
+    select: { evidence_id: true, uploaded_by_user_id: true },
+    take: 1,
+  },
+  dependent: {
+    select: {
+      dependent_profile: { select: { created_by_user_id: true } },
+    },
+  },
+} satisfies Prisma.guardianshipsSelect;
+
+type VerifyRow = Prisma.guardianshipsGetPayload<{
+  select: typeof VERIFY_ROW_SELECT;
+}>;
+
+interface VerifyTransactionResult {
+  dependentUserId: string;
+  row: VerifiedGuardianship;
+  /** Consent flipped to verified in THIS call (drives the side effects). */
+  newlyVerified: boolean;
+  /** Set when the request was already approved by an earlier identical call. */
+  alreadyApproved: unknown;
+}
+
+/**
+ * The director verifies a minor's consent after reviewing the signed paper form
+ * (FP-73). One transaction, serialized per dependent with the same advisory lock
+ * as revoke/leave/upload:
+ *
+ *  - the request must be a pending one of the section in the path;
+ *  - the consent lives on the dependent's ACTIVE PRIMARY row (guardian or club
+ *    custody); with no such row nothing is written (no orphan verified row);
+ *  - a current signed form must exist (409 GUARDIANSHIP_EVIDENCE_REQUIRED);
+ *  - four-eyes for CUSTODY rows (ruling A14): the verifier cannot be the person
+ *    who uploaded the current form, who created the dependent, or the guardian
+ *    who handed the child over to the club (403 GUARDIANSHIP_CUSTODIAN_SELF_VERIFY);
+ *  - invited guardians waiting on the verified row become verified too;
+ *  - the audit row `guardianship.consent_verified` is written in the same
+ *    transaction.
+ *
+ * After the commit: the acting-for epoch is bumped (the guardian's scopes
+ * expand on the very next request), guardians are told, and when asked the
+ * request is approved. A failing approval never undoes the consent.
+ */
+@Injectable()
+export class ConsentVerificationService {
+  private readonly logger = new Logger(ConsentVerificationService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly actingForCache: ActingForCache,
+    private readonly membershipRequests: MembershipRequestsService,
+    private readonly guardianNotifications: GuardianNotificationsService,
+  ) {}
+
+  async verify(
+    clubSectionId: number,
+    assignmentId: string,
+    verifierId: string,
+    dto: VerifyConsentDto,
+  ): Promise<VerifyConsentResult> {
+    if (dto.confirm_paper_form_reviewed !== true) {
+      throw new AppBadRequestException(
+        ErrorCode.MR_CONSENT_CONFIRMATION_REQUIRED,
+      );
+    }
+
+    const outcome = await this.prisma.$transaction((tx) =>
+      this.verifyInTransaction(tx, clubSectionId, assignmentId, verifierId),
+    );
+
+    if (outcome.newlyVerified) {
+      // Epoch bump never throws; guardians learn about it best effort.
+      await this.actingForCache.bump(outcome.dependentUserId);
+      void this.guardianNotifications.onConsentVerified({
+        dependentUserId: outcome.dependentUserId,
+        verifierUserId: verifierId,
+      });
+    }
+
+    const result: VerifyConsentResult = {
+      guardianship: outcome.row,
+      assignment: dto.approve === true ? outcome.alreadyApproved : null,
+      approve_error: null,
+    };
+    if (dto.approve === true && outcome.alreadyApproved === null) {
+      try {
+        result.assignment = await this.membershipRequests.approve(
+          clubSectionId,
+          assignmentId,
+          verifierId,
+        );
+      } catch (error) {
+        result.approve_error =
+          error instanceof AppException
+            ? error.code
+            : ErrorCode.INTERNAL_SERVER_ERROR;
+        this.logger.warn(
+          `Consent verified but approving ${assignmentId} failed (${result.approve_error}): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    return result;
+  }
+
+  private async verifyInTransaction(
+    tx: Prisma.TransactionClient,
+    clubSectionId: number,
+    assignmentId: string,
+    verifierId: string,
+  ): Promise<VerifyTransactionResult> {
+    // The request decides WHICH dependent to lock; its state is re-read below.
+    const probe = await findSectionAssignment(tx, clubSectionId, assignmentId);
+    if (!probe || !probe.active) {
+      throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+    }
+    const dependentId = probe.user_id;
+    const profile = await tx.dependent_profiles.findUnique({
+      where: { user_id: dependentId },
+      select: { user_id: true },
+    });
+    if (!profile) {
+      // Adults have no guardian consent to verify.
+      throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+    }
+
+    await lockDependent(tx, dependentId);
+
+    const assignment = await findSectionAssignment(
+      tx,
+      clubSectionId,
+      assignmentId,
+    );
+    if (!assignment || !assignment.active) {
+      throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+    }
+
+    const row = await tx.guardianships.findFirst({
+      where: {
+        dependent_user_id: dependentId,
+        is_primary: true,
+        is_test_data: false,
+        ...NOT_REVOKED,
+      },
+      select: VERIFY_ROW_SELECT,
+    });
+    if (!row) {
+      // The last guardian left and nobody took over (or only test data): there
+      // is nothing to verify. No row is written.
+      throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+    }
+
+    if (assignment.status !== 'pending') {
+      // A repeated call after the first one already approved the request is a
+      // no-op success; any other processed state is the usual 409.
+      if (assignment.status === 'active' && row.consent_status === 'verified') {
+        return {
+          dependentUserId: dependentId,
+          row: this.toVerified(row),
+          newlyVerified: false,
+          alreadyApproved: await tx.club_role_assignments.findUnique({
+            where: { assignment_id: assignmentId },
+          }),
+        };
+      }
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+    }
+
+    if (row.consent_status === 'verified') {
+      return {
+        dependentUserId: dependentId,
+        row: this.toVerified(row),
+        newlyVerified: false,
+        alreadyApproved: null,
+      };
+    }
+
+    const evidence = row.consent_evidences[0];
+    if (!evidence) {
+      throw new AppConflictException(ErrorCode.GUARDIANSHIP_EVIDENCE_REQUIRED);
+    }
+    if (row.is_custodian) {
+      await this.assertFourEyes(
+        tx,
+        row,
+        evidence.uploaded_by_user_id,
+        verifierId,
+      );
+    }
+
+    const now = new Date();
+    const updated = await tx.guardianships.updateMany({
+      where: {
+        guardianship_id: row.guardianship_id,
+        consent_status: 'pending',
+      },
+      data: {
+        consent_status: 'verified',
+        verified_by_user_id: verifierId,
+        verified_at: now,
+        verification_method: 'director_paper_form',
+        modified_at: now,
+      },
+    });
+    if (updated.count === 0) {
+      // Someone else verified or revoked it between our read and this write.
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+    }
+
+    const promoted = await this.promoteInvitees(
+      tx,
+      row.guardianship_id,
+      row.guardian_user_id,
+      now,
+    );
+
+    await this.recordAudit(tx, {
+      guardianshipId: row.guardianship_id,
+      dependentId,
+      verifierId,
+      evidenceId: evidence.evidence_id,
+      clubSectionId,
+      assignmentId,
+      custody: row.is_custodian,
+      promoted,
+      at: now,
+    });
+
+    return {
+      dependentUserId: dependentId,
+      row: {
+        guardianship_id: row.guardianship_id,
+        consent_status: 'verified',
+        verified_at: now.toISOString(),
+        verified_by_user_id: verifierId,
+        verification_method: 'director_paper_form',
+      },
+      newlyVerified: true,
+      alreadyApproved: null,
+    };
+  }
+
+  /**
+   * Custody rows have no guardian user, so "the custodian" is whoever put the
+   * child there: the uploader of the current form, the creator of the
+   * dependent and the guardian who handed the child over. None of them may
+   * verify the custody; another authorized person of the club (or an admin)
+   * must.
+   */
+  private async assertFourEyes(
+    tx: Prisma.TransactionClient,
+    row: VerifyRow,
+    evidenceUploaderId: string,
+    verifierId: string,
+  ): Promise<void> {
+    const forbidden = new Set<string>([evidenceUploaderId]);
+    const creatorId = row.dependent.dependent_profile?.created_by_user_id;
+    if (creatorId) forbidden.add(creatorId);
+
+    const handedOver = await tx.guardianships.findFirst({
+      where: {
+        dependent_user_id: row.dependent_user_id,
+        is_custodian: false,
+        guardian_user_id: { not: null },
+        consent_status: 'revoked',
+        revoked_reason: { in: CUSTODY_TRIGGER_REASONS },
+      },
+      orderBy: { revoked_at: 'desc' },
+      select: { guardian_user_id: true },
+    });
+    if (handedOver?.guardian_user_id)
+      forbidden.add(handedOver.guardian_user_id);
+
+    if (forbidden.has(verifierId)) {
+      throw new AppForbiddenException(
+        ErrorCode.GUARDIANSHIP_CUSTODIAN_SELF_VERIFY,
+      );
+    }
+  }
+
+  /**
+   * A guardian invited through a link code while the row was still pending is
+   * vouched for by the one who invited them: when that row becomes verified so
+   * do they (transitively, a chain is at most 4 guardians long).
+   */
+  private async promoteInvitees(
+    tx: Prisma.TransactionClient,
+    verifiedGuardianshipId: string,
+    verifiedGuardianUserId: string | null,
+    at: Date,
+  ): Promise<string[]> {
+    const promoted: string[] = [];
+    let frontier: Array<{ id: string; guardianUserId: string | null }> = [
+      { id: verifiedGuardianshipId, guardianUserId: verifiedGuardianUserId },
+    ];
+    while (frontier.length > 0) {
+      const next: typeof frontier = [];
+      for (const parent of frontier) {
+        const invitees = await tx.guardianships.findMany({
+          where: {
+            invited_by_guardianship_id: parent.id,
+            consent_status: 'pending',
+            is_test_data: false,
+          },
+          select: { guardianship_id: true, guardian_user_id: true },
+        });
+        for (const invitee of invitees) {
+          await tx.guardianships.update({
+            where: { guardianship_id: invitee.guardianship_id },
+            data: {
+              consent_status: 'verified',
+              verification_method: 'guardian_invite',
+              verified_at: at,
+              verified_by_user_id: parent.guardianUserId,
+              modified_at: at,
+            },
+          });
+          promoted.push(invitee.guardianship_id);
+          next.push({
+            id: invitee.guardianship_id,
+            guardianUserId: invitee.guardian_user_id,
+          });
+        }
+      }
+      frontier = next;
+    }
+    return promoted;
+  }
+
+  /**
+   * Written with the SAME transaction client so the verification and its audit
+   * row commit or roll back together.
+   */
+  private async recordAudit(
+    tx: Prisma.TransactionClient,
+    input: {
+      guardianshipId: string;
+      dependentId: string;
+      verifierId: string;
+      evidenceId: string;
+      clubSectionId: number;
+      assignmentId: string;
+      custody: boolean;
+      promoted: string[];
+      at: Date;
+    },
+  ): Promise<void> {
+    // The domain row replaces the generic HTTP one for this request.
+    markExplicitAuditRecorded();
+    await tx.audit_logs.create({
+      data: {
+        entity_type: 'guardianship',
+        entity_id: input.guardianshipId,
+        action: 'consent_verified',
+        actor_user_id: input.verifierId,
+        actor_kind: 'user',
+        target_user_id: input.dependentId,
+        summary: 'Consentimiento del tutor verificado por el director',
+        changes: {
+          verification_method: 'director_paper_form',
+          evidence_id: input.evidenceId,
+          club_section_id: input.clubSectionId,
+          assignment_id: input.assignmentId,
+          custody: input.custody,
+          promoted_guardianship_ids: input.promoted,
+        },
+        result: 'succeeded',
+        source: 'service',
+        correlation_id: getAuditCorrelationId() ?? null,
+        effective_at: input.at,
+      },
+    });
+  }
+
+  private toVerified(row: VerifyRow): VerifiedGuardianship {
+    return {
+      guardianship_id: row.guardianship_id,
+      consent_status: 'verified',
+      verified_at: (row.verified_at ?? new Date(0)).toISOString(),
+      verified_by_user_id: row.verified_by_user_id,
+      verification_method: row.verification_method,
+    };
+  }
+}

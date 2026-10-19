@@ -60,6 +60,13 @@ describe('MembershipRequestsService', () => {
     system_config: {
       findUnique: jest.fn(),
     },
+    // Read by the consent block of listPending and by the new-request copy.
+    dependent_profiles: {
+      findMany: jest.fn(),
+    },
+    guardianships: {
+      findMany: jest.fn(),
+    },
   };
 
   const mockAuthorizationContext = {
@@ -89,6 +96,11 @@ describe('MembershipRequestsService', () => {
     mockRoleEligibility.assertAssignment.mockReset().mockResolvedValue({
       allowed: true,
     });
+    // Adults by default: no dependent anywhere.
+    mockPrismaService.dependent_profiles.findMany
+      .mockReset()
+      .mockResolvedValue([]);
+    mockPrismaService.guardianships.findMany.mockReset().mockResolvedValue([]);
     transactionMock = createTransactionMock();
     mockPrismaService.$transaction.mockImplementation(
       (
@@ -820,6 +832,171 @@ describe('MembershipRequestsService', () => {
         },
         'membership_requests:new_request',
       );
+    });
+
+    it('uses the "Menor · consentimiento pendiente" copy for a dependent whose consent is pending', async () => {
+      mockPrismaService.dependent_profiles.findMany.mockResolvedValue([
+        { user_id: userId },
+      ]);
+      mockPrismaService.guardianships.findMany.mockResolvedValue([]);
+
+      await service.notifyNewRequestCreated({
+        userId,
+        clubSectionId: 10,
+        assignmentId: pendingAssignment.assignment_id,
+      });
+
+      const call = mockNotificationsService.sendToSectionRole.mock.calls[0];
+      expect(call[2]).toBe('Menor · consentimiento pendiente');
+      expect(call[3]).toContain('ficha de consentimiento firmada');
+      expect(call[5]).toBe('membership_requests:new_request');
+    });
+
+    it('keeps the normal copy for a dependent whose consent is already verified', async () => {
+      mockPrismaService.dependent_profiles.findMany.mockResolvedValue([
+        { user_id: userId },
+      ]);
+      mockPrismaService.guardianships.findMany.mockResolvedValue([
+        { dependent_user_id: userId, verified_at: new Date() },
+      ]);
+
+      await service.notifyNewRequestCreated({
+        userId,
+        clubSectionId: 10,
+        assignmentId: pendingAssignment.assignment_id,
+      });
+
+      expect(mockNotificationsService.sendToSectionRole.mock.calls[0][2]).toBe(
+        'Nueva persona esperando aprobación',
+      );
+    });
+
+    it('still notifies with the normal copy when the consent lookup fails', async () => {
+      mockPrismaService.dependent_profiles.findMany.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await service.notifyNewRequestCreated({
+        userId,
+        clubSectionId: 10,
+        assignmentId: pendingAssignment.assignment_id,
+      });
+
+      expect(mockNotificationsService.sendToSectionRole).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(mockNotificationsService.sendToSectionRole.mock.calls[0][2]).toBe(
+        'Nueva persona esperando aprobación',
+      );
+    });
+  });
+
+  describe('listPending consent block (FP-72)', () => {
+    const dependentA = 'aaaaaaaa-0000-4000-8000-00000000000a';
+    const dependentB = 'bbbbbbbb-0000-4000-8000-00000000000b';
+    const request = (user_id: string, email: string | null) => ({
+      assignment_id: `as-${user_id}`,
+      user_id,
+      club_section_id: 10,
+      status: 'pending',
+      users: { user_id, name: 'N', email },
+      roles: { role_id: 'r', role_name: 'member' },
+    });
+
+    it('adds null to adults and a block to dependents, with constant consent queries', async () => {
+      const adults = ['a1', 'a2', 'a3'];
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        request(adults[0], 'a1@x.org'),
+        request(dependentA, null),
+        request(adults[1], 'a2@x.org'),
+        request(dependentB, null),
+        request(adults[2], 'a3@x.org'),
+      ]);
+      mockPrismaService.dependent_profiles.findMany.mockResolvedValue([
+        { user_id: dependentA },
+        { user_id: dependentB },
+      ]);
+      mockPrismaService.guardianships.findMany.mockResolvedValue([
+        {
+          guardianship_id: 'g-a',
+          dependent_user_id: dependentA,
+          is_primary: true,
+          is_custodian: false,
+          consent_status: 'pending',
+          external_name: null,
+          relationship_type: { name: 'Madre' },
+          guardian: { name: 'María', paternal_last_name: 'Pérez' },
+          custodian_club: null,
+          consent_evidences: [{ evidence_id: 'e-1' }],
+        },
+        {
+          guardianship_id: 'g-b',
+          dependent_user_id: dependentB,
+          is_primary: true,
+          is_custodian: false,
+          consent_status: 'verified',
+          external_name: null,
+          relationship_type: { name: 'Padre' },
+          guardian: { name: 'Luis', paternal_last_name: 'Gómez' },
+          custodian_club: null,
+          consent_evidences: [],
+        },
+      ]);
+
+      const result = await service.listPending(10);
+
+      expect(result.map((item) => item.consent === null)).toEqual([
+        true,
+        false,
+        true,
+        false,
+        true,
+      ]);
+      expect(result[1].consent).toMatchObject({
+        required: true,
+        dependent: true,
+        guardianship_id: 'g-a',
+        status: 'pending',
+        evidence_uploaded: true,
+        guardians: [
+          {
+            display_name: 'María Pérez',
+            relationship_type_name: 'Madre',
+            is_primary: true,
+          },
+        ],
+      });
+      expect(result[3].consent).toMatchObject({
+        guardianship_id: 'g-b',
+        status: 'verified',
+        evidence_uploaded: false,
+      });
+      // Constant: one read per table for the whole page, not one per request.
+      expect(
+        mockPrismaService.dependent_profiles.findMany,
+      ).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.guardianships.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a null email as null in the item (no 500)', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        request(dependentA, null),
+      ]);
+
+      const [item] = await service.listPending(10);
+
+      expect(item.users.email).toBeNull();
+    });
+
+    it('does not read guardianships when nobody in the page is a dependent', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        request('a1', 'a1@x.org'),
+      ]);
+
+      const result = await service.listPending(10);
+
+      expect(result[0].consent).toBeNull();
+      expect(mockPrismaService.guardianships.findMany).not.toHaveBeenCalled();
     });
   });
 });

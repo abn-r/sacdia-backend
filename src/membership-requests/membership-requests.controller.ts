@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpCode,
   Post,
   Param,
   Body,
@@ -23,7 +24,8 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import 'multer';
 import { MembershipRequestsService } from './membership-requests.service';
-import { RejectRequestDto } from './dto';
+import { RejectRequestDto, VerifyConsentDto } from './dto';
+import { ConsentVerificationService } from './consent-verification.service';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import { namedThrottle } from '../config/throttler.helpers';
 import { ConsentEvidenceFilePipe } from '../guardianships/consent-evidence-file.pipe';
@@ -47,6 +49,7 @@ export class MembershipRequestsController {
   constructor(
     private readonly membershipRequestsService: MembershipRequestsService,
     private readonly evidence: GuardianEvidenceService,
+    private readonly consentVerification: ConsentVerificationService,
   ) {}
 
   @Get()
@@ -225,6 +228,50 @@ export class MembershipRequestsController {
       currentUser.sub,
       clubSectionId,
       assignmentId,
+    );
+    return { status: 'success', data };
+  }
+  @Post(':assignmentId/verify-consent')
+  @HttpCode(200)
+  @RequirePermissions('club_members:approve')
+  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
+  @ApiOperation({
+    summary: 'Verificar el consentimiento del tutor de un menor',
+    description:
+      'El director confirma haber revisado la ficha firmada. Requiere ficha vigente subida (409 GUARDIANSHIP_EVIDENCE_REQUIRED). Si el menor está bajo custodia del club, quien subió la ficha, quien creó al menor o el tutor que lo cedió no pueden verificar (403 GUARDIANSHIP_CUSTODIAN_SELF_VERIFY). Con approve=true también aprueba la solicitud; si la aprobación falla el consentimiento queda verificado y `approve_error` trae el código (reintentar la misma llamada). Idempotente.',
+  })
+  @ApiParam({ name: 'clubSectionId', type: Number })
+  @ApiParam({ name: 'assignmentId', type: String })
+  @ApiResponse({
+    status: 200,
+    description:
+      '{ guardianship: { guardianship_id, consent_status, verified_at, verified_by_user_id, verification_method }, assignment: {...}|null, approve_error: string|null }',
+  })
+  @ApiResponse({ status: 400, description: 'MR_CONSENT_CONFIRMATION_REQUIRED' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Sin club_members:approve o GUARDIANSHIP_CUSTODIAN_SELF_VERIFY',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'MR_NOT_FOUND o GUARDIANSHIP_NOT_FOUND',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'GUARDIANSHIP_EVIDENCE_REQUIRED o MR_ALREADY_PENDING',
+  })
+  async verifyConsent(
+    @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Body() dto: VerifyConsentDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ) {
+    const data = await this.consentVerification.verify(
+      clubSectionId,
+      assignmentId,
+      currentUser.sub,
+      dto,
     );
     return { status: 'success', data };
   }

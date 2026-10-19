@@ -281,6 +281,70 @@ describe('ActingForResolver', () => {
     });
   });
 
+  describe('after the director verifies the consent (FP-74)', () => {
+    const CLASSES_HONORS_EVIDENCE = [
+      'classes:write',
+      'honors:write',
+      'evidence:upload',
+    ];
+
+    it('the pending grant cannot write classes, honors or evidence', async () => {
+      prisma.guardianships.findFirst.mockResolvedValue(guardianshipRow());
+
+      const result = await resolver.resolve(GUARDIAN, DEPENDENT);
+
+      expect(result).toMatchObject({ granted: true });
+      const scopes = (result as { grant: { scopes: string[] } }).grant.scopes;
+      for (const scope of CLASSES_HONORS_EVIDENCE) {
+        expect(scopes).not.toContain(scope);
+      }
+    });
+
+    it('verification + epoch bump expands the scopes on the very next resolve, past a cached pending grant', async () => {
+      prisma.guardianships.findFirst.mockResolvedValue(guardianshipRow());
+      const before = await resolver.resolve(GUARDIAN, DEPENDENT);
+      // Cached: a second resolve does not even touch the database.
+      await resolver.resolve(GUARDIAN, DEPENDENT);
+      expect(prisma.guardianships.findFirst).toHaveBeenCalledTimes(1);
+
+      // The director verifies (consent_status flips) and the service bumps.
+      prisma.guardianships.findFirst.mockResolvedValue(
+        guardianshipRow({ consent_status: 'verified' }),
+      );
+      await actingCache.bump(DEPENDENT);
+      const after = await resolver.resolve(GUARDIAN, DEPENDENT);
+
+      expect(before).toMatchObject({
+        granted: true,
+        grant: { consentStatus: 'pending' },
+      });
+      expect(after).toEqual({
+        granted: true,
+        grant: expect.objectContaining({
+          consentStatus: 'verified',
+          scopes: GUARDIAN_VERIFIED_SCOPES,
+        }),
+      });
+      const scopes = (after as { grant: { scopes: readonly string[] } }).grant
+        .scopes;
+      for (const scope of CLASSES_HONORS_EVIDENCE) {
+        expect(scopes).toContain(scope);
+      }
+    });
+
+    it('without the bump the cached pending grant would linger (proves the bump is what expands the scopes)', async () => {
+      prisma.guardianships.findFirst.mockResolvedValue(guardianshipRow());
+      await resolver.resolve(GUARDIAN, DEPENDENT);
+      prisma.guardianships.findFirst.mockResolvedValue(
+        guardianshipRow({ consent_status: 'verified' }),
+      );
+
+      const stale = await resolver.resolve(GUARDIAN, DEPENDENT);
+
+      expect(stale).toMatchObject({ grant: { consentStatus: 'pending' } });
+    });
+  });
+
   describe('cache', () => {
     it('serves a cache hit without touching the database', async () => {
       prisma.guardianships.findFirst.mockResolvedValue(guardianshipRow());

@@ -814,5 +814,7 @@
   "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "The birthday indicates you are below the minimum age to hold your own account",
   "GUARDIANSHIP_EVIDENCE_NOT_FOUND": "No signed consent form has been uploaded yet",
   "GUARDIANSHIP_EVIDENCE_REQUIRED": "Upload the signed consent form before verifying the consent",
-  "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "Consent forms cannot be stored or read right now. Try again later"
+  "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "Consent forms cannot be stored or read right now. Try again later",
+  "GUARDIANSHIP_CUSTODIAN_SELF_VERIFY": "A minor under club custody must be verified by another authorized person of the club, not by whoever uploaded the form or took the minor into custody",
+  "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirm that you reviewed the signed paper form before verifying the consent"
 }

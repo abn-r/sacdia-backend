@@ -814,5 +814,7 @@
   "USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE": "La fecha de nacimiento indica que no tienes la edad mínima para tener una cuenta propia",
   "GUARDIANSHIP_EVIDENCE_NOT_FOUND": "Aún no se ha subido la ficha de consentimiento firmada",
   "GUARDIANSHIP_EVIDENCE_REQUIRED": "Sube la ficha de consentimiento firmada antes de verificar el consentimiento",
-  "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "Las fichas de consentimiento no se pueden guardar ni consultar por ahora. Inténtalo más tarde"
+  "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "Las fichas de consentimiento no se pueden guardar ni consultar por ahora. Inténtalo más tarde",
+  "GUARDIANSHIP_CUSTODIAN_SELF_VERIFY": "Un menor bajo custodia del club debe ser verificado por otra persona autorizada del club, no por quien subió la ficha ni por quien lo recibió en custodia",
+  "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirma que revisaste la ficha firmada en papel antes de verificar el consentimiento"
 }

@@ -166,3 +166,63 @@ describe('GuardianNotificationsService.onDependentEvidenceUploaded', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe('GuardianNotificationsService.onConsentVerified', () => {
+  it('tells every active guardian but the verifier, with the family consent source', async () => {
+    const { service, notifications } = setup(dependentWith([G1, G2]));
+
+    await service.onConsentVerified({
+      dependentUserId: DEPENDENT,
+      verifierUserId: G2,
+    });
+
+    expect(notifications.sendToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendToUser).toHaveBeenCalledWith(
+      {
+        userId: G1,
+        title: 'Ana · consentimiento verificado',
+        body: 'El club verificó la ficha de consentimiento firmada.',
+        data: {
+          type: 'dependent_consent_verified',
+          dependent_user_id: DEPENDENT,
+        },
+      },
+      'system',
+      'family:consent_verified',
+    );
+  });
+
+  it('is a no-op for a dependent that is gone, frozen or has an account', async () => {
+    const { service, notifications } = setup(null);
+
+    await service.onConsentVerified({
+      dependentUserId: DEPENDENT,
+      verifierUserId: G2,
+    });
+
+    expect(notifications.sendToUser).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when only the verifier is a guardian', async () => {
+    const { service, notifications } = setup(dependentWith([G1]));
+
+    await service.onConsentVerified({
+      dependentUserId: DEPENDENT,
+      verifierUserId: G1,
+    });
+
+    expect(notifications.sendToUser).not.toHaveBeenCalled();
+  });
+
+  it('never throws: a failing lookup is logged', async () => {
+    const { service, prisma } = setup(null);
+    prisma.users.findFirst.mockRejectedValue(new Error('db down'));
+
+    await expect(
+      service.onConsentVerified({
+        dependentUserId: DEPENDENT,
+        verifierUserId: G2,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
