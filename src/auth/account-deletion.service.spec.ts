@@ -684,6 +684,63 @@ describe('AccountDeletionService', () => {
       expect(mockTokenBlacklist.blacklistAllUserTokens).not.toHaveBeenCalled();
     });
 
+    it('with dependents: still erases legal acceptance IP/UA, in the SAME transaction after detaching', async () => {
+      const detached = [
+        { guardianshipId: 'g-1', dependentUserId: 'd-1', outcome: 'frozen' },
+      ];
+      mockLifecycle.detachGuardian.mockResolvedValue(detached);
+      // A distinct tx client proves the writes go through the transaction.
+      const tx = {
+        session: { deleteMany: jest.fn() },
+        user_fcm_tokens: { updateMany: jest.fn() },
+        users: { update: jest.fn() },
+        verification: { deleteMany: jest.fn() },
+        account: { deleteMany: jest.fn() },
+        legal_acceptances: { updateMany: jest.fn() },
+        account_deletion_log: { create: jest.fn() },
+      };
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (client: any) => Promise<any>) => fn(tx),
+      );
+
+      await service.deleteAccount(
+        USER_ID,
+        { password: PASSWORD },
+        '127.0.0.1',
+        { acknowledgeDependents: true },
+      );
+
+      expect(mockLifecycle.detachGuardian).toHaveBeenCalledWith(
+        tx,
+        USER_ID,
+        'guardian_account_closed',
+      );
+      expect(tx.legal_acceptances.updateMany).toHaveBeenCalledWith({
+        where: { user_id: USER_ID },
+        data: { ip_address: null, user_agent: null },
+      });
+      expect(mockPrisma.legal_acceptances.updateMany).not.toHaveBeenCalled();
+      const order = (fn: jest.Mock) => fn.mock.invocationCallOrder[0];
+      expect(order(mockLifecycle.detachGuardian)).toBeLessThan(
+        order(tx.legal_acceptances.updateMany),
+      );
+      expect(order(tx.legal_acceptances.updateMany)).toBeLessThan(
+        order(mockLifecycle.afterCommit),
+      );
+    });
+
+    it('keeps legal acceptance IP/UA when detaching a dependent fails (rollback)', async () => {
+      mockLifecycle.detachGuardian.mockRejectedValue(new Error('constraint'));
+
+      await expect(
+        service.deleteAccount(USER_ID, { password: PASSWORD }, undefined, {
+          acknowledgeDependents: true,
+        }),
+      ).rejects.toThrow('constraint');
+
+      expect(mockPrisma.legal_acceptances.updateMany).not.toHaveBeenCalled();
+    });
+
     it('does not need the flag when there are no dependents', async () => {
       mockLifecycle.deletionImpact.mockResolvedValue({ dependents: [] });
       await expect(
