@@ -89,6 +89,8 @@ interface VerifyTransactionResult {
  *  - the consent lives on the dependent's ACTIVE PRIMARY row (guardian or club
  *    custody); with no such row nothing is written (no orphan verified row);
  *  - a current signed form must exist (409 GUARDIANSHIP_EVIDENCE_REQUIRED);
+ *  - four-eyes for EVERY row (verify 2c W2): a live guardian of the child cannot
+ *    verify it (403 GUARDIANSHIP_GUARDIAN_SELF_VERIFY);
  *  - four-eyes for CUSTODY rows (ruling A14): the verifier cannot be the person
  *    who uploaded the current form, who created the dependent, or the guardian
  *    who handed the child over to the club (403 GUARDIANSHIP_CUSTODIAN_SELF_VERIFY);
@@ -239,6 +241,7 @@ export class ConsentVerificationService {
     if (!evidence) {
       throw new AppConflictException(ErrorCode.GUARDIANSHIP_EVIDENCE_REQUIRED);
     }
+    await this.assertVerifierIsNotGuardian(tx, dependentId, verifierId);
     if (row.is_custodian) {
       await this.assertFourEyes(
         tx,
@@ -298,6 +301,31 @@ export class ConsentVerificationService {
       newlyVerified: true,
       alreadyApproved: null,
     };
+  }
+
+  /**
+   * Four-eyes for every row (verify 2c W2): whoever answers for the child
+   * cannot verify the child's consent, whatever permission they hold in the
+   * section. Any live guardianship counts (primary, secondary, invited,
+   * test data); a revoked one does not.
+   */
+  private async assertVerifierIsNotGuardian(
+    tx: Prisma.TransactionClient,
+    dependentId: string,
+    verifierId: string,
+  ): Promise<void> {
+    const ownRows = await tx.guardianships.count({
+      where: {
+        dependent_user_id: dependentId,
+        guardian_user_id: verifierId,
+        ...NOT_REVOKED,
+      },
+    });
+    if (ownRows > 0) {
+      throw new AppForbiddenException(
+        ErrorCode.GUARDIANSHIP_GUARDIAN_SELF_VERIFY,
+      );
+    }
   }
 
   /**

@@ -243,7 +243,7 @@ export class MembershipRequestsController {
   @ApiOperation({
     summary: 'Verificar el consentimiento del tutor de un menor',
     description:
-      'El director confirma haber revisado la ficha firmada. Requiere ficha vigente subida (409 GUARDIANSHIP_EVIDENCE_REQUIRED). Si el menor está bajo custodia del club, quien subió la ficha, quien creó al menor o el tutor que lo cedió no pueden verificar (403 GUARDIANSHIP_CUSTODIAN_SELF_VERIFY). Con approve=true también aprueba la solicitud; si la aprobación falla el consentimiento queda verificado y `approve_error` trae el código (reintentar la misma llamada). Idempotente.',
+      'El director confirma haber revisado la ficha firmada. Requiere ficha vigente subida (409 GUARDIANSHIP_EVIDENCE_REQUIRED). Un tutor vigente del menor nunca puede verificar su consentimiento (403 GUARDIANSHIP_GUARDIAN_SELF_VERIFY). Si el menor está bajo custodia del club, quien subió la ficha, quien creó al menor o el tutor que lo cedió no pueden verificar (403 GUARDIANSHIP_CUSTODIAN_SELF_VERIFY). Con approve=true también aprueba la solicitud; si la aprobación falla el consentimiento queda verificado y `approve_error` trae el código (reintentar la misma llamada). Idempotente.',
   })
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiParam({ name: 'assignmentId', type: String })
@@ -256,7 +256,7 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 403,
     description:
-      'Sin club_members:approve o GUARDIANSHIP_CUSTODIAN_SELF_VERIFY',
+      'Sin club_members:approve, GUARDIANSHIP_GUARDIAN_SELF_VERIFY o GUARDIANSHIP_CUSTODIAN_SELF_VERIFY',
   })
   @ApiResponse({
     status: 404,

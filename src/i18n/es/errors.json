@@ -817,5 +817,6 @@
   "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "Las fichas de consentimiento no se pueden guardar ni consultar por ahora. Inténtalo más tarde",
   "GUARDIANSHIP_CUSTODIAN_SELF_VERIFY": "Un menor bajo custodia del club debe ser verificado por otra persona autorizada del club, no por quien subió la ficha ni por quien lo recibió en custodia",
   "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirma que revisaste la ficha firmada en papel antes de verificar el consentimiento",
-  "GUARDIANSHIP_CONSENT_ALREADY_VERIFIED": "El consentimiento del tutor de este menor ya está verificado: la ficha firmada ya no se puede reemplazar"
+  "GUARDIANSHIP_CONSENT_ALREADY_VERIFIED": "El consentimiento del tutor de este menor ya está verificado: la ficha firmada ya no se puede reemplazar",
+  "GUARDIANSHIP_GUARDIAN_SELF_VERIFY": "Un tutor de este menor no puede verificar su propio consentimiento: debe hacerlo otra persona autorizada del club"
 }

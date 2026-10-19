@@ -53,6 +53,8 @@ function setup() {
   let row: ReturnType<typeof primaryRow> | null = primaryRow();
   let assignment: Record<string, unknown> | null = { ...pendingAssignment };
   let handedOver: { guardian_user_id: string } | null = null;
+  /** Users holding a live (non-revoked) guardianship of the dependent (W2). */
+  const liveGuardians = new Set<string>();
   const invitees = new Map<
     string,
     Array<{ guardianship_id: string; guardian_user_id: string }>
@@ -86,6 +88,12 @@ function setup() {
       updateMany: jest.fn().mockImplementation(() => {
         order.push('verify-update');
         return Promise.resolve({ count: 1 });
+      }),
+      count: jest.fn().mockImplementation(({ where }: any) => {
+        order.push('read-verifier-guardianship');
+        return Promise.resolve(
+          liveGuardians.has(where.guardian_user_id) ? 1 : 0,
+        );
       }),
       findMany: jest
         .fn()
@@ -143,6 +151,7 @@ function setup() {
     setRow: (value: typeof row) => (row = value),
     setAssignment: (value: typeof assignment) => (assignment = value),
     setHandedOver: (value: typeof handedOver) => (handedOver = value),
+    liveGuardians,
     invitees,
   };
 }
@@ -182,6 +191,7 @@ describe('ConsentVerificationService.verify', () => {
       expect(s.order).toEqual([
         'lock',
         'read-primary',
+        'read-verifier-guardianship',
         'verify-update',
         'audit',
         'commit',
@@ -665,6 +675,93 @@ describe('ConsentVerificationService.verify', () => {
       );
 
       expect(result.guardianship.consent_status).toBe('verified');
+    });
+  });
+
+  /**
+   * verify 2c W2 (four-eyes for every row): whoever answers for the child
+   * (any live guardianship of the dependent: primary, secondary, invited,
+   * test data included) cannot verify that child's consent, even holding
+   * club_members:approve in the section.
+   */
+  describe('guardian four-eyes (W2)', () => {
+    const expectNothingVerified = (s: ReturnType<typeof setup>) => {
+      expect(s.tx.guardianships.updateMany).not.toHaveBeenCalled();
+      expect(s.tx.audit_logs.create).not.toHaveBeenCalled();
+      expect(s.actingCache.bump).not.toHaveBeenCalled();
+      expect(s.notifications.onConsentVerified).not.toHaveBeenCalled();
+      expect(s.membershipRequests.approve).not.toHaveBeenCalled();
+    };
+
+    it('the primary guardian who is also a director cannot verify: 403 GUARDIANSHIP_GUARDIAN_SELF_VERIFY', async () => {
+      const s = setup();
+      s.liveGuardians.add(GUARDIAN);
+
+      const error = await rejection(
+        s.service.verify(SECTION, ASSIGNMENT, GUARDIAN, dto()),
+      );
+
+      expect(error.code).toBe(ErrorCode.GUARDIANSHIP_GUARDIAN_SELF_VERIFY);
+      expect(error.getStatus()).toBe(403);
+      expectNothingVerified(s);
+    });
+
+    it('a second guardian (not the primary row) cannot verify either, and the lookup runs under the lock', async () => {
+      const s = setup();
+      s.liveGuardians.add(SECOND_GUARDIAN);
+
+      const error = await rejection(
+        s.service.verify(SECTION, ASSIGNMENT, SECOND_GUARDIAN, dto()),
+      );
+
+      expect(error.code).toBe(ErrorCode.GUARDIANSHIP_GUARDIAN_SELF_VERIFY);
+      expect(s.order.indexOf('lock')).toBeLessThan(
+        s.order.indexOf('read-verifier-guardianship'),
+      );
+      expect(s.tx.guardianships.count).toHaveBeenCalledWith({
+        where: {
+          dependent_user_id: DEPENDENT,
+          guardian_user_id: SECOND_GUARDIAN,
+          consent_status: { not: 'revoked' },
+        },
+      });
+      expectNothingVerified(s);
+    });
+
+    it('also applies to custody rows (a guardian invited after the hand-over)', async () => {
+      const s = setup();
+      s.setRow(
+        primaryRow({
+          guardian_user_id: null,
+          is_custodian: true,
+          consent_evidences: [
+            { evidence_id: 'ev-9', uploaded_by_user_id: DEPUTY },
+          ],
+          dependent: { dependent_profile: { created_by_user_id: CREATOR } },
+        }),
+      );
+      s.liveGuardians.add(DIRECTOR);
+
+      const error = await rejection(
+        s.service.verify(SECTION, ASSIGNMENT, DIRECTOR, dto()),
+      );
+
+      expect(error.code).toBe(ErrorCode.GUARDIANSHIP_GUARDIAN_SELF_VERIFY);
+      expectNothingVerified(s);
+    });
+
+    it('a director who is not a guardian of the child verifies normally', async () => {
+      const s = setup();
+      s.liveGuardians.add(GUARDIAN);
+
+      const result = await s.service.verify(
+        SECTION,
+        ASSIGNMENT,
+        DIRECTOR,
+        dto(),
+      );
+
+      expect(result.guardianship.verified_by_user_id).toBe(DIRECTOR);
     });
   });
 });

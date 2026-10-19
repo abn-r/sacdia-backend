@@ -804,5 +804,6 @@
   "GUARDIANSHIP_EVIDENCE_UNAVAILABLE": "Les fiches de consentement ne peuvent pas être enregistrées ni consultées pour le moment. Réessayez plus tard",
   "GUARDIANSHIP_CUSTODIAN_SELF_VERIFY": "Un mineur sous la garde du club doit être vérifié par une autre personne autorisée du club, pas par celle qui a téléversé la fiche ni par celle qui l'a pris en charge",
   "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirmez que vous avez examiné la fiche papier signée avant de vérifier le consentement",
-  "GUARDIANSHIP_CONSENT_ALREADY_VERIFIED": "Le consentement du tuteur de ce mineur est déjà vérifié : la fiche signée ne peut plus être remplacée"
+  "GUARDIANSHIP_CONSENT_ALREADY_VERIFIED": "Le consentement du tuteur de ce mineur est déjà vérifié : la fiche signée ne peut plus être remplacée",
+  "GUARDIANSHIP_GUARDIAN_SELF_VERIFY": "Un tuteur de ce mineur ne peut pas vérifier son propre consentement : une autre personne autorisée du club doit le faire"
 }
