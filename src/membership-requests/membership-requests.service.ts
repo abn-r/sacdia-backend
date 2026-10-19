@@ -181,16 +181,21 @@ export class MembershipRequestsService {
       }
       throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
     }
+    // Unreachable (the transaction throws when it wrote without a row), but an
+    // explicit check narrows the type on every compiler instead of `!`.
+    if (!assignment) {
+      throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+    }
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
-      assignment!.user_id,
+      assignment.user_id,
     );
 
-    this.recordReviewAudit('approved', assignment!, approvedById);
+    this.recordReviewAudit('approved', assignment, approvedById);
 
     this.emitRealtimeInvalidation(
-      assignment!.club_section_id,
-      assignment!.assignment_id,
+      assignment.club_section_id,
+      assignment.assignment_id,
       'UPDATED',
       approvedById,
     );
@@ -254,16 +259,21 @@ export class MembershipRequestsService {
       }
       throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
     }
+    // Unreachable (the transaction throws when it wrote without a row), but an
+    // explicit check narrows the type on every compiler instead of `!`.
+    if (!assignment) {
+      throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+    }
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
-      assignment!.user_id,
+      assignment.user_id,
     );
 
-    this.recordReviewAudit('rejected', assignment!, rejectedById);
+    this.recordReviewAudit('rejected', assignment, rejectedById);
 
     this.emitRealtimeInvalidation(
-      assignment!.club_section_id,
-      assignment!.assignment_id,
+      assignment.club_section_id,
+      assignment.assignment_id,
       'DELETED',
       rejectedById,
     );
