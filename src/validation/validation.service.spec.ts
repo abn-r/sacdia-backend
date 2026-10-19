@@ -4,12 +4,21 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { ValidationService } from './validation.service';
 
 describe('ValidationService honor workflow delegation', () => {
-  const prisma = {};
   const notifications = {};
   const honorWorkflow = {
     submitForReview: jest.fn(),
     approve: jest.fn(),
     reject: jest.fn(),
+  };
+
+  const prisma = {
+    users_honors: {
+      findUnique: jest.fn().mockResolvedValue({ user_id: 'member-1' }),
+    },
+  };
+  const actorSectionScope = {
+    resolve: jest.fn().mockResolvedValue({ all: true }),
+    includesMember: jest.fn().mockResolvedValue(true),
   };
 
   let service: ValidationService;
@@ -20,6 +29,7 @@ describe('ValidationService honor workflow delegation', () => {
       prisma as any,
       notifications as any,
       honorWorkflow as any,
+      actorSectionScope as any,
     );
   });
 
@@ -80,6 +90,7 @@ describe('ValidationService retired class path', () => {
     prisma as never,
     { notifySafe: jest.fn(), sendToSectionRole: jest.fn() } as never,
     honorWorkflow as never,
+    {} as never,
   );
 
   async function expectGone(promise: Promise<unknown>) {
@@ -128,15 +139,18 @@ describe('ValidationService retired class path', () => {
       reader as never,
       {} as never,
       {} as never,
+      {
+        resolve: jest.fn().mockResolvedValue({ all: true }),
+      } as never,
     );
 
     await expect(
-      lister.getPendingReviews({ entity_type: 'class' }),
+      lister.getPendingReviews('admin-1', { entity_type: 'class' }),
     ).resolves.toEqual({
       classes: [],
       honors: [],
     });
-    await expect(lister.getPendingReviews()).resolves.toEqual({
+    await expect(lister.getPendingReviews('admin-1')).resolves.toEqual({
       classes: [],
       honors: [],
     });
@@ -169,6 +183,7 @@ describe('ValidationService eligibility keeps legacy APPROVED', () => {
     };
     const service = new ValidationService(
       prisma as never,
+      {} as never,
       {} as never,
       {} as never,
     );

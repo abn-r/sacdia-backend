@@ -1059,17 +1059,18 @@ export class ClassesService {
       classId,
       enrollmentId,
     });
-    if (resolvedEnrollment.recordKind === 'HISTORICAL_CERTIFICATE') {
-      return this.readCertificateProgressArchive(
-        resolvedEnrollment.enrollmentId,
-      );
-    }
+    // Access first: the historical archive is someone's progress too.
     await this.classProgressAccess.assertCanAccessProgress({
       actorUserId,
       targetUserId,
       classId,
       ecclesiasticalYearId: resolvedEnrollment.ecclesiasticalYearId,
     });
+    if (resolvedEnrollment.recordKind === 'HISTORICAL_CERTIFICATE') {
+      return this.readCertificateProgressArchive(
+        resolvedEnrollment.enrollmentId,
+      );
+    }
 
     // Get all sections for this class
     const classData = await this.findOne(classId);

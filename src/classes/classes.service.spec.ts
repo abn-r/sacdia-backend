@@ -434,6 +434,68 @@ describe('ClassesService', () => {
     });
   });
 
+  describe('getUserProgress historical archive', () => {
+    beforeEach(() => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 80,
+        user_id: 'member-1',
+        class_id: 7,
+        ecclesiastical_year_id: 1999,
+        investiture_status: 'INVESTIDO',
+        locked_for_validation: false,
+        record_kind: 'HISTORICAL_CERTIFICATE',
+      });
+      mockPrismaService.class_section_progress.findMany.mockResolvedValue([
+        { section_id: 3, score: 4, status: 'VALIDATED' },
+      ]);
+      mockPrismaService.class_sections.findMany.mockResolvedValue([
+        { section_id: 3, name: 'Nudos', class_modules: { name: 'Campamento' } },
+      ]);
+    });
+
+    it('checks progress access before reading the archive', async () => {
+      mockClassProgressAccessService.assertCanAccessProgress.mockRejectedValueOnce(
+        new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED),
+      );
+
+      await expect(
+        service.getUserProgress('member-1', 7, 80, 'stranger-1'),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+
+      expect(
+        mockClassProgressAccessService.assertCanAccessProgress,
+      ).toHaveBeenCalledWith({
+        actorUserId: 'stranger-1',
+        targetUserId: 'member-1',
+        classId: 7,
+        ecclesiasticalYearId: 1999,
+      });
+      expect(
+        mockPrismaService.class_section_progress.findMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('returns the archive once access is granted', async () => {
+      await expect(
+        service.getUserProgress('member-1', 7, 80),
+      ).resolves.toMatchObject({
+        enrollment_id: 80,
+        record_kind: 'HISTORICAL_CERTIFICATE',
+        progress_archive: [
+          {
+            section_name: 'Nudos',
+            module_name: 'Campamento',
+            score: 4,
+            status: 'VALIDATED',
+          },
+        ],
+      });
+      expect(
+        mockClassProgressAccessService.assertCanAccessProgress,
+      ).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('getUserProgress', () => {
     it('resolves a single active-year enrollment automatically', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
