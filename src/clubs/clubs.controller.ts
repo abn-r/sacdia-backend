@@ -24,6 +24,7 @@ import {
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 import { ClubsService } from './clubs.service';
 import { DirectorDesignationService } from './director-designation.service';
 import {
@@ -67,7 +68,11 @@ export class ClubsController {
   // CLUBS - CRUD
   // ========================================
 
+  // Post-registration step 3 reads this list while a guardian acts for a
+  // dependent. Only this route and getSections carry a scope in this
+  // controller; every other /clubs route stays denied while acting.
   @Get()
+  @ActingScope('registration:write')
   @SkipPermissions()
   @ApiOperation({
     summary: 'Listar clubs',
@@ -184,6 +189,7 @@ export class ClubsController {
   // ========================================
 
   @Get(':clubId/sections')
+  @ActingScope('registration:write')
   @SkipPermissions()
   @ApiOperation({
     summary: 'Obtener secciones del club',

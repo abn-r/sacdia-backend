@@ -167,6 +167,12 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'POST /users/:userId/post-registration/membership-request/cancel':
     'registration:write',
   'POST /users/:userId/membership/annual-enroll': 'registration:write',
+  // Post-registration step 3 club picker (read-only reference data). Scoped as
+  // registration:write, not self:read, so a Phase 3 linked device (self:read +
+  // evidence:upload) cannot browse clubs: only a guardian finishing the child's
+  // registration can. Every other /clubs route stays never-scope.
+  'GET /clubs': 'registration:write',
+  'GET /clubs/:clubId/sections': 'registration:write',
   // ---- classes:write
   'POST /users/:userId/classes/enroll': 'classes:write',
   'PATCH /users/:userId/classes/:classId/progress': 'classes:write',
@@ -254,7 +260,13 @@ const NEVER_SCOPE: Array<{
   },
   { label: 'certifications', pattern: /^[A-Z]+ \/certifications(\/|$)/ },
   { label: 'admin', pattern: /^[A-Z]+ \/admin(\/|$)/ },
-  { label: 'club routes', pattern: /^[A-Z]+ \/clubs(\/|$)/ },
+  {
+    // Every /clubs route except the two step-3 club picker reads (see the
+    // registration:write entries above).
+    label: 'club routes',
+    pattern:
+      /^(?!GET \/clubs$|GET \/clubs\/:clubId\/sections$)[A-Z]+ \/clubs(\/|$)/,
+  },
   { label: 'club sections', pattern: /^[A-Z]+ \/club-sections(\/|$)/ },
   {
     label: 'membership requests',
