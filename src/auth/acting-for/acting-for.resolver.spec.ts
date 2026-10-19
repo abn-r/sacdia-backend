@@ -294,7 +294,9 @@ describe('ActingForResolver', () => {
       const result = await resolver.resolve(GUARDIAN, DEPENDENT);
 
       expect(result).toMatchObject({ granted: true });
-      const scopes = (result as { grant: { scopes: string[] } }).grant.scopes;
+      const scopes: readonly string[] = result.granted
+        ? result.grant.scopes
+        : [];
       for (const scope of CLASSES_HONORS_EVIDENCE) {
         expect(scopes).not.toContain(scope);
       }
@@ -325,8 +327,7 @@ describe('ActingForResolver', () => {
           scopes: GUARDIAN_VERIFIED_SCOPES,
         }),
       });
-      const scopes = (after as { grant: { scopes: readonly string[] } }).grant
-        .scopes;
+      const scopes: readonly string[] = after.granted ? after.grant.scopes : [];
       for (const scope of CLASSES_HONORS_EVIDENCE) {
         expect(scopes).toContain(scope);
       }
