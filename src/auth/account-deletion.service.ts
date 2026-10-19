@@ -269,9 +269,14 @@ export class AccountDeletionService {
 
       // 2d-bis. Erase the IP and device kept with each legal acceptance; the
       //         acceptance itself (document, version, date) stays on the
-      //         anonymized user as consent history.
+      //         anonymized user as consent history. Acceptances this user made
+      //         ON BEHALF of a dependent (user_id = the minor, accepted_by =
+      //         this user) carry the guardian's own IP and device, so they go
+      //         too.
       await tx.legal_acceptances.updateMany({
-        where: { user_id: userId },
+        where: {
+          OR: [{ user_id: userId }, { accepted_by_user_id: userId }],
+        },
         data: { ip_address: null, user_agent: null },
       });
 

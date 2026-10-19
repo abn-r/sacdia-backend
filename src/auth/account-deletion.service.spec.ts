@@ -189,9 +189,21 @@ describe('AccountDeletionService', () => {
     it('should erase IP and user agent from legal acceptances', async () => {
       await service.deleteAccount(USER_ID, { password: PASSWORD });
       expect(mockPrisma.legal_acceptances.updateMany).toHaveBeenCalledWith({
-        where: { user_id: USER_ID },
+        where: {
+          OR: [{ user_id: USER_ID }, { accepted_by_user_id: USER_ID }],
+        },
         data: { ip_address: null, user_agent: null },
       });
+    });
+
+    it('also erases IP and user agent of acceptances the user made on behalf of a dependent', async () => {
+      await service.deleteAccount(USER_ID, { password: PASSWORD });
+      // One statement covers both: the guardian's own acceptances and the ones
+      // recorded for a minor (user_id = minor, accepted_by_user_id = guardian).
+      expect(mockPrisma.legal_acceptances.updateMany).toHaveBeenCalledTimes(1);
+      const [{ where }] = mockPrisma.legal_acceptances.updateMany.mock
+        .calls[0] as [{ where: { OR: Array<Record<string, string>> } }];
+      expect(where.OR).toContainEqual({ accepted_by_user_id: USER_ID });
     });
 
     it('should write an account_deletion_log entry', async () => {
@@ -716,7 +728,9 @@ describe('AccountDeletionService', () => {
         'guardian_account_closed',
       );
       expect(tx.legal_acceptances.updateMany).toHaveBeenCalledWith({
-        where: { user_id: USER_ID },
+        where: {
+          OR: [{ user_id: USER_ID }, { accepted_by_user_id: USER_ID }],
+        },
         data: { ip_address: null, user_agent: null },
       });
       expect(mockPrisma.legal_acceptances.updateMany).not.toHaveBeenCalled();
