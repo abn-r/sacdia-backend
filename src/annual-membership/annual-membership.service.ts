@@ -405,6 +405,7 @@ export class AnnualMembershipService {
     }
 
     if (existingMember?.status === 'inactive') {
+      // activation-gate: params.userId
       await tx.club_role_assignments.update({
         where: { assignment_id: existingMember.assignment_id },
         data: { status: 'active' },
@@ -548,6 +549,7 @@ export class AnnualMembershipService {
     if (existingMember?.status === 'inactive') {
       await this._assertMemberPlacement(tx, params);
       await assertAssignmentActivationAllowed(tx, params.userId);
+      // activation-gate: params.userId
       await tx.club_role_assignments.update({
         where: { assignment_id: existingMember.assignment_id },
         data: { status: 'active' },
@@ -613,6 +615,7 @@ export class AnnualMembershipService {
       }
 
       await assertAssignmentActivationAllowed(tx, params.userId);
+      // activation-gate: params.userId
       await tx.club_role_assignments.update({
         where: { assignment_id: ensured.assignment_id },
         data: { status: 'active' },
