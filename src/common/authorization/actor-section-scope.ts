@@ -51,18 +51,20 @@ function nonBaseGlobalGrants(
   );
 }
 
-/** A non-base global role (or a direct grant) carries `permission`. */
+/**
+ * A non-base global role carries `permission`, so its territory counts.
+ *
+ * Direct grants (`users_permissions`) are deliberately ignored: they carry no
+ * club, section or territory, so they cannot say WHERE the actor may act. The
+ * guard may still let the request in, but the scope stays empty until the
+ * actor holds a role with a territory or a club section.
+ */
 export function actorHasGlobalPermission(
   resolved: ResolvedAuthorizationProfile,
   permission: string,
 ): boolean {
-  return (
-    nonBaseGlobalGrants(resolved).some((grant) =>
-      grant.permissions.includes(permission),
-    ) ||
-    (resolved.authorization.grants.direct_permissions ?? []).includes(
-      permission,
-    )
+  return nonBaseGlobalGrants(resolved).some((grant) =>
+    grant.permissions.includes(permission),
   );
 }
 

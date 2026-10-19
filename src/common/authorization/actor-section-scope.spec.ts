@@ -97,6 +97,42 @@ describe('buildActorSectionScope', () => {
     );
   });
 
+  it.each([
+    ['without territory', {}],
+    ['with a configured territory', { local_field: { id: 7 } }],
+  ])(
+    'gives a direct permission no section scope (%s): scope comes only from roles',
+    (_label, territory) => {
+      const profile = actorProfile({ territory });
+      profile.authorization.grants.direct_permissions = [
+        'validation:review',
+        'requests:review',
+        'requests:read',
+      ];
+
+      expect(
+        isActorSectionScopeEmpty(buildActorSectionScope(profile, REVIEW)),
+      ).toBe(true);
+      expect(
+        isActorSectionScopeEmpty(
+          buildActorSectionScope(profile, REQUESTS_READ),
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it('does not let a direct permission unlock the territory of a role that lacks it', () => {
+    const profile = actorProfile({
+      globalRoles: [{ roleName: 'director-lf', permissions: [] }],
+      territory: { local_field: { id: 7 } },
+    });
+    profile.authorization.grants.direct_permissions = ['validation:review'];
+
+    expect(
+      isActorSectionScopeEmpty(buildActorSectionScope(profile, REVIEW)),
+    ).toBe(true);
+  });
+
   it('ignores territory when no global role carries the permission', () => {
     const profile = actorProfile({
       globalRoles: [
