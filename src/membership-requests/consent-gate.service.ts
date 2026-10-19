@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AppConflictException } from '../common/errors/app.exception';
-import { ErrorCode } from '../common/errors/error-codes';
 import { displayName } from '../guardianships/guardianship-queries';
+import { assertAssignmentActivationAllowed } from './assignment-activation-gate';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -51,26 +50,15 @@ export class ConsentGateService {
   /**
    * Throws 409 MR_CONSENT_NOT_VERIFIED when the user is a dependent without a
    * verified guardianship. Call it INSIDE the approving transaction so a
-   * consent revoked between listing and approving blocks the approval.
+   * consent revoked between listing and approving blocks the approval; for a
+   * dependent it takes the per-dependent lock (serialized with verify/revoke).
+   * Same rule as every other activation path: {@link assertAssignmentActivationAllowed}.
    */
-  async assertApprovable(db: Db, userId: string): Promise<void> {
-    const profile = await db.dependent_profiles.findUnique({
-      where: { user_id: userId },
-      select: { user_id: true },
-    });
-    if (!profile) return;
-
-    const verified = await db.guardianships.findFirst({
-      where: {
-        dependent_user_id: userId,
-        consent_status: 'verified',
-        is_test_data: false,
-      },
-      select: { guardianship_id: true },
-    });
-    if (!verified) {
-      throw new AppConflictException(ErrorCode.MR_CONSENT_NOT_VERIFIED);
-    }
+  async assertApprovable(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<void> {
+    await assertAssignmentActivationAllowed(tx, userId);
   }
 
   /**

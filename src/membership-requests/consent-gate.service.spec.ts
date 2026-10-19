@@ -14,6 +14,7 @@ describe('ConsentGateService', () => {
       findFirst: jest.fn(),
       findMany: jest.fn(),
     },
+    $executeRaw: jest.fn().mockResolvedValue(1),
   });
   type Db = ReturnType<typeof makeDb>;
   const asDb = (db: Db) => db as never;
@@ -27,6 +28,28 @@ describe('ConsentGateService', () => {
         gate.assertApprovable(asDb(db), userId),
       ).resolves.toBeUndefined();
       expect(db.guardianships.findFirst).not.toHaveBeenCalled();
+      expect(db.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('takes the per-dependent advisory lock BEFORE reading the consent (S2: serialized with verify/revoke)', async () => {
+      const db = makeDb();
+      const order: string[] = [];
+      db.dependent_profiles.findUnique.mockResolvedValue({ user_id: userId });
+      db.$executeRaw.mockImplementation((sql: TemplateStringsArray, key) => {
+        order.push(`lock:${sql.join('?')}:${String(key)}`);
+        return Promise.resolve(1);
+      });
+      db.guardianships.findFirst.mockImplementation(() => {
+        order.push('read');
+        return Promise.resolve({ guardianship_id: 'g1' });
+      });
+
+      await gate.assertApprovable(asDb(db), userId);
+
+      expect(order).toEqual([
+        `lock:SELECT pg_advisory_xact_lock(hashtext(?)):guardianships:dependent:${userId}`,
+        'read',
+      ]);
     });
 
     it('lets a dependent with a verified, non-test row through (custodian rows count too)', async () => {

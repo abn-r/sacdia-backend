@@ -46,6 +46,8 @@ describe('MembershipRequestsService', () => {
       findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    // Per-dependent advisory lock taken by the consent gate.
+    $executeRaw: jest.fn().mockResolvedValue(1),
   });
 
   let transactionMock: ReturnType<typeof createTransactionMock>;
@@ -331,6 +333,13 @@ describe('MembershipRequestsService', () => {
         ).toBeLessThan(
           transactionMock.club_role_assignments.updateMany.mock
             .invocationCallOrder[0],
+        );
+        // S2: the per-dependent lock (verify/revoke take it too) comes first.
+        expect(transactionMock.$executeRaw).toHaveBeenCalledTimes(1);
+        expect(
+          transactionMock.$executeRaw.mock.invocationCallOrder[0],
+        ).toBeLessThan(
+          transactionMock.guardianships.findFirst.mock.invocationCallOrder[0],
         );
         expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
       });

@@ -48,6 +48,7 @@ import {
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
 
 @Injectable()
 export class ClubsService {
@@ -696,6 +697,8 @@ export class ClubsService {
         clubSectionId: dto.club_section_id as number,
         db: tx,
       });
+      // A dependent needs verified guardian consent before any active role.
+      await assertAssignmentActivationAllowed(tx, dto.user_id);
       const created = await tx.club_role_assignments.create({
         data: assignment,
         include: {
@@ -854,6 +857,10 @@ export class ClubsService {
           db: tx,
         });
       }
+      if (becomesActive) {
+        // e.g. PATCH {status:'active'} on a dependent's pending request.
+        await assertAssignmentActivationAllowed(tx, existing.user_id);
+      }
       const updated = await tx.club_role_assignments.update({
         where: { assignment_id: assignmentId },
         data: updateData,
@@ -978,6 +985,8 @@ export class ClubsService {
         clubSectionId: sectionId,
         db: tx,
       });
+      // Checked before the outgoing director is ended: nothing is written.
+      await assertAssignmentActivationAllowed(tx, dto.successor_user_id);
 
       const ended = await tx.club_role_assignments.update({
         where: { assignment_id: dto.current_assignment_id },
@@ -1112,6 +1121,7 @@ export class ClubsService {
         throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);
       }
 
+      await assertAssignmentActivationAllowed(tx, dto.user_id);
       const created = await tx.club_role_assignments.create({
         data: {
           user_id: dto.user_id,
