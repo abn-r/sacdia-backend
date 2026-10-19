@@ -1051,6 +1051,7 @@ describe('HonorInstructorProposalsService (B9, D11)', () => {
         {} as never,
         {} as never,
         instructors as never,
+        {} as never,
       );
 
       const patch = await fail(

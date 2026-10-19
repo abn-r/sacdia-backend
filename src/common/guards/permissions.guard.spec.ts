@@ -2216,5 +2216,154 @@ describe('PermissionsGuard', () => {
         ).resolves.toBe(true);
       },
     );
+
+    describe('acting-for principal (guardian acting for a dependent)', () => {
+      const GUARDIAN = 'guardian-1';
+      const DEPENDENT = 'dependent-1';
+      const STRANGER = 'stranger-1';
+
+      /** Shape JwtStrategy.validate attaches while acting (see auth-principal.ts). */
+      const actingUser = () => ({
+        sub: DEPENDENT,
+        userId: DEPENDENT,
+        user_id: DEPENDENT,
+        email: null,
+        kind: 'guardian_acting',
+        actor_sub: GUARDIAN,
+        acting_for: true,
+        scopes: ['self:read', 'profile:write'],
+        guardianship_id: 'gs-1',
+        consent_status: 'pending',
+      });
+
+      const actingContext = (targetUserId: string) =>
+        createContext({
+          user: actingUser(),
+          params: { userId: targetUserId },
+        });
+
+      it.each(USER_ROUTES.map((route) => [route.route, route] as const))(
+        'denies the acting guardian on another user via base-role grants: %s',
+        async (_label, route) => {
+          mockUserRoute(route);
+          mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+            createResolved({
+              globalRoleName: 'user',
+              globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+            }),
+          );
+
+          await expect(
+            guard.canActivate(actingContext(STRANGER)),
+          ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+          // Authorization is resolved for the substituted principal only.
+          expect(
+            mockAuthorizationContext.resolveUserAuthorization,
+          ).toHaveBeenCalledWith(DEPENDENT);
+          expect(
+            mockAuthorizationContext.resolveUserAuthorization,
+          ).not.toHaveBeenCalledWith(GUARDIAN);
+        },
+      );
+
+      it('denies reading the guardian own record while acting (the guardian is another user)', async () => {
+        mockUserRoute(
+          sensitive('GET /users/:userId/allergies', 'health', 'read'),
+        );
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          createResolved({
+            globalRoleName: 'user',
+            globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+          }),
+        );
+
+        await expect(
+          guard.canActivate(actingContext(GUARDIAN)),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      });
+
+      it.each(USER_ROUTES.map((route) => [route.route, route] as const))(
+        'lets the acting guardian through on the dependent own route (owner bypass): %s',
+        async (_label, route) => {
+          mockUserRoute(route);
+
+          await expect(
+            guard.canActivate(actingContext(DEPENDENT)),
+          ).resolves.toBe(true);
+          expect(
+            mockAuthorizationContext.resolveUserAuthorization,
+          ).not.toHaveBeenCalled();
+        },
+      );
+
+      it('lets the acting guardian through on an owner-aware active_assignment route of the dependent', async () => {
+        mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+          if (key === PERMISSIONS_KEY) {
+            return { permissions: ['classes:submit_progress'], mode: 'all' };
+          }
+          if (key === AUTHORIZATION_RESOURCE_KEY) {
+            return { type: 'active_assignment', ownerParam: 'userId' };
+          }
+          return undefined;
+        });
+
+        await expect(guard.canActivate(actingContext(DEPENDENT))).resolves.toBe(
+          true,
+        );
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          createResolved({
+            globalRoleName: 'user',
+            globalPermissions: ['classes:submit_progress'],
+          }),
+        );
+        await expect(
+          guard.canActivate(actingContext(STRANGER)),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      });
+
+      it('never borrows the guardian own staff grants while acting', async () => {
+        // The guardian is an admin, but the principal is the dependent: the
+        // dependent's profile (base role only) is the one evaluated.
+        mockUserRoute(USER_ROUTES[0]);
+        mockAuthorizationContext.resolveUserAuthorization.mockImplementation(
+          async (userId: string) =>
+            userId === GUARDIAN
+              ? createResolved({
+                  globalRoleName: 'admin',
+                  globalPermissions: ['users:update_profile'],
+                })
+              : createResolved({
+                  globalRoleName: 'user',
+                  globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+                }),
+        );
+
+        await expect(
+          guard.canActivate(actingContext(STRANGER)),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      });
+
+      it('still counts the base role for the acting principal on non-owner-aware routes', async () => {
+        mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+          if (key === PERMISSIONS_KEY) {
+            return { permissions: ['catalogs:read'], mode: 'all' };
+          }
+          if (key === AUTHORIZATION_RESOURCE_KEY) {
+            return { type: 'global' };
+          }
+          return undefined;
+        });
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          createResolved({
+            globalRoleName: 'user',
+            globalPermissions: LEGACY_BASE_ROLE_PERMISSIONS,
+          }),
+        );
+
+        await expect(
+          guard.canActivate(createContext({ user: actingUser() })),
+        ).resolves.toBe(true);
+      });
+    });
   });
 });

@@ -7,6 +7,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import { SeverityLevel } from './dto/update-user-medical.dto';
+import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -80,6 +81,9 @@ describe('UsersService', () => {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
     },
+    account: {
+      count: jest.fn(),
+    },
   };
 
   const mockFileStorageService = {
@@ -94,7 +98,16 @@ describe('UsersService', () => {
     ),
   };
 
+  const mockCountryAgePolicy = {
+    getPolicy: jest.fn(),
+  };
+
   beforeEach(async () => {
+    mockCountryAgePolicy.getPolicy.mockResolvedValue({
+      minSelfLoginAge: 13,
+      ageOfMajority: 18,
+      timeZone: 'America/Mexico_City',
+    });
     transactionMock = createTransactionMock();
     mockPrismaService.$transaction.mockImplementation(
       (
@@ -109,6 +122,7 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
       ],
     }).compile();
 
@@ -888,6 +902,92 @@ describe('UsersService', () => {
       expect(result.message).toBe('Usuario actualizado exitosamente');
     });
 
+    describe('self-edit birthday age gate (FP-24)', () => {
+      const yearsAgo = (years: number, extraDays = 0): string => {
+        const d = new Date();
+        d.setUTCFullYear(d.getUTCFullYear() - years);
+        d.setUTCDate(d.getUTCDate() + extraDays);
+        return d.toISOString().slice(0, 10);
+      };
+      const selfUser = { sub: 'u1', kind: 'user' as const };
+
+      beforeEach(() => {
+        mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
+        mockPrismaService.users.update.mockResolvedValue(updatedUserRow);
+        mockPrismaService.unions.findUnique.mockResolvedValue({
+          union_id: 2,
+          country_id: 1,
+        });
+        mockPrismaService.local_fields.findUnique.mockResolvedValue({
+          local_field_id: 3,
+          union_id: 2,
+        });
+        mockPrismaService.account.count.mockResolvedValue(1);
+      });
+
+      it('blocks an account holder setting a 10-year-old birthday and saves nothing', async () => {
+        await expect(
+          service.update('u1', { birthday: yearsAgo(10) }, selfUser),
+        ).rejects.toMatchObject({
+          code: ErrorCode.USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE,
+          status: 422,
+        });
+        expect(mockPrismaService.users.update).not.toHaveBeenCalled();
+      });
+
+      it('allows an account holder aged 13 or more', async () => {
+        await service.update('u1', { birthday: yearsAgo(13, -1) }, selfUser);
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+      });
+
+      it('uses the user country policy (min 16 blocks a 14-year-old)', async () => {
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 16,
+          ageOfMajority: 18,
+          timeZone: 'America/Mexico_City',
+        });
+
+        await expect(
+          service.update('u1', { birthday: yearsAgo(14) }, selfUser),
+        ).rejects.toMatchObject({
+          code: ErrorCode.USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE,
+        });
+        expect(mockCountryAgePolicy.getPolicy).toHaveBeenCalledWith(1);
+      });
+
+      it('does not block a guardian acting for a dependent', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(10) },
+          { sub: 'u1', kind: 'guardian_acting' },
+        );
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+        expect(mockPrismaService.account.count).not.toHaveBeenCalled();
+      });
+
+      it('does not block a third party editing another user (admin)', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(10) },
+          { sub: 'admin-1', kind: 'user' },
+        );
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+      });
+
+      it('does not block a target without an account (dependent)', async () => {
+        mockPrismaService.account.count.mockResolvedValue(0);
+
+        await service.update('u1', { birthday: yearsAgo(10) }, selfUser);
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+      });
+
+      it('does not run when no birthday is submitted or no actor is provided', async () => {
+        await service.update('u1', { gender: 'M' }, selfUser);
+        await service.update('u1', { birthday: yearsAgo(10) });
+        expect(mockPrismaService.account.count).not.toHaveBeenCalled();
+      });
+    });
+
     it('TC-U02 - error: user not found → NotFoundException', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
@@ -1288,6 +1388,62 @@ describe('UsersService', () => {
       const result = await service.requiresLegalRepresentative('u1');
 
       expect(result).toBe(false);
+    });
+
+    describe('country age of majority', () => {
+      beforeEach(() => {
+        jest.useFakeTimers({ now: new Date('2026-10-16T18:00:00.000Z') });
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('TC-RL04 - a 17-year-old requires a representative when the majority is 18', async () => {
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          birthday: new Date('2009-05-10'),
+          country_id: 1,
+        });
+
+        await expect(service.requiresLegalRepresentative('u1')).resolves.toBe(
+          true,
+        );
+        expect(mockCountryAgePolicy.getPolicy).toHaveBeenCalledWith(1);
+      });
+
+      it('TC-RL05 - a 17-year-old does not require one when the country majority is 16', async () => {
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 13,
+          ageOfMajority: 16,
+          timeZone: 'America/Mexico_City',
+        });
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          birthday: new Date('2009-05-10'),
+          country_id: 2,
+        });
+
+        await expect(service.requiresLegalRepresentative('u1')).resolves.toBe(
+          false,
+        );
+      });
+
+      it('TC-RL06 - age uses the calendar of the country reference zone', async () => {
+        // 18:00Z on Oct 16 is Oct 16 in Mexico City but already Oct 17 in Auckland.
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 13,
+          ageOfMajority: 18,
+          timeZone: 'Pacific/Auckland',
+        });
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          birthday: new Date('2008-10-17'),
+          country_id: 3,
+        });
+
+        await expect(service.calculateAge('u1')).resolves.toBe(18);
+        await expect(service.requiresLegalRepresentative('u1')).resolves.toBe(
+          false,
+        );
+      });
     });
   });
 });

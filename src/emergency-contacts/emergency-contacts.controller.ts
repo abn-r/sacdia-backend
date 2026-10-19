@@ -21,6 +21,7 @@ import { CreateEmergencyContactDto } from './dto/create-emergency-contact.dto';
 import { UpdateEmergencyContactDto } from './dto/update-emergency-contact.dto';
 import { SensitiveUserSubresource } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('emergency-contacts')
 @Controller('users/:userId/emergency-contacts')
@@ -32,6 +33,7 @@ export class EmergencyContactsController {
   ) {}
 
   @Post()
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('emergency_contacts', 'update')
   @ApiOperation({ summary: 'Crear contacto de emergencia (máximo 5)' })
   @ApiResponse({ status: 201, description: 'Contacto creado' })
@@ -49,6 +51,7 @@ export class EmergencyContactsController {
   }
 
   @Get()
+  @ActingScope('self:read')
   @SensitiveUserSubresource('emergency_contacts', 'read')
   @ApiOperation({ summary: 'Listar contactos de emergencia del usuario' })
   @ApiResponse({ status: 200, description: 'Lista de contactos' })
@@ -62,6 +65,7 @@ export class EmergencyContactsController {
   }
 
   @Get(':contactId')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('emergency_contacts', 'read')
   @ApiOperation({ summary: 'Obtener un contacto específico' })
   @ApiResponse({ status: 200, description: 'Contacto encontrado' })
@@ -79,6 +83,7 @@ export class EmergencyContactsController {
   }
 
   @Patch(':contactId')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('emergency_contacts', 'update')
   @ApiOperation({ summary: 'Actualizar contacto de emergencia' })
   @ApiResponse({ status: 200, description: 'Contacto actualizado' })
@@ -97,6 +102,7 @@ export class EmergencyContactsController {
   }
 
   @Delete(':contactId')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('emergency_contacts', 'update')
   @ApiOperation({ summary: 'Eliminar contacto de emergencia (soft delete)' })
   @ApiResponse({ status: 200, description: 'Contacto eliminado' })

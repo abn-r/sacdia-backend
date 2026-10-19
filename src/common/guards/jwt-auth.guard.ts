@@ -14,6 +14,8 @@ import {
 } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { SKIP_MFA_CHECK_KEY } from './mfa.guard';
+import { isActingForError } from '../../auth/acting-for/acting-for.errors';
+import { assertActingScope } from '../../auth/acting-for/acting-scope.policy';
 
 /** True for the 503 JwtStrategy raises when revocation cannot be verified. */
 export function isRevocationCheckUnavailable(
@@ -58,6 +60,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       throw err;
     }
 
+    // Acting-for refusals (400/403) are about the acted profile, not about the
+    // session: never turn them into a 401, which would log the guardian out.
+    if (isActingForError(err)) {
+      throw err;
+    }
+
     if (err || !user) {
       const request = context.switchToHttp().getRequest<Request>();
       const reason = this.resolveReason(err, info);
@@ -82,6 +90,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (!skipMfaCheck && user.mfa_pending === true) {
       throw new AppForbiddenException(ErrorCode.GUARD_MFA_REQUIRED);
     }
+
+    // A substituted principal (guardian acting for a dependent) only reaches
+    // routes that declare a scope it holds. Checked here, next to the principal
+    // creation, so the global guard and every local re-run always agree.
+    assertActingScope(this.reflector, context, user);
 
     return user;
   }

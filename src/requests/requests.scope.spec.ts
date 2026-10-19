@@ -406,3 +406,130 @@ describe('transfer reads scope', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Actor scope (#528) and the family-profiles consent gate both guard the
+ * approvals. Order: scope (404) -> status (409 already reviewed) -> consent
+ * gate inside the write transaction (409 MR_CONSENT_NOT_VERIFIED) -> write.
+ * An out-of-scope actor must learn nothing about the dependent's consent.
+ */
+describe('approval scope x consent gate (family-profiles)', () => {
+  function withUnverifiedDependentTx(
+    prisma: ReturnType<typeof setup>['prisma'],
+  ) {
+    const tx = {
+      ecclesiastical_years: {
+        findFirst: jest.fn().mockResolvedValue({ year_id: 1 }),
+      },
+      roles: { findUnique: jest.fn().mockResolvedValue(null) },
+      dependent_profiles: {
+        findUnique: jest.fn().mockResolvedValue({ user_id: 'dependent-1' }),
+      },
+      guardianships: { findFirst: jest.fn().mockResolvedValue(null) },
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      club_role_assignments: {
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn(),
+        updateManyAndReturn: jest.fn(),
+      },
+      role_assignment_requests: { update: jest.fn() },
+      club_transfer_requests: { update: jest.fn() },
+    };
+    prisma.$transaction.mockImplementation(
+      (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+    );
+    return tx;
+  }
+
+  it('answers 404 to an out-of-scope director approving a dependent, without touching consent', async () => {
+    const { service, prisma, actorId } = setup('clubDirector');
+    const tx = withUnverifiedDependentTx(prisma);
+    prisma.role_assignment_requests.findUnique.mockResolvedValue(
+      assignmentRequest({ user_id: 'dependent-1' }),
+    );
+
+    await expectStatus(
+      service.reviewAssignment('req-1', actorId, 'approved'),
+      HttpStatus.NOT_FOUND,
+      ErrorCode.REQUEST_ASSIGNMENT_NOT_FOUND,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.dependent_profiles.findUnique).not.toHaveBeenCalled();
+    expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 already-reviewed before the consent gate for an in-scope director', async () => {
+    const { service, prisma, actorId } = setup('clubDirector');
+    const tx = withUnverifiedDependentTx(prisma);
+    prisma.role_assignment_requests.findUnique.mockResolvedValue(
+      assignmentRequest({
+        user_id: 'dependent-1',
+        club_section_id: IN_SCOPE_SECTION,
+        status: 'approved',
+      }),
+    );
+
+    await expectStatus(
+      service.reviewAssignment('req-1', actorId, 'approved'),
+      HttpStatus.CONFLICT,
+      ErrorCode.REQUEST_ASSIGNMENT_ALREADY_REVIEWED,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.dependent_profiles.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 MR_CONSENT_NOT_VERIFIED to an in-scope director approving an unverified dependent', async () => {
+    const { service, prisma, actorId } = setup('clubDirector');
+    const tx = withUnverifiedDependentTx(prisma);
+    prisma.role_assignment_requests.findUnique.mockResolvedValue(
+      assignmentRequest({
+        user_id: 'dependent-1',
+        club_section_id: IN_SCOPE_SECTION,
+      }),
+    );
+
+    await expectStatus(
+      service.reviewAssignment('req-1', actorId, 'approved'),
+      HttpStatus.CONFLICT,
+      ErrorCode.MR_CONSENT_NOT_VERIFIED,
+    );
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
+    expect(tx.role_assignment_requests.update).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 to an out-of-scope director approving a dependent transfer, without touching consent', async () => {
+    const { service, prisma, actorId } = setup('clubDirector');
+    const tx = withUnverifiedDependentTx(prisma);
+    prisma.club_transfer_requests.findUnique.mockResolvedValue(
+      transferRequest({ user_id: 'dependent-1' }),
+    );
+
+    await expectStatus(
+      service.reviewTransfer('tr-1', actorId, 'approved'),
+      HttpStatus.NOT_FOUND,
+      ErrorCode.REQUEST_TRANSFER_NOT_FOUND,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.dependent_profiles.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 MR_CONSENT_NOT_VERIFIED to an in-scope director moving an unverified dependent', async () => {
+    const { service, prisma, actorId } = setup('clubDirector');
+    const tx = withUnverifiedDependentTx(prisma);
+    prisma.club_transfer_requests.findUnique.mockResolvedValue(
+      transferRequest({
+        user_id: 'dependent-1',
+        to_section_id: IN_SCOPE_SECTION,
+      }),
+    );
+
+    await expectStatus(
+      service.reviewTransfer('tr-1', actorId, 'approved'),
+      HttpStatus.CONFLICT,
+      ErrorCode.MR_CONSENT_NOT_VERIFIED,
+    );
+    expect(tx.club_role_assignments.updateManyAndReturn).not.toHaveBeenCalled();
+    expect(tx.club_transfer_requests.update).not.toHaveBeenCalled();
+  });
+});

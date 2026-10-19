@@ -6,7 +6,13 @@ import {
   USER_MANAGEMENT_ROLES,
 } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
-import { GLOBAL_ROLES_KEY, PERMISSIONS_KEY } from '../common/decorators';
+import {
+  AUTHORIZATION_RESOURCE_KEY,
+  GLOBAL_ROLES_KEY,
+  PERMISSIONS_KEY,
+  SENSITIVE_USER_SUBRESOURCE_KEY,
+} from '../common/decorators';
+import { GuardianEvidenceService } from '../guardianships/guardian-evidence.service';
 import {
   JwtAuthGuard,
   GlobalRolesGuard,
@@ -23,7 +29,9 @@ describe('AdminUsersController', () => {
     updateUserApproval: jest.fn(),
     updateUser: jest.fn(),
     createAdminUser: jest.fn(),
+    assertUserInActorScope: jest.fn(),
   };
+  const mockGuardianEvidence = { getForAdmin: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -33,6 +41,7 @@ describe('AdminUsersController', () => {
           provide: AdminUsersService,
           useValue: mockAdminUsersService,
         },
+        { provide: GuardianEvidenceService, useValue: mockGuardianEvidence },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -186,6 +195,71 @@ describe('AdminUsersController', () => {
         'target-1',
       );
       expect(result).toEqual({ status: 'success', data: expected });
+    });
+  });
+
+  describe('getGuardianshipConsentEvidence', () => {
+    const handler =
+      AdminUsersController.prototype.getGuardianshipConsentEvidence;
+    const req = { user: { sub: 'actor-1' } } as Request & {
+      user: { sub: string };
+    };
+
+    it('needs the legal_representative sensitive read (users:read_detail fallback) on the target user', () => {
+      expect(
+        Reflect.getMetadata(SENSITIVE_USER_SUBRESOURCE_KEY, handler),
+      ).toEqual({ family: 'legal_representative', mode: 'read' });
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+        permissions: ['legal_representative:read'],
+        mode: 'all',
+      });
+      expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
+        type: 'user',
+        ownerParam: 'userId',
+      });
+      expect(Reflect.getMetadata(GLOBAL_ROLES_KEY, handler)).toEqual([
+        ...USER_MANAGEMENT_ROLES,
+      ]);
+    });
+
+    it('checks the actor territorial scope BEFORE reading the form', async () => {
+      const order: string[] = [];
+      mockAdminUsersService.assertUserInActorScope.mockImplementation(() => {
+        order.push('scope');
+        return Promise.resolve();
+      });
+      mockGuardianEvidence.getForAdmin.mockImplementation(() => {
+        order.push('read');
+        return Promise.resolve({ url: 'https://signed/x' });
+      });
+
+      const result = await controller.getGuardianshipConsentEvidence(
+        req,
+        'user-1',
+        'gs-1',
+      );
+
+      expect(order).toEqual(['scope', 'read']);
+      expect(mockGuardianEvidence.getForAdmin).toHaveBeenCalledWith(
+        'actor-1',
+        'user-1',
+        'gs-1',
+      );
+      expect(result).toEqual({
+        status: 'success',
+        data: { url: 'https://signed/x' },
+      });
+    });
+
+    it('does not read anything when the user is outside the actor scope', async () => {
+      mockAdminUsersService.assertUserInActorScope.mockRejectedValue(
+        new Error('out of scope'),
+      );
+
+      await expect(
+        controller.getGuardianshipConsentEvidence(req, 'user-1', 'gs-1'),
+      ).rejects.toThrow('out of scope');
+      expect(mockGuardianEvidence.getForAdmin).not.toHaveBeenCalled();
     });
   });
 

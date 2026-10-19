@@ -434,7 +434,7 @@ interface MinimalPostRegistrationBlock {
 
 interface AdminUserListItem {
   user_id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   paternal_last_name: string | null;
   maternal_last_name: string | null;
@@ -465,6 +465,59 @@ interface AdminUserListItem {
     club_selection_complete: boolean;
   } | null;
   created_at: Date;
+}
+
+/** One guardianship row seen from the dependent (history included). */
+export interface AdminGuardianshipAsDependent {
+  guardianship_id: string;
+  guardian: {
+    user_id: string;
+    display_name: string;
+    email: string | null;
+  } | null;
+  custodian_club: { club_id: number; name: string } | null;
+  external_name: string | null;
+  relationship_type_name: string | null;
+  is_primary: boolean;
+  is_custodian: boolean;
+  consent_status: string;
+  verification_method: string | null;
+  verified_at: Date | null;
+  verified_by: { user_id: string; display_name: string } | null;
+  evidence_uploaded: boolean;
+  is_test_data: boolean;
+  created_at: Date;
+  revoked_at: Date | null;
+  revoked_reason: string | null;
+}
+
+export interface AdminGuardianshipAsGuardian {
+  guardianship_id: string;
+  dependent: {
+    user_id: string;
+    display_name: string;
+    birthday: Date | null;
+  };
+  relationship_type_name: string | null;
+  is_primary: boolean;
+  consent_status: string;
+}
+
+/**
+ * Family block of the user detail. `custodian_club` replaces `guardian` when
+ * the club holds a minor. Gated by the same sensitive family as the legal
+ * representative: `legal_representative:read` (or the transitional
+ * `users:read_detail`).
+ */
+export interface AdminGuardianshipsBlock {
+  as_dependent: AdminGuardianshipAsDependent[];
+  as_guardian: AdminGuardianshipAsGuardian[];
+  dependent_profile: {
+    created_at: Date;
+    created_by_user_id: string;
+    frozen_at: Date | null;
+    purge_after: Date | null;
+  } | null;
 }
 
 interface AdminUserDetail extends AdminUserListItem {
@@ -499,6 +552,7 @@ interface AdminUserDetail extends AdminUserListItem {
   health: SensitiveHealthBlock | null;
   emergency_contacts: AdminUserDetailRecord['emergency_contact'] | null;
   legal_representative: AdminUserDetailRecord['legal_representative'] | null;
+  guardianships: AdminGuardianshipsBlock | null;
   post_registration: MinimalPostRegistrationBlock | null;
   scope: ScopeMeta;
 }
@@ -624,6 +678,12 @@ export class AdminUsersService {
       user,
       actorGlobalPermissions,
     );
+    const guardianships = this.canReadSensitiveFamily(
+      actorGlobalPermissions,
+      'legal_representative',
+    )
+      ? await this.buildGuardianshipsBlock(user.user_id)
+      : null;
 
     return {
       ...listItem,
@@ -647,11 +707,9 @@ export class AdminUsersService {
         section_name: assignment.club_sections?.club_types?.name ?? null,
         district_id:
           assignment.club_sections?.clubs?.districlub_type_id ?? null,
-        district_name:
-          assignment.club_sections?.clubs?.districts?.name ?? null,
+        district_name: assignment.club_sections?.clubs?.districts?.name ?? null,
         church_id: assignment.club_sections?.clubs?.church_id ?? null,
-        church_name:
-          assignment.club_sections?.clubs?.churches?.name ?? null,
+        church_name: assignment.club_sections?.clubs?.churches?.name ?? null,
         start_date: assignment.start_date,
         end_date: assignment.end_date,
         ecclesiastical_year: assignment.ecclesiastical_year,
@@ -660,6 +718,7 @@ export class AdminUsersService {
       health: sensitiveBlocks.health,
       emergency_contacts: sensitiveBlocks.emergency_contacts,
       legal_representative: sensitiveBlocks.legal_representative,
+      guardianships,
       post_registration: sensitiveBlocks.post_registration,
       scope: this.toScopeMeta(scope),
     };
@@ -1081,6 +1140,150 @@ export class AdminUsersService {
       )
         ? this.buildMinimalPostRegistrationBlock(user)
         : null,
+    };
+  }
+
+  /**
+   * Who answers for this user and for whom this user answers (family profiles).
+   * Three reads, all by the user id: the rows as dependent (history included,
+   * revoked rows show who left and why), the live rows as guardian and the
+   * dependent profile. Contact data is limited to the guardian's e-mail.
+   */
+  private async buildGuardianshipsBlock(
+    userId: string,
+  ): Promise<AdminGuardianshipsBlock> {
+    const [asDependent, asGuardian, profile] = await Promise.all([
+      this.prisma.guardianships.findMany({
+        where: { dependent_user_id: userId },
+        orderBy: { created_at: 'asc' },
+        select: {
+          guardianship_id: true,
+          guardian_user_id: true,
+          is_primary: true,
+          is_custodian: true,
+          consent_status: true,
+          verification_method: true,
+          verified_at: true,
+          external_name: true,
+          is_test_data: true,
+          created_at: true,
+          revoked_at: true,
+          revoked_reason: true,
+          relationship_type: { select: { name: true } },
+          guardian: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              email: true,
+              active: true,
+            },
+          },
+          custodian_club: { select: { club_id: true, name: true } },
+          verifier: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+          consent_evidences: {
+            where: { superseded_at: null, purged_at: null },
+            select: { evidence_id: true },
+            take: 1,
+          },
+        },
+      }),
+      this.prisma.guardianships.findMany({
+        where: {
+          guardian_user_id: userId,
+          is_custodian: false,
+          consent_status: { not: 'revoked' },
+        },
+        orderBy: { created_at: 'asc' },
+        select: {
+          guardianship_id: true,
+          is_primary: true,
+          consent_status: true,
+          relationship_type: { select: { name: true } },
+          dependent: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              birthday: true,
+            },
+          },
+        },
+      }),
+      this.prisma.dependent_profiles.findUnique({
+        where: { user_id: userId },
+        select: {
+          created_at: true,
+          created_by_user_id: true,
+          frozen_at: true,
+          purge_after: true,
+        },
+      }),
+    ]);
+
+    const fullName = (
+      person: { name: string | null; paternal_last_name: string | null } | null,
+    ) =>
+      [person?.name, person?.paternal_last_name]
+        .filter((part): part is string => !!part && part.trim().length > 0)
+        .join(' ');
+
+    return {
+      as_dependent: asDependent.map((row) => ({
+        guardianship_id: row.guardianship_id,
+        guardian: row.guardian
+          ? {
+              user_id: row.guardian.user_id,
+              display_name: fullName(row.guardian),
+              // A deleted account keeps an anonymized placeholder address.
+              email: isDeletedAccountSnapshot(row.guardian)
+                ? null
+                : row.guardian.email,
+            }
+          : null,
+        custodian_club: row.custodian_club
+          ? {
+              club_id: row.custodian_club.club_id,
+              name: row.custodian_club.name,
+            }
+          : null,
+        external_name: row.external_name,
+        relationship_type_name: row.relationship_type?.name ?? null,
+        is_primary: row.is_primary,
+        is_custodian: row.is_custodian,
+        consent_status: row.consent_status,
+        verification_method: row.verification_method,
+        verified_at: row.verified_at,
+        verified_by: row.verifier
+          ? {
+              user_id: row.verifier.user_id,
+              display_name: fullName(row.verifier),
+            }
+          : null,
+        evidence_uploaded: row.consent_evidences.length > 0,
+        is_test_data: row.is_test_data,
+        created_at: row.created_at,
+        revoked_at: row.revoked_at,
+        revoked_reason: row.revoked_reason,
+      })),
+      as_guardian: asGuardian.map((row) => ({
+        guardianship_id: row.guardianship_id,
+        dependent: {
+          user_id: row.dependent.user_id,
+          display_name: fullName(row.dependent),
+          birthday: row.dependent.birthday,
+        },
+        relationship_type_name: row.relationship_type?.name ?? null,
+        is_primary: row.is_primary,
+        consent_status: row.consent_status,
+      })),
+      dependent_profile: profile,
     };
   }
 

@@ -89,7 +89,9 @@ export class UserAwareThrottlerGuard extends ThrottlerGuard {
       return undefined;
     }
 
-    const userId = user.sub ?? user.user_id;
+    // A guardian acting for a dependent is throttled as the GUARDIAN: `sub` is
+    // the substituted dependent there, `actor_sub` is the real caller.
+    const userId = user.actor_sub ?? user.sub ?? user.user_id;
 
     if (typeof userId === 'string' && userId.trim().length > 0) {
       return userId;

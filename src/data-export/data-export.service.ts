@@ -367,6 +367,8 @@ export class DataExportService {
         notificationPreferences,
         evidenceFiles,
         legalAcceptances,
+        guardianships,
+        dependentProfile,
       ] = await Promise.all([
         this.prisma.users.findUnique({
           where: { user_id: userId },
@@ -519,6 +521,42 @@ export class DataExportService {
           },
           orderBy: { accepted_at: 'desc' },
         }),
+
+        // Family profiles: guardianships where the user is the minor or the
+        // guardian. Link code hashes, consent evidence file keys and external
+        // contact data are deliberately NOT selected.
+        this.prisma.guardianships.findMany({
+          where: {
+            OR: [{ dependent_user_id: userId }, { guardian_user_id: userId }],
+          },
+          select: {
+            guardianship_id: true,
+            dependent_user_id: true,
+            guardian_user_id: true,
+            is_custodian: true,
+            custodian_club_id: true,
+            is_primary: true,
+            consent_status: true,
+            sworn_declaration_at: true,
+            verification_method: true,
+            verified_at: true,
+            revoked_at: true,
+            revoked_reason: true,
+            created_at: true,
+            relationship_type: { select: { name: true } },
+          },
+          orderBy: { created_at: 'asc' },
+        }),
+
+        this.prisma.dependent_profiles.findUnique({
+          where: { user_id: userId },
+          select: {
+            created_by_user_id: true,
+            created_at: true,
+            frozen_at: true,
+            purge_after: true,
+          },
+        }),
       ]);
 
       // Step 4: Build JSON payload
@@ -527,7 +565,7 @@ export class DataExportService {
           export_id: exportId,
           generated_at: new Date().toISOString(),
           format: 'json',
-          schema_version: '1.1.0',
+          schema_version: '1.2.0',
           app_version: process.env.npm_package_version ?? 'unknown',
           notice:
             'Evidence files (documents, images) are not included in this export. ' +
@@ -552,6 +590,21 @@ export class DataExportService {
         })),
         notification_preferences: notificationPreferences,
         legal_acceptances: legalAcceptances,
+        family: {
+          dependent_profile: dependentProfile,
+          as_dependent: guardianships
+            .filter((row) => row.dependent_user_id === userId)
+            .map(({ relationship_type, ...row }) => ({
+              ...row,
+              relationship_type: relationship_type?.name ?? null,
+            })),
+          as_guardian: guardianships
+            .filter((row) => row.guardian_user_id === userId)
+            .map(({ relationship_type, ...row }) => ({
+              ...row,
+              relationship_type: relationship_type?.name ?? null,
+            })),
+        },
         evidence_files_metadata: evidenceFiles,
       };
 

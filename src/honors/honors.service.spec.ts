@@ -1,3 +1,4 @@
+import { GuardianNotificationsService } from '../guardianships/guardian-notifications.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { HonorsService, HONOR_DETAIL_URL_LIMITER } from './honors.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +14,10 @@ import {
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import { InstructorsService } from '../instructors/instructors.service';
+
+const mockGuardianNotifications = {
+  onDependentEvidenceUploaded: jest.fn().mockResolvedValue(undefined),
+};
 
 describe('HonorsService', () => {
   let service: HonorsService;
@@ -120,6 +125,10 @@ describe('HonorsService', () => {
           useValue: masterHonorsEvaluator,
         },
         { provide: InstructorsService, useValue: instructors },
+        {
+          provide: GuardianNotificationsService,
+          useValue: mockGuardianNotifications,
+        },
         {
           provide: TranslationService,
           useValue: {
@@ -1358,6 +1367,13 @@ describe('HonorsService', () => {
           }),
         }),
       );
+      // Guardians of the honor owner are told after the files were saved.
+      expect(
+        mockGuardianNotifications.onDependentEvidenceUploaded,
+      ).toHaveBeenCalledWith({
+        dependentUserId: 'user-123',
+        kind: 'honor',
+      });
     });
 
     it('should abort DB persistence and rollback uploaded objects when any upload fails', async () => {
@@ -1405,6 +1421,10 @@ describe('HonorsService', () => {
         StorageBucketAlias.USERS_HONORS_CERT,
         ['cert-user-123-15-1000.pdf'],
       );
+      // A failed upload never notifies the guardians.
+      expect(
+        mockGuardianNotifications.onDependentEvidenceUploaded,
+      ).not.toHaveBeenCalled();
     });
 
     it('should rollback all uploaded objects when DB save fails', async () => {

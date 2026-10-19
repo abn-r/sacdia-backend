@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { UsersService } from '../users/users.service';
-import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
+import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
+import { ageToday } from '../common/age/age.util';
 import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
+import { CompleteGuardianOnlyDto } from './dto/complete-guardian-only.dto';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import {
@@ -16,6 +17,7 @@ import {
   AppConflictException,
   AppException,
   AppInternalServerErrorException,
+  AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
@@ -51,8 +53,7 @@ export class PostRegistrationService {
 
   constructor(
     private prisma: PrismaService,
-    private usersService: UsersService,
-    private legalRepService: LegalRepresentativesService,
+    private countryAgePolicy: CountryAgePolicyService,
     private classAssignmentResolver: ClassAssignmentResolverService,
     private membershipRequestsService: MembershipRequestsService,
     private authorizationContext: AuthorizationContextService,
@@ -197,20 +198,6 @@ export class PostRegistrationService {
         throw new AppBadRequestException(
           ErrorCode.POST_REG_EMERGENCY_CONTACT_REQUIRED,
         );
-      }
-
-      // Si es menor de 18, validar representante legal
-      const requiresRep =
-        await this.usersService.requiresLegalRepresentative(userId);
-
-      if (requiresRep) {
-        try {
-          await this.legalRepService.findOne(userId);
-        } catch {
-          throw new AppBadRequestException(
-            ErrorCode.POST_REG_LEGAL_REP_REQUIRED,
-          );
-        }
       }
 
       await this.prisma.users_pr.update({
@@ -362,6 +349,92 @@ export class PostRegistrationService {
         'No se puede completar el paso 3 para este usuario',
       );
     }
+  }
+
+  /**
+   * "Solo soy tutor de menores": an adult guardian closes their own
+   * post-registration without joining a club. Owner only (the controller
+   * route has no @ActingScope, so a guardian acting for a dependent is denied
+   * before reaching here). No dependent has to exist yet.
+   */
+  async completeGuardianOnly(
+    userId: string,
+    dto: CompleteGuardianOnlyDto,
+    actor: PostRegistrationActorContext = this.createOwnerContext(userId),
+  ) {
+    // Third parties (admins) never close this exit on someone else's behalf.
+    if (!actor.isOwner) {
+      throw new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
+    }
+
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: {
+        birthday: true,
+        country_id: true,
+        account: { select: { id: true }, take: 1 },
+      },
+    });
+
+    // Only a person with their own login (Better Auth account) can be a
+    // guardian; a dependent (no account) can never take this exit.
+    if (!user || user.account.length === 0 || !user.birthday) {
+      throw new AppUnprocessableEntityException(
+        ErrorCode.POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT,
+      );
+    }
+
+    const policy = await this.countryAgePolicy.getPolicy(
+      dto.country_id ?? user.country_id,
+    );
+    if (ageToday(user.birthday, policy.timeZone) < policy.ageOfMajority) {
+      throw new AppUnprocessableEntityException(
+        ErrorCode.POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const userPr = await tx.users_pr.findUnique({
+        where: { user_id: userId },
+        select: { user_id: true },
+      });
+      if (!userPr) {
+        throw new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
+      }
+
+      const geo: Prisma.usersUncheckedUpdateInput = {};
+      if (dto.country_id !== undefined) geo.country_id = dto.country_id;
+      if (dto.union_id !== undefined) geo.union_id = dto.union_id;
+      if (dto.local_field_id !== undefined) {
+        geo.local_field_id = dto.local_field_id;
+      }
+      if (Object.keys(geo).length > 0) {
+        await tx.users.update({ where: { user_id: userId }, data: geo });
+      }
+
+      await tx.users_pr.update({
+        where: { user_id: userId },
+        data: {
+          club_selection_complete: true,
+          complete: true,
+          date_completed: new Date(),
+        },
+      });
+
+      await this.authorizationContextVersion.bump(tx, userId);
+    });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+
+    this.logger.log(
+      `Guardian-only exit completed for user ${userId} - Post-registration COMPLETE`,
+    );
+
+    return {
+      status: 'success',
+      message: 'Post-registro completado',
+      data: { mode: 'guardian_only' },
+    };
   }
 
   async cancelPendingMembershipRequest(

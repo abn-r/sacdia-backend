@@ -5,6 +5,7 @@ import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { DependentPushRouterService } from './dependent-push-router.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { buildAuthorizationSnapshot } from '../../test/helpers/rbac-test-helpers';
 import {
@@ -50,6 +51,12 @@ describe('NotificationsService', () => {
 
   const mockNotificationsQueue = {
     add: jest.fn().mockResolvedValue({ id: 'job-broadcast' }),
+  };
+
+  const mockDependentPushRouter = {
+    routeAndSend: jest
+      .fn()
+      .mockResolvedValue({ successCount: 0, failureCount: 0 }),
   };
 
   const mockAuthorizationContextService = {
@@ -103,6 +110,10 @@ describe('NotificationsService', () => {
       {
         provide: AuthorizationContextService,
         useValue: mockAuthorizationContextService,
+      },
+      {
+        provide: DependentPushRouterService,
+        useValue: mockDependentPushRouter,
       },
     ];
 
@@ -1565,6 +1576,97 @@ describe('NotificationsService', () => {
       await expect(
         service.sendSilentToSection(payload),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('dependent push routing', () => {
+    const DEPENDENT = '00000000-0000-0000-0000-0000000000d1';
+
+    beforeEach(() => {
+      mockDependentPushRouter.routeAndSend.mockClear();
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+      mockPreferencesService.isAllowedForUser.mockResolvedValue(true);
+    });
+
+    it('pushBestEffort routes to guardians even when the dependent has no tokens', async () => {
+      await service.pushBestEffort(
+        {
+          userId: DEPENDENT,
+          title: 'Insignia',
+          body: 'Ganaste una insignia',
+          data: { type: 'badge' },
+        },
+        'achievements:unlock',
+      );
+
+      expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledWith(
+        [DEPENDENT],
+        {
+          title: 'Insignia',
+          body: 'Ganaste una insignia',
+          data: { type: 'badge' },
+          source: 'achievements:unlock',
+        },
+        expect.any(Function),
+        expect.stringContaining('pushBestEffort'),
+      );
+    });
+
+    it('pushBestEffort does not route when the user opted out of the source', async () => {
+      mockPreferencesService.isAllowedForUser.mockResolvedValue(false);
+      await service.pushBestEffort(
+        { userId: DEPENDENT, title: 'T', body: 'B' },
+        'achievements:unlock',
+      );
+      expect(mockDependentPushRouter.routeAndSend).not.toHaveBeenCalled();
+    });
+
+    it('pushBestEffort does not route when FCM is not configured', async () => {
+      (firebaseAdminMock.getApps as jest.Mock).mockReturnValue([]);
+      await service.pushBestEffort({
+        userId: DEPENDENT,
+        title: 'T',
+        body: 'B',
+      });
+      expect(mockDependentPushRouter.routeAndSend).not.toHaveBeenCalled();
+    });
+
+    it('the synchronous sendToUser path routes to guardians and keeps the inbox on the dependent', async () => {
+      mockPrismaService.$transaction.mockImplementation(
+        (fn: (tx: any) => Promise<any>) => fn(mockPrismaService),
+      );
+
+      await service.sendToUser(
+        { userId: DEPENDENT, title: 'Hola', body: 'Mundo' },
+        SENT_BY,
+        'activities:created',
+      );
+
+      expect(
+        mockPrismaService.notification_deliveries.create,
+      ).toHaveBeenCalledWith({ data: { log_id: 1, user_id: DEPENDENT } });
+      expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledWith(
+        [DEPENDENT],
+        expect.objectContaining({
+          title: 'Hola',
+          source: 'activities:created',
+        }),
+        expect.any(Function),
+        expect.stringContaining('sendToUserSync'),
+      );
+    });
+
+    it('silent realtime pushes are never routed', async () => {
+      (service as any).queue = undefined;
+      await service.sendSilentToSection({
+        sectionId: 1,
+        resource: 'activities',
+        action: 'CREATED',
+        entityId: 1,
+        actorId: SENT_BY,
+        timestamp: new Date().toISOString(),
+      });
+      expect(mockDependentPushRouter.routeAndSend).not.toHaveBeenCalled();
     });
   });
 });

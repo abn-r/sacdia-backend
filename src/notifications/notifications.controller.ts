@@ -45,6 +45,7 @@ import {
   PermissionsGuard,
 } from '../common/guards';
 import { NOTIFICATION_CATEGORIES } from './notification-categories.constants';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 enum ClubInstanceType {
   adventurers = 'adventurers',
@@ -198,6 +199,7 @@ export class NotificationsController {
   }
 
   @Get('history')
+  @ActingScope('self:read')
   @SkipPermissions()
   @ApiResponse({ status: 200, description: 'Paginated notification audit log' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
@@ -224,6 +226,7 @@ export class NotificationsController {
   // ---------------------------------------------------------------------------
 
   @Get('unread-count')
+  @ActingScope('self:read')
   @SkipPermissions()
   @UseGuards(JwtAuthGuard)
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
@@ -242,6 +245,7 @@ export class NotificationsController {
   }
 
   @Patch('read-all')
+  @ActingScope('self:read')
   @SkipPermissions()
   @UseGuards(JwtAuthGuard)
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
@@ -260,6 +264,7 @@ export class NotificationsController {
   }
 
   @Patch(':deliveryId/read')
+  @ActingScope('self:read')
   @SkipPermissions()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
@@ -381,7 +386,8 @@ export class FcmTokensController {
   @Get('user/:userId')
   @UseGuards(OwnerOrAdminGuard)
   @ApiOperation({
-    summary: 'Get FCM tokens by user ID (owner or admin/assistant-admin/super-admin)',
+    summary:
+      'Get FCM tokens by user ID (owner or admin/assistant-admin/super-admin)',
   })
   @ApiResponse({ status: 200, description: 'List of FCM tokens for user' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })

@@ -91,7 +91,7 @@ export class MfaService {
    */
   async verifyMfa(
     userId: string,
-    email: string,
+    email: string | null,
     code: string,
     sessionId?: string | null,
   ): Promise<{ verified: boolean; accessToken?: string }> {

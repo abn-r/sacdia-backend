@@ -1,6 +1,32 @@
-import { IsDate, IsInt, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsDate,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+
+/**
+ * Every state a `club_role_assignments.status` can hold (the column is a free
+ * VARCHAR, so the API is what keeps it in this set). `designated` stays here so
+ * the service keeps answering it with its specific 400; making a row `active`
+ * also passes the consent gate for dependents.
+ */
+export const CLUB_ROLE_ASSIGNMENT_STATUSES = [
+  'active',
+  'inactive',
+  'pending',
+  'rejected',
+  'expired',
+  'cancelled',
+  'ended',
+  'designated',
+] as const;
+export type ClubRoleAssignmentStatus =
+  (typeof CLUB_ROLE_ASSIGNMENT_STATUSES)[number];
 
 export class AssignRoleDto {
   @ApiProperty({ description: 'ID del usuario' })
@@ -83,10 +109,13 @@ export class UpdateRoleAssignmentDto {
   @Type(() => Date)
   end_date?: Date;
 
-  @ApiPropertyOptional({ description: 'Estado del rol' })
+  @ApiPropertyOptional({
+    description: 'Estado del rol',
+    enum: CLUB_ROLE_ASSIGNMENT_STATUSES,
+  })
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsIn(CLUB_ROLE_ASSIGNMENT_STATUSES)
+  status?: ClubRoleAssignmentStatus;
 }
 
 export class DirectorSuccessionDto {
@@ -111,11 +140,15 @@ export class DirectorSuccessionDto {
 }
 
 export class DirectorDesignationDto {
-  @ApiProperty({ description: 'Usuario que será preelegido como director para el año futuro' })
+  @ApiProperty({
+    description: 'Usuario que será preelegido como director para el año futuro',
+  })
   @IsUUID()
   declare user_id: string;
 
-  @ApiProperty({ description: 'ID del año eclesiástico futuro para la programación' })
+  @ApiProperty({
+    description: 'ID del año eclesiástico futuro para la programación',
+  })
   @Type(() => Number)
   @IsInt()
   declare ecclesiastical_year_id: number;
@@ -126,7 +159,9 @@ export class ReplaceDirectorPlanDto {
   @IsUUID()
   declare succession_id: string;
 
-  @ApiProperty({ description: 'Versión actual de la programación (control optimista)' })
+  @ApiProperty({
+    description: 'Versión actual de la programación (control optimista)',
+  })
   @Type(() => Number)
   @IsInt()
   declare version: number;
@@ -137,7 +172,9 @@ export class ReplaceDirectorPlanDto {
 }
 
 export class DirectorInitialAssignmentDto {
-  @ApiProperty({ description: 'Usuario que será asignado como director inicial' })
+  @ApiProperty({
+    description: 'Usuario que será asignado como director inicial',
+  })
   @IsUUID()
   declare user_id: string;
 

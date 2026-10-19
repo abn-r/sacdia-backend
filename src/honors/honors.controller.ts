@@ -52,6 +52,7 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 // ========================================
 // CATÁLOGO DE HONORES (Público)
@@ -172,6 +173,7 @@ export class UserHonorsController {
   ) {}
 
   @Get()
+  @ActingScope('self:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:read')
   @ApiOperation({
@@ -192,6 +194,7 @@ export class UserHonorsController {
   }
 
   @Get('stats')
+  @ActingScope('self:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:read')
   @ApiOperation({ summary: 'Obtener estadísticas de honores del usuario' })
@@ -202,6 +205,7 @@ export class UserHonorsController {
   }
 
   @Post()
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @ApiOperation({
@@ -219,6 +223,7 @@ export class UserHonorsController {
   }
 
   @Post('bulk')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @ApiOperation({
@@ -239,6 +244,7 @@ export class UserHonorsController {
   }
 
   @Post(':honorId/files')
+  @ActingScope('evidence:upload')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @UseInterceptors(
@@ -295,6 +301,7 @@ export class UserHonorsController {
   }
 
   @Post(':honorId')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @ApiOperation({
@@ -314,6 +321,7 @@ export class UserHonorsController {
   }
 
   @Patch(':honorId')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:submit')
   @ApiOperation({
@@ -338,6 +346,7 @@ export class UserHonorsController {
   }
 
   @Delete(':honorId')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:delete')
   @ApiOperation({

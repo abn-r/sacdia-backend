@@ -24,6 +24,7 @@ import {
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 import { ClubsService } from './clubs.service';
 import { DirectorDesignationService } from './director-designation.service';
 import {
@@ -67,7 +68,11 @@ export class ClubsController {
   // CLUBS - CRUD
   // ========================================
 
+  // Post-registration step 3 reads this list while a guardian acts for a
+  // dependent. Only this route and getSections carry a scope in this
+  // controller; every other /clubs route stays denied while acting.
   @Get()
+  @ActingScope('registration:write')
   @SkipPermissions()
   @ApiOperation({
     summary: 'Listar clubs',
@@ -154,8 +159,7 @@ export class ClubsController {
   @RequirePermissions('clubs:update')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
-    summary:
-      'Actualizar club (dirección o secretaría de la sección activa)',
+    summary: 'Actualizar club (dirección o secretaría de la sección activa)',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Club actualizado' })
@@ -185,6 +189,7 @@ export class ClubsController {
   // ========================================
 
   @Get(':clubId/sections')
+  @ActingScope('registration:write')
   @SkipPermissions()
   @ApiOperation({
     summary: 'Obtener secciones del club',
@@ -251,8 +256,7 @@ export class ClubsController {
     idParam: 'sectionId',
   })
   @ApiOperation({
-    summary:
-      'Actualizar sección (dirección o secretaría de la sección activa)',
+    summary: 'Actualizar sección (dirección o secretaría de la sección activa)',
     description:
       'Aventureros y Conquistadores pueden apagarse con active=false. Guías Mayores no: 400 CLUB_SECTION_MASTER_GUIDES_REQUIRED. active=true en una GM inactiva (legado) está permitido. fee, souls_target y meeting no se bloquean.',
   })
@@ -405,6 +409,11 @@ export class ClubsController {
   @ApiResponse({ status: 201, description: 'Rol asignado' })
   @ApiResponse({ status: 400, description: 'Rango de fechas de rol inválido' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'MR_CONSENT_NOT_VERIFIED: el usuario es un menor sin consentimiento del tutor verificado',
+  })
   async assignRole(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Body() dto: AssignRoleDto,
@@ -484,11 +493,21 @@ export class ClubsController {
   @ApiHeader({
     name: 'Idempotency-Key',
     required: true,
-    description: 'Clave de idempotencia del actor. Misma clave y payload reutilizan el plan; distinta payload → 409 IDEMPOTENCY_KEY_REUSED.',
+    description:
+      'Clave de idempotencia del actor. Misma clave y payload reutilizan el plan; distinta payload → 409 IDEMPOTENCY_KEY_REUSED.',
   })
-  @ApiResponse({ status: 201, description: 'Programación creada o reutilizada' })
-  @ApiResponse({ status: 400, description: 'Año inválido o falta Idempotency-Key' })
-  @ApiResponse({ status: 409, description: 'Ya existe un plan abierto para esa sección/año' })
+  @ApiResponse({
+    status: 201,
+    description: 'Programación creada o reutilizada',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Año inválido o falta Idempotency-Key',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Ya existe un plan abierto para esa sección/año',
+  })
   async designateDirector(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
@@ -607,7 +626,15 @@ export class ClubRolesController {
   @ApiOperation({ summary: 'Actualizar asignación de rol' })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Asignación actualizada' })
-  @ApiResponse({ status: 400, description: 'Rango de fechas de rol inválido' })
+  @ApiResponse({
+    status: 400,
+    description: 'Rango de fechas de rol inválido o `status` fuera del enum',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'MR_CONSENT_NOT_VERIFIED: activar la asignación de un menor sin consentimiento del tutor verificado',
+  })
   async updateAssignment(
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
     @Body() dto: UpdateRoleAssignmentDto,

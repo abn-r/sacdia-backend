@@ -19,6 +19,7 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ageAt } from '../common/age/age.util';
 import { CamporeeStaffService } from '../camporee-staff/camporee-staff.service';
 import {
   AddCamporeeJudgeDto,
@@ -233,18 +234,6 @@ export class CamporeeScoringService {
       .toLowerCase();
   }
 
-  private calculateAge(birthday: Date, referenceDate = new Date()): number {
-    let age = referenceDate.getUTCFullYear() - birthday.getUTCFullYear();
-    const monthDiff = referenceDate.getUTCMonth() - birthday.getUTCMonth();
-    const dayDiff = referenceDate.getUTCDate() - birthday.getUTCDate();
-
-    if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
-      age -= 1;
-    }
-
-    return age;
-  }
-
   private getAdultCutoffDate(referenceDate = new Date()): Date {
     const cutoff = new Date(referenceDate);
     cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 18);
@@ -266,7 +255,7 @@ export class CamporeeScoringService {
     ].map((role) => this.normalizeText(role));
     const reasons: CamporeeJudgeEligibilityReason[] = [];
 
-    if (user.birthday && this.calculateAge(user.birthday) >= 18) {
+    if (user.birthday && ageAt(user.birthday, new Date()) >= 18) {
       reasons.push('adult');
     }
 
@@ -986,8 +975,7 @@ export class CamporeeScoringService {
 
     return {
       camporee_event_section_result_id: result.camporee_event_section_result_id,
-      score_status:
-        result.score_status === 'no_show' ? 'no_show' : 'scored',
+      score_status: result.score_status === 'no_show' ? 'no_show' : 'scored',
       is_no_show: result.is_no_show ?? false,
       total_awarded_points: this.round2(
         this.toNumber(result.total_awarded_points),
@@ -1851,8 +1839,7 @@ export class CamporeeScoringService {
       club_name: row.club_sections?.clubs?.name ?? null,
       section_name: row.club_sections?.club_types?.name ?? null,
       status: row.status,
-      active_result_id:
-        activeResultBySection.get(row.club_section_id) ?? null,
+      active_result_id: activeResultBySection.get(row.club_section_id) ?? null,
     }));
   }
 

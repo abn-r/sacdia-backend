@@ -7,6 +7,7 @@ import {
   Delete,
   Param,
   Body,
+  Req,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -41,6 +42,8 @@ import {
   SensitiveUserSubresource,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
+import type { AuthPrincipal } from '../auth/acting-for/auth-principal';
 
 @ApiTags('users')
 @Controller('users')
@@ -50,6 +53,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get(':userId')
+  @ActingScope('self:read')
   @RequirePermissions('users:read_detail')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Obtener información de un usuario' })
@@ -60,6 +64,7 @@ export class UsersController {
   }
 
   @Get(':userId/allergies')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener alergias activas del usuario' })
   @ApiResponse({
@@ -81,6 +86,7 @@ export class UsersController {
   }
 
   @Get(':userId/diseases')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener enfermedades activas del usuario' })
   @ApiResponse({
@@ -102,6 +108,7 @@ export class UsersController {
   }
 
   @Get(':userId/medicines')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener medicamentos activos del usuario' })
   @ApiResponse({
@@ -123,19 +130,27 @@ export class UsersController {
   }
 
   @Patch(':userId')
+  @ActingScope('profile:write')
   @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Actualizar información personal del usuario' })
   @ApiResponse({ status: 200, description: 'Usuario actualizado' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({
+    status: 422,
+    description:
+      'USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE: self-edit birthday below the country minimum age',
+  })
   async update(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() updateUserDto: UpdateUserDto,
+    @Req() req: { user?: AuthPrincipal },
   ) {
-    return this.usersService.update(userId, updateUserDto);
+    return this.usersService.update(userId, updateUserDto, req.user);
   }
 
   @Put(':userId/allergies')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar alergias del usuario',
@@ -168,6 +183,7 @@ export class UsersController {
   }
 
   @Put(':userId/diseases')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar enfermedades del usuario',
@@ -200,6 +216,7 @@ export class UsersController {
   }
 
   @Put(':userId/medicines')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar medicamentos del usuario',
@@ -232,6 +249,7 @@ export class UsersController {
   }
 
   @Delete(':userId/allergies/:allergyId')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar alergia del usuario (borrado lógico)',
@@ -251,6 +269,7 @@ export class UsersController {
   }
 
   @Delete(':userId/diseases/:diseaseId')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar enfermedad del usuario (borrado lógico)',
@@ -270,6 +289,7 @@ export class UsersController {
   }
 
   @Delete(':userId/medicines/:medicineId')
+  @ActingScope('profile:write')
   @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar medicamento del usuario (borrado lógico)',
@@ -289,6 +309,7 @@ export class UsersController {
   }
 
   @Post(':userId/profile-picture')
+  @ActingScope('profile:write')
   @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
@@ -320,6 +341,7 @@ export class UsersController {
   }
 
   @Delete(':userId/profile-picture')
+  @ActingScope('profile:write')
   @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Eliminar foto de perfil' })
@@ -330,6 +352,7 @@ export class UsersController {
   }
 
   @Get(':userId/age')
+  @ActingScope('self:read')
   @RequirePermissions('users:read_detail')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Calcular edad del usuario' })
@@ -347,10 +370,13 @@ export class UsersController {
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Verificar si el usuario requiere representante legal',
+    deprecated: true,
+    description:
+      'Deprecated: los representantes legales son de solo lectura (reemplazados por guardianships). La mayoría de edad se toma del país del usuario.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Si requiere (edad < 18) o no',
+    description: 'Si requiere (edad < mayoría de edad del país) o no',
   })
   async requiresLegalRepresentative(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -365,7 +391,7 @@ export class UsersController {
         required,
         userAge: age,
         reason: required
-          ? 'Usuario es menor de 18 años'
+          ? 'Usuario es menor de edad'
           : 'Usuario es mayor de edad',
       },
     };

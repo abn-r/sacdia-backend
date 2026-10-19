@@ -25,6 +25,47 @@ async function mismatchCode(fn: () => unknown) {
   throw new Error('expected a LEGAL_VERSION_MISMATCH');
 }
 
+describe('LegalService.recordOnBehalf', () => {
+  it('writes the dependent rows inside the caller transaction, crediting the guardian', async () => {
+    const { service, prisma } = createService();
+    const tx = {
+      legal_acceptances: {
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+    };
+
+    await service.recordOnBehalf(tx as any, 'child-1', OK, 'guardian-1', {
+      ipAddress: '203.0.113.45',
+      userAgent: 'SACDIA/1.0',
+    });
+
+    expect(prisma.legal_acceptances.createMany).not.toHaveBeenCalled();
+    expect(tx.legal_acceptances.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          user_id: 'child-1',
+          document_type: 'terms',
+          document_version: CURRENT,
+          method: 'register_checkbox',
+          ip_address: '203.0.113.45',
+          user_agent: 'SACDIA/1.0',
+          accepted_by_user_id: 'guardian-1',
+        },
+        {
+          user_id: 'child-1',
+          document_type: 'privacy',
+          document_version: CURRENT,
+          method: 'register_checkbox',
+          ip_address: '203.0.113.45',
+          user_agent: 'SACDIA/1.0',
+          accepted_by_user_id: 'guardian-1',
+        },
+      ],
+      skipDuplicates: true,
+    });
+  });
+});
+
 describe('LegalService', () => {
   describe('getCurrent', () => {
     it('returns terms then privacy with version and url', () => {
@@ -184,6 +225,20 @@ describe('LegalService', () => {
         ],
         skipDuplicates: true,
       });
+    });
+
+    it('records who accepted when a guardian accepts for a dependent', async () => {
+      const { service, prisma } = createService();
+      await service.accept('child-1', OK, undefined, 'guardian-1');
+      const rows = prisma.legal_acceptances.createMany.mock.calls[0][0].data;
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row).toMatchObject({
+          user_id: 'child-1',
+          accepted_by_user_id: 'guardian-1',
+          method: 'acceptance_gate',
+        });
+      }
     });
 
     it('returns the refreshed status', async () => {

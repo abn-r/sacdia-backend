@@ -55,6 +55,143 @@ describe('AuditLogsService', () => {
       );
     });
 
+    describe('acting-for attribution', () => {
+      const actingFor = {
+        actorUserId: 'guardian-1',
+        subjectUserId: 'dependent-1',
+        guardianshipId: 'gs-1',
+        kind: 'guardian_acting' as const,
+      };
+
+      const withActingFor = <T>(fn: () => Promise<T>): Promise<T> =>
+        runWithAuditContext(async () => {
+          const context = getAuditContext();
+          if (context) context.actingFor = actingFor;
+          return fn();
+        });
+
+      beforeEach(() => {
+        mockPrisma.audit_logs.create.mockResolvedValue({ audit_log_id: 3n });
+      });
+
+      it('attributes the row to the guardian and targets the dependent when the actor is the subject', async () => {
+        await withActingFor(() =>
+          service.recordEvent({
+            entity_type: 'users',
+            entity_id: 'dependent-1',
+            action: 'UPDATED',
+            actor_user_id: 'dependent-1',
+            actor_kind: 'user',
+            request_context: { method: 'PATCH' },
+          }),
+        );
+
+        expect(mockPrisma.audit_logs.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            actor_user_id: 'guardian-1',
+            actor_kind: 'guardian_acting',
+            target_user_id: 'dependent-1',
+            request_context: {
+              method: 'PATCH',
+              acting_for: {
+                guardian_user_id: 'guardian-1',
+                dependent_user_id: 'dependent-1',
+                guardianship_id: 'gs-1',
+              },
+            },
+          }),
+        });
+      });
+
+      it('attributes a row that has no actor', async () => {
+        await withActingFor(() =>
+          service.recordEvent({
+            entity_type: 'users',
+            entity_id: 'dependent-1',
+            action: 'UPDATED',
+          }),
+        );
+
+        expect(mockPrisma.audit_logs.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            actor_user_id: 'guardian-1',
+            actor_kind: 'guardian_acting',
+            target_user_id: 'dependent-1',
+          }),
+        });
+      });
+
+      it('keeps an explicit target_user_id', async () => {
+        await withActingFor(() =>
+          service.recordEvent({
+            entity_type: 'users',
+            entity_id: 'x',
+            action: 'UPDATED',
+            actor_user_id: 'dependent-1',
+            target_user_id: 'someone-else',
+          }),
+        );
+
+        expect(mockPrisma.audit_logs.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ target_user_id: 'someone-else' }),
+        });
+      });
+
+      it('does not override a third-party actor (e.g. a director reviewing the dependent)', async () => {
+        await withActingFor(() =>
+          service.recordEvent({
+            entity_type: 'membership_request',
+            entity_id: 'a-1',
+            action: 'membership_request.approved',
+            actor_user_id: 'director-1',
+            target_user_id: 'dependent-1',
+          }),
+        );
+
+        expect(mockPrisma.audit_logs.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            actor_user_id: 'director-1',
+            actor_kind: 'user',
+            target_user_id: 'dependent-1',
+            request_context: expect.anything(),
+          }),
+        });
+        const data = mockPrisma.audit_logs.create.mock.calls[0][0].data;
+        expect(data.request_context).not.toHaveProperty('acting_for');
+      });
+
+      it('does not re-attribute system events', async () => {
+        await withActingFor(() =>
+          service.recordEvent({
+            entity_type: 'cron',
+            entity_id: 'purge',
+            action: 'PURGED',
+            actor_kind: 'system',
+          }),
+        );
+
+        const data = mockPrisma.audit_logs.create.mock.calls[0][0].data;
+        expect(data.actor_user_id).toBeNull();
+        expect(data.actor_kind).toBe('system');
+      });
+
+      it('is a no-op outside an acting request', async () => {
+        await runWithAuditContext(() =>
+          service.recordEvent({
+            entity_type: 'users',
+            entity_id: 'u',
+            action: 'UPDATED',
+            actor_user_id: 'u',
+          }),
+        );
+
+        const data = mockPrisma.audit_logs.create.mock.calls[0][0].data;
+        expect(data.actor_user_id).toBe('u');
+        expect(data.actor_kind).toBe('user');
+        expect(data.target_user_id).toBeNull();
+      });
+    });
+
     it('swallows errors without rethrowing', async () => {
       mockPrisma.audit_logs.create.mockRejectedValue(
         new Error('DB connection lost'),
@@ -157,6 +294,57 @@ describe('AuditLogsService', () => {
           entity_id: '1',
           action: 'CREATED',
         });
+        expect(getAuditContext()?.explicitAuditRecorded).toBe(true);
+      });
+    });
+  });
+
+  /**
+   * Fail-closed variant (verify 2c W3): for events whose absence would be a
+   * compliance gap (reads of a minor's consent form), the caller must know the
+   * row was not written.
+   */
+  describe('recordEventOrThrow', () => {
+    const event = {
+      entity_type: 'guardianship_consent_evidence',
+      entity_id: 'ev-1',
+      action: 'read',
+      actor_user_id: 'director-1',
+      target_user_id: 'dependent-1',
+    };
+
+    it('rethrows a failed insert instead of swallowing it', async () => {
+      mockPrisma.audit_logs.create.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(service.recordEventOrThrow(event)).rejects.toThrow(
+        'db down',
+      );
+    });
+
+    it('writes with the given transaction client, same row shape as recordEvent', async () => {
+      const tx = { audit_logs: { create: jest.fn().mockResolvedValue({}) } };
+
+      await service.recordEventOrThrow(event, tx as never);
+
+      expect(mockPrisma.audit_logs.create).not.toHaveBeenCalled();
+      expect(tx.audit_logs.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          entity_type: 'guardianship_consent_evidence',
+          entity_id: 'ev-1',
+          action: 'read',
+          actor_user_id: 'director-1',
+          target_user_id: 'dependent-1',
+          result: 'succeeded',
+          source: 'service',
+          actor_kind: 'user',
+        }),
+      });
+    });
+
+    it('marks the dedup flag like recordEvent', async () => {
+      mockPrisma.audit_logs.create.mockResolvedValue({});
+      await runWithAuditContext(async () => {
+        await service.recordEventOrThrow(event);
         expect(getAuditContext()?.explicitAuditRecorded).toBe(true);
       });
     });

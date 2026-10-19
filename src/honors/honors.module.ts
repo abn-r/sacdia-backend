@@ -16,6 +16,7 @@ import { InstructorsModule } from '../instructors/instructors.module';
 import { CatalogsModule } from '../catalogs/catalogs.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { GuardianshipsModule } from '../guardianships/guardianships.module';
 import { HonorValidationWorkflowService } from './honor-validation-workflow.service';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 import { MasterHonorsService } from './master-honors.service';
@@ -45,6 +46,7 @@ function isRedisConfigured(): boolean {
     CatalogsModule,
     AchievementsModule,
     NotificationsModule,
+    GuardianshipsModule,
     MasterHonorsQueueModule,
   ],
   controllers: [

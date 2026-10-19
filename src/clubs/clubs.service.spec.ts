@@ -83,6 +83,14 @@ describe('ClubsService', () => {
       count: jest.fn(),
       findMany: jest.fn(),
     },
+    // Consent gate (family-profiles): adults by default (no dependent row).
+    dependent_profiles: {
+      findUnique: jest.fn(),
+    },
+    guardianships: {
+      findFirst: jest.fn(),
+    },
+    $executeRaw: jest.fn(),
     $transaction: jest.fn(),
   };
 
@@ -1392,6 +1400,8 @@ describe('ClubsService', () => {
 
     function mockInitialAssignmentTransaction(existingDirectorCount = 0) {
       const tx = {
+        // Adult successor: the consent gate is a no-op.
+        dependent_profiles: { findUnique: jest.fn().mockResolvedValue(null) },
         club_role_assignments: {
           count: jest.fn().mockResolvedValue(existingDirectorCount),
           create: jest.fn().mockResolvedValue({
@@ -1532,6 +1542,8 @@ describe('ClubsService', () => {
 
     function mockSuccessionTransaction(overrideCurrentYearId = 2026) {
       const tx = {
+        // Adult successor: the consent gate is a no-op.
+        dependent_profiles: { findUnique: jest.fn().mockResolvedValue(null) },
         club_role_assignments: {
           findUnique: jest.fn().mockResolvedValue({
             assignment_id: currentAssignmentId,
@@ -2543,6 +2555,354 @@ describe('ClubsService', () => {
           expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
         },
       );
+    });
+  });
+
+  /**
+   * family-profiles C1/C2: a dependent (minor without an account) can only get
+   * an ACTIVE club role once a guardian's consent is verified. Every write that
+   * activates an assignment runs the gate in its own transaction.
+   */
+  describe('consent gate on activation (family-profiles)', () => {
+    const dependentId = '20a9a762-a4fa-49dd-93a6-3851e27f8b69';
+    const directorRoleId = '00000000-0000-0000-0000-000000000006';
+    const actorUserId = '00000000-0000-0000-0000-000000000001';
+
+    /** Gate models of a transaction client for one user. */
+    const gateModels = (
+      consent: 'adult' | 'unverified' | 'verified',
+    ): {
+      dependent_profiles: { findUnique: jest.Mock };
+      guardianships: { findFirst: jest.Mock };
+      $executeRaw: jest.Mock;
+    } => ({
+      dependent_profiles: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            consent === 'adult' ? null : { user_id: dependentId },
+          ),
+      },
+      guardianships: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue(
+            consent === 'verified' ? { guardianship_id: 'g-1' } : null,
+          ),
+      },
+      $executeRaw: jest.fn().mockResolvedValue(1),
+    });
+
+    const useGateOnRootClient = (
+      consent: 'adult' | 'unverified' | 'verified',
+    ) => {
+      const models = gateModels(consent);
+      mockPrismaService.dependent_profiles.findUnique.mockImplementation(
+        models.dependent_profiles.findUnique,
+      );
+      mockPrismaService.guardianships.findFirst.mockImplementation(
+        models.guardianships.findFirst,
+      );
+      mockPrismaService.$executeRaw.mockImplementation(models.$executeRaw);
+      mockPrismaService.$transaction = jest.fn(
+        (callback: (tx: typeof mockPrismaService) => unknown) =>
+          callback(mockPrismaService),
+      );
+    };
+
+    afterEach(() => {
+      mockPrismaService.dependent_profiles.findUnique.mockReset();
+      mockPrismaService.guardianships.findFirst.mockReset();
+      mockPrismaService.$executeRaw.mockReset();
+    });
+
+    describe('assignRole (POST /clubs/:clubId/sections/:sectionId/roles)', () => {
+      const dto = {
+        user_id: dependentId,
+        role_id: 'role-member',
+        club_section_id: 7,
+        ecclesiastical_year_id: 2026,
+      };
+      beforeEach(() => {
+        mockPrismaService.role_slot_limits.findUnique.mockResolvedValue(null);
+        mockPrismaService.club_role_assignments.count.mockResolvedValue(0);
+        mockPrismaService.roles.findFirst.mockResolvedValue({
+          role_id: 'role-member',
+        });
+        mockPrismaService.roles.findUnique.mockResolvedValue({
+          role_name: 'member',
+        });
+        mockPrismaService.roles.findMany.mockResolvedValue([]);
+        mockPrismaService.club_role_assignments.create.mockResolvedValue({
+          assignment_id: 'assignment-1',
+          users: { name: 'Ana', paternal_last_name: 'Pérez' },
+          roles: { role_name: 'member' },
+        });
+      });
+
+      it('rejects an unverified dependent with 409 MR_CONSENT_NOT_VERIFIED and writes nothing', async () => {
+        useGateOnRootClient('unverified');
+
+        await expect(service.assignRole(dto)).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+        expect(
+          mockPrismaService.club_role_assignments.create,
+        ).not.toHaveBeenCalled();
+        expect(
+          mockAuthorizationContextVersionService.bump,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('serializes with verify/revoke (per-dependent lock) and assigns a verified dependent', async () => {
+        useGateOnRootClient('verified');
+
+        await service.assignRole(dto);
+
+        expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+        expect(
+          mockPrismaService.club_role_assignments.create,
+        ).toHaveBeenCalled();
+      });
+
+      it('assigns an adult without any consent lookup', async () => {
+        useGateOnRootClient('adult');
+
+        await service.assignRole({ ...dto, user_id: 'adult-1' });
+
+        expect(
+          mockPrismaService.guardianships.findFirst,
+        ).not.toHaveBeenCalled();
+        expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.club_role_assignments.create,
+        ).toHaveBeenCalled();
+      });
+    });
+
+    describe('updateRoleAssignment (PATCH /club-roles/:assignmentId)', () => {
+      const pendingRequest = {
+        assignment_id: 'request-1',
+        user_id: dependentId,
+        role_id: 'role-member',
+        club_section_id: 7,
+        active: true,
+        status: 'pending',
+        start_date: new Date('2026-03-01'),
+        end_date: null,
+        ecclesiastical_year_id: 2026,
+      };
+      beforeEach(() => {
+        mockPrismaService.club_role_assignments.findUnique.mockResolvedValue(
+          pendingRequest,
+        );
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+        mockPrismaService.club_role_assignments.update.mockResolvedValue({
+          assignment_id: 'request-1',
+          user_id: dependentId,
+          club_section_id: 7,
+        });
+        mockPrismaService.role_slot_limits.findUnique.mockResolvedValue(null);
+        mockPrismaService.roles.findUnique.mockResolvedValue({
+          role_name: 'member',
+        });
+        mockPrismaService.roles.findMany.mockResolvedValue([]);
+      });
+
+      it('rejects flipping an unverified dependent request to active with 409 and does not update', async () => {
+        useGateOnRootClient('unverified');
+
+        await expect(
+          service.updateRoleAssignment('request-1', { status: 'active' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+        expect(
+          mockPrismaService.club_role_assignments.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('activates a verified dependent after taking the per-dependent lock', async () => {
+        useGateOnRootClient('verified');
+
+        await service.updateRoleAssignment('request-1', { status: 'active' });
+
+        expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+        expect(
+          mockPrismaService.club_role_assignments.update,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ status: 'active' }),
+          }),
+        );
+      });
+
+      it('activates an adult without any consent lookup', async () => {
+        useGateOnRootClient('adult');
+
+        await service.updateRoleAssignment('request-1', { status: 'active' });
+
+        expect(
+          mockPrismaService.guardianships.findFirst,
+        ).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.club_role_assignments.update,
+        ).toHaveBeenCalled();
+      });
+
+      it('gates a PATCH carrying status active even when the pre-read says the row is already active (S-N2: the row may have gone back to pending since)', async () => {
+        useGateOnRootClient('unverified');
+        mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+          ...pendingRequest,
+          status: 'active',
+        });
+
+        await expect(
+          service.updateRoleAssignment('request-1', { status: 'active' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+        expect(
+          mockPrismaService.club_role_assignments.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('never gates a write that does not activate (ending a dependent role)', async () => {
+        useGateOnRootClient('unverified');
+        mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+          ...pendingRequest,
+          status: 'active',
+        });
+
+        await service.updateRoleAssignment('request-1', { status: 'ended' });
+
+        expect(
+          mockPrismaService.dependent_profiles.findUnique,
+        ).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.club_role_assignments.update,
+        ).toHaveBeenCalled();
+      });
+    });
+
+    describe('director paths', () => {
+      beforeEach(() => {
+        mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+          year_id: 2026,
+          start_date: new Date('2026-01-01'),
+          end_date: new Date('2026-12-31'),
+          active: true,
+        });
+        mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(
+          true,
+        );
+        mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+        mockPrismaService.club_sections.findUnique.mockResolvedValue({
+          main_club_id: 99,
+        });
+        mockPrismaService.roles.findFirst.mockResolvedValue({
+          role_id: directorRoleId,
+        });
+      });
+
+      const initialTx = (consent: 'adult' | 'unverified' | 'verified') => {
+        const tx = {
+          ...gateModels(consent),
+          club_role_assignments: {
+            count: jest.fn().mockResolvedValue(0),
+            create: jest.fn().mockResolvedValue({
+              assignment_id: 'new-director',
+              user_id: dependentId,
+              club_section_id: 7,
+            }),
+          },
+        };
+        mockPrismaService.$transaction = jest.fn((cb) => cb(tx));
+        return tx;
+      };
+
+      const successionTx = (consent: 'adult' | 'unverified' | 'verified') => {
+        const tx = {
+          ...gateModels(consent),
+          club_role_assignments: {
+            findUnique: jest.fn().mockResolvedValue({
+              assignment_id: 'cur',
+              user_id: 'old',
+              club_section_id: 7,
+              role_id: directorRoleId,
+              active: true,
+              status: 'active',
+              ecclesiastical_year_id: 2026,
+              roles: { role_name: 'director' },
+            }),
+            count: jest.fn().mockResolvedValue(0),
+            update: jest.fn().mockResolvedValue({
+              assignment_id: 'cur',
+              user_id: 'old',
+              club_section_id: 7,
+            }),
+            create: jest.fn().mockResolvedValue({
+              assignment_id: 'new',
+              user_id: dependentId,
+              club_section_id: 7,
+            }),
+          },
+        };
+        mockPrismaService.$transaction = jest.fn((cb) => cb(tx));
+        return tx;
+      };
+
+      it('assignInitialSectionDirector rejects an unverified dependent with 409 and creates nothing', async () => {
+        const tx = initialTx('unverified');
+
+        await expect(
+          service.assignInitialSectionDirector(7, actorUserId, {
+            user_id: dependentId,
+            ecclesiastical_year_id: 2026,
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.MR_CONSENT_NOT_VERIFIED });
+        expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
+      });
+
+      it('assignInitialSectionDirector creates for a verified dependent and an adult', async () => {
+        for (const consent of ['verified', 'adult'] as const) {
+          const tx = initialTx(consent);
+          await service.assignInitialSectionDirector(7, actorUserId, {
+            user_id: dependentId,
+            ecclesiastical_year_id: 2026,
+          });
+          expect(tx.club_role_assignments.create).toHaveBeenCalledTimes(1);
+        }
+      });
+
+      it('succeedSectionDirector rejects an unverified dependent successor with 409 and neither ends nor creates', async () => {
+        const tx = successionTx('unverified');
+
+        await expect(
+          service.succeedSectionDirector(7, actorUserId, {
+            current_assignment_id: 'cur',
+            successor_user_id: dependentId,
+            ecclesiastical_year_id: 2026,
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.MR_CONSENT_NOT_VERIFIED });
+        expect(tx.club_role_assignments.update).not.toHaveBeenCalled();
+        expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
+      });
+
+      it('succeedSectionDirector hands over to a verified dependent and an adult', async () => {
+        for (const consent of ['verified', 'adult'] as const) {
+          const tx = successionTx(consent);
+          await service.succeedSectionDirector(7, actorUserId, {
+            current_assignment_id: 'cur',
+            successor_user_id: dependentId,
+            ecclesiastical_year_id: 2026,
+          });
+          expect(tx.club_role_assignments.create).toHaveBeenCalledTimes(1);
+        }
+      });
     });
   });
 });

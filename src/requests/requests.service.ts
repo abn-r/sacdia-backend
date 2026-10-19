@@ -18,6 +18,7 @@ import {
 } from '../common/authorization/actor-section-scope';
 import { ActorSectionScopeService } from '../coordination/actor-section-scope.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
 
 /**
  * Reading other people's requests: club staff who approve them
@@ -294,6 +295,9 @@ export class RequestsService {
             db: tx,
           });
         }
+        // The membership becomes active in ANOTHER section: a dependent needs
+        // verified guardian consent there too (family-profiles).
+        await assertAssignmentActivationAllowed(tx, request.user_id);
 
         // Update all active role assignments from old section to new section
         const affectedAssignments =
@@ -760,6 +764,9 @@ export class RequestsService {
           clubSectionId: request.club_section_id,
           db: tx,
         });
+
+        // A dependent needs verified guardian consent before any active role.
+        await assertAssignmentActivationAllowed(tx, request.user_id);
 
         // Create the club_role_assignment
         const assignment = await tx.club_role_assignments.create({

@@ -44,6 +44,7 @@ import {
   PermissionsGuard,
 } from '../common/guards';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 type CurrentUserPayload = {
   sub: string;
@@ -154,6 +155,7 @@ export class UserClassesController {
   constructor(private readonly classesService: ClassesService) {}
 
   @Get()
+  @ActingScope('self:read')
   @RequirePermissions('classes:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
@@ -176,6 +178,7 @@ export class UserClassesController {
   }
 
   @Post('enroll')
+  @ActingScope('classes:write')
   @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
@@ -196,6 +199,7 @@ export class UserClassesController {
   }
 
   @Get(':classId/progress')
+  @ActingScope('self:read')
   @RequirePermissions('classes:read')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
@@ -237,6 +241,7 @@ export class UserClassesController {
   }
 
   @Patch(':classId/progress')
+  @ActingScope('classes:write')
   @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })
   @ApiOperation({
@@ -278,6 +283,7 @@ export class UserClassesController {
   // ========================================
 
   @Post(':classId/sections/:sectionId/submit')
+  @ActingScope('classes:write')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })
@@ -322,6 +328,7 @@ export class UserClassesController {
   // ========================================
 
   @Post(':classId/sections/:sectionId/files')
+  @ActingScope('evidence:upload')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })
@@ -379,6 +386,7 @@ export class UserClassesController {
   }
 
   @Delete(':classId/sections/:sectionId/files/:fileId')
+  @ActingScope('evidence:upload')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })

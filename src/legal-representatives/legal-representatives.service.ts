@@ -1,99 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { UsersService } from '../users/users.service';
-import { CreateLegalRepresentativeDto } from './dto/create-legal-representative.dto';
-import { UpdateLegalRepresentativeDto } from './dto/update-legal-representative.dto';
-import {
-  AppBadRequestException,
-  AppConflictException,
-  AppNotFoundException,
-} from '../common/errors/app.exception';
+import { AppNotFoundException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
+/**
+ * READ-ONLY since family-profiles Phase 2: guardianships supersede legal
+ * representatives. Writes were removed; the table stays untouched until it is
+ * dropped in Phase 4.
+ */
 @Injectable()
 export class LegalRepresentativesService {
-  private readonly logger = new Logger(LegalRepresentativesService.name);
-
-  constructor(
-    private prisma: PrismaService,
-    private usersService: UsersService,
-  ) {}
-
-  async create(userId: string, createDto: CreateLegalRepresentativeDto) {
-    // Validar que el usuario requiere representante legal
-    const requiresRep =
-      await this.usersService.requiresLegalRepresentative(userId);
-
-    if (!requiresRep) {
-      throw new AppBadRequestException(ErrorCode.LEGAL_REP_NOT_REQUIRED);
-    }
-
-    // Validar que no tenga ya un representante
-    const existing = await this.prisma.legal_representatives.findUnique({
-      where: { user_id: userId },
-    });
-
-    if (existing) {
-      throw new AppConflictException(ErrorCode.LEGAL_REP_ALREADY_EXISTS);
-    }
-
-    // Validar que se proporcione usuario registrado O datos manuales
-    if (
-      !createDto.representative_user_id &&
-      (!createDto.name || !createDto.paternal_last_name || !createDto.phone)
-    ) {
-      throw new AppBadRequestException(ErrorCode.LEGAL_REP_DATA_REQUIRED);
-    }
-
-    // Si es usuario registrado, verificar que exista
-    if (createDto.representative_user_id) {
-      const repUser = await this.prisma.users.findUnique({
-        where: { user_id: createDto.representative_user_id },
-      });
-
-      if (!repUser) {
-        throw new AppNotFoundException(ErrorCode.LEGAL_REP_USER_NOT_FOUND);
-      }
-    }
-
-    // Verificar que el relationship_type existe
-    const relType = await this.prisma.relationship_types.findUnique({
-      where: { relationship_type_id: createDto.relationship_type_id },
-    });
-
-    if (!relType) {
-      throw new AppNotFoundException(
-        ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND,
-      );
-    }
-
-    const representative = await this.prisma.legal_representatives.create({
-      data: {
-        user_id: userId,
-        representative_user_id: createDto.representative_user_id,
-        name: createDto.name,
-        paternal_last_name: createDto.paternal_last_name,
-        maternal_last_name: createDto.maternal_last_name,
-        phone: createDto.phone,
-        relationship_type_id: createDto.relationship_type_id,
-      },
-      include: {
-        relationship_types: {
-          select: {
-            name: true,
-          },
-        },
-      },
-    });
-
-    this.logger.log(`Legal representative created for user ${userId}`);
-
-    return {
-      status: 'success',
-      data: representative,
-      message: 'Representante legal registrado exitosamente',
-    };
-  }
+  constructor(private prisma: PrismaService) {}
 
   async findOne(userId: string) {
     const user = await this.prisma.users.findUnique({
@@ -139,82 +56,6 @@ export class LegalRepresentativesService {
       status: 'success',
       data: representative,
       hasLegalRepresentative: true,
-    };
-  }
-
-  async update(userId: string, updateDto: UpdateLegalRepresentativeDto) {
-    // Verificar que existe
-    const existing = await this.prisma.legal_representatives.findUnique({
-      where: { user_id: userId },
-    });
-
-    if (!existing) {
-      throw new AppNotFoundException(ErrorCode.LEGAL_REP_NOT_FOUND);
-    }
-
-    // Si actualizan representative_user_id, verificar que existe
-    if (updateDto.representative_user_id) {
-      const repUser = await this.prisma.users.findUnique({
-        where: { user_id: updateDto.representative_user_id },
-      });
-
-      if (!repUser) {
-        throw new AppNotFoundException(ErrorCode.LEGAL_REP_USER_NOT_FOUND);
-      }
-    }
-
-    // Si actualizan relationship_type_id, verificar que existe
-    if (updateDto.relationship_type_id) {
-      const relType = await this.prisma.relationship_types.findUnique({
-        where: { relationship_type_id: updateDto.relationship_type_id },
-      });
-
-      if (!relType) {
-        throw new AppNotFoundException(
-          ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND,
-        );
-      }
-    }
-
-    const updated = await this.prisma.legal_representatives.update({
-      where: { user_id: userId },
-      data: updateDto,
-      include: {
-        relationship_types: {
-          select: {
-            name: true,
-          },
-        },
-      },
-    });
-
-    this.logger.log(`Legal representative updated for user ${userId}`);
-
-    return {
-      status: 'success',
-      data: updated,
-      message: 'Representante legal actualizado exitosamente',
-    };
-  }
-
-  async remove(userId: string) {
-    const existing = await this.prisma.legal_representatives.findUnique({
-      where: { user_id: userId },
-    });
-
-    if (!existing) {
-      throw new AppNotFoundException(ErrorCode.LEGAL_REP_NOT_FOUND);
-    }
-
-    await this.prisma.legal_representatives.delete({
-      where: { user_id: userId },
-    });
-
-    this.logger.log(`Legal representative deleted for user ${userId}`);
-
-    return {
-      status: 'success',
-      message: 'Representante legal eliminado exitosamente',
     };
   }
 }

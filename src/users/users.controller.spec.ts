@@ -31,4 +31,21 @@ describe('UsersController', () => {
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
+
+  it('passes the authenticated principal to update so the self-edit age gate can run', async () => {
+    const principal = { sub: 'u1', kind: 'user' as const };
+    mockUsersService.update.mockResolvedValue({ status: 'success' });
+
+    await controller.update(
+      '20a9a762-a4fa-49dd-93a6-3851e27f8b69',
+      { birthday: '2000-01-01' },
+      { user: principal as never },
+    );
+
+    expect(mockUsersService.update).toHaveBeenCalledWith(
+      '20a9a762-a4fa-49dd-93a6-3851e27f8b69',
+      { birthday: '2000-01-01' },
+      principal,
+    );
+  });
 });

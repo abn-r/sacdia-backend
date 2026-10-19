@@ -10,6 +10,7 @@
  */
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ageAt } from '../../common/age/age.util';
 import type { CertificationEligibilityRuleType } from '../domain/certification-definition.types';
 
 export type EligibilityDbClient = PrismaService | Prisma.TransactionClient;
@@ -57,19 +58,11 @@ function verdict(
 }
 
 /**
- * Whole-years age as of `asOf` (defaults to now). Matches calendar-age
- * semantics (birthday not yet reached this year → one year younger).
+ * Whole-years age as of `asOf` (defaults to now). Delegates to the shared
+ * UTC-calendar util so the result does not depend on the server time zone.
  */
 export function calculateAge(birthday: Date, asOf: Date = new Date()): number {
-  let age = asOf.getFullYear() - birthday.getFullYear();
-  const monthDiff = asOf.getMonth() - birthday.getMonth();
-  if (
-    monthDiff < 0 ||
-    (monthDiff === 0 && asOf.getDate() < birthday.getDate())
-  ) {
-    age -= 1;
-  }
-  return age;
+  return ageAt(birthday, asOf);
 }
 
 async function evaluateMinAge(

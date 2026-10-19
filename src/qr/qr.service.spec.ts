@@ -332,6 +332,49 @@ describe('QrService', () => {
     });
   });
 
+  it('never prints an email on the card when the user has none (dependent profile)', async () => {
+    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
+      profile: {
+        user_id: 'kid-1',
+        email: null,
+        name: 'Ana',
+        paternal_last_name: 'Pérez',
+        maternal_last_name: null,
+        user_image: null,
+      },
+      authorization: {
+        grants: { global_roles: [], club_assignments: [] },
+        active_assignment: { assignment_id: null },
+        effective: {
+          permissions: ['qr:issue_self'],
+          scope: { global: {}, club: null },
+        },
+      },
+      legacy: {
+        club: null,
+        club_context: {
+          active_assignment_id: null,
+          active: null,
+          available: [],
+        },
+        permissions: ['qr:issue_self'],
+        roles: ['user'],
+      },
+      post_register_complete: false,
+    });
+    mockJwtService.sign.mockReturnValue('jwt-qr-token');
+    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrismaService.users.findUnique.mockResolvedValue({ blood: null });
+    mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
+    mockPrismaService.emergency_contacts.findFirst.mockResolvedValue(null);
+
+    const result = await service.getMyCard('kid-1');
+
+    expect(result.visual.primary_line).toBe('Ana Pérez');
+    expect(result.visual.secondary_line).toBe('Credencial virtual');
+    expect(JSON.stringify(result)).not.toContain('@');
+  });
+
   it('returns null for card extras when no enrollment or emergency contact exists', async () => {
     mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
       profile: {

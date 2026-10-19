@@ -25,7 +25,8 @@ import { accessJwtClaims } from '../common/constants/jwt-audiences';
 
 export interface BaUser {
   id: string;
-  email: string;
+  /** Null for dependent profiles (family profiles): they have no account email. */
+  email: string | null;
   name: string;
   emailVerified: boolean;
   image?: string | null;
@@ -158,7 +159,7 @@ export function totpIdentifier(userId: string): string {
  */
 function mapDbUserToBaUser(dbUser: {
   user_id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   email_verified: boolean;
   user_image?: string | null;
@@ -783,7 +784,12 @@ export class BetterAuthService implements IBetterAuthService {
 
     const secret = generateSecret();
     const issuer = 'SACDIA';
-    const totpURI = generateURI({ label: dbUser.email, issuer, secret });
+    // Dependent profiles (no email) never enroll TOTP; the user id keeps the label non-empty.
+    const totpURI = generateURI({
+      label: dbUser.email ?? userId,
+      issuer,
+      secret,
+    });
 
     const { plain: plainCodes, hashed: hashedCodes } =
       await this.generateBackupCodes();

@@ -25,7 +25,7 @@ import { SupportService } from './support.service';
 
 interface JwtUser {
   sub: string;
-  email: string;
+  email: string | null;
 }
 
 @ApiTags('support')

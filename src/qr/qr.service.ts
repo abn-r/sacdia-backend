@@ -18,7 +18,10 @@ import {
 } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
-import { clubTypeCycleRank, clubTypeSectionName } from '../clubs/section-display';
+import {
+  clubTypeCycleRank,
+  clubTypeSectionName,
+} from '../clubs/section-display';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -803,7 +806,12 @@ export class QrService {
       title: QR_CARD_TITLE,
       subtitle: QR_CARD_SUBTITLE,
       primary_line: member.full_name,
-      secondary_line: resolved.profile.email,
+      // Dependent profiles have no email: never print an email, fall back to the club line.
+      secondary_line:
+        resolved.profile.email ??
+        member.section_name ??
+        member.club_name ??
+        QR_CARD_SUBTITLE,
       club_name: member.club_name,
       section_name: member.section_name,
     };

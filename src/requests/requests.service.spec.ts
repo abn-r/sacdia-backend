@@ -68,6 +68,14 @@ describe('RequestsService', () => {
       create: jest.fn().mockResolvedValue({ enrollment_id: 101 }),
       update: jest.fn().mockResolvedValue({ enrollment_id: 101 }),
     },
+    // Consent gate: adults by default (no dependent_profiles row).
+    dependent_profiles: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    guardianships: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    $executeRaw: jest.fn().mockResolvedValue(1),
   });
 
   let transactionMock: ReturnType<typeof createTransactionMock>;
@@ -659,6 +667,124 @@ describe('RequestsService', () => {
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * family-profiles C1/C2: approving a role request or a transfer makes the
+   * requester's assignment active in a section, so a dependent needs verified
+   * guardian consent (same gate, same transaction, per-dependent lock).
+   */
+  describe('consent gate on activation (family-profiles)', () => {
+    const asDependent = (verified: boolean) => {
+      transactionMock.dependent_profiles.findUnique.mockResolvedValue({
+        user_id: 'dependent',
+      });
+      transactionMock.guardianships.findFirst.mockResolvedValue(
+        verified ? { guardianship_id: 'g-1' } : null,
+      );
+    };
+
+    describe('reviewAssignment approved', () => {
+      beforeEach(() => {
+        prisma.role_assignment_requests.findUnique.mockResolvedValue({
+          request_id: 'role-request-1',
+          user_id: 'user-2',
+          requested_by: 'requester-1',
+          role_id: 'role-member',
+          club_section_id: 20,
+          status: 'pending',
+          role: { role_id: 'role-member', role_name: 'member' },
+        });
+        transactionMock.club_role_assignments.create.mockResolvedValue({
+          assignment_id: 'assignment-2',
+          user_id: 'user-2',
+        });
+      });
+
+      it('rejects an unverified dependent with 409 MR_CONSENT_NOT_VERIFIED and creates nothing', async () => {
+        asDependent(false);
+
+        await expect(
+          service.reviewAssignment('role-request-1', 'approver-1', 'approved'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+        expect(
+          transactionMock.club_role_assignments.create,
+        ).not.toHaveBeenCalled();
+        expect(
+          transactionMock.role_assignment_requests.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('creates for a verified dependent after the per-dependent lock', async () => {
+        asDependent(true);
+
+        await service.reviewAssignment(
+          'role-request-1',
+          'approver-1',
+          'approved',
+        );
+
+        expect(transactionMock.$executeRaw).toHaveBeenCalledTimes(1);
+        expect(
+          transactionMock.club_role_assignments.create,
+        ).toHaveBeenCalledTimes(1);
+      });
+
+      it('creates for an adult without a consent lookup', async () => {
+        await service.reviewAssignment(
+          'role-request-1',
+          'approver-1',
+          'approved',
+        );
+
+        expect(transactionMock.guardianships.findFirst).not.toHaveBeenCalled();
+        expect(
+          transactionMock.club_role_assignments.create,
+        ).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('reviewTransfer approved', () => {
+      beforeEach(() => {
+        // Isolate from once-queued authorization mocks of earlier tests.
+        authorizationContext.canManageClub.mockReset().mockResolvedValue(true);
+      });
+
+      it('rejects moving an unverified dependent with 409 and moves nothing', async () => {
+        asDependent(false);
+
+        await expect(
+          service.reviewTransfer('transfer-1', 'reviewer-1', 'approved'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+        expect(
+          transactionMock.club_role_assignments.updateManyAndReturn,
+        ).not.toHaveBeenCalled();
+        expect(
+          transactionMock.club_transfer_requests.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('moves a verified dependent and an adult', async () => {
+        asDependent(true);
+        await service.reviewTransfer('transfer-1', 'reviewer-1', 'approved');
+        expect(
+          transactionMock.club_role_assignments.updateManyAndReturn,
+        ).toHaveBeenCalledTimes(1);
+
+        transactionMock = createTransactionMock();
+        await service.reviewTransfer('transfer-1', 'reviewer-1', 'approved');
+        expect(
+          transactionMock.club_role_assignments.updateManyAndReturn,
+        ).toHaveBeenCalledTimes(1);
+        expect(transactionMock.guardianships.findFirst).not.toHaveBeenCalled();
+      });
     });
   });
 });

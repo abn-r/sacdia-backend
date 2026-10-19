@@ -18,6 +18,7 @@ import {
   buildEvidenceDisplayNameForFile,
   resolveEvidenceFileExtension,
 } from '../common/utils/evidence-file-names';
+import { GuardianNotificationsService } from '../guardianships/guardian-notifications.service';
 
 @Injectable()
 export class HonorRequirementsService {
@@ -31,6 +32,7 @@ export class HonorRequirementsService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorageService: FileStorageService,
+    private readonly guardianNotifications: GuardianNotificationsService,
   ) {}
 
   // ========================================
@@ -366,6 +368,11 @@ export class HonorRequirementsService {
 
     await this.touchUserHonor(userHonorId);
 
+    void this.guardianNotifications.onDependentEvidenceUploaded({
+      dependentUserId: userId,
+      kind: 'honor_requirement',
+    });
+
     return evidence;
   }
 
@@ -397,6 +404,11 @@ export class HonorRequirementsService {
     });
 
     await this.touchUserHonor(userHonorId);
+
+    void this.guardianNotifications.onDependentEvidenceUploaded({
+      dependentUserId: userId,
+      kind: 'honor_requirement',
+    });
 
     return evidence;
   }

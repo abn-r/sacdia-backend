@@ -81,6 +81,11 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   'requests:assignment_rejected': 'approvals',
   // Membership requests
   'membership_requests:new_request': 'approvals',
+  // Family profiles (guardian-facing; never re-fanned-out by the dependent
+  // push router, which skips the whole `family:` prefix)
+  'family:custody_transferred': 'approvals',
+  'family:evidence_uploaded': 'approvals',
+  'family:consent_verified': 'approvals',
   // Member-of-month (director notification = approval-adjacent)
   'units:member_of_month': 'approvals',
   'units:member_of_month_director': 'approvals',

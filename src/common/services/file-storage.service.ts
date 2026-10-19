@@ -58,6 +58,16 @@ export enum StorageBucketAlias {
    * Optional prefix: R2_KEY_PREFIX_CERTIFICATE_IMPORTS (default certificate-imports).
    */
   CERTIFICATE_IMPORTS = 'CERTIFICATE_IMPORTS',
+  /**
+   * PRIVATE bucket for signed parental-consent forms (image/PDF) of dependents.
+   * Never public: objects are served only through signed URLs (TTL 900 s).
+   * Key format: {prefix}/{guardianshipId}/{uuid}.{ext}
+   * Env vars: R2_BUCKET_GUARDIANSHIP_EVIDENCE (required to use the endpoints).
+   * Optional: R2_PUBLIC_URL_GUARDIANSHIP_EVIDENCE (never used to serve files),
+   * R2_KEY_PREFIX_GUARDIANSHIP_EVIDENCE (default guardianships/consent).
+   * Optional at boot: the evidence endpoints fail closed while the bucket is unset.
+   */
+  GUARDIANSHIP_EVIDENCE = 'GUARDIANSHIP_EVIDENCE',
 }
 
 export type UploadFileOptions = {

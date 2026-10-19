@@ -499,63 +499,6 @@ describe('Permissions metadata', () => {
         LegalRepresentativesController.prototype.findOne,
       ),
     ).toEqual({ family: 'legal_representative', mode: 'read' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        LegalRepresentativesController.prototype.create,
-      ),
-    ).toEqual({ permissions: ['legal_representative:update'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        LegalRepresentativesController.prototype.create,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-    expect(
-      Reflect.getMetadata(
-        SENSITIVE_USER_SUBRESOURCE_KEY,
-        LegalRepresentativesController.prototype.create,
-      ),
-    ).toEqual({ family: 'legal_representative', mode: 'update' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        LegalRepresentativesController.prototype.update,
-      ),
-    ).toEqual({ permissions: ['legal_representative:update'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        LegalRepresentativesController.prototype.update,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-    expect(
-      Reflect.getMetadata(
-        SENSITIVE_USER_SUBRESOURCE_KEY,
-        LegalRepresentativesController.prototype.update,
-      ),
-    ).toEqual({ family: 'legal_representative', mode: 'update' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        LegalRepresentativesController.prototype.remove,
-      ),
-    ).toEqual({ permissions: ['legal_representative:update'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        LegalRepresentativesController.prototype.remove,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-    expect(
-      Reflect.getMetadata(
-        SENSITIVE_USER_SUBRESOURCE_KEY,
-        LegalRepresentativesController.prototype.remove,
-      ),
-    ).toEqual({ family: 'legal_representative', mode: 'update' });
   });
 
   it('marks inventory creation as instance-scoped inventory permission', () => {

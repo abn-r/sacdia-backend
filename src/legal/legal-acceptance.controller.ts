@@ -23,8 +23,11 @@ import {
 } from '../auth/session-request-context';
 import { AcceptLegalDocumentsDto } from './dto/accept-legal-documents.dto';
 import { LegalService } from './legal.service';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
-type LegalRequest = SessionContextRequest & { user: { sub: string } };
+type LegalRequest = SessionContextRequest & {
+  user: { sub: string; actor_sub?: string; acting_for?: boolean };
+};
 
 @ApiTags('legal')
 @Controller('users/me')
@@ -39,6 +42,7 @@ export class LegalAcceptanceController {
    * Acceptance status of the authenticated user for the CURRENT versions.
    */
   @Get('legal-acceptance')
+  @ActingScope('self:read')
   @Throttle(namedThrottle({ ttl: 60000, limit: 30 }))
   @ApiOperation({ summary: 'Legal acceptance status of the current user' })
   @ApiResponse({ status: 200, description: 'LegalStatus block' })
@@ -54,6 +58,7 @@ export class LegalAcceptanceController {
    * Accepts the current Terms and Privacy versions. Idempotent.
    */
   @Post('legal-acceptance')
+  @ActingScope('legal:accept')
   @HttpCode(200)
   @Throttle(namedThrottle({ ttl: 60000, limit: 10 }))
   @ApiOperation({ summary: 'Accept the current legal documents' })
@@ -72,6 +77,9 @@ export class LegalAcceptanceController {
         req.user.sub,
         { terms: dto.terms_version, privacy: dto.privacy_version },
         sessionContextFromRequest(req),
+        // While a guardian acts for a dependent the subject is the child, but
+        // the person who accepted is the guardian (legal evidence).
+        req.user.acting_for ? req.user.actor_sub : null,
       ),
     };
   }

@@ -32,6 +32,7 @@ import {
 } from './dto/qr-credential.dto';
 import { QrService } from './qr.service';
 import { namedThrottle } from '../config/throttler.helpers';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 const QR_SELF_SERVICE_THROTTLE = namedThrottle({ ttl: 60_000, limit: 10 });
 
@@ -51,6 +52,7 @@ export class QrController {
   }
 
   @Get('member/token')
+  @ActingScope('self:read')
   @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
@@ -72,6 +74,7 @@ export class QrController {
   }
 
   @Get('me')
+  @ActingScope('self:read')
   @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
@@ -92,6 +95,7 @@ export class QrController {
   }
 
   @Get('me/card')
+  @ActingScope('self:read')
   @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
@@ -112,6 +116,7 @@ export class QrController {
   }
 
   @Get('me/card.pdf')
+  @ActingScope('self:read')
   @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiProduces('application/pdf')

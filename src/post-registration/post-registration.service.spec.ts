@@ -2,14 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PostRegistrationService } from './post-registration.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { UsersService } from '../users/users.service';
-import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
+import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
 import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { AppForbiddenException } from '../common/errors/app.exception';
+
+const GUARDIAN_ID = '9f1d9a40-79f0-4e0c-a8c7-5f0f1c7d9a11';
 
 describe('PostRegistrationService', () => {
   let service: PostRegistrationService;
@@ -79,6 +80,7 @@ describe('PostRegistrationService', () => {
         .mockResolvedValue({ enrollment_id: 1001, active: true }),
     },
     users_pr: {
+      findUnique: jest.fn().mockResolvedValue({ user_id: 'u' }),
       update: jest.fn().mockResolvedValue({}),
     },
   });
@@ -104,16 +106,11 @@ describe('PostRegistrationService', () => {
       create: jest.fn(),
       count: jest.fn(),
     },
-    legal_representatives: { findUnique: jest.fn(), create: jest.fn() },
     club_role_assignments: { create: jest.fn() },
   };
 
-  const mockUsersService = {
-    requiresLegalRepresentative: jest.fn(),
-  };
-
-  const mockLegalRepService = {
-    findOne: jest.fn(),
+  const mockCountryAgePolicy = {
+    getPolicy: jest.fn(),
   };
 
   const mockMembershipRequestsService = {
@@ -139,6 +136,12 @@ describe('PostRegistrationService', () => {
       allowed: true,
     });
 
+    mockCountryAgePolicy.getPolicy.mockReset().mockResolvedValue({
+      minSelfLoginAge: 13,
+      ageOfMajority: 18,
+      timeZone: 'America/Mexico_City',
+    });
+
     transactionMock = createTransactionMock();
 
     mockPrismaService.$transaction.mockImplementation(
@@ -154,8 +157,7 @@ describe('PostRegistrationService', () => {
         PostRegistrationService,
         ClassAssignmentResolverService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: UsersService, useValue: mockUsersService },
-        { provide: LegalRepresentativesService, useValue: mockLegalRepService },
+        { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
         {
           provide: MembershipRequestsService,
           useValue: mockMembershipRequestsService,
@@ -293,6 +295,26 @@ describe('PostRegistrationService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.POST_REG_NOT_INITIATED });
     });
 
+    it('no longer requires a legal representative for minors (FP-25)', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        gender: 'F',
+        birthday: new Date('2016-03-15'),
+        baptism: false,
+      });
+      mockPrismaService.emergency_contacts.count.mockResolvedValue(1);
+
+      const result = await service.completeStep2(
+        ownerActor.actorUserId,
+        ownerActor,
+      );
+
+      expect(result).toMatchObject({ status: 'success' });
+      expect(mockPrismaService.users_pr.update).toHaveBeenCalledWith({
+        where: { user_id: ownerActor.actorUserId },
+        data: { personal_info_complete: true },
+      });
+    });
+
     it('should return a minimal success payload for third-party completion', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         gender: 'M',
@@ -300,7 +322,6 @@ describe('PostRegistrationService', () => {
         baptism: true,
       });
       mockPrismaService.emergency_contacts.count.mockResolvedValue(1);
-      mockUsersService.requiresLegalRepresentative.mockResolvedValue(false);
 
       const result = await service.completeStep2('target-user-1', adminActor);
 
@@ -552,6 +573,28 @@ describe('PostRegistrationService', () => {
       });
     });
 
+    it('creates the dependent membership request and returns the owner response while acting (FP-25)', async () => {
+      // While acting, req.user.sub is the dependent, so the controller builds
+      // an owner context (actorUserId === userId).
+      const result = await service.completeStep3(userId, dto, {
+        actorUserId: userId,
+        isOwner: true,
+      });
+
+      expect(result).toMatchObject({
+        status: 'success',
+        message: 'Post-registro completado exitosamente',
+      });
+      expect(transactionMock.club_role_assignments.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ user_id: userId, status: 'pending' }),
+        }),
+      );
+      expect(
+        mockMembershipRequestsService.notifyNewRequestCreated,
+      ).toHaveBeenCalledWith(expect.objectContaining({ userId }));
+    });
+
     it('should invalidate authorization cache after completing membership request', async () => {
       await service.completeStep3(userId, dto, ownerActor);
 
@@ -796,6 +839,128 @@ describe('PostRegistrationService', () => {
       await expect(
         service.completeStep3(userId, dto, adminActor),
       ).rejects.toMatchObject({ code: ErrorCode.POST_REG_NOT_INITIATED });
+    });
+  });
+
+  describe('completeGuardianOnly', () => {
+    const adultBirthday = new Date('1985-05-10');
+
+    const mockUser = (overrides: Record<string, unknown> = {}) =>
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        birthday: adultBirthday,
+        country_id: 1,
+        account: [{ id: 'acc-1' }],
+        ...overrides,
+      });
+
+    const guardianActor = { actorUserId: GUARDIAN_ID, isOwner: true };
+
+    it('completes an adult guardian with 0 dependents and no geo (FP-27)', async () => {
+      mockUser();
+
+      const result = await service.completeGuardianOnly(
+        GUARDIAN_ID,
+        {},
+        guardianActor,
+      );
+
+      expect(result).toEqual({
+        status: 'success',
+        message: 'Post-registro completado',
+        data: { mode: 'guardian_only' },
+      });
+      expect(transactionMock.users.update).not.toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).toHaveBeenCalledWith({
+        where: { user_id: GUARDIAN_ID },
+        data: {
+          club_selection_complete: true,
+          complete: true,
+          date_completed: expect.any(Date),
+        },
+      });
+      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledWith(
+        transactionMock,
+        GUARDIAN_ID,
+      );
+      expect(
+        mockAuthorizationContextService.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(GUARDIAN_ID);
+    });
+
+    it('stores the optional geography when provided and uses its country policy', async () => {
+      mockUser();
+
+      await service.completeGuardianOnly(
+        GUARDIAN_ID,
+        { country_id: 7, union_id: 8, local_field_id: 9 },
+        guardianActor,
+      );
+
+      expect(mockCountryAgePolicy.getPolicy).toHaveBeenCalledWith(7);
+      expect(transactionMock.users.update).toHaveBeenCalledWith({
+        where: { user_id: GUARDIAN_ID },
+        data: { country_id: 7, union_id: 8, local_field_id: 9 },
+      });
+    });
+
+    it('falls back to the stored country for the age policy when no geo is sent', async () => {
+      mockUser({ country_id: 4 });
+
+      await service.completeGuardianOnly(GUARDIAN_ID, {}, guardianActor);
+
+      expect(mockCountryAgePolicy.getPolicy).toHaveBeenCalledWith(4);
+    });
+
+    it('rejects a 17-year-old account with 422 and writes nothing', async () => {
+      const seventeen = new Date();
+      seventeen.setUTCFullYear(seventeen.getUTCFullYear() - 17);
+      mockUser({ birthday: seventeen });
+
+      await expect(
+        service.completeGuardianOnly(GUARDIAN_ID, {}, guardianActor),
+      ).rejects.toMatchObject({
+        code: ErrorCode.POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT,
+        status: 422,
+      });
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('applies the country age of majority (16 makes a 17-year-old adult)', async () => {
+      const seventeen = new Date();
+      seventeen.setUTCFullYear(seventeen.getUTCFullYear() - 17);
+      mockUser({ birthday: seventeen });
+      mockCountryAgePolicy.getPolicy.mockResolvedValue({
+        minSelfLoginAge: 13,
+        ageOfMajority: 16,
+        timeZone: 'America/Mexico_City',
+      });
+
+      await expect(
+        service.completeGuardianOnly(GUARDIAN_ID, {}, guardianActor),
+      ).resolves.toMatchObject({ data: { mode: 'guardian_only' } });
+    });
+
+    it('rejects a user without a birthday or without an account', async () => {
+      mockUser({ birthday: null });
+      await expect(
+        service.completeGuardianOnly(GUARDIAN_ID, {}, guardianActor),
+      ).rejects.toMatchObject({
+        code: ErrorCode.POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT,
+      });
+
+      mockUser({ account: [] });
+      await expect(
+        service.completeGuardianOnly(GUARDIAN_ID, {}, guardianActor),
+      ).rejects.toMatchObject({
+        code: ErrorCode.POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT,
+      });
+    });
+
+    it('is owner-only: a third party cannot close it for someone else', async () => {
+      await expect(
+        service.completeGuardianOnly(GUARDIAN_ID, {}, adminActor),
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_NOT_INITIATED });
+      expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
     });
   });
 

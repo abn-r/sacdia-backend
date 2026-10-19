@@ -16,6 +16,8 @@ import { SessionsService } from './sessions.service';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { SocialSignInModule } from './social-sign-in/social-sign-in.module';
 import { LegalModule } from '../legal/legal.module';
+import { ActingForModule } from './acting-for/acting-for.module';
+import { GuardianshipsModule } from '../guardianships/guardianships.module';
 
 @Module({
   imports: [
@@ -40,6 +42,12 @@ import { LegalModule } from '../legal/legal.module';
     // LegalService: register validates/records acceptance, /auth/me exposes status.
     // Dependency is Auth -> Legal only (LegalModule never imports AuthModule).
     LegalModule,
+    // ActingForResolver (principal substitution in JwtStrategy) + epoch cache.
+    ActingForModule,
+    // GuardianshipLifecycleService: account deletion detaches the guardian's
+    // dependents in the same transaction. Dependency is Auth -> Guardianships
+    // only (GuardianshipsModule never imports AuthModule).
+    GuardianshipsModule,
   ],
   controllers: [
     AuthController,

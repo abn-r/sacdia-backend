@@ -85,10 +85,17 @@ export class LegalService {
     userId: string,
     versions: AcceptedLegalVersions,
     context?: SessionRequestContext,
+    acceptedByUserId?: string | null,
   ): Promise<LegalStatus> {
     this.assertCurrentVersions(versions);
     await this.prisma.legal_acceptances.createMany({
-      data: this.rows(userId, versions, 'acceptance_gate', context),
+      data: this.rows(
+        userId,
+        versions,
+        'acceptance_gate',
+        context,
+        acceptedByUserId,
+      ),
       skipDuplicates: true,
     });
     return this.getStatus(userId);
@@ -107,11 +114,36 @@ export class LegalService {
     });
   }
 
+  /**
+   * Dependent creation: the guardian accepts Terms/Privacy ON BEHALF of the
+   * minor. The row belongs to the dependent; `accepted_by_user_id` keeps the
+   * guardian who actually clicked the checkbox. Runs inside the create tx.
+   */
+  async recordOnBehalf(
+    tx: Prisma.TransactionClient,
+    dependentId: string,
+    versions: AcceptedLegalVersions,
+    guardianId: string,
+    context?: SessionRequestContext,
+  ): Promise<void> {
+    await tx.legal_acceptances.createMany({
+      data: this.rows(
+        dependentId,
+        versions,
+        'register_checkbox',
+        context,
+        guardianId,
+      ),
+      skipDuplicates: true,
+    });
+  }
+
   private rows(
     userId: string,
     versions: AcceptedLegalVersions,
     method: LegalAcceptanceMethod,
     context?: SessionRequestContext,
+    acceptedByUserId?: string | null,
   ): Prisma.legal_acceptancesCreateManyInput[] {
     return LEGAL_DOCUMENT_TYPES.map((type) => ({
       user_id: userId,
@@ -122,7 +154,7 @@ export class LegalService {
       // column limits local to this table.
       ip_address: context?.ipAddress?.slice(0, IP_MAX) ?? null,
       user_agent: context?.userAgent?.slice(0, USER_AGENT_MAX) ?? null,
-      accepted_by_user_id: null,
+      accepted_by_user_id: acceptedByUserId ?? null,
     }));
   }
 }

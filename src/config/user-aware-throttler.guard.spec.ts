@@ -15,8 +15,7 @@ describe('UserAwareThrottlerGuard', () => {
       get: jest.fn(() => secret),
     }) as unknown as ConfigService;
 
-  const createJwtService = (secret: string) =>
-    new JwtService({ secret } as Record<string, string>);
+  const createJwtService = (secret: string) => new JwtService({ secret });
 
   const createGuard = (
     secret: string,
@@ -44,7 +43,7 @@ describe('UserAwareThrottlerGuard', () => {
   });
 
   const makeSignedToken = (secret: string, payload: { sub: string }) =>
-    new JwtService({ secret } as Record<string, string>).sign(
+    new JwtService({ secret }).sign(
       { ...payload, ...accessJwtClaims() },
       {
         algorithm: 'HS256',
@@ -80,9 +79,37 @@ describe('UserAwareThrottlerGuard', () => {
     },
   );
 
+  it('keys acting-for traffic on the GUARDIAN (actor_sub), not on the substituted dependent', async () => {
+    const guard = createGuard('valid-secret');
+    const request = makeRequest({
+      user: {
+        sub: 'dependent-1',
+        user_id: 'dependent-1',
+        actor_sub: 'guardian-1',
+        kind: 'guardian_acting',
+      } as any,
+    });
+
+    await expect(guard.getTrackerForTest(request)).resolves.toBe(
+      'user:guardian-1',
+    );
+  });
+
+  it('before auth runs, the signed token sub (the guardian) is the tracker even with X-Acting-For', async () => {
+    const secret = 'valid-secret';
+    const token = makeSignedToken(secret, { sub: 'guardian-1' });
+    const guard = createGuard(secret);
+    const request = makeRequest({ authorization: `Bearer ${token}` });
+    request.headers['x-acting-for'] = '22222222-2222-4222-8222-222222222222';
+
+    await expect(guard.getTrackerForTest(request)).resolves.toBe(
+      'user:guardian-1',
+    );
+  });
+
   it('falls back to ip tracker when bearer token lacks access iss/aud', async () => {
     const secret = 'valid-secret';
-    const token = new JwtService({ secret } as Record<string, string>).sign(
+    const token = new JwtService({ secret }).sign(
       { sub: 'user-123' },
       { algorithm: 'HS256', expiresIn: '1h' },
     );

@@ -31,6 +31,7 @@ import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { DependentPushRouterService } from './dependent-push-router.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import {
   NOTIFICATIONS_QUEUE,
@@ -115,6 +116,7 @@ export class NotificationsService {
     private readonly fcmTokensService: FcmTokensService,
     private readonly preferencesService: NotificationPreferencesService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly dependentPushRouter: DependentPushRouterService,
     @Optional()
     @InjectQueue(NOTIFICATIONS_QUEUE)
     private readonly queue: Queue | undefined,
@@ -134,6 +136,27 @@ export class NotificationsService {
 
   private isQueueReady(): boolean {
     return !!this.queue;
+  }
+
+  /**
+   * A dependent (minor without an account) has no FCM tokens: route the push
+   * to its guardians, labeled with the child's name. Best effort, never throws.
+   */
+  private async pushToGuardians(
+    userIds: readonly string[],
+    title: string,
+    body: string,
+    data: Record<string, string> | undefined,
+    source: string | undefined,
+    context: string,
+  ): Promise<void> {
+    await this.dependentPushRouter.routeAndSend(
+      userIds,
+      { title, body, data, source },
+      (tokens, pushTitle, pushBody, pushData) =>
+        this.sendMulticastDirect(tokens, pushTitle, pushBody, pushData),
+      context,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -178,6 +201,14 @@ export class NotificationsService {
       if (!allowed || !this.isFcmConfigured()) {
         return;
       }
+      await this.pushToGuardians(
+        [dto.userId],
+        dto.title,
+        dto.body,
+        dto.data,
+        source,
+        `pushBestEffort ${dto.userId}`,
+      );
       const tokens = await this.prisma.user_fcm_tokens.findMany({
         where: { user_id: dto.userId, active: true },
         select: { token: true },
@@ -978,6 +1009,16 @@ export class NotificationsService {
       });
 
     // Step 3: FCM push — best effort, only if tokens exist.
+    if (this.isFcmConfigured()) {
+      await this.pushToGuardians(
+        [dto.userId],
+        dto.title,
+        dto.body,
+        dto.data,
+        source,
+        `sendToUserSync ${dto.userId}`,
+      );
+    }
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: dto.userId, active: true },
       select: { token: true },
@@ -1080,6 +1121,16 @@ export class NotificationsService {
       });
 
     // Step 3: FCM push — best effort, only to users with active tokens.
+    if (this.isFcmConfigured()) {
+      await this.pushToGuardians(
+        allowedUserIds,
+        dto.title,
+        dto.body,
+        dto.data,
+        source,
+        'broadcastSync',
+      );
+    }
     const tokenRows = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: { in: allowedUserIds }, active: true },
       select: { token: true },
@@ -1186,6 +1237,16 @@ export class NotificationsService {
       });
 
     // Step 3: FCM push — best effort, only to members with active tokens.
+    if (this.isFcmConfigured()) {
+      await this.pushToGuardians(
+        userIds,
+        dto.title,
+        dto.body,
+        dto.data,
+        source,
+        'sendToClubMembersSync',
+      );
+    }
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: { in: userIds }, active: true },
       select: { token: true },
@@ -1298,6 +1359,16 @@ export class NotificationsService {
       });
 
     // Step 3: FCM push — best effort, only to users with active tokens.
+    if (this.isFcmConfigured()) {
+      await this.pushToGuardians(
+        userIds,
+        title,
+        body,
+        data,
+        source,
+        'sendToSectionRoleSync',
+      );
+    }
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: { in: userIds }, active: true },
       select: { token: true },
@@ -1412,6 +1483,16 @@ export class NotificationsService {
       });
 
     // Step 3: FCM push — best effort, only to users with active tokens.
+    if (this.isFcmConfigured()) {
+      await this.pushToGuardians(
+        userIds,
+        title,
+        body,
+        data,
+        source,
+        'sendToGlobalRoleSync',
+      );
+    }
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: { in: userIds }, active: true },
       select: { token: true },

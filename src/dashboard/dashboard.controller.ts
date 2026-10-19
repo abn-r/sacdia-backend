@@ -8,6 +8,7 @@ import {
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../common/guards';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('dashboard')
 @Controller('dashboard')
@@ -18,6 +19,7 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('summary')
+  @ActingScope('self:read')
   @ApiOperation({
     summary: 'Resumen del dashboard del usuario autenticado',
     description:

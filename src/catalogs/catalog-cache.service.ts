@@ -21,6 +21,8 @@ export const CATALOG_CACHE_KEYS = {
   ACTIVITY_TYPES: 'cache:catalogs:activity_types',
   RELATIONSHIP_TYPES: 'cache:catalogs:relationship_types',
   COUNTRIES: 'cache:catalogs:countries',
+  COUNTRY_AGE_POLICY: (countryId: number) =>
+    `cache:catalogs:country_age_policy:${countryId}`,
   DIVISIONS: 'cache:catalogs:divisions',
   UNIONS: (filter?: UnionCacheFilter) => {
     if (typeof filter === 'number') {

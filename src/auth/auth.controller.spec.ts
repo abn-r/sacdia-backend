@@ -256,13 +256,16 @@ describe('AuthController', () => {
 
   describe('getProfile', () => {
     it('should use current user userId and delegate to authService.getProfile', async () => {
-      const currentUser = { userId: 'user-123' };
+      const currentUser = { userId: 'user-123' } as any;
       const expected = { status: 'success' };
       mockAuthService.getProfile.mockResolvedValue(expected);
 
       const result = await controller.getProfile(currentUser);
 
-      expect(mockAuthService.getProfile).toHaveBeenCalledWith('user-123');
+      expect(mockAuthService.getProfile).toHaveBeenCalledWith(
+        'user-123',
+        currentUser,
+      );
       expect(result).toEqual(expected);
     });
   });
@@ -332,6 +335,35 @@ describe('AuthController', () => {
         'user-1',
         { password: 'Secret123!' },
         '1.1.1.1',
+        { acknowledgeDependents: false },
+      );
+    });
+
+    it('forwards acknowledge_dependents only when it is exactly true', async () => {
+      mockAccountDeletionService.deleteAccount.mockResolvedValue(undefined);
+
+      await controller.deleteAccount(
+        user,
+        { password: 'Secret123!', acknowledge_dependents: true },
+        '1.1.1.1',
+      );
+      expect(mockAccountDeletionService.deleteAccount).toHaveBeenLastCalledWith(
+        'user-1',
+        { password: 'Secret123!' },
+        '1.1.1.1',
+        { acknowledgeDependents: true },
+      );
+
+      await controller.deleteAccount(
+        user,
+        { password: 'Secret123!', acknowledge_dependents: false },
+        '1.1.1.1',
+      );
+      expect(mockAccountDeletionService.deleteAccount).toHaveBeenLastCalledWith(
+        'user-1',
+        { password: 'Secret123!' },
+        '1.1.1.1',
+        { acknowledgeDependents: false },
       );
     });
 
@@ -348,6 +380,7 @@ describe('AuthController', () => {
         'user-1',
         { provider: 'apple', idToken: 'tok', nonce: 'raw' },
         '1.1.1.1',
+        { acknowledgeDependents: false },
       );
     });
   });

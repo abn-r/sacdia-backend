@@ -22,6 +22,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ClubCycleReadinessService } from '../common/services/club-cycle-readiness.service';
 import { LegalService } from '../legal/legal.service';
+import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -67,6 +68,9 @@ describe('AuthService', () => {
     },
     session: {
       deleteMany: jest.fn(),
+    },
+    guardianships: {
+      count: jest.fn().mockResolvedValue(0),
     },
   };
 
@@ -168,7 +172,16 @@ describe('AuthService', () => {
     getStatus: jest.fn(),
   };
 
+  const mockCountryAgePolicy = {
+    getPolicy: jest.fn(),
+  };
+
   beforeEach(async () => {
+    mockCountryAgePolicy.getPolicy.mockReset().mockResolvedValue({
+      minSelfLoginAge: 13,
+      ageOfMajority: 18,
+      timeZone: 'America/Mexico_City',
+    });
     mockLegalService.assertCurrentVersions.mockReset();
     mockLegalService.getStatus.mockResolvedValue(LEGAL_STATUS);
     mockLegalService.recordOnRegister.mockResolvedValue(undefined);
@@ -215,6 +228,7 @@ describe('AuthService', () => {
         },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: LegalService, useValue: mockLegalService },
+        { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
       ],
     }).compile();
 
@@ -312,6 +326,98 @@ describe('AuthService', () => {
             complete: false,
           }),
         }),
+      });
+    });
+
+    describe('age gate (FP-23)', () => {
+      const yearsAgo = (years: number, extraDays = 0): string => {
+        const d = new Date();
+        d.setUTCFullYear(d.getUTCFullYear() - years);
+        d.setUTCDate(d.getUTCDate() + extraDays);
+        return d.toISOString().slice(0, 10);
+      };
+
+      const stubSuccessfulCreate = () => {
+        mockBetterAuthService.createUser.mockResolvedValue(mockBaResult);
+        mockTx.users_pr.create.mockResolvedValue({ user_id: 'user-123' });
+        mockTx.roles.findFirst.mockResolvedValue({
+          role_id: 1,
+          role_name: 'user',
+        });
+        mockTx.users_roles.create.mockResolvedValue({
+          user_id: 'user-123',
+          role_id: 1,
+        });
+        mockPrismaService.verification.create.mockResolvedValue({});
+      };
+
+      it('blocks a 12-year-old with 422 and creates no rows', async () => {
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(12) }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+          status: 422,
+        });
+
+        expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+        expect(mockLegalService.recordOnRegister).not.toHaveBeenCalled();
+      });
+
+      it('lets a user who turned 13 yesterday register', async () => {
+        stubSuccessfulCreate();
+
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(13, -1) }),
+        ).resolves.toMatchObject({ success: true });
+        expect(mockBetterAuthService.createUser).toHaveBeenCalled();
+      });
+
+      it('blocks a user who turns 13 tomorrow', async () => {
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(13, 2) }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+        });
+        expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
+      });
+
+      it('uses the selected country policy (min 16 blocks a 14-year-old)', async () => {
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 16,
+          ageOfMajority: 18,
+          timeZone: 'America/Mexico_City',
+        });
+
+        await expect(
+          service.register({
+            ...registerDto,
+            birthday: yearsAgo(14),
+            country_id: 9,
+          }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+        });
+        expect(mockCountryAgePolicy.getPolicy).toHaveBeenCalledWith(9);
+        expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
+      });
+
+      it('does not gate when the birthday is omitted (FP-24 is authoritative)', async () => {
+        stubSuccessfulCreate();
+
+        await service.register(registerDto);
+
+        expect(mockCountryAgePolicy.getPolicy).not.toHaveBeenCalled();
+        expect(mockBetterAuthService.createUser).toHaveBeenCalled();
+      });
+
+      it('rejects an unparsable calendar date before creating anything', async () => {
+        await expect(
+          service.register({ ...registerDto, birthday: '2017-02-31' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+        });
+        expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
       });
     });
 
@@ -967,6 +1073,135 @@ describe('AuthService', () => {
       await expect(service.getProfile('missing-user')).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+
+    describe('acting_for and family', () => {
+      const resolvedProfile = (userId: string) => ({
+        profile: {
+          user_id: userId,
+          email: null,
+          name: 'Ana',
+          paternal_last_name: 'Perez',
+          maternal_last_name: null,
+          user_image: null,
+        },
+        post_register_complete: false,
+        authorization: {
+          grants: { global_roles: [], club_assignments: [] },
+          active_assignment: { assignment_id: null },
+          effective: { permissions: [], scope: { global: {}, club: null } },
+        },
+        legacy: {
+          roles: ['user'],
+          permissions: [],
+          club: null,
+          club_context: {
+            active_assignment_id: null,
+            active: null,
+            available: [],
+          },
+        },
+      });
+
+      it('exposes acting_for and hides family while a guardian acts for a dependent', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedProfile('dependent-1'),
+        );
+
+        const result = await service.getProfile('dependent-1', {
+          acting_for: true,
+          actor_sub: 'guardian-1',
+          guardianship_id: 'gs-1',
+          consent_status: 'pending',
+          scopes: ['self:read', 'profile:write'],
+        });
+
+        expect(result.data.acting_for).toEqual({
+          actor_user_id: 'guardian-1',
+          dependent_user_id: 'dependent-1',
+          guardianship_id: 'gs-1',
+          consent_status: 'pending',
+          scopes: ['self:read', 'profile:write'],
+        });
+        expect(result.data.family).toBeNull();
+        expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
+      });
+
+      it('returns acting_for null and the family summary for a regular user', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedProfile('guardian-1'),
+        );
+        mockPrismaService.guardianships.count.mockResolvedValueOnce(2);
+
+        const result = await service.getProfile('guardian-1', {
+          acting_for: false,
+          actor_sub: 'guardian-1',
+          scopes: null,
+        });
+
+        expect(result.data.acting_for).toBeNull();
+        expect(result.data.family).toEqual({
+          is_guardian: true,
+          dependents_count: 2,
+        });
+        expect(mockPrismaService.guardianships.count).toHaveBeenCalledWith({
+          where: expect.objectContaining({
+            guardian_user_id: 'guardian-1',
+            is_custodian: false,
+            is_test_data: false,
+          }),
+        });
+      });
+
+      it('reports is_guardian false when the user has no dependents', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedProfile('user-1'),
+        );
+
+        const result = await service.getProfile('user-1');
+
+        expect(result.data.family).toEqual({
+          is_guardian: false,
+          dependents_count: 0,
+        });
+      });
+    });
+
+    it('should return email null (no 500) for a profile without email', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: {
+            user_id: 'dependent-1',
+            email: null,
+            name: 'Ana',
+            paternal_last_name: 'Perez',
+            maternal_last_name: null,
+            user_image: null,
+          },
+          post_register_complete: false,
+          authorization: {
+            grants: { global_roles: [], club_assignments: [] },
+            active_assignment: { assignment_id: null },
+            effective: { permissions: [], scope: { global: {}, club: null } },
+          },
+          legacy: {
+            roles: ['user'],
+            permissions: [],
+            club: null,
+            club_context: {
+              active_assignment_id: null,
+              active: null,
+              available: [],
+            },
+          },
+        },
+      );
+
+      const result = await service.getProfile('dependent-1');
+
+      expect(result.status).toBe('success');
+      expect(result.data.email).toBeNull();
+      expect(result.data.name).toBe('Ana');
     });
 
     it('should return profile with canonical authorization and legacy fields', async () => {
@@ -1705,6 +1940,22 @@ describe('AuthService', () => {
         success: true,
         message: 'El email ya está verificado',
         alreadyVerified: true,
+      });
+      expect(mockPrismaService.verification.create).not.toHaveBeenCalled();
+    });
+
+    it('should skip silently (no token, no email enqueued) when the account has no email', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        email: null,
+        email_verified: false,
+      });
+
+      const result = await service.sendVerificationEmail('dependent-1');
+
+      expect(result).toEqual({
+        success: true,
+        message: 'La cuenta no tiene correo electrónico',
+        skipped: true,
       });
       expect(mockPrismaService.verification.create).not.toHaveBeenCalled();
     });

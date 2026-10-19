@@ -1,7 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsIn,
   IsNotEmpty,
+  IsOptional,
   IsString,
   MaxLength,
   Validate,
@@ -84,4 +86,13 @@ export class DeleteAccountDto {
   @IsNotEmpty()
   @MaxLength(256)
   nonce?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Confirma que entiendes qué pasará con los menores a tu cargo. Obligatorio (true) cuando tienes menores; ' +
+      'GET /guardianships/me/deletion-impact muestra el resultado de cada uno.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  acknowledge_dependents?: boolean;
 }

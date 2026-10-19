@@ -42,6 +42,11 @@ jest.mock('@aws-sdk/client-s3', () => {
   };
 });
 
+const mockGetSignedUrl = jest.fn();
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: (...args: unknown[]) => mockGetSignedUrl(...args),
+}));
+
 // ---------------------------------------------------------------------------
 // Config factory
 // ---------------------------------------------------------------------------
@@ -172,6 +177,101 @@ describe('R2FileStorageService', () => {
       expect(mockS3Send).not.toHaveBeenCalledWith(
         expect.any(HeadObjectCommand),
       );
+    });
+  });
+
+  describe('GUARDIANSHIP_EVIDENCE — private consent-form bucket', () => {
+    const evidenceEnv = {
+      R2_BUCKET_GUARDIANSHIP_EVIDENCE: 'sacdia-guardianship-evidence',
+      R2_PUBLIC_URL_GUARDIANSHIP_EVIDENCE: 'https://priv-evidence.r2.dev',
+    };
+
+    it('uploads under the default guardianships/consent prefix', async () => {
+      const configured = await buildService(evidenceEnv);
+      mockS3Send.mockResolvedValueOnce({});
+
+      const result = await configured.upload(
+        StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+        'gs-1/a.pdf',
+        Buffer.from('%PDF'),
+        { contentType: 'application/pdf', overwrite: true },
+      );
+
+      expect(result.key).toBe('guardianships/consent/gs-1/a.pdf');
+      const command = mockS3Send.mock.calls[0][0] as PutObjectCommand;
+      expect(command.input.Bucket).toBe('sacdia-guardianship-evidence');
+    });
+
+    it('never exposes a public URL: the bucket is private', async () => {
+      const configured = await buildService(evidenceEnv);
+      expect(() =>
+        configured.resolvePublicUrl(
+          StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+          'gs-1/a.pdf',
+        ),
+      ).toThrow();
+    });
+
+    it('works with only the bucket name: the public URL is optional (private bucket)', async () => {
+      const configured = await buildService({
+        R2_BUCKET_GUARDIANSHIP_EVIDENCE: 'sacdia-guardianship-evidence',
+      });
+      mockS3Send.mockResolvedValueOnce({});
+
+      const result = await configured.upload(
+        StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+        'gs-1/a.pdf',
+        Buffer.from('%PDF'),
+        { contentType: 'application/pdf', overwrite: true },
+      );
+
+      expect(result.key).toBe('guardianships/consent/gs-1/a.pdf');
+      mockS3Send.mockResolvedValueOnce({});
+      await expect(
+        configured.deleteMany(StorageBucketAlias.GUARDIANSHIP_EVIDENCE, [
+          result.key,
+        ]),
+      ).resolves.toBeUndefined();
+    });
+
+    it('signs a 900 s download URL for a key under the default prefix, without any public URL', async () => {
+      const configured = await buildService({
+        R2_BUCKET_GUARDIANSHIP_EVIDENCE: 'sacdia-guardianship-evidence',
+      });
+      mockGetSignedUrl.mockResolvedValueOnce(
+        'https://acct.r2.cloudflarestorage.com/signed?X-Amz-Expires=900',
+      );
+
+      const url = await configured.getSignedDownloadUrl(
+        StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+        'guardianships/consent/gs-1/a.pdf',
+        { expiresInSeconds: 900 },
+      );
+
+      expect(url).toContain('X-Amz-Expires=900');
+      const [, command, options] = mockGetSignedUrl.mock.calls[0] as [
+        unknown,
+        GetObjectCommand,
+        { expiresIn: number },
+      ];
+      expect(command.input).toEqual({
+        Bucket: 'sacdia-guardianship-evidence',
+        Key: 'guardianships/consent/gs-1/a.pdf',
+      });
+      expect(options.expiresIn).toBe(900);
+    });
+
+    it('fails closed when the bucket env vars are not configured', async () => {
+      // `service` was built without them: the API boots, evidence does not work.
+      await expect(
+        service.upload(
+          StorageBucketAlias.GUARDIANSHIP_EVIDENCE,
+          'gs-1/a.pdf',
+          Buffer.from('%PDF'),
+          { contentType: 'application/pdf' },
+        ),
+      ).rejects.toBeDefined();
+      expect(mockS3Send).not.toHaveBeenCalled();
     });
   });
 

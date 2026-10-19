@@ -687,7 +687,11 @@ export class RbacService {
           entityId: userId,
           action: 'UPDATED',
           summary: `Reactivated role ${role.role_name}`,
-          changes: { role_id: roleId, role_name: role.role_name, reactivated: true },
+          changes: {
+            role_id: roleId,
+            role_name: role.role_name,
+            reactivated: true,
+          },
         });
         return { success: true, message: 'Rol reactivado' };
       }
@@ -826,7 +830,7 @@ export class RbacService {
 
     return {
       success: true,
-      message: `Usuario ${user.email} es ahora super-admin`,
+      message: `Usuario ${user.email ?? userId} es ahora super-admin`,
       user_id: userId,
       role: 'super-admin',
     };

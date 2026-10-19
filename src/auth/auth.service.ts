@@ -35,9 +35,13 @@ import {
   AppBadRequestException,
   AppNotFoundException,
   AppUnauthorizedException,
+  AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { LegalService } from '../legal/legal.service';
+import { ageToday, parseCalendarDate } from '../common/age/age.util';
+import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
+import type { AuthPrincipal } from './acting-for/auth-principal';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -83,7 +87,27 @@ export class AuthService {
     private readonly emailService: EmailService,
     private readonly config: ConfigService,
     private readonly legalService: LegalService,
+    private readonly countryAgePolicy: CountryAgePolicyService,
   ) {}
+
+  private async assertRegistrationAge(dto: RegisterDto): Promise<void> {
+    if (!dto.birthday) return;
+
+    const birthday = parseCalendarDate(dto.birthday);
+    if (!birthday) {
+      // The DTO already validated the shape; an unparsable date never passes.
+      throw new AppUnprocessableEntityException(
+        ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+      );
+    }
+
+    const policy = await this.countryAgePolicy.getPolicy(dto.country_id);
+    if (ageToday(birthday, policy.timeZone) < policy.minSelfLoginAge) {
+      throw new AppUnprocessableEntityException(
+        ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+      );
+    }
+  }
 
   async register(dto: RegisterDto, context?: SessionRequestContext) {
     // 0. Validate the accepted legal versions BEFORE any user is created: a
@@ -93,6 +117,13 @@ export class AuthService {
       privacy: dto.accepted_privacy_version,
     };
     this.legalService.assertCurrentVersions(accepted);
+
+    // 0b. Age gate (FP-23): a person below the country's minimum self-login
+    //     age cannot hold an account; their guardian registers them from
+    //     "Mi familia". Runs BEFORE createUser so nothing is created. The
+    //     birthday is optional here (API clients can omit it); the authoritative
+    //     gate is UsersService.update (FP-24).
+    await this.assertRegistrationAge(dto);
 
     // 1. Create user in Better Auth (outside transaction — BA manages its own DB writes).
     //    BA creates the row in `users` (mapped via prismaAdapter: user_id, user_image, etc.)
@@ -646,13 +677,26 @@ export class AuthService {
     }
   }
 
-  async getProfile(userId: string) {
+  async getProfile(
+    userId: string,
+    principal?: Pick<
+      AuthPrincipal,
+      | 'acting_for'
+      | 'actor_sub'
+      | 'guardianship_id'
+      | 'consent_status'
+      | 'scopes'
+    >,
+  ) {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
-    const [signedUserImage, legal] = await Promise.all([
+    const acting = principal?.acting_for === true;
+    const [signedUserImage, legal, family] = await Promise.all([
       this.resolvePrivateProfilePicture(resolved.profile.user_image),
       // Outside the authorization cache: acceptance must reflect the DB right away.
       this.legalService.getStatus(userId),
+      // Hidden while acting: a dependent has no family of its own to show.
+      acting ? Promise.resolve(null) : this.loadFamilySummary(userId),
     ]);
 
     return {
@@ -667,7 +711,43 @@ export class AuthService {
         club_context: resolved.legacy.club_context,
         authorization: resolved.authorization,
         legal,
+        acting_for: acting
+          ? {
+              actor_user_id: principal.actor_sub,
+              dependent_user_id: userId,
+              guardianship_id: principal.guardianship_id ?? null,
+              consent_status: principal.consent_status ?? null,
+              scopes: principal.scopes ?? [],
+            }
+          : null,
+        family,
       },
+    };
+  }
+
+  /**
+   * Guardian summary for GET /auth/me. Mirrors the active-dependent rule used
+   * by the dependent limit: non-custodian, non-test, pending|verified, and the
+   * dependent is not frozen or purged.
+   */
+  private async loadFamilySummary(
+    userId: string,
+  ): Promise<{ is_guardian: boolean; dependents_count: number }> {
+    const dependentsCount = await this.prisma.guardianships.count({
+      where: {
+        guardian_user_id: userId,
+        is_custodian: false,
+        is_test_data: false,
+        consent_status: { in: ['pending', 'verified'] },
+        dependent: {
+          dependent_profile: { is: { frozen_at: null, purged_at: null } },
+        },
+      },
+    });
+
+    return {
+      is_guardian: dependentsCount > 0,
+      dependents_count: dependentsCount,
     };
   }
 
@@ -816,6 +896,15 @@ export class AuthService {
       };
     }
 
+    // Dependent profiles have no email: there is nothing to verify.
+    if (!dbUser.email) {
+      return {
+        success: true,
+        message: 'La cuenta no tiene correo electrónico',
+        skipped: true,
+      };
+    }
+
     await this.createAndLogVerificationToken(dbUser.email);
 
     return {
@@ -895,9 +984,14 @@ export class AuthService {
    * email through other means (e.g., resend flow).
    */
   private async createAndLogVerificationToken(
-    email: string,
+    email: string | null,
     userName?: string,
   ): Promise<void> {
+    // Dependent profiles have no email: nothing to verify, nothing to log.
+    if (!email) {
+      return;
+    }
+
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 

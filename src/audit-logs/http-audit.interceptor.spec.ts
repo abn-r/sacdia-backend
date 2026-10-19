@@ -6,6 +6,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { AuditOptions } from '../common/decorators/audit.decorator';
 import { AuditLogsService } from './audit-logs.service';
 import {
+  getAuditContext,
   markExplicitAuditRecorded,
   runWithAuditContext,
 } from './audit-request-context';
@@ -262,5 +263,76 @@ describe('HttpAuditInterceptor', () => {
     expect(recordEvent).toHaveBeenCalledWith(
       expect.objectContaining({ correlation_id: id }),
     );
+  });
+
+  describe('acting for a dependent', () => {
+    const actingFor = {
+      actorUserId: 'guardian-1',
+      subjectUserId: 'dependent-1',
+      guardianshipId: 'gs-1',
+      kind: 'guardian_acting' as const,
+    };
+    const actingRequest = () =>
+      makeRequest({
+        method: 'PATCH',
+        url: '/api/v1/users/dependent-1',
+        params: { userId: 'dependent-1' },
+        user: {
+          user_id: 'dependent-1',
+          sub: 'dependent-1',
+          actor_sub: 'guardian-1',
+          acting_for: true,
+        },
+      });
+
+    it('logs the request as guardian>dependent', async () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+
+      await runInterceptor(actingRequest());
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'guardian-1>dependent-1' }),
+      );
+      logSpy.mockRestore();
+    });
+
+    it('end to end: the persisted HTTP row is attributed to the guardian and targets the dependent', async () => {
+      const create = jest.fn().mockResolvedValue({ audit_log_id: 1n });
+      const realService = new AuditLogsService({
+        audit_logs: { create },
+      } as never);
+      const reflector = {
+        getAllAndOverride: jest.fn(() => undefined),
+      } as unknown as Reflector;
+      const realInterceptor = new HttpAuditInterceptor(reflector, realService);
+
+      await runWithAuditContext(async () => {
+        const context = getAuditContext();
+        if (context) context.actingFor = actingFor;
+        await lastValueFrom(
+          realInterceptor.intercept(makeContext(actingRequest()), next),
+          { defaultValue: undefined },
+        );
+        await new Promise(process.nextTick);
+      });
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create.mock.calls[0][0].data).toMatchObject({
+        source: 'http',
+        actor_user_id: 'guardian-1',
+        actor_kind: 'guardian_acting',
+        target_user_id: 'dependent-1',
+        request_context: {
+          method: 'PATCH',
+          acting_for: {
+            guardian_user_id: 'guardian-1',
+            dependent_user_id: 'dependent-1',
+            guardianship_id: 'gs-1',
+          },
+        },
+      });
+    });
   });
 });

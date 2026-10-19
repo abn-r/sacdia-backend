@@ -11,6 +11,10 @@ import { NextClassResolver } from '../classes/next-class.resolver';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import {
+  isAssignmentActivationAllowed,
+  lockActivationDependentsAscending,
+} from '../membership-requests/assignment-activation-gate';
 import { NotificationsService } from '../notifications/notifications.service';
 import { closePendingInvestitureAuthorizations } from '../investiture-requests/investiture-year-close';
 
@@ -358,6 +362,16 @@ export class YearCutService {
           },
         });
 
+        // Every gate call below (plan activation, type jumps) may lock a
+        // dependent. Take all of those locks now, ascending by user_id and
+        // before the first write, so this transaction can never wait on a
+        // lock out of order against account deletion (detachGuardian) or any
+        // other multi-dependent path; the gate calls then re-enter them.
+        await lockActivationDependentsAscending(tx, [
+          ...plans.map((plan) => plan.successor_user_id),
+          ...expired.map((row) => row.user_id),
+        ]);
+
         let ended = 0;
         if (expired.length > 0) {
           ended = await this.closeAssignmentsAtOutgoingEnd(tx, expired);
@@ -690,6 +704,19 @@ export class YearCutService {
           successionId: plan.succession_id,
           sectionId: plan.club_section_id,
           code: eligibility.violation?.code,
+        });
+        continue;
+      }
+
+      // A dependent successor needs verified guardian consent; the cut goes on.
+      if (!(await isAssignmentActivationAllowed(tx, plan.successor_user_id))) {
+        this.logger.warn(
+          `YearCut: successor ${plan.successor_user_id} of section ${plan.club_section_id} has no verified guardian consent (${ErrorCode.MR_CONSENT_NOT_VERIFIED}) — skipping plan ${plan.succession_id}`,
+        );
+        skipped.push({
+          successionId: plan.succession_id,
+          sectionId: plan.club_section_id,
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
         });
         continue;
       }

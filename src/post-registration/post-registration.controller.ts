@@ -19,12 +19,14 @@ import {
 } from '@nestjs/swagger';
 import { PostRegistrationService } from './post-registration.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
+import { CompleteGuardianOnlyDto } from './dto/complete-guardian-only.dto';
 import {
   SensitiveUserSubresource,
   RequirePermissions,
   AuthorizationResource,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -51,6 +53,7 @@ export class PostRegistrationController {
   }
 
   @Get('photo-status')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('post_registration', 'read')
   @ApiOperation({
     summary: 'Verificar si el usuario tiene foto de perfil subida',
@@ -66,6 +69,7 @@ export class PostRegistrationController {
   }
 
   @Get('status')
+  @ActingScope('self:read')
   @SensitiveUserSubresource('post_registration', 'read')
   @ApiOperation({ summary: 'Obtener estado del post-registro' })
   @ApiResponse({ status: 200, description: 'Estado actual' })
@@ -85,6 +89,7 @@ export class PostRegistrationController {
   }
 
   @Post('step-1/complete')
+  @ActingScope('registration:write')
   @RequirePermissions('registration:complete')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
@@ -113,13 +118,14 @@ export class PostRegistrationController {
   }
 
   @Post('step-2/complete')
+  @ActingScope('registration:write')
   @RequirePermissions('registration:complete')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 2: Información personal',
     description:
-      'Valida: género, cumpleaños, bautismo, >= 1 contacto emergencia, representante legal si < 18',
+      'Valida: género, cumpleaños, bautismo, >= 1 contacto emergencia',
   })
   @ApiResponse({ status: 200, description: 'Paso 2 completado' })
   @ApiResponse({
@@ -142,6 +148,7 @@ export class PostRegistrationController {
   }
 
   @Post('step-3/complete')
+  @ActingScope('registration:write')
   @RequirePermissions('registration:complete')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
@@ -175,7 +182,45 @@ export class PostRegistrationController {
     );
   }
 
+  // Deliberately NO @ActingScope: a guardian acting for a dependent must never
+  // close the guardian's own post-registration (denied by default while acting).
+  @Post('step-3/guardian-only')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Paso 3 alterno: "Solo soy tutor de menores"',
+    description:
+      'Cierra el post-registro de un adulto sin elegir club. Solo el propio usuario; requiere cuenta y mayoría de edad del país. La geografía es opcional y no exige dependientes existentes.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Post-registro completado (data.mode = guardian_only)',
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Insufficient permissions — requires registration:complete, or called while acting for a dependent',
+  })
+  @ApiResponse({
+    status: 422,
+    description: 'POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT',
+  })
+  async completeGuardianOnly(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: CompleteGuardianOnlyDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.postRegistrationService.completeGuardianOnly(
+      userId,
+      dto,
+      this.buildActorContext(userId, request),
+    );
+  }
+
   @Post('membership-request/cancel')
+  @ActingScope('registration:write')
   @RequirePermissions('registration:complete')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)

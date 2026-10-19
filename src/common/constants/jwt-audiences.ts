@@ -8,11 +8,13 @@
 export const ACCESS_JWT_ISSUER = 'https://api.sacdia.app';
 export const ACCESS_JWT_AUDIENCE = 'sacdia:access';
 export const QR_MEMBER_AUDIENCE = 'sacdia:qr-member';
+/**
+ * Reserved for the Phase 3 linked device (a child's paired phone). Phase 2 only
+ * REJECTS it: no principal of that kind exists yet.
+ */
+export const DEVICE_AUDIENCE = 'sacdia:device';
 
-export function jwtAudienceIncludes(
-  aud: unknown,
-  expected: string,
-): boolean {
+export function jwtAudienceIncludes(aud: unknown, expected: string): boolean {
   if (aud === expected) {
     return true;
   }

@@ -192,6 +192,9 @@ describe('Auth E2E Tests', () => {
       // /auth/me now includes the legal status; the fake user id is not a UUID,
       // so the legal_acceptances lookup is stubbed like the users lookup above.
       jest.spyOn(prisma.legal_acceptances, 'findMany').mockResolvedValue([]);
+      // Same for the guardian family summary (guardianships.guardian_user_id is
+      // a uuid column).
+      jest.spyOn(prisma.guardianships, 'count').mockResolvedValue(0);
 
       const refreshRes = await request(app.getHttpServer())
         .post('/api/v1/auth/refresh')

@@ -1,6 +1,7 @@
 import { PostRegistrationController } from './post-registration.controller';
 import { PostRegistrationService } from './post-registration.service';
 import type { Request } from 'express';
+import { ACTING_SCOPE_KEY } from '../auth/acting-for/acting-scope.decorator';
 
 describe('PostRegistrationController', () => {
   let controller: PostRegistrationController;
@@ -11,6 +12,7 @@ describe('PostRegistrationController', () => {
     completeStep1: jest.fn(),
     completeStep2: jest.fn(),
     completeStep3: jest.fn(),
+    completeGuardianOnly: jest.fn(),
     cancelPendingMembershipRequest: jest.fn(),
   };
 
@@ -152,5 +154,30 @@ describe('PostRegistrationController', () => {
       isOwner: true,
     });
     expect(result).toBe(expectedResponse);
+  });
+
+  it('delegates guardian-only with an owner context and declares NO acting scope', async () => {
+    const request = {
+      user: { sub: 'guardian-1' },
+    } as unknown as Request;
+    mockPostRegistrationService.completeGuardianOnly.mockResolvedValue({
+      status: 'success',
+    });
+
+    await controller.completeGuardianOnly('guardian-1', {}, request);
+
+    expect(
+      mockPostRegistrationService.completeGuardianOnly,
+    ).toHaveBeenCalledWith(
+      'guardian-1',
+      {},
+      { actorUserId: 'guardian-1', isOwner: true },
+    );
+    expect(
+      Reflect.getMetadata(
+        ACTING_SCOPE_KEY,
+        PostRegistrationController.prototype.completeGuardianOnly,
+      ),
+    ).toBeUndefined();
   });
 });
