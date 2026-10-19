@@ -4,9 +4,15 @@ import { ValidationService } from './validation.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { HonorsModule } from '../honors/honors.module';
+import { CoordinationModule } from '../coordination/coordination.module';
 
 @Module({
-  imports: [PrismaModule, NotificationsModule, HonorsModule],
+  imports: [
+    PrismaModule,
+    NotificationsModule,
+    HonorsModule,
+    CoordinationModule,
+  ],
   controllers: [ValidationController],
   providers: [ValidationService],
   exports: [ValidationService],

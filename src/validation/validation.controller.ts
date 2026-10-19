@@ -103,7 +103,10 @@ export class ValidationController {
     status: 403,
     description: 'Insufficient permissions — requires validation:review',
   })
-  @ApiResponse({ status: 404, description: 'Entidad no encontrada' })
+  @ApiResponse({
+    status: 404,
+    description: 'Entidad no encontrada o fuera del alcance del revisor',
+  })
   async review(
     @Param('entityType') entityType: 'class' | 'honor',
     @Param('entityId', ParseIntPipe) entityId: number,
@@ -134,7 +137,7 @@ export class ValidationController {
   @ApiOperation({
     summary: 'Listar items pendientes de revision',
     description:
-      'Obtiene clases y honores con estado pendiente de revision, filtrable por seccion y tipo',
+      'Obtiene honores pendientes de revision dentro del alcance del revisor: secciones donde revisa (club), secciones coordinadas o su territorio. Sin alcance de revisor devuelve listas vacias. Filtrable por seccion y tipo',
   })
   @ApiQuery({
     name: 'section_id',
@@ -150,11 +153,12 @@ export class ValidationController {
   })
   @ApiResponse({ status: 200, description: 'Lista de items pendientes' })
   async getPendingReviews(
+    @CurrentUser() user: CurrentUserPayload,
     @Query('section_id', new ParseIntPipe({ optional: true }))
     sectionId?: number,
     @Query('entity_type') entityType?: 'class' | 'honor',
   ) {
-    return this.validationService.getPendingReviews({
+    return this.validationService.getPendingReviews(user.sub, {
       club_section_id: sectionId,
       entity_type: entityType,
     });
@@ -175,7 +179,7 @@ export class ValidationController {
   @ApiOperation({
     summary: 'Historial de validacion',
     description:
-      'Obtiene el historial de validaciones de una clase u honor especifico',
+      'Obtiene el historial de validaciones de una clase u honor especifico. Lo ve el dueno o un revisor cuyo alcance cubre al miembro; fuera de alcance responde 404',
   })
   @ApiParam({
     name: 'entityType',
@@ -192,8 +196,13 @@ export class ValidationController {
   async getValidationHistory(
     @Param('entityType') entityType: 'class' | 'honor',
     @Param('entityId', ParseIntPipe) entityId: number,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.validationService.getValidationHistory(entityType, entityId);
+    return this.validationService.getValidationHistory(
+      entityType,
+      entityId,
+      user.sub,
+    );
   }
 
   // ========================================
