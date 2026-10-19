@@ -126,15 +126,24 @@ export class MembershipRequestsService {
           },
           select: { user_id: true, roles: { select: { role_name: true } } },
         });
-        if (pending) {
-          await this.consentGate.assertApprovable(tx, pending.user_id);
-          await this.roleEligibility.assertAssignment({
-            userId: pending.user_id,
-            roleName: pending.roles.role_name,
-            clubSectionId,
-            db: tx,
+        if (!pending) {
+          // Nothing to activate here. NEVER fall through to the update: a row
+          // re-pended after the read above (post-registration re-pends
+          // rejected/expired rows) would match its WHERE and be activated
+          // without the consent gate (verify 2c-r2 S-N1).
+          const current = await tx.club_role_assignments.findUnique({
+            where: { assignment_id: assignmentId },
           });
+          return { result: { count: 0 }, assignment: current };
         }
+        await this.consentGate.assertApprovable(tx, pending.user_id);
+        await this.roleEligibility.assertAssignment({
+          userId: pending.user_id,
+          roleName: pending.roles.role_name,
+          clubSectionId,
+          db: tx,
+        });
+        // activation-gate: pending.user_id
         const result = await tx.club_role_assignments.updateMany({
           where: {
             assignment_id: assignmentId,

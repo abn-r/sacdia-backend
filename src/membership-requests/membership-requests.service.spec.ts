@@ -318,6 +318,43 @@ describe('MembershipRequestsService', () => {
         ).toHaveBeenCalledTimes(1);
       });
 
+      it('never writes when the row is no longer pending: a row re-pended after the read is not activated ungated (S-N1)', async () => {
+        transactionMock.club_role_assignments.findFirst.mockResolvedValue(null);
+        transactionMock.club_role_assignments.findUnique.mockResolvedValue({
+          ...pendingAssignment,
+          status: 'active',
+        });
+        // Even if the WHERE would now match, the approve must not reach it.
+        transactionMock.club_role_assignments.updateMany.mockResolvedValue({
+          count: 1,
+        });
+
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, actorId),
+        ).rejects.toMatchObject({ code: ErrorCode.MR_ALREADY_PENDING });
+
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).not.toHaveBeenCalled();
+        expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
+        expect(mockAuditLogs.recordEvent).not.toHaveBeenCalled();
+      });
+
+      it('answers not found when there is no row at all and still writes nothing', async () => {
+        transactionMock.club_role_assignments.findFirst.mockResolvedValue(null);
+        transactionMock.club_role_assignments.findUnique.mockResolvedValue(
+          null,
+        );
+
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, actorId),
+        ).rejects.toMatchObject({ code: ErrorCode.MR_NOT_FOUND });
+
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).not.toHaveBeenCalled();
+      });
+
       it('checks consent inside the approving transaction, before activating', async () => {
         transactionMock.dependent_profiles.findUnique.mockResolvedValue(
           dependentProfile,
