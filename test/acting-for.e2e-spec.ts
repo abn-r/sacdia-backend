@@ -78,12 +78,36 @@ function createPrismaDouble(seed: Record<string, unknown>): any {
   });
 }
 
+function resolvedProfile(userId: string, authorization: unknown) {
+  return {
+    profile: { user_id: userId },
+    post_register_complete: true,
+    authorization,
+    legacy: {
+      roles: [],
+      permissions: [],
+      club: null,
+      club_context: {
+        active_assignment_id: null,
+        active: null,
+        available: [],
+      },
+    },
+  };
+}
+
 describe('Acting-for E2E', () => {
   let app: INestApplication;
   let jwtService: JwtService;
   let prisma: any;
   let actingCache: ActingForCache;
   let throttlerSpy: jest.SpyInstance;
+  let authorizationContext: {
+    resolveUserAuthorization: jest.Mock;
+    canManageClub: jest.Mock;
+    canAccessHierarchyScope: jest.Mock;
+  };
+  let defaultResolveAuthorization: (userId: string) => Promise<unknown>;
 
   /** Consent state of GUARDIAN_ID's guardianship over DEPENDENT_ID; null = none. */
   let grantedStatus: 'pending' | 'verified' | null;
@@ -129,22 +153,10 @@ describe('Acting-for E2E', () => {
       .spyOn(UserAwareThrottlerGuard.prototype, 'canActivate')
       .mockResolvedValue(true);
 
-    const authorizationContext = {
-      resolveUserAuthorization: jest.fn(async (userId: string) => ({
-        profile: { user_id: userId },
-        post_register_complete: true,
-        authorization: buildAuthorizationSnapshot({}),
-        legacy: {
-          roles: [],
-          permissions: [],
-          club: null,
-          club_context: {
-            active_assignment_id: null,
-            active: null,
-            available: [],
-          },
-        },
-      })),
+    defaultResolveAuthorization = async (userId: string) =>
+      resolvedProfile(userId, buildAuthorizationSnapshot({}));
+    authorizationContext = {
+      resolveUserAuthorization: jest.fn(defaultResolveAuthorization),
       canManageClub: jest.fn().mockResolvedValue(false),
       canAccessHierarchyScope: jest.fn().mockReturnValue(false),
     };
@@ -404,6 +416,91 @@ describe('Acting-for E2E', () => {
         .get(`/api/v1/users/${FOREIGN_DEPENDENT_ID}`)
         .set(acting(GUARDIAN_ID, DEPENDENT_ID));
       expect(response.status).toBe(403);
+    });
+  });
+
+  describe('base user role grants while acting (#519)', () => {
+    /**
+     * Simulates a regressed base role that still carries cross-user grants
+     * (pre-20261016100000 plus users:read_detail): the guard itself, not only
+     * the seed, must keep the acting guardian off other users' data.
+     */
+    const BASE_ROLE_PERMISSIONS = [
+      'users:read',
+      'users:read_detail',
+      'users:update_profile',
+      'health:read',
+      'health:update',
+      'emergency_contacts:read',
+      'post_registration:read',
+    ];
+
+    beforeEach(() => {
+      authorizationContext.resolveUserAuthorization.mockImplementation(
+        async (userId: string) =>
+          resolvedProfile(
+            userId,
+            buildAuthorizationSnapshot({
+              globalRoleName: 'user',
+              globalPermissions: BASE_ROLE_PERMISSIONS,
+            }),
+          ),
+      );
+      authorizationContext.resolveUserAuthorization.mockClear();
+    });
+
+    afterEach(() => {
+      authorizationContext.resolveUserAuthorization.mockImplementation(
+        defaultResolveAuthorization,
+      );
+    });
+
+    it.each([
+      ['health', (id: string) => `/api/v1/users/${id}/allergies`],
+      ['profile', (id: string) => `/api/v1/users/${id}`],
+      [
+        'post-registration',
+        (id: string) => `/api/v1/users/${id}/post-registration/status`,
+      ],
+    ])(
+      'an acting guardian cannot read a non-dependent user %s through base-role grants',
+      async (_label, path) => {
+        for (const target of [RANDOM_ID, GUARDIAN_ID]) {
+          const response = await request(app.getHttpServer())
+            .get(path(target))
+            .set(acting(GUARDIAN_ID, DEPENDENT_ID));
+          expect(response.status).toBe(403);
+          expect(errorCode(response.body)).toBe('GUARD_PERMISSION_DENIED');
+        }
+        // Only the substituted principal (the dependent) was evaluated.
+        const evaluated =
+          authorizationContext.resolveUserAuthorization.mock.calls.map(
+            ([userId]) => userId,
+          );
+        expect(evaluated.length).toBeGreaterThan(0);
+        expect(new Set(evaluated)).toEqual(new Set([DEPENDENT_ID]));
+      },
+    );
+
+    it('the owner bypass still serves the dependent own route while acting', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/users/${DEPENDENT_ID}/post-registration/status`)
+        .set(acting(GUARDIAN_ID, DEPENDENT_ID));
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toMatchObject({ complete: false });
+      expect(
+        authorizationContext.resolveUserAuthorization,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('without the header the guardian cannot use base-role grants on the dependent either', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/users/${DEPENDENT_ID}/allergies`)
+        .set(bearer(GUARDIAN_ID));
+
+      expect(response.status).toBe(403);
+      expect(errorCode(response.body)).toBe('GUARD_PERMISSION_DENIED');
     });
   });
 
