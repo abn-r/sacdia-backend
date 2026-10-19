@@ -37,6 +37,13 @@ describe('AdminUsersService', () => {
     enrollments: {
       findMany: jest.fn(),
     },
+    // Family block of the user detail (legal_representative:read readers).
+    guardianships: {
+      findMany: jest.fn(),
+    },
+    dependent_profiles: {
+      findUnique: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
 
@@ -90,6 +97,8 @@ describe('AdminUsersService', () => {
 
     mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
     mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+    mockPrismaService.guardianships.findMany.mockResolvedValue([]);
+    mockPrismaService.dependent_profiles.findUnique.mockResolvedValue(null);
     mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
       [],
     );
@@ -1199,6 +1208,267 @@ describe('AdminUsersService', () => {
         expect(result.emergency_contacts).toBeNull();
         expect(result.legal_representative).toBeNull();
         expect(result.post_registration).toBeNull();
+      });
+    });
+
+    describe('guardianships block (family profiles)', () => {
+      const actor = {
+        user_id: 'actor-admin',
+        union_id: 2,
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'admin' } }],
+      };
+
+      const readerOf = (permissions: string[]) =>
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          buildResolvedAuthorization({
+            roles: ['admin'],
+            permissions,
+            unionId: 2,
+          }),
+        );
+
+      beforeEach(() => {
+        mockPrismaService.users.findUnique.mockResolvedValue(actor);
+        mockPrismaService.users.findFirst.mockResolvedValue(
+          buildAdminDetailRecord(),
+        );
+      });
+
+      it('lists the guardians of a dependent with consent, verifier, form and test-data flags', async () => {
+        readerOf(['legal_representative:read']);
+        mockPrismaService.guardianships.findMany
+          .mockResolvedValueOnce([
+            {
+              guardianship_id: 'g-1',
+              guardian_user_id: 'u-mom',
+              is_primary: true,
+              is_custodian: false,
+              consent_status: 'verified',
+              verification_method: 'director_paper_form',
+              verified_at: new Date('2026-10-18T10:00:00.000Z'),
+              external_name: null,
+              is_test_data: false,
+              created_at: new Date('2026-10-17T10:00:00.000Z'),
+              revoked_at: null,
+              revoked_reason: null,
+              relationship_type: { name: 'Madre' },
+              guardian: {
+                user_id: 'u-mom',
+                name: 'María',
+                paternal_last_name: 'Pérez',
+                email: 'maria@example.org',
+                active: true,
+              },
+              custodian_club: null,
+              verifier: {
+                user_id: 'u-dir',
+                name: 'Carlos',
+                paternal_last_name: 'Ruiz',
+              },
+              consent_evidences: [{ evidence_id: 'e-1' }],
+            },
+          ])
+          .mockResolvedValueOnce([]);
+        mockPrismaService.dependent_profiles.findUnique.mockResolvedValue({
+          created_at: new Date('2026-10-17T10:00:00.000Z'),
+          created_by_user_id: 'u-mom',
+          frozen_at: null,
+          purge_after: null,
+        });
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.guardianships).toEqual({
+          as_dependent: [
+            {
+              guardianship_id: 'g-1',
+              guardian: {
+                user_id: 'u-mom',
+                display_name: 'María Pérez',
+                email: 'maria@example.org',
+              },
+              custodian_club: null,
+              external_name: null,
+              relationship_type_name: 'Madre',
+              is_primary: true,
+              is_custodian: false,
+              consent_status: 'verified',
+              verification_method: 'director_paper_form',
+              verified_at: new Date('2026-10-18T10:00:00.000Z'),
+              verified_by: { user_id: 'u-dir', display_name: 'Carlos Ruiz' },
+              evidence_uploaded: true,
+              is_test_data: false,
+              created_at: new Date('2026-10-17T10:00:00.000Z'),
+              revoked_at: null,
+              revoked_reason: null,
+            },
+          ],
+          as_guardian: [],
+          dependent_profile: {
+            created_at: new Date('2026-10-17T10:00:00.000Z'),
+            created_by_user_id: 'u-mom',
+            frozen_at: null,
+            purge_after: null,
+          },
+        });
+        // The user is read through the dependent side with the full history.
+        expect(
+          mockPrismaService.guardianships.findMany.mock.calls[0][0].where,
+        ).toEqual({ dependent_user_id: 'user-1' });
+      });
+
+      it('shows a custodian row with the club and no guardian, and keeps revoked history', async () => {
+        readerOf(['legal_representative:read']);
+        mockPrismaService.guardianships.findMany
+          .mockResolvedValueOnce([
+            {
+              guardianship_id: 'g-old',
+              guardian_user_id: 'u-gone',
+              is_primary: true,
+              is_custodian: false,
+              consent_status: 'revoked',
+              verification_method: null,
+              verified_at: null,
+              external_name: null,
+              is_test_data: false,
+              created_at: new Date('2026-10-01T00:00:00.000Z'),
+              revoked_at: new Date('2026-10-10T00:00:00.000Z'),
+              revoked_reason: 'guardian_account_closed',
+              relationship_type: { name: 'Padre' },
+              guardian: {
+                user_id: 'u-gone',
+                name: null,
+                paternal_last_name: null,
+                email:
+                  'deleted-0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a@sacdia.deleted',
+                active: false,
+              },
+              custodian_club: null,
+              verifier: null,
+              consent_evidences: [],
+            },
+            {
+              guardianship_id: 'g-custody',
+              guardian_user_id: null,
+              is_primary: true,
+              is_custodian: true,
+              consent_status: 'pending',
+              verification_method: null,
+              verified_at: null,
+              external_name: null,
+              is_test_data: false,
+              created_at: new Date('2026-10-10T00:00:00.000Z'),
+              revoked_at: null,
+              revoked_reason: null,
+              relationship_type: null,
+              guardian: null,
+              custodian_club: { club_id: 9, name: 'Club Central' },
+              verifier: null,
+              consent_evidences: [],
+            },
+          ])
+          .mockResolvedValueOnce([]);
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        const [revoked, custody] = result.guardianships!.as_dependent;
+        expect(revoked).toMatchObject({
+          consent_status: 'revoked',
+          revoked_reason: 'guardian_account_closed',
+          guardian: { user_id: 'u-gone', display_name: '', email: null },
+        });
+        expect(custody).toMatchObject({
+          guardian: null,
+          custodian_club: { club_id: 9, name: 'Club Central' },
+          is_custodian: true,
+          evidence_uploaded: false,
+        });
+      });
+
+      it('lists the dependents of a guardian (live, non-custodian rows only)', async () => {
+        readerOf(['legal_representative:read']);
+        mockPrismaService.guardianships.findMany
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              guardianship_id: 'g-ana',
+              is_primary: true,
+              consent_status: 'pending',
+              relationship_type: { name: 'Madre' },
+              dependent: {
+                user_id: 'd-ana',
+                name: 'Ana',
+                paternal_last_name: 'Pérez',
+                birthday: new Date('2017-04-02T00:00:00.000Z'),
+              },
+            },
+          ]);
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.guardianships?.as_guardian).toEqual([
+          {
+            guardianship_id: 'g-ana',
+            dependent: {
+              user_id: 'd-ana',
+              display_name: 'Ana Pérez',
+              birthday: new Date('2017-04-02T00:00:00.000Z'),
+            },
+            relationship_type_name: 'Madre',
+            is_primary: true,
+            consent_status: 'pending',
+          },
+        ]);
+        expect(
+          mockPrismaService.guardianships.findMany.mock.calls[1][0].where,
+        ).toEqual({
+          guardian_user_id: 'user-1',
+          is_custodian: false,
+          consent_status: { not: 'revoked' },
+        });
+      });
+
+      it('is also exposed to the transitional users:read_detail readers', async () => {
+        readerOf(['users:read_detail']);
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.guardianships).toEqual({
+          as_dependent: [],
+          as_guardian: [],
+          dependent_profile: null,
+        });
+      });
+
+      it.each([['health:read'], ['emergency_contacts:read'], ['users:read']])(
+        'is null and never queried for a reader without the legal_representative family (%s)',
+        async (permission) => {
+          readerOf([permission]);
+
+          const result = await service.getUserById('actor-admin', 'user-1');
+
+          expect(result.guardianships).toBeNull();
+          expect(
+            mockPrismaService.guardianships.findMany,
+          ).not.toHaveBeenCalled();
+          expect(
+            mockPrismaService.dependent_profiles.findUnique,
+          ).not.toHaveBeenCalled();
+        },
+      );
+
+      it('a dependent without e-mail does not break the detail (email null)', async () => {
+        readerOf(['legal_representative:read']);
+        mockPrismaService.users.findFirst.mockResolvedValue({
+          ...buildAdminDetailRecord(),
+          email: null,
+        });
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.email).toBeNull();
+        expect(result.is_deleted).toBe(false);
       });
     });
 
