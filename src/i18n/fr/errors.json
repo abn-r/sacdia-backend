@@ -620,6 +620,7 @@
   "GUARD_USER_ID_PARAM_MISSING": "Identifiant utilisateur introuvable dans les paramètres de la requête",
   "GUARD_ASSIGNMENT_SCOPE_INVALID": "Vous n'avez pas d'affectation active pour cette instance",
   "GUARD_ASSIGNMENT_NOT_FOUND": "Affectation de club introuvable",
+  "GUARD_ID_PARAM_INVALID": "L'identifiant de la ressource n'est pas valide",
   "FILE_TOO_LARGE": "La taille du fichier dépasse le maximum autorisé",
   "FILE_TYPE_INVALID": "Type de fichier non autorisé",
   "FILE_REQUIRED": "Un fichier est requis",

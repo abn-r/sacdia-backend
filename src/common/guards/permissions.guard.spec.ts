@@ -12,6 +12,8 @@ import { InstitutionalHierarchyService } from '../services/institutional-hierarc
 const SENSITIVE_USER_SUBRESOURCE_KEY = 'sensitive_user_subresource';
 
 describe('PermissionsGuard', () => {
+  const MEMBER_USER_ID = '88888888-8888-4888-8888-888888888888';
+
   const mockReflector = {
     getAllAndOverride: jest.fn(),
   };
@@ -942,14 +944,14 @@ describe('PermissionsGuard', () => {
       guard.canActivate(
         createContext({
           user: { sub: 'director-1' },
-          params: { userId: 'pending-user-1' },
+          params: { userId: '99999999-9999-4999-8999-999999999991' },
         }),
       ),
     ).resolves.toBe(true);
 
     expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledWith({
       where: {
-        user_id: 'pending-user-1',
+        user_id: '99999999-9999-4999-8999-999999999991',
         club_section_id: 22,
         active: true,
         OR: [
@@ -989,7 +991,7 @@ describe('PermissionsGuard', () => {
       guard.canActivate(
         createContext({
           user: { sub: 'director-1' },
-          params: { userId: 'member-user-1' },
+          params: { userId: MEMBER_USER_ID },
         }),
       ),
     ).resolves.toBe(true);
@@ -1017,7 +1019,7 @@ describe('PermissionsGuard', () => {
       guard.canActivate(
         createContext({
           user: { sub: 'director-1' },
-          params: { userId: 'other-user-1' },
+          params: { userId: '99999999-9999-4999-8999-999999999992' },
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
@@ -1045,8 +1047,28 @@ describe('PermissionsGuard', () => {
     const directorContext = () =>
       createContext({
         user: { sub: 'director-1' },
-        params: { userId: 'member-user-1' },
+        params: { userId: MEMBER_USER_ID },
       });
+
+    it('skips the section-membership lookup when the target userId is not a UUID', async () => {
+      mockSensitiveRoute('health', 'read');
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          activeClubPermissions: ['health:read'],
+          instanceId: 22,
+        }),
+      );
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'director-1' },
+            params: { userId: 'not-a-uuid' },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      expect(mockPrisma.club_role_assignments.findFirst).not.toHaveBeenCalled();
+    });
 
     it.each([
       'health',
@@ -1072,7 +1094,7 @@ describe('PermissionsGuard', () => {
         expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledWith(
           {
             where: {
-              user_id: 'member-user-1',
+              user_id: MEMBER_USER_ID,
               club_section_id: 22,
               active: true,
               OR: [{ status: null }, { status: { in: ['active'] } }],
@@ -1152,10 +1174,100 @@ describe('PermissionsGuard', () => {
       guard.canActivate(
         createContext({
           user: { sub: 'admin-1' },
-          params: { assignmentId: 'missing-assignment' },
+          params: { assignmentId: '55555555-5555-4555-8555-555555555555' },
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND });
+  });
+
+  describe('malformed UUID route params', () => {
+    const mockUuidResource = (
+      permission: string,
+      resource: Record<string, unknown>,
+    ) => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY) {
+          return { permissions: [permission], mode: 'all' };
+        }
+        if (key === AUTHORIZATION_RESOURCE_KEY) {
+          return resource;
+        }
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ globalPermissions: [permission] }),
+      );
+    };
+
+    it.each([
+      [
+        'club_assignment',
+        'club_roles:revoke',
+        'assignmentId',
+        'club_role_assignments',
+      ],
+      [
+        'class_counselor_assignment',
+        'club_roles:assign',
+        'assignmentId',
+        'class_counselor_assignments',
+      ],
+      ['insurance_member', 'insurance:read', 'memberId', 'users'],
+    ] as const)(
+      'rejects a non-UUID %s id with 400 before querying Prisma',
+      async (type, permission, idParam, model) => {
+        mockUuidResource(permission, { type, idParam });
+
+        await expect(
+          guard.canActivate(
+            createContext({
+              user: { sub: 'admin-1' },
+              params: { clubSectionId: '12', [idParam]: 'not-a-uuid' },
+            }),
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.GUARD_ID_PARAM_INVALID,
+          status: 400,
+        });
+        expect(mockPrisma[model].findUnique).not.toHaveBeenCalled();
+      },
+    );
+
+    it('keeps 403 when the club assignment id param is missing', async () => {
+      mockUuidResource('club_roles:revoke', {
+        type: 'club_assignment',
+        idParam: 'assignmentId',
+      });
+
+      await expect(
+        guard.canActivate(
+          createContext({ user: { sub: 'admin-1' }, params: {} }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID,
+      });
+      expect(
+        mockPrisma.club_role_assignments.findUnique,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('queries Prisma with a well-formed club assignment UUID', async () => {
+      const assignmentId = '77777777-7777-4777-8777-777777777777';
+      mockUuidResource('club_roles:revoke', {
+        type: 'club_assignment',
+        idParam: 'assignmentId',
+      });
+      mockPrisma.club_role_assignments.findUnique.mockResolvedValue(null);
+
+      await expect(
+        guard.canActivate(
+          createContext({ user: { sub: 'admin-1' }, params: { assignmentId } }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND });
+      expect(mockPrisma.club_role_assignments.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { assignment_id: assignmentId } }),
+      );
+    });
   });
 
   it('rejects class counselor assignment mutation when actor scope is another club section', async () => {
@@ -1364,7 +1476,7 @@ describe('PermissionsGuard', () => {
       guard.canActivate(
         createContext({
           user: { sub: 'club-a-actor' },
-          params: { memberId: 'member-b' },
+          params: { memberId: '66666666-6666-4666-8666-666666666666' },
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
@@ -1826,7 +1938,7 @@ describe('PermissionsGuard', () => {
     const otherUserContext = () =>
       createContext({
         user: { sub: 'attacker-1' },
-        params: { userId: 'victim-1' },
+        params: { userId: '99999999-9999-4999-8999-999999999993' },
       });
 
     it.each(USER_ROUTES.map((route) => [route.route, route] as const))(
@@ -1854,8 +1966,8 @@ describe('PermissionsGuard', () => {
         await expect(
           guard.canActivate(
             createContext({
-              user: { sub: 'victim-1' },
-              params: { userId: 'victim-1' },
+              user: { sub: '99999999-9999-4999-8999-999999999993' },
+              params: { userId: '99999999-9999-4999-8999-999999999993' },
             }),
           ),
         ).resolves.toBe(true);
@@ -2045,8 +2157,8 @@ describe('PermissionsGuard', () => {
       await expect(
         guard.canActivate(
           createContext({
-            user: { sub: 'victim-1' },
-            params: { userId: 'victim-1' },
+            user: { sub: '99999999-9999-4999-8999-999999999993' },
+            params: { userId: '99999999-9999-4999-8999-999999999993' },
           }),
         ),
       ).resolves.toBe(true);
