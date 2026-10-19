@@ -63,7 +63,32 @@ export class MembershipRequestsController {
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiResponse({
     status: 200,
-    description: 'Lista de solicitudes pendientes',
+    description:
+      'Lista de solicitudes pendientes. Cada item incluye `expires_at` (timeout base almacenado, sin cambios) y `effective_expires_at` (ISO): el vencimiento real que aplica el cron. Adulto: created_at + timeout base; menor con consentimiento pendiente: created_at + max(base, 30) dias; menor con consentimiento verificado: max(created_at, verified_at) + timeout base.',
+    schema: {
+      example: {
+        status: 'success',
+        data: [
+          {
+            assignment_id: '3f0c8a52-6a58-4b1e-9d2a-0e5b7c1d9a11',
+            user_id: '8d1f0b34-2c6e-4f0a-bb7e-5a3c9e2d4f10',
+            club_section_id: 10,
+            status: 'pending',
+            created_at: '2026-10-01T12:00:00.000Z',
+            expires_at: '2026-10-09T12:00:00.000Z',
+            effective_expires_at: '2026-10-31T12:00:00.000Z',
+            consent: {
+              required: true,
+              dependent: true,
+              guardianship_id: 'b2f6c9a0-1d3e-4a7b-8c5d-6e9f0a1b2c3d',
+              status: 'pending',
+              evidence_uploaded: false,
+              guardians: [],
+            },
+          },
+        ],
+      },
+    },
   })
   @ApiResponse({
     status: 401,

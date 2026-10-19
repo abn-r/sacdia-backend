@@ -11,6 +11,12 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ConsentGateService } from './consent-gate.service';
+import {
+  addDays,
+  effectiveMembershipExpiry,
+  isMembershipRequestExpired,
+  parsePendingTimeoutDays,
+} from './membership-request-expiry';
 
 const MEMBERSHIP_REQUEST_REVIEWER_ROLES = [
   'director',
@@ -18,16 +24,6 @@ const MEMBERSHIP_REQUEST_REVIEWER_ROLES = [
   'secretary',
   'secretary-treasurer',
 ] as const;
-
-/** Default pending timeout (system_config membership.pending_timeout_days). */
-const DEFAULT_PENDING_TIMEOUT_DAYS = 8;
-
-/**
- * Requests of a dependent whose guardian consent is still pending live this
- * long (ruling #11518): the paper form travels through the guardian and the
- * director, so the normal timeout is too short.
- */
-export const DEPENDENT_CONSENT_PENDING_TIMEOUT_DAYS = 30;
 
 export type PendingMembershipRequestNotificationInput = {
   userId: string;
@@ -85,12 +81,22 @@ export class MembershipRequestsService {
       orderBy: { created_at: 'asc' },
     });
 
-    const consent = await this.consentGate.loadConsentBlocks(this.prisma, [
-      ...new Set(requests.map((request) => request.user_id)),
+    const userIds = [...new Set(requests.map((request) => request.user_id))];
+    const [consent, consentStates, timeoutDays] = await Promise.all([
+      this.consentGate.loadConsentBlocks(this.prisma, userIds),
+      this.consentGate.loadDependentConsent(this.prisma, userIds),
+      this.getPendingTimeoutDays(),
     ]);
     return requests.map((request) => ({
       ...request,
       consent: consent.get(request.user_id) ?? null,
+      // `expires_at` is the stored base timeout; this one applies the real
+      // rule the cron uses (same helper).
+      effective_expires_at: effectiveMembershipExpiry({
+        createdAt: request.created_at,
+        timeoutDays,
+        consent: consentStates.get(request.user_id),
+      }).toISOString(),
     }));
   }
 
@@ -406,20 +412,10 @@ export class MembershipRequestsService {
    *  - everybody else: the base timeout from creation, unchanged.
    */
   async expireStaleRequests(): Promise<number> {
-    const config = await this.prisma.system_config.findUnique({
-      where: { config_key: 'membership.pending_timeout_days' },
-    });
-
-    const timeoutDays = config
-      ? parseInt(config.config_value, 10)
-      : DEFAULT_PENDING_TIMEOUT_DAYS;
+    const timeoutDays = await this.getPendingTimeoutDays();
 
     const now = new Date();
-    const baseCutoff = this.daysAgo(now, timeoutDays);
-    const consentPendingCutoff = this.daysAgo(
-      now,
-      Math.max(timeoutDays, DEPENDENT_CONSENT_PENDING_TIMEOUT_DAYS),
-    );
+    const baseCutoff = addDays(now, -timeoutDays);
 
     const { count, userIds } = await this.prisma.$transaction(async (tx) => {
       // Nothing can expire before the base cutoff: dependents only get MORE time.
@@ -438,15 +434,16 @@ export class MembershipRequestsService {
       ]);
 
       const expirableIds = candidates
-        .filter(({ user_id, created_at }) => {
-          const state = consent.get(user_id);
-          if (!state) return true; // not a dependent: base timeout
-          if (!state.verifiedAt) return created_at < consentPendingCutoff;
-          // Verified: the base timeout restarts at verification.
-          const clockStart =
-            state.verifiedAt > created_at ? state.verifiedAt : created_at;
-          return clockStart < baseCutoff;
-        })
+        .filter(({ user_id, created_at }) =>
+          isMembershipRequestExpired(
+            {
+              createdAt: created_at,
+              timeoutDays,
+              consent: consent.get(user_id),
+            },
+            now,
+          ),
+        )
         .map(({ assignment_id }) => assignment_id);
       if (expirableIds.length === 0)
         return { count: 0, userIds: [] as string[] };
@@ -478,10 +475,11 @@ export class MembershipRequestsService {
     return count;
   }
 
-  private daysAgo(from: Date, days: number): Date {
-    const cutoff = new Date(from);
-    cutoff.setDate(cutoff.getDate() - days);
-    return cutoff;
+  private async getPendingTimeoutDays(): Promise<number> {
+    const config = await this.prisma.system_config.findUnique({
+      where: { config_key: 'membership.pending_timeout_days' },
+    });
+    return parsePendingTimeoutDays(config?.config_value);
   }
 
   /**

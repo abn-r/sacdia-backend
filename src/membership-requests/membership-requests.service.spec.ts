@@ -945,6 +945,7 @@ describe('MembershipRequestsService', () => {
       user_id,
       club_section_id: 10,
       status: 'pending',
+      created_at: new Date('2026-10-01T12:00:00.000Z'),
       users: { user_id, name: 'N', email },
       roles: { role_id: 'r', role_name: 'member' },
     });
@@ -1017,11 +1018,82 @@ describe('MembershipRequestsService', () => {
         status: 'verified',
         evidence_uploaded: false,
       });
-      // Constant: one read per table for the whole page, not one per request.
+      // Constant: the reads are batched for the whole page (consent blocks +
+      // verification dates), never one per request.
       expect(
         mockPrismaService.dependent_profiles.findMany,
-      ).toHaveBeenCalledTimes(1);
-      expect(mockPrismaService.guardianships.findMany).toHaveBeenCalledTimes(1);
+      ).toHaveBeenCalledTimes(2);
+      expect(mockPrismaService.guardianships.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    describe('effective_expires_at (same rule as the cron)', () => {
+      const created = new Date('2026-10-01T12:00:00.000Z');
+      const iso = (date: Date) => date.toISOString();
+      const plusDays = (from: Date, days: number) =>
+        new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
+
+      const listOne = async (
+        userId: string,
+        opts: { dependent: boolean; verifiedAt?: Date },
+      ) => {
+        mockPrismaService.system_config.findUnique.mockResolvedValue({
+          config_value: '8',
+        });
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          {
+            ...request(userId, opts.dependent ? null : 'x@x.org'),
+            created_at: created,
+          },
+        ]);
+        mockPrismaService.dependent_profiles.findMany.mockResolvedValue(
+          opts.dependent ? [{ user_id: userId }] : [],
+        );
+        mockPrismaService.guardianships.findMany.mockImplementation(
+          async (args: any) =>
+            args?.where?.consent_status === 'verified' && opts.verifiedAt
+              ? [{ dependent_user_id: userId, verified_at: opts.verifiedAt }]
+              : [],
+        );
+        const [item] = await service.listPending(10);
+        return item;
+      };
+
+      it('an adult gets created_at + the base timeout', async () => {
+        const item = await listOne('a1', { dependent: false });
+        expect(item.effective_expires_at).toBe(iso(plusDays(created, 8)));
+      });
+
+      it('a minor with consent pending gets created_at + max(base, 30) days', async () => {
+        const item = await listOne(dependentA, { dependent: true });
+        expect(item.effective_expires_at).toBe(iso(plusDays(created, 30)));
+      });
+
+      it('a minor with consent verified later restarts the base timeout at verification', async () => {
+        const verifiedAt = plusDays(created, 20);
+        const item = await listOne(dependentA, {
+          dependent: true,
+          verifiedAt,
+        });
+        expect(item.effective_expires_at).toBe(iso(plusDays(verifiedAt, 8)));
+      });
+
+      it('a minor verified BEFORE the request counts from created_at', async () => {
+        const item = await listOne(dependentA, {
+          dependent: true,
+          verifiedAt: plusDays(created, -5),
+        });
+        expect(item.effective_expires_at).toBe(iso(plusDays(created, 8)));
+      });
+
+      it('keeps the stored expires_at untouched', async () => {
+        mockPrismaService.system_config.findUnique.mockResolvedValue(null);
+        const stored = plusDays(created, 8);
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          { ...request('a1', 'x@x.org'), expires_at: stored },
+        ]);
+        const [item] = await service.listPending(10);
+        expect(item.expires_at).toBe(stored);
+      });
     });
 
     it('keeps a null email as null in the item (no 500)', async () => {
