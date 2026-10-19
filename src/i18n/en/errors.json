@@ -623,6 +623,7 @@
   "GUARD_USER_ID_PARAM_MISSING": "User ID not found in request parameters",
   "GUARD_ASSIGNMENT_SCOPE_INVALID": "You do not have an active assignment for this instance",
   "GUARD_ASSIGNMENT_NOT_FOUND": "Club assignment not found",
+  "GUARD_ID_PARAM_INVALID": "The resource identifier is invalid",
   "FILE_TOO_LARGE": "File size exceeds maximum allowed",
   "FILE_TYPE_INVALID": "File type not allowed",
   "FILE_REQUIRED": "A file is required",
