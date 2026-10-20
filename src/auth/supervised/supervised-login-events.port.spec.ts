@@ -78,7 +78,7 @@ describe('supervised login events port', () => {
     }
     const adapter = new Adapter();
     const { onTeenSessionStarted } = resolveSupervisedLoginEvents(adapter);
-    onTeenSessionStarted({ userId: 'u-1' });
+    void onTeenSessionStarted({ userId: 'u-1' });
     expect(adapter.seen).toEqual(['u-1']);
   });
 
