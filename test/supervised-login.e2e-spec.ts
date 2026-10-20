@@ -496,6 +496,12 @@ describe('Supervised login E2E', () => {
       guardianship_link_codes: linkCodes,
       supervised_logins: supervisedLogins,
       session,
+      // No paired phones in this world (3b): the summary counts them.
+      linked_devices: createModelMock({
+        groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      }),
       account: createModelMock({
         count: jest.fn(async (args: any) =>
           people[args?.where?.userId as string]?.hasAccount ? 1 : 0,
@@ -628,6 +634,8 @@ describe('Supervised login E2E', () => {
         const userId = token.replace(/^refresh:/, '');
         return people[userId]?.sessionAlive ? userId : null;
       }),
+      // No session of this world belongs to a linked device (3b).
+      findLinkedDeviceOfSession: jest.fn().mockResolvedValue(null),
       refreshSession: jest.fn(async (token: string) => {
         const userId = token.replace(/^refresh:/, '');
         if (!people[userId]?.sessionAlive) {

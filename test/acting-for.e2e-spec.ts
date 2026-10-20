@@ -197,6 +197,12 @@ describe('Acting-for E2E', () => {
 
     const prismaDouble = createPrismaDouble({
       guardianships,
+      // No paired phones in this world (3b): the summary counts them.
+      linked_devices: createModelMock({
+        groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      }),
       users: createModelMock({
         findUnique: jest.fn().mockResolvedValue({
           birthday: new Date('1985-01-15T00:00:00.000Z'),
