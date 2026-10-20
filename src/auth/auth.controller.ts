@@ -536,7 +536,7 @@ export class AuthController {
   }
 
   @Patch('me/context')
-  @ActingScope('profile:write')
+  @ActingScope('club:context')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({

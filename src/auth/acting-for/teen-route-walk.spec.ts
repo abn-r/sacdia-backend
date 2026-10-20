@@ -347,7 +347,7 @@ export function listUnclassified(
 const TEEN_APP_FLOW: Array<{ key: string; pending: boolean }> = [
   { key: 'GET /auth/me', pending: true },
   { key: 'GET /auth/profile/completion-status', pending: true },
-  { key: 'PATCH /auth/me/context', pending: true },
+  { key: 'PATCH /auth/me/context', pending: false },
   { key: 'POST /auth/update-password', pending: true },
   { key: 'GET /users/:userId', pending: true },
   { key: 'PATCH /users/:userId', pending: true },
@@ -392,7 +392,7 @@ const TEEN_APP_FLOW: Array<{ key: string; pending: boolean }> = [
   { key: 'GET /users/:userId/honors', pending: true },
   { key: 'POST /users/:userId/honors', pending: false },
   { key: 'GET /dashboard/summary', pending: true },
-  { key: 'GET /qr/me', pending: true },
+  { key: 'GET /qr/me', pending: false },
   { key: 'GET /clubs/:clubId', pending: false },
   { key: 'GET /clubs/:clubId/activities', pending: false },
   { key: 'GET /activities/:activityId', pending: false },

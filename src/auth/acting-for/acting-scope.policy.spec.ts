@@ -73,6 +73,8 @@ describe('acting scope metadata and policy', () => {
         'self:preferences',
         'guardian_link:issue',
         'account:manage',
+        'credential:read',
+        'club:context',
       ].sort(),
     );
   });
@@ -86,6 +88,10 @@ describe('acting scope metadata and policy', () => {
         'registration:write',
         'legal:accept',
         'consent:evidence',
+        // The dependent's credential and club context (reachable while acting
+        // before Phase 3 through self:read / profile:write; kept as is).
+        'credential:read',
+        'club:context',
       ].sort(),
     );
     expect([...GUARDIAN_VERIFIED_SCOPES].sort()).toEqual(
@@ -100,6 +106,8 @@ describe('acting scope metadata and policy', () => {
         'evidence:upload',
         'legal:accept',
         'consent:evidence',
+        'credential:read',
+        'club:context',
       ].sort(),
     );
     // The verified set is no longer an alias of the whole vocabulary.
@@ -145,6 +153,13 @@ describe('acting scope metadata and policy', () => {
       expect(TEEN_PENDING_SCOPES).not.toContain(clubScope);
       expect(TEEN_SCOPES).toEqual(expect.arrayContaining([clubScope]));
     }
+    // The member credential and the club context are club data: only a teen
+    // with a verified guardian holds them (ruling option A).
+    expect(TEEN_PENDING_SCOPES).not.toContain('credential:read');
+    expect(TEEN_PENDING_SCOPES).not.toContain('club:context');
+    expect(TEEN_SCOPES).toEqual(
+      expect.arrayContaining(['credential:read', 'club:context']),
+    );
     // Teens never hold the guardian-only scopes.
     expect(TEEN_SCOPES).not.toContain('consent:evidence');
     expect(TEEN_SCOPES).not.toContain('guardian_link:issue');
@@ -179,6 +194,8 @@ describe('acting scope metadata and policy', () => {
     ]) {
       expect(AGE_UNKNOWN_SCOPES).not.toContain(forbidden);
     }
+    expect(AGE_UNKNOWN_SCOPES).not.toContain('credential:read');
+    expect(AGE_UNKNOWN_SCOPES).not.toContain('club:context');
     // Never wider than a pending teen, apart from managing the own account.
     for (const scope of AGE_UNKNOWN_SCOPES) {
       if (scope === 'account:manage') continue;
@@ -206,9 +223,11 @@ describe('acting scope metadata and policy', () => {
         'evidence:submit',
         'push:register',
         'agenda:read',
+        'credential:read',
       ].sort(),
     );
     for (const forbidden of [
+      'club:context',
       'health:read',
       'classes:write',
       'profile:write',

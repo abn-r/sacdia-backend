@@ -65,9 +65,9 @@ Un principal que no es `kind: 'user'` solo cruza rutas que declaran `@ActingScop
 
 | Scope | Qué permite | Quién lo tiene |
 | --- | --- | --- |
-| `self:read` | Lecturas del propio perfil, clases, honores, QR, inbox de notificaciones, `/auth/me`, dashboard | tutor (pending/verified), teen (pendiente/activo), dispositivo, edad desconocida |
+| `self:read` | Lecturas del propio perfil, clases, honores, inbox de notificaciones, `/auth/me`, dashboard | tutor (pending/verified), teen (pendiente/activo), dispositivo, edad desconocida |
 | `health:read` | Salud y contactos de emergencia propios | tutor, teen, edad desconocida |
-| `profile:write` | `PATCH /users/:userId`, salud, foto, contactos de emergencia, `PATCH /auth/me/context` | tutor, teen, edad desconocida |
+| `profile:write` | `PATCH /users/:userId`, salud, foto, contactos de emergencia | tutor, teen, edad desconocida |
 | `registration:write` | Pasos 1-3 de post-registro, selectores de club/sección, cancelar solicitud, inscripción anual | tutor, teen, edad desconocida |
 | `legal:accept` | `POST /users/me/legal-acceptance` (acting: `accepted_by_user_id` = tutor) | tutor, teen, edad desconocida |
 | `consent:evidence` | Subir la ficha de consentimiento firmada (paso 3) | solo tutor |
@@ -79,6 +79,8 @@ Un principal que no es `kind: 'user'` solo cruza rutas que declaran `@ActingScop
 | `self:password` | `POST /auth/update-password` y reenvío de verificación | teen, edad desconocida |
 | `self:preferences` | Preferencias de notificación propias | solo teen |
 | `guardian_link:issue` | Emitir el código de vínculo y revocar un vínculo PENDIENTE propio (`/users/me/guardian-link*`) | solo teen pendiente |
+| `credential:read` | Credencial QR de miembro (`/qr/me`, `/qr/me/card`, `/qr/me/card.pdf`, `/qr/member/token`) | tutor, teen ACTIVO, dispositivo; nunca teen pendiente ni edad desconocida |
+| `club:context` | `PATCH /auth/me/context` (cambiar la asignación de club activa) | tutor, teen ACTIVO; nunca teen pendiente ni edad desconocida |
 | `account:manage` | Sesiones, proveedores OAuth y borrar la cuenta | solo edad desconocida |
 
 - **Nunca llevan scope** (siempre 403 mientras se actúa): contraseña, MFA, sesiones, OAuth, borrar cuenta, exportar datos, FCM, preferencias de notificación, `/guardianships/*`, `legal-representative*`, propuesta de instructor, maestrías, certificaciones, admin, clubes, secciones, escaneo QR, envío de notificaciones, catálogo legal y la salida `POST /users/:userId/post-registration/step-3/guardian-only`.
@@ -107,7 +109,7 @@ Un principal que no es `kind: 'user'` solo cruza rutas que declaran `@ActingScop
 - **Resolución** (`SupervisedPrincipalResolver`, `src/auth/supervised/`): una consulta a `users` (cumpleaños, país, `supervised_login`, perfil congelado, tutorías verificadas). Caché `supv:v3:{userId}:{epoch}` con el MISMO epoch que acting-for (`acting:epoch:{userId}`): 1 h adulto, 60 s supervisado o edad desconocida, 10 s bloqueado, siempre recortado a la medianoche local del país (la mayoría de edad aplica sin esperar el TTL). Redis caído => DB; DB caída => `503 AUTH_REVOCATION_CHECK_UNAVAILABLE`.
 - **Corte inmediato del teen**: deshabilitar, restablecer, congelar o perder al tutor => `401 AUTH_SUPERVISED_ACCESS_REVOKED` en la siguiente petición (la sesión `sid` se comprueba por petición para `supervised_user`, cacheada bajo el epoch).
 - **`FAMILY_TEEN_LOGIN_ENABLED` apagado (FP3-35)**: una cuenta cuyo `supervised_logins.method` es `handle` queda `blocked: teen_login_disabled` => `401 AUTH_SUPERVISED_ACCESS_REVOKED` en cada petición y `POST /auth/refresh` rechazado con el mismo código. Los teens con método `email` no se tocan. El método va en la caché; la bandera se aplica encima en cada llamada (sin bump ni espera). Las sesiones no se borran: encender la bandera las restaura. La bandera se lee del `ConfigService` en cada petición, pero en un servidor desplegado su valor es la foto del env validada al arrancar: **cambiarla exige reiniciar**.
-- **Sin datos de club para un teen pendiente** (FP3-03/FP3-07): `principalSeesClubData(principal)` es `false` para `supervised_user` sin `supervision: 'active'` y para `age_unknown_user`. `GET /dashboard/summary` sigue accesible pero devuelve `club_name`, `club_type`, `user_role` en `null` y `upcoming_activities` vacío; su propio progreso (clase, honores) sí se devuelve. La superficie completa de un teen pendiente está fijada ruta por ruta en `PENDING_TEEN_SURFACE` (`acting-scope-metadata.spec.ts`).
+- **Sin datos de club para un teen pendiente** (FP3-03/FP3-07): `principalSeesClubData(principal)` es `false` para `supervised_user` sin `supervision: 'active'` y para `age_unknown_user`. `GET /dashboard/summary` sigue accesible pero devuelve `club_name`, `club_type`, `user_role` en `null` y `upcoming_activities` vacío; su propio progreso (clase, honores) sí se devuelve. La credencial QR (`credential:read`) y el cambio de contexto de club (`club:context`) no existen para ellos (403 `PRINCIPAL_SCOPE_DENIED`), también con una asignación activa anterior al despliegue; `GET /auth/me` sigue accesible pero sin asignación, contexto ni nombres de club. La superficie completa de un teen pendiente está fijada ruta por ruta en `PENDING_TEEN_SURFACE` (`acting-scope-metadata.spec.ts`).
 - **Auditoría**: `actor_kind = 'supervised_user'`, actor = el propio teen.
 
 ### Auditoría

@@ -45,10 +45,6 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'GET /users/:userId/honors/:honorId/requirements/progress': 'self:read',
   'GET /users/:userId/honors/:honorId/requirements/:requirementId/evidence':
     'self:read',
-  'GET /qr/member/token': 'self:read',
-  'GET /qr/me': 'self:read',
-  'GET /qr/me/card': 'self:read',
-  'GET /qr/me/card.pdf': 'self:read',
   'GET /notifications/history': 'self:read',
   'GET /notifications/unread-count': 'self:read',
   'PATCH /notifications/read-all': 'self:read',
@@ -76,7 +72,6 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'POST /users/:userId/emergency-contacts': 'profile:write',
   'PATCH /users/:userId/emergency-contacts/:contactId': 'profile:write',
   'DELETE /users/:userId/emergency-contacts/:contactId': 'profile:write',
-  'PATCH /auth/me/context': 'profile:write',
   // ---- registration:write
   'POST /users/:userId/post-registration/step-1/complete': 'registration:write',
   'POST /users/:userId/post-registration/step-2/complete': 'registration:write',
@@ -187,6 +182,15 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   // ---- guardian_link:issue (a pending teen links a guardian; never a guardian/device)
   'POST /users/me/guardian-link-codes': 'guardian_link:issue',
   'POST /users/me/guardian-links/:guardianshipId/revoke': 'guardian_link:issue',
+  // ---- credential:read (the member QR credential: guardian acting, ACTIVE teen
+  // and device; never a pending teen or an unknown age: FP3-03/FP3-07, option A)
+  'GET /qr/member/token': 'credential:read',
+  'GET /qr/me': 'credential:read',
+  'GET /qr/me/card': 'credential:read',
+  'GET /qr/me/card.pdf': 'credential:read',
+  // ---- club:context (switch the active club assignment; guardian acting and
+  // ACTIVE teen only: a pending teen / unknown age has no club context)
+  'PATCH /auth/me/context': 'club:context',
   // ---- push:register (teen + linked device; own token only)
   'POST /users/me/fcm-tokens': 'push:register',
   'DELETE /users/me/fcm-tokens/:tokenId': 'push:register',
@@ -233,6 +237,8 @@ const TEEN_ACCESS: Record<
   'agenda:read': 'active',
   'consent:evidence': 'none',
   'account:manage': 'none',
+  'credential:read': 'active',
+  'club:context': 'active',
 };
 
 /**
@@ -240,7 +246,10 @@ const TEEN_ACCESS: Record<
  * the response is shaped for them (club fields null, no activities). Each one
  * needs a controller test of the shaping.
  */
-const SHAPED_FOR_PENDING_TEEN: string[] = ['GET /dashboard/summary'];
+const SHAPED_FOR_PENDING_TEEN: string[] = [
+  'GET /dashboard/summary',
+  'GET /auth/me',
+];
 
 /**
  * The WHOLE surface of a pending teen (no verified guardian), reviewed route
@@ -249,9 +258,10 @@ const SHAPED_FOR_PENDING_TEEN: string[] = ['GET /dashboard/summary'];
  *    evidence) stay readable: personal data, not club data (orchestrator
  *    ruling on verify W1; classes was the documented 3a deviation).
  *  - shaped: reachable, club fields stripped (SHAPED_FOR_PENDING_TEEN).
- *  - club_context_open: KNOWN to still show the club of an active pre-deploy
- *    assignment (club name/section on the QR card, the /auth/me club
- *    context). Reported on verify W1 for a ruling; not fixed here.
+ *  - The QR credential routes and PATCH /auth/me/context are NOT here: they
+ *    carry `credential:read` / `club:context`, which a pending teen does not
+ *    hold (ruling option A: no club data and no member credential until a
+ *    guardian is verified, also with an active pre-deploy assignment).
  */
 const PENDING_TEEN_SURFACE: Record<
   string,
@@ -262,7 +272,6 @@ const PENDING_TEEN_SURFACE: Record<
   | 'account'
   | 'notifications'
   | 'shaped'
-  | 'club_context_open'
 > = {
   // Onboarding: post-registration, club pickers, the join request, legal, guardian link.
   'GET /users/:userId/post-registration/status': 'onboarding',
@@ -324,13 +333,7 @@ const PENDING_TEEN_SURFACE: Record<
   'DELETE /users/me/fcm-tokens/:tokenId': 'notifications',
   // Shaped for a pending teen.
   'GET /dashboard/summary': 'shaped',
-  // Known open: see the doc comment.
-  'GET /auth/me': 'club_context_open',
-  'PATCH /auth/me/context': 'club_context_open',
-  'GET /qr/me': 'club_context_open',
-  'GET /qr/me/card': 'club_context_open',
-  'GET /qr/me/card.pdf': 'club_context_open',
-  'GET /qr/member/token': 'club_context_open',
+  'GET /auth/me': 'shaped',
 };
 
 /** Scopes only a supervised teen holds: never a guardian, never a device. */
@@ -642,6 +645,9 @@ describe('acting-scope metadata snapshot', () => {
         'honors:write',
         'evidence:upload',
         'legal:accept',
+        // Retagged from self:read / profile:write (QR credential, context switch).
+        'credential:read',
+        'club:context',
       ]);
       const phase2Routes = routes.filter(
         (r) => r.scope !== undefined && phase2Scopes.has(r.scope),

@@ -49,6 +49,12 @@ export const ACTING_FOR_SCOPES = [
   // The own account (sessions, account deletion). Unknown-age principals only:
   // a teen, a guardian acting and a device never manage sessions or delete.
   'account:manage',
+  // The member QR credential (token, card, PDF). Club data, so a teen without
+  // a verified guardian and an unknown-age account never hold it.
+  'credential:read',
+  // Switch the active club assignment. Club data too: same holders as above,
+  // minus the device.
+  'club:context',
 ] as const;
 
 export type ActingForScope = (typeof ACTING_FOR_SCOPES)[number];
@@ -65,6 +71,8 @@ export const GUARDIAN_PENDING_SCOPES = [
   'registration:write',
   'legal:accept',
   'consent:evidence',
+  'credential:read',
+  'club:context',
 ] as const satisfies readonly ActingForScope[];
 
 /**
@@ -84,6 +92,8 @@ export const GUARDIAN_VERIFIED_SCOPES = [
   'evidence:upload',
   'legal:accept',
   'consent:evidence',
+  'credential:read',
+  'club:context',
 ] as const satisfies readonly ActingForScope[];
 
 /**
@@ -120,6 +130,8 @@ export const TEEN_SCOPES = [
   'push:register',
   'self:password',
   'self:preferences',
+  'credential:read',
+  'club:context',
 ] as const satisfies readonly ActingForScope[];
 
 /**
@@ -133,6 +145,7 @@ export const DEVICE_SCOPES = [
   'evidence:submit',
   'push:register',
   'agenda:read',
+  'credential:read',
 ] as const satisfies readonly ActingForScope[];
 
 /**
