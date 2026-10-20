@@ -102,6 +102,7 @@ describe('AuthService', () => {
   const mockBetterAuthService = {
     createUser: jest.fn(),
     signInWithIdentifier: jest.fn(),
+    getSessionOwnerId: jest.fn(),
     refreshSession: jest.fn(),
     signOut: jest.fn(),
     resetPasswordForEmail: jest.fn(),
@@ -1358,6 +1359,12 @@ describe('AuthService', () => {
     });
 
     describe('supervised state (FP3-35: a cut handle session cannot slide back in)', () => {
+      beforeEach(() => {
+        mockBetterAuthService.getSessionOwnerId
+          .mockReset()
+          .mockResolvedValue('user-123');
+      });
+
       it.each(['teen_login_disabled', 'login_disabled', 'frozen'])(
         'refuses a blocked (%s) principal with 401 AUTH_SUPERVISED_ACCESS_REVOKED and hands out no token',
         async (cause) => {
@@ -1373,11 +1380,76 @@ describe('AuthService', () => {
             code: ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
             status: 401,
           });
+          expect(mockBetterAuthService.getSessionOwnerId).toHaveBeenCalledWith(
+            'ba-session-token',
+          );
           expect(mockSupervisedResolver.resolve).toHaveBeenCalledWith(
             'user-123',
           );
         },
       );
+
+      it('a refused refresh never touches the session row (the state is checked BEFORE the slide)', async () => {
+        mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'blocked',
+          cause: 'teen_login_disabled',
+        });
+
+        await expect(
+          service.refreshSession({ refreshToken: 'ba-session-token' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+        });
+
+        // refreshSession is what slides the session expiry.
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+        expect(mockTokenBlacklistService.blacklistToken).not.toHaveBeenCalled();
+      });
+
+      it('resolves the state before it refreshes', async () => {
+        const order: string[] = [];
+        mockSupervisedResolver.resolve.mockImplementation(() => {
+          order.push('resolve');
+          return Promise.resolve({ state: 'adult' });
+        });
+        mockBetterAuthService.refreshSession.mockImplementation(() => {
+          order.push('refresh');
+          return Promise.resolve(mockBaResult);
+        });
+
+        await service.refreshSession({ refreshToken: 'ba-session-token' });
+
+        expect(order).toEqual(['resolve', 'refresh']);
+      });
+
+      it('an unknown or expired token has no owner: it goes straight to the refresh, which reports it', async () => {
+        mockBetterAuthService.getSessionOwnerId.mockResolvedValue(null);
+        mockBetterAuthService.refreshSession.mockRejectedValue(
+          new UnauthorizedException('Session not found or expired'),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'expired-token' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID });
+
+        expect(mockSupervisedResolver.resolve).not.toHaveBeenCalled();
+        expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith(
+          'expired-token',
+        );
+      });
+
+      it('a failed owner lookup is the invalid-token 401 and nothing is refreshed', async () => {
+        mockBetterAuthService.getSessionOwnerId.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'ba-session-token' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID });
+
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
 
       it('a supervised teen who is not blocked (an email teen while the flag is off) refreshes normally', async () => {
         mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
@@ -1394,7 +1466,7 @@ describe('AuthService', () => {
         expect(result.data.accessToken).toBe('new-sacdia-jwt');
       });
 
-      it('a failed state lookup is the 503, never a refresh that fails open', async () => {
+      it('a failed state lookup is the 503, never a refresh that fails open (and the session is not slid)', async () => {
         mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
         mockSupervisedResolver.resolve.mockRejectedValue(
           new AppServiceUnavailableException(
@@ -1408,6 +1480,7 @@ describe('AuthService', () => {
           code: ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
           status: 503,
         });
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
       });
     });
 

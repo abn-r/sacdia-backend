@@ -1022,6 +1022,36 @@ describe('BetterAuthService', () => {
     });
   });
 
+  describe('getSessionOwnerId (read-only: the refresh decides BEFORE it slides)', () => {
+    it('returns the owner of a live session and writes nothing', async () => {
+      const { svc } = buildService();
+      mockSessionFindFirst.mockResolvedValue({ userId: 'user-uuid-123' });
+
+      await expect(
+        svc.getSessionOwnerId('raw-opaque-session-token'),
+      ).resolves.toBe('user-uuid-123');
+
+      expect(mockSessionFindFirst).toHaveBeenCalledWith({
+        where: {
+          token: 'raw-opaque-session-token',
+          expiresAt: { gt: expect.any(Date) },
+        },
+        select: { userId: true },
+      });
+      expect(mockQueryRaw).not.toHaveBeenCalled();
+      expect(mockSessionUpdate).not.toHaveBeenCalled();
+      expect(mockSessionDeleteMany).not.toHaveBeenCalled();
+    });
+
+    it('returns null for an unknown or expired token', async () => {
+      const { svc } = buildService();
+      mockSessionFindFirst.mockResolvedValue(null);
+
+      await expect(svc.getSessionOwnerId('nope')).resolves.toBeNull();
+      expect(mockSessionDeleteMany).not.toHaveBeenCalled();
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // resetPasswordForEmail
   // ---------------------------------------------------------------------------

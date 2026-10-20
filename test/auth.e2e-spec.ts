@@ -20,6 +20,7 @@ describe('Auth E2E Tests', () => {
       },
       accessToken: 'fake-jwt',
     }),
+    getSessionOwnerId: jest.fn().mockResolvedValue('test-user-id'),
     refreshSession: jest.fn().mockResolvedValue({
       user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
       session: {

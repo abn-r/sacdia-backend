@@ -110,6 +110,12 @@ export interface IBetterAuthService {
     userId: string,
     context?: SessionRequestContext,
   ): Promise<BaSession>;
+  /**
+   * Who owns a LIVE session token, without touching the session (no slide, no
+   * cleanup). Lets the refresh path decide about the principal BEFORE it
+   * extends the row. Null when the token is unknown or expired.
+   */
+  getSessionOwnerId(sessionToken: string): Promise<string | null>;
   refreshSession(sessionToken: string): Promise<BaAuthResult>;
   signOut(sessionToken: string): Promise<void>;
   resetPasswordForEmail(email: string, redirectTo?: string): Promise<void>;
@@ -473,6 +479,14 @@ export class BetterAuthService implements IBetterAuthService {
     context?: SessionRequestContext,
   ): Promise<BaAuthResult> {
     return this.signInWithIdentifier(email, password, context);
+  }
+
+  async getSessionOwnerId(sessionToken: string): Promise<string | null> {
+    const session = await this.prisma.session.findFirst({
+      where: { token: sessionToken, expiresAt: { gt: new Date() } },
+      select: { userId: true },
+    });
+    return session?.userId ?? null;
   }
 
   /**

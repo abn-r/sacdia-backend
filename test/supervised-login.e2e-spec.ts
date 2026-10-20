@@ -622,7 +622,12 @@ describe('Supervised login E2E', () => {
           };
         },
       ),
-      // The opaque refresh token of this world is `refresh:<userId>`.
+      // The opaque refresh token of this world is `refresh:<userId>`. The owner
+      // lookup is read-only; `refreshSession` below is what slides the session.
+      getSessionOwnerId: jest.fn(async (token: string) => {
+        const userId = token.replace(/^refresh:/, '');
+        return people[userId]?.sessionAlive ? userId : null;
+      }),
       refreshSession: jest.fn(async (token: string) => {
         const userId = token.replace(/^refresh:/, '');
         if (!people[userId]?.sessionAlive) {
@@ -1270,7 +1275,12 @@ describe('Supervised login E2E', () => {
       expect(errorCode(response.body)).toBe('AUTH_SUPERVISED_ACCESS_REVOKED');
     });
 
-    it('the handle session cannot be refreshed back in (401 AUTH_SUPERVISED_ACCESS_REVOKED)', async () => {
+    it('the handle session cannot be refreshed back in (401 AUTH_SUPERVISED_ACCESS_REVOKED) and the session row is not slid', async () => {
+      const baService = moduleRef.get(BetterAuthService, {
+        strict: false,
+      }) as unknown as { refreshSession: jest.Mock };
+      baService.refreshSession.mockClear();
+
       const response = await request(app.getHttpServer())
         .post('/api/v1/auth/refresh')
         .send({ refreshToken: `refresh:${CHILD_ID}` });
@@ -1278,6 +1288,8 @@ describe('Supervised login E2E', () => {
       expect(response.status).toBe(401);
       expect(errorCode(response.body)).toBe('AUTH_SUPERVISED_ACCESS_REVOKED');
       expect(response.body?.data?.accessToken).toBeUndefined();
+      // refreshSession is what extends the session expiry: it was never called.
+      expect(baService.refreshSession).not.toHaveBeenCalled();
     });
 
     it('an EMAIL teen is not cut: requests and refresh keep working', async () => {

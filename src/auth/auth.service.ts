@@ -584,6 +584,43 @@ export class AuthService {
       throw new AppBadRequestException(ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED);
     }
 
+    // A blocked principal never gets its session extended nor a fresh access
+    // JWT: above all a handle session while FAMILY_TEEN_LOGIN_ENABLED is off
+    // (FP3-35), whose session row is kept so the flag can be switched back on.
+    // The decision is taken BEFORE the refresh, because refreshing slides the
+    // session row. Disable, reset and freeze already delete the sessions; this
+    // is their safety net. An unknown or expired token has no owner: it falls
+    // through so the refresh reports it as it always did. A failed state lookup
+    // is the resolver's 503, never a refresh that fails open.
+    let sessionOwnerId: string | null;
+    try {
+      sessionOwnerId =
+        await this.betterAuthService.getSessionOwnerId(refreshToken);
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_refresh_failed',
+          reason: error instanceof Error ? error.message : String(error),
+          payloadFormat,
+          userAgent: context?.userAgent ?? 'unknown',
+        }),
+      );
+      throw new AppUnauthorizedException(ErrorCode.AUTH_REFRESH_TOKEN_INVALID);
+    }
+    if (sessionOwnerId) {
+      const supervised = await this.supervisedResolver.resolve(sessionOwnerId);
+      if (supervised.state === 'blocked') {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth_refresh_supervised_blocked',
+            sub: sessionOwnerId,
+            cause: supervised.cause,
+          }),
+        );
+        throw supervisedAccessRevoked();
+      }
+    }
+
     // The "refresh token" sent by clients IS the BA opaque session token.
     // BA does not have a separate refresh token — the session slides on each getSession call.
     let baResult: Awaited<
@@ -613,23 +650,6 @@ export class AuthService {
         }),
       );
       throw new AppUnauthorizedException(ErrorCode.AUTH_REFRESH_TOKEN_INVALID);
-    }
-
-    // A blocked principal never gets a fresh access JWT: above all a handle
-    // session while FAMILY_TEEN_LOGIN_ENABLED is off (FP3-35), whose session
-    // row is kept so the flag can be switched back on. Disable, reset and
-    // freeze already delete the sessions; this is their safety net. A failed
-    // lookup is the resolver's 503, never a refresh that fails open.
-    const supervised = await this.supervisedResolver.resolve(baResult.user.id);
-    if (supervised.state === 'blocked') {
-      this.logger.warn(
-        JSON.stringify({
-          event: 'auth_refresh_supervised_blocked',
-          sub: baResult.user.id,
-          cause: supervised.cause,
-        }),
-      );
-      throw supervisedAccessRevoked();
     }
 
     this.logger.log(
