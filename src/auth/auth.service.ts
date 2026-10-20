@@ -56,7 +56,11 @@ import {
   toDateValue,
 } from '../common/age/age.util';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
-import type { AuthPrincipal } from './acting-for/auth-principal';
+import {
+  principalSeesClubData,
+  type AuthPrincipal,
+} from './acting-for/auth-principal';
+import { stripClubContext } from './acting-for/strip-club-context';
 import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
 import { SupervisionStateService } from '../guardianships/supervision-state.service';
 
@@ -921,8 +925,14 @@ export class AuthService {
       | 'supervision'
     >,
   ) {
-    const resolved =
+    const fullyResolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
+    // A teen without a verified guardian and an unknown-age account get no club
+    // context at all, also with an active assignment from before Phase 3.
+    const resolved =
+      principal && !principalSeesClubData(principal)
+        ? stripClubContext(fullyResolved)
+        : fullyResolved;
     const acting = principal?.acting_for === true;
     const supervisionStatus =
       principal?.kind === 'supervised_user' ? principal.supervision : undefined;

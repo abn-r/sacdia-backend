@@ -2142,6 +2142,166 @@ describe('AuthService', () => {
       });
     });
 
+    describe('club data for a principal without club-data rights (option A)', () => {
+      const clubGrant = {
+        assignment_id: 'assign-1',
+        role_name: 'member',
+        permissions: ['club_members:read'],
+        operational: true,
+        ecclesiastical_year_id: 7,
+        club: { club_id: 10, club_name: 'Club Aguila' },
+        section: { club_section_id: 20, club_type_id: 2 },
+        scope: {},
+        status: 'active',
+      };
+      // A user with an ACTIVE club assignment from before the deploy.
+      const withActiveAssignment = () => ({
+        profile: {
+          user_id: 'teen-1',
+          email: 'teen@example.com',
+          name: 'Ana',
+          paternal_last_name: 'Perez',
+          maternal_last_name: null,
+          birthday: new Date('2011-01-01'),
+          country_id: 1,
+          user_image: null,
+        },
+        post_register_complete: true,
+        authorization: {
+          grants: {
+            global_roles: [],
+            club_assignments: [clubGrant],
+            direct_permissions: [],
+          },
+          active_assignment: { assignment_id: 'assign-1' },
+          effective: {
+            permissions: ['club_members:read'],
+            scope: {
+              global: {},
+              club: {
+                assignment_id: 'assign-1',
+                role_name: 'member',
+                club: clubGrant.club,
+                section: clubGrant.section,
+              },
+            },
+          },
+        },
+        legacy: {
+          roles: ['user'],
+          permissions: [],
+          club: { club_id: 10, club_name: 'Club Aguila', club_type: 'JA' },
+          club_context: {
+            active_assignment_id: 'assign-1',
+            active: { assignment_id: 'assign-1', club_name: 'Club Aguila' },
+            available: [{ assignment_id: 'assign-1', club_name: 'Club Aguila' }],
+          },
+        },
+      });
+      const emptyContext = {
+        active_assignment_id: null,
+        active: null,
+        available: [],
+      };
+
+      beforeEach(() => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          withActiveAssignment(),
+        );
+        mockSupervisionState.describe.mockResolvedValue({
+          status: 'pending_guardian',
+          pending_since: null,
+          guardians: [],
+          summary_visible_to_guardians: true,
+          days_left: 70,
+        });
+      });
+
+      const expectNoClubData = (data: Record<string, any>) => {
+        expect(data.club).toBeNull();
+        expect(data.club_context).toEqual(emptyContext);
+        expect(data.authorization.grants.club_assignments).toEqual([]);
+        expect(data.authorization.active_assignment).toEqual({
+          assignment_id: null,
+        });
+        expect(data.authorization.effective.scope.club).toBeNull();
+        expect(data.authorization.effective.permissions).toEqual([]);
+        expect(JSON.stringify(data)).not.toContain('Club Aguila');
+      };
+
+      it('pending teen with an active pre-deploy assignment: no club in /auth/me, structure intact', async () => {
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+          supervision: 'pending_guardian',
+        });
+
+        expectNoClubData(result.data);
+        // The app parser keeps working: same keys, empty lists, not a missing block.
+        expect(result.data.authorization.grants.global_roles).toEqual([]);
+        expect(result.data.mode).toBe('teen_pending');
+        expect(result.data.user_id).toBe('teen-1');
+      });
+
+      it('unknown age with an active assignment: no club in /auth/me', async () => {
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'age_unknown_user',
+        });
+
+        expectNoClubData(result.data);
+        expect(result.data.mode).toBe('profile_incomplete');
+      });
+
+      it('a supervised principal with no supervision status fails closed', async () => {
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+        });
+
+        expectNoClubData(result.data);
+      });
+
+      it('an ACTIVE teen keeps the club context', async () => {
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+          supervision: 'active',
+        });
+
+        expect(result.data.club?.club_name).toBe('Club Aguila');
+        expect(result.data.authorization.grants.club_assignments).toHaveLength(
+          1,
+        );
+        expect(result.data.authorization.active_assignment).toEqual({
+          assignment_id: 'assign-1',
+        });
+      });
+
+      it('an adult and a guardian acting keep the club context', async () => {
+        const adult = await service.getProfile('teen-1');
+        expect(adult.data.club?.club_name).toBe('Club Aguila');
+
+        const acting = await service.getProfile('teen-1', {
+          acting_for: true,
+          actor_sub: 'guardian-1',
+          guardianship_id: 'gs-1',
+          consent_status: 'verified',
+          scopes: ['self:read'],
+          kind: 'guardian_acting',
+        });
+        expect(acting.data.club?.club_name).toBe('Club Aguila');
+      });
+    });
+
     it('should return email null (no 500) for a profile without email', async () => {
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         {
