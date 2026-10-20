@@ -1,3 +1,4 @@
+import * as vm from 'node:vm';
 import {
   ageAt,
   ageToday,
@@ -34,6 +35,15 @@ describe('age.util', () => {
           new Date('2026-10-20T18:00:00.000Z'),
         ),
       ).toBe(0);
+    });
+
+    it('accepts a Date from another realm (structuredClone / vm), not only this realm instanceof', () => {
+      const foreign = vm.runInNewContext(
+        "new Date('2010-10-17T00:00:00.000Z')",
+      ) as Date;
+      expect(foreign instanceof Date).toBe(false);
+      expect(toDateValue(foreign)?.getTime()).toBe(day('2010-10-17').getTime());
+      expect(ageAt(foreign, day('2026-10-17'))).toBe(16);
     });
 
     it('toDateValue revives Date, ISO strings and rejects garbage', () => {

@@ -9,8 +9,11 @@ export const DEFAULT_AGE_TIMEZONE = 'America/Mexico_City';
 export function toDateValue(
   value: Date | string | null | undefined,
 ): Date | null {
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
+  // Tag check, not `instanceof`: a Date from another realm (structuredClone in
+  // a vm context, a worker) is still a Date.
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    const date = value as Date;
+    return Number.isNaN(date.getTime()) ? null : date;
   }
   if (typeof value !== 'string') {
     return null;
