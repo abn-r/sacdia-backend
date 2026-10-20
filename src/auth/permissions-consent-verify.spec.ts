@@ -466,22 +466,27 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
     });
   });
 
-  describe('the seed carries the fallback', () => {
-    const seedMigration = readFileSync(
-      join(
-        __dirname,
-        '../../prisma/migrations/20261022130000_seed_family_permissions/migration.sql',
-      ),
-      'utf8',
-    )
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('--'))
-      .join('\n');
+  describe('the seed grants coordinators consent:verify', () => {
+    const readSql = (migration: string): string =>
+      readFileSync(
+        join(__dirname, `../../prisma/migrations/${migration}/migration.sql`),
+        'utf8',
+      )
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n');
 
     it.each(['coordinator', 'zone-coordinator', 'general-coordinator'])(
-      'the migration does not grant consent:verify to %s',
+      'the B11 seed (20261022130000) still does not name %s; 20261023120000 grants it consent:verify',
       (role) => {
-        expect(seedMigration).not.toContain(`'${role}'`);
+        expect(readSql('20261022130000_seed_family_permissions')).not.toContain(
+          `'${role}'`,
+        );
+        const grant = readSql(
+          '20261023120000_grant_consent_verify_to_coordinators',
+        );
+        expect(grant).toContain(`'${role}'`);
+        expect(grant).toContain("p.permission_name = 'consent:verify'");
       },
     );
   });

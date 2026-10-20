@@ -1005,3 +1005,97 @@ describe('family permission seeds (20261022130000)', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// coordinator-consent-verify: consent:verify for GLOBAL coordinators
+// (20261023120000). PermissionsGuard now resolves their assigned sections on
+// the routes that opt in with `coordinatorSections`, so the B11 fallback of
+// 20261022130000 (immutable) is lifted by a follow-up migration.
+// ---------------------------------------------------------------------------
+
+const COORDINATOR_CONSENT_MIGRATION =
+  '20261023120000_grant_consent_verify_to_coordinators';
+const COORDINATOR_ROLES = [
+  'coordinator',
+  'zone-coordinator',
+  'general-coordinator',
+];
+const COORDINATOR_SEED_BEGIN = '-- BEGIN coordinator consent:verify';
+const COORDINATOR_SEED_END = '-- END coordinator consent:verify';
+
+const coordinatorConsentMigration = (): string =>
+  readPrisma(`migrations/${COORDINATOR_CONSENT_MIGRATION}/migration.sql`);
+
+const coordinatorSeedSection = (): string => {
+  const start = rolePermissionsSeed.indexOf(COORDINATOR_SEED_BEGIN);
+  const end = rolePermissionsSeed.indexOf(COORDINATOR_SEED_END);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  return rolePermissionsSeed.slice(start, end);
+};
+
+describe('coordinator consent:verify grant (20261023120000)', () => {
+  it('sorts after the family permission seed that creates consent:verify', () => {
+    expect(COORDINATOR_CONSENT_MIGRATION > FAMILY_SEED_MIGRATION).toBe(true);
+  });
+
+  it('is DML only: one INSERT INTO role_permissions, nothing else', () => {
+    const statements = splitStatements(coordinatorConsentMigration());
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toMatch(/^INSERT INTO role_permissions\b/);
+    const dml = stripComments(coordinatorConsentMigration()).replace(
+      /'[^']*'/g,
+      "''",
+    );
+    expect(dml).not.toMatch(
+      /\b(DELETE|UPDATE\s+\w+\s+SET|TRUNCATE|DROP|ALTER|CREATE|BEGIN|COMMIT)\b/i,
+    );
+  });
+
+  it('is idempotent and grants only to active GLOBAL roles and an active permission', () => {
+    const [statement] = splitStatements(coordinatorConsentMigration());
+    expect(statement).toMatch(
+      /ON CONFLICT \(role_id, permission_id\) DO NOTHING$/,
+    );
+    expect(statement).toMatch(/r\.role_category = 'GLOBAL'/);
+    expect(statement).toMatch(/r\.active = true/);
+    expect(statement).toMatch(/p\.active = true/);
+  });
+
+  it('grants consent:verify to coordinator, zone-coordinator and general-coordinator, and nothing else', () => {
+    expect(parseGrants(coordinatorConsentMigration())).toEqual(
+      COORDINATOR_ROLES.map((role) => `GLOBAL|${role}|consent:verify`).sort(),
+    );
+  });
+
+  describe('role-permissions.seed.sql carries the SAME rows', () => {
+    it('the coordinator block grants exactly the migration rows', () => {
+      expect(parseGrants(coordinatorSeedSection())).toEqual(
+        parseGrants(coordinatorConsentMigration()),
+      );
+    });
+
+    it('sits inside the seed transaction, after the coordinator role blocks (their DELETE+INSERT would wipe it)', () => {
+      const at = rolePermissionsSeed.indexOf(COORDINATOR_SEED_BEGIN);
+      const commit = rolePermissionsSeed.indexOf('\nCOMMIT;');
+      expect(at).toBeLessThan(commit);
+      for (const role of COORDINATOR_ROLES) {
+        const roleBlockDelete = rolePermissionsSeed.indexOf(
+          `WHERE role_name = '${role}' AND role_category = 'GLOBAL'`,
+        );
+        expect(roleBlockDelete).toBeGreaterThanOrEqual(0);
+        expect(roleBlockDelete).toBeLessThan(at);
+      }
+      // Nothing between the block and COMMIT deletes role_permissions.
+      expect(rolePermissionsSeed.slice(at, commit)).not.toMatch(
+        /DELETE FROM role_permissions/,
+      );
+    });
+
+    it('no DELETE of consent:verify anywhere in the seed (the grant is additive)', () => {
+      expect(rolePermissionsSeed).not.toMatch(
+        /DELETE FROM role_permissions[^;]*'consent:verify'/i,
+      );
+    });
+  });
+});
