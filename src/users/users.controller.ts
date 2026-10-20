@@ -59,8 +59,13 @@ export class UsersController {
   @ApiOperation({ summary: 'Obtener información de un usuario' })
   @ApiResponse({ status: 200, description: 'Usuario encontrado' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async findOne(@Param('userId', ParseUUIDPipe) userId: string) {
-    return this.usersService.findOne(userId);
+  async findOne(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() req?: { user?: AuthPrincipal },
+  ) {
+    return this.usersService.findOne(userId, {
+      withoutHealth: req?.user?.kind === 'linked_device',
+    });
   }
 
   @Get(':userId/allergies')

@@ -858,6 +858,36 @@ describe('UsersService', () => {
       // The service catches the error and returns the original value
       expect(result.data.user_image).toBe(storedUrl);
     });
+
+    it('TC-F05 - a linked device never selects the blood type', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...baseUserRow,
+        user_image: null,
+      });
+
+      await service.findOne('u1', { withoutHealth: true });
+
+      expect(mockPrismaService.users.findUnique).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ blood: false }),
+        }),
+      );
+    });
+
+    it('TC-F06 - everyone else still gets the blood type', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...baseUserRow,
+        user_image: null,
+      });
+
+      await service.findOne('u1');
+
+      expect(mockPrismaService.users.findUnique).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ blood: true }),
+        }),
+      );
+    });
   });
 
   // ============================================================

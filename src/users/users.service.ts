@@ -214,7 +214,11 @@ export class UsersService {
     }
   }
 
-  async findOne(userId: string) {
+  /**
+   * `withoutHealth` drops the blood type: a child's paired phone (3b) reads
+   * its own profile but never health data (design §2.2).
+   */
+  async findOne(userId: string, opts: { withoutHealth?: boolean } = {}) {
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
       select: {
@@ -227,7 +231,7 @@ export class UsersService {
         birthday: true,
         baptism: true,
         baptism_date: true,
-        blood: true,
+        blood: !opts.withoutHealth,
         user_image: true,
         country_id: true,
         union_id: true,
