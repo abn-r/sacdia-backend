@@ -48,6 +48,10 @@ import { createTable, type Row } from './helpers/world-prisma-double';
  *      verify-only reviewer cannot approve; another reviewer verifies; the
  *      director approves; the family claims the minor with a code; the creator
  *      verifies the PARENT's new form.
+ *   A2. GLOBAL coordinators: only a coordinator_assignment covering the section
+ *      opens it. Inside it they verify (approve:false) from a filtered list and
+ *      never approve or upload; outside it (other section, expired assignment,
+ *      or merely a member of the section) they are 403.
  *   B. An admin cuts a minor's own login and a paired device: reason mandatory,
  *      immediate 401, guardians notified, audited, and NO route to enable or
  *      reset a password.
@@ -63,8 +67,9 @@ import { createTable, type Row } from './helpers/world-prisma-double';
  *
  * Relation filters in `where` (`account: { none }`, `dependent_profile: { is }`)
  * are not evaluated by the double; the decorated rows carry the relations
- * instead. Coordinators are not part of the journey: the guard cannot resolve
- * their territory (B11 finding), a CLUB secretary is the independent verifier.
+ * instead. In A, a CLUB secretary is the independent verifier; in A2 it is a
+ * coordinator (the REAL PermissionsGuard coordinator path; coordinator
+ * assignments are an in-memory list, see `coordinatorAssignments`).
  */
 
 const SECTION_ID = 3;
@@ -86,6 +91,17 @@ const HANDLE = 'rayo-veloz-482913';
 const DEVICE_ID = '00000000-0000-4000-8000-0000000000d9';
 const OTHER_DEVICE_ID = '00000000-0000-4000-8000-0000000000d8';
 const DEVICE_SESSION = 'device-session-1';
+const LOCAL_FIELD_ID = 4;
+// GLOBAL coordinators (consent:verify on the coordinator ROLE).
+const COORDINATOR = '00000000-0000-4000-8000-000000000c01';
+const COORDINATOR_ELSEWHERE = '00000000-0000-4000-8000-000000000c02';
+const COORDINATOR_EXPIRED = '00000000-0000-4000-8000-000000000c03';
+const COORDINATOR_MEMBER = '00000000-0000-4000-8000-000000000c04';
+
+const coordinatorProfile = {
+  globalRoleName: 'coordinator',
+  globalPermissions: ['consent:verify'],
+};
 
 const AUTHORIZATIONS: Record<
   string,
@@ -133,6 +149,90 @@ const AUTHORIZATIONS: Record<
     globalPermissions: ['users:read_detail'],
     unionId: 2,
   },
+  [COORDINATOR]: coordinatorProfile,
+  [COORDINATOR_ELSEWHERE]: coordinatorProfile,
+  [COORDINATOR_EXPIRED]: coordinatorProfile,
+  // A coordinator whose ACTIVE club assignment is a plain member of the
+  // section, with NO coordinator assignment (verify C1).
+  [COORDINATOR_MEMBER]: {
+    ...coordinatorProfile,
+    assignmentId: 'assignment-member',
+    activeRoleName: 'member',
+    activePermissions: [],
+    clubId: CLUB_ID,
+    clubSectionId: SECTION_ID,
+  },
+};
+
+const daysFromToday = (days: number): Date => {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date;
+};
+
+/** coordinator_assignments rows (SECTION assignments only in this suite). */
+const coordinatorAssignments = [
+  {
+    assignment_id: 'coord-assignment-1',
+    user_id: COORDINATOR,
+    active: true,
+    assignment_type: 'SECTION',
+    local_field_id: LOCAL_FIELD_ID,
+    zone_id: null,
+    club_type_id: null,
+    club_section_id: SECTION_ID,
+    start_date: daysFromToday(-30),
+    end_date: null,
+  },
+  {
+    assignment_id: 'coord-assignment-2',
+    user_id: COORDINATOR_ELSEWHERE,
+    active: true,
+    assignment_type: 'SECTION',
+    local_field_id: LOCAL_FIELD_ID,
+    zone_id: null,
+    club_type_id: null,
+    club_section_id: 99,
+    start_date: daysFromToday(-30),
+    end_date: null,
+  },
+  {
+    assignment_id: 'coord-assignment-3',
+    user_id: COORDINATOR_EXPIRED,
+    active: true,
+    assignment_type: 'SECTION',
+    local_field_id: LOCAL_FIELD_ID,
+    zone_id: null,
+    club_type_id: null,
+    club_section_id: SECTION_ID,
+    start_date: daysFromToday(-60),
+    end_date: daysFromToday(-1),
+  },
+];
+
+/**
+ * coordinator_assignments.findFirst as the guard asks it
+ * (coordinatorScopeIncludesSection): the user, the active window of today, and
+ * any of the covering clauses (a clause matches when every scalar column is
+ * equal; the ZONE relation filter never matches a SECTION row).
+ */
+const findCoveringCoordinatorAssignment = async (args: any) => {
+  const [window, covering] = args.where.AND;
+  const today: Date = window.start_date.lte;
+  const hit = coordinatorAssignments.find(
+    (row: Record<string, unknown>) =>
+      row.user_id === args.where.user_id &&
+      row.active === window.active &&
+      (row.start_date as Date) <= today &&
+      (row.end_date === null || (row.end_date as Date) >= today) &&
+      covering.OR.some((clause: Record<string, unknown>) =>
+        Object.entries(clause).every(
+          ([key, value]) => key in row && row[key] === value,
+        ),
+      ),
+  );
+  return hit ? { assignment_id: hit.assignment_id } : null;
 };
 
 describe('Director-created minor E2E', () => {
@@ -386,7 +486,24 @@ describe('Director-created minor E2E', () => {
       guardianship_link_codes: linkCodes.model,
       audit_logs: audits.model,
       legal_acceptances: legal.model,
+      coordinator_assignments: createModelMock({
+        findFirst: jest.fn(findCoveringCoordinatorAssignment),
+      }),
       club_sections: createModelMock({
+        // The coordinator scope reads the section's club (guard path).
+        findFirst: jest.fn(async (args: any) =>
+          args?.where?.club_section_id === SECTION_ID &&
+          args?.where?.active === true
+            ? {
+                club_type_id: 1,
+                clubs: {
+                  active: true,
+                  local_field_id: LOCAL_FIELD_ID,
+                  districlub_type_id: 1,
+                },
+              }
+            : null,
+        ),
         findUnique: jest.fn(async (args: any) =>
           args?.where?.club_section_id === SECTION_ID
             ? {
@@ -1022,6 +1139,187 @@ describe('Director-created minor E2E', () => {
           'active',
         );
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // A2. Coordinators verify consent only in their assigned sections
+  // ---------------------------------------------------------------------------
+
+  describe('A2. a coordinator verifies consent only in the sections their assignments cover', () => {
+    let minorId: string;
+    let assignmentId: string;
+    let custodyId: string;
+
+    const listRequests = (userId: string) =>
+      request(app.getHttpServer())
+        .get(api(`/club-sections/${SECTION_ID}/membership-requests`))
+        .set(bearer(userId));
+    const verify = (userId: string, body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post(
+          api(
+            `/club-sections/${SECTION_ID}/membership-requests/${assignmentId}/verify-consent`,
+          ),
+        )
+        .set(bearer(userId))
+        .send(body);
+    const evidencePath = () =>
+      api(
+        `/club-sections/${SECTION_ID}/membership-requests/${assignmentId}/consent-evidence`,
+      );
+    const listedIds = (body: { data: Array<{ assignment_id: string }> }) =>
+      body.data.map((item) => item.assignment_id);
+    const consentStatus = () =>
+      guardianships.find({ guardianship_id: custodyId })!.consent_status;
+
+    beforeAll(async () => {
+      clearWorld();
+      for (const id of [
+        DIRECTOR_1,
+        COORDINATOR,
+        COORDINATOR_ELSEWHERE,
+        COORDINATOR_EXPIRED,
+        COORDINATOR_MEMBER,
+      ]) {
+        await seedAdult(id);
+      }
+      await assignments.model.create({
+        data: {
+          user_id: DIRECTOR_1,
+          role_id: 'role-director',
+          club_section_id: SECTION_ID,
+          status: 'active',
+        },
+      });
+
+      const created = await request(app.getHttpServer())
+        .post(api(`/club-sections/${SECTION_ID}/dependents`))
+        .set(bearer(DIRECTOR_1))
+        .send(validBody({ name: 'Mateo' }));
+      expect(created.status).toBe(201);
+      minorId = created.body.data.dependent.user_id;
+      assignmentId = created.body.data.assignment.assignment_id;
+      custodyId = created.body.data.guardianship.guardianship_id;
+
+      // The creator uploads the paper form (state flip, as in A).
+      evidences.push({
+        evidence_id: 'evidence-a2',
+        guardianship_id: custodyId,
+        uploaded_by_user_id: DIRECTOR_1,
+        uploaded_at: new Date(),
+        superseded_at: null,
+        purged_at: null,
+      });
+    });
+
+    it('inside an assigned section the coordinator gets the filtered list: the minor with a pending consent and a form, verifiable', async () => {
+      const response = await listRequests(COORDINATOR);
+
+      expect(response.status).toBe(200);
+      expect(listedIds(response.body)).toEqual([assignmentId]);
+      expect(response.body.data[0].consent).toMatchObject({
+        status: 'pending',
+        evidence_uploaded: true,
+        viewer_can_verify: true,
+        viewer_verify_block: null,
+      });
+    });
+
+    it.each([
+      ['assigned to another section', COORDINATOR_ELSEWHERE],
+      ['whose assignment expired', COORDINATOR_EXPIRED],
+      [
+        'who is only a member of the section (no assignment)',
+        COORDINATOR_MEMBER,
+      ],
+    ])(
+      'a coordinator %s is 403 GUARD_CLUB_SCOPE_REQUIRED on the list, the form and verify-consent; nothing is written',
+      async (_label, userId) => {
+        const list = await listRequests(userId);
+        const form = await request(app.getHttpServer())
+          .get(evidencePath())
+          .set(bearer(userId));
+        const verified = await verify(userId, {
+          confirm_paper_form_reviewed: true,
+          approve: false,
+        });
+
+        for (const response of [list, form, verified]) {
+          expect(response.status).toBe(403);
+          expect(errorCode(response.body)).toBe('GUARD_CLUB_SCOPE_REQUIRED');
+        }
+        expect(consentStatus()).toBe('pending');
+      },
+    );
+
+    it('the coordinator cannot upload a form (approvers only): 403 GUARD_PERMISSION_DENIED', async () => {
+      const response = await request(app.getHttpServer())
+        .post(evidencePath())
+        .set(bearer(COORDINATOR))
+        .attach('file', Buffer.from('%PDF-1.4 test'), {
+          filename: 'ficha.pdf',
+          contentType: 'application/pdf',
+        });
+
+      expect(response.status).toBe(403);
+      expect(errorCode(response.body)).toBe('GUARD_PERMISSION_DENIED');
+    });
+
+    it('the coordinator cannot ask to approve: 403 MR_APPROVE_PERMISSION_REQUIRED, nothing written; the approve route is 403', async () => {
+      const response = await verify(COORDINATOR, {
+        confirm_paper_form_reviewed: true,
+        approve: true,
+      });
+      const approve = await request(app.getHttpServer())
+        .post(
+          api(
+            `/club-sections/${SECTION_ID}/membership-requests/${assignmentId}/approve`,
+          ),
+        )
+        .set(bearer(COORDINATOR))
+        .send({});
+
+      expect(response.status).toBe(403);
+      expect(errorCode(response.body)).toBe('MR_APPROVE_PERMISSION_REQUIRED');
+      expect(approve.status).toBe(403);
+      expect(consentStatus()).toBe('pending');
+      expect(assignments.find({ assignment_id: assignmentId })!.status).toBe(
+        'pending',
+      );
+    });
+
+    it('the coordinator verifies with approve:false: consent verified by them, audited, the request still pending', async () => {
+      const response = await verify(COORDINATOR, {
+        confirm_paper_form_reviewed: true,
+        approve: false,
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.guardianship).toMatchObject({
+        guardianship_id: custodyId,
+        consent_status: 'verified',
+        verified_by_user_id: COORDINATOR,
+      });
+      expect(response.body.data.assignment).toBeNull();
+      expect(
+        audits.rows.find((row) => row.action === 'consent_verified'),
+      ).toMatchObject({ actor_user_id: COORDINATOR, target_user_id: minorId });
+      expect(assignments.find({ assignment_id: assignmentId })!.status).toBe(
+        'pending',
+      );
+    });
+
+    it('once verified it leaves the coordinator list, and verifying again is 404 MR_NOT_FOUND (outside their list)', async () => {
+      const list = await listRequests(COORDINATOR);
+      const again = await verify(COORDINATOR, {
+        confirm_paper_form_reviewed: true,
+      });
+
+      expect(list.status).toBe(200);
+      expect(listedIds(list.body)).not.toContain(assignmentId);
+      expect(again.status).toBe(404);
+      expect(errorCode(again.body)).toBe('MR_NOT_FOUND');
     });
   });
 
