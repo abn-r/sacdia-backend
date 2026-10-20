@@ -519,6 +519,7 @@ describe('teen route walk', () => {
       'DELETE /auth/me',
       'DELETE /auth/sessions',
       'DELETE /auth/sessions/:sessionId',
+      'GET /auth/oauth/providers',
       'GET /auth/sessions',
     ]);
     for (const route of accountRoutes) {
@@ -624,7 +625,7 @@ describe('teen route walk', () => {
         method: 'GET',
         fullPath: '/walk-probe-tagged/x',
         controller: TaggedController as unknown as AnyFn,
-        handler: TaggedController.prototype.x as unknown as AnyFn,
+        handler: TaggedController.prototype.x,
         scope: 'member:read',
         handlerScope: 'member:read',
         classScope: undefined,

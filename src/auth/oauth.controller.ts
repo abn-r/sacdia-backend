@@ -18,6 +18,7 @@ import { OAuthService } from './oauth.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { namedThrottle } from '../config/throttler.helpers';
+import { ActingScope } from './acting-for/acting-scope.decorator';
 
 /**
  * OAuthController — connected providers.
@@ -38,6 +39,9 @@ export class OAuthController {
   // ---------------------------------------------------------------------------
 
   @Get('providers')
+  // An unknown-age account deleting itself must re-authenticate with its
+  // provider: the app lists the linked providers first (App Store 5.1.1(v)).
+  @ActingScope('account:manage')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({

@@ -193,6 +193,7 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'DELETE /auth/sessions': 'account:manage',
   'DELETE /auth/sessions/:sessionId': 'account:manage',
   'DELETE /auth/me': 'account:manage',
+  'GET /auth/oauth/providers': 'account:manage',
 };
 
 /**
@@ -259,7 +260,12 @@ const NEVER_SCOPE: Array<{
   pattern: RegExp;
 }> = [
   { label: 'mfa', pattern: /^[A-Z]+ \/auth\/mfa(\/|$)/ },
-  { label: 'oauth', pattern: /^[A-Z]+ \/auth\/oauth(\/|$)/ },
+  // GET providers is AGE_UNKNOWN_ONLY (reauth before deletion); linking,
+  // unlinking and sign-in stay unscoped.
+  {
+    label: 'oauth',
+    pattern: /^(?!GET \/auth\/oauth\/providers$)[A-Z]+ \/auth\/oauth(\/|$)/,
+  },
   { label: 'data export', pattern: /^[A-Z]+ \/users\/me\/data-export/ },
   { label: 'fcm tokens', pattern: /^[A-Z]+ \/fcm-tokens(\/|$)/ },
   {
@@ -326,6 +332,10 @@ const NEVER_SCOPE: Array<{
 const AGE_UNKNOWN_ONLY: Array<{ label: string; pattern: RegExp }> = [
   { label: 'account deletion', pattern: /^DELETE \/auth\/me$/ },
   { label: 'sessions', pattern: /^[A-Z]+ \/auth\/sessions(\/|$)/ },
+  {
+    label: 'linked providers (reauth before deletion)',
+    pattern: /^GET \/auth\/oauth\/providers$/,
+  },
 ];
 
 /** Routes that must carry no scope for ANY non-`user` kind (the teen included). */
