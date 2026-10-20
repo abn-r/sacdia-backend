@@ -1,0 +1,152 @@
+import { coordinator_assignment_type, type Prisma } from '@prisma/client';
+import type { PrismaService } from '../../prisma/prisma.service';
+
+/**
+ * Canonical coordinator territory (docs/canon/runtime-coordination.md):
+ * `coordinator_scope(user_id) -> club_section_ids[]`, the union of
+ *  - GENERAL: every active section of active clubs in the local field;
+ *  - ZONE:    active sections of `club_type_id` in the zone's active districts;
+ *  - SECTION: that one section.
+ * The role (`coordinator`, `zone-coordinator`, `general-coordinator`) only opens
+ * the door; the assignment is the authority. Never derive it from the user's
+ * home local field or union.
+ *
+ * Lives in common/ so PermissionsGuard (CommonModule, global) can use it
+ * without depending on CoordinationModule, which imports CommonModule.
+ * CoordinationService delegates here: one expansion, not two.
+ */
+/** GLOBAL roles whose territory is the coordinator scope below. */
+export const COORDINATOR_GLOBAL_ROLE_NAMES: ReadonlySet<string> = new Set([
+  'coordinator',
+  'zone-coordinator',
+  'general-coordinator',
+]);
+
+export type CoordinatorScopePrisma = Pick<
+  PrismaService,
+  'coordinator_assignments' | 'club_sections' | 'coordination_zone_districts'
+>;
+
+export type CoordinatorAssignmentInput = {
+  localFieldId: number;
+  assignmentType: coordinator_assignment_type;
+  zoneId?: number | null;
+  clubTypeId?: number | null;
+  clubSectionId?: number | null;
+};
+
+/** Assignment windows are DATE columns: compare against the UTC day. */
+export function startOfUtcDay(now: Date = new Date()): Date {
+  const today = new Date(now.getTime());
+  today.setUTCHours(0, 0, 0, 0);
+  return today;
+}
+
+export function activeCoordinatorAssignmentWhere(
+  today: Date,
+): Prisma.coordinator_assignmentsWhereInput {
+  return {
+    active: true,
+    start_date: { lte: today },
+    OR: [{ end_date: null }, { end_date: { gte: today } }],
+  };
+}
+
+export async function resolveCoordinatorAssignmentSectionIds(
+  prisma: CoordinatorScopePrisma,
+  input: CoordinatorAssignmentInput,
+): Promise<number[]> {
+  const { localFieldId, assignmentType, zoneId, clubTypeId, clubSectionId } =
+    input;
+
+  if (assignmentType === coordinator_assignment_type.SECTION) {
+    return clubSectionId ? [clubSectionId] : [];
+  }
+
+  if (assignmentType === coordinator_assignment_type.GENERAL) {
+    const sections = await prisma.club_sections.findMany({
+      where: {
+        active: true,
+        clubs: { is: { active: true, local_field_id: localFieldId } },
+      },
+      select: { club_section_id: true },
+    });
+    return sections.map((section) => section.club_section_id);
+  }
+
+  if (!zoneId || !clubTypeId) return [];
+
+  const zoneDistricts = await prisma.coordination_zone_districts.findMany({
+    where: { zone_id: zoneId, active: true },
+    select: { districlub_type_id: true },
+  });
+
+  const districtIds = zoneDistricts.map(
+    (membership) => membership.districlub_type_id,
+  );
+
+  if (districtIds.length === 0) return [];
+
+  const sections = await prisma.club_sections.findMany({
+    where: {
+      active: true,
+      club_type_id: clubTypeId,
+      clubs: {
+        is: {
+          active: true,
+          local_field_id: localFieldId,
+          districlub_type_id: { in: districtIds },
+        },
+      },
+    },
+    select: { club_section_id: true },
+  });
+
+  return sections.map((section) => section.club_section_id);
+}
+
+/**
+ * The section is inside the user's coordinator scope today: some active
+ * assignment expands to it and the section itself is active (the same
+ * filter resolveCoordinatorScope applies). Says nothing about roles or
+ * permissions; callers gate on those first.
+ */
+export async function coordinatorScopeIncludesSection(
+  prisma: CoordinatorScopePrisma,
+  userId: string,
+  clubSectionId: number,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const assignments = await prisma.coordinator_assignments.findMany({
+    where: {
+      user_id: userId,
+      ...activeCoordinatorAssignmentWhere(startOfUtcDay(now)),
+    },
+    orderBy: [{ assignment_type: 'asc' }, { created_at: 'asc' }],
+    select: {
+      local_field_id: true,
+      assignment_type: true,
+      zone_id: true,
+      club_type_id: true,
+      club_section_id: true,
+    },
+  });
+
+  for (const assignment of assignments) {
+    const sectionIds = await resolveCoordinatorAssignmentSectionIds(prisma, {
+      localFieldId: assignment.local_field_id,
+      assignmentType: assignment.assignment_type,
+      zoneId: assignment.zone_id,
+      clubTypeId: assignment.club_type_id,
+      clubSectionId: assignment.club_section_id,
+    });
+    if (sectionIds.includes(clubSectionId)) {
+      const activeSections = await prisma.club_sections.count({
+        where: { club_section_id: clubSectionId, active: true },
+      });
+      return activeSections > 0;
+    }
+  }
+
+  return false;
+}

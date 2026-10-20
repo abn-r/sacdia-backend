@@ -8,12 +8,9 @@ import {
   hasTerritorialRecorte,
   resolveActorTerritoryScope,
 } from './actor-territory-scope';
+import { COORDINATOR_GLOBAL_ROLE_NAMES } from './coordinator-section-scope';
 
-export const COORDINATOR_ROLE_NAMES = new Set([
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
-]);
+export { COORDINATOR_GLOBAL_ROLE_NAMES as COORDINATOR_ROLE_NAMES } from './coordinator-section-scope';
 
 /**
  * Club sections an actor may work on for one capability (review honors,
@@ -75,7 +72,7 @@ export function actorHasCoordinatorPermission(
 ): boolean {
   return resolved.authorization.grants.global_roles.some(
     (grant) =>
-      COORDINATOR_ROLE_NAMES.has(grant.role_name.toLowerCase()) &&
+      COORDINATOR_GLOBAL_ROLE_NAMES.has(grant.role_name.toLowerCase()) &&
       grant.permissions.includes(permission),
   );
 }

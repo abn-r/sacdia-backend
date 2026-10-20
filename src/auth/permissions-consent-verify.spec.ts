@@ -10,33 +10,23 @@ import { MembershipRequestsController } from '../membership-requests/membership-
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
- * T3c-B11. Design section 13 assumed that a GLOBAL coordinator holding
- * `consent:verify` resolves `club_assignment` resources INSIDE their territory
- * and is denied outside it, so coordinators could be the independent verifier of
- * a director-created minor.
+ * T3c-B11 + coordinator-consent-verify. Design section 13 assumed that a GLOBAL
+ * coordinator holding `consent:verify` resolves `club_assignment` resources
+ * INSIDE their territory and is denied outside it, so coordinators can be the
+ * independent verifier of a director-created minor.
  *
- * VALIDATION RESULT: THE ASSUMPTION FAILS for `coordinator`, `zone-coordinator`
- * and `general-coordinator`.
+ * Originally that failed: `validateInstanceScope` only accepted
+ * `canManageClub` (role-first union / local-field / division territory, which
+ * coordinators do not have) or the caller's active club section.
  *
- * Why: `validateInstanceScope` (PermissionsGuard) lets a request through only if
- * `AuthorizationContextService.canManageClub` is true or the caller's ACTIVE
- * club assignment is that very section. `canManageClub` resolves territory with
- * `resolveActorTerritoryScope`, which only knows super-admin, the division,
- * union and local-field director/assistant roles and admin/assistant-admin. A
- * coordinator is none of them, so their scope is `open`, which
- * `actorCanAccessHierarchyScope` treats as "no territory": denied everywhere,
- * even inside the territory the coordinator was assigned to. A home
- * local_field_id on the user never upgrades the role (see
- * actor-territory-scope.ts).
- *
- * FALLBACK APPLIED (the user must be told): `consent:verify` is seeded only for
- * the CLUB roles director, deputy-director, secretary and secretary-treasurer
- * (plus admin, assistant-admin and super-admin through their wildcard blocks).
- * The coordinator rows were removed from migration
- * 20261022130000_seed_family_permissions and from both seed files. `assistant-lf`
- * resolves territory correctly but already verifies through `club_members:approve`
- * (the seed grants it), so it needs no extra row. Making coordinators verify
- * needs a separate change: teach resolveActorTerritoryScope their territory.
+ * Now: a route opts in with `@AuthorizationResource({ ..., coordinatorSections:
+ * true })` and, there only, a coordinator passes when a coordinator ROLE carries
+ * the required permission AND the canonical coordinator scope
+ * (coordinator_assignments GENERAL / ZONE / SECTION -> club_section_ids) covers
+ * the resource's section. `canManageClub` and `resolveActorTerritoryScope` are
+ * NOT broadened: they gate club management, finances, director designation...
+ * and a coordinator's authority is per SECTION (a ZONE assignment covers one
+ * club type), never per club.
  */
 
 const SECTION_ID = 22;
@@ -128,7 +118,41 @@ function clubRoleProfile(
   };
 }
 
-function setup(profile: unknown, clubTerritory: Territory = HOME_TERRITORY) {
+type CoordinatorAssignment = {
+  local_field_id: number;
+  assignment_type: 'GENERAL' | 'ZONE' | 'SECTION';
+  zone_id: number | null;
+  club_type_id: number | null;
+  club_section_id: number | null;
+};
+
+const sectionAssignment = (clubSectionId: number): CoordinatorAssignment => ({
+  local_field_id: HOME_TERRITORY.local_field,
+  assignment_type: 'SECTION',
+  zone_id: null,
+  club_type_id: null,
+  club_section_id: clubSectionId,
+});
+
+const generalAssignment = (): CoordinatorAssignment => ({
+  local_field_id: HOME_TERRITORY.local_field,
+  assignment_type: 'GENERAL',
+  zone_id: null,
+  club_type_id: null,
+  club_section_id: null,
+});
+
+type CoordinatorData = {
+  assignments?: CoordinatorAssignment[];
+  /** What a GENERAL / ZONE assignment expands to (club_sections.findMany). */
+  expandedSectionIds?: number[];
+};
+
+function setup(
+  profile: unknown,
+  clubTerritory: Territory = HOME_TERRITORY,
+  coordinator: CoordinatorData = {},
+) {
   const hierarchy = {
     resolveCurrent: jest.fn().mockResolvedValue({
       division_id: clubTerritory.division,
@@ -150,6 +174,20 @@ function setup(profile: unknown, clubTerritory: Territory = HOME_TERRITORY) {
           club_type_id: 2,
         },
       }),
+    },
+    coordinator_assignments: {
+      findMany: jest.fn().mockResolvedValue(coordinator.assignments ?? []),
+    },
+    club_sections: {
+      findMany: jest.fn().mockResolvedValue(
+        (coordinator.expandedSectionIds ?? []).map((club_section_id) => ({
+          club_section_id,
+        })),
+      ),
+      count: jest.fn().mockResolvedValue(1),
+    },
+    coordination_zone_districts: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
   };
   // The REAL authorization context: only the profile loader is replaced. The
@@ -175,8 +213,10 @@ function setup(profile: unknown, clubTerritory: Territory = HOME_TERRITORY) {
   return { guard, prisma, hierarchy };
 }
 
-/** The context of the REAL verify-consent handler: its real PERMISSIONS_KEY and resource. */
-function verifyConsentContext(): ExecutionContext {
+type Handler = keyof MembershipRequestsController;
+
+/** The context of a REAL controller handler: its real PERMISSIONS_KEY and resource. */
+function handlerContext(handler: Handler = 'verifyConsent'): ExecutionContext {
   const request = {
     user: { sub: USER_ID },
     params: { clubSectionId: String(SECTION_ID), assignmentId: ASSIGNMENT_ID },
@@ -184,15 +224,18 @@ function verifyConsentContext(): ExecutionContext {
     body: {},
   };
   return {
-    getHandler: () => MembershipRequestsController.prototype.verifyConsent,
+    getHandler: () => MembershipRequestsController.prototype[handler],
     getClass: () => MembershipRequestsController,
     switchToHttp: () => ({ getRequest: () => request }),
   } as unknown as ExecutionContext;
 }
 
-const decide = async (guard: PermissionsGuard) => {
+const decide = async (
+  guard: PermissionsGuard,
+  handler: Handler = 'verifyConsent',
+) => {
   try {
-    return { allowed: await guard.canActivate(verifyConsentContext()) };
+    return { allowed: await guard.canActivate(handlerContext(handler)) };
   } catch (error) {
     return { allowed: false, code: (error as { code?: string }).code };
   }
@@ -201,39 +244,137 @@ const decide = async (guard: PermissionsGuard) => {
 describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () => {
   afterEach(() => jest.restoreAllMocks());
 
-  describe('GLOBAL coordinators: the design assumption FAILS (documented fallback)', () => {
-    it.each(['coordinator', 'zone-coordinator', 'general-coordinator'])(
-      '%s holding consent:verify is DENIED even inside their own territory',
+  describe('GLOBAL coordinators resolve their ASSIGNED sections (coordinator_assignments)', () => {
+    const COORDINATOR_ROLES = [
+      'coordinator',
+      'zone-coordinator',
+      'general-coordinator',
+    ];
+
+    it.each(COORDINATOR_ROLES)(
+      '%s holding consent:verify PASSES on a section covered by a SECTION assignment',
+      async (role) => {
+        const { guard, prisma } = setup(
+          globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+          { assignments: [sectionAssignment(SECTION_ID)] },
+        );
+
+        expect(await decide(guard)).toEqual({ allowed: true });
+        expect(prisma.coordinator_assignments.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ user_id: USER_ID, active: true }),
+          }),
+        );
+      },
+    );
+
+    it.each(COORDINATOR_ROLES)(
+      '%s PASSES through a GENERAL assignment whose local field contains the section',
       async (role) => {
         const { guard } = setup(
           globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
           HOME_TERRITORY,
+          {
+            assignments: [generalAssignment()],
+            expandedSectionIds: [21, SECTION_ID],
+          },
         );
 
-        const result = await decide(guard);
-
-        // If this ever flips to allowed, resolveActorTerritoryScope learned the
-        // coordinator territory: restore the coordinator rows in the seed
-        // migration and in both seed files.
-        expect(result).toEqual({
-          allowed: false,
-          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
-        });
+        expect(await decide(guard)).toEqual({ allowed: true });
       },
     );
 
-    it.each(['coordinator', 'zone-coordinator', 'general-coordinator'])(
-      '%s is denied outside their territory too (so it is the role, not the territory, that fails)',
+    it.each(COORDINATOR_ROLES)(
+      '%s is DENIED on a section outside their assignments, even in their home territory',
       async (role) => {
         const { guard } = setup(
           globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
-          OTHER_TERRITORY,
+          HOME_TERRITORY,
+          {
+            assignments: [sectionAssignment(99), generalAssignment()],
+            expandedSectionIds: [21, 30],
+          },
         );
 
         expect(await decide(guard)).toEqual({
           allowed: false,
           code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
         });
+      },
+    );
+
+    it.each(COORDINATOR_ROLES)(
+      '%s without any active assignment is DENIED (the role alone is not a territory)',
+      async (role) => {
+        const { guard } = setup(
+          globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+        );
+
+        expect(await decide(guard)).toEqual({
+          allowed: false,
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      },
+    );
+
+    it('the coordinator ROLE must carry the permission: a direct consent:verify grant does not open the assigned sections', async () => {
+      const profile = globalRoleProfile(
+        'coordinator',
+        ['clubs:read'],
+        HOME_TERRITORY,
+      );
+      profile.authorization.grants.direct_permissions = [
+        'consent:verify',
+      ] as never;
+      const { guard, prisma } = setup(profile, HOME_TERRITORY, {
+        assignments: [sectionAssignment(SECTION_ID)],
+      });
+
+      expect(await decide(guard)).toEqual({
+        allowed: false,
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+      expect(prisma.coordinator_assignments.findMany).not.toHaveBeenCalled();
+    });
+
+    it('routes that did NOT opt in stay closed: a coordinator holding club_members:approve cannot approve inside an assigned section', async () => {
+      const { guard, prisma } = setup(
+        globalRoleProfile(
+          'general-coordinator',
+          ['club_members:approve', 'consent:verify'],
+          HOME_TERRITORY,
+        ),
+        HOME_TERRITORY,
+        { assignments: [sectionAssignment(SECTION_ID)] },
+      );
+
+      for (const handler of ['approve', 'reject'] as const) {
+        expect(await decide(guard, handler)).toEqual({
+          allowed: false,
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      }
+      expect(prisma.coordinator_assignments.findMany).not.toHaveBeenCalled();
+    });
+
+    it.each(COORDINATOR_ROLES)(
+      '%s still does not manage the club (canManageClub is NOT broadened)',
+      async (role) => {
+        const { guard } = setup(
+          globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+        );
+        const authorizationContext = (
+          guard as unknown as {
+            authorizationContext: AuthorizationContextService;
+          }
+        ).authorizationContext;
+
+        expect(
+          await authorizationContext.canManageClub(USER_ID, MAIN_CLUB_ID),
+        ).toBe(false);
       },
     );
   });

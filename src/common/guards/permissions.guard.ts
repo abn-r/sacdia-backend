@@ -32,6 +32,10 @@ import {
   getSensitiveUserSubresourceFallbackPermission,
   getSensitiveUserSubresourcePolicy,
 } from './sensitive-user-subresource-policy';
+import {
+  COORDINATOR_GLOBAL_ROLE_NAMES,
+  coordinatorScopeIncludesSection,
+} from '../authorization/coordinator-section-scope';
 
 /**
  * Same shape `ParseUUIDPipe` accepts (and Postgres `uuid` parses). Stricter
@@ -216,6 +220,7 @@ export class PermissionsGuard implements CanActivate {
           userId,
           resolved,
           await this.resolveClubSectionScope(request, resource),
+          resource.coordinatorSections ? requirement : undefined,
         );
       case 'camporee':
         return this.validateTerritoryScope(
@@ -300,6 +305,7 @@ export class PermissionsGuard implements CanActivate {
           userId,
           resolved,
           await this.resolveClubAssignmentScope(request, resource),
+          resource.coordinatorSections ? requirement : undefined,
         );
       case 'class_counselor_assignment':
         return this.validateInstanceScope(
@@ -591,10 +597,15 @@ export class PermissionsGuard implements CanActivate {
     return true;
   }
 
+  /**
+   * `coordinatorRequirement` is set only when the route opted in with
+   * `coordinatorSections` (see AuthorizationResourceMetadata).
+   */
   private async validateInstanceScope(
     userId: string,
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedInstanceScope,
+    coordinatorRequirement?: PermissionRequirement,
   ): Promise<boolean> {
     if (
       await this.authorizationContext.canManageClub(
@@ -608,14 +619,55 @@ export class PermissionsGuard implements CanActivate {
     const activeClubScope = resolved.authorization.effective.scope.club;
 
     if (
-      !activeClubScope ||
-      activeClubScope.club.club_id !== resourceScope.mainClubId ||
-      activeClubScope.section.club_section_id !== resourceScope.instanceId
+      activeClubScope &&
+      activeClubScope.club.club_id === resourceScope.mainClubId &&
+      activeClubScope.section.club_section_id === resourceScope.instanceId
     ) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+      return true;
     }
 
-    return true;
+    if (
+      coordinatorRequirement &&
+      (await this.coordinatorCoversSection(
+        userId,
+        resolved,
+        coordinatorRequirement,
+        resourceScope.instanceId,
+      ))
+    ) {
+      return true;
+    }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+  }
+
+  /**
+   * A coordinator ROLE carries the requirement by itself (direct grants and
+   * club assignments do not count: they say nothing about coordinator
+   * territory) and the canonical coordinator scope covers the section.
+   */
+  private async coordinatorCoversSection(
+    userId: string,
+    resolved: ResolvedAuthorizationProfile,
+    requirement: PermissionRequirement,
+    clubSectionId: number,
+  ): Promise<boolean> {
+    const coordinatorPermissions = new Set(
+      resolved.authorization.grants.global_roles
+        .filter((grant) =>
+          COORDINATOR_GLOBAL_ROLE_NAMES.has(grant.role_name.toLowerCase()),
+        )
+        .flatMap((grant) => grant.permissions),
+    );
+    const satisfied =
+      requirement.mode === 'any'
+        ? requirement.permissions.some((p) => coordinatorPermissions.has(p))
+        : requirement.permissions.every((p) => coordinatorPermissions.has(p));
+    if (!satisfied) {
+      return false;
+    }
+
+    return coordinatorScopeIncludesSection(this.prisma, userId, clubSectionId);
   }
 
   private async validateAnyInstanceScope(

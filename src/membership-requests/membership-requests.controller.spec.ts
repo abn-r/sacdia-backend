@@ -195,7 +195,7 @@ describe('MembershipRequestsController (consent)', () => {
       expect(verification.verify).not.toHaveBeenCalled();
     });
 
-    it('accepts club_members:approve or consent:verify on the club_assignment resource, answers 200 and has no acting scope', () => {
+    it('accepts club_members:approve or consent:verify on the club_assignment resource (coordinator sections opted in), answers 200 and has no acting scope', () => {
       const handler = MembershipRequestsController.prototype.verifyConsent;
       expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
         permissions: ['club_members:approve', 'consent:verify'],
@@ -204,6 +204,7 @@ describe('MembershipRequestsController (consent)', () => {
       expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
         type: 'club_assignment',
         idParam: 'assignmentId',
+        coordinatorSections: true,
       });
       expect(Reflect.getMetadata('__httpCode__', handler)).toBe(200);
       expect(Reflect.getMetadata(ACTING_SCOPE_KEY, handler)).toBeUndefined();

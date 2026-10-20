@@ -283,7 +283,11 @@ export class MembershipRequestsController {
     permissions: [APPROVE_PERMISSION, 'consent:verify'],
     mode: 'any',
   })
-  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
+  @AuthorizationResource({
+    type: 'club_assignment',
+    idParam: 'assignmentId',
+    coordinatorSections: true,
+  })
   @ApiOperation({
     summary: 'Verificar el consentimiento del tutor de un menor',
     description:
