@@ -738,8 +738,8 @@ describe('JwtStrategy', () => {
       expect(result.scopes).toBe(TEEN_PENDING_SCOPES);
     });
 
-    it('a blocked teen (disabled, frozen) gets 401 AUTH_SUPERVISED_ACCESS_REVOKED', async () => {
-      for (const cause of ['login_disabled', 'frozen']) {
+    it('a blocked teen (disabled, frozen, handle login cut by the flag) gets 401 AUTH_SUPERVISED_ACCESS_REVOKED', async () => {
+      for (const cause of ['login_disabled', 'frozen', 'teen_login_disabled']) {
         mockSupervisedResolver.resolveForRequest.mockResolvedValue({
           state: 'blocked',
           cause,

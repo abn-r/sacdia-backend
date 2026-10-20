@@ -7,6 +7,7 @@ import { ErrorCode } from '../../common/errors/error-codes';
 import { ageToday } from '../../common/age/age.util';
 import { CountryAgePolicyService } from '../../common/age/country-age-policy.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { FamilyFeatureFlagsService } from '../../guardianships/family-feature-flags.service';
 import {
   SUPERVISED_STATE_MEMO,
   TEEN_PENDING_SCOPES,
@@ -16,6 +17,7 @@ import {
 } from '../acting-for/auth-principal';
 import {
   SupervisedPrincipalCache,
+  type SupervisedLoginMethod,
   type SupervisedState,
 } from './supervised-principal.cache';
 
@@ -30,6 +32,15 @@ interface SupervisedStateMemo {
   state: SupervisedState;
 }
 
+function loginMethodOf(login: { method: string } | null): {
+  login_method?: SupervisedLoginMethod;
+} {
+  if (login?.method === 'handle' || login?.method === 'email') {
+    return { login_method: login.method };
+  }
+  return {};
+}
+
 /** Scope set a supervised principal carries for each supervision status. */
 export function scopesForSupervision(
   supervision: SupervisionStatus,
@@ -38,6 +49,10 @@ export function scopesForSupervision(
 }
 
 const ADULT: SupervisedState = { state: 'adult' };
+const TEEN_LOGIN_DISABLED: SupervisedState = {
+  state: 'blocked',
+  cause: 'teen_login_disabled',
+};
 const PROFILE_INCOMPLETE: SupervisedState = { state: 'profile_incomplete' };
 
 interface UnknownAgeFacts {
@@ -87,6 +102,14 @@ function isOnboardingWithUnknownAge(user: UnknownAgeFacts): boolean {
  *                 non-revoked, NON-custodian guardianship exists, otherwise
  *                 `pending_guardian` (custody and unverified links do not count).
  *
+ * Rollback flag (FP3-35): while FAMILY_TEEN_LOGIN_ENABLED is off, an account
+ * whose supervised login method is `handle` resolves as
+ * blocked:`teen_login_disabled`, so its open sessions get 401 on the next
+ * request and refresh is refused. Email teens are not touched. The method is
+ * part of the cached state (same users lookup, no extra query); the flag is
+ * applied on top of it on EVERY call, so a flip needs no epoch bump and is
+ * undone the same way (sessions are cut lazily, never deleted).
+ *
  * Failure policy (same as the acting-for resolver): a Redis error falls back to
  * the database; a database error is a 503 AUTH_REVOCATION_CHECK_UNAVAILABLE.
  * It never fails open.
@@ -99,6 +122,7 @@ export class SupervisedPrincipalResolver {
     private readonly prisma: PrismaService,
     private readonly cache: SupervisedPrincipalCache,
     private readonly countryAgePolicy: CountryAgePolicyService,
+    private readonly familyFlags: FamilyFeatureFlagsService,
   ) {}
 
   /**
@@ -120,6 +144,27 @@ export class SupervisedPrincipalResolver {
   }
 
   async resolve(userId: string): Promise<SupervisedState> {
+    return this.applyTeenLoginFlag(await this.resolveCached(userId));
+  }
+
+  /**
+   * FP3-35: the flag only governs HANDLE logins (the handle exists because of
+   * the feature). An adult who still logs in with a handle is cut too: the
+   * handle login is the uniform 401 while the flag is off, so leaving the
+   * session open would be the only way in. Read per call (never memoized here).
+   */
+  private applyTeenLoginFlag(state: SupervisedState): SupervisedState {
+    if (
+      (state.state === 'supervised' || state.state === 'adult') &&
+      state.login_method === 'handle' &&
+      !this.familyFlags.isEnabled('teen_login')
+    ) {
+      return TEEN_LOGIN_DISABLED;
+    }
+    return state;
+  }
+
+  private async resolveCached(userId: string): Promise<SupervisedState> {
     let epoch: number | null;
     try {
       epoch = await this.cache.getEpoch(userId);
@@ -218,7 +263,7 @@ export class SupervisedPrincipalResolver {
         select: {
           birthday: true,
           country_id: true,
-          supervised_login: { select: { disabled_at: true } },
+          supervised_login: { select: { disabled_at: true, method: true } },
           dependent_profile: {
             select: { frozen_at: true, purged_at: true },
           },
@@ -260,9 +305,13 @@ export class SupervisedPrincipalResolver {
         };
       }
 
+      const loginMethod = loginMethodOf(user.supervised_login);
       const policy = await this.countryAgePolicy.getPolicy(user.country_id);
       if (ageToday(user.birthday, policy.timeZone) >= policy.ageOfMajority) {
-        return { state: ADULT, timeZone: policy.timeZone };
+        return {
+          state: { ...ADULT, ...loginMethod },
+          timeZone: policy.timeZone,
+        };
       }
 
       const profile = user.dependent_profile;
@@ -284,7 +333,7 @@ export class SupervisedPrincipalResolver {
           ? 'active'
           : 'pending_guardian';
       return {
-        state: { state: 'supervised', supervision },
+        state: { state: 'supervised', supervision, ...loginMethod },
         timeZone: policy.timeZone,
       };
     } catch (error) {

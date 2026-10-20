@@ -49,11 +49,11 @@ describe('SupervisedPrincipalCache', () => {
     };
   };
 
-  it('stores the state under supv:v2:{user}:{epoch} with the adult TTL', async () => {
+  it('stores the state under supv:v3:{user}:{epoch} with the adult TTL', async () => {
     const { manager, cache } = build();
     await cache.setState('u1', 5, { state: 'adult' }, null);
     expect(manager.set).toHaveBeenCalledWith(
-      'supv:v2:u1:5',
+      'supv:v3:u1:5',
       { state: 'adult' },
       SUPERVISED_ADULT_TTL_MS,
     );
@@ -78,13 +78,13 @@ describe('SupervisedPrincipalCache', () => {
     );
     expect(manager.set).toHaveBeenNthCalledWith(
       1,
-      'supv:v2:u1:1',
+      'supv:v3:u1:1',
       expect.anything(),
       SUPERVISED_ACTIVE_TTL_MS,
     );
     expect(manager.set).toHaveBeenNthCalledWith(
       2,
-      'supv:v2:u1:2',
+      'supv:v3:u1:2',
       expect.anything(),
       SUPERVISED_BLOCKED_TTL_MS,
     );
@@ -94,15 +94,21 @@ describe('SupervisedPrincipalCache', () => {
     const { manager, cache } = build();
     await cache.setState('u1', 1, { state: 'profile_incomplete' }, null);
     expect(manager.set).toHaveBeenCalledWith(
-      'supv:v2:u1:1',
+      'supv:v3:u1:1',
       { state: 'profile_incomplete' },
       SUPERVISED_ACTIVE_TTL_MS,
     );
   });
 
-  it('the state key is v2: an entry cached by the pre-restriction code (v1) is never read', async () => {
+  it('the state key is v3: entries cached by older code (v1 pre-restriction, v2 without the login method) are never read', async () => {
     const { manager, cache } = build();
     manager.store.set('supv:v1:u1:1', { state: 'adult' });
+    // A v2 entry has no login_method: read after the deploy it would let a
+    // handle session through while FAMILY_TEEN_LOGIN_ENABLED is off.
+    manager.store.set('supv:v2:u1:1', {
+      state: 'supervised',
+      supervision: 'active',
+    });
     expect(await cache.getState('u1', 1)).toBeNull();
   });
 
@@ -113,7 +119,7 @@ describe('SupervisedPrincipalCache', () => {
       await cache.setState('u1', 1, { state: 'adult' }, 'America/Mexico_City');
       // 30s left before 00:00 in Mexico City; the 1h adult TTL is capped.
       expect(manager.set).toHaveBeenCalledWith(
-        'supv:v2:u1:1',
+        'supv:v3:u1:1',
         { state: 'adult' },
         30_000,
       );

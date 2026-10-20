@@ -744,6 +744,24 @@ describe('BetterAuthService', () => {
         expect(mockSessionCreate).not.toHaveBeenCalled();
       });
 
+      it('a handle login cut by FAMILY_TEEN_LOGIN_ENABLED=false is the uniform 401 even with the right password (FP3-08/FP3-35), and no session is created', async () => {
+        const { svc } = buildService();
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'blocked',
+          cause: 'teen_login_disabled',
+        });
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+          status: 401,
+        });
+        expect(mockSessionCreate).not.toHaveBeenCalled();
+      });
+
       it('a frozen account answers 403 AUTH_ACCOUNT_FROZEN with the right password', async () => {
         const { svc } = buildService();
         mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });

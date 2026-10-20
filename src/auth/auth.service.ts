@@ -18,6 +18,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto, loginIdentifierOf } from './dto/login.dto';
 import { LoginFailureCounter } from './login-failure-counter';
 import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
+import { supervisedAccessRevoked } from './acting-for/acting-for.errors';
 import {
   fireEvent,
   resolveSupervisedLoginEvents,
@@ -608,6 +609,23 @@ export class AuthService {
         }),
       );
       throw new AppUnauthorizedException(ErrorCode.AUTH_REFRESH_TOKEN_INVALID);
+    }
+
+    // A blocked principal never gets a fresh access JWT: above all a handle
+    // session while FAMILY_TEEN_LOGIN_ENABLED is off (FP3-35), whose session
+    // row is kept so the flag can be switched back on. Disable, reset and
+    // freeze already delete the sessions; this is their safety net. A failed
+    // lookup is the resolver's 503, never a refresh that fails open.
+    const supervised = await this.supervisedResolver.resolve(baResult.user.id);
+    if (supervised.state === 'blocked') {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_refresh_supervised_blocked',
+          sub: baResult.user.id,
+          cause: supervised.cause,
+        }),
+      );
+      throw supervisedAccessRevoked();
     }
 
     this.logger.log(

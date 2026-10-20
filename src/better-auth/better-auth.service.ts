@@ -426,6 +426,16 @@ export class BetterAuthService implements IBetterAuthService {
     //    The resolver turns an adult (age of majority) into "not blocked", so a
     //    handle login keeps working after the teen grows up.
     const supervised = await this.supervisedResolver.resolve(dbUser.user_id);
+    if (
+      supervised.state === 'blocked' &&
+      supervised.cause === 'teen_login_disabled'
+    ) {
+      // A handle account while FAMILY_TEEN_LOGIN_ENABLED is off: the same
+      // uniform 401 as an unknown handle (FP3-08), never a 403 that would
+      // confirm the account. Normally unreachable (the handle lookup already
+      // resolves to nobody); this covers a flag flip between the two reads.
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+    }
     if (supervised.state === 'blocked') {
       throw new AppForbiddenException(
         supervised.cause === 'frozen'

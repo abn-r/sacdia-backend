@@ -7,6 +7,7 @@ process.env.E2E_REAL_SUPERVISED_RESOLVER = 'true';
 process.env.FAMILY_TEEN_LOGIN_ENABLED = 'true';
 
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -91,6 +92,7 @@ describe('Supervised login E2E', () => {
   let jwtService: JwtService;
   let actingCache: ActingForCache;
   let prisma: any;
+  let config: ConfigService;
   let throttlerSpy: jest.SpyInstance;
   let issuedCode: string | null;
   let storedCode: Record<string, unknown> | null;
@@ -574,6 +576,24 @@ describe('Supervised login E2E', () => {
           };
         },
       ),
+      // The opaque refresh token of this world is `refresh:<userId>`.
+      refreshSession: jest.fn(async (token: string) => {
+        const userId = token.replace(/^refresh:/, '');
+        if (!people[userId]?.sessionAlive) {
+          throw new Error('Session not found or expired');
+        }
+        return {
+          user: { id: userId, email: null, name: 'Test' },
+          session: {
+            token,
+            expiresAt: new Date(Date.now() + 3_600_000),
+          },
+          accessToken: createBearerToken(jwtService, userId).replace(
+            /^Bearer /,
+            '',
+          ),
+        };
+      }),
       signJwt: jest.fn().mockReturnValue('fake-jwt'),
       signOut: jest.fn().mockResolvedValue(undefined),
       hasTotpEnabled: jest.fn().mockResolvedValue({ enabled: false }),
@@ -591,6 +611,7 @@ describe('Supervised login E2E', () => {
       .compile();
 
     prisma = moduleFixture.get(PrismaService);
+    config = moduleFixture.get(ConfigService);
     actingCache = moduleFixture.get(ActingForCache, { strict: false });
 
     app = moduleFixture.createNestApplication();
@@ -1130,6 +1151,114 @@ describe('Supervised login E2E', () => {
         .get(`/api/v1/users/${CHILD_ID}/post-registration/status`)
         .set(acting(ADULT_ID, CHILD_ID));
 
+      expect(response.status).toBe(200);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // E. The teen-login flag is switched off (FP3-35: rollback by flag)
+  // ---------------------------------------------------------------------------
+
+  describe('E. FAMILY_TEEN_LOGIN_ENABLED switched off with handle sessions open', () => {
+    let handleToken: string;
+
+    const setTeenLoginFlag = (enabled: boolean) =>
+      // ConfigService answers from its internal config first, so `set` is how
+      // a flip is simulated in-process. In a deployed server the value comes
+      // from the validated env snapshot: a flip there means a restart.
+      config.set('FAMILY_TEEN_LOGIN_ENABLED', enabled);
+
+    beforeAll(async () => {
+      resetWorld();
+      // An email teen with a verified guardian (self-registered, then linked).
+      people[TEEN_ID].login = {
+        method: 'email',
+        login_handle: null,
+        origin: 'self_registered',
+        enabled_at: null,
+        disabled_at: null,
+        disabled_reason: null,
+        password_set_by: 'self',
+      };
+      links.push({
+        guardianship_id: 'gs-teen-verified',
+        dependent_user_id: TEEN_ID,
+        guardian_user_id: ADULT_ID,
+        consent_status: 'verified',
+      });
+      await actingCache.bump(CHILD_ID);
+      await actingCache.bump(TEEN_ID);
+      setTeenLoginFlag(true);
+    });
+
+    afterAll(() => {
+      setTeenLoginFlag(true);
+    });
+
+    it('with the flag on, the handle login works and its token is accepted', async () => {
+      const login = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ identifier: HANDLE, password: 'guardian-chosen-pass-1' });
+      expect(login.status).toBe(200);
+      expect(login.body.data.user.principal).toMatchObject({
+        kind: 'supervised_user',
+      });
+      handleToken = login.body.data.accessToken as string;
+      expect(handleToken).toEqual(expect.any(String));
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/users/${CHILD_ID}/post-registration/status`)
+        .set({ Authorization: `Bearer ${handleToken}` });
+      expect(response.status).toBe(200);
+    });
+
+    it('the flag goes off: the very next request of the open handle session is 401 AUTH_SUPERVISED_ACCESS_REVOKED (no epoch bump, no cache wait)', async () => {
+      setTeenLoginFlag(false);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/users/${CHILD_ID}/post-registration/status`)
+        .set({ Authorization: `Bearer ${handleToken}` });
+
+      expect(response.status).toBe(401);
+      expect(errorCode(response.body)).toBe('AUTH_SUPERVISED_ACCESS_REVOKED');
+    });
+
+    it('the handle session cannot be refreshed back in (401 AUTH_SUPERVISED_ACCESS_REVOKED)', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: `refresh:${CHILD_ID}` });
+
+      expect(response.status).toBe(401);
+      expect(errorCode(response.body)).toBe('AUTH_SUPERVISED_ACCESS_REVOKED');
+      expect(response.body?.data?.accessToken).toBeUndefined();
+    });
+
+    it('an EMAIL teen is not cut: requests and refresh keep working', async () => {
+      const read = await request(app.getHttpServer())
+        .get(`/api/v1/users/${TEEN_ID}/post-registration/status`)
+        .set(bearer(TEEN_ID));
+      expect(read.status).toBe(200);
+
+      const refresh = await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: `refresh:${TEEN_ID}` });
+      expect(refresh.status).toBe(200);
+      expect(refresh.body.data.accessToken).toEqual(expect.any(String));
+    });
+
+    it('an adult is not touched', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set(bearer(ADULT_ID));
+      expect(response.status).toBe(200);
+    });
+
+    it('the flag back on restores the same handle session (sessions were cut lazily, never deleted)', async () => {
+      setTeenLoginFlag(true);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/users/${CHILD_ID}/post-registration/status`)
+        .set({ Authorization: `Bearer ${handleToken}` });
       expect(response.status).toBe(200);
     });
   });

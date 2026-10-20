@@ -32,7 +32,10 @@ import { SupervisionStateService } from '../guardianships/supervision-state.serv
 import { LoginFailureCounter } from './login-failure-counter';
 import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
 import { SUPERVISED_LOGIN_EVENTS } from './supervised/supervised-login-events.port';
-import { AppException } from '../common/errors/app.exception';
+import {
+  AppException,
+  AppServiceUnavailableException,
+} from '../common/errors/app.exception';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -1352,6 +1355,60 @@ describe('AuthService', () => {
       );
 
       expect(mockTokenBlacklistService.blacklistToken).not.toHaveBeenCalled();
+    });
+
+    describe('supervised state (FP3-35: a cut handle session cannot slide back in)', () => {
+      it.each(['teen_login_disabled', 'login_disabled', 'frozen'])(
+        'refuses a blocked (%s) principal with 401 AUTH_SUPERVISED_ACCESS_REVOKED and hands out no token',
+        async (cause) => {
+          mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+          mockSupervisedResolver.resolve.mockResolvedValue({
+            state: 'blocked',
+            cause,
+          });
+
+          await expect(
+            service.refreshSession({ refreshToken: 'ba-session-token' }),
+          ).rejects.toMatchObject({
+            code: ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+            status: 401,
+          });
+          expect(mockSupervisedResolver.resolve).toHaveBeenCalledWith(
+            'user-123',
+          );
+        },
+      );
+
+      it('a supervised teen who is not blocked (an email teen while the flag is off) refreshes normally', async () => {
+        mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'supervised',
+          supervision: 'active',
+          login_method: 'email',
+        });
+
+        const result = await service.refreshSession({
+          refreshToken: 'ba-session-token',
+        });
+
+        expect(result.data.accessToken).toBe('new-sacdia-jwt');
+      });
+
+      it('a failed state lookup is the 503, never a refresh that fails open', async () => {
+        mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+        mockSupervisedResolver.resolve.mockRejectedValue(
+          new AppServiceUnavailableException(
+            ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+          ),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'ba-session-token' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+          status: 503,
+        });
+      });
     });
 
     it('does not fail refresh when blacklist storage rejects', async () => {

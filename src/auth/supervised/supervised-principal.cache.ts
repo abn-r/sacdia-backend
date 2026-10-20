@@ -4,17 +4,31 @@ import type { Cache } from 'cache-manager';
 import { ActingForCache } from '../acting-for/acting-for.cache';
 import type { SupervisionStatus } from '../acting-for/auth-principal';
 
-export type SupervisedBlockCause = 'login_disabled' | 'frozen';
+/**
+ * Why a principal is cut. `teen_login_disabled` (FAMILY_TEEN_LOGIN_ENABLED is
+ * off and the account logs in with a handle) is decided on EVERY call from the
+ * flag and the cached login method: it is never cached itself.
+ */
+export type SupervisedBlockCause =
+  'login_disabled' | 'frozen' | 'teen_login_disabled';
+
+/** `supervised_logins.method` of the account, when it has a row. */
+export type SupervisedLoginMethod = 'email' | 'handle';
 
 /**
  * What the resolver decided about a user: adult, supervised, blocked, or
  * `profile_incomplete` (unknown age: NULL birthday while the self-service
- * post-registration is still open).
+ * post-registration is still open). `login_method` is set only when the account
+ * has a `supervised_logins` row (absent = no supervised login).
  */
 export type SupervisedState =
-  | { state: 'adult' }
+  | { state: 'adult'; login_method?: SupervisedLoginMethod }
   | { state: 'profile_incomplete' }
-  | { state: 'supervised'; supervision: SupervisionStatus }
+  | {
+      state: 'supervised';
+      supervision: SupervisionStatus;
+      login_method?: SupervisedLoginMethod;
+    }
   | { state: 'blocked'; cause: SupervisedBlockCause };
 
 export const SUPERVISED_ADULT_TTL_MS = 3_600_000; // 1 h
@@ -64,10 +78,13 @@ export function msUntilNextLocalMidnight(
  * Epoch-versioned cache of the supervised-principal decision.
  *
  * Keys:
- *  - `supv:v2:{userId}:{epoch}`            the SupervisedState (v2 since the
- *                                          `profile_incomplete` state: a v1
+ *  - `supv:v3:{userId}:{epoch}`            the SupervisedState. v2 added the
+ *                                          `profile_incomplete` state (a v1
  *                                          entry said "adult" for a NULL
- *                                          birthday and must never be read)
+ *                                          birthday); v3 adds `login_method`
+ *                                          (a v2 entry has none, so a handle
+ *                                          session would pass the flag-off
+ *                                          cut). Older entries are never read.
  *  - `supv:sid:v1:{userId}:{epoch}:{sid}`  "this session still exists"
  * The epoch is the SAME one acting-for uses (`acting:epoch:{userId}`), so every
  * family mutation that already calls `ActingForCache.bump` also invalidates
@@ -94,7 +111,7 @@ export class SupervisedPrincipalCache {
     epoch: number,
   ): Promise<SupervisedState | null> {
     const cached = await this.cache.get<SupervisedState>(
-      `supv:v2:${userId}:${epoch}`,
+      `supv:v3:${userId}:${epoch}`,
     );
     return cached ?? null;
   }
@@ -114,7 +131,7 @@ export class SupervisedPrincipalCache {
     const ttl = timeZone
       ? Math.max(Math.min(base, msUntilNextLocalMidnight(timeZone)), MIN_TTL_MS)
       : base;
-    await this.cache.set(`supv:v2:${userId}:${epoch}`, state, ttl);
+    await this.cache.set(`supv:v3:${userId}:${epoch}`, state, ttl);
   }
 
   async getSession(

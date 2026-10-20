@@ -10,6 +10,7 @@ import {
   TEEN_SCOPES,
 } from '../acting-for/auth-principal';
 import { ActingForCache } from '../acting-for/acting-for.cache';
+import type { FamilyFeatureFlagsService } from '../../guardianships/family-feature-flags.service';
 import { SupervisedPrincipalCache } from './supervised-principal.cache';
 import {
   scopesForSupervision,
@@ -32,7 +33,10 @@ function fakeCacheManager() {
 interface UserRow {
   birthday: Date | null;
   country_id: number | null;
-  supervised_login: { disabled_at: Date | null } | null;
+  supervised_login: {
+    disabled_at: Date | null;
+    method?: 'email' | 'handle';
+  } | null;
   dependent_profile: { frozen_at: Date | null; purged_at: Date | null } | null;
   guardianships_as_dependent: Array<{ guardianship_id: string }>;
   access_panel?: boolean | null;
@@ -61,6 +65,7 @@ describe('SupervisedPrincipalResolver', () => {
     session: { findFirst: jest.Mock };
   };
   let policy: { getPolicy: jest.Mock };
+  let flags: { isEnabled: jest.Mock };
   let resolver: SupervisedPrincipalResolver;
   let epochs: ActingForCache;
 
@@ -76,11 +81,13 @@ describe('SupervisedPrincipalResolver', () => {
     policy = {
       getPolicy: jest.fn().mockResolvedValue({ ...DEFAULT_COUNTRY_AGE_POLICY }),
     };
+    flags = { isEnabled: jest.fn().mockReturnValue(true) };
     epochs = new ActingForCache(manager as any);
     resolver = new SupervisedPrincipalResolver(
       prisma as any,
       new SupervisedPrincipalCache(manager as any, epochs),
       policy as unknown as CountryAgePolicyService,
+      flags as unknown as FamilyFeatureFlagsService,
     );
   });
 
@@ -313,6 +320,143 @@ describe('SupervisedPrincipalResolver', () => {
     });
   });
 
+  describe('FAMILY_TEEN_LOGIN_ENABLED off (FP3-35: existing handle sessions fail closed)', () => {
+    const handleLogin = { disabled_at: null, method: 'handle' as const };
+    const emailLogin = { disabled_at: null, method: 'email' as const };
+
+    it('a handle teen is blocked:teen_login_disabled while the flag is off', async () => {
+      flags.isEnabled.mockReturnValue(false);
+      prisma.users.findUnique.mockResolvedValue(
+        user({ supervised_login: handleLogin }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'blocked',
+        cause: 'teen_login_disabled',
+      });
+      expect(flags.isEnabled).toHaveBeenCalledWith('teen_login');
+    });
+
+    it('a handle teen with a verified guardian is cut too (the supervision status does not matter)', async () => {
+      flags.isEnabled.mockReturnValue(false);
+      prisma.users.findUnique.mockResolvedValue(
+        user({
+          supervised_login: handleLogin,
+          guardianships_as_dependent: [{ guardianship_id: 'g1' }],
+        }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'blocked',
+        cause: 'teen_login_disabled',
+      });
+    });
+
+    it('a handle teen keeps working while the flag is on', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({ supervised_login: handleLogin }),
+      );
+      expect(await resolver.resolve('u1')).toMatchObject({
+        state: 'supervised',
+        supervision: 'pending_guardian',
+      });
+    });
+
+    it('an EMAIL teen is not cut: the flag only concerns handle logins', async () => {
+      flags.isEnabled.mockReturnValue(false);
+      prisma.users.findUnique.mockResolvedValue(
+        user({ supervised_login: emailLogin }),
+      );
+      expect(await resolver.resolve('u1')).toMatchObject({
+        state: 'supervised',
+        supervision: 'pending_guardian',
+      });
+    });
+
+    it('a teen with no supervised_logins row yet is not cut', async () => {
+      flags.isEnabled.mockReturnValue(false);
+      expect(await resolver.resolve('u1')).toMatchObject({
+        state: 'supervised',
+      });
+    });
+
+    it('a handle account past the age of majority is cut too: its only way in is the handle, and the handle login is the uniform 401', async () => {
+      flags.isEnabled.mockReturnValue(false);
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: date('2000-01-01'), supervised_login: handleLogin }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'blocked',
+        cause: 'teen_login_disabled',
+      });
+    });
+
+    it('an adult with no handle is never touched by the flag', async () => {
+      flags.isEnabled.mockReturnValue(false);
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: date('2000-01-01') }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({ state: 'adult' });
+    });
+
+    it('the flag is applied on every call over the CACHED state: a flip takes effect without a DB read or an epoch bump, both ways', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({ supervised_login: handleLogin }),
+      );
+      expect((await resolver.resolve('u1')).state).toBe('supervised');
+
+      flags.isEnabled.mockReturnValue(false);
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'blocked',
+        cause: 'teen_login_disabled',
+      });
+
+      flags.isEnabled.mockReturnValue(true);
+      expect((await resolver.resolve('u1')).state).toBe('supervised');
+
+      expect(prisma.users.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it('the cached entry carries the login method, never the flag decision', async () => {
+      flags.isEnabled.mockReturnValue(false);
+      prisma.users.findUnique.mockResolvedValue(
+        user({ supervised_login: handleLogin }),
+      );
+      await resolver.resolve('u1');
+      expect(manager.set).toHaveBeenCalledWith(
+        expect.stringMatching(/^supv:v3:u1:/),
+        {
+          state: 'supervised',
+          supervision: 'pending_guardian',
+          login_method: 'handle',
+        },
+        expect.any(Number),
+      );
+    });
+
+    it('reads the login method in the same users lookup (no extra query per request)', async () => {
+      await resolver.resolve('u1');
+      expect(prisma.users.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            supervised_login: {
+              select: { disabled_at: true, method: true },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('a disabled handle login stays blocked:login_disabled (the more specific cause wins)', async () => {
+      flags.isEnabled.mockReturnValue(false);
+      prisma.users.findUnique.mockResolvedValue(
+        user({ supervised_login: { disabled_at: NOW, method: 'handle' } }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'blocked',
+        cause: 'login_disabled',
+      });
+    });
+  });
+
   describe('cache', () => {
     it('serves the second call from the cache', async () => {
       await resolver.resolve('u1');
@@ -372,7 +516,7 @@ describe('SupervisedPrincipalResolver', () => {
       jest.setSystemTime(new Date('2026-10-21T05:59:30.000Z'));
       await resolver.resolve('u1');
       expect(manager.set).toHaveBeenCalledWith(
-        expect.stringMatching(/^supv:v2:u1:/),
+        expect.stringMatching(/^supv:v3:u1:/),
         { state: 'supervised', supervision: 'pending_guardian' },
         30_000,
       );
