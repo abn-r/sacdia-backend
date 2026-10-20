@@ -1,8 +1,9 @@
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { LEGAL_VERSION_MAX_LENGTH } from './legal-documents.constants';
 import { LegalService } from './legal.service';
 
-const CURRENT = '1.0.0-store';
+const CURRENT = '2.0.0-family';
 const OK = { terms: CURRENT, privacy: CURRENT };
 
 function createService() {
@@ -24,6 +25,18 @@ async function mismatchCode(fn: () => unknown) {
   }
   throw new Error('expected a LEGAL_VERSION_MISMATCH');
 }
+
+describe('current legal versions (family bump, DRAFT pending legal review)', () => {
+  it('are 2.0.0-family for both documents and fit the 32-char column', () => {
+    const { service } = createService();
+    for (const document of service.getCurrent()) {
+      expect(document.version).toBe('2.0.0-family');
+      expect(document.version.length).toBeLessThanOrEqual(
+        LEGAL_VERSION_MAX_LENGTH,
+      );
+    }
+  });
+});
 
 describe('LegalService.recordOnBehalf', () => {
   it('writes the dependent rows inside the caller transaction, crediting the guardian', async () => {
@@ -107,6 +120,18 @@ describe('LegalService', () => {
       expect(
         await mismatchCode(() =>
           service.assertCurrentVersions({ terms: CURRENT, privacy: '0.9' }),
+        ),
+      ).toBe(ErrorCode.LEGAL_VERSION_MISMATCH);
+    });
+
+    it('rejects the previous 1.0.0-store version after the family bump (draft 2.0.0-family)', async () => {
+      const { service } = createService();
+      expect(
+        await mismatchCode(() =>
+          service.assertCurrentVersions({
+            terms: '1.0.0-store',
+            privacy: '1.0.0-store',
+          }),
         ),
       ).toBe(ErrorCode.LEGAL_VERSION_MISMATCH);
     });

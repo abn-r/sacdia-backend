@@ -6,7 +6,7 @@ import { trimLegalVersion } from './legal-version.transform';
 
 export class AcceptLegalDocumentsDto {
   @ApiProperty({
-    example: '1.0.0-store',
+    example: '2.0.0-family',
     description: 'Versión de los Términos y Condiciones que se acepta',
   })
   @Transform(trimLegalVersion)
@@ -16,7 +16,7 @@ export class AcceptLegalDocumentsDto {
   declare terms_version: string;
 
   @ApiProperty({
-    example: '1.0.0-store',
+    example: '2.0.0-family',
     description: 'Versión del Aviso de Privacidad que se acepta',
   })
   @Transform(trimLegalVersion)

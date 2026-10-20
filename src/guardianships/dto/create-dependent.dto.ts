@@ -67,14 +67,14 @@ export class CreateDependentDto {
   @Equals(true, { message: 'sworn_declaration must be true' })
   declare sworn_declaration: boolean;
 
-  @ApiProperty({ example: '1.0.0-store' })
+  @ApiProperty({ example: '2.0.0-family' })
   @Transform(trimLegalVersion)
   @IsString()
   @IsNotEmpty()
   @MaxLength(LEGAL_VERSION_MAX_LENGTH)
   declare accepted_terms_version: string;
 
-  @ApiProperty({ example: '1.0.0-store' })
+  @ApiProperty({ example: '2.0.0-family' })
   @Transform(trimLegalVersion)
   @IsString()
   @IsNotEmpty()

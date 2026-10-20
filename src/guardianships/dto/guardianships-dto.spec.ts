@@ -30,8 +30,8 @@ const validDependent = {
   birthday: '2017-04-02',
   relationship_type_id: REL,
   sworn_declaration: true,
-  accepted_terms_version: ' 1.0.0-store ',
-  accepted_privacy_version: '1.0.0-store',
+  accepted_terms_version: ' 2.0.0-family ',
+  accepted_privacy_version: '2.0.0-family',
 };
 
 describe('CreateDependentDto', () => {
@@ -40,7 +40,7 @@ describe('CreateDependentDto', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.name).toBe('Ana');
-      expect(result.value.accepted_terms_version).toBe('1.0.0-store');
+      expect(result.value.accepted_terms_version).toBe('2.0.0-family');
       expect(result.value.maternal_last_name).toBeUndefined();
     }
   });

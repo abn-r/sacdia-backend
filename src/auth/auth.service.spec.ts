@@ -167,14 +167,14 @@ describe('AuthService', () => {
     documents: [
       {
         document_type: 'terms',
-        version: '1.0.0-store',
+        version: '2.0.0-family',
         url: 'https://sacdia.com/terms',
         accepted: true,
         accepted_at: '2026-10-15T22:01:00.000Z',
       },
       {
         document_type: 'privacy',
-        version: '1.0.0-store',
+        version: '2.0.0-family',
         url: 'https://sacdia.com/privacy',
         accepted: true,
         accepted_at: '2026-10-15T22:01:00.000Z',
@@ -326,10 +326,10 @@ describe('AuthService', () => {
       name: 'Juan',
       paternal_last_name: 'Garcia',
       maternal_last_name: 'Lopez',
-      accepted_terms_version: '1.0.0-store',
-      accepted_privacy_version: '1.0.0-store',
+      accepted_terms_version: '2.0.0-family',
+      accepted_privacy_version: '2.0.0-family',
     };
-    const acceptedVersions = { terms: '1.0.0-store', privacy: '1.0.0-store' };
+    const acceptedVersions = { terms: '2.0.0-family', privacy: '2.0.0-family' };
 
     const mockBaResult = {
       user: {

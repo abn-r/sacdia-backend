@@ -287,8 +287,8 @@ describe('Acting-for E2E', () => {
         birthday: '2017-04-02',
         relationship_type_id: RELATIONSHIP_ID,
         sworn_declaration: true,
-        accepted_terms_version: '1.0.0-store',
-        accepted_privacy_version: '1.0.0-store',
+        accepted_terms_version: '2.0.0-family',
+        accepted_privacy_version: '2.0.0-family',
       });
 
     expect(response.status).toBe(201);
@@ -314,8 +314,8 @@ describe('Acting-for E2E', () => {
         birthday: '2017-04-02',
         relationship_type_id: RELATIONSHIP_ID,
         sworn_declaration: true,
-        accepted_terms_version: '1.0.0-store',
-        accepted_privacy_version: '1.0.0-store',
+        accepted_terms_version: '2.0.0-family',
+        accepted_privacy_version: '2.0.0-family',
         access_mode: 'self',
         email: 'x@y.z',
       });

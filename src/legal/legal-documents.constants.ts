@@ -16,12 +16,19 @@ export type LegalAcceptanceMethod = (typeof LEGAL_ACCEPTANCE_METHODS)[number];
  * until a row exists for the current version). Keep it in sync with the
  * `docs/legal` frontmatter, and ship the bump only after the new text is
  * published on the website (the `url` below), never before.
+ *
+ * DRAFT (family profiles 3a): `2.0.0-family` is the version for the text that
+ * covers supervised accounts of 13-17 year olds (own login, guardian summary,
+ * guardian security notices). The text itself is a DRAFT FOR LEGAL REVIEW. This
+ * bump lives in its own commit so it can be reverted alone, and it MUST NOT be
+ * promoted to `main` until legal approves the text and it is published at the
+ * URLs below (see the rule above: version after publication, never before).
  */
 export const CURRENT_LEGAL_DOCUMENTS: Readonly<
   Record<LegalDocumentType, { version: string; url: string }>
 > = {
-  terms: { version: '1.0.0-store', url: 'https://sacdia.com/terms' },
-  privacy: { version: '1.0.0-store', url: 'https://sacdia.com/privacy' },
+  terms: { version: '2.0.0-family', url: 'https://sacdia.com/terms' },
+  privacy: { version: '2.0.0-family', url: 'https://sacdia.com/privacy' },
 };
 
 /** Column limits of `legal_acceptances` (see migration 20261015120000). */

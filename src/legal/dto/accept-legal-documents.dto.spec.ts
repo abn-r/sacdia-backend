@@ -11,34 +11,34 @@ describe('AcceptLegalDocumentsDto', () => {
   it('accepts both versions', async () => {
     expect(
       await errorsFor({
-        terms_version: '1.0.0-store',
-        privacy_version: '1.0.0-store',
+        terms_version: '2.0.0-family',
+        privacy_version: '2.0.0-family',
       }),
     ).toHaveLength(0);
   });
 
   it('trims surrounding whitespace', () => {
     const dto = plainToInstance(AcceptLegalDocumentsDto, {
-      terms_version: ' 1.0.0-store ',
-      privacy_version: '\t1.0.0-store\n',
+      terms_version: ' 2.0.0-family ',
+      privacy_version: '\t2.0.0-family\n',
     });
-    expect(dto.terms_version).toBe('1.0.0-store');
-    expect(dto.privacy_version).toBe('1.0.0-store');
+    expect(dto.terms_version).toBe('2.0.0-family');
+    expect(dto.privacy_version).toBe('2.0.0-family');
   });
 
   it('rejects a missing version', async () => {
-    expect(await errorsFor({ terms_version: '1.0.0-store' })).not.toHaveLength(
+    expect(await errorsFor({ terms_version: '2.0.0-family' })).not.toHaveLength(
       0,
     );
     expect(
-      await errorsFor({ privacy_version: '1.0.0-store' }),
+      await errorsFor({ privacy_version: '2.0.0-family' }),
     ).not.toHaveLength(0);
   });
 
   it('rejects blank, non-string and over-long versions', async () => {
     for (const bad of ['', '   ', 123, null, { a: 1 }, 'x'.repeat(33)]) {
       expect(
-        await errorsFor({ terms_version: bad, privacy_version: '1.0.0-store' }),
+        await errorsFor({ terms_version: bad, privacy_version: '2.0.0-family' }),
       ).not.toHaveLength(0);
     }
   });
@@ -52,8 +52,8 @@ describe('AcceptLegalDocumentsDto', () => {
     await expect(
       pipe.transform(
         {
-          terms_version: '1.0.0-store',
-          privacy_version: '1.0.0-store',
+          terms_version: '2.0.0-family',
+          privacy_version: '2.0.0-family',
           user_id: 'someone-else',
         },
         { type: 'body', metatype: AcceptLegalDocumentsDto },

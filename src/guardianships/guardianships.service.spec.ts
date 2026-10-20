@@ -6,7 +6,7 @@ import { GUARDIAN_RELATIONSHIP_TYPE_NAMES } from './guardianships.constants';
 import { GuardianshipsService } from './guardianships.service';
 
 const TZ = DEFAULT_COUNTRY_AGE_POLICY.timeZone;
-const CURRENT = '1.0.0-store';
+const CURRENT = '2.0.0-family';
 const GUARDIAN = '11111111-1111-4111-8111-111111111111';
 const REL_TYPE = '22222222-2222-4222-8222-222222222222';
 

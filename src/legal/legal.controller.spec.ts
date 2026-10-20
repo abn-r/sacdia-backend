@@ -34,7 +34,7 @@ describe('LegalController', () => {
       true,
     );
     const documents = [
-      { document_type: 'terms', version: '1.0.0-store', url: 'u1' },
+      { document_type: 'terms', version: '2.0.0-family', url: 'u1' },
     ];
     mockLegalService.getCurrent.mockReturnValue(documents);
     expect(controller.getCurrent()).toEqual({
@@ -110,12 +110,12 @@ describe('LegalAcceptanceController', () => {
       socket: { remoteAddress: '127.0.0.1' },
     };
     const result = await controller.accept(req, {
-      terms_version: '1.0.0-store',
-      privacy_version: '1.0.0-store',
+      terms_version: '2.0.0-family',
+      privacy_version: '2.0.0-family',
     });
     expect(mockLegalService.accept).toHaveBeenCalledWith(
       'user-1',
-      { terms: '1.0.0-store', privacy: '1.0.0-store' },
+      { terms: '2.0.0-family', privacy: '2.0.0-family' },
       expect.objectContaining({ userAgent: 'SACDIA/1.0' }),
       null,
     );
@@ -135,12 +135,12 @@ describe('LegalAcceptanceController', () => {
       socket: { remoteAddress: '127.0.0.1' },
     };
     await controller.accept(req, {
-      terms_version: '1.0.0-store',
-      privacy_version: '1.0.0-store',
+      terms_version: '2.0.0-family',
+      privacy_version: '2.0.0-family',
     });
     expect(mockLegalService.accept).toHaveBeenCalledWith(
       'child-1',
-      { terms: '1.0.0-store', privacy: '1.0.0-store' },
+      { terms: '2.0.0-family', privacy: '2.0.0-family' },
       expect.any(Object),
       'guardian-1',
     );
