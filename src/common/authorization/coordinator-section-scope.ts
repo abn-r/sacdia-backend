@@ -106,10 +106,17 @@ export async function resolveCoordinatorAssignmentSectionIds(
 }
 
 /**
- * The section is inside the user's coordinator scope today: some active
- * assignment expands to it and the section itself is active (the same
- * filter resolveCoordinatorScope applies). Says nothing about roles or
- * permissions; callers gate on those first.
+ * The section is inside the user's coordinator scope today: ONE active
+ * assignment covers it and the section itself is active. The same rule as
+ * expanding every assignment (resolveCoordinatorAssignmentSectionIds) and
+ * looking the section up, asked the other way round so a guarded request
+ * never expands a GENERAL assignment to a whole local field:
+ *  - SECTION: that section;
+ *  - GENERAL: the section's club is active and in the assignment's local field;
+ *  - ZONE:    same, the section has the assignment's club type and the club's
+ *             district is an active district of the zone.
+ * Says nothing about roles or permissions; callers gate on those first.
+ * /coordination/me/scope still expands (it lists the sections).
  */
 export async function coordinatorScopeIncludesSection(
   prisma: CoordinatorScopePrisma,
@@ -117,36 +124,61 @@ export async function coordinatorScopeIncludesSection(
   clubSectionId: number,
   now: Date = new Date(),
 ): Promise<boolean> {
-  const assignments = await prisma.coordinator_assignments.findMany({
-    where: {
-      user_id: userId,
-      ...activeCoordinatorAssignmentWhere(startOfUtcDay(now)),
-    },
-    orderBy: [{ assignment_type: 'asc' }, { created_at: 'asc' }],
+  const section = await prisma.club_sections.findFirst({
+    where: { club_section_id: clubSectionId, active: true },
     select: {
-      local_field_id: true,
-      assignment_type: true,
-      zone_id: true,
       club_type_id: true,
-      club_section_id: true,
+      clubs: {
+        select: {
+          active: true,
+          local_field_id: true,
+          districlub_type_id: true,
+        },
+      },
     },
   });
+  if (!section) return false;
 
-  for (const assignment of assignments) {
-    const sectionIds = await resolveCoordinatorAssignmentSectionIds(prisma, {
-      localFieldId: assignment.local_field_id,
-      assignmentType: assignment.assignment_type,
-      zoneId: assignment.zone_id,
-      clubTypeId: assignment.club_type_id,
-      clubSectionId: assignment.club_section_id,
-    });
-    if (sectionIds.includes(clubSectionId)) {
-      const activeSections = await prisma.club_sections.count({
-        where: { club_section_id: clubSectionId, active: true },
-      });
-      return activeSections > 0;
-    }
+  const covering: Prisma.coordinator_assignmentsWhereInput[] = [
+    {
+      assignment_type: coordinator_assignment_type.SECTION,
+      club_section_id: clubSectionId,
+    },
+  ];
+  const club = section.clubs;
+  if (club?.active) {
+    covering.push(
+      {
+        assignment_type: coordinator_assignment_type.GENERAL,
+        local_field_id: club.local_field_id,
+      },
+      {
+        assignment_type: coordinator_assignment_type.ZONE,
+        local_field_id: club.local_field_id,
+        club_type_id: section.club_type_id,
+        coordination_zones: {
+          is: {
+            districts: {
+              some: {
+                districlub_type_id: club.districlub_type_id,
+                active: true,
+              },
+            },
+          },
+        },
+      },
+    );
   }
 
-  return false;
+  const match = await prisma.coordinator_assignments.findFirst({
+    where: {
+      user_id: userId,
+      AND: [
+        activeCoordinatorAssignmentWhere(startOfUtcDay(now)),
+        { OR: covering },
+      ],
+    },
+    select: { assignment_id: true },
+  });
+  return match !== null;
 }

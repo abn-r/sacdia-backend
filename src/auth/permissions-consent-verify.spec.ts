@@ -184,9 +184,34 @@ const generalAssignment = (): CoordinatorAssignment => ({
 
 type CoordinatorData = {
   assignments?: CoordinatorAssignment[];
-  /** What a GENERAL / ZONE assignment expands to (club_sections.findMany). */
-  expandedSectionIds?: number[];
+  /** Local field of the section's club (a GENERAL assignment matches on it). */
+  sectionLocalFieldId?: number;
 };
+
+type CoveringClause = Partial<CoordinatorAssignment> & Record<string, unknown>;
+
+/**
+ * coordinator_assignments.findFirst as the targeted scope query asks it: the
+ * active window is NOT evaluated (the rows here are all active) and the ZONE
+ * relation filter is not either (no ZONE row in this spec); a row matches a
+ * covering clause when every scalar column of the clause is equal.
+ */
+const coveringAssignment =
+  (assignments: CoordinatorAssignment[]) =>
+  async (args: {
+    where: { AND: [unknown, { OR: CoveringClause[] }] };
+  }): Promise<{ assignment_id: string } | null> => {
+    const clauses = args.where.AND[1].OR;
+    const hit = assignments.find((row) =>
+      clauses.some((clause) =>
+        Object.entries(clause).every(
+          ([key, value]) =>
+            key in row && row[key as keyof CoordinatorAssignment] === value,
+        ),
+      ),
+    );
+    return hit ? { assignment_id: 'coordinator-assignment-1' } : null;
+  };
 
 function setup(
   profile: unknown,
@@ -216,7 +241,7 @@ function setup(
       }),
     },
     coordinator_assignments: {
-      findMany: jest.fn().mockResolvedValue(coordinator.assignments ?? []),
+      findFirst: jest.fn(coveringAssignment(coordinator.assignments ?? [])),
     },
     club_sections: {
       findUnique: jest.fn().mockResolvedValue({
@@ -224,11 +249,16 @@ function setup(
         main_club_id: MAIN_CLUB_ID,
         club_type_id: 2,
       }),
-      findMany: jest.fn().mockResolvedValue(
-        (coordinator.expandedSectionIds ?? []).map((club_section_id) => ({
-          club_section_id,
-        })),
-      ),
+      findFirst: jest.fn().mockResolvedValue({
+        club_type_id: 2,
+        clubs: {
+          active: true,
+          local_field_id:
+            coordinator.sectionLocalFieldId ?? HOME_TERRITORY.local_field,
+          districlub_type_id: 7,
+        },
+      }),
+      findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(1),
     },
     coordination_zone_districts: {
@@ -312,9 +342,9 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
         );
 
         expect(await decide(guard)).toEqual({ allowed: true });
-        expect(prisma.coordinator_assignments.findMany).toHaveBeenCalledWith(
+        expect(prisma.coordinator_assignments.findFirst).toHaveBeenCalledWith(
           expect.objectContaining({
-            where: expect.objectContaining({ user_id: USER_ID, active: true }),
+            where: expect.objectContaining({ user_id: USER_ID }),
           }),
         );
       },
@@ -328,7 +358,6 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
           HOME_TERRITORY,
           {
             assignments: [generalAssignment()],
-            expandedSectionIds: [21, SECTION_ID],
           },
         );
 
@@ -344,7 +373,9 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
           HOME_TERRITORY,
           {
             assignments: [sectionAssignment(99), generalAssignment()],
-            expandedSectionIds: [21, 30],
+            // The section's club is in ANOTHER local field: the GENERAL
+            // assignment does not reach it.
+            sectionLocalFieldId: OTHER_TERRITORY.local_field,
           },
         );
 
@@ -387,7 +418,7 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
         allowed: false,
         code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
       });
-      expect(prisma.coordinator_assignments.findMany).not.toHaveBeenCalled();
+      expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
     });
 
     it('routes that did NOT opt in stay closed: a coordinator holding club_members:approve cannot approve inside an assigned section', async () => {
@@ -407,7 +438,7 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
           code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
         });
       }
-      expect(prisma.coordinator_assignments.findMany).not.toHaveBeenCalled();
+      expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
     });
 
     it.each(COORDINATOR_ROLES)(
@@ -836,7 +867,7 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
         });
         expect(request.coordinatorSectionGrant).toBeUndefined();
       }
-      expect(prisma.coordinator_assignments.findMany).not.toHaveBeenCalled();
+      expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
 
       const listRequest = newRequest();
       await run(guard, 'listPending', listRequest);
@@ -866,7 +897,7 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
         allowed: true,
       });
       expect(request.coordinatorSectionGrant).toBeUndefined();
-      expect(prisma.coordinator_assignments.findMany).not.toHaveBeenCalled();
+      expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
     });
 
     it('a territory from ANOTHER global role does not let the coordinator role permission through without an assignment', async () => {
