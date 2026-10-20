@@ -280,6 +280,33 @@ describe('ClassProgressAccessService', () => {
     );
   });
 
+  it("rejects a linked device (the child account) reading or writing a sibling's progress, even in the same section", async () => {
+    // FP3-45. A linked device acts as the child: actor is a plain account
+    // with no global role, no counselor assignment and only a `member` role
+    // in the very same section as the sibling it targets.
+    mockPrisma.club_role_assignments.findMany.mockImplementation(
+      ({ where }: { where: { user_id?: string } }) =>
+        Promise.resolve([
+          {
+            assignment_id: '66666666-6666-6666-6666-666666666666',
+            user_id: where.user_id,
+            active: true,
+            ecclesiastical_year_id: baseParams.ecclesiasticalYearId,
+            club_section_id: 20,
+            roles: { role_name: 'member' },
+            club_sections: { club_section_id: 20, club_type_id: 2 },
+          },
+        ]),
+    );
+
+    await expect(
+      service.assertCanAccessClassProgress(baseParams),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+    await expect(service.canAccessClassProgress(baseParams)).resolves.toBe(
+      false,
+    );
+  });
+
   it('rejects an instructor who is not a formal owner of the progress', async () => {
     mockPrisma.club_role_assignments.findMany.mockImplementation(
       ({ where }: { where: { user_id?: string } }) => {

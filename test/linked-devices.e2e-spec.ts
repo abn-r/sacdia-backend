@@ -1405,6 +1405,178 @@ describe('Linked device E2E (family profiles 3b)', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // FP3-45: a device only ever acts on its OWN child
+  // ---------------------------------------------------------------------------
+
+  describe('F. a linked device cannot touch a sibling (same guardian) evidence', () => {
+    // The suite passes RBAC through globally. Here the REAL PermissionsGuard
+    // must run: the owner rule (`ownerParam: userId`) is the only thing that
+    // keeps a device of child A away from child B's userId. The env flag is
+    // read on every request, so flipping it is enough.
+    let previousPassthrough: string | undefined;
+    let authContext: { resolveUserAuthorization: jest.Mock };
+    let originalResolve: jest.Mock;
+    let classes: { uploadSectionFile: jest.Mock; submitSection: jest.Mock };
+
+    beforeAll(() => {
+      previousPassthrough = process.env.E2E_PASSTHROUGH_PERMISSIONS;
+      delete process.env.E2E_PASSTHROUGH_PERMISSIONS;
+
+      authContext = moduleRef.get(AuthorizationContextService, {
+        strict: false,
+      }) as unknown as typeof authContext;
+      originalResolve = authContext.resolveUserAuthorization;
+      // What the child really holds: ONLY the base `user` role (own data
+      // grants), no club role, no direct permission. It is the same snapshot
+      // for any userId the guard asks about, exactly like production for an
+      // account that has no other grant.
+      authContext.resolveUserAuthorization = jest.fn(async (userId: string) => {
+        const base = await originalResolve(userId);
+        return {
+          ...base,
+          authorization: buildAuthorizationSnapshot({
+            globalRoleName: 'user',
+            globalPermissions: ['classes:read', 'classes:submit_progress'],
+            assignmentId: null,
+          }),
+        };
+      });
+      classes = moduleRef.get(ClassesService, {
+        strict: false,
+      }) as unknown as typeof classes;
+    });
+
+    afterAll(() => {
+      authContext.resolveUserAuthorization = originalResolve;
+      if (previousPassthrough === undefined) {
+        delete process.env.E2E_PASSTHROUGH_PERMISSIONS;
+      } else {
+        process.env.E2E_PASSTHROUGH_PERMISSIONS = previousPassthrough;
+      }
+    });
+
+    const png = Buffer.from('89504e470d0a1a0a', 'hex');
+    const upload = (path: string, token: string) =>
+      request(app.getHttpServer())
+        .post(path)
+        .set(deviceAuth(token))
+        .attach('file', png, {
+          filename: 'photo.png',
+          contentType: 'image/png',
+        });
+
+    it("control: the guard is real, so the device's OWN userId is allowed (upload 201, submit 201)", async () => {
+      const { accessToken } = await pairDevice();
+      classes.uploadSectionFile.mockClear();
+      classes.submitSection.mockClear();
+
+      const ok = await upload(
+        `/api/v1/users/${CHILD}/classes/3/sections/7/files`,
+        accessToken,
+      );
+      expect(ok.status).toBe(201);
+      const submitted = await request(app.getHttpServer())
+        .post(`/api/v1/users/${CHILD}/classes/3/sections/7/submit`)
+        .set(deviceAuth(accessToken))
+        .send({});
+      expect(submitted.status).toBe(201);
+      expect(uploadCalls).toBe(1);
+      expect(classes.submitSection).toHaveBeenCalledTimes(1);
+    });
+
+    it("the device of child A is 403 GUARD_PERMISSION_DENIED on child B's upload, submit, delete and enrollments, and nothing is written or notified", async () => {
+      const { accessToken } = await pairDevice();
+      sendToUser.mockClear();
+      classes.uploadSectionFile.mockClear();
+      classes.submitSection.mockClear();
+
+      const attempts: Array<[string, string, () => request.Test]> = [
+        [
+          'upload',
+          `/users/${SIBLING}/classes/3/sections/7/files`,
+          () =>
+            upload(
+              `/api/v1/users/${SIBLING}/classes/3/sections/7/files`,
+              accessToken,
+            ),
+        ],
+        [
+          'upload with a guessed enrollmentId',
+          `/users/${SIBLING}/classes/3/sections/7/files?enrollmentId=1`,
+          () =>
+            upload(
+              `/api/v1/users/${SIBLING}/classes/3/sections/7/files?enrollmentId=1`,
+              accessToken,
+            ),
+        ],
+        [
+          'submit',
+          `/users/${SIBLING}/classes/3/sections/7/submit`,
+          () =>
+            request(app.getHttpServer())
+              .post(`/api/v1/users/${SIBLING}/classes/3/sections/7/submit`)
+              .set(deviceAuth(accessToken))
+              .send({}),
+        ],
+        [
+          'delete file',
+          `/users/${SIBLING}/classes/3/sections/7/files/55`,
+          () =>
+            request(app.getHttpServer())
+              .delete(`/api/v1/users/${SIBLING}/classes/3/sections/7/files/55`)
+              .set(deviceAuth(accessToken)),
+        ],
+        [
+          'enrollments read',
+          `/users/${SIBLING}/classes`,
+          () =>
+            request(app.getHttpServer())
+              .get(`/api/v1/users/${SIBLING}/classes`)
+              .set(deviceAuth(accessToken)),
+        ],
+      ];
+
+      for (const [label, path, send] of attempts) {
+        const denied = await send();
+        expect({ label, path, status: denied.status }).toEqual({
+          label,
+          path,
+          status: 403,
+        });
+        expect({ label, code: errorCode(denied.body) }).toEqual({
+          label,
+          code: 'GUARD_PERMISSION_DENIED',
+        });
+      }
+
+      await flush();
+      // No write: the (stubbed) service layer was never reached, so no file,
+      // no submission and no guardian notification exist for the sibling.
+      expect(uploadCalls).toBe(0);
+      expect(classes.uploadSectionFile).not.toHaveBeenCalled();
+      expect(classes.submitSection).not.toHaveBeenCalled();
+      expect(
+        sendToUser.mock.calls.filter(
+          (call) => call[2] === 'family:evidence_uploaded',
+        ),
+      ).toHaveLength(0);
+    });
+
+    it('a guardian-side id is no way in either: the device is also denied on its own guardian and on a stranger as the path userId', async () => {
+      const { accessToken } = await pairDevice();
+      for (const other of [GUARDIAN, STRANGER]) {
+        const denied = await upload(
+          `/api/v1/users/${other}/classes/3/sections/7/files`,
+          accessToken,
+        );
+        expect(denied.status).toBe(403);
+        expect(errorCode(denied.body)).toBe('GUARD_PERMISSION_DENIED');
+      }
+      expect(uploadCalls).toBe(0);
+    });
+  });
+
   it('the real container binds LINKED_DEVICE_REVOKER to the REAL LinkedDevicesService (no no-op)', () => {
     const revoker = moduleRef.get(LINKED_DEVICE_REVOKER, { strict: false });
     expect(revoker).toBe(
