@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import type { Prisma } from '@prisma/client';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { isCertificateImportObjectKey } from '../certificate-bulk-imports/certificate-import-file-ref';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
@@ -145,6 +146,16 @@ export class DependentProfilesPurgeCronService {
       await this.fileStorage.deleteMany(bucket, [...keys]);
     }
 
+    // A teen with an own login (3a) also loses every credential. Read before
+    // the transaction nulls the email: the email is what the verification
+    // rows are keyed by.
+    const identity = await this.prisma.users.findUnique({
+      where: { user_id: dependentId },
+      select: { email: true, account: { select: { id: true }, take: 1 } },
+    });
+    const holdsAccount = (identity?.account?.length ?? 0) > 0;
+    const email = identity?.email ?? null;
+
     await this.prisma.$transaction(async (tx) => {
       await tx.users.update({
         where: { user_id: dependentId },
@@ -203,6 +214,9 @@ export class DependentProfilesPurgeCronService {
         where: { user_id: dependentId },
         data: { ip_address: null, user_agent: null },
       });
+      if (holdsAccount) {
+        await this.deleteCredentials(tx, dependentId, email);
+      }
       await tx.dependent_profiles.update({
         where: { user_id: dependentId },
         data: { purged_at: now },
@@ -210,6 +224,40 @@ export class DependentProfilesPurgeCronService {
     });
 
     await this.actingForCache.bump(dependentId);
+  }
+
+  /**
+   * Account-holder path: credential and OAuth `account` rows, `verification`
+   * rows (keyed by the email or carrying the user id), sessions and FCM tokens
+   * are deleted, and the handle is released. The users row stays (foreign keys)
+   * with email and PII already nulled, which also frees the email for a new
+   * registration (the unique index ignores NULL).
+   */
+  private async deleteCredentials(
+    tx: Prisma.TransactionClient,
+    dependentId: string,
+    email: string | null,
+  ): Promise<void> {
+    await tx.account.deleteMany({ where: { userId: dependentId } });
+    await tx.session.deleteMany({ where: { userId: dependentId } });
+    await tx.verification.deleteMany({
+      where: {
+        OR: [
+          { value: dependentId },
+          { identifier: { contains: dependentId } },
+          ...(email
+            ? [{ identifier: email }, { identifier: { endsWith: `:${email}` } }]
+            : []),
+        ],
+      },
+    });
+    await tx.user_fcm_tokens.deleteMany({ where: { user_id: dependentId } });
+    // The handle becomes reusable (the CHECK ties method='handle' to a handle,
+    // so the method drops to 'email'); the row stays as legal history.
+    await tx.supervised_logins.updateMany({
+      where: { user_id: dependentId },
+      data: { method: 'email', login_handle: null },
+    });
   }
 
   /**

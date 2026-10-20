@@ -24,6 +24,11 @@ function setup() {
     notification_deliveries: { deleteMany: jest.fn().mockResolvedValue({}) },
     guardianships: { updateMany: jest.fn().mockResolvedValue({}) },
     dependent_profiles: { update: jest.fn().mockResolvedValue({}) },
+    account: { deleteMany: jest.fn().mockResolvedValue({}) },
+    session: { deleteMany: jest.fn().mockResolvedValue({}) },
+    verification: { deleteMany: jest.fn().mockResolvedValue({}) },
+    user_fcm_tokens: { deleteMany: jest.fn().mockResolvedValue({}) },
+    supervised_logins: { updateMany: jest.fn().mockResolvedValue({}) },
   };
   const prisma: any = {
     dependent_profiles: { findMany: jest.fn().mockResolvedValue([]) },
@@ -482,5 +487,96 @@ describe('DependentProfilesPurgeCronService evidence, inbox and holder data (rul
     });
     // The guardianship rows themselves are kept as legal history.
     expect(tx.guardianships).not.toHaveProperty('deleteMany');
+  });
+});
+
+describe('DependentProfilesPurgeCronService account-holder path (3a teen)', () => {
+  function teen(ctx: ReturnType<typeof setup>, email: string | null) {
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+    ctx.prisma.users.findUnique.mockResolvedValue({
+      user_image: null,
+      email,
+      account: [{ id: 'acc-1' }],
+    });
+  }
+
+  it('deletes credentials, OAuth accounts, verifications, sessions and FCM tokens, and frees the handle', async () => {
+    const ctx = setup();
+    teen(ctx, 'ana@example.com');
+
+    await ctx.service.purgeDue();
+
+    const { tx } = ctx;
+    expect(tx.account.deleteMany).toHaveBeenCalledWith({
+      where: { userId: D1 },
+    });
+    expect(tx.session.deleteMany).toHaveBeenCalledWith({
+      where: { userId: D1 },
+    });
+    expect(tx.user_fcm_tokens.deleteMany).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+    });
+    const verification = tx.verification.deleteMany.mock.calls[0][0].where.OR;
+    expect(verification).toEqual(
+      expect.arrayContaining([
+        { value: D1 },
+        { identifier: 'ana@example.com' },
+      ]),
+    );
+    // CHECK: method='handle' requires a handle, so both change together.
+    expect(tx.supervised_logins.updateMany).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+      data: { method: 'email', login_handle: null },
+    });
+    // The users row stays (foreign keys) with the email nulled: reusable.
+    expect(tx.users.update).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+      data: expect.objectContaining({ email: null, active: false }),
+    });
+    expect(tx.dependent_profiles.update).toHaveBeenCalled();
+    expect(ctx.prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('works for a handle teen without an email', async () => {
+    const ctx = setup();
+    teen(ctx, null);
+    await ctx.service.purgeDue();
+    const where = ctx.tx.verification.deleteMany.mock.calls[0][0].where.OR;
+    expect(where).toHaveLength(2);
+    expect(ctx.tx.account.deleteMany).toHaveBeenCalled();
+  });
+
+  it('leaves the no-account dependent path unchanged', async () => {
+    const ctx = setup();
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+
+    await ctx.service.purgeDue();
+
+    for (const model of [
+      ctx.tx.account,
+      ctx.tx.session,
+      ctx.tx.verification,
+      ctx.tx.user_fcm_tokens,
+      ctx.tx.supervised_logins,
+    ]) {
+      expect(
+        Object.values(model).every((fn: any) => !fn.mock.calls.length),
+      ).toBe(true);
+    }
+  });
+
+  it('a credential failure rolls the purge back: purged_at is not set and the next run retries', async () => {
+    const ctx = setup();
+    teen(ctx, 'ana@example.com');
+    ctx.tx.account.deleteMany.mockRejectedValue(new Error('db'));
+
+    const summary = await ctx.service.purgeDue();
+
+    expect(summary).toEqual({ purged: 0, failed: 1 });
+    expect(ctx.cache.bump).not.toHaveBeenCalled();
   });
 });
