@@ -43,6 +43,12 @@ export const MAX_LINKED_DEVICES_PER_DEPENDENT = 2;
 export const DEVICE_PAIRING_TOKEN_TTL_MS = 10 * 60 * 1000;
 /** A device session can never be extended past this many days from pairing (P3-A13). */
 export const DEVICE_ABSOLUTE_LIFETIME_MS = 180 * 24 * 60 * 60 * 1000;
+/**
+ * What a purged child's device rows keep as their label. `label` is free text
+ * typed on the phone (personal data) and the column is NOT NULL, so the purge
+ * overwrites it with this neutral text instead of nulling it.
+ */
+export const PURGED_DEVICE_LABEL = 'Dispositivo';
 /** A revoked device stays listed for the guardians this long (history). */
 export const REVOKED_DEVICE_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 

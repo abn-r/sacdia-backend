@@ -11,6 +11,7 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PURGED_DEVICE_LABEL } from './guardianships.constants';
 import {
   LINKED_DEVICE_REVOKER,
   type LinkedDeviceRevoker,
@@ -43,7 +44,9 @@ export interface PurgeSummary {
  *      evidence rows and the notification inbox rows, blank the honor file
  *      columns, null the external holder's name / phone on the guardianship
  *      rows, null IP/user agent on the legal acceptances, set
- *      `dependent_profiles.purged_at`.
+ *      `dependent_profiles.purged_at`. The device pairing tokens are deleted and the
+ *      linked device rows are scrubbed (label overwritten, app version and push
+ *      token pointer cleared); the revoked rows stay as the audit.
  *
  * The users row is NOT hard-deleted (foreign keys from class progress, audit
  * and the guardianship rows kept for legal history). The guardianship rows
@@ -229,6 +232,22 @@ export class DependentProfilesPurgeCronService {
         'dependent_frozen',
       );
       await tx.user_fcm_tokens.deleteMany({ where: { user_id: dependentId } });
+      // Pairing tokens carry nothing worth keeping (single use, hashed): they
+      // go. The device rows stay as the audit of which phones were paired and
+      // when, but their free text is personal data typed on the child's phone:
+      // the label is overwritten (NOT NULL column) and the app version and the
+      // push token pointer are cleared.
+      await tx.device_pairing_tokens.deleteMany({
+        where: { dependent_user_id: dependentId },
+      });
+      await tx.linked_devices.updateMany({
+        where: { dependent_user_id: dependentId },
+        data: {
+          label: PURGED_DEVICE_LABEL,
+          app_version: null,
+          fcm_token_id: null,
+        },
+      });
       if (holdsAccount) {
         await this.deleteCredentials(tx, dependentId, email);
       }
