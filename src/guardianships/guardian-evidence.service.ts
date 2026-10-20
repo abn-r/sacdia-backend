@@ -21,6 +21,7 @@ import {
 } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { actingForScopeDenied } from '../auth/acting-for/acting-for.errors';
+import { consentHasVerifyWork } from '../membership-requests/consent-four-eyes';
 import { DependentActionLimiter } from './dependent-action-limiter';
 import type { Db } from './guardianship-queries';
 import { CONSENT_EVIDENCE_MIME_TYPES } from './consent-evidence-file.pipe';
@@ -67,6 +68,18 @@ export interface ConsentEvidenceDownload {
 
 export interface DirectorConsentEvidenceDownload extends ConsentEvidenceDownload {
   uploaded_by_display_name: string;
+}
+
+/**
+ * `verifyOnly`: the caller reached the director endpoints with `consent:verify`
+ * but without `club_members:approve` for the section (a coordinator, or a club
+ * role with only that). They are limited to the consents with work for them:
+ * the same set as their filtered membership-request list. See
+ * {@link GuardianEvidenceService.getForDirector} /
+ * {@link GuardianEvidenceService.uploadForDirector}.
+ */
+export interface DirectorEvidenceOptions {
+  verifyOnly?: boolean;
 }
 
 interface CurrentEvidence {
@@ -183,33 +196,78 @@ export class GuardianEvidenceService {
   // Director (club_members:approve on the assignment, enforced by the guard)
   // ---------------------------------------------------------------------------
 
+  /**
+   * `verifyOnly` reviewers may upload only for a PENDING request of a minor
+   * whose consent is still pending (a paper form they received); anything else
+   * is 404 MR_NOT_FOUND, like an unknown request (an already verified consent
+   * is not the 409 the director gets: it is not theirs to learn about).
+   */
   async uploadForDirector(
     directorId: string,
     clubSectionId: number,
     assignmentId: string,
     file: Express.Multer.File | undefined,
+    options: DirectorEvidenceOptions = {},
   ): Promise<UploadedConsentEvidence> {
     this.assertConfigured();
-    const target = await this.resolveDirectorTarget(
-      clubSectionId,
-      assignmentId,
-      ['pending'],
-    );
+    let target: EvidenceTarget;
+    if (options.verifyOnly) {
+      const resolved = await this.resolveVerifyOnlyTarget(
+        clubSectionId,
+        assignmentId,
+      );
+      if (resolved.consentStatus !== 'pending') {
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+      }
+      target = resolved.target;
+    } else {
+      target = await this.resolveDirectorTarget(clubSectionId, assignmentId, [
+        'pending',
+      ]);
+    }
     return this.store(target, directorId, file, 'director');
   }
 
+  /**
+   * `verifyOnly` reviewers read only the forms of the requests in their
+   * filtered list: pending request, minor with a pending consent AND a current
+   * form ({@link consentHasVerifyWork}). Anything else is 404 MR_NOT_FOUND,
+   * indistinguishable from an unknown request, and nothing is signed or audited.
+   */
   async getForDirector(
     directorId: string,
     clubSectionId: number,
     assignmentId: string,
+    options: DirectorEvidenceOptions = {},
   ): Promise<DirectorConsentEvidenceDownload> {
     this.assertConfigured();
-    const target = await this.resolveDirectorTarget(
-      clubSectionId,
-      assignmentId,
-      ['pending', 'active'],
-    );
-    const evidence = await this.requireCurrent(target.guardianshipId);
+    let target: EvidenceTarget;
+    let evidence: CurrentEvidence;
+    if (options.verifyOnly) {
+      const resolved = await this.resolveVerifyOnlyTarget(
+        clubSectionId,
+        assignmentId,
+      );
+      target = resolved.target;
+      const current = await this.findCurrent(target.guardianshipId);
+      if (
+        !current ||
+        !consentHasVerifyWork({
+          hasPrimary: true,
+          consentStatus: resolved.consentStatus,
+          evidenceUploaded: current !== null,
+        })
+      ) {
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+      }
+      evidence = current;
+    } else {
+      target = await this.resolveDirectorTarget(clubSectionId, assignmentId, [
+        'pending',
+        'active',
+      ]);
+      evidence = await this.requireCurrent(target.guardianshipId);
+    }
     const download = await this.signAndAudit(
       evidence,
       target,
@@ -328,6 +386,39 @@ export class GuardianEvidenceService {
       throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
     }
     return this.consentTarget(assignment.user_id);
+  }
+
+  /**
+   * The target of a verify-only reviewer, with the consent status of its row:
+   * a PENDING request of a minor. Every miss at this level (unknown or
+   * processed request, other section, not a minor) is the same 404 MR_NOT_FOUND
+   * (never GUARDIANSHIP_NOT_FOUND), so the endpoint never tells a verify-only
+   * reviewer more than their filtered list does. The caller narrows on the
+   * consent status.
+   */
+  private async resolveVerifyOnlyTarget(
+    clubSectionId: number,
+    assignmentId: string,
+  ): Promise<{ target: EvidenceTarget; consentStatus: string }> {
+    let target: EvidenceTarget;
+    try {
+      target = await this.resolveDirectorTarget(clubSectionId, assignmentId, [
+        'pending',
+      ]);
+    } catch (error) {
+      if (error instanceof AppNotFoundException) {
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+      }
+      throw error;
+    }
+    const row = await this.prisma.guardianships.findFirst({
+      where: { guardianship_id: target.guardianshipId },
+      select: { consent_status: true },
+    });
+    if (!row) {
+      throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+    }
+    return { target, consentStatus: row.consent_status };
   }
 
   private async consentTarget(dependentId: string): Promise<EvidenceTarget> {
@@ -461,27 +552,31 @@ export class GuardianEvidenceService {
   private async requireCurrent(
     guardianshipId: string,
   ): Promise<CurrentEvidence> {
-    const evidence = await this.prisma.guardianship_consent_evidences.findFirst(
-      {
-        where: {
-          guardianship_id: guardianshipId,
-          superseded_at: null,
-          purged_at: null,
-        },
-        select: {
-          evidence_id: true,
-          guardianship_id: true,
-          file_key: true,
-          content_type: true,
-          uploaded_at: true,
-          uploaded_by: { select: { name: true, paternal_last_name: true } },
-        },
-      },
-    );
+    const evidence = await this.findCurrent(guardianshipId);
     if (!evidence) {
       throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_EVIDENCE_NOT_FOUND);
     }
     return evidence;
+  }
+
+  private async findCurrent(
+    guardianshipId: string,
+  ): Promise<CurrentEvidence | null> {
+    return this.prisma.guardianship_consent_evidences.findFirst({
+      where: {
+        guardianship_id: guardianshipId,
+        superseded_at: null,
+        purged_at: null,
+      },
+      select: {
+        evidence_id: true,
+        guardianship_id: true,
+        file_key: true,
+        content_type: true,
+        uploaded_at: true,
+        uploaded_by: { select: { name: true, paternal_last_name: true } },
+      },
+    });
   }
 
   /**

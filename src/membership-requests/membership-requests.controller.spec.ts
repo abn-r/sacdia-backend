@@ -15,6 +15,15 @@ import { MembershipRequestsService } from './membership-requests.service';
 const USER = { sub: 'director-1' };
 const ASSIGNMENT = '11111111-1111-4111-8111-111111111111';
 
+/** What PermissionsGuard leaves on the request (see AuthorizedRequest). */
+const asRequest = (permissions?: string[], coordinatorSectionGrant?: boolean) =>
+  ({
+    authorization: permissions ? { effective: { permissions } } : undefined,
+    coordinatorSectionGrant,
+  }) as never;
+const DIRECTOR_REQUEST = asRequest(['club_members:approve', 'consent:verify']);
+const VERIFY_ONLY_REQUEST = asRequest(['consent:verify']);
+
 describe('MembershipRequestsController (consent)', () => {
   const evidence = {
     uploadForDirector: jest.fn().mockResolvedValue({ evidence_id: 'ev-1' }),
@@ -47,29 +56,100 @@ describe('MembershipRequestsController (consent)', () => {
   });
 
   it('lists the pending requests for the caller, who the consent verdict is computed for', async () => {
-    expect(await controller.listPending(5, USER)).toEqual({
+    expect(await controller.listPending(5, USER, DIRECTOR_REQUEST)).toEqual({
       status: 'success',
       data: [{ assignment_id: 'a-1' }],
     });
-    expect(requests.listPending).toHaveBeenCalledWith(5, 'director-1');
+    expect(requests.listPending).toHaveBeenCalledWith(5, 'director-1', {
+      verifyOnly: false,
+    });
+  });
+
+  describe('who gets the filtered (verify-only) view', () => {
+    const verifyOnlyOf = async (request: never) => {
+      await controller.listPending(5, USER, request);
+      return requests.listPending.mock.calls[0][2].verifyOnly;
+    };
+
+    it('club_members:approve effective: everything, unchanged', async () => {
+      expect(await verifyOnlyOf(asRequest(['club_members:approve']))).toBe(
+        false,
+      );
+    });
+
+    it('consent:verify alone (a secretary or club role with only that): filtered', async () => {
+      expect(await verifyOnlyOf(VERIFY_ONLY_REQUEST)).toBe(true);
+    });
+
+    it('a coordinator: filtered', async () => {
+      expect(await verifyOnlyOf(asRequest(['consent:verify'], true))).toBe(
+        true,
+      );
+    });
+
+    it('a coordinator who also holds club_members:approve elsewhere (active club role of ANOTHER club) is still filtered here', async () => {
+      expect(
+        await verifyOnlyOf(
+          asRequest(['club_members:approve', 'consent:verify'], true),
+        ),
+      ).toBe(true);
+    });
+
+    it('fails closed (filtered) when the request carries no resolved authorization', async () => {
+      expect(await verifyOnlyOf(asRequest(undefined))).toBe(true);
+    });
   });
 
   it('uploads the form as the director of the section in the path', async () => {
     const file = { mimetype: 'application/pdf' } as never;
 
     expect(
-      await controller.uploadConsentEvidence(5, ASSIGNMENT, file, USER),
+      await controller.uploadConsentEvidence(
+        5,
+        ASSIGNMENT,
+        file,
+        USER,
+        DIRECTOR_REQUEST,
+      ),
     ).toEqual({ status: 'success', data: { evidence_id: 'ev-1' } });
     expect(evidence.uploadForDirector).toHaveBeenCalledWith(
       'director-1',
       5,
       ASSIGNMENT,
       file,
+      { verifyOnly: false },
+    );
+  });
+
+  it('uploads as a verify-only reviewer: the service is told, so it narrows to pending-consent minors', async () => {
+    const file = { mimetype: 'application/pdf' } as never;
+
+    await controller.uploadConsentEvidence(
+      5,
+      ASSIGNMENT,
+      file,
+      USER,
+      VERIFY_ONLY_REQUEST,
+    );
+
+    expect(evidence.uploadForDirector).toHaveBeenCalledWith(
+      'director-1',
+      5,
+      ASSIGNMENT,
+      file,
+      { verifyOnly: true },
     );
   });
 
   it('reads the form as the director of the section in the path', async () => {
-    expect(await controller.getConsentEvidence(5, ASSIGNMENT, USER)).toEqual({
+    expect(
+      await controller.getConsentEvidence(
+        5,
+        ASSIGNMENT,
+        USER,
+        DIRECTOR_REQUEST,
+      ),
+    ).toEqual({
       status: 'success',
       data: { url: 'https://signed/x' },
     });
@@ -77,6 +157,23 @@ describe('MembershipRequestsController (consent)', () => {
       'director-1',
       5,
       ASSIGNMENT,
+      { verifyOnly: false },
+    );
+  });
+
+  it('reads the form as a verify-only reviewer (coordinator): the service narrows to the filtered list', async () => {
+    await controller.getConsentEvidence(
+      5,
+      ASSIGNMENT,
+      USER,
+      asRequest(['consent:verify'], true),
+    );
+
+    expect(evidence.getForDirector).toHaveBeenCalledWith(
+      'director-1',
+      5,
+      ASSIGNMENT,
+      { verifyOnly: true },
     );
   });
 
@@ -178,6 +275,21 @@ describe('MembershipRequestsController (consent)', () => {
 
       expect(error.code).toBe(ErrorCode.MR_APPROVE_PERMISSION_REQUIRED);
       expect(error.getStatus()).toBe(403);
+      expect(verification.verify).not.toHaveBeenCalled();
+    });
+
+    it('approve:true by a coordinator whose club_members:approve comes from ANOTHER club role is 403, the service is never called', async () => {
+      const error = await rejection(
+        controller.verifyConsent(
+          5,
+          ASSIGNMENT,
+          { confirm_paper_form_reviewed: true, approve: true },
+          USER,
+          asRequest(['club_members:approve', 'consent:verify'], true),
+        ),
+      );
+
+      expect(error.code).toBe(ErrorCode.MR_APPROVE_PERMISSION_REQUIRED);
       expect(verification.verify).not.toHaveBeenCalled();
     });
 

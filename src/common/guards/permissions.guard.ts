@@ -221,6 +221,7 @@ export class PermissionsGuard implements CanActivate {
           resolved,
           await this.resolveClubSectionScope(request, resource),
           resource.coordinatorSections ? requirement : undefined,
+          request,
         );
       case 'camporee':
         return this.validateTerritoryScope(
@@ -306,6 +307,7 @@ export class PermissionsGuard implements CanActivate {
           resolved,
           await this.resolveClubAssignmentScope(request, resource),
           resource.coordinatorSections ? requirement : undefined,
+          request,
         );
       case 'class_counselor_assignment':
         return this.validateInstanceScope(
@@ -599,13 +601,19 @@ export class PermissionsGuard implements CanActivate {
 
   /**
    * `coordinatorRequirement` is set only when the route opted in with
-   * `coordinatorSections` (see AuthorizationResourceMetadata).
+   * `coordinatorSections` (see AuthorizationResourceMetadata). When the request
+   * gets in ONLY through that coordinator path, `request.coordinatorSectionGrant`
+   * is set to true: the caller has coordinator authority over the section, not
+   * club authority, so a permission that came from somewhere else (a club role
+   * in ANOTHER club that happens to be the active one) must not widen what they
+   * see here.
    */
   private async validateInstanceScope(
     userId: string,
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedInstanceScope,
     coordinatorRequirement?: PermissionRequirement,
+    request?: Record<string, unknown>,
   ): Promise<boolean> {
     if (
       await this.authorizationContext.canManageClub(
@@ -635,6 +643,9 @@ export class PermissionsGuard implements CanActivate {
         resourceScope.instanceId,
       ))
     ) {
+      if (request) {
+        request.coordinatorSectionGrant = true;
+      }
       return true;
     }
 

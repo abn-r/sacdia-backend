@@ -691,6 +691,19 @@ describe('Director-created minor E2E', () => {
     }) =>
       body.data.find((item) => item.assignment_id === assignmentId)!.consent;
 
+    const listedIds = (body: { data: Array<{ assignment_id: string }> }) =>
+      body.data.map((item) => item.assignment_id);
+
+    it('a verify-only reviewer (consent:verify without club_members:approve) does not see the request while no form exists; the director does', async () => {
+      const reviewer = await listRequests(SECRETARY);
+      const director = await listRequests(DIRECTOR_1);
+
+      expect(reviewer.status).toBe(200);
+      expect(listedIds(reviewer.body)).not.toContain(assignmentId);
+      expect(director.status).toBe(200);
+      expect(listedIds(director.body)).toContain(assignmentId);
+    });
+
     it('before any form exists the list says nothing can be verified yet: false / null for the creator too', async () => {
       const response = await listRequests(DIRECTOR_1);
 
@@ -761,6 +774,23 @@ describe('Director-created minor E2E', () => {
           expect(json).not.toContain(DIRECTOR_1);
           expect(json).not.toContain(minorId);
         }
+      });
+
+      it('the verify-only reviewer now sees the request (pending consent + current form); the director still sees it too', async () => {
+        const reviewer = await listRequests(SECRETARY);
+        const director = await listRequests(DIRECTOR_2);
+
+        expect(reviewer.status).toBe(200);
+        expect(listedIds(reviewer.body)).toEqual(
+          expect.arrayContaining([assignmentId]),
+        );
+        expect(consentOf(reviewer.body)).toMatchObject({
+          evidence_uploaded: true,
+          status: 'pending',
+          viewer_can_verify: true,
+          viewer_verify_block: null,
+        });
+        expect(listedIds(director.body)).toContain(assignmentId);
       });
 
       it('the creator cannot get around it by asking to approve in the same call', async () => {
@@ -835,6 +865,15 @@ describe('Director-created minor E2E', () => {
           viewer_can_verify: false,
           viewer_verify_block: null,
         });
+      });
+
+      it('once verified the request has no work left: the verify-only reviewer no longer sees it, the director still does', async () => {
+        const reviewer = await listRequests(SECRETARY);
+        const director = await listRequests(DIRECTOR_2);
+
+        expect(reviewer.status).toBe(200);
+        expect(listedIds(reviewer.body)).not.toContain(assignmentId);
+        expect(listedIds(director.body)).toContain(assignmentId);
       });
 
       it('the verify-only reviewer still cannot approve the request (403, still pending)', async () => {

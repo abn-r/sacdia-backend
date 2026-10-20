@@ -1,8 +1,10 @@
 import { ErrorCode } from '../common/errors/error-codes';
 import {
   CUSTODY_TRIGGER_REASONS,
+  consentHasVerifyWork,
   custodyBarredUserIds,
   evaluateConsentVerifier,
+  verdictHasVerifyWork,
   verifierBlockErrorCode,
 } from './consent-four-eyes';
 
@@ -122,5 +124,68 @@ describe('consent four-eyes predicate (shared by verify-consent and the consent 
       'guardian_left',
       'guardian_account_closed',
     ]);
+  });
+});
+
+describe('consent has work for a verifier (what a verify-only reviewer is shown)', () => {
+  it.each([
+    ['pending consent with a current form', true, 'pending', true, true],
+    ['no form uploaded yet', true, 'pending', false, false],
+    ['already verified', true, 'verified', true, false],
+    ['revoked', true, 'revoked', true, false],
+    [
+      'no active primary row (nothing to verify)',
+      false,
+      'pending',
+      true,
+      false,
+    ],
+  ])('%s', (_label, hasPrimary, consentStatus, evidenceUploaded, expected) => {
+    expect(
+      consentHasVerifyWork({ hasPrimary, consentStatus, evidenceUploaded }),
+    ).toBe(expected);
+  });
+
+  it('is exactly the "something to verify" half of the verdict, barred viewer or not', () => {
+    const cases = [];
+    for (const hasPrimary of [true, false]) {
+      for (const consentStatus of ['pending', 'verified', 'revoked']) {
+        for (const evidenceUploaded of [true, false]) {
+          for (const viewerIsLiveGuardian of [true, false]) {
+            for (const custody of [true, false]) {
+              cases.push({
+                viewerId: VIEWER,
+                hasPrimary,
+                consentStatus,
+                evidenceUploaded,
+                viewerIsLiveGuardian,
+                custody,
+                custodyBarredUserIds: [VIEWER],
+              });
+            }
+          }
+        }
+      }
+    }
+    for (const input of cases) {
+      expect(verdictHasVerifyWork(evaluateConsentVerifier(input))).toBe(
+        consentHasVerifyWork(input),
+      );
+    }
+  });
+
+  it('a barred viewer still has work shown (the block explains why they cannot act)', () => {
+    expect(
+      verdictHasVerifyWork({
+        viewer_can_verify: false,
+        viewer_verify_block: 'self_custodian',
+      }),
+    ).toBe(true);
+    expect(
+      verdictHasVerifyWork({
+        viewer_can_verify: false,
+        viewer_verify_block: null,
+      }),
+    ).toBe(false);
   });
 });

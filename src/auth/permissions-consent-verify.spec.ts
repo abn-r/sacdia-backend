@@ -587,6 +587,76 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
     });
   });
 
+  describe('the guard marks requests it let in ONLY through the coordinator path (the list is filtered for them)', () => {
+    const run = async (
+      guard: PermissionsGuard,
+      handler: Handler,
+      request: Record<string, unknown>,
+    ) => {
+      try {
+        return await guard.canActivate(handlerContext(handler, request));
+      } catch {
+        return false;
+      }
+    };
+
+    it.each(['listPending', 'getConsentEvidence'] as const)(
+      '%s: a coordinator inside their assignment gets coordinatorSectionGrant = true',
+      async (handler) => {
+        const { guard } = setup(
+          globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+          { assignments: [sectionAssignment(SECTION_ID)] },
+        );
+        const request = newRequest();
+
+        expect(await run(guard, handler, request)).toBe(true);
+        expect(request.coordinatorSectionGrant).toBe(true);
+      },
+    );
+
+    it('a club role reaching its own section is NOT marked', async () => {
+      const { guard } = setup(
+        clubRoleProfile(
+          'secretary',
+          ['consent:verify'],
+          MAIN_CLUB_ID,
+          SECTION_ID,
+        ),
+      );
+      const request = newRequest();
+
+      expect(await run(guard, 'listPending', request)).toBe(true);
+      expect(request.coordinatorSectionGrant).toBeUndefined();
+    });
+
+    it('a territory manager (canManageClub) is NOT marked', async () => {
+      const { guard } = setup(
+        globalRoleProfile(
+          'admin',
+          ['club_members:approve', 'consent:verify'],
+          HOME_TERRITORY,
+        ),
+      );
+      const request = newRequest();
+
+      expect(await run(guard, 'listPending', request)).toBe(true);
+      expect(request.coordinatorSectionGrant).toBeUndefined();
+    });
+
+    it('a denied coordinator is not marked', async () => {
+      const { guard } = setup(
+        globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+        HOME_TERRITORY,
+        { assignments: [sectionAssignment(99)] },
+      );
+      const request = newRequest();
+
+      expect(await run(guard, 'listPending', request)).toBe(false);
+      expect(request.coordinatorSectionGrant).toBeUndefined();
+    });
+  });
+
   describe('the seed grants coordinators consent:verify', () => {
     const readSql = (migration: string): string =>
       readFileSync(
