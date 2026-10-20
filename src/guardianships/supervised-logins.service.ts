@@ -704,7 +704,7 @@ export class SupervisedLoginsService {
       select: DEPENDENT_SELECT,
     });
     if (!dependent) throw notFound();
-    return dependent as DependentRow;
+    return dependent;
   }
 
   /**

@@ -1276,9 +1276,10 @@ describe('Supervised login E2E', () => {
     });
 
     it('the handle session cannot be refreshed back in (401 AUTH_SUPERVISED_ACCESS_REVOKED) and the session row is not slid', async () => {
-      const baService = moduleRef.get(BetterAuthService, {
-        strict: false,
-      }) as unknown as { refreshSession: jest.Mock };
+      const baService = moduleRef.get<{ refreshSession: jest.Mock }>(
+        BetterAuthService,
+        { strict: false },
+      );
       baService.refreshSession.mockClear();
 
       const response = await request(app.getHttpServer())
