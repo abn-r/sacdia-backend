@@ -195,6 +195,50 @@ export class LinkedDevicesService implements LinkedDeviceRevoker {
     await this.afterCommit(revoked, 'device_logout');
   }
 
+  /**
+   * The daily sweep's entry (3c): ends the devices the SYSTEM must close on its
+   * own, `majority` (every device of the child) or `expired` (one device whose
+   * 180-day cap passed). It is the same path every other revoke takes, so the
+   * guardians are told exactly once: the compare-and-set inside `revokeInTx`
+   * means a device the per-request gate already revoked comes back empty here
+   * and is not announced a second time (and the reverse).
+   *
+   * Under the dependent lock it first runs `precondition` (the sweep re-reads
+   * the birthday there: a correction between its scan and this lock wins), and
+   * for `expired` the where clause re-checks the cap itself. Returns how many
+   * devices this call revoked.
+   */
+  async revokeBySystem(input: {
+    dependentId: string;
+    reason: 'majority' | 'expired';
+    /** Only for `expired`: the single device to close. */
+    deviceId?: string;
+    precondition?: (tx: Prisma.TransactionClient) => Promise<boolean>;
+    now?: Date;
+  }): Promise<number> {
+    const now = input.now ?? new Date();
+    const revoked = await this.prisma.$transaction(async (tx) => {
+      await lockDependent(tx, input.dependentId);
+      if (input.precondition && !(await input.precondition(tx))) {
+        return [] as RevokedDevice[];
+      }
+      const where: Prisma.linked_devicesWhereInput =
+        input.reason === 'expired'
+          ? {
+              dependent_user_id: input.dependentId,
+              ...(input.deviceId ? { linked_device_id: input.deviceId } : {}),
+              absolute_expires_at: { lte: now },
+            }
+          : { dependent_user_id: input.dependentId };
+      return this.revocation.revokeInTx(tx, where, {
+        by: null,
+        reason: input.reason,
+      });
+    });
+    await this.afterCommit(revoked, input.reason);
+    return revoked.length;
+  }
+
   private async revokeOne(
     dependentId: string,
     deviceId: string,

@@ -9,6 +9,7 @@ import { DependentClaimCodesController } from './dependent-claim-codes.controlle
 import { DependentProfilesPurgeCronService } from './dependent-profiles-purge-cron.service';
 import { DirectorDependentsController } from './director-dependents.controller';
 import { DirectorDependentsService } from './director-dependents.service';
+import { FamilyAgeTransitionsCronService } from './family-age-transitions-cron.service';
 import { PendingTeenCronService } from './pending-teen-cron.service';
 import { FamilyFeatureFlagsModule } from './family-feature-flags.module';
 import { GuardianEvidenceService } from './guardian-evidence.service';
@@ -65,6 +66,8 @@ import { SupervisionStateService } from './supervision-state.service';
     DirectorDependentsService,
     DependentProfilesPurgeCronService,
     PendingTeenCronService,
+    // Birthday-13 nudge + majority / expiry sweep of the linked devices (3c).
+    FamilyAgeTransitionsCronService,
     SupervisionStateService,
     GuardianPowersPolicy,
     DependentActionLimiter,

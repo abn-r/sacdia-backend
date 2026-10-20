@@ -440,6 +440,96 @@ describe('LinkedDevicesService', () => {
       },
     );
   });
+  describe('revokeBySystem (daily sweep: majority and expired)', () => {
+    const revokedRow = {
+      linkedDeviceId: DEV,
+      dependentUserId: CHILD,
+      label: 'Tablet de Ana',
+    };
+
+    it('majority: revokes ALL devices of the child under the dependent lock, bumps and tells the guardians ONCE', async () => {
+      revocation.revokeInTx.mockResolvedValue([revokedRow]);
+
+      const count = await service.revokeBySystem({
+        dependentId: CHILD,
+        reason: 'majority',
+      });
+      await flush();
+
+      expect(count).toBe(1);
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1); // lockDependent
+      expect(revocation.revokeInTx).toHaveBeenCalledWith(
+        tx,
+        { dependent_user_id: CHILD },
+        { by: null, reason: 'majority' },
+      );
+      expect(revocation.bumpAfterCommit).toHaveBeenCalledTimes(1);
+      expect(security.onDeviceRevoked).toHaveBeenCalledTimes(1);
+      expect(security.onDeviceRevoked).toHaveBeenCalledWith({
+        dependentUserId: CHILD,
+        label: 'Tablet de Ana',
+        excludeUserId: undefined,
+        reason: 'majority',
+      });
+    });
+
+    it('expired: only the named device whose cap passed (the where re-checks the cap)', async () => {
+      revocation.revokeInTx.mockResolvedValue([revokedRow]);
+
+      await service.revokeBySystem({
+        dependentId: CHILD,
+        deviceId: DEV,
+        reason: 'expired',
+        now: NOW,
+      });
+      await flush();
+
+      expect(revocation.revokeInTx).toHaveBeenCalledWith(
+        tx,
+        {
+          dependent_user_id: CHILD,
+          linked_device_id: DEV,
+          absolute_expires_at: { lte: NOW },
+        },
+        { by: null, reason: 'expired' },
+      );
+      expect(security.onDeviceRevoked).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: 'expired' }),
+      );
+    });
+
+    it('a precondition that fails under the lock revokes and announces nothing', async () => {
+      const precondition = jest.fn().mockResolvedValue(false);
+
+      const count = await service.revokeBySystem({
+        dependentId: CHILD,
+        reason: 'majority',
+        precondition,
+      });
+      await flush();
+
+      expect(precondition).toHaveBeenCalledWith(tx);
+      expect(count).toBe(0);
+      expect(revocation.revokeInTx).not.toHaveBeenCalled();
+      expect(revocation.bumpAfterCommit).not.toHaveBeenCalled();
+      expect(security.onDeviceRevoked).not.toHaveBeenCalled();
+    });
+
+    it('a concurrent revoker that won the compare-and-set leaves nothing to announce', async () => {
+      revocation.revokeInTx.mockResolvedValue([]);
+
+      const count = await service.revokeBySystem({
+        dependentId: CHILD,
+        reason: 'majority',
+      });
+      await flush();
+
+      expect(count).toBe(0);
+      expect(revocation.bumpAfterCommit).not.toHaveBeenCalled();
+      expect(security.onDeviceRevoked).not.toHaveBeenCalled();
+    });
+  });
+
   describe('auto-revoke announcements (W6 ruling)', () => {
     const revokedRow = {
       linkedDeviceId: DEV,
