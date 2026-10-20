@@ -1,6 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { accessJwtClaims } from '../common/constants/jwt-audiences';
+import {
+  accessJwtClaims,
+  deviceJwtClaims,
+} from '../common/constants/jwt-audiences';
 import { UserAwareThrottlerGuard } from './user-aware-throttler.guard';
 
 describe('UserAwareThrottlerGuard', () => {
@@ -105,6 +108,52 @@ describe('UserAwareThrottlerGuard', () => {
     await expect(guard.getTrackerForTest(request)).resolves.toBe(
       'user:guardian-1',
     );
+  });
+
+  describe('a linked device (3b)', () => {
+    const secret = 'test-secret-min-32-chars-for-hs256';
+
+    it('after auth, throttles as the DEPENDENT (user:{dependentId}), never by IP', async () => {
+      const guard = createGuard(secret);
+      const req = makeRequest({
+        ip: '203.0.113.5',
+        user: { kind: 'linked_device', sub: 'child-1', actor_sub: 'child-1' },
+      });
+
+      await expect(guard.getTrackerForTest(req)).resolves.toBe('user:child-1');
+    });
+
+    it('before auth, a signed device token is keyed by its subject (two children behind one NAT are not throttled together)', async () => {
+      const guard = createGuard(secret);
+      const token = new JwtService({ secret }).sign(
+        { sub: 'child-1', sid: 's', dev: 'd', ...deviceJwtClaims() },
+        { algorithm: 'HS256', expiresIn: '1h' },
+      );
+
+      await expect(
+        guard.getTrackerForTest(
+          makeRequest({ ip: '203.0.113.5', authorization: `Bearer ${token}` }),
+        ),
+      ).resolves.toBe('user:child-1');
+    });
+
+    it('a device token with the access audience claimed twice or a QR audience still falls back to the IP', async () => {
+      const guard = createGuard(secret);
+      const qr = new JwtService({ secret }).sign(
+        {
+          sub: 'child-1',
+          iss: 'https://api.sacdia.app',
+          aud: 'sacdia:qr-member',
+        },
+        { algorithm: 'HS256', expiresIn: '1h' },
+      );
+
+      await expect(
+        guard.getTrackerForTest(
+          makeRequest({ ip: '203.0.113.5', authorization: `Bearer ${qr}` }),
+        ),
+      ).resolves.toBe('ip:203.0.113.5');
+    });
   });
 
   it('falls back to ip tracker when bearer token lacks access iss/aud', async () => {

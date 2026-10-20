@@ -16,6 +16,7 @@ import { ErrorCode } from '../errors/error-codes';
 import { SKIP_MFA_CHECK_KEY } from './mfa.guard';
 import {
   isActingForError,
+  isDeviceAccessError,
   isSupervisedAccessError,
 } from '../../auth/acting-for/acting-for.errors';
 import { assertActingScope } from '../../auth/acting-for/acting-scope.policy';
@@ -72,6 +73,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     // A supervised teen whose access was disabled, reset or frozen gets the
     // specific 401 (not the generic one) so the app can explain it.
     if (isSupervisedAccessError(err)) {
+      throw err;
+    }
+
+    // A linked device that was unlinked, ended its lifetime or stopped being
+    // eligible gets its own 401 so the app returns to the pairing screen.
+    if (isDeviceAccessError(err)) {
       throw err;
     }
 

@@ -97,6 +97,16 @@ describe('pending teen / unknown age: no club data from QR or context switch', (
     expect(principalSeesClubData({ kind: 'age_unknown_user' })).toBe(false);
   });
 
+  it('principalSeesClubData is true for a linked device: it only authenticates while the pairing guardianship is VERIFIED (the same bar as an active teen)', () => {
+    expect(principalSeesClubData({ kind: 'linked_device' })).toBe(true);
+    // ...and still true for every principal that has club data today.
+    expect(principalSeesClubData({ kind: 'user' })).toBe(true);
+    expect(principalSeesClubData({ kind: 'guardian_acting' })).toBe(true);
+    expect(
+      principalSeesClubData({ kind: 'supervised_user', supervision: 'active' }),
+    ).toBe(true);
+  });
+
   describe.each(BLOCKED)(
     '$label (with an active pre-deploy assignment)',
     (principal) => {

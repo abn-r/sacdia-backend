@@ -204,6 +204,21 @@ describe('ClubDataRecipientsService.filterClubDataRecipients', () => {
     ).resolves.toEqual([PLAIN_DEPENDENT]);
   });
 
+  it('keeps a device-paired child: no account, so a club push reaches its device tokens AND the guardian copy (3b)', async () => {
+    const { service } = setup([
+      row({
+        user_id: PLAIN_DEPENDENT,
+        birthday: yearsAgo(9),
+        account: false,
+        verifiedGuardian: true,
+      }),
+    ]);
+
+    await expect(
+      service.filterClubDataRecipients([PLAIN_DEPENDENT, ACTIVE_TEEN]),
+    ).resolves.toContain(PLAIN_DEPENDENT);
+  });
+
   it('keeps a user that has no row (never invents a restriction)', async () => {
     const { service } = setup([]);
 

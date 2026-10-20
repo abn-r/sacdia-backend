@@ -4,7 +4,12 @@ import { JwtStrategy } from './jwt.strategy';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../../common/errors/error-codes';
-import { accessJwtClaims } from '../../common/constants/jwt-audiences';
+import {
+  accessJwtClaims,
+  deviceJwtClaims,
+} from '../../common/constants/jwt-audiences';
+import { FamilyFeatureFlagsService } from '../../guardianships/family-feature-flags.service';
+import { LinkedDeviceGate } from '../device/linked-device.gate';
 import { runWithAuditContext } from '../../audit-logs/audit-request-context';
 import { getAuditContext } from '../../audit-logs/audit-request-context';
 import { ActingForResolver } from '../acting-for/acting-for.resolver';
@@ -12,8 +17,10 @@ import { SupervisedPrincipalResolver } from '../supervised/supervised-principal.
 import {
   ACTING_GRANT_MEMO,
   AGE_UNKNOWN_SCOPES,
+  DEVICE_SCOPES,
   GUARDIAN_PENDING_SCOPES,
   GUARDIAN_VERIFIED_SCOPES,
+  LINKED_DEVICE_MEMO,
   TEEN_PENDING_SCOPES,
   TEEN_SCOPES,
 } from '../acting-for/auth-principal';
@@ -49,6 +56,14 @@ describe('JwtStrategy', () => {
     isSessionActive: jest.fn(),
   };
 
+  const mockDeviceGate = {
+    assertActive: jest.fn(),
+  };
+
+  const mockFlags = {
+    isEnabled: jest.fn(),
+  };
+
   const buildStrategy = (degradedMode?: string) =>
     new JwtStrategy(
       buildConfigService(degradedMode),
@@ -56,6 +71,8 @@ describe('JwtStrategy', () => {
       mockPrisma as unknown as PrismaService,
       mockActingResolver as unknown as ActingForResolver,
       mockSupervisedResolver as unknown as SupervisedPrincipalResolver,
+      mockDeviceGate as unknown as LinkedDeviceGate,
+      mockFlags as unknown as FamilyFeatureFlagsService,
     );
 
   const buildReq = (token: string, headers: Record<string, unknown> = {}) =>
@@ -82,6 +99,9 @@ describe('JwtStrategy', () => {
     });
     mockSupervisedResolver.isSessionActive.mockReset();
     mockSupervisedResolver.isSessionActive.mockResolvedValue(true);
+    mockDeviceGate.assertActive.mockReset();
+    mockFlags.isEnabled.mockReset();
+    mockFlags.isEnabled.mockReturnValue(true);
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
@@ -596,23 +616,15 @@ describe('JwtStrategy', () => {
       expect(mockActingResolver.resolve).not.toHaveBeenCalled();
     });
 
-    it('rejects the reserved sacdia:device audience (no linked_device principal in Phase 2)', async () => {
+    it('a guardian token that names BOTH audiences is rejected before anything is resolved', async () => {
       await expect(
         buildStrategy().validate(
-          buildReq('device-token'),
-          guardianPayload({ aud: 'sacdia:device' }),
-        ),
-      ).rejects.toMatchObject({
-        code: ErrorCode.GUARD_JWT_UNAUTHORIZED,
-        status: 401,
-      });
-      await expect(
-        buildStrategy().validate(
-          buildReq('device-token'),
+          buildReq('both'),
           guardianPayload({ aud: ['sacdia:access', 'sacdia:device'] }),
         ),
       ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
       expect(mockTokenBlacklistService.checkToken).not.toHaveBeenCalled();
+      expect(mockActingResolver.resolve).not.toHaveBeenCalled();
     });
   });
 
@@ -1015,6 +1027,227 @@ describe('JwtStrategy', () => {
 
         expect(getAuditContext()?.actingFor).toBeUndefined();
       });
+    });
+  });
+
+  describe('linked device (aud sacdia:device)', () => {
+    const CHILD = '55555555-5555-4555-8555-555555555555';
+    const DEVICE = '66666666-6666-4666-8666-666666666666';
+    const GUARDIANSHIP = '77777777-7777-4777-8777-777777777777';
+    const SID = 'device-session-1';
+
+    const devicePayload = (overrides: Record<string, unknown> = {}) => ({
+      sub: CHILD,
+      sid: SID,
+      dev: DEVICE,
+      iat: 1700000000,
+      ...deviceJwtClaims(),
+      ...overrides,
+    });
+
+    const activeDecision = {
+      active: true as const,
+      linkedDeviceId: DEVICE,
+      guardianshipId: GUARDIANSHIP,
+      validUntil: Date.now() + 3_600_000,
+    };
+
+    beforeEach(() => {
+      mockDeviceGate.assertActive.mockResolvedValue(activeDecision);
+    });
+
+    it('builds a linked_device principal with exactly the DEVICE scopes, from the gate (not the token)', async () => {
+      const principal = await buildStrategy().validate(
+        buildReq('device-jwt'),
+        devicePayload(),
+      );
+
+      expect(principal).toEqual({
+        sub: CHILD,
+        userId: CHILD,
+        user_id: CHILD,
+        email: null,
+        mfa_pending: false,
+        sid: SID,
+        kind: 'linked_device',
+        actor_sub: CHILD,
+        acting_for: false,
+        scopes: DEVICE_SCOPES,
+        guardianship_id: GUARDIANSHIP,
+        linked_device_id: DEVICE,
+      });
+      expect(mockDeviceGate.assertActive).toHaveBeenCalledWith({
+        dependentId: CHILD,
+        sid: SID,
+        deviceId: DEVICE,
+      });
+      // A device never goes through the adult / teen resolver.
+      expect(mockSupervisedResolver.resolveForRequest).not.toHaveBeenCalled();
+      expect(mockActingResolver.resolve).not.toHaveBeenCalled();
+    });
+
+    it('records the device as the audit actor (actor = the child, request context carries the device)', async () => {
+      await runWithAuditContext(async () => {
+        await buildStrategy().validate(buildReq('d'), devicePayload());
+
+        expect(getAuditContext()?.actingFor).toEqual({
+          actorUserId: CHILD,
+          subjectUserId: CHILD,
+          guardianshipId: GUARDIANSHIP,
+          linkedDeviceId: DEVICE,
+          kind: 'linked_device',
+        });
+      });
+    });
+
+    it('still runs the token and user revocation checks first', async () => {
+      mockTokenBlacklistService.checkToken.mockResolvedValue('revoked');
+
+      await expect(
+        buildStrategy().validate(buildReq('old-device-jwt'), devicePayload()),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
+      expect(mockDeviceGate.assertActive).not.toHaveBeenCalled();
+    });
+
+    it('the kill switch: flag off answers 401 AUTH_DEVICE_REVOKED before ANY lookup', async () => {
+      mockFlags.isEnabled.mockReturnValue(false);
+
+      await expect(
+        buildStrategy().validate(buildReq('d'), devicePayload()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_DEVICE_REVOKED,
+        status: 401,
+      });
+      expect(mockFlags.isEnabled).toHaveBeenCalledWith('linked_device');
+      expect(mockTokenBlacklistService.checkToken).not.toHaveBeenCalled();
+      expect(mockDeviceGate.assertActive).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'an audience array that also lists the access audience',
+        ['sacdia:access', 'sacdia:device'],
+      ],
+      ['the device audience as an array', ['sacdia:device']],
+    ])('rejects %s', async (_label, aud) => {
+      await expect(
+        buildStrategy().validate(buildReq('d'), devicePayload({ aud })),
+      ).rejects.toMatchObject({
+        code: ErrorCode.GUARD_JWT_UNAUTHORIZED,
+        status: 401,
+      });
+      expect(mockDeviceGate.assertActive).not.toHaveBeenCalled();
+    });
+
+    it('rejects a wrong issuer', async () => {
+      await expect(
+        buildStrategy().validate(
+          buildReq('d'),
+          devicePayload({ iss: 'https://evil.example' }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
+    });
+
+    it.each([
+      ['no sid', { sid: undefined }],
+      ['no dev', { dev: undefined }],
+      ['a non-uuid dev', { dev: 'not-a-uuid' }],
+      ['a non-uuid sub', { sub: 'child' }],
+      ['no sub', { sub: undefined }],
+    ])('rejects a device token with %s', async (_label, overrides) => {
+      await expect(
+        buildStrategy().validate(buildReq('d'), devicePayload(overrides)),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
+      expect(mockDeviceGate.assertActive).not.toHaveBeenCalled();
+    });
+
+    it('X-Acting-For on a device token is 403 ACTING_FOR_FORBIDDEN, before the gate', async () => {
+      await expect(
+        buildStrategy().validate(
+          buildReq('d', { 'x-acting-for': GUARDIANSHIP }),
+          devicePayload(),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACTING_FOR_FORBIDDEN,
+        status: 403,
+      });
+      expect(mockDeviceGate.assertActive).not.toHaveBeenCalled();
+      expect(mockActingResolver.resolve).not.toHaveBeenCalled();
+    });
+
+    it('even a malformed X-Acting-For is the uniform 403 on a device (not a 400)', async () => {
+      await expect(
+        buildStrategy().validate(
+          buildReq('d', { 'x-acting-for': 'garbage' }),
+          devicePayload(),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.ACTING_FOR_FORBIDDEN });
+    });
+
+    it('propagates the gate refusals untouched (revoked, past the cap, 503)', async () => {
+      const revoked = Object.assign(new Error('revoked'), {
+        code: ErrorCode.AUTH_DEVICE_REVOKED,
+      });
+      mockDeviceGate.assertActive.mockRejectedValue(revoked);
+
+      await expect(
+        buildStrategy().validate(buildReq('d'), devicePayload()),
+      ).rejects.toBe(revoked);
+    });
+
+    it('memoizes the gate decision on the request so a local guard re-run does not repeat it', async () => {
+      const req = buildReq('d');
+      const strategy = buildStrategy();
+
+      await strategy.validate(req, devicePayload());
+      await strategy.validate(req, devicePayload());
+
+      expect(mockDeviceGate.assertActive).toHaveBeenCalledTimes(1);
+      expect(
+        (req as { [LINKED_DEVICE_MEMO]?: unknown })[LINKED_DEVICE_MEMO],
+      ).toBeDefined();
+    });
+
+    it('does not reuse a memo that belongs to another device or session', async () => {
+      const req = buildReq('d');
+      const strategy = buildStrategy();
+
+      await strategy.validate(req, devicePayload());
+      await strategy.validate(req, devicePayload({ sid: 'other-session' }));
+
+      expect(mockDeviceGate.assertActive).toHaveBeenCalledTimes(2);
+    });
+
+    it('a spoofed dev claim on an ACCESS token is ignored: the user kind comes from the server', async () => {
+      const principal = await buildStrategy().validate(
+        buildReq('access'),
+        accessPayload({ dev: DEVICE, kind: 'linked_device' }),
+      );
+
+      expect(principal).toMatchObject({ kind: 'user', scopes: null });
+      expect(principal.linked_device_id).toBeUndefined();
+      expect(mockDeviceGate.assertActive).not.toHaveBeenCalled();
+    });
+
+    it('an access token with the QR audience still fails', async () => {
+      await expect(
+        buildStrategy().validate(
+          buildReq('qr'),
+          devicePayload({ aud: 'sacdia:qr-member' }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
+    });
+
+    it('the revocation cache being down applies the degraded mode to a device too (503 in reject mode)', async () => {
+      mockTokenBlacklistService.checkToken.mockResolvedValue('unavailable');
+
+      await expect(
+        buildStrategy('reject').validate(buildReq('d'), devicePayload()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+        status: 503,
+      });
+      expect(mockDeviceGate.assertActive).not.toHaveBeenCalled();
     });
   });
 });

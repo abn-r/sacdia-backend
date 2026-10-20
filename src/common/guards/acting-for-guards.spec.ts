@@ -5,6 +5,8 @@ import { SkipMfaCheck } from '../decorators/skip-mfa-check.decorator';
 import {
   actingForForbidden,
   actingForHeaderInvalid,
+  deviceRevoked,
+  deviceSessionExpired,
   supervisedAccessRevoked,
 } from '../../auth/acting-for/acting-for.errors';
 import { ErrorCode } from '../errors/error-codes';
@@ -276,6 +278,42 @@ describe('acting-for scope enforcement in the passport guards', () => {
         ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
       );
       expect((thrown as any).getStatus()).toBe(401);
+    });
+
+    it.each([
+      ['AUTH_DEVICE_REVOKED', deviceRevoked, ErrorCode.AUTH_DEVICE_REVOKED],
+      [
+        'AUTH_DEVICE_SESSION_EXPIRED',
+        deviceSessionExpired,
+        ErrorCode.AUTH_DEVICE_SESSION_EXPIRED,
+      ],
+    ])(
+      'rethrows %s so the child app can tell "unlinked" from a plain expired token (3b)',
+      (_name, make, code) => {
+        const error = make();
+        let thrown: unknown;
+        try {
+          guard.handleRequest(error, false, null, contextFor('scoped'));
+        } catch (caught) {
+          thrown = caught;
+        }
+        expect(thrown).toBe(error);
+        expect((thrown as any).code).toBe(code);
+        expect((thrown as any).getStatus()).toBe(401);
+      },
+    );
+
+    it('a device principal on a route with NO scope is PRINCIPAL_SCOPE_DENIED, never the acting code', () => {
+      expect(() =>
+        guard.handleRequest(
+          null,
+          devicePrincipal(['self:read']),
+          null,
+          contextFor('unscoped'),
+        ),
+      ).toThrow(
+        expect.objectContaining({ code: ErrorCode.PRINCIPAL_SCOPE_DENIED }),
+      );
     });
 
     it('still maps ordinary strategy failures to GUARD_JWT_UNAUTHORIZED', () => {

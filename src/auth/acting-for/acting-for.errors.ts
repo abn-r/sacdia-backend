@@ -84,3 +84,31 @@ export function supervisedAccessRevoked(): AppException {
     HttpStatus.UNAUTHORIZED,
   );
 }
+
+const DEVICE_ACCESS_ERROR_CODES: ReadonlySet<ErrorCode> = new Set([
+  ErrorCode.AUTH_DEVICE_REVOKED,
+  ErrorCode.AUTH_DEVICE_SESSION_EXPIRED,
+]);
+
+/**
+ * True for the 401 the linked-device pipeline raises on purpose (unlinked,
+ * kill switch, ineligible, absolute cap). Guards rethrow it untouched so the
+ * app can tell "this device was unlinked" from a plain expired token.
+ */
+export function isDeviceAccessError(err: unknown): err is AppException {
+  return err instanceof AppException && DEVICE_ACCESS_ERROR_CODES.has(err.code);
+}
+
+export function deviceRevoked(): AppException {
+  return new AppException(
+    ErrorCode.AUTH_DEVICE_REVOKED,
+    HttpStatus.UNAUTHORIZED,
+  );
+}
+
+export function deviceSessionExpired(): AppException {
+  return new AppException(
+    ErrorCode.AUTH_DEVICE_SESSION_EXPIRED,
+    HttpStatus.UNAUTHORIZED,
+  );
+}

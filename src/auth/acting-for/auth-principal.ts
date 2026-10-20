@@ -207,6 +207,10 @@ export function principalSeesClubData(
   principal: Pick<AuthPrincipal, 'kind' | 'supervision'>,
 ): boolean {
   if (principal.kind === 'age_unknown_user') return false;
+  // A linked device only authenticates while the child's pairing guardianship is
+  // VERIFIED (the per-request device check enforces it), which is the same bar
+  // as an `active` teen: the child sees its own club, within DEVICE_SCOPES.
+  if (principal.kind === 'linked_device') return true;
   if (principal.kind === 'supervised_user') {
     return principal.supervision === 'active';
   }
@@ -218,3 +222,6 @@ export const ACTING_GRANT_MEMO = Symbol('sacdia.acting_grant_memo');
 
 /** Request property that memoizes the resolved supervised state across guard re-runs. */
 export const SUPERVISED_STATE_MEMO = Symbol('sacdia.supervised_state_memo');
+
+/** Request property that memoizes the device gate decision across guard re-runs. */
+export const LINKED_DEVICE_MEMO = Symbol('sacdia.linked_device_memo');
