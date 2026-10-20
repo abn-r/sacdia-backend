@@ -9,6 +9,7 @@ import { AuthService } from '../auth.service';
 import { LoginFailureCounter } from '../login-failure-counter';
 import { SocialSignInService } from '../social-sign-in/social-sign-in.service';
 import { LinkCodesService } from '../../guardianships/link-codes.service';
+import { SupervisedLoginsService } from '../../guardianships/supervised-logins.service';
 import {
   NOOP_SUPERVISED_LOGIN_EVENTS,
   SUPERVISED_LOGIN_EVENTS,
@@ -28,6 +29,7 @@ describe('SUPERVISED_LOGIN_EVENTS binding is required (never a silent no-op)', (
     LoginFailureCounter,
     SocialSignInService,
     LinkCodesService,
+    SupervisedLoginsService,
   ];
 
   it.each(consumers.map((consumer) => [consumer.name, consumer] as const))(
