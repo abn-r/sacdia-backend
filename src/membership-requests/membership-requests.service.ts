@@ -11,6 +11,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ConsentGateService } from './consent-gate.service';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import {
   addDays,
   effectiveMembershipExpiry,
@@ -43,6 +44,7 @@ export class MembershipRequestsService {
     private readonly roleEligibility: ClubRoleEligibilityService,
     private readonly consentGate: ConsentGateService,
     private readonly auditLogs: AuditLogsService,
+    private readonly actingForCache: ActingForCache,
   ) {}
 
   /**
@@ -346,6 +348,9 @@ export class MembershipRequestsService {
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    // users_pr.complete went back to false: the principal kind depends on it
+    // (unknown-age restriction), so re-resolve it on the next request.
+    await this.actingForCache.bump(userId);
 
     this.emitRealtimeInvalidation(
       cancelledAssignment.club_section_id,

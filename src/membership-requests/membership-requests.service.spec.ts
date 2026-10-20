@@ -6,6 +6,7 @@ import {
 } from './activation-gate.testing';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MembershipRequestsService } from './membership-requests.service';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
@@ -100,6 +101,10 @@ describe('MembershipRequestsService', () => {
     recordEvent: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockActingForCache = {
+    bump: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     mockRoleEligibility.assertAssignment.mockReset().mockResolvedValue({
@@ -134,6 +139,7 @@ describe('MembershipRequestsService', () => {
         // Real gate: it only talks to the transaction client, which is mocked.
         ConsentGateService,
         { provide: AuditLogsService, useValue: mockAuditLogs },
+        { provide: ActingForCache, useValue: mockActingForCache },
       ],
     }).compile();
 
@@ -502,6 +508,17 @@ describe('MembershipRequestsService', () => {
   });
 
   describe('cancelPendingForUser', () => {
+    it('reopening the post-registration moves the principal epoch after the commit (unknown-age restriction)', async () => {
+      await service.cancelPendingForUser(userId, actorId);
+
+      expect(mockActingForCache.bump).toHaveBeenCalledWith(userId);
+      expect(
+        mockActingForCache.bump.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(
+        Math.max(...transactionMock.users_pr.update.mock.invocationCallOrder),
+      );
+    });
+
     it('should cancel the only pending request and reset post-registration club selection', async () => {
       const result = await service.cancelPendingForUser(userId, actorId);
 

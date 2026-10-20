@@ -8,6 +8,7 @@ import { TokenBlacklistService } from '../../common/services/token-blacklist.ser
 import { PrismaService } from '../../prisma/prisma.service';
 import { SUPERVISED_LOGIN_EVENTS } from '../supervised/supervised-login-events.port';
 import { SupervisedPrincipalResolver } from '../supervised/supervised-principal.resolver';
+import { ActingForCache } from '../acting-for/acting-for.cache';
 import { AppleTokenClient } from './apple-token.client';
 import { SocialAccountResolver } from './social-account.resolver';
 import { SocialSignInService } from './social-sign-in.service';
@@ -36,6 +37,7 @@ describe('SocialSignInService', () => {
   const tokenBlacklist = { blacklistAllUserTokens: jest.fn() };
   const supervisedResolver = { resolve: jest.fn() };
   const supervisedEvents = { onTeenSessionStarted: jest.fn() };
+  const actingForCache = { bump: jest.fn().mockResolvedValue(undefined) };
   const prisma = {
     users: { findUnique: jest.fn() },
     users_pr: { findUnique: jest.fn() },
@@ -97,6 +99,7 @@ describe('SocialSignInService', () => {
         { provide: TokenBlacklistService, useValue: tokenBlacklist },
         { provide: SupervisedPrincipalResolver, useValue: supervisedResolver },
         { provide: SUPERVISED_LOGIN_EVENTS, useValue: supervisedEvents },
+        { provide: ActingForCache, useValue: actingForCache },
       ],
     }).compile();
     service = module.get(SocialSignInService);
@@ -130,6 +133,31 @@ describe('SocialSignInService', () => {
       false,
       'sess-1',
     );
+  });
+
+  it('an EXISTING account (linked or returning) moves the principal epoch: the provisioning may have just opened a post-registration row', async () => {
+    resolver.resolve.mockResolvedValue({
+      userId: 'user-1',
+      created: false,
+      linked: true,
+      revokedPriorAccess: false,
+    });
+    await service.signIn('google', { idToken: 't', nonce: 'n' });
+    expect(actingForCache.bump).toHaveBeenCalledWith('user-1');
+    expect(actingForCache.bump.mock.invocationCallOrder[0]).toBeLessThan(
+      supervisedResolver.resolve.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('a brand-new account has no cached principal: no bump', async () => {
+    resolver.resolve.mockResolvedValue({
+      userId: 'user-1',
+      created: true,
+      linked: false,
+      revokedPriorAccess: false,
+    });
+    await service.signIn('google', { idToken: 't', nonce: 'n' });
+    expect(actingForCache.bump).not.toHaveBeenCalled();
   });
 
   it('issues an mfa_pending token when the user has TOTP enabled', async () => {

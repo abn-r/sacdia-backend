@@ -21,6 +21,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 
 export type PostRegistrationActorContext = {
   actorUserId: string;
@@ -59,6 +60,7 @@ export class PostRegistrationService {
     private authorizationContext: AuthorizationContextService,
     private authorizationContextVersion: AuthorizationContextVersionService,
     private roleEligibility: ClubRoleEligibilityService,
+    private actingForCache: ActingForCache,
   ) {}
 
   async getStatus(
@@ -330,6 +332,9 @@ export class PostRegistrationService {
       await this.authorizationContext.invalidateUserAuthorizationCache(
         completion.affectedAuthorizationUserId,
       );
+      // The principal kind reads `users_pr.complete` (unknown-age restriction):
+      // re-resolve it on the next request. Never throws.
+      await this.actingForCache.bump(userId);
 
       if (completion.membershipRequest.shouldNotifyReviewers) {
         await this.membershipRequestsService.notifyNewRequestCreated({
@@ -425,6 +430,7 @@ export class PostRegistrationService {
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    await this.actingForCache.bump(userId);
 
     this.logger.log(
       `Guardian-only exit completed for user ${userId} - Post-registration COMPLETE`,

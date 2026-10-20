@@ -19,6 +19,7 @@ import {
   type SupervisedLoginEvents,
 } from '../supervised/supervised-login-events.port';
 import { SupervisedPrincipalResolver } from '../supervised/supervised-principal.resolver';
+import { ActingForCache } from '../acting-for/acting-for.cache';
 import { AppleTokenClient } from './apple-token.client';
 import type { SocialTokenSignInDto } from './dto/social-token-sign-in.dto';
 import { SocialAccountResolver } from './social-account.resolver';
@@ -79,6 +80,7 @@ export class SocialSignInService {
     private readonly fileStorage: FileStorageService,
     private readonly tokenBlacklist: TokenBlacklistService,
     private readonly supervisedResolver: SupervisedPrincipalResolver,
+    private readonly actingForCache: ActingForCache,
     @Optional()
     @Inject(SUPERVISED_LOGIN_EVENTS)
     events?: Partial<SupervisedLoginEvents>,
@@ -128,6 +130,14 @@ export class SocialSignInService {
 
     if (provider === 'apple' && dto.authorizationCode) {
       await this.storeAppleRefreshToken(identity.sub, dto.authorizationCode);
+    }
+
+    if (!created) {
+      // The provisioning creates the post-registration row when it is missing
+      // (an admin-created or legacy account signing in with Google/Apple), and
+      // the principal kind reads it (unknown-age restriction). Re-resolve it.
+      // A brand-new account has no cached principal yet.
+      await this.actingForCache.bump(userId);
     }
 
     if (revokedPriorAccess) {
