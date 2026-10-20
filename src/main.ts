@@ -66,6 +66,9 @@ async function bootstrap() {
     ]);
     const SENSITIVE_BODY_FIELDS = new Set([
       'password',
+      // Login identifier (email or supervised login handle) and the handle.
+      'identifier',
+      'login_handle',
       'refresh_token',
       'refreshToken',
       'access_token',

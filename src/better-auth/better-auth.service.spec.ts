@@ -1,7 +1,15 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ErrorCode } from '../common/errors/error-codes';
 import { JwtService } from '@nestjs/jwt';
-import { BetterAuthService } from './better-auth.service';
+import { BetterAuthService, DUMMY_BCRYPT_HASH } from './better-auth.service';
+
+const mockSupervisedResolver = {
+  resolve: jest.fn(),
+};
+
+const mockFamilyFlags = {
+  isEnabled: jest.fn(),
+};
 
 const mockEmailService = {
   sendDataExportReady: jest.fn().mockResolvedValue(undefined),
@@ -23,6 +31,7 @@ describe('BetterAuthService', () => {
   // -- Prisma method mocks ---------------------------------------------------
   const mockUsersFindUnique = jest.fn();
   const mockUsersCreate = jest.fn();
+  const mockSupervisedLoginsFindFirst = jest.fn();
   const mockAccountFindFirst = jest.fn();
   const mockAccountCreate = jest.fn();
   const mockAccountUpdate = jest.fn();
@@ -58,6 +67,9 @@ describe('BetterAuthService', () => {
       findFirst: mockVerificationFindFirst,
       delete: mockVerificationDelete,
       deleteMany: mockVerificationDeleteMany,
+    },
+    supervised_logins: {
+      findFirst: mockSupervisedLoginsFindFirst,
     },
     $queryRaw: mockQueryRaw,
     $transaction: mockTransaction,
@@ -97,6 +109,10 @@ describe('BetterAuthService', () => {
     jest.clearAllMocks();
     // Default: no TOTP enrolled — hasTotpEnabled returns null → mfa_pending: false
     mockVerificationFindFirst.mockResolvedValue(null);
+    mockSupervisedResolver.resolve.mockReset().mockResolvedValue({
+      state: 'adult',
+    });
+    mockFamilyFlags.isEnabled.mockReset().mockReturnValue(true);
   });
 
   // ---------------------------------------------------------------------------
@@ -113,6 +129,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const token = service.signJwt({
@@ -132,6 +150,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const token = service.signJwt({
@@ -153,6 +173,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const token = service.signJwt({
@@ -176,6 +198,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const token = service.signJwt({
@@ -197,6 +221,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const before = Math.floor(Date.now() / 1000);
@@ -230,6 +256,8 @@ describe('BetterAuthService', () => {
       mockJwtService,
       mockPrisma as any,
       mockEmailService as any,
+      mockSupervisedResolver as any,
+      mockFamilyFlags as any,
     );
     return { svc, mockJwtService };
   }
@@ -346,7 +374,7 @@ describe('BetterAuthService', () => {
   // signInWithPassword
   // ---------------------------------------------------------------------------
 
-  describe('signInWithPassword', () => {
+  describe('signInWithIdentifier (email login)', () => {
     it('should return BaAuthResult on successful login', async () => {
       const { svc } = buildService();
 
@@ -359,7 +387,7 @@ describe('BetterAuthService', () => {
       mockAccountFindFirst.mockResolvedValue(accountWithRealHash);
       mockSessionCreate.mockResolvedValue(mockDbSession);
 
-      const result = await svc.signInWithPassword(
+      const result = await svc.signInWithIdentifier(
         'test@example.com',
         'Password123!',
       );
@@ -387,7 +415,7 @@ describe('BetterAuthService', () => {
       });
       mockSessionCreate.mockResolvedValue(mockDbSession);
 
-      await svc.signInWithPassword('test@example.com', 'Password123!', {
+      await svc.signInWithIdentifier('test@example.com', 'Password123!', {
         ipAddress: '203.0.113.7',
         userAgent: 'Dart/3.11 (dart:io)',
       });
@@ -407,7 +435,7 @@ describe('BetterAuthService', () => {
       mockUsersFindUnique.mockResolvedValue(null);
 
       await expect(
-        svc.signInWithPassword('unknown@example.com', 'Password123!'),
+        svc.signInWithIdentifier('unknown@example.com', 'Password123!'),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
     });
 
@@ -418,7 +446,7 @@ describe('BetterAuthService', () => {
       mockAccountFindFirst.mockResolvedValue(null);
 
       await expect(
-        svc.signInWithPassword('test@example.com', 'Password123!'),
+        svc.signInWithIdentifier('test@example.com', 'Password123!'),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
     });
 
@@ -433,8 +461,306 @@ describe('BetterAuthService', () => {
       mockAccountFindFirst.mockResolvedValue(accountWithRealHash);
 
       await expect(
-        svc.signInWithPassword('test@example.com', 'WrongPassword!'),
+        svc.signInWithIdentifier('test@example.com', 'WrongPassword!'),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // signInWithIdentifier: handles, uniform timing, blocked states (phase 3a)
+  // ---------------------------------------------------------------------------
+
+  describe('signInWithIdentifier (handles and uniform failures)', () => {
+    const bcrypt = require('bcryptjs');
+    const HANDLE = 'ana-7kq4m9tx';
+    const handleUser = { ...mockDbUser, user_id: 'teen-uuid-1', email: null };
+
+    async function realAccount(password = 'Password123!') {
+      return {
+        ...mockDbAccount,
+        userId: handleUser.user_id,
+        password: await bcrypt.hash(password, 12),
+      };
+    }
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('logs a handle teen in (the handle resolves through supervised_logins)', async () => {
+      const { svc } = buildService();
+      mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+      mockAccountFindFirst.mockResolvedValue(await realAccount());
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      const result = await svc.signInWithIdentifier(HANDLE, 'Password123!');
+
+      expect(result.user.id).toBe('teen-uuid-1');
+      expect(mockUsersFindUnique).not.toHaveBeenCalled();
+      expect(mockSupervisedLoginsFindFirst).toHaveBeenCalledWith({
+        where: { login_handle: HANDLE },
+        select: { user: true },
+      });
+    });
+
+    it('is case-insensitive and trims the handle', async () => {
+      const { svc } = buildService();
+      mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+      mockAccountFindFirst.mockResolvedValue(await realAccount());
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await svc.signInWithIdentifier('  Ana-7KQ4M9TX ', 'Password123!');
+
+      expect(mockSupervisedLoginsFindFirst).toHaveBeenCalledWith({
+        where: { login_handle: HANDLE },
+        select: { user: true },
+      });
+    });
+
+    it('treats an identifier with "@" as an email, never as a handle', async () => {
+      const { svc } = buildService();
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(await realAccount());
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await svc.signInWithIdentifier('test@example.com', 'Password123!');
+
+      expect(mockUsersFindUnique).toHaveBeenCalledWith({
+        where: { email: 'test@example.com' },
+      });
+      expect(mockSupervisedLoginsFindFirst).not.toHaveBeenCalled();
+    });
+
+    describe('uniform failure and timing', () => {
+      it.each([
+        ['an unknown email', 'nobody@example.com'],
+        ['an unknown handle', 'nobody-xx99zz'],
+        ['a malformed handle', 'x'],
+      ])(
+        'runs a dummy bcrypt comparison and answers the uniform 401 for %s',
+        async (_label, identifier) => {
+          const { svc } = buildService();
+          mockUsersFindUnique.mockResolvedValue(null);
+          mockSupervisedLoginsFindFirst.mockResolvedValue(null);
+          const compare = jest.spyOn(bcrypt, 'compare');
+
+          await expect(
+            svc.signInWithIdentifier(identifier, 'Password123!'),
+          ).rejects.toMatchObject({
+            code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+            status: 401,
+          });
+
+          expect(compare).toHaveBeenCalledTimes(1);
+          expect(compare).toHaveBeenCalledWith(
+            'Password123!',
+            DUMMY_BCRYPT_HASH,
+          );
+          expect(mockSessionCreate).not.toHaveBeenCalled();
+        },
+      );
+
+      it('runs the dummy comparison when the user has no credential (email and handle)', async () => {
+        const { svc } = buildService();
+        mockUsersFindUnique.mockResolvedValue(mockDbUser);
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(null);
+        const compare = jest.spyOn(bcrypt, 'compare');
+
+        for (const identifier of ['test@example.com', HANDLE]) {
+          compare.mockClear();
+          await expect(
+            svc.signInWithIdentifier(identifier, 'Password123!'),
+          ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+          expect(compare).toHaveBeenCalledTimes(1);
+          expect(compare).toHaveBeenCalledWith(
+            'Password123!',
+            DUMMY_BCRYPT_HASH,
+          );
+        }
+      });
+
+      it('also runs the dummy comparison for an account with an empty password hash', async () => {
+        const { svc } = buildService();
+        mockUsersFindUnique.mockResolvedValue(mockDbUser);
+        mockAccountFindFirst.mockResolvedValue({
+          ...mockDbAccount,
+          password: null,
+        });
+        const compare = jest.spyOn(bcrypt, 'compare');
+
+        await expect(
+          svc.signInWithIdentifier('test@example.com', 'x'),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+        expect(compare).toHaveBeenCalledWith('x', DUMMY_BCRYPT_HASH);
+      });
+
+      it('answers byte-identical errors for an unknown handle, a known handle with a wrong password and a missing credential', async () => {
+        const { svc } = buildService();
+        const wrongHash = await realAccount('CorrectPassword!');
+        const outcomes: string[] = [];
+        const capture = async () => {
+          try {
+            await svc.signInWithIdentifier(HANDLE, 'WrongPassword!');
+            return 'no-error';
+          } catch (error) {
+            const e = error as {
+              code: string;
+              status: number;
+              getResponse: () => unknown;
+            };
+            return JSON.stringify({
+              code: e.code,
+              status: e.status,
+              response: e.getResponse(),
+            });
+          }
+        };
+
+        mockSupervisedLoginsFindFirst.mockResolvedValue(null);
+        outcomes.push(await capture()); // unknown handle
+
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(wrongHash);
+        outcomes.push(await capture()); // wrong password
+
+        mockAccountFindFirst.mockResolvedValue(null);
+        outcomes.push(await capture()); // no credential
+
+        expect(new Set(outcomes).size).toBe(1);
+        expect(JSON.parse(outcomes[0])).toMatchObject({
+          code: 'AUTH_INVALID_CREDENTIALS',
+          status: 401,
+        });
+      });
+
+      it('with FAMILY_TEEN_LOGIN_ENABLED off a handle is the uniform 401 even with the right password (and a dummy compare)', async () => {
+        const { svc } = buildService();
+        mockFamilyFlags.isEnabled.mockReturnValue(false);
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        const compare = jest.spyOn(bcrypt, 'compare');
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+          status: 401,
+        });
+
+        expect(mockFamilyFlags.isEnabled).toHaveBeenCalledWith('teen_login');
+        expect(mockSupervisedLoginsFindFirst).not.toHaveBeenCalled();
+        expect(compare).toHaveBeenCalledWith('Password123!', DUMMY_BCRYPT_HASH);
+      });
+
+      it('with the flag off an EMAIL teen still logs in', async () => {
+        const { svc } = buildService();
+        mockFamilyFlags.isEnabled.mockReturnValue(false);
+        mockUsersFindUnique.mockResolvedValue(mockDbUser);
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSessionCreate.mockResolvedValue(mockDbSession);
+
+        await expect(
+          svc.signInWithIdentifier('test@example.com', 'Password123!'),
+        ).resolves.toMatchObject({ accessToken: 'mocked-sacdia-jwt' });
+      });
+
+      it('the dummy hash is a valid bcrypt hash at the same cost as real ones', () => {
+        expect(DUMMY_BCRYPT_HASH).toMatch(/^\$2[aby]\$12\$[./A-Za-z0-9]{53}$/);
+        expect(bcrypt.getRounds(DUMMY_BCRYPT_HASH)).toBe(12);
+      });
+    });
+
+    describe('blocked states are revealed only AFTER a correct password', () => {
+      it('a disabled supervised login answers 403 AUTH_SUPERVISED_LOGIN_DISABLED with the right password', async () => {
+        const { svc } = buildService();
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'blocked',
+          cause: 'login_disabled',
+        });
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_SUPERVISED_LOGIN_DISABLED,
+          status: 403,
+        });
+        expect(mockSessionCreate).not.toHaveBeenCalled();
+      });
+
+      it('a frozen account answers 403 AUTH_ACCOUNT_FROZEN with the right password', async () => {
+        const { svc } = buildService();
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'blocked',
+          cause: 'frozen',
+        });
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_ACCOUNT_FROZEN,
+          status: 403,
+        });
+      });
+
+      it.each(['login_disabled', 'frozen'])(
+        'a WRONG password on a %s account is still the uniform 401 (nothing is revealed) and the state is not even read',
+        async (cause) => {
+          const { svc } = buildService();
+          mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+          mockAccountFindFirst.mockResolvedValue(await realAccount());
+          mockSupervisedResolver.resolve.mockResolvedValue({
+            state: 'blocked',
+            cause,
+          });
+
+          await expect(
+            svc.signInWithIdentifier(HANDLE, 'WrongPassword!'),
+          ).rejects.toMatchObject({
+            code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+            status: 401,
+          });
+          expect(mockSupervisedResolver.resolve).not.toHaveBeenCalled();
+        },
+      );
+
+      it('a teen who reached the age of majority keeps logging in (the resolver says adult)', async () => {
+        const { svc } = buildService();
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSupervisedResolver.resolve.mockResolvedValue({ state: 'adult' });
+        mockSessionCreate.mockResolvedValue(mockDbSession);
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).resolves.toMatchObject({ accessToken: 'mocked-sacdia-jwt' });
+      });
+
+      it('email logins of an adult never see a blocked state', async () => {
+        const { svc } = buildService();
+        mockUsersFindUnique.mockResolvedValue(mockDbUser);
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSessionCreate.mockResolvedValue(mockDbSession);
+
+        await svc.signInWithIdentifier('test@example.com', 'Password123!');
+
+        expect(mockSupervisedResolver.resolve).toHaveBeenCalledWith(
+          mockDbUser.user_id,
+        );
+      });
+    });
+
+    it('keeps the deprecated signInWithPassword alias working (email)', async () => {
+      const { svc } = buildService();
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(await realAccount());
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await expect(
+        svc.signInWithPassword('test@example.com', 'Password123!'),
+      ).resolves.toMatchObject({ accessToken: 'mocked-sacdia-jwt' });
     });
   });
 

@@ -19,12 +19,19 @@ import { EcclesiasticalYearService } from '../common/services/ecclesiastical-yea
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
-import { AppBadRequestException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppForbiddenException,
+  AppUnauthorizedException,
+} from '../common/errors/app.exception';
 import { ClubCycleReadinessService } from '../common/services/club-cycle-readiness.service';
 import { LegalService } from '../legal/legal.service';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
 import { SupervisionStateService } from '../guardianships/supervision-state.service';
+import { LoginFailureCounter } from './login-failure-counter';
+import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
+import { AppException } from '../common/errors/app.exception';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -46,6 +53,9 @@ describe('AuthService', () => {
       findFirst: jest.fn(),
     },
     users_roles: {
+      create: jest.fn(),
+    },
+    supervised_logins: {
       create: jest.fn(),
     },
   };
@@ -81,7 +91,7 @@ describe('AuthService', () => {
   // -------------------------------------------------------------------------
   const mockBetterAuthService = {
     createUser: jest.fn(),
-    signInWithPassword: jest.fn(),
+    signInWithIdentifier: jest.fn(),
     refreshSession: jest.fn(),
     signOut: jest.fn(),
     resetPasswordForEmail: jest.fn(),
@@ -192,9 +202,27 @@ describe('AuthService', () => {
     describe: jest.fn(),
   };
 
+  const mockLoginFailures = {
+    check: jest.fn(),
+    recordFailure: jest.fn(),
+    recordSuccess: jest.fn(),
+  };
+
+  const mockSupervisedResolver = {
+    resolve: jest.fn(),
+  };
+
   beforeEach(async () => {
     mockFamilyFlags.getAll.mockReset().mockReturnValue(FAMILY_FEATURES);
     mockSupervisionState.describe.mockReset();
+    mockLoginFailures.check.mockReset().mockResolvedValue({ locked: false });
+    mockLoginFailures.recordFailure
+      .mockReset()
+      .mockResolvedValue({ lockStarted: false, retryAfterSeconds: 0 });
+    mockLoginFailures.recordSuccess.mockReset().mockResolvedValue(undefined);
+    mockSupervisedResolver.resolve
+      .mockReset()
+      .mockResolvedValue({ state: 'adult' });
     mockCountryAgePolicy.getPolicy.mockReset().mockResolvedValue({
       minSelfLoginAge: 13,
       ageOfMajority: 18,
@@ -249,6 +277,11 @@ describe('AuthService', () => {
         { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
         { provide: FamilyFeatureFlagsService, useValue: mockFamilyFlags },
         { provide: SupervisionStateService, useValue: mockSupervisionState },
+        { provide: LoginFailureCounter, useValue: mockLoginFailures },
+        {
+          provide: SupervisedPrincipalResolver,
+          useValue: mockSupervisedResolver,
+        },
       ],
     }).compile();
 
@@ -431,6 +464,86 @@ describe('AuthService', () => {
         expect(mockBetterAuthService.createUser).toHaveBeenCalled();
       });
 
+      it.each([
+        ['15', 15],
+        ['13 (turned 13 yesterday)', 13],
+        ['17', 17],
+      ])(
+        'creates the self_registered supervised row (clock starts now) inside the register transaction for a %s-year-old',
+        async (_label, years) => {
+          stubSuccessfulCreate();
+          mockTx.supervised_logins.create.mockResolvedValue({});
+
+          await service.register({
+            ...registerDto,
+            birthday: yearsAgo(years, years === 13 ? -1 : -10),
+          });
+
+          expect(mockTx.supervised_logins.create).toHaveBeenCalledWith({
+            data: {
+              user_id: 'user-123',
+              method: 'email',
+              origin: 'self_registered',
+              password_set_by: 'self',
+              pending_since: expect.any(Date),
+            },
+          });
+        },
+      );
+
+      it('creates no supervised row for an adult (18+)', async () => {
+        stubSuccessfulCreate();
+
+        await service.register({ ...registerDto, birthday: yearsAgo(18, -5) });
+
+        expect(mockTx.supervised_logins.create).not.toHaveBeenCalled();
+      });
+
+      it('creates no supervised row when the birthday is omitted (it is created when the birthday is saved)', async () => {
+        stubSuccessfulCreate();
+
+        await service.register(registerDto);
+
+        expect(mockTx.supervised_logins.create).not.toHaveBeenCalled();
+      });
+
+      it('a 12-year-old stays blocked and nothing is created', async () => {
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(12) }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+        });
+        expect(mockTx.supervised_logins.create).not.toHaveBeenCalled();
+      });
+
+      it('follows the country majority: a 17-year-old is an adult where the majority is 16', async () => {
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 13,
+          ageOfMajority: 16,
+          timeZone: 'America/Mexico_City',
+        });
+        stubSuccessfulCreate();
+
+        await service.register({
+          ...registerDto,
+          birthday: yearsAgo(17, -10),
+          country_id: 9,
+        });
+
+        expect(mockTx.supervised_logins.create).not.toHaveBeenCalled();
+      });
+
+      it('rolls the registration back (revokes the BA session) when the supervised row cannot be written', async () => {
+        stubSuccessfulCreate();
+        mockBetterAuthService.signOut.mockResolvedValue(undefined);
+        mockTx.supervised_logins.create.mockRejectedValue(new Error('db'));
+
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(15, -10) }),
+        ).rejects.toThrow('db');
+        expect(mockBetterAuthService.signOut).toHaveBeenCalled();
+      });
+
       it('rejects an unparsable calendar date before creating anything', async () => {
         await expect(
           service.register({ ...registerDto, birthday: '2017-02-31' }),
@@ -541,7 +654,7 @@ describe('AuthService', () => {
       const warnSpy = jest
         .spyOn((service as any).logger, 'warn')
         .mockImplementation();
-      mockBetterAuthService.signInWithPassword.mockRejectedValue(
+      mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
         new UnauthorizedException('Invalid login credentials'),
       );
 
@@ -555,7 +668,9 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException when user is not in local database', async () => {
-      mockBetterAuthService.signInWithPassword.mockResolvedValue(mockBaResult);
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+        mockBaResult,
+      );
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
       await expect(service.login(loginDto)).rejects.toMatchObject({
@@ -564,7 +679,9 @@ describe('AuthService', () => {
     });
 
     it('should return tokens, user data, and post-registration state', async () => {
-      mockBetterAuthService.signInWithPassword.mockResolvedValue(mockBaResult);
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+        mockBaResult,
+      );
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-123',
         email: loginDto.email,
@@ -587,7 +704,7 @@ describe('AuthService', () => {
       const context = { ipAddress: '203.0.113.7', userAgent: 'Dart/3.11' };
       const result = await service.login(loginDto, context);
 
-      expect(mockBetterAuthService.signInWithPassword).toHaveBeenCalledWith(
+      expect(mockBetterAuthService.signInWithIdentifier).toHaveBeenCalledWith(
         loginDto.email,
         loginDto.password,
         context,
@@ -609,6 +726,7 @@ describe('AuthService', () => {
             maternal_last_name: 'Lopez',
             avatar: 'https://avatar.test/user-123.png',
             roles: ['user', 'director'],
+            principal: { kind: 'user', supervision: null },
           },
           needsPostRegistration: true,
           postRegistrationStatus: {
@@ -622,7 +740,9 @@ describe('AuthService', () => {
     });
 
     it('should compute needsPostRegistration=false when users_pr.complete is true', async () => {
-      mockBetterAuthService.signInWithPassword.mockResolvedValue(mockBaResult);
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+        mockBaResult,
+      );
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-123',
         email: loginDto.email,
@@ -642,6 +762,250 @@ describe('AuthService', () => {
       const result = await service.login(loginDto);
 
       expect(result.data.needsPostRegistration).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // login() with identifiers, lockout and the principal (phase 3a)
+  // ---------------------------------------------------------------------------
+  describe('login by identifier (phase 3a)', () => {
+    const sessionExpiresAt = new Date(1900000000 * 1000);
+    const baResult = (id = 'teen-1') => ({
+      user: { id, email: null },
+      session: {
+        token: 'ba-opaque-session-token',
+        expiresAt: sessionExpiresAt,
+      },
+      accessToken: 'sacdia-hs256-jwt',
+    });
+    const userRow = (id = 'teen-1') => ({
+      user_id: id,
+      email: null,
+      name: 'Ana',
+      paternal_last_name: 'Perez',
+      maternal_last_name: null,
+      user_image: null,
+      users_pr: {
+        complete: true,
+        profile_picture_complete: true,
+        personal_info_complete: true,
+        club_selection_complete: true,
+      },
+      users_roles: [],
+    });
+    const context = { ipAddress: '203.0.113.7', userAgent: 'Dart/3.11' };
+
+    it('passes a handle through as the identifier (trimmed) and logs it nowhere', async () => {
+      const warn = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation();
+      mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+        new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+      );
+
+      await expect(
+        service.login(
+          { identifier: '  ana-7kq4m9tx ', password: 'Password123!' },
+          context,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+      expect(mockBetterAuthService.signInWithIdentifier).toHaveBeenCalledWith(
+        'ana-7kq4m9tx',
+        'Password123!',
+        context,
+      );
+      const logged = warn.mock.calls.map((call) => String(call[0])).join('\n');
+      expect(logged).not.toContain('ana-7kq4m9tx');
+      expect(logged).toContain('[handle]');
+    });
+
+    it('keeps the legacy email field working and masks it in the log', async () => {
+      const warn = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation();
+      mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+        new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+      );
+
+      await expect(
+        service.login({ email: 'juan.garcia@example.com', password: 'x' }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+      expect(mockBetterAuthService.signInWithIdentifier).toHaveBeenCalledWith(
+        'juan.garcia@example.com',
+        'x',
+        undefined,
+      );
+      expect(String(warn.mock.calls[0]?.[0])).not.toContain('juan.garcia@');
+    });
+
+    it('logs in an email teen and a handle teen with the standard payload plus the principal', async () => {
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(baResult());
+      mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+      mockSupervisedResolver.resolve.mockResolvedValue({
+        state: 'supervised',
+        supervision: 'pending_guardian',
+      });
+
+      for (const identifier of ['teen@example.com', 'ana-7kq4m9tx']) {
+        const result = await service.login(
+          { identifier, password: 'Password123!' },
+          context,
+        );
+        expect(result.data.user.principal).toEqual({
+          kind: 'supervised_user',
+          supervision: 'pending_guardian',
+        });
+        expect(result.data).toMatchObject({
+          accessToken: 'sacdia-hs256-jwt',
+          refreshToken: 'ba-opaque-session-token',
+          tokenType: 'bearer',
+        });
+      }
+    });
+
+    it('answers an active teen with supervision active and an adult with kind user', async () => {
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(baResult());
+      mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+
+      mockSupervisedResolver.resolve.mockResolvedValue({
+        state: 'supervised',
+        supervision: 'active',
+      });
+      expect(
+        (await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }))
+          .data.user.principal,
+      ).toEqual({ kind: 'supervised_user', supervision: 'active' });
+
+      mockSupervisedResolver.resolve.mockResolvedValue({ state: 'adult' });
+      expect(
+        (await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }))
+          .data.user.principal,
+      ).toEqual({ kind: 'user', supervision: null });
+    });
+
+    describe('lockout', () => {
+      it('checks the lock BEFORE the credentials: 429 AUTH_LOGIN_LOCKED, no credential check, no failure counted', async () => {
+        mockLoginFailures.check.mockResolvedValue({
+          locked: true,
+          retryAfterSeconds: 900,
+        });
+
+        let thrown: unknown;
+        try {
+          await service.login(
+            { identifier: 'ana-7kq4m9tx', password: 'Password123!' },
+            context,
+          );
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(AppException);
+        expect(thrown).toMatchObject({
+          code: ErrorCode.AUTH_LOGIN_LOCKED,
+          status: 429,
+        });
+        expect((thrown as AppException).getResponse().namedArgs).toEqual({
+          retry_after_seconds: 900,
+        });
+        expect(mockLoginFailures.check).toHaveBeenCalledWith(
+          'ana-7kq4m9tx',
+          '203.0.113.7',
+        );
+        expect(
+          mockBetterAuthService.signInWithIdentifier,
+        ).not.toHaveBeenCalled();
+        expect(mockLoginFailures.recordFailure).not.toHaveBeenCalled();
+        expect(mockLoginFailures.recordSuccess).not.toHaveBeenCalled();
+      });
+
+      it('counts a wrong password against the identifier and the IP', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+          new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+        );
+
+        await expect(
+          service.login(
+            { identifier: 'ana-7kq4m9tx', password: 'wrong' },
+            context,
+          ),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+        expect(mockLoginFailures.recordFailure).toHaveBeenCalledWith(
+          'ana-7kq4m9tx',
+          '203.0.113.7',
+        );
+      });
+
+      it('does not count unexpected errors (a database blip is not a guess) but still answers the uniform 401', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+        expect(mockLoginFailures.recordFailure).not.toHaveBeenCalled();
+      });
+
+      it('resets the counter of the identifier after a successful login', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+          baResult(),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+
+        await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' });
+
+        expect(mockLoginFailures.recordSuccess).toHaveBeenCalledWith(
+          'ana-7kq4m9tx',
+        );
+      });
+
+      it('a counter that cannot be reset never fails a good login', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+          baResult(),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+        mockLoginFailures.recordSuccess.mockRejectedValue(new Error('redis'));
+
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+        ).resolves.toMatchObject({ status: 'success' });
+      });
+
+      it('a counter that cannot record never turns the 401 into a 500', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+          new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+        );
+        mockLoginFailures.recordFailure.mockRejectedValue(new Error('redis'));
+
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+      });
+    });
+
+    describe('blocked after a CORRECT password', () => {
+      it.each([
+        [ErrorCode.AUTH_SUPERVISED_LOGIN_DISABLED],
+        [ErrorCode.AUTH_ACCOUNT_FROZEN],
+      ])(
+        'passes the 403 %s through untouched and counts no failure',
+        async (code) => {
+          mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+            new AppForbiddenException(code),
+          );
+
+          await expect(
+            service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+          ).rejects.toMatchObject({ code, status: 403 });
+
+          expect(mockLoginFailures.recordFailure).not.toHaveBeenCalled();
+        },
+      );
     });
   });
 
@@ -888,6 +1252,36 @@ describe('AuthService', () => {
         'juan.garcia@example.com',
         undefined,
       );
+    });
+
+    it('answers the neutral response for a login handle and queues NO email (guardian resets handle passwords)', async () => {
+      const log = jest
+        .spyOn((service as any).logger, 'log')
+        .mockImplementation();
+
+      const result = await service.requestPasswordReset({
+        email: 'ana-7kq4m9tx',
+      });
+
+      expect(result).toEqual({
+        success: true,
+        message: 'Correo de recuperación enviado',
+      });
+      expect(
+        mockBetterAuthService.resetPasswordForEmail,
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
+      // The response is byte-identical to the one for an email.
+      mockBetterAuthService.resetPasswordForEmail.mockResolvedValue(undefined);
+      expect(
+        await service.requestPasswordReset({
+          email: 'juan.garcia@example.com',
+        }),
+      ).toEqual(result);
+      // The handle is never logged.
+      expect(
+        log.mock.calls.map((call) => String(call[0])).join('\n'),
+      ).not.toContain('ana-7kq4m9tx');
     });
 
     it('should throw BadRequestException when BA resetPasswordForEmail throws', async () => {

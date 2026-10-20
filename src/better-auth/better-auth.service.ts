@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   AppBadRequestException,
+  AppForbiddenException,
   AppInternalServerErrorException,
   AppNotFoundException,
   AppUnauthorizedException,
@@ -18,6 +19,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { maskEmail } from '../common/utils/mask-email.util';
 import { EmailService } from '../common/email/email.service';
 import { accessJwtClaims } from '../common/constants/jwt-audiences';
+import { SupervisedPrincipalResolver } from '../auth/supervised/supervised-principal.resolver';
+import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -86,6 +89,17 @@ export interface IBetterAuthService {
     name: string,
     context?: SessionRequestContext,
   ): Promise<BaAuthResult>;
+  /**
+   * Password login by identifier: an email (contains '@') or a login handle.
+   * Uniform 401 for every failure before the password verifies; the supervised
+   * login state (frozen / disabled) is revealed only after it does.
+   */
+  signInWithIdentifier(
+    identifier: string,
+    password: string,
+    context?: SessionRequestContext,
+  ): Promise<BaAuthResult>;
+  /** @deprecated email-only alias of {@link signInWithIdentifier}. */
   signInWithPassword(
     email: string,
     password: string,
@@ -134,6 +148,19 @@ const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Bcrypt cost factor */
 const BCRYPT_ROUNDS = 12;
+
+/**
+ * A valid bcrypt hash (cost 12) of a throwaway value. Login compares the
+ * submitted password against it whenever there is no real hash to compare
+ * (unknown email, unknown or unusable handle, no credential, flag off), so every
+ * failure costs the same CPU and timing does not reveal whether an account
+ * exists. Never matches anything: the password it came from is not recorded.
+ */
+export const DUMMY_BCRYPT_HASH =
+  '$2b$12$VEzbMLXeQB2uCqe9wamzsuaTRHu4NPwtsxjXG5SBeu31k9umfJemm';
+
+/** Server-generated handle format (lowercase, 6-40 chars). */
+const LOGIN_HANDLE_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
 
 /** Generate a URL-safe random token (32 bytes = 43 base64url chars). */
 function generateToken(): string {
@@ -214,6 +241,8 @@ export class BetterAuthService implements IBetterAuthService {
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
+    private readonly supervisedResolver: SupervisedPrincipalResolver,
+    private readonly familyFlags: FamilyFeatureFlagsService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -317,46 +346,90 @@ export class BetterAuthService implements IBetterAuthService {
   }
 
   /**
-   * Authenticates a user via email+password — direct Prisma lookup.
+   * Finds the account a login identifier points at. An identifier with '@' is
+   * an email; anything else is a login handle (case-insensitive). A handle only
+   * resolves while FAMILY_TEEN_LOGIN_ENABLED is on and when it is well formed;
+   * otherwise it resolves to nobody, exactly like an unknown one.
+   */
+  private async findUserForLogin(identifier: string) {
+    const trimmed = identifier.trim();
+    if (trimmed.includes('@')) {
+      return this.prisma.users.findUnique({ where: { email: trimmed } });
+    }
+
+    const handle = trimmed.toLowerCase();
+    if (
+      !this.familyFlags.isEnabled('teen_login') ||
+      !LOGIN_HANDLE_PATTERN.test(handle)
+    ) {
+      return null;
+    }
+    const login = await this.prisma.supervised_logins.findFirst({
+      where: { login_handle: handle },
+      select: { user: true },
+    });
+    return login?.user ?? null;
+  }
+
+  /**
+   * Authenticates a user by identifier (email or login handle) + password —
+   * direct Prisma lookup.
    *
    * Flow:
-   *   1. Find user by email → NotFoundException if missing
-   *   2. Find credential account → UnauthorizedException if missing
-   *   3. bcrypt.compare → UnauthorizedException if mismatch
-   *   4. Create session → sign JWT → return BaAuthResult
+   *   1. Resolve the user by email or handle
+   *   2. Find the credential account
+   *   3. ALWAYS run one bcrypt.compare (against a dummy hash when there is no
+   *      user / credential), so unknown, no-credential, wrong-password and
+   *      flag-off cases cost the same and fail with the SAME 401
+   *   4. Only after a CORRECT password: a frozen account answers 403
+   *      AUTH_ACCOUNT_FROZEN and a disabled supervised login 403
+   *      AUTH_SUPERVISED_LOGIN_DISABLED (nothing is learned without the password)
+   *   5. Create session → sign JWT → return BaAuthResult
    */
-  async signInWithPassword(
-    email: string,
+  async signInWithIdentifier(
+    identifier: string,
     password: string,
     context?: SessionRequestContext,
   ): Promise<BaAuthResult> {
     // 1. Find user
-    const dbUser = await this.prisma.users.findUnique({ where: { email } });
-    if (!dbUser) {
-      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
-    }
+    const dbUser = await this.findUserForLogin(identifier);
 
     // 2. Find credential account
-    const dbAccount = await this.prisma.account.findFirst({
-      where: { userId: dbUser.user_id, providerId: 'credential' },
-    });
-    if (!dbAccount || !dbAccount.password) {
+    const dbAccount = dbUser
+      ? await this.prisma.account.findFirst({
+          where: { userId: dbUser.user_id, providerId: 'credential' },
+        })
+      : null;
+    const storedHash = dbAccount?.password ?? null;
+
+    // 3. Verify password. One compare on EVERY path (timing oracle fix).
+    const isValid = await bcrypt.compare(
+      password,
+      storedHash ?? DUMMY_BCRYPT_HASH,
+    );
+    if (!dbUser || !storedHash || !isValid) {
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
-    // 3. Verify password
-    const isValid = await bcrypt.compare(password, dbAccount.password);
-    if (!isValid) {
-      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+    // 4. The password is right: now it is safe to say why access is blocked.
+    //    The resolver turns an adult (age of majority) into "not blocked", so a
+    //    handle login keeps working after the teen grows up.
+    const supervised = await this.supervisedResolver.resolve(dbUser.user_id);
+    if (supervised.state === 'blocked') {
+      throw new AppForbiddenException(
+        supervised.cause === 'frozen'
+          ? ErrorCode.AUTH_ACCOUNT_FROZEN
+          : ErrorCode.AUTH_SUPERVISED_LOGIN_DISABLED,
+      );
     }
 
-    // 4. Check MFA enrollment — if TOTP is active, issue a restricted token
+    // 5. Check MFA enrollment — if TOTP is active, issue a restricted token
     //    with mfa_pending: true. The client must call POST /auth/mfa/verify to
     //    obtain a full aal2 token. JwtAuthGuard blocks protected endpoints while
     //    mfa_pending is true unless @SkipMfaCheck() is present.
     const { enabled: mfaEnabled } = await this.hasTotpEnabled(dbUser.user_id);
 
-    // 5. Create session + sign JWT
+    // 6. Create session + sign JWT
     const session = await this.createSession(dbUser.user_id, context);
     const user = mapDbUserToBaUser(dbUser);
     const accessToken = this.signJwt(user, mfaEnabled, session.id);
@@ -370,6 +443,15 @@ export class BetterAuthService implements IBetterAuthService {
     }
 
     return { user, session, accessToken };
+  }
+
+  /** @deprecated email-only alias of {@link signInWithIdentifier}. */
+  signInWithPassword(
+    email: string,
+    password: string,
+    context?: SessionRequestContext,
+  ): Promise<BaAuthResult> {
+    return this.signInWithIdentifier(email, password, context);
   }
 
   /**

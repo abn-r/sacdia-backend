@@ -146,8 +146,11 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
             'req.headers.cookie',
             'req.body.password',
             'req.body.refreshToken',
+            // Login identifier: an email or a supervised login handle.
+            'req.body.identifier',
             'requestBody.password',
             'requestBody.refreshToken',
+            'requestBody.identifier',
             'req.body.birthday',
             'req.body.blood',
             'req.body.allergies',

@@ -6,7 +6,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DependentClaimCodesController } from './dependent-claim-codes.controller';
 import { DependentProfilesPurgeCronService } from './dependent-profiles-purge-cron.service';
-import { FamilyFeatureFlagsService } from './family-feature-flags.service';
+import { FamilyFeatureFlagsModule } from './family-feature-flags.module';
 import { GuardianEvidenceService } from './guardian-evidence.service';
 import { GuardianNotificationsService } from './guardian-notifications.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
@@ -28,6 +28,7 @@ import { SupervisionStateService } from './supervision-state.service';
     AuditLogsModule,
     LegalModule,
     NotificationsModule,
+    FamilyFeatureFlagsModule,
   ],
   controllers: [GuardianshipsController, DependentClaimCodesController],
   providers: [
@@ -38,7 +39,6 @@ import { SupervisionStateService } from './supervision-state.service';
     GuardianNotificationsService,
     GuardianEvidenceService,
     DependentProfilesPurgeCronService,
-    FamilyFeatureFlagsService,
     SupervisionStateService,
   ],
   exports: [
@@ -47,7 +47,7 @@ import { SupervisionStateService } from './supervision-state.service';
     LinkCodesService,
     GuardianNotificationsService,
     GuardianEvidenceService,
-    FamilyFeatureFlagsService,
+    FamilyFeatureFlagsModule,
     SupervisionStateService,
   ],
 })

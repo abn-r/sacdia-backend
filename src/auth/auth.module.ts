@@ -18,6 +18,7 @@ import { SocialSignInModule } from './social-sign-in/social-sign-in.module';
 import { LegalModule } from '../legal/legal.module';
 import { ActingForModule } from './acting-for/acting-for.module';
 import { GuardianshipsModule } from '../guardianships/guardianships.module';
+import { LoginFailureCounter } from './login-failure-counter';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { GuardianshipsModule } from '../guardianships/guardianships.module';
     AuthorizationContextService,
     MfaGuard,
     SessionsService,
+    LoginFailureCounter,
   ],
   exports: [
     AuthService,

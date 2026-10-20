@@ -1,4 +1,5 @@
 import {
+  HttpStatus,
   Inject,
   Injectable,
   ServiceUnavailableException,
@@ -13,7 +14,9 @@ import {
 } from '../better-auth/better-auth.service';
 import { isPresentedAccessJwtForUser } from './presented-access-jwt';
 import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, loginIdentifierOf } from './dto/login.dto';
+import { LoginFailureCounter } from './login-failure-counter';
+import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
@@ -33,6 +36,7 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { EmailService } from '../common/email/email.service';
 import {
   AppBadRequestException,
+  AppException,
   AppNotFoundException,
   AppUnauthorizedException,
   AppUnprocessableEntityException,
@@ -92,10 +96,19 @@ export class AuthService {
     private readonly countryAgePolicy: CountryAgePolicyService,
     private readonly familyFlags: FamilyFeatureFlagsService,
     private readonly supervisionState: SupervisionStateService,
+    private readonly loginFailures: LoginFailureCounter,
+    private readonly supervisedResolver: SupervisedPrincipalResolver,
   ) {}
 
-  private async assertRegistrationAge(dto: RegisterDto): Promise<void> {
-    if (!dto.birthday) return;
+  /**
+   * Blocks anyone below the minimum self-login age. Returns whether the person
+   * falls in the supervised range (minimum age <= age < majority): they get a
+   * `supervised_logins` row with the registration so the guardian-less clock
+   * starts. Without a birthday nothing is known (false); the row is then
+   * created when the birthday is saved (UsersService).
+   */
+  private async assertRegistrationAge(dto: RegisterDto): Promise<boolean> {
+    if (!dto.birthday) return false;
 
     const birthday = parseCalendarDate(dto.birthday);
     if (!birthday) {
@@ -106,11 +119,13 @@ export class AuthService {
     }
 
     const policy = await this.countryAgePolicy.getPolicy(dto.country_id);
-    if (ageToday(birthday, policy.timeZone) < policy.minSelfLoginAge) {
+    const age = ageToday(birthday, policy.timeZone);
+    if (age < policy.minSelfLoginAge) {
       throw new AppUnprocessableEntityException(
         ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
       );
     }
+    return age < policy.ageOfMajority;
   }
 
   async register(dto: RegisterDto, context?: SessionRequestContext) {
@@ -127,7 +142,7 @@ export class AuthService {
     //     "Mi familia". Runs BEFORE createUser so nothing is created. The
     //     birthday is optional here (API clients can omit it); the authoritative
     //     gate is UsersService.update (FP-24).
-    await this.assertRegistrationAge(dto);
+    const supervisedAge = await this.assertRegistrationAge(dto);
 
     // 1. Create user in Better Auth (outside transaction — BA manages its own DB writes).
     //    BA creates the row in `users` (mapped via prismaAdapter: user_id, user_image, etc.)
@@ -181,6 +196,20 @@ export class AuthService {
             role_id: userRole.role_id,
           },
         });
+
+        // 2c-bis. A self-registered 13-17 starts supervised: the row also starts
+        //         the 90-day guardian-less clock (pending_since = now).
+        if (supervisedAge) {
+          await tx.supervised_logins.create({
+            data: {
+              user_id: baResult.user.id,
+              method: 'email',
+              origin: 'self_registered',
+              password_set_by: 'self',
+              pending_since: new Date(),
+            },
+          });
+        }
 
         // 2d. Record Terms/Privacy acceptance (append-only evidence)
         await this.legalService.recordOnRegister(
@@ -260,22 +289,51 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, context?: SessionRequestContext) {
-    const maskedEmail = maskEmail(dto.email);
+    const identifier = loginIdentifierOf(dto);
+    // The identifier is sensitive (an email or a login handle): logs only get
+    // the masked email, or just the kind of identifier for a handle.
+    const loggedAs = identifier.includes('@')
+      ? maskEmail(identifier)
+      : '[handle]';
+    const ip = context?.ipAddress;
+
+    // 0. Progressive lockout, checked BEFORE the credentials. A lock applies to
+    //    the correct password too and to identifiers that do not exist, with the
+    //    same answer.
+    const lock = await this.loginFailures.check(identifier, ip);
+    if (lock.locked) {
+      throw new AppException(
+        ErrorCode.AUTH_LOGIN_LOCKED,
+        HttpStatus.TOO_MANY_REQUESTS,
+        { retry_after_seconds: lock.retryAfterSeconds },
+      );
+    }
 
     // 1. Authenticate with Better Auth
     let baResult: Awaited<
-      ReturnType<typeof this.betterAuthService.signInWithPassword>
+      ReturnType<typeof this.betterAuthService.signInWithIdentifier>
     >;
     try {
-      baResult = await this.betterAuthService.signInWithPassword(
-        dto.email,
+      baResult = await this.betterAuthService.signInWithIdentifier(
+        identifier,
         dto.password,
         context,
       );
     } catch (error) {
+      // 403 AUTH_ACCOUNT_FROZEN / AUTH_SUPERVISED_LOGIN_DISABLED: the password
+      // was CORRECT, so this is not a guess. Say why, count nothing.
+      if (
+        error instanceof AppException &&
+        error.getStatus() === HttpStatus.FORBIDDEN
+      ) {
+        throw error;
+      }
       this.logger.warn(
-        `Login failed for ${maskedEmail}: ${error instanceof Error ? error.message : String(error)}`,
+        `Login failed for ${loggedAs}: ${error instanceof Error ? error.message : String(error)}`,
       );
+      if (error instanceof AppUnauthorizedException) {
+        await this.recordLoginFailureBestEffort(identifier, ip);
+      }
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
@@ -283,11 +341,19 @@ export class AuthService {
       this.logger.warn(
         JSON.stringify({
           event: 'auth_login_missing_session',
-          email: maskedEmail,
+          email: loggedAs,
         }),
       );
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
+
+    await this.loginFailures
+      .recordSuccess(identifier)
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Could not reset the login counter: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
 
     // 2. Load SACDIA user profile and verify post-registration state
     const user = await this.prisma.users.findUnique({
@@ -357,11 +423,41 @@ export class AuthService {
           maternal_last_name: user.maternal_last_name,
           avatar: await this.resolvePrivateProfilePicture(user.user_image),
           roles,
+          principal: await this.loginPrincipalOf(user.user_id),
         },
         needsPostRegistration,
         postRegistrationStatus: user.users_pr ?? null,
       },
     };
+  }
+
+  /** A lockout counting problem must never turn into a 500 on the login path. */
+  private async recordLoginFailureBestEffort(
+    identifier: string,
+    ip: string | undefined,
+  ): Promise<void> {
+    try {
+      await this.loginFailures.recordFailure(identifier, ip);
+    } catch (error) {
+      this.logger.warn(
+        `Could not record the login failure: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * The principal kind the login response advertises (the same server-side
+   * decision the JWT strategy takes on every later request).
+   */
+  private async loginPrincipalOf(userId: string): Promise<{
+    kind: 'user' | 'supervised_user';
+    supervision: 'pending_guardian' | 'active' | null;
+  }> {
+    const state = await this.supervisedResolver.resolve(userId);
+    if (state.state === 'supervised') {
+      return { kind: 'supervised_user', supervision: state.supervision };
+    }
+    return { kind: 'user', supervision: null };
   }
 
   async refreshSession(
@@ -567,6 +663,17 @@ export class AuthService {
   }
 
   async requestPasswordReset(dto: ResetPasswordRequestDto) {
+    // A login handle has no email to write to: the guardian resets handle
+    // passwords. Same neutral answer as an unknown email, nothing queued, no
+    // lookup, and the handle is never logged.
+    if (!dto.email.includes('@')) {
+      this.logger.log('Password reset requested for a handle: no email queued');
+      return {
+        success: true,
+        message: 'Correo de recuperación enviado',
+      };
+    }
+
     const redirectTo = process.env.FRONTEND_URL
       ? `${process.env.FRONTEND_URL}/reset-password`
       : undefined;
