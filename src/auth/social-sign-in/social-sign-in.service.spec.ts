@@ -6,6 +6,8 @@ import { ErrorCode } from '../../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SUPERVISED_LOGIN_EVENTS } from '../supervised/supervised-login-events.port';
+import { SupervisedPrincipalResolver } from '../supervised/supervised-principal.resolver';
 import { AppleTokenClient } from './apple-token.client';
 import { SocialAccountResolver } from './social-account.resolver';
 import { SocialSignInService } from './social-sign-in.service';
@@ -32,6 +34,8 @@ describe('SocialSignInService', () => {
     hasTotpEnabled: jest.fn(),
   };
   const tokenBlacklist = { blacklistAllUserTokens: jest.fn() };
+  const supervisedResolver = { resolve: jest.fn() };
+  const supervisedEvents = { onTeenSessionStarted: jest.fn() };
   const prisma = {
     users: { findUnique: jest.fn() },
     users_pr: { findUnique: jest.fn() },
@@ -54,6 +58,7 @@ describe('SocialSignInService', () => {
     jest.clearAllMocks();
     google.verify.mockResolvedValue(identity);
     betterAuth.hasTotpEnabled.mockResolvedValue({ enabled: false });
+    supervisedResolver.resolve.mockResolvedValue({ state: 'adult' });
     apple.verify.mockResolvedValue({
       ...identity,
       provider: 'apple',
@@ -90,6 +95,8 @@ describe('SocialSignInService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: FILE_STORAGE_SERVICE, useValue: fileStorage },
         { provide: TokenBlacklistService, useValue: tokenBlacklist },
+        { provide: SupervisedPrincipalResolver, useValue: supervisedResolver },
+        { provide: SUPERVISED_LOGIN_EVENTS, useValue: supervisedEvents },
       ],
     }).compile();
     service = module.get(SocialSignInService);
@@ -338,5 +345,46 @@ describe('SocialSignInService', () => {
   it('does not call Apple when no authorization code is sent', async () => {
     await service.signIn('apple', { idToken: 't', nonce: 'n' });
     expect(appleTokens.exchangeCode).not.toHaveBeenCalled();
+  });
+
+  describe('guardian notice for a supervised teen (phase 3a)', () => {
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    it('tells the guardians when a supervised teen signs in with Google (a new session)', async () => {
+      supervisedResolver.resolve.mockResolvedValue({
+        state: 'supervised',
+        supervision: 'active',
+      });
+
+      await service.signIn('google', { idToken: 't', nonce: 'n' });
+      await flush();
+
+      expect(supervisedResolver.resolve).toHaveBeenCalledWith('user-1');
+      expect(supervisedEvents.onTeenSessionStarted).toHaveBeenCalledWith({
+        userId: 'user-1',
+      });
+    });
+
+    it('does not notify for an adult', async () => {
+      await service.signIn('google', { idToken: 't', nonce: 'n' });
+      await flush();
+      expect(supervisedEvents.onTeenSessionStarted).not.toHaveBeenCalled();
+    });
+
+    it('never fails the sign-in when the classification or the notice fails', async () => {
+      supervisedResolver.resolve.mockRejectedValue(new Error('redis down'));
+      await expect(
+        service.signIn('google', { idToken: 't', nonce: 'n' }),
+      ).resolves.toMatchObject({ accessToken: 'sacdia-jwt' });
+
+      supervisedResolver.resolve.mockResolvedValue({
+        state: 'supervised',
+        supervision: 'pending_guardian',
+      });
+      supervisedEvents.onTeenSessionStarted.mockRejectedValue(new Error('x'));
+      await expect(
+        service.signIn('google', { idToken: 't', nonce: 'n' }),
+      ).resolves.toMatchObject({ accessToken: 'sacdia-jwt' });
+    });
   });
 });

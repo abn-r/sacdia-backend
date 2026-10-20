@@ -317,13 +317,14 @@ export class AuthController {
     description: 'Password updated',
   })
   async updatePassword(
-    @CurrentUser() user: { userId: string },
+    @CurrentUser() user: { userId: string; kind?: string },
     @Body() dto: UpdatePasswordDto,
   ) {
     await this.authService.updateOwnPassword(
       user.userId,
       dto.currentPassword,
       dto.password,
+      { supervised: user.kind === 'supervised_user' },
     );
     return { status: 'success', message: 'Password updated' };
   }

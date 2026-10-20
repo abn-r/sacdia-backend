@@ -166,6 +166,73 @@ describe('NotificationPreferencesService', () => {
     expect(categorySettings.getSettingsMap).not.toHaveBeenCalled();
   });
 
+  describe('family:security is mandatory (a guardian cannot mute it)', () => {
+    it('is allowed even when the guardian muted approvals, ignoring the preference lookup', async () => {
+      prisma.notification_preferences.findUnique.mockResolvedValue({
+        enabled: false,
+      });
+      prisma.notification_preferences.findMany.mockResolvedValue([
+        { user_id: 'guardian-1', enabled: false },
+      ]);
+
+      await expect(
+        service.isAllowedForUser('guardian-1', 'family:security'),
+      ).resolves.toBe(true);
+      await expect(
+        service.filterAllowedUsers(
+          ['guardian-1', 'guardian-2'],
+          'family:security',
+        ),
+      ).resolves.toEqual(new Set(['guardian-1', 'guardian-2']));
+
+      expect(prisma.notification_preferences.findUnique).not.toHaveBeenCalled();
+      expect(prisma.notification_preferences.findMany).not.toHaveBeenCalled();
+    });
+
+    it('is allowed even when the whole approvals category is off globally', async () => {
+      categorySettings.getSettingsMap.mockResolvedValue(
+        buildSettings({
+          approvals: { mobileEnabled: false, defaultEnabled: false },
+        }),
+      );
+      await expect(
+        service.isAllowedForUser('guardian-1', 'family:security'),
+      ).resolves.toBe(true);
+      await expect(
+        service.filterAllowedUsers(['guardian-1'], 'family:security'),
+      ).resolves.toEqual(new Set(['guardian-1']));
+    });
+
+    it('the other family sources are still ordinary: approvals muted blocks family:evidence_uploaded', async () => {
+      prisma.notification_preferences.findUnique.mockResolvedValue({
+        enabled: false,
+      });
+      await expect(
+        service.isAllowedForUser('guardian-1', 'family:evidence_uploaded'),
+      ).resolves.toBe(false);
+    });
+
+    it('teen reminders and age nudges respect the reminders preference', async () => {
+      prisma.notification_preferences.findUnique.mockResolvedValue({
+        enabled: false,
+      });
+      await expect(
+        service.isAllowedForUser('teen-1', 'family:teen_reminder'),
+      ).resolves.toBe(false);
+      await expect(
+        service.isAllowedForUser('guardian-1', 'family:age_nudge'),
+      ).resolves.toBe(false);
+      expect(
+        prisma.notification_preferences.findUnique,
+      ).toHaveBeenLastCalledWith({
+        where: {
+          user_id_category: { user_id: 'guardian-1', category: 'reminders' },
+        },
+        select: { enabled: true },
+      });
+    });
+  });
+
   it('applies the mobile alias policy to mapped legacy sources', async () => {
     categorySettings.getSettingsMap.mockResolvedValue(
       buildSettings({

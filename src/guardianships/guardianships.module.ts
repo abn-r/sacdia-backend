@@ -9,7 +9,9 @@ import { DependentClaimCodesController } from './dependent-claim-codes.controlle
 import { DependentProfilesPurgeCronService } from './dependent-profiles-purge-cron.service';
 import { FamilyFeatureFlagsModule } from './family-feature-flags.module';
 import { GuardianEvidenceService } from './guardian-evidence.service';
+import { SUPERVISED_LOGIN_EVENTS } from '../auth/supervised/supervised-login-events.port';
 import { DependentActionLimiter } from './dependent-action-limiter';
+import { GuardianSecurityNotificationsService } from './guardian-security-notifications.service';
 import { GuardianPowersPolicy } from './guardian-powers.policy';
 import { SupervisedLoginsService } from './supervised-logins.service';
 import { GuardianNotificationsService } from './guardian-notifications.service';
@@ -58,6 +60,12 @@ import { SupervisionStateService } from './supervision-state.service';
     GuardianPowersPolicy,
     DependentActionLimiter,
     SupervisedLoginsService,
+    GuardianSecurityNotificationsService,
+    // The login, enable/disable and link code flows report to the security notices.
+    {
+      provide: SUPERVISED_LOGIN_EVENTS,
+      useExisting: GuardianSecurityNotificationsService,
+    },
     // 3a default: there are no linked devices yet. 3b rebinds this token.
     { provide: LINKED_DEVICE_REVOKER, useValue: NOOP_LINKED_DEVICE_REVOKER },
   ],
@@ -70,6 +78,8 @@ import { SupervisionStateService } from './supervision-state.service';
     FamilyFeatureFlagsModule,
     SupervisionStateService,
     GuardianPowersPolicy,
+    GuardianSecurityNotificationsService,
+    SUPERVISED_LOGIN_EVENTS,
     LINKED_DEVICE_REVOKER,
   ],
 })

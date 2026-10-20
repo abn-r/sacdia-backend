@@ -6,8 +6,11 @@
  * unknown sources return undefined.
  */
 import {
+  ADMIN_SOURCE_PREFIXES,
+  MANDATORY_SOURCE_PREFIXES,
   NOTIFICATION_SOURCE_MAP,
   getCategoryForSource,
+  isMandatorySource,
   isSourceMapped,
 } from './notification-source-map.constants';
 import { MOBILE_NOTIFICATION_CATEGORIES } from './notification-categories.constants';
@@ -143,6 +146,49 @@ describe('notification-source-map', () => {
     it('returns false for unmapped sources', () => {
       expect(isSourceMapped('admin:broadcast')).toBe(false);
       expect(isSourceMapped('totally:unknown')).toBe(false);
+    });
+  });
+
+  describe('phase 3a family sources', () => {
+    it('maps the security notice to approvals and teen reminders / age nudges to reminders', () => {
+      expect(getCategoryForSource('family:security')).toBe('approvals');
+      expect(getCategoryForSource('family:teen_reminder')).toBe('reminders');
+      expect(getCategoryForSource('family:age_nudge')).toBe('reminders');
+    });
+  });
+
+  describe('mandatory sources', () => {
+    it('lists admin and family:security', () => {
+      expect([...MANDATORY_SOURCE_PREFIXES]).toEqual([
+        'admin',
+        'family:security',
+      ]);
+    });
+
+    it.each(['admin', 'admin:broadcast', 'family:security'])(
+      '%s is mandatory',
+      (source) => {
+        expect(isMandatorySource(source)).toBe(true);
+      },
+    );
+
+    it.each([
+      'family:evidence_uploaded',
+      'family:consent_verified',
+      'family:securityx',
+      'administrator',
+      'activities:created',
+      '',
+      null,
+      undefined,
+    ])('%p is NOT mandatory', (source) => {
+      expect(isMandatorySource(source as string | null | undefined)).toBe(
+        false,
+      );
+    });
+
+    it('keeps the deprecated ADMIN_SOURCE_PREFIXES alias in sync', () => {
+      expect(ADMIN_SOURCE_PREFIXES).toBe(MANDATORY_SOURCE_PREFIXES);
     });
   });
 });

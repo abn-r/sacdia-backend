@@ -114,6 +114,7 @@ function setup() {
     revokeByGuardianship: jest.fn().mockResolvedValue(0),
   };
 
+  const events = { onGuardianLinked: jest.fn() };
   const service = new LinkCodesService(
     prisma,
     config as any,
@@ -122,11 +123,13 @@ function setup() {
     guardianships as any,
     agePolicy as any,
     deviceRevoker as any,
+    events as any,
   );
   return {
     service,
     prisma,
     tx,
+    events,
     agePolicy,
     deviceRevoker,
     failures,
@@ -1151,6 +1154,42 @@ describe('LinkCodesService.redeem: teen_guardian_link (phase 3a)', () => {
     const error = await errorOf(service.redeem(REDEEMER, redeemDto()));
     expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_INVALID);
     expect(created).toHaveLength(0);
+  });
+
+  it('tells the TEEN after the commit that an adult linked (a notice, never a failure of the redeem)', async () => {
+    const { service, events } = arrange();
+    events.onGuardianLinked.mockRejectedValue(new Error('push down'));
+
+    await expect(service.redeem(REDEEMER, redeemDto())).resolves.toBeDefined();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(events.onGuardianLinked).toHaveBeenCalledWith({
+      teenUserId: TEEN,
+      guardianUserId: REDEEMER,
+    });
+  });
+
+  it('a second_guardian redeem sends no teen notice', async () => {
+    const { service, tx, events } = setup();
+    tx.guardianships.findFirst
+      .mockResolvedValueOnce({
+        guardianship_id: 'g-inv',
+        consent_status: 'verified',
+      })
+      .mockResolvedValueOnce(null);
+    tx.guardianships.count.mockResolvedValue(1);
+
+    await service.redeem(REDEEMER, redeemDto());
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(events.onGuardianLinked).not.toHaveBeenCalled();
+  });
+
+  it('a failed teen redeem sends no notice', async () => {
+    const { service, events } = arrange({ alreadyGuardian: true });
+    await errorOf(service.redeem(REDEEMER, redeemDto()));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(events.onGuardianLinked).not.toHaveBeenCalled();
   });
 
   it('the redeem result is the DependentSummary of the teen (access_mode comes from the summary service)', async () => {

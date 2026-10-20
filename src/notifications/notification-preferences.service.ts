@@ -4,7 +4,10 @@ import {
   NOTIFICATION_CATEGORIES,
   NotificationCategory,
 } from './notification-categories.constants';
-import { getCategoryForSource } from './notification-source-map.constants';
+import {
+  getCategoryForSource,
+  isMandatorySource,
+} from './notification-source-map.constants';
 import { NotificationCategorySettingsService } from './notification-category-settings.service';
 
 export interface PreferenceEntry {
@@ -98,7 +101,7 @@ export class NotificationPreferencesService {
    * Returns true if the user has NOT opted out of the given source's category.
    *
    * Rules:
-   * - "admin:*" sources always return true (never blocked)
+   * - "admin:*" and "family:security" sources always return true (never blocked)
    * - If source is undefined/null, always return true
    * - If source is not in NOTIFICATION_SOURCE_MAP and not a known category prefix,
    *   logs a warning and returns true (permissive fallback — add source to the map)
@@ -108,6 +111,12 @@ export class NotificationPreferencesService {
     userId: string,
     source: string | undefined,
   ): Promise<boolean> {
+    // Mandatory sources (admin, guardian security notices) cannot be muted and
+    // ignore the global category switch too.
+    if (isMandatorySource(source)) {
+      return true;
+    }
+
     const category = extractCategory(source);
 
     // No source or admin category — always allowed
@@ -161,6 +170,10 @@ export class NotificationPreferencesService {
     userIds: string[],
     source: string | undefined,
   ): Promise<Set<string>> {
+    if (isMandatorySource(source)) {
+      return new Set(userIds);
+    }
+
     const category = extractCategory(source);
 
     // No opt-out check needed

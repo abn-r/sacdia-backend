@@ -31,6 +31,7 @@ import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags
 import { SupervisionStateService } from '../guardianships/supervision-state.service';
 import { LoginFailureCounter } from './login-failure-counter';
 import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
+import { SUPERVISED_LOGIN_EVENTS } from './supervised/supervised-login-events.port';
 import { AppException } from '../common/errors/app.exception';
 
 describe('AuthService', () => {
@@ -69,6 +70,9 @@ describe('AuthService', () => {
     users_pr: {
       findUnique: jest.fn(),
       upsert: jest.fn(),
+    },
+    supervised_logins: {
+      updateMany: jest.fn(),
     },
     club_role_assignments: {
       findFirst: jest.fn(),
@@ -212,6 +216,13 @@ describe('AuthService', () => {
     resolve: jest.fn(),
   };
 
+  const mockEvents = {
+    onTeenSessionStarted: jest.fn(),
+    onTeenPasswordChanged: jest.fn(),
+    onPasswordReset: jest.fn(),
+  };
+  const flushEvents = () => new Promise<void>((r) => setImmediate(r));
+
   beforeEach(async () => {
     mockFamilyFlags.getAll.mockReset().mockReturnValue(FAMILY_FEATURES);
     mockSupervisionState.describe.mockReset();
@@ -223,6 +234,12 @@ describe('AuthService', () => {
     mockSupervisedResolver.resolve
       .mockReset()
       .mockResolvedValue({ state: 'adult' });
+    mockEvents.onTeenSessionStarted.mockReset();
+    mockEvents.onTeenPasswordChanged.mockReset();
+    mockEvents.onPasswordReset.mockReset();
+    mockPrismaService.supervised_logins.updateMany
+      .mockReset()
+      .mockResolvedValue({ count: 1 });
     mockCountryAgePolicy.getPolicy.mockReset().mockResolvedValue({
       minSelfLoginAge: 13,
       ageOfMajority: 18,
@@ -282,6 +299,7 @@ describe('AuthService', () => {
           provide: SupervisedPrincipalResolver,
           useValue: mockSupervisedResolver,
         },
+        { provide: SUPERVISED_LOGIN_EVENTS, useValue: mockEvents },
       ],
     }).compile();
 
@@ -885,6 +903,61 @@ describe('AuthService', () => {
       ).toEqual({ kind: 'user', supervision: null });
     });
 
+    describe('guardian notices', () => {
+      beforeEach(() => {
+        mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+          baResult(),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+      });
+
+      it('a supervised teen password login tells the verified guardians (new session)', async () => {
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'supervised',
+          supervision: 'active',
+        });
+
+        await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' });
+        await flushEvents();
+
+        expect(mockEvents.onTeenSessionStarted).toHaveBeenCalledWith({
+          userId: 'teen-1',
+        });
+      });
+
+      it('an adult login sends nothing', async () => {
+        await service.login({ identifier: 'adult@example.com', password: 'p' });
+        await flushEvents();
+        expect(mockEvents.onTeenSessionStarted).not.toHaveBeenCalled();
+      });
+
+      it('the login still answers 200 when the notifier throws', async () => {
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'supervised',
+          supervision: 'active',
+        });
+        mockEvents.onTeenSessionStarted.mockRejectedValue(
+          new Error('fcm down'),
+        );
+
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+        ).resolves.toMatchObject({ status: 'success' });
+        await flushEvents();
+      });
+
+      it('a failed login (wrong password) sends no new-session notice', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+          new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+        );
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'wrong' }),
+        ).rejects.toBeDefined();
+        await flushEvents();
+        expect(mockEvents.onTeenSessionStarted).not.toHaveBeenCalled();
+      });
+    });
+
     describe('lockout', () => {
       it('checks the lock BEFORE the credentials: 429 AUTH_LOGIN_LOCKED, no credential check, no failure counted', async () => {
         mockLoginFailures.check.mockResolvedValue({
@@ -1341,6 +1414,29 @@ describe('AuthService', () => {
       });
     });
 
+    it('tells the verified guardians when a (teen) password is reset by email, and never breaks the reset', async () => {
+      mockBetterAuthService.resetPasswordWithToken.mockResolvedValue({
+        userId: 'teen-1',
+      });
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 1 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockResolvedValue(
+        undefined,
+      );
+      mockEvents.onPasswordReset.mockRejectedValue(new Error('push down'));
+
+      await expect(
+        service.confirmPasswordReset({
+          token: 'reset-token',
+          password: 'NewPassword123!',
+        }),
+      ).resolves.toMatchObject({ success: true });
+      await flushEvents();
+
+      expect(mockEvents.onPasswordReset).toHaveBeenCalledWith({
+        dependentUserId: 'teen-1',
+      });
+    });
+
     it('should still succeed when the JWT blacklist write fails after the password changed', async () => {
       mockBetterAuthService.resetPasswordWithToken.mockResolvedValue({
         userId: 'user-123',
@@ -1426,6 +1522,86 @@ describe('AuthService', () => {
       expect(
         mockTokenBlacklistService.blacklistAllUserTokens,
       ).toHaveBeenCalledWith('user-123', 28800);
+    });
+
+    describe('supervised teen (phase 3a)', () => {
+      beforeEach(() => {
+        mockBetterAuthService.updateOwnPassword.mockResolvedValue(undefined);
+        mockPrismaService.session.deleteMany.mockResolvedValue({ count: 1 });
+        mockTokenBlacklistService.blacklistAllUserTokens.mockResolvedValue(
+          undefined,
+        );
+      });
+
+      it('after the CORRECT current password the guardians are told and password_set_by becomes self', async () => {
+        await service.updateOwnPassword(
+          'teen-1',
+          'Current123!',
+          'NewPass123!',
+          {
+            supervised: true,
+          },
+        );
+        await flushEvents();
+
+        expect(mockEvents.onTeenPasswordChanged).toHaveBeenCalledWith({
+          userId: 'teen-1',
+        });
+        expect(
+          mockPrismaService.supervised_logins.updateMany,
+        ).toHaveBeenCalledWith({
+          where: { user_id: 'teen-1' },
+          data: { password_set_by: 'self' },
+        });
+      });
+
+      it('a WRONG current password sends no notice and changes nothing', async () => {
+        mockBetterAuthService.updateOwnPassword.mockRejectedValue(
+          new UnauthorizedException('Invalid password'),
+        );
+
+        await expect(
+          service.updateOwnPassword('teen-1', 'wrong', 'NewPass123!', {
+            supervised: true,
+          }),
+        ).rejects.toThrow(UnauthorizedException);
+        await flushEvents();
+
+        expect(mockEvents.onTeenPasswordChanged).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.supervised_logins.updateMany,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('an adult (or any non-supervised caller) triggers no notice', async () => {
+        await service.updateOwnPassword('user-1', 'Current123!', 'NewPass123!');
+        await flushEvents();
+        expect(mockEvents.onTeenPasswordChanged).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.supervised_logins.updateMany,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('the update succeeds even when the notifier throws', async () => {
+        mockEvents.onTeenPasswordChanged.mockRejectedValue(new Error('x'));
+        await expect(
+          service.updateOwnPassword('teen-1', 'Current123!', 'NewPass123!', {
+            supervised: true,
+          }),
+        ).resolves.toBeUndefined();
+        await flushEvents();
+      });
+
+      it('a failure recording password_set_by never fails the update', async () => {
+        mockPrismaService.supervised_logins.updateMany.mockRejectedValue(
+          new Error('db'),
+        );
+        await expect(
+          service.updateOwnPassword('teen-1', 'Current123!', 'NewPass123!', {
+            supervised: true,
+          }),
+        ).resolves.toBeUndefined();
+      });
     });
 
     it('should still succeed when the JWT blacklist write fails after the password changed', async () => {

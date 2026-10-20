@@ -1,8 +1,20 @@
-import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { principalScopeDenied } from '../auth/acting-for/acting-for.errors';
+import {
+  fireEvent,
+  resolveSupervisedLoginEvents,
+  SUPERVISED_LOGIN_EVENTS,
+  type SupervisedLoginEvents,
+} from '../auth/supervised/supervised-login-events.port';
 import { ageToday } from '../common/age/age.util';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import {
@@ -77,6 +89,7 @@ function invalidCode(): AppException {
 export class LinkCodesService {
   private readonly logger = new Logger(LinkCodesService.name);
   private key: Buffer | null = null;
+  private readonly events: SupervisedLoginEvents;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -87,7 +100,12 @@ export class LinkCodesService {
     private readonly countryAgePolicy: CountryAgePolicyService,
     @Inject(LINKED_DEVICE_REVOKER)
     private readonly deviceRevoker: LinkedDeviceRevoker,
-  ) {}
+    @Optional()
+    @Inject(SUPERVISED_LOGIN_EVENTS)
+    events?: Partial<SupervisedLoginEvents>,
+  ) {
+    this.events = resolveSupervisedLoginEvents(events);
+  }
 
   private hashKey(): Buffer {
     if (!this.key) {
@@ -332,10 +350,11 @@ export class LinkCodesService {
     const codeHash = hashLinkCode(normalized, this.hashKey());
 
     let dependentId: string;
+    let purpose: LinkCodePurpose;
     try {
-      dependentId = await this.prisma.$transaction((tx) =>
+      ({ dependentId, purpose } = await this.prisma.$transaction((tx) =>
         this.redeemInTransaction(tx, userId, codeHash, dto),
-      );
+      ));
     } catch (error) {
       if (
         error instanceof AppException &&
@@ -347,6 +366,20 @@ export class LinkCodesService {
     }
 
     await this.actingForCache.bump(dependentId);
+    if (purpose === 'teen_guardian_link') {
+      // The teen is told an adult linked (pending the director's check).
+      void fireEvent(
+        () =>
+          this.events.onGuardianLinked({
+            teenUserId: dependentId,
+            guardianUserId: userId,
+          }),
+        (error) =>
+          this.logger.warn(
+            `teen guardian-linked notice failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+      );
+    }
     return this.guardianships.getSummaryForGuardian(userId, dependentId);
   }
 
@@ -355,7 +388,7 @@ export class LinkCodesService {
     userId: string,
     codeHash: string,
     dto: RedeemLinkCodeDto,
-  ): Promise<string> {
+  ): Promise<{ dependentId: string; purpose: LinkCodePurpose }> {
     const now = new Date();
 
     const code = await tx.guardianship_link_codes.findFirst({
@@ -403,7 +436,7 @@ export class LinkCodesService {
 
     if (code.purpose === 'teen_guardian_link') {
       await this.linkAsTeenGuardian(tx, userId, dependentId, dto, now);
-      return dependentId;
+      return { dependentId, purpose: 'teen_guardian_link' };
     }
 
     // `director_claim` is for custodial children only (no account). A
@@ -434,7 +467,7 @@ export class LinkCodesService {
         now,
       );
     }
-    return dependentId;
+    return { dependentId, purpose: code.purpose as LinkCodePurpose };
   }
 
   /**

@@ -232,6 +232,22 @@ describe('AuthController', () => {
   });
 
   describe('updatePassword', () => {
+    it('flags a supervised teen so the guardians are told', async () => {
+      mockAuthService.updateOwnPassword.mockResolvedValue(undefined);
+
+      await controller.updatePassword(
+        { userId: 'teen-1', kind: 'supervised_user' },
+        { currentPassword: 'Current123!', password: 'NewPassword123!' },
+      );
+
+      expect(mockAuthService.updateOwnPassword).toHaveBeenCalledWith(
+        'teen-1',
+        'Current123!',
+        'NewPassword123!',
+        { supervised: true },
+      );
+    });
+
     it('should pass currentPassword and password to authService.updateOwnPassword and return success message', async () => {
       const currentUser = { userId: 'user-123' };
       const dto = {
@@ -246,6 +262,7 @@ describe('AuthController', () => {
         'user-123',
         'CurrentPassword123!',
         'NewPassword123!',
+        { supervised: false },
       );
       expect(result).toEqual({
         status: 'success',

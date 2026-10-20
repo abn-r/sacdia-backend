@@ -2,6 +2,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Optional,
   ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
@@ -17,6 +18,12 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto, loginIdentifierOf } from './dto/login.dto';
 import { LoginFailureCounter } from './login-failure-counter';
 import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
+import {
+  fireEvent,
+  resolveSupervisedLoginEvents,
+  SUPERVISED_LOGIN_EVENTS,
+  type SupervisedLoginEvents,
+} from './supervised/supervised-login-events.port';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
@@ -98,7 +105,14 @@ export class AuthService {
     private readonly supervisionState: SupervisionStateService,
     private readonly loginFailures: LoginFailureCounter,
     private readonly supervisedResolver: SupervisedPrincipalResolver,
-  ) {}
+    @Optional()
+    @Inject(SUPERVISED_LOGIN_EVENTS)
+    events?: Partial<SupervisedLoginEvents>,
+  ) {
+    this.events = resolveSupervisedLoginEvents(events);
+  }
+
+  private readonly events: SupervisedLoginEvents;
 
   /**
    * Blocks anyone below the minimum self-login age. Returns whether the person
@@ -355,6 +369,19 @@ export class AuthService {
         );
       });
 
+    // A password login of a supervised teen opens a NEW session: the verified
+    // guardians are told (deduplicated, best effort; refresh never reaches here).
+    const principal = await this.loginPrincipalOf(baResult.user.id);
+    if (principal.kind === 'supervised_user') {
+      void fireEvent(
+        () => this.events.onTeenSessionStarted({ userId: baResult.user.id }),
+        (error) =>
+          this.logger.warn(
+            `Teen session notice failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+      );
+    }
+
     // 2. Load SACDIA user profile and verify post-registration state
     const user = await this.prisma.users.findUnique({
       where: { user_id: baResult.user.id },
@@ -423,7 +450,7 @@ export class AuthService {
           maternal_last_name: user.maternal_last_name,
           avatar: await this.resolvePrivateProfilePicture(user.user_image),
           roles,
-          principal: await this.loginPrincipalOf(user.user_id),
+          principal,
         },
         needsPostRegistration,
         postRegistrationStatus: user.users_pr ?? null,
@@ -716,6 +743,15 @@ export class AuthService {
       this.logger.log(
         `Password reset confirmed; sessions revoked for ${userId}`,
       );
+      // A supervised teen's emailed reset tells the verified guardians. The
+      // adapter does nothing for adults and for children without guardians.
+      void fireEvent(
+        () => this.events.onPasswordReset({ dependentUserId: userId }),
+        (error) =>
+          this.logger.warn(
+            `Password reset notice failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+      );
       return {
         success: true,
         message: 'Contraseña actualizada. Inicie sesión de nuevo',
@@ -746,7 +782,9 @@ export class AuthService {
     userId: string,
     currentPassword: string,
     newPassword: string,
+    options: { supervised?: boolean } = {},
   ): Promise<void> {
+    // A WRONG current password throws here: no notice, nothing changes.
     await this.betterAuthService.updateOwnPassword(
       userId,
       currentPassword,
@@ -755,6 +793,28 @@ export class AuthService {
     await this.prisma.session.deleteMany({ where: { userId } });
     await this.blacklistUserTokensBestEffort(userId, 'password_change');
     this.logger.log(`Self-service password updated for user: ${userId}`);
+
+    if (options.supervised) {
+      // The teen chose this password: the guardian no longer set it. Best
+      // effort, after the change is already committed.
+      await this.prisma.supervised_logins
+        .updateMany({
+          where: { user_id: userId },
+          data: { password_set_by: 'self' },
+        })
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Could not record password_set_by for ${userId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      void fireEvent(
+        () => this.events.onTeenPasswordChanged({ userId }),
+        (error) =>
+          this.logger.warn(
+            `Teen password notice failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+      );
+    }
   }
 
   /**
