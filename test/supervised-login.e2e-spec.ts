@@ -12,6 +12,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { ActingForCache } from '../src/auth/acting-for/acting-for.cache';
+import { accessJwtClaims } from '../src/common/constants/jwt-audiences';
 import { CURRENT_LEGAL_DOCUMENTS } from '../src/legal/legal-documents.constants';
 import { BetterAuthService } from '../src/better-auth/better-auth.service';
 import { AuthorizationContextService } from '../src/common/services/authorization-context.service';
@@ -759,6 +760,12 @@ describe('Supervised login E2E', () => {
   // ---------------------------------------------------------------------------
 
   describe('B. a child with a guardian-enabled handle login', () => {
+    // Minted BEFORE the disable (iat one minute ago), so the user-level
+    // blacklist written by the disable really applies to it. Tokens minted in
+    // the same second as the disable are not covered by the blacklist (strict
+    // iat < blacklist time) and only exercise the supervised state check.
+    let tokenBeforeDisable: string;
+
     beforeAll(async () => {
       resetWorld();
       await actingCache.bump(CHILD_ID);
@@ -794,9 +801,15 @@ describe('Supervised login E2E', () => {
     });
 
     it('the child token works while the login is enabled', async () => {
+      tokenBeforeDisable = jwtService.sign({
+        sub: CHILD_ID,
+        email: `${CHILD_ID}@test.local`,
+        ...accessJwtClaims(),
+        iat: Math.floor(Date.now() / 1000) - 60,
+      });
       const response = await request(app.getHttpServer())
         .get(`/api/v1/users/${CHILD_ID}/post-registration/status`)
-        .set(bearer(CHILD_ID));
+        .set({ Authorization: `Bearer ${tokenBeforeDisable}` });
 
       expect(response.status).toBe(200);
     });
@@ -818,6 +831,15 @@ describe('Supervised login E2E', () => {
       const response = await request(app.getHttpServer())
         .get(`/api/v1/users/${CHILD_ID}/post-registration/status`)
         .set(bearer(CHILD_ID));
+
+      expect(response.status).toBe(401);
+      expect(errorCode(response.body)).toBe('AUTH_SUPERVISED_ACCESS_REVOKED');
+    });
+
+    it('the token held BEFORE the disable (blacklisted) is cut with the same 401 AUTH_SUPERVISED_ACCESS_REVOKED', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/users/${CHILD_ID}/post-registration/status`)
+        .set({ Authorization: `Bearer ${tokenBeforeDisable}` });
 
       expect(response.status).toBe(401);
       expect(errorCode(response.body)).toBe('AUTH_SUPERVISED_ACCESS_REVOKED');

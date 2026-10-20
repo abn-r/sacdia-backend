@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  AppException,
   AppServiceUnavailableException,
   AppUnauthorizedException,
 } from '../../common/errors/app.exception';
@@ -174,7 +175,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             sub: payload.sub,
           }),
         );
-        throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
+        throw await this.userBlacklistedError(req, payload.sub);
       }
       revocationCheckUnavailable = userStatus === 'unavailable';
     }
@@ -227,6 +228,33 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     return this.buildActingPrincipal(req, payload, basePrincipal, dependentId);
+  }
+
+  /**
+   * The 401 for a token caught by the user-level blacklist. The request is
+   * rejected no matter what; only the REASON differs. A guardian disable (and a
+   * reset) blacklists every token of the minor, and that check runs before the
+   * supervised one, so without this the old teen token got the generic
+   * GUARD_JWT_UNAUTHORIZED instead of AUTH_SUPERVISED_ACCESS_REVOKED, the code
+   * the app uses to explain the cut. Adults keep the generic code, and a failed
+   * state lookup falls back to it (never a 503, never a pass).
+   */
+  private async userBlacklistedError(
+    req: Request,
+    userId: string,
+  ): Promise<AppException> {
+    try {
+      const state = await this.supervisedResolver.resolveForRequest(
+        req,
+        userId,
+      );
+      if (state.state === 'blocked' || state.state === 'supervised') {
+        return supervisedAccessRevoked();
+      }
+    } catch {
+      // Fall through to the generic code: the token is rejected regardless.
+    }
+    return new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
   }
 
   /**

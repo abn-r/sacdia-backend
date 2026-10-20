@@ -753,6 +753,58 @@ describe('JwtStrategy', () => {
       }
     });
 
+    describe('user-level blacklist hit (QA BUG-5)', () => {
+      // disable/reset call blacklistAllUserTokens, which is checked BEFORE the
+      // supervised state: the old teen token got the generic
+      // GUARD_JWT_UNAUTHORIZED instead of the specified reason.
+      beforeEach(() => {
+        mockTokenBlacklistService.checkUserTokens.mockResolvedValue('revoked');
+      });
+
+      it('a disabled teen whose tokens were blacklisted gets 401 AUTH_SUPERVISED_ACCESS_REVOKED', async () => {
+        mockSupervisedResolver.resolveForRequest.mockResolvedValue({
+          state: 'blocked',
+          cause: 'login_disabled',
+        });
+
+        await expect(
+          buildStrategy().validate(buildReq('t'), teenPayload()),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+          status: 401,
+        });
+      });
+
+      it('a teen cut by a reset (still supervised) gets the same 401 AUTH_SUPERVISED_ACCESS_REVOKED', async () => {
+        mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
+
+        await expect(
+          buildStrategy().validate(buildReq('t'), teenPayload()),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+          status: 401,
+        });
+        // Still rejected by the blacklist: no principal is ever built.
+        expect(mockSupervisedResolver.isSessionActive).not.toHaveBeenCalled();
+      });
+
+      it('an adult keeps the generic 401 GUARD_JWT_UNAUTHORIZED', async () => {
+        await expect(
+          buildStrategy().validate(buildReq('t'), accessPayload()),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
+      });
+
+      it('a failing state lookup still rejects, with the generic 401 (never a 503, never a pass)', async () => {
+        mockSupervisedResolver.resolveForRequest.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        await expect(
+          buildStrategy().validate(buildReq('t'), teenPayload()),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
+      });
+    });
+
     it('rejects with 401 when the session of the token was deleted (reset / disable inside the 8h JWT)', async () => {
       mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
       mockSupervisedResolver.isSessionActive.mockResolvedValue(false);
