@@ -31,6 +31,7 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('investiture')
 @ApiBearerAuth()
@@ -87,6 +88,7 @@ export class InvestitureController {
   // GET /investiture/enrollments/:enrollmentId/history
   // ========================================
 
+  @ActingScope('member:read')
   @Get('investiture/enrollments/:enrollmentId/history')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('investiture:read')
@@ -121,6 +123,7 @@ export class InvestitureController {
     return { status: 'success', data };
   }
 
+  @ActingScope('member:read')
   @Get('enrollments/:enrollmentId/investiture-history')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('investiture:read')

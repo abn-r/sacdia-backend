@@ -30,6 +30,7 @@ import {
   CurrentUser,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('requests')
 @Controller('requests')
@@ -71,6 +72,7 @@ export class RequestsController {
     );
   }
 
+  @ActingScope('member:read')
   @Get('transfers')
   @RequirePermissions('requests:read')
   @ApiOperation({
@@ -107,6 +109,7 @@ export class RequestsController {
     });
   }
 
+  @ActingScope('member:read')
   @Get('transfers/:requestId')
   @RequirePermissions('requests:read')
   @ApiOperation({
@@ -198,6 +201,7 @@ export class RequestsController {
     );
   }
 
+  @ActingScope('member:read')
   @Get('assignments')
   @RequirePermissions('requests:read')
   @ApiOperation({
@@ -234,6 +238,7 @@ export class RequestsController {
     });
   }
 
+  @ActingScope('member:read')
   @Get('assignments/:requestId')
   @RequirePermissions('requests:read')
   @ApiOperation({

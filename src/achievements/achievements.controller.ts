@@ -20,6 +20,7 @@ import {
 import { JwtAuthGuard } from '../common/guards';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { AchievementsService } from './achievements.service';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,6 +68,7 @@ export class AchievementsController {
    * Returns the authenticated user's achievements grouped by category,
    * including a progress summary.
    */
+  @ActingScope('member:read')
   @Get('me')
   @ApiOperation({
     summary: "Get current user's achievements with progress",
@@ -86,6 +88,7 @@ export class AchievementsController {
    * GET /api/v1/achievements/categories
    * Returns all active achievement categories.
    */
+  @ActingScope('member:read')
   @Get('categories')
   @ApiOperation({
     summary: 'List active achievement categories',
@@ -107,6 +110,7 @@ export class AchievementsController {
    * Returns all active achievements grouped by category.
    * Secret achievements not yet completed by the user are masked (name = "???").
    */
+  @ActingScope('member:read')
   @Get()
   @ApiOperation({
     summary: 'List all active achievements grouped by category',
@@ -195,6 +199,7 @@ export class AchievementsController {
    * Returns achievement detail + user's progress.
    * Secret achievements not yet completed are masked.
    */
+  @ActingScope('member:read')
   @Get(':achievementId')
   @ApiOperation({
     summary: 'Get achievement detail with user progress',

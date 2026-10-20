@@ -262,6 +262,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   // Rate limit: max 3 sends per minute to prevent token farming
+  @ActingScope('self:password')
   @Throttle(namedThrottle({ ttl: 60000, limit: 3 }))
   @ApiOperation({
     summary: 'Enviar email de verificación al usuario autenticado',
@@ -305,6 +306,7 @@ export class AuthController {
     return this.authService.confirmEmailVerification(dto);
   }
 
+  @ActingScope('self:password')
   @Post('update-password')
   @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
   @UseGuards(JwtAuthGuard)

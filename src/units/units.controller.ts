@@ -31,6 +31,7 @@ import {
   AuthorizationResource,
   RequirePermissions,
 } from '../common/decorators';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('units')
 @Controller()
@@ -43,6 +44,7 @@ export class UnitsController {
   // UNIDADES POR CLUB
   // ========================================
 
+  @ActingScope('member:read')
   @Get('clubs/:clubId/units')
   @RequirePermissions('units:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
@@ -70,6 +72,7 @@ export class UnitsController {
     return this.unitsService.create(clubId, dto);
   }
 
+  @ActingScope('member:read')
   @Get('clubs/:clubId/units/:unitId')
   @RequirePermissions('units:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
@@ -164,6 +167,7 @@ export class UnitsController {
   // REGISTROS SEMANALES
   // ========================================
 
+  @ActingScope('member:read')
   @Get('clubs/:clubId/units/:unitId/weekly-records')
   @RequirePermissions('units:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })

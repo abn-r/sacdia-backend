@@ -51,7 +51,7 @@ export class EmergencyContactsController {
   }
 
   @Get()
-  @ActingScope('self:read')
+  @ActingScope('health:read')
   @SensitiveUserSubresource('emergency_contacts', 'read')
   @ApiOperation({ summary: 'Listar contactos de emergencia del usuario' })
   @ApiResponse({ status: 200, description: 'Lista de contactos' })
@@ -65,7 +65,7 @@ export class EmergencyContactsController {
   }
 
   @Get(':contactId')
-  @ActingScope('self:read')
+  @ActingScope('health:read')
   @SensitiveUserSubresource('emergency_contacts', 'read')
   @ApiOperation({ summary: 'Obtener un contacto específico' })
   @ApiResponse({ status: 200, description: 'Contacto encontrado' })

@@ -19,6 +19,7 @@ import { SkipPermissions } from '../common/decorators/skip-permissions.decorator
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { ResourceQueryDto } from './dto/resource-query.dto';
 import { ResourcesService } from './resources.service';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 /**
  * Controlador orientado a la app móvil.
@@ -42,6 +43,7 @@ export class ResourcesAppController {
   // GET /resources/me — Recursos visibles para el usuario autenticado
   // ---------------------------------------------------------------------------
 
+  @ActingScope('member:read')
   @Get('me')
   @ApiOperation({
     summary: 'Mis recursos',
@@ -69,6 +71,7 @@ export class ResourcesAppController {
   // GET /resources/me/:id — Recurso individual visible para el usuario
   // ---------------------------------------------------------------------------
 
+  @ActingScope('member:read')
   @Get('me/:id')
   @ApiOperation({
     summary: 'Obtener recurso visible',
@@ -94,6 +97,7 @@ export class ResourcesAppController {
   // GET /resources/me/:id/signed-url — URL firmada para el usuario
   // ---------------------------------------------------------------------------
 
+  @ActingScope('member:read')
   @Get('me/:id/signed-url')
   @ApiOperation({
     summary: 'Obtener URL firmada (app)',

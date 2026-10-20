@@ -64,7 +64,7 @@ export class UsersController {
   }
 
   @Get(':userId/allergies')
-  @ActingScope('self:read')
+  @ActingScope('health:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener alergias activas del usuario' })
   @ApiResponse({
@@ -86,7 +86,7 @@ export class UsersController {
   }
 
   @Get(':userId/diseases')
-  @ActingScope('self:read')
+  @ActingScope('health:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener enfermedades activas del usuario' })
   @ApiResponse({
@@ -108,7 +108,7 @@ export class UsersController {
   }
 
   @Get(':userId/medicines')
-  @ActingScope('self:read')
+  @ActingScope('health:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener medicamentos activos del usuario' })
   @ApiResponse({

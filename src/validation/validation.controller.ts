@@ -25,6 +25,7 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 type CurrentUserPayload = {
   sub: string;
@@ -41,6 +42,7 @@ export class ValidationController {
   // SUBMIT FOR REVIEW (member)
   // ========================================
 
+  @ActingScope('member:write')
   @Post('submit')
   @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('validation:submit')
@@ -168,6 +170,7 @@ export class ValidationController {
   // VALIDATION HISTORY
   // ========================================
 
+  @ActingScope('member:read')
   @Get(':entityType/:entityId/history')
   @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('validation:read')
@@ -209,6 +212,7 @@ export class ValidationController {
   // INVESTITURE ELIGIBILITY
   // ========================================
 
+  @ActingScope('member:read')
   @Get('eligibility/:userId')
   @RequirePermissions('validation:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })

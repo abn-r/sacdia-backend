@@ -363,6 +363,7 @@ export class UserHonorsController {
     return this.honorsService.abandonHonor(userId, honorId);
   }
 
+  @ActingScope('member:write')
   @Post(':honorId/instructor-proposal')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:submit')
@@ -397,6 +398,7 @@ export class UserHonorsController {
     return this.proposalsService.propose(req.user.sub, userId, honorId, dto);
   }
 
+  @ActingScope('member:write')
   @Delete(':honorId/instructor-proposal')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:submit')

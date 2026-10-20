@@ -26,6 +26,7 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { namedThrottle } from '../config/throttler.helpers';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('member-of-month')
 @Controller()
@@ -87,6 +88,7 @@ export class MemberOfMonthController {
     return { status: 'success', data };
   }
 
+  @ActingScope('member:read')
   @Get('clubs/:clubId/sections/:sectionId/member-of-month')
   @RequirePermissions('mom:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
@@ -107,6 +109,7 @@ export class MemberOfMonthController {
     return this.memberOfMonthService.getCurrentMemberOfMonth(clubId, sectionId);
   }
 
+  @ActingScope('member:read')
   @Get('clubs/:clubId/sections/:sectionId/member-of-month/history')
   @RequirePermissions('mom:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })

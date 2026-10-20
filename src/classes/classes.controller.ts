@@ -283,7 +283,7 @@ export class UserClassesController {
   // ========================================
 
   @Post(':classId/sections/:sectionId/submit')
-  @ActingScope('classes:write')
+  @ActingScope('evidence:submit')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })

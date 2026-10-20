@@ -51,6 +51,7 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('activities')
 @Controller()
@@ -63,6 +64,7 @@ export class ActivitiesController {
   // ACTIVIDADES POR CLUB
   // ========================================
 
+  @ActingScope('agenda:read')
   @Get('clubs/:clubId/activities')
   @RequirePermissions('activities:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
@@ -204,6 +206,7 @@ export class ActivitiesController {
     );
   }
 
+  @ActingScope('agenda:read')
   @Get('activity-series/:seriesId')
   @RequirePermissions('activities:read')
   @AuthorizationResource({ type: 'activity_series', idParam: 'seriesId' })
@@ -259,6 +262,7 @@ export class ActivitiesController {
   // ACTIVIDAD INDIVIDUAL
   // ========================================
 
+  @ActingScope('agenda:read')
   @Get('activities/:activityId')
   @RequirePermissions('activities:read')
   @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
@@ -358,6 +362,7 @@ export class ActivitiesController {
     return this.activitiesService.recordAttendance(activityId, dto);
   }
 
+  @ActingScope('member:read')
   @Get('activities/:activityId/attendance')
   @RequirePermissions('attendance:read')
   @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
@@ -371,6 +376,7 @@ export class ActivitiesController {
     return this.activitiesService.getAttendance(activityId);
   }
 
+  @ActingScope('member:read')
   @Get('activities/:activityId/rsvp')
   @RequirePermissions('activities:read')
   @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
@@ -387,6 +393,7 @@ export class ActivitiesController {
     return this.activitiesService.getMyRsvp(activityId, req.user.sub);
   }
 
+  @ActingScope('member:write')
   @Put('activities/:activityId/rsvp')
   @RequirePermissions('activities:read')
   @AuthorizationResource({ type: 'activity', idParam: 'activityId' })

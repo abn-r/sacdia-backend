@@ -24,6 +24,7 @@ import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { CreateResourceCategoryDto } from './dto/create-resource-category.dto';
 import { UpdateResourceCategoryDto } from './dto/update-resource-category.dto';
 import { ResourceCategoriesService } from './resource-categories.service';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('resource-categories')
 @Controller('resource-categories')
@@ -48,6 +49,7 @@ export class ResourceCategoriesController {
     return { status: 'success', data };
   }
 
+  @ActingScope('member:read')
   @Get()
   @RequirePermissions('resource_categories:read')
   @ApiOperation({ summary: 'Listar categorías de recursos activas' })
@@ -62,6 +64,7 @@ export class ResourceCategoriesController {
     return { status: 'success', data };
   }
 
+  @ActingScope('member:read')
   @Get(':id')
   @RequirePermissions('resource_categories:read')
   @ApiOperation({ summary: 'Obtener categoría de recurso por ID' })

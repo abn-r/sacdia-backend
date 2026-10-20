@@ -124,6 +124,7 @@ export class ClubsController {
     );
   }
 
+  @ActingScope('member:read')
   @Get(':clubId')
   @RequirePermissions('clubs:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
@@ -211,6 +212,7 @@ export class ClubsController {
     });
   }
 
+  @ActingScope('member:read')
   @Get(':clubId/sections/:sectionId')
   @RequirePermissions('club_sections:read')
   @AuthorizationResource({
@@ -280,6 +282,7 @@ export class ClubsController {
   // AGGREGATIONS
   // ========================================
 
+  @ActingScope('member:read')
   @Get(':clubId/leadership')
   @RequirePermissions('clubs:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
