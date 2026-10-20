@@ -1,11 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import {
   AppException,
   AppServiceUnavailableException,
 } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { ageToday } from '../../common/age/age.util';
-import { CountryAgePolicyService } from '../../common/age/country-age-policy.service';
+import {
+  CountryAgePolicyService,
+  DEFAULT_COUNTRY_AGE_POLICY,
+  type CountryAgePolicy,
+} from '../../common/age/country-age-policy.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FamilyFeatureFlagsService } from '../../guardianships/family-feature-flags.service';
 import {
@@ -21,7 +26,7 @@ import {
   type SupervisedState,
 } from './supervised-principal.cache';
 
-interface ResolvedFromDatabase {
+export interface ResolvedFromDatabase {
   state: SupervisedState;
   /** Country reference zone, used to cap the cache TTL at local midnight. */
   timeZone: string | null;
@@ -78,6 +83,96 @@ function isOnboardingWithUnknownAge(user: UnknownAgeFacts): boolean {
     user.access_panel !== true &&
     user.users_roles.length === 0
   );
+}
+
+/**
+ * What the decision reads from `users`. Shared by the per-request resolver and
+ * by batch callers (club notification recipients) so both derive the state
+ * from the SAME facts.
+ */
+export const SUPERVISED_STATE_USER_SELECT = {
+  birthday: true,
+  country_id: true,
+  supervised_login: { select: { disabled_at: true, method: true } },
+  dependent_profile: {
+    select: { frozen_at: true, purged_at: true },
+  },
+  guardianships_as_dependent: {
+    where: {
+      consent_status: 'verified',
+      is_test_data: false,
+      is_custodian: false,
+      revoked_at: null,
+    },
+    select: { guardianship_id: true },
+    take: 1,
+  },
+  // Only consulted for a NULL birthday (unknown age).
+  access_panel: true,
+  users_pr: { select: { complete: true } },
+  users_roles: {
+    where: {
+      active: true,
+      roles: {
+        active: true,
+        role_category: 'GLOBAL',
+        role_name: { not: 'user' },
+      },
+    },
+    select: { user_role_id: true },
+    take: 1,
+  },
+} as const satisfies Prisma.usersSelect;
+
+export type SupervisedStateUser = Prisma.usersGetPayload<{
+  select: typeof SUPERVISED_STATE_USER_SELECT;
+}>;
+
+/**
+ * Pure decision over {@link SUPERVISED_STATE_USER_SELECT} facts. `policy` is the
+ * country age policy and is only read when the user has a birthday (pass null
+ * otherwise). The login-method flag (FP3-35) is NOT applied here.
+ */
+export function deriveSupervisedState(
+  user: SupervisedStateUser,
+  countryPolicy: CountryAgePolicy | null,
+): ResolvedFromDatabase {
+  if (!user.birthday) {
+    return {
+      state: isOnboardingWithUnknownAge(user) ? PROFILE_INCOMPLETE : ADULT,
+      timeZone: null,
+    };
+  }
+  const policy = countryPolicy ?? DEFAULT_COUNTRY_AGE_POLICY;
+
+  const loginMethod = loginMethodOf(user.supervised_login);
+  if (ageToday(user.birthday, policy.timeZone) >= policy.ageOfMajority) {
+    return {
+      state: { ...ADULT, ...loginMethod },
+      timeZone: policy.timeZone,
+    };
+  }
+
+  const profile = user.dependent_profile;
+  if (profile && (profile.frozen_at || profile.purged_at)) {
+    return {
+      state: { state: 'blocked', cause: 'frozen' },
+      timeZone: policy.timeZone,
+    };
+  }
+  if (user.supervised_login?.disabled_at) {
+    return {
+      state: { state: 'blocked', cause: 'login_disabled' },
+      timeZone: policy.timeZone,
+    };
+  }
+
+  const supervision: SupervisionStatus =
+    user.guardianships_as_dependent.length > 0 ? 'active' : 'pending_guardian';
+  return {
+    state: { state: 'supervised', supervision, ...loginMethod },
+    timeZone: policy.timeZone,
+  };
 }
 
 /**
@@ -260,82 +355,16 @@ export class SupervisedPrincipalResolver {
     try {
       const user = await this.prisma.users.findUnique({
         where: { user_id: userId },
-        select: {
-          birthday: true,
-          country_id: true,
-          supervised_login: { select: { disabled_at: true, method: true } },
-          dependent_profile: {
-            select: { frozen_at: true, purged_at: true },
-          },
-          guardianships_as_dependent: {
-            where: {
-              consent_status: 'verified',
-              is_test_data: false,
-              is_custodian: false,
-              revoked_at: null,
-            },
-            select: { guardianship_id: true },
-            take: 1,
-          },
-          // Only consulted for a NULL birthday (unknown age).
-          access_panel: true,
-          users_pr: { select: { complete: true } },
-          users_roles: {
-            where: {
-              active: true,
-              roles: {
-                active: true,
-                role_category: 'GLOBAL',
-                role_name: { not: 'user' },
-              },
-            },
-            select: { user_role_id: true },
-            take: 1,
-          },
-        },
+        select: SUPERVISED_STATE_USER_SELECT,
       });
 
       if (!user) {
         return { state: ADULT, timeZone: null };
       }
-      if (!user.birthday) {
-        return {
-          state: isOnboardingWithUnknownAge(user) ? PROFILE_INCOMPLETE : ADULT,
-          timeZone: null,
-        };
-      }
-
-      const loginMethod = loginMethodOf(user.supervised_login);
-      const policy = await this.countryAgePolicy.getPolicy(user.country_id);
-      if (ageToday(user.birthday, policy.timeZone) >= policy.ageOfMajority) {
-        return {
-          state: { ...ADULT, ...loginMethod },
-          timeZone: policy.timeZone,
-        };
-      }
-
-      const profile = user.dependent_profile;
-      if (profile && (profile.frozen_at || profile.purged_at)) {
-        return {
-          state: { state: 'blocked', cause: 'frozen' },
-          timeZone: policy.timeZone,
-        };
-      }
-      if (user.supervised_login?.disabled_at) {
-        return {
-          state: { state: 'blocked', cause: 'login_disabled' },
-          timeZone: policy.timeZone,
-        };
-      }
-
-      const supervision: SupervisionStatus =
-        user.guardianships_as_dependent.length > 0
-          ? 'active'
-          : 'pending_guardian';
-      return {
-        state: { state: 'supervised', supervision, ...loginMethod },
-        timeZone: policy.timeZone,
-      };
+      const policy = user.birthday
+        ? await this.countryAgePolicy.getPolicy(user.country_id)
+        : null;
+      return deriveSupervisedState(user, policy);
     } catch (error) {
       if (error instanceof AppException) {
         throw error;
