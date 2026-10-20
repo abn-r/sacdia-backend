@@ -49,6 +49,14 @@ export const DEVICE_ABSOLUTE_LIFETIME_MS = 180 * 24 * 60 * 60 * 1000;
  * overwrites it with this neutral text instead of nulling it.
  */
 export const PURGED_DEVICE_LABEL = 'Dispositivo';
+/**
+ * What a purged child's EXTERNAL holder row keeps as `external_name`. The name
+ * is personal data, but `guardianships_holder_ck` requires every non-custodian
+ * row without a `guardian_user_id` to carry an `external_name`, so the purge
+ * overwrites it with this neutral text instead of nulling it (same idea as
+ * PURGED_DEVICE_LABEL).
+ */
+export const PURGED_GUARDIAN_NAME = 'Tutor';
 /** A revoked device stays listed for the guardians this long (history). */
 export const REVOKED_DEVICE_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 
