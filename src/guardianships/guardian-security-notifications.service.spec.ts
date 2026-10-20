@@ -376,6 +376,65 @@ describe('events', () => {
   });
 });
 
+describe('device_revoked copy by reason (W6 ruling)', () => {
+  const unlinked = async (
+    reason?: string,
+    options: Parameters<typeof setup>[0] = {},
+  ) => {
+    const { service, notifications } = setup(options);
+    await service.onDeviceRevoked({
+      dependentUserId: TEEN,
+      label: 'Tablet de Ana',
+      reason: reason as never,
+    });
+    return notifications.sendToUser.mock.calls[0][0] as {
+      title: string;
+      body: string;
+    };
+  };
+
+  it('majority: says the child now has the age for an own account', async () => {
+    const dto = await unlinked('majority');
+    expect(dto.title).toBe('Ana · dispositivo desvinculado');
+    expect(dto.body).toBe(
+      'Se desvinculó un dispositivo de la cuenta de Ana: Tablet de Ana. Ana ya tiene la edad para usar su propia cuenta.',
+    );
+  });
+
+  it('majority: still reaches the guardians although the child is of age now', async () => {
+    const dto = await unlinked('majority', { birthday: yearsAgo(18) });
+    expect(dto.body).toContain('ya tiene la edad para usar su propia cuenta');
+  });
+
+  it('other reasons keep the age-of-majority cutoff', async () => {
+    const { service, notifications } = setup({ birthday: yearsAgo(18) });
+    await service.onDeviceRevoked({
+      dependentUserId: TEEN,
+      label: 'Tablet de Ana',
+      reason: 'expired',
+    });
+    expect(notifications.sendToUser).not.toHaveBeenCalled();
+  });
+
+  it('expired: says the link lapsed after 180 days and can be redone', async () => {
+    const dto = await unlinked('expired');
+    expect(dto.title).toBe('Ana · dispositivo desvinculado');
+    expect(dto.body).toBe(
+      'Se desvinculó un dispositivo de la cuenta de Ana: Tablet de Ana. La vinculación venció después de 180 días; puedes vincularlo de nuevo.',
+    );
+  });
+
+  it.each([undefined, 'guardian', 'device_logout', 'admin'])(
+    '%s: the default body is unchanged',
+    async (reason) => {
+      const dto = await unlinked(reason);
+      expect(dto.body).toBe(
+        'Se desvinculó un dispositivo de la cuenta de Ana: Tablet de Ana.',
+      );
+    },
+  );
+});
+
 describe('noticeText', () => {
   const EVENTS: SecurityEvent[] = [
     'teen_new_session',

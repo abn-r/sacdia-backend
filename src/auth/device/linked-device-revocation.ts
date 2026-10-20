@@ -22,6 +22,15 @@ export interface RevokeInput {
   reason: LinkedDeviceRevokeReason;
 }
 
+/**
+ * Told about devices the system revoked on its own (the request check), so the
+ * guardianships module can notify without this class depending on it.
+ */
+export type AutoRevokedListener = (
+  revoked: RevokedDevice[],
+  reason: LinkedDeviceRevokeReason,
+) => void | Promise<void>;
+
 const DEVICE_SELECT = {
   linked_device_id: true,
   dependent_user_id: true,
@@ -56,11 +65,48 @@ const DEVICE_SELECT = {
 @Injectable()
 export class LinkedDeviceRevocation {
   private readonly logger = new Logger(LinkedDeviceRevocation.name);
+  private autoRevokedListener: AutoRevokedListener | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly actingForCache: ActingForCache,
   ) {}
+
+  /**
+   * Registers the ONE listener of {@link announceAutoRevoked} (a second call
+   * replaces the first). This is a hook, not an event bus: the guardianships
+   * module owns the notice policy and registers itself here, which keeps this
+   * class free of any dependency on that module.
+   */
+  onAutoRevoked(listener: AutoRevokedListener): void {
+    this.autoRevokedListener = listener;
+  }
+
+  /**
+   * Tells the listener which devices an automatic revoke moved to revoked, and
+   * why. Pass ONLY the rows the revoke call returned (the compare and set
+   * already guarantees a second revoker gets none), so a device is announced
+   * once. Best effort: never throws, a failure is logged.
+   */
+  announceAutoRevoked(
+    revoked: RevokedDevice[],
+    reason: LinkedDeviceRevokeReason,
+  ): void {
+    const listener = this.autoRevokedListener;
+    if (!listener || revoked.length === 0) return;
+    const fail = (error: unknown): void => {
+      this.logger.warn(
+        `Auto-revoke announcement failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    };
+    try {
+      void Promise.resolve(listener(revoked, reason)).catch(fail);
+    } catch (error) {
+      fail(error);
+    }
+  }
 
   /** Revokes every ACTIVE device matching `where`. Returns the ones it revoked. */
   async revokeInTx(

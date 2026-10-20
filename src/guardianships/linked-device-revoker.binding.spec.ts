@@ -85,7 +85,10 @@ describe('LINKED_DEVICE_REVOKER binding (3b)', () => {
         LinkedDevicesService,
         { provide: LINKED_DEVICE_REVOKER, useExisting: LinkedDevicesService },
         { provide: PrismaService, useValue: {} },
-        { provide: LinkedDeviceRevocation, useValue: { revokeInTx } },
+        {
+          provide: LinkedDeviceRevocation,
+          useValue: { revokeInTx, onAutoRevoked: jest.fn() },
+        },
         { provide: GuardianPowersPolicy, useValue: {} },
         { provide: GuardianSecurityNotificationsService, useValue: {} },
       ],

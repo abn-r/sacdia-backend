@@ -329,4 +329,62 @@ describe('LinkedDeviceRevocation', () => {
       expect(Logger.prototype.warn).toHaveBeenCalled();
     });
   });
+
+  describe('auto-revoke announcements', () => {
+    const revoked = [
+      {
+        linkedDeviceId: 'd1',
+        dependentUserId: 'kid',
+        guardianshipId: 'gs',
+        pairedByUserId: 'g',
+        label: 'Tablet',
+        platform: 'android',
+        sessionId: 's1',
+      },
+    ];
+
+    it('hands the revoked rows and the reason to the registered listener', () => {
+      const listener = jest.fn();
+      service.onAutoRevoked(listener);
+
+      service.announceAutoRevoked(revoked, 'majority');
+
+      expect(listener).toHaveBeenCalledWith(revoked, 'majority');
+    });
+
+    it('does nothing without a listener or without rows', () => {
+      expect(() =>
+        service.announceAutoRevoked(revoked, 'expired'),
+      ).not.toThrow();
+      const listener = jest.fn();
+      service.onAutoRevoked(listener);
+      service.announceAutoRevoked([], 'expired');
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('a listener that throws never propagates, it is logged', () => {
+      service.onAutoRevoked(() => {
+        throw new Error('boom');
+      });
+
+      expect(() =>
+        service.announceAutoRevoked(revoked, 'expired'),
+      ).not.toThrow();
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('boom'),
+      );
+    });
+
+    it('a listener that rejects never propagates, it is logged', async () => {
+      service.onAutoRevoked(() => Promise.reject(new Error('async boom')));
+
+      expect(() =>
+        service.announceAutoRevoked(revoked, 'expired'),
+      ).not.toThrow();
+      await new Promise<void>((r) => setImmediate(r));
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('async boom'),
+      );
+    });
+  });
 });

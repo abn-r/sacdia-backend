@@ -335,7 +335,10 @@ export class LinkedDeviceGate {
     }
   }
 
-  /** Fire and forget: the row records why the request check refused it. */
+  /**
+   * Fire and forget: the row records why the request check refused it, and the
+   * listener (guardian notices) hears about what this call revoked.
+   */
   private autoRevoke(input: DeviceGateInput, cause: DeviceInactiveCause): void {
     const reason = AUTO_REVOKE_REASON[cause];
     if (!reason) return;
@@ -347,6 +350,13 @@ export class LinkedDeviceGate {
         },
         { by: null, reason },
       )
+      // Only the rows THIS call revoked: a concurrent revoker gets none, so a
+      // device is announced once.
+      .then((revoked) => {
+        if (revoked.length > 0) {
+          this.revocation.announceAutoRevoked(revoked, reason);
+        }
+      })
       .catch((error: unknown) => {
         this.logger.warn(
           JSON.stringify({

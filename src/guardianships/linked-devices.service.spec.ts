@@ -31,7 +31,11 @@ function devRow(over: Record<string, unknown> = {}) {
 describe('LinkedDevicesService', () => {
   let tx: Record<string, any>;
   let prisma: Record<string, any>;
-  let revocation: { revokeInTx: jest.Mock; bumpAfterCommit: jest.Mock };
+  let revocation: {
+    revokeInTx: jest.Mock;
+    bumpAfterCommit: jest.Mock;
+    onAutoRevoked: jest.Mock;
+  };
   let powers: { assertVerifiedGuardian: jest.Mock };
   let security: { onDeviceRevoked: jest.Mock };
   let service: LinkedDevicesService;
@@ -54,6 +58,7 @@ describe('LinkedDevicesService', () => {
     revocation = {
       revokeInTx: jest.fn().mockResolvedValue([]),
       bumpAfterCommit: jest.fn().mockResolvedValue(undefined),
+      onAutoRevoked: jest.fn(),
     };
     powers = {
       assertVerifiedGuardian: jest.fn().mockResolvedValue({
@@ -195,6 +200,7 @@ describe('LinkedDevicesService', () => {
         dependentUserId: CHILD,
         label: 'Tablet de Ana',
         excludeUserId: G2,
+        reason: 'guardian',
       });
     });
 
@@ -295,6 +301,7 @@ describe('LinkedDevicesService', () => {
         dependentUserId: CHILD,
         label: 'Tablet de Ana',
         excludeUserId: undefined,
+        reason: 'device_logout',
       });
     });
 
@@ -389,6 +396,7 @@ describe('LinkedDevicesService', () => {
         dependentUserId: CHILD,
         label: 'Tablet de Ana',
         excludeUserId: undefined,
+        reason: 'guardianship_revoked',
       });
     });
 
@@ -413,8 +421,8 @@ describe('LinkedDevicesService', () => {
       ['session_revoked', true],
       ['teen_login_enabled', false],
       ['dependent_frozen', false],
-      ['majority', false],
-      ['expired', false],
+      ['majority', true],
+      ['expired', true],
     ] as const)(
       'reason %s notifies the guardians: %s',
       async (reason, notified) => {
@@ -429,6 +437,55 @@ describe('LinkedDevicesService', () => {
         expect(security.onDeviceRevoked).toHaveBeenCalledTimes(
           notified ? 1 : 0,
         );
+      },
+    );
+  });
+  describe('auto-revoke announcements (W6 ruling)', () => {
+    const revokedRow = {
+      linkedDeviceId: DEV,
+      dependentUserId: CHILD,
+      guardianshipId: 'gs-1',
+      pairedByUserId: G1,
+      label: 'Tablet de Ana',
+      platform: 'android',
+      sessionId: 'sid-1',
+    };
+    const listener = () => {
+      expect(revocation.onAutoRevoked).toHaveBeenCalledTimes(1);
+      return revocation.onAutoRevoked.mock.calls[0][0] as (
+        revoked: unknown[],
+        reason: string,
+      ) => void;
+    };
+
+    it('registers ONE listener on the revocation helper', () => {
+      expect(revocation.onAutoRevoked).toHaveBeenCalledTimes(1);
+      expect(typeof revocation.onAutoRevoked.mock.calls[0][0]).toBe('function');
+    });
+
+    it.each(['majority', 'expired'])(
+      '%s: the remaining guardians are told, with the reason',
+      async (reason) => {
+        listener()([revokedRow], reason);
+        await flush();
+
+        expect(security.onDeviceRevoked).toHaveBeenCalledTimes(1);
+        expect(security.onDeviceRevoked).toHaveBeenCalledWith({
+          dependentUserId: CHILD,
+          label: 'Tablet de Ana',
+          excludeUserId: undefined,
+          reason,
+        });
+      },
+    );
+
+    it.each(['teen_login_enabled', 'dependent_frozen'])(
+      '%s: nobody is told (an adult action caused it, or it has its own notice)',
+      async (reason) => {
+        listener()([revokedRow], reason);
+        await flush();
+
+        expect(security.onDeviceRevoked).not.toHaveBeenCalled();
       },
     );
   });

@@ -46,9 +46,13 @@ export interface RevokeDeviceResponse {
 }
 
 /**
- * Reasons whose guardians must be told ("a device was unlinked"). The others
- * are already covered by a notice of their own (teen login enabled), have no
- * guardian left to tell (frozen) or are plain housekeeping (majority, expiry).
+ * Reasons whose guardians must be told ("a device was unlinked"): the ones a
+ * guardian did not necessarily cause (a logout, a session revoke, an admin) and
+ * the two lifecycle ends the guardians would otherwise never learn about
+ * (`majority`: the child is old enough for an own account; `expired`: the
+ * 180-day cap passed). The others stay silent: `teen_login_enabled` has a notice
+ * of its own and `dependent_frozen` is caused by an adult (guardian or director)
+ * action, so a second notice would be redundant.
  */
 const NOTIFIED_REASONS: ReadonlySet<LinkedDeviceRevokeReason> = new Set([
   'guardian',
@@ -57,6 +61,8 @@ const NOTIFIED_REASONS: ReadonlySet<LinkedDeviceRevokeReason> = new Set([
   'device_logout',
   'session_revoked',
   'admin',
+  'majority',
+  'expired',
 ]);
 
 /**
@@ -113,7 +119,14 @@ export class LinkedDevicesService implements LinkedDeviceRevoker {
     private readonly revocation: LinkedDeviceRevocation,
     private readonly powers: GuardianPowersPolicy,
     private readonly security: GuardianSecurityNotificationsService,
-  ) {}
+  ) {
+    // The request check revokes on its own (majority, expiry, ...) from the auth
+    // layer, which cannot see this module: it announces through this hook and
+    // `notify` stays the single place that decides who is told.
+    this.revocation.onAutoRevoked((revoked, reason) =>
+      this.notify(revoked, reason),
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Guardian-facing
@@ -345,6 +358,7 @@ export class LinkedDevicesService implements LinkedDeviceRevoker {
           dependentUserId: device.dependentUserId,
           label: device.label,
           excludeUserId,
+          reason,
         })
         .catch((error: unknown) => {
           this.logger.warn(

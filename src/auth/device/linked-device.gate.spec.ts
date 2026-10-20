@@ -59,7 +59,10 @@ describe('LinkedDeviceGate', () => {
   let epochs: { getEpoch: jest.Mock; initEpoch: jest.Mock };
   let flags: { isEnabled: jest.Mock };
   let policy: { getPolicy: jest.Mock };
-  let revocation: { revokeStandalone: jest.Mock };
+  let revocation: {
+    revokeStandalone: jest.Mock;
+    announceAutoRevoked: jest.Mock;
+  };
   let store: Map<string, unknown>;
 
   const build = () =>
@@ -116,7 +119,10 @@ describe('LinkedDeviceGate', () => {
         timeZone: 'America/Mexico_City',
       }),
     };
-    revocation = { revokeStandalone: jest.fn().mockResolvedValue([]) };
+    revocation = {
+      revokeStandalone: jest.fn().mockResolvedValue([]),
+      announceAutoRevoked: jest.fn(),
+    };
     arrange();
   });
 
@@ -400,6 +406,90 @@ describe('LinkedDeviceGate', () => {
       expect(Logger.prototype.warn).toHaveBeenCalledWith(
         expect.stringContaining('linked_device_auto_revoke_failed'),
       );
+    });
+
+    describe('announcing what the gate revoked', () => {
+      const REVOKED = [
+        {
+          linkedDeviceId: DEVICE,
+          dependentUserId: CHILD,
+          guardianshipId: GUARDIANSHIP,
+          pairedByUserId: 'guardian-1',
+          label: 'Tablet de Ana',
+          platform: 'android',
+          sessionId: SID,
+        },
+      ];
+      // Fake timers are on: drain the promise chain of the fire-and-forget revoke.
+      const settle = async () => {
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+      };
+
+      it('majority: announces the rows this revoke changed, with the reason', async () => {
+        arrange({ dependent: { birthday: YEARS(18.1) } });
+        revocation.revokeStandalone.mockResolvedValue(REVOKED);
+
+        await expect(build().assertActive(INPUT)).rejects.toBeDefined();
+        await settle();
+
+        expect(revocation.announceAutoRevoked).toHaveBeenCalledTimes(1);
+        expect(revocation.announceAutoRevoked).toHaveBeenCalledWith(
+          REVOKED,
+          'majority',
+        );
+      });
+
+      it('expired: announces the rows this revoke changed, with the reason', async () => {
+        arrange({
+          device: { absolute_expires_at: new Date(NOW.getTime() - 1000) },
+        });
+        revocation.revokeStandalone.mockResolvedValue(REVOKED);
+
+        await expect(build().assertActive(INPUT)).rejects.toBeDefined();
+        await settle();
+
+        expect(revocation.announceAutoRevoked).toHaveBeenCalledWith(
+          REVOKED,
+          'expired',
+        );
+      });
+
+      it('a revoke that changed nothing (someone else won) announces nothing', async () => {
+        arrange({ dependent: { birthday: YEARS(18.1) } });
+        revocation.revokeStandalone.mockResolvedValue([]);
+
+        await expect(build().assertActive(INPUT)).rejects.toBeDefined();
+        await settle();
+
+        expect(revocation.announceAutoRevoked).not.toHaveBeenCalled();
+      });
+
+      it('a failed revoke announces nothing', async () => {
+        arrange({ dependent: { birthday: YEARS(18.1) } });
+        revocation.revokeStandalone.mockRejectedValue(new Error('db down'));
+
+        await expect(build().assertActive(INPUT)).rejects.toBeDefined();
+        await settle();
+
+        expect(revocation.announceAutoRevoked).not.toHaveBeenCalled();
+      });
+
+      it('an announce that throws never breaks the request', async () => {
+        arrange({ dependent: { birthday: YEARS(18.1) } });
+        revocation.revokeStandalone.mockResolvedValue(REVOKED);
+        revocation.announceAutoRevoked.mockImplementation(() => {
+          throw new Error('listener exploded');
+        });
+
+        await expect(build().assertActive(INPUT)).rejects.toMatchObject({
+          code: ErrorCode.AUTH_DEVICE_REVOKED,
+        });
+        await settle();
+
+        expect(Logger.prototype.warn).toHaveBeenCalledWith(
+          expect.stringContaining('linked_device_auto_revoke_failed'),
+        );
+      });
     });
 
     it('caches a refusal for 10 s and does not re-revoke inside it', async () => {

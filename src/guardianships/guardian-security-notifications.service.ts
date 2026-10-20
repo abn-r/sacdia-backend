@@ -6,6 +6,7 @@ import { CountryAgePolicyService } from '../common/age/country-age-policy.servic
 import type { SupervisedLoginEvents } from '../auth/supervised/supervised-login-events.port';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import type { LinkedDeviceRevokeReason } from './linked-device-revoker.port';
 import { ACTIVE_USER_GUARDIAN } from './guardianship-queries';
 import { MAX_GUARDIANS_PER_DEPENDENT } from './guardianships.constants';
 
@@ -179,10 +180,15 @@ export class GuardianSecurityNotificationsService implements SupervisedLoginEven
     dependentUserId: string;
     label: string;
     excludeUserId?: string;
+    reason?: LinkedDeviceRevokeReason;
   }): Promise<void> {
     await this.notifyGuardians(input.dependentUserId, 'device_revoked', {
       detail: input.label,
       excludeUserId: input.excludeUserId,
+      reason: input.reason,
+      // The device went away BECAUSE the child reached the age of majority: the
+      // usual "notices stop at majority" cutoff would silence exactly this one.
+      pastMajority: input.reason === 'majority',
     });
   }
 
@@ -193,11 +199,13 @@ export class GuardianSecurityNotificationsService implements SupervisedLoginEven
   /**
    * Who gets the notice: verified non-custodian user guardians, at most 4,
    * without the actor. Empty for an adult, an unknown user or a child with no
-   * verified guardian (no-op, no error).
+   * verified guardian (no-op, no error). `pastMajority` lifts the age cutoff
+   * for the one notice that is ABOUT the child reaching it.
    */
   async recipientsOf(
     dependentId: string,
     excludeUserId?: string,
+    pastMajority = false,
   ): Promise<{ firstName: string; guardianIds: string[] } | null> {
     const dependent = await this.prisma.users.findUnique({
       where: { user_id: dependentId },
@@ -217,7 +225,10 @@ export class GuardianSecurityNotificationsService implements SupervisedLoginEven
 
     // Notices stop at the age of majority.
     const policy = await this.countryAgePolicy.getPolicy(dependent.country_id);
-    if (ageToday(dependent.birthday, policy.timeZone) >= policy.ageOfMajority) {
+    if (
+      !pastMajority &&
+      ageToday(dependent.birthday, policy.timeZone) >= policy.ageOfMajority
+    ) {
       return null;
     }
 
@@ -235,12 +246,18 @@ export class GuardianSecurityNotificationsService implements SupervisedLoginEven
   private async notifyGuardians(
     dependentId: string,
     event: SecurityEvent,
-    options: { excludeUserId?: string; detail?: string },
+    options: {
+      excludeUserId?: string;
+      detail?: string;
+      reason?: LinkedDeviceRevokeReason;
+      pastMajority?: boolean;
+    },
   ): Promise<void> {
     try {
       const target = await this.recipientsOf(
         dependentId,
         options.excludeUserId,
+        options.pastMajority,
       );
       if (!target) return;
 
@@ -254,7 +271,12 @@ export class GuardianSecurityNotificationsService implements SupervisedLoginEven
         return;
       }
 
-      const text = noticeText(event, target.firstName, options.detail);
+      const text = noticeText(
+        event,
+        target.firstName,
+        options.detail,
+        options.reason,
+      );
       await Promise.allSettled(
         target.guardianIds.map((guardianId) =>
           this.notifications.sendToUser(
@@ -356,11 +378,27 @@ function firstNameOf(name: string | null): string {
   return first && first.length > 0 ? first : 'Tu menor';
 }
 
+/** Extra sentence for the lifecycle ends a guardian did not trigger. */
+function deviceRevokedSuffix(
+  reason: LinkedDeviceRevokeReason | undefined,
+  first: string,
+): string {
+  switch (reason) {
+    case 'majority':
+      return ` ${first} ya tiene la edad para usar su propia cuenta.`;
+    case 'expired':
+      return ' La vinculación venció después de 180 días; puedes vincularlo de nuevo.';
+    default:
+      return '';
+  }
+}
+
 /** Spanish texts; the title always starts with the child's first name. */
 export function noticeText(
   event: SecurityEvent,
   first: string,
   detail?: string,
+  reason?: LinkedDeviceRevokeReason,
 ): NoticeText {
   switch (event) {
     case 'teen_new_session':
@@ -406,7 +444,7 @@ export function noticeText(
     case 'device_revoked':
       return {
         title: `${first} · dispositivo desvinculado`,
-        body: `Se desvinculó un dispositivo de la cuenta de ${first}${detail ? `: ${detail}` : ''}.`,
+        body: `Se desvinculó un dispositivo de la cuenta de ${first}${detail ? `: ${detail}` : ''}.${deviceRevokedSuffix(reason, first)}`,
       };
     case 'teen_guardian_linked':
       return {

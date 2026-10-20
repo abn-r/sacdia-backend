@@ -403,7 +403,7 @@ describe('linked device auto-revoke matrix (FP3-50)', () => {
     expect(w.audits.filter((a) => a.entity_id === 'D1')).toHaveLength(1);
   });
 
-  it('the guardians are told for guardian-originated reasons only', async () => {
+  it('the guardians are told for guardian-originated reasons, not for the ones an adult action caused', async () => {
     const guardianLeaves = world();
     await guardianLeaves.service.revokeByGuardianship(
       guardianLeaves.tx,
@@ -431,4 +431,38 @@ describe('linked device auto-revoke matrix (FP3-50)', () => {
     await flush();
     expect(teenLogin.security.onDeviceRevoked).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['majority', 1],
+    ['expired', 1],
+    ['teen_login_enabled', 0],
+    ['dependent_frozen', 0],
+  ] as const)(
+    'gate auto-revoke (%s) announced through the helper: %i notice(s) per device',
+    async (reason, notices) => {
+      const w = world();
+      w.revocation.announceAutoRevoked(
+        [
+          {
+            linkedDeviceId: 'D1',
+            dependentUserId: D1_CHILD,
+            guardianshipId: GS_G1,
+            pairedByUserId: 'p',
+            label: 'Tablet D1',
+            platform: 'android',
+            sessionId: 'sid-D1',
+          },
+        ],
+        reason,
+      );
+      await flush();
+
+      expect(w.security.onDeviceRevoked).toHaveBeenCalledTimes(notices);
+      if (notices > 0) {
+        expect(w.security.onDeviceRevoked).toHaveBeenCalledWith(
+          expect.objectContaining({ dependentUserId: D1_CHILD, reason }),
+        );
+      }
+    },
+  );
 });
