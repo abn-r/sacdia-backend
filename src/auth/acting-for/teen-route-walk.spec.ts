@@ -592,6 +592,29 @@ describe('teen route walk', () => {
     }
   });
 
+  describe('director-created minors (phase 3c)', () => {
+    const KEY = 'POST /club-sections/:clubSectionId/dependents';
+
+    it('the director-create route exists, carries NO acting scope and is not reachable by a plain member', () => {
+      const route = routes.find((r) => r.key === KEY);
+      expect({ key: KEY, exists: route !== undefined }).toEqual({
+        key: KEY,
+        exists: true,
+      });
+      expect(route!.scope).toBeUndefined();
+      // dependents:create is a director permission: neither `user` nor `member` hold it.
+      expect(TEEN_PERMISSIONS.has('dependents:create')).toBe(false);
+      expect(memberReach(route!)).toBeNull();
+      expect(classify(route!)).toBe('never-scope');
+    });
+
+    it('is denied to a verified teen and to a pending teen', () => {
+      const route = routes.find((r) => r.key === KEY)!;
+      expect(allowedFor(route, TEEN_SCOPES)).toBe(false);
+      expect(allowedFor(route, TEEN_PENDING_SCOPES)).toBe(false);
+    });
+  });
+
   describe('the app teen flows', () => {
     it.each(TEEN_APP_FLOW)(
       '$key is allowed for a verified teen (pending: $pending)',

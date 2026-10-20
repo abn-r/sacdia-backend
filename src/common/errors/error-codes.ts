@@ -908,6 +908,8 @@ export enum ErrorCode {
   MR_CONSENT_CONFIRMATION_REQUIRED = 'MR_CONSENT_CONFIRMATION_REQUIRED',
   GUARDIANSHIP_CONSENT_ALREADY_VERIFIED = 'GUARDIANSHIP_CONSENT_ALREADY_VERIFIED',
   GUARDIANSHIP_GUARDIAN_SELF_VERIFY = 'GUARDIANSHIP_GUARDIAN_SELF_VERIFY',
+  // Family profiles phase 3c: a verify-only reviewer (consent:verify) tried to approve the membership.
+  MR_APPROVE_PERMISSION_REQUIRED = 'MR_APPROVE_PERMISSION_REQUIRED',
 
   // ── File Validation ───────────────────────────────────────────────────────
   FILE_TOO_LARGE = 'FILE_TOO_LARGE',

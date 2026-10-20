@@ -839,5 +839,6 @@
   "DEVICE_PAIRING_TOKEN_INVALID": "The pairing code is not valid or has expired. Ask your guardian for a new one",
   "DEVICE_PAIRING_NOT_ELIGIBLE": "A device cannot be linked for this minor",
   "DEVICE_LIMIT_REACHED": "The maximum number of linked devices for this minor was reached",
-  "DEVICE_NOT_FOUND": "Device not found"
+  "DEVICE_NOT_FOUND": "Device not found",
+  "MR_APPROVE_PERMISSION_REQUIRED": "You can verify this minor's consent, but approving the request requires the membership approval permission"
 }

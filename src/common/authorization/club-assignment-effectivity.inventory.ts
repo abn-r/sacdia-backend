@@ -78,6 +78,8 @@ const baseline = {
     'effectiveWhere|T09|1|257d0ba772be',
   'guardianships/guardianship-queries.ts':
     'workflowWhere|allowlist|3|5acfc142566f',
+  'guardianships/director-dependents.service.ts':
+    'workflowWhere|allowlist|1|85e349b66389',
   'guardianships/guardian-summary.service.ts':
     'effectiveWhere|allowlist|1|3affa23bfc46',
   'honors/honor-validation-workflow.service.ts':

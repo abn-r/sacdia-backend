@@ -826,5 +826,6 @@
   "DEVICE_PAIRING_TOKEN_INVALID": "Le code d'association n'est pas valide ou a expiré. Demandez-en un nouveau à votre tuteur",
   "DEVICE_PAIRING_NOT_ELIGIBLE": "Impossible d'associer un appareil pour ce mineur",
   "DEVICE_LIMIT_REACHED": "Le nombre maximal d'appareils associés pour ce mineur est atteint",
-  "DEVICE_NOT_FOUND": "Appareil introuvable"
+  "DEVICE_NOT_FOUND": "Appareil introuvable",
+  "MR_APPROVE_PERMISSION_REQUIRED": "Vous pouvez vérifier le consentement de ce mineur, mais approuver la demande exige l'autorisation d'approuver les adhésions"
 }

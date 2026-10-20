@@ -468,6 +468,13 @@ const NEVER_SCOPE: Array<{
     pattern: /^POST \/club-sections\/:clubSectionId\/dependents\//,
   },
   {
+    // Phase 3c: a director registers a minor. Staff-only (dependents:create on
+    // the section): guardian_acting, supervised_user, linked_device and the
+    // unknown-age principal are all denied by default.
+    label: 'director-created minors',
+    pattern: /^POST \/club-sections\/:clubSectionId\/dependents$/,
+  },
+  {
     label: 'legal representative',
     pattern: /^[A-Z]+ \/users\/:userId\/legal-representative/,
   },

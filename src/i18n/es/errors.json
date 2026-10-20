@@ -839,5 +839,6 @@
   "DEVICE_PAIRING_TOKEN_INVALID": "El código de vinculación no es válido o ya venció. Pide uno nuevo a tu tutor",
   "DEVICE_PAIRING_NOT_ELIGIBLE": "No se puede vincular un dispositivo para este menor",
   "DEVICE_LIMIT_REACHED": "Se alcanzó el máximo de dispositivos vinculados para este menor",
-  "DEVICE_NOT_FOUND": "Dispositivo no encontrado"
+  "DEVICE_NOT_FOUND": "Dispositivo no encontrado",
+  "MR_APPROVE_PERMISSION_REQUIRED": "Puedes verificar el consentimiento de este menor, pero aprobar la solicitud requiere el permiso de aprobación de membresías"
 }

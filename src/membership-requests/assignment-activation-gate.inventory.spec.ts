@@ -885,6 +885,9 @@ const EXPECTED_WRITE_SITES = [
   'membership-requests/membership-requests.service.ts | MembershipRequestsService.cancelPendingForUser | updateMany | no-activation | ungated',
   'membership-requests/membership-requests.service.ts | MembershipRequestsService.expireStaleRequests | updateManyAndReturn | no-activation | ungated',
   'membership-requests/membership-requests.service.ts | MembershipRequestsService.reject | updateMany | no-activation | ungated',
+  // POST /club-sections/:clubSectionId/dependents (phase 3c): a PENDING request for a
+  // director-created minor under club custody; approve stays gated by the consent
+  'guardianships/director-dependents.service.ts | DirectorDependentsService.createInTransaction | create | no-activation | ungated',
   // club selection: status 'pending' (a request, approved later through approve)
   'post-registration/post-registration.service.ts | PostRegistrationService.resolveMemberAssignment | create | no-activation | ungated',
   'post-registration/post-registration.service.ts | PostRegistrationService.resolveMemberAssignment | update | no-activation | ungated',
@@ -1365,10 +1368,24 @@ describe('activation gate is age-based (family-profiles phase 3a)', () => {
     ).rejects.toMatchObject({ code: 'MR_CONSENT_NOT_VERIFIED', status: 409 });
   });
 
-  it('still classifies the director-create site as a TODO for 3c (not present yet)', () => {
-    // The director-create inventory line lands with 3c; nothing in src writes
-    // club_role_assignments from a guardianships service today.
-    const sites = scanSource(srcRoot).sites.map(format);
-    expect(sites.some((site) => site.startsWith('guardianships/'))).toBe(false);
+  it('classifies the director-create site (phase 3c): a PENDING request, never an activation', () => {
+    const sites = scanSource(srcRoot)
+      .sites.filter((site) => site.path.startsWith('guardianships/'))
+      .map(format);
+    // The one guardianships write of club_role_assignments is the director-create
+    // request. It carries the literal status 'pending'.
+    expect(sites).toEqual([
+      'guardianships/director-dependents.service.ts | DirectorDependentsService.createInTransaction | create | no-activation | ungated',
+    ]);
+    const source = readFileSync(
+      join(srcRoot, 'guardianships/director-dependents.service.ts'),
+      'utf8',
+    );
+    const write = source.slice(
+      source.indexOf('tx.club_role_assignments.create'),
+      source.indexOf('select: { assignment_id: true }'),
+    );
+    expect(write).toMatch(/status:\s*'pending'/);
+    expect(write).not.toMatch(/status:\s*'active'/);
   });
 });

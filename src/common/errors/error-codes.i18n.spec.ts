@@ -31,6 +31,9 @@ const PHASE_3B_CODES: ErrorCode[] = [
   ErrorCode.DEVICE_NOT_FOUND,
 ];
 
+/** Codes introduced by family profiles phase 3c (each needs the 4 locales). */
+const PHASE_3C_CODES: ErrorCode[] = [ErrorCode.MR_APPROVE_PERMISSION_REQUIRED];
+
 const load = (locale: string): Record<string, string> =>
   JSON.parse(
     readFileSync(join(__dirname, `../../i18n/${locale}/errors.json`), 'utf8'),
@@ -48,6 +51,14 @@ describe('phase 3b error codes i18n parity', () => {
   it.each(LOCALES)('every phase 3b code has a message in %s', (locale) => {
     const catalog = load(locale);
     const missing = PHASE_3B_CODES.filter((code) => !catalog[code]?.trim());
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('phase 3c error codes i18n parity', () => {
+  it.each(LOCALES)('every phase 3c code has a message in %s', (locale) => {
+    const catalog = load(locale);
+    const missing = PHASE_3C_CODES.filter((code) => !catalog[code]?.trim());
     expect(missing).toEqual([]);
   });
 });
