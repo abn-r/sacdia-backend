@@ -820,5 +820,11 @@
   "SUPERVISED_LOGIN_EMAIL_UNAVAILABLE": "Esse e-mail não está disponível",
   "SUPERVISED_LOGIN_PASSWORD_INVALID": "A senha não atende aos requisitos de segurança",
   "GUARDIANSHIP_CONSENT_NOT_VERIFIED": "O consentimento deste menor ainda não foi verificado",
-  "FAMILY_FEATURE_DISABLED": "Este recurso não está disponível no momento"
+  "FAMILY_FEATURE_DISABLED": "Este recurso não está disponível no momento",
+  "AUTH_DEVICE_REVOKED": "Este dispositivo foi desvinculado. Vincule-o novamente pelo celular do seu responsável",
+  "AUTH_DEVICE_SESSION_EXPIRED": "A vinculação deste dispositivo expirou. Peça ao seu responsável para vinculá-lo de novo",
+  "DEVICE_PAIRING_TOKEN_INVALID": "O código de vinculação não é válido ou expirou. Peça um novo ao seu responsável",
+  "DEVICE_PAIRING_NOT_ELIGIBLE": "Não é possível vincular um dispositivo para este menor",
+  "DEVICE_LIMIT_REACHED": "O número máximo de dispositivos vinculados para este menor foi atingido",
+  "DEVICE_NOT_FOUND": "Dispositivo não encontrado"
 }

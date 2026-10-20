@@ -820,5 +820,11 @@
   "SUPERVISED_LOGIN_EMAIL_UNAVAILABLE": "Cet e-mail n'est pas disponible",
   "SUPERVISED_LOGIN_PASSWORD_INVALID": "Le mot de passe ne respecte pas les exigences de sécurité",
   "GUARDIANSHIP_CONSENT_NOT_VERIFIED": "Le consentement de ce mineur n'est pas encore vérifié",
-  "FAMILY_FEATURE_DISABLED": "Cette fonctionnalité n'est pas disponible pour le moment"
+  "FAMILY_FEATURE_DISABLED": "Cette fonctionnalité n'est pas disponible pour le moment",
+  "AUTH_DEVICE_REVOKED": "Cet appareil a été dissocié. Associez-le de nouveau depuis le téléphone de votre tuteur",
+  "AUTH_DEVICE_SESSION_EXPIRED": "L'association de cet appareil a expiré. Demandez à votre tuteur de l'associer de nouveau",
+  "DEVICE_PAIRING_TOKEN_INVALID": "Le code d'association n'est pas valide ou a expiré. Demandez-en un nouveau à votre tuteur",
+  "DEVICE_PAIRING_NOT_ELIGIBLE": "Impossible d'associer un appareil pour ce mineur",
+  "DEVICE_LIMIT_REACHED": "Le nombre maximal d'appareils associés pour ce mineur est atteint",
+  "DEVICE_NOT_FOUND": "Appareil introuvable"
 }

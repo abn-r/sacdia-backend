@@ -21,6 +21,16 @@ const PHASE_3A_CODES: ErrorCode[] = [
   ErrorCode.FAMILY_FEATURE_DISABLED,
 ];
 
+/** Codes introduced by family profiles phase 3b (each needs the 4 locales). */
+const PHASE_3B_CODES: ErrorCode[] = [
+  ErrorCode.AUTH_DEVICE_REVOKED,
+  ErrorCode.AUTH_DEVICE_SESSION_EXPIRED,
+  ErrorCode.DEVICE_PAIRING_TOKEN_INVALID,
+  ErrorCode.DEVICE_PAIRING_NOT_ELIGIBLE,
+  ErrorCode.DEVICE_LIMIT_REACHED,
+  ErrorCode.DEVICE_NOT_FOUND,
+];
+
 const load = (locale: string): Record<string, string> =>
   JSON.parse(
     readFileSync(join(__dirname, `../../i18n/${locale}/errors.json`), 'utf8'),
@@ -30,6 +40,14 @@ describe('phase 3a error codes i18n parity', () => {
   it.each(LOCALES)('every phase 3a code has a message in %s', (locale) => {
     const catalog = load(locale);
     const missing = PHASE_3A_CODES.filter((code) => !catalog[code]?.trim());
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('phase 3b error codes i18n parity', () => {
+  it.each(LOCALES)('every phase 3b code has a message in %s', (locale) => {
+    const catalog = load(locale);
+    const missing = PHASE_3B_CODES.filter((code) => !catalog[code]?.trim());
     expect(missing).toEqual([]);
   });
 });

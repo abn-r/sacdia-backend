@@ -833,5 +833,11 @@
   "SUPERVISED_LOGIN_EMAIL_UNAVAILABLE": "Ese correo no está disponible",
   "SUPERVISED_LOGIN_PASSWORD_INVALID": "La contraseña no cumple los requisitos de seguridad",
   "GUARDIANSHIP_CONSENT_NOT_VERIFIED": "El consentimiento de este menor aún no está verificado",
-  "FAMILY_FEATURE_DISABLED": "Esta función no está disponible por ahora"
+  "FAMILY_FEATURE_DISABLED": "Esta función no está disponible por ahora",
+  "AUTH_DEVICE_REVOKED": "Este dispositivo fue desvinculado. Vuelve a vincularlo desde el teléfono de tu tutor",
+  "AUTH_DEVICE_SESSION_EXPIRED": "La vinculación de este dispositivo venció. Pide a tu tutor que lo vincule de nuevo",
+  "DEVICE_PAIRING_TOKEN_INVALID": "El código de vinculación no es válido o ya venció. Pide uno nuevo a tu tutor",
+  "DEVICE_PAIRING_NOT_ELIGIBLE": "No se puede vincular un dispositivo para este menor",
+  "DEVICE_LIMIT_REACHED": "Se alcanzó el máximo de dispositivos vinculados para este menor",
+  "DEVICE_NOT_FOUND": "Dispositivo no encontrado"
 }
