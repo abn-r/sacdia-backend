@@ -386,7 +386,15 @@ export class UsersService {
 
     const updatedUser = await this.prisma.users.update({
       where: { user_id: userId },
-      data: updateUserDto,
+      data: {
+        ...updateUserDto,
+        ...(updateUserDto.birthday !== undefined
+          ? { birthday: toPrismaDate(updateUserDto.birthday) }
+          : {}),
+        ...(updateUserDto.baptism_date !== undefined
+          ? { baptism_date: toPrismaDate(updateUserDto.baptism_date) }
+          : {}),
+      },
       select: {
         user_id: true,
         email: true,
@@ -1133,4 +1141,16 @@ export class UsersService {
       return value;
     }
   }
+}
+
+/**
+ * Prisma rejects a date-only string for a DateTime column (500), while the DTO
+ * documents YYYY-MM-DD. A date-only value becomes UTC midnight, the same parse
+ * the register uses (`parseCalendarDate`); a full ISO date-time keeps its
+ * instant (the column is @db.Date, Postgres keeps the UTC calendar date).
+ */
+function toPrismaDate(value: string): Date {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? (parseCalendarDate(value) ?? new Date(value))
+    : new Date(value);
 }

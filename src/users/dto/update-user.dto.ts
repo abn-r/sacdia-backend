@@ -56,10 +56,11 @@ export class UpdateUserDto {
 
   @ApiPropertyOptional({
     example: '2000-01-15',
-    description: 'Fecha de nacimiento (YYYY-MM-DD)',
+    description:
+      'Fecha de nacimiento (YYYY-MM-DD; también acepta una fecha-hora ISO 8601). Una fecha imposible (2017-02-31) es 400.',
   })
   @IsOptional()
-  @IsDateString()
+  @IsDateString({ strict: true })
   birthday?: string;
 
   @ApiPropertyOptional({ example: true })
@@ -72,7 +73,7 @@ export class UpdateUserDto {
     description: 'Fecha de bautismo (requerido si baptism=true)',
   })
   @IsOptional()
-  @IsDateString()
+  @IsDateString({ strict: true })
   @ValidateIf((o) => o.baptism === true)
   baptism_date?: string;
 

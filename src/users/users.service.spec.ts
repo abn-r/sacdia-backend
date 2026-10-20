@@ -914,6 +914,59 @@ describe('UsersService', () => {
       expect(result.message).toBe('Usuario actualizado exitosamente');
     });
 
+    describe('date-only inputs (QA BUG-4)', () => {
+      // The DTO documents YYYY-MM-DD, but Prisma rejects a date-only string for
+      // a DateTime column: the raw string made PATCH /users/:id a 500.
+      beforeEach(() => {
+        mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
+        mockPrismaService.users.update.mockResolvedValue(updatedUserRow);
+        mockPrismaService.unions.findUnique.mockResolvedValue({
+          union_id: 2,
+          country_id: 1,
+        });
+        mockPrismaService.local_fields.findUnique.mockResolvedValue({
+          local_field_id: 3,
+          union_id: 2,
+        });
+        mockPrismaService.account.count.mockResolvedValue(1);
+      });
+
+      it('sends a YYYY-MM-DD birthday to Prisma as a UTC-midnight Date', async () => {
+        await service.update(
+          'u1',
+          { birthday: '2000-01-15' },
+          { sub: 'u1', kind: 'user' },
+        );
+
+        const data = mockPrismaService.users.update.mock.calls[0][0].data;
+        expect(data.birthday).toEqual(new Date('2000-01-15T00:00:00.000Z'));
+      });
+
+      it('sends a YYYY-MM-DD baptism_date as a UTC-midnight Date too', async () => {
+        await service.update('u1', {
+          baptism: true,
+          baptism_date: '2015-06-20',
+        });
+
+        const data = mockPrismaService.users.update.mock.calls[0][0].data;
+        expect(data.baptism_date).toEqual(new Date('2015-06-20T00:00:00.000Z'));
+      });
+
+      it('keeps the instant of a full ISO date-time (what the app sends)', async () => {
+        await service.update('u1', { birthday: '2000-01-15T06:00:00.000Z' });
+
+        const data = mockPrismaService.users.update.mock.calls[0][0].data;
+        expect(data.birthday).toEqual(new Date('2000-01-15T06:00:00.000Z'));
+      });
+
+      it('leaves the other fields as they were sent', async () => {
+        await service.update('u1', { gender: 'M' });
+
+        const data = mockPrismaService.users.update.mock.calls[0][0].data;
+        expect(data).toEqual({ gender: 'M' });
+      });
+    });
+
     describe('self-edit birthday age gate (FP-24)', () => {
       const yearsAgo = (years: number, extraDays = 0): string => {
         const d = new Date();
