@@ -1423,9 +1423,10 @@ describe('Linked device E2E (family profiles 3b)', () => {
       previousPassthrough = process.env.E2E_PASSTHROUGH_PERMISSIONS;
       delete process.env.E2E_PASSTHROUGH_PERMISSIONS;
 
-      authContext = moduleRef.get(AuthorizationContextService, {
-        strict: false,
-      }) as unknown as typeof authContext;
+      authContext = moduleRef.get<unknown, typeof authContext>(
+        AuthorizationContextService,
+        { strict: false },
+      );
       originalResolve = authContext.resolveUserAuthorization;
       // What the child really holds: ONLY the base `user` role (own data
       // grants), no club role, no direct permission. It is the same snapshot
@@ -1442,9 +1443,9 @@ describe('Linked device E2E (family profiles 3b)', () => {
           }),
         };
       });
-      classes = moduleRef.get(ClassesService, {
+      classes = moduleRef.get<unknown, typeof classes>(ClassesService, {
         strict: false,
-      }) as unknown as typeof classes;
+      });
     });
 
     afterAll(() => {
