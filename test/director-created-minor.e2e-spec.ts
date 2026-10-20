@@ -863,7 +863,7 @@ describe('Director-created minor E2E', () => {
           .set(bearer(DIRECTOR_1))
           .send({});
 
-        expect(response.status).toBe(201);
+        expect(response.status).toBe(200);
         expect(assignments.find({ assignment_id: assignmentId })).toMatchObject(
           {
             status: 'active',
