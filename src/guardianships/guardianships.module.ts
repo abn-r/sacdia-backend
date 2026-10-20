@@ -7,6 +7,7 @@ import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DependentClaimCodesController } from './dependent-claim-codes.controller';
 import { DependentProfilesPurgeCronService } from './dependent-profiles-purge-cron.service';
+import { PendingTeenCronService } from './pending-teen-cron.service';
 import { FamilyFeatureFlagsModule } from './family-feature-flags.module';
 import { GuardianEvidenceService } from './guardian-evidence.service';
 import { SUPERVISED_LOGIN_EVENTS } from '../auth/supervised/supervised-login-events.port';
@@ -56,6 +57,7 @@ import { SupervisionStateService } from './supervision-state.service';
     GuardianNotificationsService,
     GuardianEvidenceService,
     DependentProfilesPurgeCronService,
+    PendingTeenCronService,
     SupervisionStateService,
     GuardianPowersPolicy,
     DependentActionLimiter,
