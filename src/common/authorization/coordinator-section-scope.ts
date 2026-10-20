@@ -5,8 +5,11 @@ import type { PrismaService } from '../../prisma/prisma.service';
  * Canonical coordinator territory (docs/canon/runtime-coordination.md):
  * `coordinator_scope(user_id) -> club_section_ids[]`, the union of
  *  - GENERAL: every active section of active clubs in the local field;
- *  - ZONE:    active sections of `club_type_id` in the zone's active districts;
- *  - SECTION: that one section.
+ *  - ZONE:    active sections of `club_type_id` in the zone's active districts,
+ *             while the zone itself is active;
+ *  - SECTION: that one section, while it and its club are active.
+ * One rule for every type: only ACTIVE territory grants scope (an inactive
+ * zone, club or section contributes nothing).
  * The role (`coordinator`, `zone-coordinator`, `general-coordinator`) only opens
  * the door; the assignment is the authority. Never derive it from the user's
  * home local field or union.
@@ -60,7 +63,16 @@ export async function resolveCoordinatorAssignmentSectionIds(
     input;
 
   if (assignmentType === coordinator_assignment_type.SECTION) {
-    return clubSectionId ? [clubSectionId] : [];
+    if (!clubSectionId) return [];
+    const sections = await prisma.club_sections.findMany({
+      where: {
+        club_section_id: clubSectionId,
+        active: true,
+        clubs: { is: { active: true } },
+      },
+      select: { club_section_id: true },
+    });
+    return sections.map((section) => section.club_section_id);
   }
 
   if (assignmentType === coordinator_assignment_type.GENERAL) {
@@ -77,7 +89,7 @@ export async function resolveCoordinatorAssignmentSectionIds(
   if (!zoneId || !clubTypeId) return [];
 
   const zoneDistricts = await prisma.coordination_zone_districts.findMany({
-    where: { zone_id: zoneId, active: true },
+    where: { zone_id: zoneId, active: true, zone: { active: true } },
     select: { districlub_type_id: true },
   });
 
@@ -110,11 +122,12 @@ export async function resolveCoordinatorAssignmentSectionIds(
  * assignment covers it and the section itself is active. The same rule as
  * expanding every assignment (resolveCoordinatorAssignmentSectionIds) and
  * looking the section up, asked the other way round so a guarded request
- * never expands a GENERAL assignment to a whole local field:
+ * never expands a GENERAL assignment to a whole local field. The section and
+ * its club must be active for every type:
  *  - SECTION: that section;
- *  - GENERAL: the section's club is active and in the assignment's local field;
+ *  - GENERAL: the club is in the assignment's local field;
  *  - ZONE:    same, the section has the assignment's club type and the club's
- *             district is an active district of the zone.
+ *             district is an active district of an ACTIVE zone.
  * Says nothing about roles or permissions; callers gate on those first.
  * /coordination/me/scope still expands (it lists the sections).
  */
@@ -139,36 +152,35 @@ export async function coordinatorScopeIncludesSection(
   });
   if (!section) return false;
 
+  const club = section.clubs;
+  if (!club?.active) return false;
+
   const covering: Prisma.coordinator_assignmentsWhereInput[] = [
     {
       assignment_type: coordinator_assignment_type.SECTION,
       club_section_id: clubSectionId,
     },
-  ];
-  const club = section.clubs;
-  if (club?.active) {
-    covering.push(
-      {
-        assignment_type: coordinator_assignment_type.GENERAL,
-        local_field_id: club.local_field_id,
-      },
-      {
-        assignment_type: coordinator_assignment_type.ZONE,
-        local_field_id: club.local_field_id,
-        club_type_id: section.club_type_id,
-        coordination_zones: {
-          is: {
-            districts: {
-              some: {
-                districlub_type_id: club.districlub_type_id,
-                active: true,
-              },
+    {
+      assignment_type: coordinator_assignment_type.GENERAL,
+      local_field_id: club.local_field_id,
+    },
+    {
+      assignment_type: coordinator_assignment_type.ZONE,
+      local_field_id: club.local_field_id,
+      club_type_id: section.club_type_id,
+      coordination_zones: {
+        is: {
+          active: true,
+          districts: {
+            some: {
+              districlub_type_id: club.districlub_type_id,
+              active: true,
             },
           },
         },
       },
-    );
-  }
+    },
+  ];
 
   const match = await prisma.coordinator_assignments.findFirst({
     where: {

@@ -147,6 +147,7 @@ describe('coordinatorScopeIncludesSection (one section against the active assign
                 club_type_id: CLUB_TYPE_ID,
                 coordination_zones: {
                   is: {
+                    active: true,
                     districts: {
                       some: { districlub_type_id: DISTRICT_ID, active: true },
                     },
@@ -206,7 +207,7 @@ describe('coordinatorScopeIncludesSection (one section against the active assign
     expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
   });
 
-  it('a section of an INACTIVE club is reachable only through a SECTION assignment (GENERAL / ZONE expand active clubs only)', async () => {
+  it('a section of an INACTIVE club is outside the scope for every assignment type (SECTION included), without reading assignments', async () => {
     const prisma = targetedPrisma({
       section: activeSection({
         clubs: {
@@ -215,33 +216,35 @@ describe('coordinatorScopeIncludesSection (one section against the active assign
           districlub_type_id: DISTRICT_ID,
         },
       }),
+      match: { assignment_id: 'a-1' },
     });
 
-    await coordinatorScopeIncludesSection(
-      targeted(prisma),
-      USER_ID,
-      SECTION_ID,
-      NOW,
-    );
+    expect(
+      await coordinatorScopeIncludesSection(
+        targeted(prisma),
+        USER_ID,
+        SECTION_ID,
+        NOW,
+      ),
+    ).toBe(false);
+    expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
+  });
 
-    expect(prisma.coordinator_assignments.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          user_id: USER_ID,
-          AND: [
-            ACTIVE_WINDOW,
-            {
-              OR: [
-                {
-                  assignment_type: coordinator_assignment_type.SECTION,
-                  club_section_id: SECTION_ID,
-                },
-              ],
-            },
-          ],
-        },
-      }),
-    );
+  it('a section without a club is outside the scope', async () => {
+    const prisma = targetedPrisma({
+      section: activeSection({ clubs: null }),
+      match: { assignment_id: 'a-1' },
+    });
+
+    expect(
+      await coordinatorScopeIncludesSection(
+        targeted(prisma),
+        USER_ID,
+        SECTION_ID,
+        NOW,
+      ),
+    ).toBe(false);
+    expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
   });
 });
 
@@ -279,7 +282,7 @@ describe('resolveCoordinatorAssignmentSectionIds', () => {
       }),
     ).toEqual([SECTION_ID]);
     expect(prisma.coordination_zone_districts.findMany).toHaveBeenCalledWith({
-      where: { zone_id: 4, active: true },
+      where: { zone_id: 4, active: true, zone: { active: true } },
       select: { districlub_type_id: true },
     });
     expect(prisma.club_sections.findMany).toHaveBeenCalledWith({
@@ -318,6 +321,39 @@ describe('resolveCoordinatorAssignmentSectionIds', () => {
       await resolveCoordinatorAssignmentSectionIds(asPrisma(prisma), {
         localFieldId: LOCAL_FIELD_ID,
         assignmentType: coordinator_assignment_type.SECTION,
+      }),
+    ).toEqual([]);
+    expect(prisma.club_sections.findMany).not.toHaveBeenCalled();
+  });
+
+  it('SECTION expands to that section only while it and its club are active', async () => {
+    const prisma = fakePrisma({ expandedSectionIds: [SECTION_ID] });
+
+    expect(
+      await resolveCoordinatorAssignmentSectionIds(asPrisma(prisma), {
+        localFieldId: LOCAL_FIELD_ID,
+        assignmentType: coordinator_assignment_type.SECTION,
+        clubSectionId: SECTION_ID,
+      }),
+    ).toEqual([SECTION_ID]);
+    expect(prisma.club_sections.findMany).toHaveBeenCalledWith({
+      where: {
+        club_section_id: SECTION_ID,
+        active: true,
+        clubs: { is: { active: true } },
+      },
+      select: { club_section_id: true },
+    });
+  });
+
+  it('SECTION of an inactive section or club expands to nothing', async () => {
+    const prisma = fakePrisma({ expandedSectionIds: [] });
+
+    expect(
+      await resolveCoordinatorAssignmentSectionIds(asPrisma(prisma), {
+        localFieldId: LOCAL_FIELD_ID,
+        assignmentType: coordinator_assignment_type.SECTION,
+        clubSectionId: SECTION_ID,
       }),
     ).toEqual([]);
   });

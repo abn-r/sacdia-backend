@@ -44,6 +44,7 @@ describe('CoordinationService', () => {
       club_section_id: 99,
       clubs: { local_field_id: 10 },
     });
+    prisma.club_sections.findMany.mockResolvedValue([{ club_section_id: 99 }]);
     prisma.club_role_assignments.findFirst.mockResolvedValue({
       club_section_id: 99,
     });
