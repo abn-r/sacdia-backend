@@ -51,6 +51,18 @@ type AuthorizedRequest = {
 
 const APPROVE_PERMISSION = 'club_members:approve';
 
+/**
+ * Reviewing a minor's consent (list, read/upload the signed form, verify):
+ * club_members:approve OR consent:verify. Approving the membership stays
+ * club_members:approve only. `coordinatorSections` lets a GLOBAL coordinator
+ * whose role carries one of these reach the sections their
+ * coordinator_assignments cover.
+ */
+const CONSENT_REVIEW_PERMISSIONS = {
+  permissions: [APPROVE_PERMISSION, 'consent:verify'],
+  mode: 'any' as const,
+};
+
 @ApiTags('membership-requests')
 @Controller('club-sections/:clubSectionId/membership-requests')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -63,8 +75,12 @@ export class MembershipRequestsController {
   ) {}
 
   @Get()
-  @RequirePermissions('club_members:approve')
-  @AuthorizationResource({ type: 'club_section', idParam: 'clubSectionId' })
+  @RequirePermissions(CONSENT_REVIEW_PERMISSIONS)
+  @AuthorizationResource({
+    type: 'club_section',
+    idParam: 'clubSectionId',
+    coordinatorSections: true,
+  })
   @ApiOperation({
     summary: 'Listar solicitudes pendientes de membresía',
     description:
@@ -110,7 +126,7 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 403,
     description:
-      'Forbidden — requires club_members:approve permission for this club',
+      'Forbidden — requires club_members:approve or consent:verify for this section (a coordinator: on a section their coordinator_assignments cover)',
   })
   async listPending(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
@@ -192,8 +208,12 @@ export class MembershipRequestsController {
     return { status: 'success', data };
   }
   @Post(':assignmentId/consent-evidence')
-  @RequirePermissions('club_members:approve')
-  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
+  @RequirePermissions(CONSENT_REVIEW_PERMISSIONS)
+  @AuthorizationResource({
+    type: 'club_assignment',
+    idParam: 'assignmentId',
+    coordinatorSections: true,
+  })
   @Throttle(namedThrottle({ ttl: 3_600_000, limit: 20 }))
   @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
@@ -213,6 +233,11 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 201,
     description: '{ evidence_id, content_type, size_bytes, uploaded_at }',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Sin club_members:approve ni consent:verify en la sección (un coordinador: solo en secciones cubiertas por sus coordinator_assignments)',
   })
   @ApiResponse({
     status: 404,
@@ -244,8 +269,12 @@ export class MembershipRequestsController {
   }
 
   @Get(':assignmentId/consent-evidence')
-  @RequirePermissions('club_members:approve')
-  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
+  @RequirePermissions(CONSENT_REVIEW_PERMISSIONS)
+  @AuthorizationResource({
+    type: 'club_assignment',
+    idParam: 'assignmentId',
+    coordinatorSections: true,
+  })
   @ApiOperation({
     summary: 'URL firmada (15 min) de la ficha de consentimiento vigente',
   })
@@ -255,6 +284,11 @@ export class MembershipRequestsController {
     status: 200,
     description:
       '{ url, expires_in, content_type, uploaded_at, uploaded_by_display_name }',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Sin club_members:approve ni consent:verify en la sección (un coordinador: solo en secciones cubiertas por sus coordinator_assignments)',
   })
   @ApiResponse({
     status: 404,
@@ -279,10 +313,7 @@ export class MembershipRequestsController {
   }
   @Post(':assignmentId/verify-consent')
   @HttpCode(200)
-  @RequirePermissions({
-    permissions: [APPROVE_PERMISSION, 'consent:verify'],
-    mode: 'any',
-  })
+  @RequirePermissions(CONSENT_REVIEW_PERMISSIONS)
   @AuthorizationResource({
     type: 'club_assignment',
     idParam: 'assignmentId',

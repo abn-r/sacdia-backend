@@ -81,16 +81,17 @@ describe('MembershipRequestsController (consent)', () => {
   });
 
   it.each(['uploadConsentEvidence', 'getConsentEvidence'] as const)(
-    '%s needs club_members:approve on the club_assignment resource and no acting scope',
+    '%s needs club_members:approve or consent:verify on the club_assignment resource (coordinator sections opted in) and no acting scope',
     (name) => {
       const handler = MembershipRequestsController.prototype[name];
       expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
-        permissions: ['club_members:approve'],
-        mode: 'all',
+        permissions: ['club_members:approve', 'consent:verify'],
+        mode: 'any',
       });
       expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
         type: 'club_assignment',
         idParam: 'assignmentId',
+        coordinatorSections: true,
       });
       expect(Reflect.getMetadata(ACTING_SCOPE_KEY, handler)).toBeUndefined();
     },
@@ -208,6 +209,56 @@ describe('MembershipRequestsController (consent)', () => {
       });
       expect(Reflect.getMetadata('__httpCode__', handler)).toBe(200);
       expect(Reflect.getMetadata(ACTING_SCOPE_KEY, handler)).toBeUndefined();
+    });
+  });
+
+  describe('verify-only reviewers (consent:verify without club_members:approve)', () => {
+    const REVIEW_ROUTES = [
+      'listPending',
+      'uploadConsentEvidence',
+      'getConsentEvidence',
+      'verifyConsent',
+    ] as const;
+
+    it.each(REVIEW_ROUTES)(
+      '%s accepts club_members:approve OR consent:verify and opts in coordinator sections',
+      (route) => {
+        const handler = MembershipRequestsController.prototype[route];
+        expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+          permissions: ['club_members:approve', 'consent:verify'],
+          mode: 'any',
+        });
+        expect(
+          Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler),
+        ).toMatchObject({ coordinatorSections: true });
+      },
+    );
+
+    it.each(['approve', 'reject'] as const)(
+      '%s stays club_members:approve only, without coordinator sections',
+      (route) => {
+        const handler = MembershipRequestsController.prototype[route];
+        expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+          permissions: ['club_members:approve'],
+          mode: 'all',
+        });
+        expect(
+          Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler),
+        ).toEqual({ type: 'club_assignment', idParam: 'assignmentId' });
+      },
+    );
+
+    it('the list keeps its club_section resource', () => {
+      expect(
+        Reflect.getMetadata(
+          AUTHORIZATION_RESOURCE_KEY,
+          MembershipRequestsController.prototype.listPending,
+        ),
+      ).toEqual({
+        type: 'club_section',
+        idParam: 'clubSectionId',
+        coordinatorSections: true,
+      });
     });
   });
 });

@@ -179,6 +179,11 @@ function setup(
       findMany: jest.fn().mockResolvedValue(coordinator.assignments ?? []),
     },
     club_sections: {
+      findUnique: jest.fn().mockResolvedValue({
+        club_section_id: SECTION_ID,
+        main_club_id: MAIN_CLUB_ID,
+        club_type_id: 2,
+      }),
       findMany: jest.fn().mockResolvedValue(
         (coordinator.expandedSectionIds ?? []).map((club_section_id) => ({
           club_section_id,
@@ -216,18 +221,24 @@ function setup(
 type Handler = keyof MembershipRequestsController;
 
 /** The context of a REAL controller handler: its real PERMISSIONS_KEY and resource. */
-function handlerContext(handler: Handler = 'verifyConsent'): ExecutionContext {
-  const request = {
-    user: { sub: USER_ID },
-    params: { clubSectionId: String(SECTION_ID), assignmentId: ASSIGNMENT_ID },
-    query: {},
-    body: {},
-  };
+function handlerContext(
+  handler: Handler = 'verifyConsent',
+  request: Record<string, unknown> = newRequest(),
+): ExecutionContext {
   return {
     getHandler: () => MembershipRequestsController.prototype[handler],
     getClass: () => MembershipRequestsController,
     switchToHttp: () => ({ getRequest: () => request }),
   } as unknown as ExecutionContext;
+}
+
+function newRequest(): Record<string, unknown> {
+  return {
+    user: { sub: USER_ID },
+    params: { clubSectionId: String(SECTION_ID), assignmentId: ASSIGNMENT_ID },
+    query: {},
+    body: {},
+  };
 }
 
 const decide = async (
@@ -463,6 +474,116 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
         code: ErrorCode.GUARD_PERMISSION_DENIED,
       });
       expect(prisma.club_role_assignments.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('verify-only reviewers reach the list and the consent form, never approve', () => {
+    const REVIEW_ROUTES = [
+      'listPending',
+      'getConsentEvidence',
+      'uploadConsentEvidence',
+      'verifyConsent',
+    ] as const;
+
+    const reviewers = () => [
+      {
+        label: 'CLUB secretary (own section)',
+        ...setup(
+          clubRoleProfile(
+            'secretary',
+            ['consent:verify'],
+            MAIN_CLUB_ID,
+            SECTION_ID,
+          ),
+        ),
+      },
+      {
+        label: 'GLOBAL coordinator (assigned section)',
+        ...setup(
+          globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+          { assignments: [sectionAssignment(SECTION_ID)] },
+        ),
+      },
+    ];
+
+    it.each(REVIEW_ROUTES)(
+      '%s lets every verify-only reviewer in',
+      async (route) => {
+        for (const { label, guard } of reviewers()) {
+          expect({ label, ...(await decide(guard, route)) }).toEqual({
+            label,
+            allowed: true,
+          });
+        }
+      },
+    );
+
+    it.each(['approve', 'reject'] as const)(
+      '%s denies every verify-only reviewer before any scope check',
+      async (route) => {
+        for (const { label, guard } of reviewers()) {
+          expect({ label, ...(await decide(guard, route)) }).toEqual({
+            label,
+            allowed: false,
+            code: ErrorCode.GUARD_PERMISSION_DENIED,
+          });
+        }
+      },
+    );
+
+    it.each([
+      'listPending',
+      'getConsentEvidence',
+      'uploadConsentEvidence',
+    ] as const)(
+      '%s denies a coordinator outside their assigned sections',
+      async (route) => {
+        const { guard } = setup(
+          globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+          { assignments: [sectionAssignment(99)] },
+        );
+
+        expect(await decide(guard, route)).toEqual({
+          allowed: false,
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      },
+    );
+
+    it('verify-consent with approve:true is 403 MR_APPROVE_PERMISSION_REQUIRED for a coordinator the guard let in', async () => {
+      const { guard } = setup(
+        globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+        HOME_TERRITORY,
+        { assignments: [sectionAssignment(SECTION_ID)] },
+      );
+      const request = newRequest();
+      expect(
+        await guard.canActivate(handlerContext('verifyConsent', request)),
+      ).toBe(true);
+      const verification = { verify: jest.fn() };
+      const controller = new MembershipRequestsController(
+        {} as never,
+        {} as never,
+        verification as never,
+      );
+
+      const error = await controller
+        .verifyConsent(
+          SECTION_ID,
+          ASSIGNMENT_ID,
+          { confirm_paper_form_reviewed: true, approve: true },
+          { sub: USER_ID },
+          request as never,
+        )
+        .then(
+          () => undefined,
+          (e: { code?: string }) => e,
+        );
+
+      expect(error?.code).toBe(ErrorCode.MR_APPROVE_PERMISSION_REQUIRED);
+      expect(verification.verify).not.toHaveBeenCalled();
     });
   });
 
