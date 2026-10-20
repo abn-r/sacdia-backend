@@ -6610,12 +6610,14 @@ model camporee_supply_folio_counters {
  * idx_guardianship_link_codes_dependent_open.
  */
 model dependent_profiles {
-  user_id            String    @id(map: "dependent_profiles_pkey") @db.Uuid
-  created_by_user_id String    @db.Uuid
-  created_at         DateTime  @default(now()) @db.Timestamptz(6)
-  frozen_at          DateTime? @db.Timestamptz(6)
-  purge_after        DateTime? @db.Timestamptz(6)
-  purged_at          DateTime? @db.Timestamptz(6)
+  user_id              String    @id(map: "dependent_profiles_pkey") @db.Uuid
+  created_by_user_id   String    @db.Uuid
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  frozen_at            DateTime? @db.Timestamptz(6)
+  purge_after          DateTime? @db.Timestamptz(6)
+  purged_at            DateTime? @db.Timestamptz(6)
+  // Phase 3c: set once the verified guardians were nudged that the child can have its own login (NULL = never).
+  teen_login_nudged_at DateTime? @db.Timestamptz(6)
 
   user       users @relation("dependent_profile_user", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "dependent_profiles_user_id_fkey")
   created_by users @relation("dependent_profile_creator", fields: [created_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "dependent_profiles_created_by_user_id_fkey")

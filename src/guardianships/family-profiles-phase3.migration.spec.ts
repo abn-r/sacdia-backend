@@ -675,3 +675,333 @@ describe('family profiles phase 3b migration (20261021120000)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 3c: dependent nudge column (20261022120000) and family permission seeds
+// (20261022130000)
+// ---------------------------------------------------------------------------
+
+const DIRECTOR_MINORS_MIGRATION = '20261022120000_family_director_minors';
+const FAMILY_SEED_MIGRATION = '20261022130000_seed_family_permissions';
+
+const readPrisma = (relative: string): string =>
+  readFileSync(join(__dirname, `../../prisma/${relative}`), 'utf8');
+
+const nudgeMigration = readPrisma(
+  `migrations/${DIRECTOR_MINORS_MIGRATION}/migration.sql`,
+);
+const seedMigration = readPrisma(
+  `migrations/${FAMILY_SEED_MIGRATION}/migration.sql`,
+);
+const permissionsSeed = readPrisma('seeds/permissions.seed.sql');
+const rolePermissionsSeed = readPrisma('seeds/role-permissions.seed.sql');
+
+const NUDGE_STATEMENT =
+  /^ALTER TABLE dependent_profiles ADD COLUMN IF NOT EXISTS teen_login_nudged_at timestamptz\(6\)$/;
+
+const findNudgeViolations = (sql: string): string[] => {
+  const violations: string[] = [];
+  for (const statement of splitStatements(sql)) {
+    if (!NUDGE_STATEMENT.test(statement)) {
+      violations.push(`not allowlisted: ${statement.slice(0, 60)}`);
+    }
+  }
+  const ddl = stripComments(sql);
+  for (const denied of DENIED_PATTERNS) {
+    if (denied.test(ddl)) {
+      violations.push(`denied: ${denied.source}`);
+    }
+  }
+  if (/\bDROP\s+CONSTRAINT\b/i.test(ddl)) {
+    violations.push('denied: DROP CONSTRAINT');
+  }
+  return violations;
+};
+
+describe('family profiles phase 3c nudge migration (20261022120000)', () => {
+  const statements = splitStatements(nudgeMigration);
+
+  it('is exactly the single additive ADD COLUMN IF NOT EXISTS statement', () => {
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toMatch(NUDGE_STATEMENT);
+  });
+
+  it('passes the allowlist/denylist guard', () => {
+    expect(findNudgeViolations(nudgeMigration)).toEqual([]);
+  });
+
+  it('adds no creator column (created_by_user_id already exists) and no default/NOT NULL', () => {
+    const ddl = stripComments(nudgeMigration);
+    expect(ddl).not.toMatch(/created_by/i);
+    expect(ddl).not.toMatch(/\bNOT\s+NULL\b/i);
+    expect(ddl).not.toMatch(/\bDEFAULT\b/i);
+    expect(schema).toMatch(/created_by_user_id\s+String\s+@db\.Uuid/);
+  });
+
+  describe('guard negative cases', () => {
+    it.each([
+      [
+        'a second column',
+        'ALTER TABLE dependent_profiles ADD COLUMN IF NOT EXISTS created_by_extra uuid;',
+      ],
+      ['DROP COLUMN', 'ALTER TABLE dependent_profiles DROP COLUMN frozen_at;'],
+      ['UPDATE', 'UPDATE dependent_profiles SET teen_login_nudged_at = now();'],
+      ['INSERT', "INSERT INTO permissions (permission_name) VALUES ('x');"],
+      ['BEGIN', 'BEGIN;'],
+      [
+        'a DROP CONSTRAINT',
+        'ALTER TABLE dependent_profiles DROP CONSTRAINT dependent_profiles_pkey;',
+      ],
+    ])('fails when an extra %s statement is appended', (_label, extra) => {
+      expect(findNudgeViolations(`${nudgeMigration}\n${extra}\n`)).not.toEqual(
+        [],
+      );
+    });
+
+    it('fails when the column loses IF NOT EXISTS or changes type', () => {
+      expect(
+        findNudgeViolations(
+          'ALTER TABLE dependent_profiles ADD COLUMN teen_login_nudged_at timestamptz(6);',
+        ),
+      ).not.toEqual([]);
+      expect(
+        findNudgeViolations(
+          'ALTER TABLE dependent_profiles ADD COLUMN IF NOT EXISTS teen_login_nudged_at timestamp;',
+        ),
+      ).not.toEqual([]);
+    });
+
+    it('ignores forbidden words that only appear inside -- comments', () => {
+      expect(
+        findNudgeViolations(`-- DROP TABLE x; INSERT y;\n${nudgeMigration}`),
+      ).toEqual([]);
+    });
+  });
+
+  it('matches the Prisma schema: nullable DateTime with Timestamptz(6)', () => {
+    const field = Prisma.dmmf.datamodel.models
+      .find((entry) => entry.name === 'dependent_profiles')!
+      .fields.find((entry) => entry.name === 'teen_login_nudged_at');
+    expect(field).toBeDefined();
+    expect(field!.type).toBe('DateTime');
+    expect(schema).toMatch(
+      /teen_login_nudged_at\s+DateTime\?\s+@db\.Timestamptz\(6\)/,
+    );
+    expect(schema).not.toMatch(/teen_login_nudged_at[^\n]*@default/);
+  });
+});
+
+// -- seeds ------------------------------------------------------------------
+
+const FAMILY_PERMISSIONS = ['dependents:create', 'consent:verify'];
+
+/** Wildcard roles pick both permissions up through their seed blocks. */
+const WILDCARD_ROLES = ['admin', 'assistant-admin', 'super-admin'];
+
+const SEED_BEGIN = '-- BEGIN family permissions (phase 3c)';
+const SEED_END = '-- END family permissions (phase 3c)';
+
+/** Quoted tokens in a SQL fragment, in order. */
+const quoted = (fragment: string): string[] =>
+  [...fragment.matchAll(/'([^']*)'/g)].map((match) => match[1]);
+
+/** "category|role|permission" triples granted by INSERT INTO role_permissions. */
+function parseGrants(sql: string): string[] {
+  const triples: string[] = [];
+  for (const statement of splitStatements(sql)) {
+    if (!/^INSERT INTO role_permissions\b/.test(statement)) continue;
+    const roles = statement.match(
+      /r\.role_name\s+(?:IN\s*\(([^)]*)\)|=\s*('[^']*'))/,
+    );
+    const category = statement.match(/r\.role_category\s*=\s*'([A-Z]+)'/);
+    const permissions = statement.match(
+      /p\.permission_name\s+(?:IN\s*\(([^)]*)\)|=\s*('[^']*'))/,
+    );
+    if (!roles || !category || !permissions) {
+      throw new Error(`unparseable grant: ${statement.slice(0, 80)}`);
+    }
+    for (const role of quoted(roles[1] ?? roles[2])) {
+      for (const permission of quoted(permissions[1] ?? permissions[2])) {
+        triples.push(`${category[1]}|${role}|${permission}`);
+      }
+    }
+  }
+  return triples.sort();
+}
+
+const seedSection = (): string => {
+  const start = rolePermissionsSeed.indexOf(SEED_BEGIN);
+  const end = rolePermissionsSeed.indexOf(SEED_END);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  return rolePermissionsSeed.slice(start, end);
+};
+
+const grantsOf = (triples: string[], permission: string): string[] =>
+  triples
+    .filter((entry) => entry.endsWith(`|${permission}`))
+    .map((e) => e.split('|').slice(0, 2).join('|'));
+
+describe('family permission seeds (20261022130000)', () => {
+  const statements = splitStatements(seedMigration);
+
+  it('only INSERTs into permissions and role_permissions, nothing else', () => {
+    expect(statements.length).toBeGreaterThan(0);
+    for (const statement of statements) {
+      expect(statement).toMatch(
+        /^INSERT INTO (permissions|role_permissions)\b/,
+      );
+    }
+    // Quoted literals (permission names such as dependents:create) are not DDL.
+    const dml = stripComments(seedMigration).replace(/'[^']*'/g, "''");
+    expect(dml).not.toMatch(
+      /\b(DELETE|UPDATE\s+\w+\s+SET|TRUNCATE|DROP|ALTER|CREATE|BEGIN|COMMIT)\b/i,
+    );
+  });
+
+  it('names only dependents:create and consent:verify', () => {
+    const names = new Set<string>();
+    for (const statement of statements) {
+      for (const token of quoted(statement)) {
+        if (/^[a-z_]+:[a-z_]+$/.test(token)) names.add(token);
+      }
+    }
+    expect([...names].sort()).toEqual([...FAMILY_PERMISSIONS].sort());
+  });
+
+  it('makes every INSERT idempotent with ON CONFLICT (applying twice cannot duplicate)', () => {
+    for (const statement of statements) {
+      expect(statement).toMatch(/\bON CONFLICT\b/);
+      if (statement.startsWith('INSERT INTO permissions')) {
+        expect(statement).toMatch(
+          /ON CONFLICT \(permission_name\) DO UPDATE SET/,
+        );
+      } else {
+        expect(statement).toMatch(
+          /ON CONFLICT \(role_id, permission_id\) DO NOTHING$/,
+        );
+      }
+    }
+    // The conflict targets exist as unique constraints.
+    expect(schema).toMatch(/permission_name\s+String\s+@unique/);
+    expect(schema).toMatch(/@@unique\(\[role_id, permission_id\]\)/);
+  });
+
+  it('inserts both permissions with an active description', () => {
+    const inserts = statements.filter((s) =>
+      s.startsWith('INSERT INTO permissions'),
+    );
+    expect(inserts).toHaveLength(1);
+    for (const permission of FAMILY_PERMISSIONS) {
+      expect(inserts[0]).toContain(`'${permission}'`);
+    }
+    expect(inserts[0]).toMatch(/, true\)/);
+  });
+
+  it('grants dependents:create to director and deputy-director only (plus the wildcard roles)', () => {
+    const grants = parseGrants(seedMigration);
+    expect(grantsOf(grants, 'dependents:create').sort()).toEqual(
+      [
+        'CLUB|director',
+        'CLUB|deputy-director',
+        ...WILDCARD_ROLES.map((role) => `GLOBAL|${role}`),
+      ].sort(),
+    );
+  });
+
+  it('grants consent:verify to CLUB director, deputy-director, secretary, secretary-treasurer (plus the wildcard roles); NO coordinator role (B11 fallback)', () => {
+    const grants = parseGrants(seedMigration);
+    expect(grantsOf(grants, 'consent:verify').sort()).toEqual(
+      [
+        'CLUB|director',
+        'CLUB|deputy-director',
+        'CLUB|secretary',
+        'CLUB|secretary-treasurer',
+        ...WILDCARD_ROLES.map((role) => `GLOBAL|${role}`),
+      ].sort(),
+    );
+    for (const denied of [
+      'coordinator',
+      'zone-coordinator',
+      'general-coordinator',
+      'member',
+      'counselor',
+      'instructor',
+      'treasurer',
+    ]) {
+      expect(
+        parseGrants(seedMigration).filter((g) => g.includes(`|${denied}|`)),
+      ).toEqual([]);
+    }
+  });
+
+  describe('seed files carry the SAME rows as the migration', () => {
+    it('permissions.seed.sql declares both permissions with the migration descriptions', () => {
+      const migrationInsert = statements.find((s) =>
+        s.startsWith('INSERT INTO permissions'),
+      )!;
+      for (const permission of FAMILY_PERMISSIONS) {
+        const pick = (sql: string) =>
+          new RegExp(`\\('${permission}', '([^']*)', true\\)`).exec(sql)?.[1];
+        expect(pick(permissionsSeed)).toBeDefined();
+        expect(pick(permissionsSeed)).toBe(pick(migrationInsert));
+      }
+    });
+
+    it('role-permissions.seed.sql family block grants the same CLUB rows as the migration', () => {
+      const fromSeed = parseGrants(seedSection());
+      const fromMigration = parseGrants(seedMigration).filter(
+        (entry) => !WILDCARD_ROLES.some((role) => entry.includes(`|${role}|`)),
+      );
+      expect(fromSeed).toEqual(fromMigration);
+      expect(fromSeed.length).toBe(6);
+    });
+
+    it('the family block sits inside the seed transaction and after every role block (DELETE+INSERT blocks would wipe it)', () => {
+      const at = rolePermissionsSeed.indexOf(SEED_BEGIN);
+      const lastRoleDelete = rolePermissionsSeed.lastIndexOf(
+        'DELETE FROM role_permissions',
+        at,
+      );
+      expect(lastRoleDelete).toBeGreaterThanOrEqual(0);
+      expect(at).toBeLessThan(rolePermissionsSeed.indexOf('\nCOMMIT;'));
+      // No DELETE of these permissions anywhere in the seed (they are additive).
+      for (const permission of FAMILY_PERMISSIONS) {
+        const pattern = new RegExp(
+          `DELETE FROM role_permissions[^;]*'${permission}'`,
+          'i',
+        );
+        expect(rolePermissionsSeed).not.toMatch(pattern);
+      }
+    });
+
+    it('wildcard roles (admin, assistant-admin, super-admin) still select permissions without a name list', () => {
+      for (const role of WILDCARD_ROLES) {
+        const block = rolePermissionsSeed.slice(
+          rolePermissionsSeed.indexOf(`WHERE r.role_name = '${role}'`),
+        );
+        const head = block.slice(0, block.indexOf('ON CONFLICT'));
+        expect(head).not.toMatch(/permission_name IN \(/);
+      }
+    });
+  });
+
+  describe('seed semantics (parse the real seed)', () => {
+    const seedGrants = (): string[] => parseGrants(seedSection());
+
+    it('director holds dependents:create; coordinator and member do not', () => {
+      const holders = grantsOf(seedGrants(), 'dependents:create');
+      expect(holders).toContain('CLUB|director');
+      expect(holders).toContain('CLUB|deputy-director');
+      expect(holders).not.toContain('GLOBAL|coordinator');
+      expect(holders).not.toContain('CLUB|member');
+    });
+
+    it('rejects a mutation that grants dependents:create to member or coordinator', () => {
+      const mutated = `${seedSection()}\nINSERT INTO role_permissions (role_permission_id, role_id, permission_id)\nSELECT gen_random_uuid(), r.role_id, p.permission_id FROM roles r CROSS JOIN permissions p\nWHERE r.role_name IN ('member') AND r.role_category = 'CLUB' AND p.permission_name = 'dependents:create'\nON CONFLICT (role_id, permission_id) DO NOTHING;\n`;
+      expect(grantsOf(parseGrants(mutated), 'dependents:create')).toContain(
+        'CLUB|member',
+      );
+    });
+  });
+});

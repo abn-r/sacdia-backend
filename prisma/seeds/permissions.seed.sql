@@ -793,6 +793,18 @@ ON CONFLICT (permission_name) DO UPDATE SET
   active = EXCLUDED.active,
   modified_at = now();
 
+-- ============================
+-- Family (Phase 3c: director-created minors and independent consent verification)
+-- ============================
+-- Same rows as migration 20261022130000_seed_family_permissions.
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('dependents:create', 'Register a minor in a club section under club custody', true),
+  ('consent:verify', 'Verify the signed consent form of a minor without approving membership', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================
