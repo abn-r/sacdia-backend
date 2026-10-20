@@ -24,6 +24,34 @@ export const VISIBLE_DEPENDENT = {
   dependent_profile: { is: { frozen_at: null, purged_at: null } },
 } as const satisfies Prisma.usersWhereInput;
 
+/**
+ * A dependent whose GUARDIAN still manages it (family-profiles 3a, design 3.7):
+ * the one fragment behind "can a guardian act for this child" and "does a club
+ * push to this child also go to the guardians".
+ *
+ *  - active, with a live (not frozen / purged) dependent profile; AND
+ *  - EITHER no account and no supervised login (a plain dependent, with or
+ *    without a paired device in 3b), OR a supervised login the guardian
+ *    enabled and later DISABLED (acting-for and the guardian copies resume).
+ *
+ * Never managed: a child with an ENABLED supervised login (the teen runs their
+ * own account; guardians get security notices and the summary instead), and a
+ * self-registered teen, enabled or disabled (it only ever had a link code, so
+ * it never becomes actable).
+ */
+export const GUARDIAN_MANAGED_DEPENDENT = {
+  active: true,
+  dependent_profile: { is: { frozen_at: null, purged_at: null } },
+  OR: [
+    { account: { none: {} }, supervised_login: { is: null } },
+    {
+      supervised_login: {
+        is: { origin: 'guardian_enabled', disabled_at: { not: null } },
+      },
+    },
+  ],
+} as const satisfies Prisma.usersWhereInput;
+
 export interface SectionAssignment {
   assignment_id: string;
   club_section_id: number | null;

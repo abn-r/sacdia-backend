@@ -11,6 +11,7 @@ export type ActingDenyCause =
   | 'dependent_inactive'
   | 'guardian_inactive'
   | 'has_account'
+  | 'supervised_login_active'
   | 'no_dependent_profile'
   | 'frozen'
   | 'birthday_missing'

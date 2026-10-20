@@ -53,6 +53,8 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'PATCH /notifications/read-all': 'self:read',
   'PATCH /notifications/:deliveryId/read': 'self:read',
   'GET /users/me/legal-acceptance': 'self:read',
+  // The teen's own supervision (status, guardians, clock). Adults get status null.
+  'GET /users/me/supervision': 'self:read',
   // ---- health:read (retagged from self:read in Phase 3: a child's phone must
   // not read health or emergency-contact data; guardians and teens hold both)
   'GET /users/:userId/allergies': 'health:read',
@@ -171,6 +173,9 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   // ---- self:preferences (teen only)
   'GET /users/me/notification-preferences': 'self:preferences',
   'PATCH /users/me/notification-preferences': 'self:preferences',
+  // ---- guardian_link:issue (a pending teen links a guardian; never a guardian/device)
+  'POST /users/me/guardian-link-codes': 'guardian_link:issue',
+  'POST /users/me/guardian-links/:guardianshipId/revoke': 'guardian_link:issue',
   // ---- push:register (teen + linked device; own token only)
   'POST /users/me/fcm-tokens': 'push:register',
   'DELETE /users/me/fcm-tokens/:tokenId': 'push:register',

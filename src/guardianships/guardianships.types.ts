@@ -11,6 +11,13 @@ export interface DependentClubMembership {
   club_type_name: string | null;
 }
 
+export interface DependentSupervisedLogin {
+  method: 'email' | 'handle';
+  login_handle: string | null;
+  enabled_at: string | null;
+  disabled_at: string | null;
+}
+
 export interface DependentSummary {
   user_id: string;
   name: string | null;
@@ -19,7 +26,22 @@ export interface DependentSummary {
   birthday: string | null;
   age: number | null;
   user_image: string | null;
-  access_mode: 'guardian_managed';
+  /**
+   * `guardian_managed`: the guardian acts for the child (no own login, or a
+   * guardian-enabled login that was disabled). `supervised_login`: the teen
+   * holds an account and acts alone; the guardian supervises.
+   */
+  access_mode: 'guardian_managed' | 'supervised_login';
+  /**
+   * The teen's login as a guardian sees it. `login_handle` is only present for
+   * a VERIFIED guardian (a pending link never sees it). Null when the child
+   * has no supervised login.
+   */
+  supervised_login: DependentSupervisedLogin | null;
+  /** Paired devices (3b). Always 0 in 3a. */
+  linked_devices_count: number;
+  /** Old enough for an own login (>= min self-login age, < majority) and has none yet. */
+  age_milestone_reached: boolean;
   post_register_complete: boolean;
   frozen: boolean;
   guardianship: {

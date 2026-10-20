@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import {
@@ -24,6 +24,11 @@ import {
   type GuardianshipRevokedReason,
 } from './guardianships.constants';
 import type { DeletionImpactEntry } from './guardianships.types';
+import {
+  LINKED_DEVICE_REVOKER,
+  type LinkedDeviceRevoker,
+  type LinkedDeviceRevokeReason,
+} from './linked-device-revoker.port';
 
 /** Club roles told that a minor is now under the club's custody. */
 const CUSTODY_NOTIFY_ROLES = ['director', 'deputy-director'];
@@ -71,7 +76,16 @@ const DETACHABLE_SELECT = {
  *      to primary when the primary left);
  *   2. else the dependent has an active/pending club assignment -> a custodian
  *      row is created for the club -> `club_custody`;
- *   3. else the profile is frozen and scheduled for purge -> `frozen`.
+ *   3. else, for a dependent WITHOUT an account, the profile is frozen and
+ *      scheduled for purge -> `frozen`; for a TEEN (it holds an account) there
+ *      is no freeze: -> `pending_guardian`, the teen falls back to
+ *      pending-guardian mode on the next request and the 90-day guardian-less
+ *      clock restarts. The clock also restarts for the custody case: custody
+ *      is not a guardian.
+ *
+ * Linked devices of the leaver's guardianship (and of the whole child when the
+ * last guardian leaves) are revoked through the LINKED_DEVICE_REVOKER port, in
+ * the same transaction.
  */
 @Injectable()
 export class GuardianshipLifecycleService {
@@ -81,6 +95,8 @@ export class GuardianshipLifecycleService {
     private readonly prisma: PrismaService,
     private readonly actingForCache: ActingForCache,
     private readonly notificationsService: NotificationsService,
+    @Inject(LINKED_DEVICE_REVOKER)
+    private readonly deviceRevoker: LinkedDeviceRevoker,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -154,6 +170,13 @@ export class GuardianshipLifecycleService {
       },
     });
 
+    // Devices paired through this guardianship die with it.
+    await this.deviceRevoker.revokeByGuardianship(
+      tx,
+      row.guardianship_id,
+      deviceReasonOf(reason),
+    );
+
     // Codes the leaver issued must not outlive them.
     if (row.guardian_user_id) {
       await tx.guardianship_link_codes.updateMany({
@@ -190,8 +213,21 @@ export class GuardianshipLifecycleService {
       };
     }
 
+    // Nobody answers for the child any more: every paired device goes.
+    const holdsAccount =
+      (await tx.account.count({ where: { userId: dependentId } })) > 0;
+
     const assignment = await findLiveAssignment(tx, dependentId);
     if (assignment && assignment.clubId !== null) {
+      await this.deviceRevoker.revokeAllForDependent(
+        tx,
+        dependentId,
+        'dependent_no_guardian',
+      );
+      if (holdsAccount) {
+        // Custody keeps the membership valid but is not a guardian.
+        await this.restartGuardianlessClock(tx, dependentId, now);
+      }
       const primaryLeft = await tx.guardianships.count({
         where: {
           dependent_user_id: dependentId,
@@ -226,6 +262,22 @@ export class GuardianshipLifecycleService {
       };
     }
 
+    if (holdsAccount) {
+      // A teen is never frozen on the spot: it goes back to pending-guardian
+      // mode (the epoch bump after commit) and the 90-day clock restarts.
+      await this.deviceRevoker.revokeAllForDependent(
+        tx,
+        dependentId,
+        'dependent_no_guardian',
+      );
+      await this.restartGuardianlessClock(tx, dependentId, now);
+      return {
+        guardianshipId: row.guardianship_id,
+        dependentUserId: dependentId,
+        outcome: 'pending_guardian',
+      };
+    }
+
     await tx.dependent_profiles.updateMany({
       where: { user_id: dependentId, purged_at: null },
       data: {
@@ -233,11 +285,41 @@ export class GuardianshipLifecycleService {
         purge_after: new Date(now.getTime() + FROZEN_PURGE_AFTER_DAYS * DAY_MS),
       },
     });
+    await this.deviceRevoker.revokeAllForDependent(
+      tx,
+      dependentId,
+      'dependent_frozen',
+    );
     return {
       guardianshipId: row.guardianship_id,
       dependentUserId: dependentId,
       outcome: 'frozen',
     };
+  }
+
+  /**
+   * (Re)starts the guardian-less clock of a teen: reminders at 7, 30 and 83
+   * days and the freeze at 90 count from `now`. Creates the supervised_logins
+   * row when the teen has none. A guardian-enabled handle login keeps working;
+   * only a new guardian can reset it.
+   */
+  private async restartGuardianlessClock(
+    tx: Prisma.TransactionClient,
+    teenId: string,
+    now: Date,
+  ): Promise<void> {
+    await tx.supervised_logins.upsert({
+      where: { user_id: teenId },
+      update: { pending_since: now, pending_reminder_level: 0 },
+      create: {
+        user_id: teenId,
+        method: 'email',
+        origin: 'self_registered',
+        password_set_by: 'self',
+        pending_since: now,
+        pending_reminder_level: 0,
+      },
+    });
   }
 
   /**
@@ -361,6 +443,50 @@ export class GuardianshipLifecycleService {
     };
   }
 
+  /**
+   * POST /users/me/guardian-links/:guardianshipId/revoke (a supervised teen).
+   * The teen removes a link that is still PENDING: a stranger who found the
+   * code, or a wrong person. Never a VERIFIED guardian (the director's check
+   * stands) and never a link of another teen: both are a plain 404. The
+   * guardian-less clock restarts through the shared detach logic.
+   */
+  async revokePendingLinkByDependent(
+    teenId: string,
+    guardianshipId: string,
+  ): Promise<{
+    guardianship_id: string;
+    consent_status: 'revoked';
+    dependent_outcome: DependentOutcome;
+  }> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      // The teen is the lock key: no probe by guardianship id needed, and a
+      // foreign id can never make us lock somebody else's child.
+      await lockDependent(tx, teenId);
+
+      const target = await tx.guardianships.findFirst({
+        where: {
+          guardianship_id: guardianshipId,
+          dependent_user_id: teenId,
+          is_custodian: false,
+          guardian_user_id: { not: null },
+          consent_status: 'pending',
+        },
+        select: DETACHABLE_SELECT,
+      });
+      if (!target) {
+        throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+      }
+      return this.detachRow(tx, target, 'removed_by_dependent');
+    });
+
+    await this.afterCommit([result]);
+    return {
+      guardianship_id: guardianshipId,
+      consent_status: 'revoked',
+      dependent_outcome: result.outcome,
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // Deletion impact (read-only preview of what detachGuardian would do)
   // ---------------------------------------------------------------------------
@@ -410,6 +536,19 @@ export class GuardianshipLifecycleService {
     });
     if (otherGuardians > 0) return 'other_guardian';
     const assignment = await findLiveAssignment(db, dependentId);
-    return assignment && assignment.clubId !== null ? 'club_custody' : 'frozen';
+    if (assignment && assignment.clubId !== null) return 'club_custody';
+    // A teen (holds an account) is not frozen: it waits for a new guardian.
+    const holdsAccount =
+      (await db.account.count({ where: { userId: dependentId } })) > 0;
+    return holdsAccount ? 'pending_guardian' : 'frozen';
   }
+}
+
+/** Maps why a guardianship was revoked to why its devices are revoked. */
+function deviceReasonOf(
+  reason: GuardianshipRevokedReason,
+): LinkedDeviceRevokeReason {
+  return reason === 'guardian_account_closed'
+    ? 'guardian_account_closed'
+    : 'guardianship_revoked';
 }

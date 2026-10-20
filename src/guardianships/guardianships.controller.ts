@@ -34,14 +34,19 @@ import { JwtAuthGuard } from '../common/guards';
 import { ConsentEvidenceFilePipe } from './consent-evidence-file.pipe';
 import {
   CreateDependentDto,
+  DisableSupervisedLoginDto,
+  EnableSupervisedLoginDto,
   IssueLinkCodeDto,
+  ReactivateSupervisedLoginDto,
   RedeemLinkCodeDto,
   RevokeGuardianshipDto,
+  SetSupervisedPasswordDto,
 } from './dto';
 import { GuardianEvidenceService } from './guardian-evidence.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
 import { GuardianshipsService } from './guardianships.service';
 import { LinkCodesService } from './link-codes.service';
+import { SupervisedLoginsService } from './supervised-logins.service';
 
 type CurrentUserPayload = { sub: string };
 
@@ -71,6 +76,7 @@ export class GuardianshipsController {
     private readonly linkCodes: LinkCodesService,
     private readonly lifecycle: GuardianshipLifecycleService,
     private readonly evidence: GuardianEvidenceService,
+    private readonly supervisedLogins: SupervisedLoginsService,
   ) {}
 
   @Get('relationship-types')
@@ -263,6 +269,156 @@ export class GuardianshipsController {
     return {
       status: 'success',
       data: await this.linkCodes.redeem(user.sub, dto),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Supervised login (Phase 3a, FAMILY_TEEN_LOGIN_ENABLED)
+  // ---------------------------------------------------------------------------
+
+  @Get('me/dependents/:dependentId/supervised-login')
+  @ApiOperation({
+    summary: "Eligibility and state of the minor's own login",
+    description:
+      'Verified guardians see the login (with the generated handle). A guardian whose link is still pending gets `eligible: false` / `consent_not_verified` and nothing else. 404 FAMILY_FEATURE_DISABLED while the flag is off.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ eligible, ineligible_reason, supervised_login }',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'GUARDIANSHIP_NOT_FOUND or FAMILY_FEATURE_DISABLED',
+  })
+  async getSupervisedLogin(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.get(user.sub, dependentId),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/supervised-login')
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 5 }))
+  @ApiOperation({
+    summary: 'Give a 13-17 year old their own login (handle or email)',
+    description:
+      'Verified guardian, as self. Creates the credential with the guardian-chosen password, the server-generated handle (method `handle`), revokes any linked device and ends acting for the child. The password is never returned or logged.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '{ supervised_login, devices_revoked }',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'GUARDIANSHIP_CONSENT_NOT_VERIFIED (pending link) or ACTING_FOR_SCOPE_DENIED (acting)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'GUARDIANSHIP_NOT_FOUND or FAMILY_FEATURE_DISABLED',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'SUPERVISED_LOGIN_ALREADY_ENABLED or SUPERVISED_LOGIN_EMAIL_UNAVAILABLE',
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'SUPERVISED_LOGIN_NOT_ELIGIBLE (age) or SUPERVISED_LOGIN_PASSWORD_INVALID',
+  })
+  async enableSupervisedLogin(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Body() dto: EnableSupervisedLoginDto,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.enable(user.sub, dependentId, dto),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/supervised-login/disable')
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 20 }))
+  @ApiOperation({
+    summary: "Disable the minor's own login (reversible while a minor)",
+    description:
+      'All sessions are deleted and the next request of the child is a 401. Acting for the child resumes when the login was guardian-enabled.',
+  })
+  @ApiResponse({ status: 200, description: '{ supervised_login }' })
+  @ApiResponse({
+    status: 404,
+    description: 'SUPERVISED_LOGIN_NOT_FOUND or GUARDIANSHIP_NOT_FOUND',
+  })
+  async disableSupervisedLogin(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Body() dto: DisableSupervisedLoginDto,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.disable(user.sub, dependentId, dto),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/supervised-login/reactivate')
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 20 }))
+  @ApiOperation({
+    summary: 'Re-enable a disabled login',
+    description:
+      'A handle login needs a NEW password (the old one is replaced). Sessions are not restored.',
+  })
+  @ApiResponse({ status: 200, description: '{ supervised_login }' })
+  @ApiResponse({ status: 409, description: 'SUPERVISED_LOGIN_ALREADY_ENABLED' })
+  @ApiResponse({
+    status: 422,
+    description: 'SUPERVISED_LOGIN_PASSWORD_INVALID',
+  })
+  async reactivateSupervisedLogin(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Body() dto: ReactivateSupervisedLoginDto,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.reactivate(user.sub, dependentId, dto),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/supervised-login/password')
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 20 }))
+  @ApiOperation({
+    summary: "Reset the minor's password",
+    description:
+      'Handle login: the guardian sets a new password. Email login: sessions are cut and the standard reset email goes to the child. 5 per hour per dependent (429).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ sessions_revoked, method, email_sent }',
+  })
+  @ApiResponse({
+    status: 422,
+    description: 'SUPERVISED_LOGIN_PASSWORD_INVALID',
+  })
+  @ApiResponse({ status: 429, description: '5 resets per hour per dependent' })
+  async resetSupervisedPassword(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Body() dto: SetSupervisedPasswordDto,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.resetPassword(
+        user.sub,
+        dependentId,
+        dto,
+      ),
     };
   }
 

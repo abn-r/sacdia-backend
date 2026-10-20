@@ -1,7 +1,10 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
+import { principalScopeDenied } from '../auth/acting-for/acting-for.errors';
+import { ageToday } from '../common/age/age.util';
+import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import {
   AppConflictException,
   AppException,
@@ -13,6 +16,7 @@ import type { RedeemLinkCodeDto } from './dto';
 import {
   ACTIVE_USER_GUARDIAN,
   NOT_REVOKED,
+  VISIBLE_DEPENDENT,
   countActiveGuardians,
   hasLiveAssignmentInSection,
   lockDependent,
@@ -20,10 +24,16 @@ import {
 import {
   DIRECTOR_CLAIM_CODE_TTL_MS,
   LINK_CODE_MAX_FAILURES,
+  MAX_DEPENDENTS_PER_GUARDIAN,
   MAX_GUARDIANS_PER_DEPENDENT,
   SECOND_GUARDIAN_CODE_TTL_MS,
+  TEEN_LINK_CODE_TTL_MS,
   type LinkCodePurpose,
 } from './guardianships.constants';
+import {
+  LINKED_DEVICE_REVOKER,
+  type LinkedDeviceRevoker,
+} from './linked-device-revoker.port';
 import { LinkCodeFailureCounter } from './link-code-failure-counter';
 import { GuardianshipsService } from './guardianships.service';
 import type { DependentSummary } from './guardianships.types';
@@ -51,9 +61,10 @@ function invalidCode(): AppException {
 }
 
 /**
- * Link codes: a guardian invites a second guardian (`second_guardian`, 72h) and
- * a club director hands a custodial dependent back to a family
- * (`director_claim`, 7d).
+ * Link codes: a guardian invites a second guardian (`second_guardian`, 72h), a
+ * club director hands a custodial dependent back to a family
+ * (`director_claim`, 7d) and a self-registered teen without a guardian asks an
+ * adult to take responsibility (`teen_guardian_link`, 72h, Phase 3a).
  *
  * Only the HMAC of the code is stored. Every way a redeem can fail on the code
  * itself (unknown, expired, consumed, revoked, malformed, stale) is the same
@@ -73,6 +84,9 @@ export class LinkCodesService {
     private readonly failures: LinkCodeFailureCounter,
     private readonly actingForCache: ActingForCache,
     private readonly guardianships: GuardianshipsService,
+    private readonly countryAgePolicy: CountryAgePolicyService,
+    @Inject(LINKED_DEVICE_REVOKER)
+    private readonly deviceRevoker: LinkedDeviceRevoker,
   ) {}
 
   private hashKey(): Buffer {
@@ -103,10 +117,22 @@ export class LinkCodesService {
           dependent_profile: { is: { frozen_at: null, purged_at: null } },
         },
       },
-      select: { guardianship_id: true },
+      select: {
+        guardianship_id: true,
+        consent_status: true,
+        dependent: { select: { account: { select: { id: true }, take: 1 } } },
+      },
     });
     if (!own) {
       throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+    }
+    // A teen holds an account: only a VERIFIED guardian may bring another
+    // adult in. A pending link (a stranger holding a leaked teen code) has no
+    // powers until the director verifies the consent.
+    if (own.dependent.account.length > 0 && own.consent_status !== 'verified') {
+      throw new AppConflictException(
+        ErrorCode.GUARDIANSHIP_CONSENT_NOT_VERIFIED,
+      );
     }
 
     if (
@@ -123,6 +149,63 @@ export class LinkCodesService {
       dependentId,
       issuedBy: guardianId,
       ttlMs: SECOND_GUARDIAN_CODE_TTL_MS,
+      clubSectionId: null,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Issue: teen guardian link (Phase 3a)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A self-registered teen asks an adult to link as their guardian. Only a
+   * teen can do it (the route's scope belongs to TEEN_PENDING_SCOPES; an adult
+   * is unrestricted by scopes, so this re-checks from the database): an active
+   * account holder under the age of majority, not frozen or purged, with NO
+   * active user guardian yet (a pending link counts as linked) and room for
+   * another guardian. The code lives 72 h and replaces any open code of the
+   * same (teen, purpose).
+   */
+  async issueTeenGuardianLink(teenId: string): Promise<IssuedLinkCode> {
+    const teen = await this.prisma.users.findFirst({
+      where: { user_id: teenId, active: true, account: { some: {} } },
+      select: {
+        birthday: true,
+        country_id: true,
+        dependent_profile: { select: { frozen_at: true, purged_at: true } },
+      },
+    });
+    if (!teen || !teen.birthday) {
+      // A dependent has no account and cannot call this; an unknown age cannot
+      // be proven a minor.
+      throw principalScopeDenied('guardian_link:issue', 'user');
+    }
+    const policy = await this.countryAgePolicy.getPolicy(teen.country_id);
+    if (ageToday(teen.birthday, policy.timeZone) >= policy.ageOfMajority) {
+      throw principalScopeDenied('guardian_link:issue', 'user');
+    }
+    if (
+      teen.dependent_profile?.frozen_at ||
+      teen.dependent_profile?.purged_at
+    ) {
+      throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+    }
+
+    const linked = await countActiveGuardians(this.prisma, teenId);
+    if (linked > 0) {
+      throw new AppConflictException(ErrorCode.GUARDIANSHIP_ALREADY_GUARDIAN);
+    }
+    if (linked >= MAX_GUARDIANS_PER_DEPENDENT) {
+      throw new AppConflictException(
+        ErrorCode.GUARDIANSHIP_GUARDIAN_LIMIT_REACHED,
+      );
+    }
+
+    return this.createCode({
+      purpose: 'teen_guardian_link',
+      dependentId: teenId,
+      issuedBy: teenId,
+      ttlMs: TEEN_LINK_CODE_TTL_MS,
       clubSectionId: null,
     });
   }
@@ -317,11 +400,19 @@ export class LinkCodesService {
     }
 
     const dependentId = code.dependent_user_id;
+
+    if (code.purpose === 'teen_guardian_link') {
+      await this.linkAsTeenGuardian(tx, userId, dependentId, dto, now);
+      return dependentId;
+    }
+
+    // `director_claim` is for custodial children only (no account). A
+    // `second_guardian` invitation also works for a teen, who holds an account.
     const dependent = await tx.users.findFirst({
       where: {
         user_id: dependentId,
         active: true,
-        account: { none: {} },
+        ...(code.purpose === 'director_claim' ? { account: { none: {} } } : {}),
         dependent_profile: { is: { frozen_at: null, purged_at: null } },
       },
       select: { user_id: true },
@@ -344,6 +435,147 @@ export class LinkCodesService {
       );
     }
     return dependentId;
+  }
+
+  /**
+   * An adult redeems a teen's code (Phase 3a, design 5.2 step 4). Runs in the
+   * redeem transaction, under the teen's dependent lock:
+   *  - the teen must still be an active, unfrozen account holder under the age
+   *    of majority with NO active user guardian; anything else is the uniform
+   *    invalid code (the whole redeem rolls back, the code survives);
+   *  - the redeemer becomes the PRIMARY, NON-custodian guardian in consent
+   *    'pending' with no inviter: a teen link NEVER auto-verifies, so the
+   *    stranger who found the code has no powers until the director's check;
+   *  - the teen's dependent profile is created now (profile semantics: "managed
+   *    by a guardian"), club custody (if the club held the child) is handed
+   *    over like a director claim, and the guardian-less clock stops.
+   */
+  private async linkAsTeenGuardian(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    teenId: string,
+    dto: RedeemLinkCodeDto,
+    now: Date,
+  ): Promise<void> {
+    const teen = await tx.users.findFirst({
+      where: { user_id: teenId, active: true, account: { some: {} } },
+      select: {
+        birthday: true,
+        country_id: true,
+        dependent_profile: { select: { frozen_at: true, purged_at: true } },
+      },
+    });
+    if (
+      !teen?.birthday ||
+      teen.dependent_profile?.frozen_at ||
+      teen.dependent_profile?.purged_at
+    ) {
+      throw invalidCode();
+    }
+    const policy = await this.countryAgePolicy.getPolicy(teen.country_id);
+    if (ageToday(teen.birthday, policy.timeZone) >= policy.ageOfMajority) {
+      throw invalidCode();
+    }
+
+    const already = await tx.guardianships.findFirst({
+      where: {
+        dependent_user_id: teenId,
+        guardian_user_id: userId,
+        ...NOT_REVOKED,
+      },
+      select: { guardianship_id: true },
+    });
+    if (already) {
+      throw new AppConflictException(ErrorCode.GUARDIANSHIP_ALREADY_GUARDIAN);
+    }
+    if ((await countActiveGuardians(tx, teenId)) > 0) {
+      // Somebody linked first: the code no longer means anything.
+      throw invalidCode();
+    }
+
+    // The 10-dependent cap counts teens too; serialize the redeemer's links.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`guardianships:create:${userId}`}))`;
+    const activeDependents = await tx.guardianships.count({
+      where: {
+        guardian_user_id: userId,
+        is_custodian: false,
+        ...NOT_REVOKED,
+        dependent: VISIBLE_DEPENDENT,
+      },
+    });
+    if (activeDependents >= MAX_DEPENDENTS_PER_GUARDIAN) {
+      throw new AppConflictException(
+        ErrorCode.GUARDIANSHIP_DEPENDENT_LIMIT_REACHED,
+      );
+    }
+
+    await tx.dependent_profiles.upsert({
+      where: { user_id: teenId },
+      update: {},
+      create: { user_id: teenId, created_by_user_id: teenId },
+    });
+
+    // Club custody (a guardian left while the teen had a club membership) hands
+    // over to the family exactly like a director claim; the unique index allows
+    // one active primary. Verification is NOT inherited.
+    await tx.guardianships.updateMany({
+      where: {
+        dependent_user_id: teenId,
+        guardian_user_id: null,
+        ...NOT_REVOKED,
+      },
+      data: {
+        consent_status: 'revoked',
+        revoked_at: now,
+        revoked_reason: 'claimed',
+        modified_at: now,
+      },
+    });
+
+    const linked = await tx.guardianships.create({
+      data: {
+        dependent_user_id: teenId,
+        guardian_user_id: userId,
+        relationship_type_id: dto.relationship_type_id,
+        is_primary: true,
+        is_custodian: false,
+        consent_status: 'pending',
+        sworn_declaration_at: now,
+        invited_by_guardianship_id: null,
+      },
+      select: { guardianship_id: true },
+    });
+
+    // Stops the 90-day guardian-less clock (a pending link counts as linked)
+    // and records who linked.
+    await tx.supervised_logins.upsert({
+      where: { user_id: teenId },
+      update: {
+        enabled_by_guardianship_id: linked.guardianship_id,
+        enabled_by_user_id: userId,
+        enabled_at: now,
+        pending_since: null,
+        pending_reminder_level: 0,
+      },
+      create: {
+        user_id: teenId,
+        method: 'email',
+        origin: 'self_registered',
+        password_set_by: 'self',
+        enabled_by_guardianship_id: linked.guardianship_id,
+        enabled_by_user_id: userId,
+        enabled_at: now,
+        pending_since: null,
+        pending_reminder_level: 0,
+      },
+    });
+
+    // No device should exist for an account holder; the port keeps 3b honest.
+    await this.deviceRevoker.revokeAllForDependent(
+      tx,
+      teenId,
+      'teen_login_enabled',
+    );
   }
 
   private async joinAsSecondGuardian(

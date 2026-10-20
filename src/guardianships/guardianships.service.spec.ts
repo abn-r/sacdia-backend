@@ -57,6 +57,14 @@ function summaryRow(dependentId: string) {
       country_id: null,
       users_pr: { complete: false },
       dependent_profile: { frozen_at: null },
+      account: [] as Array<{ id: string }>,
+      supervised_login: null as null | {
+        method: string;
+        login_handle: string | null;
+        origin: string;
+        enabled_at: Date | null;
+        disabled_at: Date | null;
+      },
     },
   };
 }
@@ -245,23 +253,41 @@ describe('GuardianshipsService.createDependent', () => {
   });
 
   describe('dependent age bounds (guardian country policy)', () => {
-    it('allows a child turning 13 tomorrow', async () => {
-      const { service, tx } = setup();
-      await service.createDependent(
+    it('allows a child turning 13 tomorrow and, since 3a, a child who is already 13 or 14 (a guardian can enable a handle login)', async () => {
+      const young = setup();
+      await young.service.createDependent(
         GUARDIAN,
         dto({ birthday: birthday(13, 1) }),
       );
-      expect(tx.users.create).toHaveBeenCalled();
+      expect(young.tx.users.create).toHaveBeenCalled();
+
+      for (const years of [13, 14, 17]) {
+        const { service, tx } = setup();
+        await service.createDependent(
+          GUARDIAN,
+          dto({ birthday: birthday(years) }),
+        );
+        expect(tx.users.create).toHaveBeenCalledTimes(1);
+      }
     });
 
-    it('rejects a child who is exactly 13 today', async () => {
+    it('rejects a child who is exactly 18 today (the age of majority)', async () => {
       const { service, tx } = setup();
       expect(
         await codeOf(
-          service.createDependent(GUARDIAN, dto({ birthday: birthday(13) })),
+          service.createDependent(GUARDIAN, dto({ birthday: birthday(18) })),
         ),
       ).toBe(ErrorCode.GUARDIANSHIP_DEPENDENT_AGE_OUT_OF_RANGE);
       expect(tx.users.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a child who turns 18 tomorrow', async () => {
+      const { service, tx } = setup();
+      await service.createDependent(
+        GUARDIAN,
+        dto({ birthday: birthday(18, 1) }),
+      );
+      expect(tx.users.create).toHaveBeenCalled();
     });
 
     it('rejects future and impossible dates', async () => {
@@ -278,20 +304,20 @@ describe('GuardianshipsService.createDependent', () => {
       ).toBe(ErrorCode.GUARDIANSHIP_DEPENDENT_AGE_OUT_OF_RANGE);
     });
 
-    it('uses the country cutoff: 14 is fine under 13 but not under 16', async () => {
+    it('uses the country majority: 16 is a minor under 18 but an adult under 16', async () => {
       const { service, policy } = setup();
       await expect(
-        service.createDependent(GUARDIAN, dto({ birthday: birthday(14) })),
-      ).rejects.toBeDefined();
+        service.createDependent(GUARDIAN, dto({ birthday: birthday(16) })),
+      ).resolves.toBeDefined();
 
       policy.getPolicy.mockResolvedValue({
-        minSelfLoginAge: 16,
-        ageOfMajority: 18,
+        minSelfLoginAge: 13,
+        ageOfMajority: 16,
         timeZone: TZ,
       });
       await expect(
-        service.createDependent(GUARDIAN, dto({ birthday: birthday(14) })),
-      ).resolves.toBeDefined();
+        service.createDependent(GUARDIAN, dto({ birthday: birthday(16) })),
+      ).rejects.toBeDefined();
     });
   });
 
@@ -547,6 +573,123 @@ describe('GuardianshipsService reads', () => {
     const [summary] = (await service.listForGuardian(GUARDIAN)).dependents;
     expect(summary.guardianship.evidence_uploaded).toBe(true);
     expect(summary.frozen).toBe(true);
+  });
+
+  describe('access mode, supervised login and milestone in the summary (phase 3a)', () => {
+    const summaryOf = async (
+      customize: (row: ReturnType<typeof summaryRow>) => void,
+      policy?: { minSelfLoginAge: number; ageOfMajority: number },
+    ) => {
+      const { service, prisma, policy: policyMock } = setup();
+      if (policy) {
+        policyMock.getPolicy.mockResolvedValue({ ...policy, timeZone: TZ });
+      }
+      const row = summaryRow('d-1');
+      customize(row);
+      prisma.guardianships.findMany.mockResolvedValue([row]);
+      return (await service.listForGuardian(GUARDIAN)).dependents[0];
+    };
+
+    const teenBirthday = (years: number) =>
+      new Date(`${birthday(years)}T00:00:00.000Z`);
+
+    it('a plain dependent is guardian_managed with no login, no devices and no milestone below 13', async () => {
+      const summary = await summaryOf(() => undefined);
+      expect(summary).toMatchObject({
+        access_mode: 'guardian_managed',
+        supervised_login: null,
+        linked_devices_count: 0,
+        age_milestone_reached: false,
+      });
+    });
+
+    it('flags the milestone for a 13-17 child without account or login (and not at 12 or 18)', async () => {
+      expect(
+        (await summaryOf((r) => (r.dependent.birthday = teenBirthday(13))))
+          .age_milestone_reached,
+      ).toBe(true);
+      expect(
+        (await summaryOf((r) => (r.dependent.birthday = teenBirthday(12))))
+          .age_milestone_reached,
+      ).toBe(false);
+      expect(
+        (await summaryOf((r) => (r.dependent.birthday = teenBirthday(18))))
+          .age_milestone_reached,
+      ).toBe(false);
+    });
+
+    it('follows the country policy for the milestone (min 16)', async () => {
+      const summary = await summaryOf(
+        (r) => (r.dependent.birthday = teenBirthday(14)),
+        { minSelfLoginAge: 16, ageOfMajority: 18 },
+      );
+      expect(summary.age_milestone_reached).toBe(false);
+    });
+
+    it('an enabled login is supervised_login: the handle shows to a VERIFIED guardian only', async () => {
+      const login = {
+        method: 'handle',
+        login_handle: 'ana-7kq4m9tx',
+        origin: 'guardian_enabled',
+        enabled_at: new Date('2026-10-01T00:00:00Z'),
+        disabled_at: null,
+      };
+      const verified = await summaryOf((r) => {
+        r.dependent.account = [{ id: 'acc' }];
+        r.dependent.supervised_login = login;
+        r.consent_status = 'verified';
+      });
+      expect(verified).toMatchObject({
+        access_mode: 'supervised_login',
+        age_milestone_reached: false,
+        supervised_login: {
+          method: 'handle',
+          login_handle: 'ana-7kq4m9tx',
+          enabled_at: '2026-10-01T00:00:00.000Z',
+          disabled_at: null,
+        },
+      });
+
+      const pending = await summaryOf((r) => {
+        r.dependent.account = [{ id: 'acc' }];
+        r.dependent.supervised_login = login;
+        r.consent_status = 'pending';
+      });
+      expect(pending.supervised_login?.login_handle).toBeNull();
+      expect(pending.supervised_login?.method).toBe('handle');
+    });
+
+    it('a guardian-enabled login that was disabled hands the child back (guardian_managed)', async () => {
+      const summary = await summaryOf((r) => {
+        r.dependent.account = [{ id: 'acc' }];
+        r.dependent.supervised_login = {
+          method: 'handle',
+          login_handle: 'ana-7kq4m9tx',
+          origin: 'guardian_enabled',
+          enabled_at: new Date('2026-10-01T00:00:00Z'),
+          disabled_at: new Date('2026-10-05T00:00:00Z'),
+        };
+        r.consent_status = 'verified';
+      });
+      expect(summary.access_mode).toBe('guardian_managed');
+      expect(summary.supervised_login?.disabled_at).toBe(
+        '2026-10-05T00:00:00.000Z',
+      );
+    });
+
+    it('a self-registered teen stays supervised_login even when its login is disabled (never actable)', async () => {
+      const summary = await summaryOf((r) => {
+        r.dependent.account = [{ id: 'acc' }];
+        r.dependent.supervised_login = {
+          method: 'email',
+          login_handle: null,
+          origin: 'self_registered',
+          enabled_at: null,
+          disabled_at: new Date('2026-10-05T00:00:00Z'),
+        };
+      });
+      expect(summary.access_mode).toBe('supervised_login');
+    });
   });
 
   it('returns 404 GUARDIANSHIP_NOT_FOUND for a stranger asking for a detail', async () => {

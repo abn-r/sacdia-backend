@@ -3,17 +3,26 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { ActingForModule } from '../auth/acting-for/acting-for.module';
 import { LegalModule } from '../legal/legal.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DependentClaimCodesController } from './dependent-claim-codes.controller';
 import { DependentProfilesPurgeCronService } from './dependent-profiles-purge-cron.service';
 import { FamilyFeatureFlagsModule } from './family-feature-flags.module';
 import { GuardianEvidenceService } from './guardian-evidence.service';
+import { DependentActionLimiter } from './dependent-action-limiter';
+import { GuardianPowersPolicy } from './guardian-powers.policy';
+import { SupervisedLoginsService } from './supervised-logins.service';
 import { GuardianNotificationsService } from './guardian-notifications.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
+import { TeenLinkCodesController } from './teen-link-codes.controller';
 import { GuardianshipsController } from './guardianships.controller';
 import { GuardianshipsService } from './guardianships.service';
 import { LinkCodeFailureCounter } from './link-code-failure-counter';
 import { LinkCodesService } from './link-codes.service';
+import {
+  LINKED_DEVICE_REVOKER,
+  NOOP_LINKED_DEVICE_REVOKER,
+} from './linked-device-revoker.port';
 import { SupervisionStateService } from './supervision-state.service';
 
 /**
@@ -29,8 +38,14 @@ import { SupervisionStateService } from './supervision-state.service';
     LegalModule,
     NotificationsModule,
     FamilyFeatureFlagsModule,
+    // SupervisedLoginsService sends the standard reset email to email teens.
+    BetterAuthModule,
   ],
-  controllers: [GuardianshipsController, DependentClaimCodesController],
+  controllers: [
+    GuardianshipsController,
+    DependentClaimCodesController,
+    TeenLinkCodesController,
+  ],
   providers: [
     GuardianshipsService,
     LinkCodesService,
@@ -40,6 +55,11 @@ import { SupervisionStateService } from './supervision-state.service';
     GuardianEvidenceService,
     DependentProfilesPurgeCronService,
     SupervisionStateService,
+    GuardianPowersPolicy,
+    DependentActionLimiter,
+    SupervisedLoginsService,
+    // 3a default: there are no linked devices yet. 3b rebinds this token.
+    { provide: LINKED_DEVICE_REVOKER, useValue: NOOP_LINKED_DEVICE_REVOKER },
   ],
   exports: [
     GuardianshipsService,
@@ -49,6 +69,8 @@ import { SupervisionStateService } from './supervision-state.service';
     GuardianEvidenceService,
     FamilyFeatureFlagsModule,
     SupervisionStateService,
+    GuardianPowersPolicy,
+    LINKED_DEVICE_REVOKER,
   ],
 })
 export class GuardianshipsModule {}

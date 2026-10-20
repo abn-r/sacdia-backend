@@ -327,6 +327,10 @@ function build(lockingEnabled: boolean) {
     db as any,
     actingCache as any,
     notificationsService as any,
+    {
+      revokeAllForDependent: jest.fn().mockResolvedValue(0),
+      revokeByGuardianship: jest.fn().mockResolvedValue(0),
+    } as any,
   );
   const membershipRequests = { approve: jest.fn().mockResolvedValue({}) };
   const guardianNotifications = {

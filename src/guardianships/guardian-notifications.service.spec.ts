@@ -54,7 +54,7 @@ describe('GuardianNotificationsService.onDependentEvidenceUploaded', () => {
     expect(notifications.sendToUser.mock.calls[1][0].userId).toBe(G2);
   });
 
-  it('is a no-op when the target is not a dependent (or is frozen / has an account)', async () => {
+  it('is a no-op when the target is not a dependent (or is frozen / purged / inactive)', async () => {
     const { service, notifications, prisma } = setup(null);
     await service.onDependentEvidenceUploaded({
       dependentUserId: DEPENDENT,
@@ -64,9 +64,44 @@ describe('GuardianNotificationsService.onDependentEvidenceUploaded', () => {
     expect(prisma.users.findFirst.mock.calls[0][0].where).toMatchObject({
       user_id: DEPENDENT,
       active: true,
-      account: { none: {} },
       dependent_profile: { is: { frozen_at: null, purged_at: null } },
     });
+    // A linked teen HAS an account: the lookup must not exclude them.
+    expect(prisma.users.findFirst.mock.calls[0][0].where).not.toHaveProperty(
+      'account',
+    );
+  });
+
+  it('notifies the guardians of a dependent that holds an account (a linked teen) when STAFF upload', async () => {
+    const { service, notifications } = setup(dependentWith([G1]));
+
+    await service.onDependentEvidenceUploaded({
+      dependentUserId: DEPENDENT,
+      kind: 'class_section',
+      actorUserId: 'staff-1',
+    });
+
+    expect(notifications.sendToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT notify when a supervised teen uploads their own evidence (P3-A11: the summary covers it)', async () => {
+    const { service, notifications, prisma } = setup(dependentWith([G1]));
+
+    await runWithAuditContext(async () => {
+      setAuditActingFor({
+        actorUserId: DEPENDENT,
+        subjectUserId: DEPENDENT,
+        kind: 'supervised_user',
+      });
+      await service.onDependentEvidenceUploaded({
+        dependentUserId: DEPENDENT,
+        kind: 'class_section',
+        actorUserId: DEPENDENT,
+      });
+    });
+
+    expect(notifications.sendToUser).not.toHaveBeenCalled();
+    expect(prisma.users.findFirst).not.toHaveBeenCalled();
   });
 
   it('is a no-op while a guardian acts for that very child (Phase 2 uploads)', async () => {
@@ -192,7 +227,21 @@ describe('GuardianNotificationsService.onConsentVerified', () => {
     );
   });
 
-  it('is a no-op for a dependent that is gone, frozen or has an account', async () => {
+  it('tells the guardians of a linked teen (who holds an account) that consent was verified', async () => {
+    const { service, notifications, prisma } = setup(dependentWith([G1]));
+
+    await service.onConsentVerified({
+      dependentUserId: DEPENDENT,
+      verifierUserId: 'director-1',
+    });
+
+    expect(notifications.sendToUser).toHaveBeenCalledTimes(1);
+    expect(prisma.users.findFirst.mock.calls[0][0].where).not.toHaveProperty(
+      'account',
+    );
+  });
+
+  it('is a no-op for a dependent that is gone, frozen or purged', async () => {
     const { service, notifications } = setup(null);
 
     await service.onConsentVerified({

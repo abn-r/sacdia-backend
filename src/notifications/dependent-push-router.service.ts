@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { chunkArray } from '../common/utils/notification.utils';
-import { ACTIVE_USER_GUARDIAN } from '../guardianships/guardianship-queries';
+import {
+  ACTIVE_USER_GUARDIAN,
+  GUARDIAN_MANAGED_DEPENDENT,
+} from '../guardianships/guardianship-queries';
 import { MAX_GUARDIANS_PER_DEPENDENT } from '../guardianships/guardianships.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
@@ -73,9 +76,9 @@ export class DependentPushRouterService {
 
   /**
    * Which of `userIds` are dependents that can be reached through guardians?
-   * ONE query regardless of how many ids come in. Frozen, purged, inactive and
-   * account-holding dependents are excluded; so are dependents without any
-   * active guardian.
+   * ONE query regardless of how many ids come in. Frozen, purged and inactive
+   * dependents are excluded, and so are teens running their own enabled login
+   * (GUARDIAN_MANAGED_DEPENDENT); so are dependents without any active guardian.
    */
   async expand(userIds: readonly string[]): Promise<DependentRoute[]> {
     const unique = [...new Set(userIds)];
@@ -85,9 +88,9 @@ export class DependentPushRouterService {
     const rows = await this.prisma.users.findMany({
       where: {
         ...(loadAll ? {} : { user_id: { in: unique } }),
-        active: true,
-        account: { none: {} },
-        dependent_profile: { is: { frozen_at: null, purged_at: null } },
+        // A teen with an ENABLED supervised login gets no guardian copies (they
+        // receive their own pushes); a disabled guardian-enabled one does again.
+        ...GUARDIAN_MANAGED_DEPENDENT,
       },
       select: {
         user_id: true,

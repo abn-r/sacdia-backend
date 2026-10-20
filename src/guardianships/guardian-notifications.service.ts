@@ -58,7 +58,9 @@ export class GuardianNotificationsService {
     input: DependentEvidenceUploadedInput,
   ): Promise<void> {
     try {
-      // A guardian acting for this very child already knows.
+      // A guardian acting for this very child already knows, and a supervised
+      // teen's own uploads are covered by the guardian summary, not by a push
+      // (Phase 3a, P3-A11). Both set the audit subject to the child.
       if (getAuditActingFor()?.subjectUserId === input.dependentUserId) {
         return;
       }
@@ -67,7 +69,8 @@ export class GuardianNotificationsService {
         where: {
           user_id: input.dependentUserId,
           active: true,
-          account: { none: {} },
+          // An account is allowed (a linked teen has one): the profile is what
+          // makes the user someone's dependent.
           dependent_profile: { is: { frozen_at: null, purged_at: null } },
         },
         select: {
@@ -79,7 +82,7 @@ export class GuardianNotificationsService {
         },
       });
       if (!dependent) {
-        return; // not a dependent (or frozen / got an account)
+        return; // not a dependent (or frozen / purged / inactive)
       }
 
       const recipients = [
@@ -137,7 +140,8 @@ export class GuardianNotificationsService {
         where: {
           user_id: input.dependentUserId,
           active: true,
-          account: { none: {} },
+          // An account is allowed (a linked teen has one): the profile is what
+          // makes the user someone's dependent.
           dependent_profile: { is: { frozen_at: null, purged_at: null } },
         },
         select: {

@@ -3,7 +3,8 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 import { createHash } from 'node:crypto';
 import {
-  NOOP_SUPERVISED_LOGIN_EVENTS,
+  fireEvent,
+  resolveSupervisedLoginEvents,
   SUPERVISED_LOGIN_EVENTS,
   type SupervisedLoginEvents,
 } from './supervised/supervised-login-events.port';
@@ -115,9 +116,9 @@ export class LoginFailureCounter {
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
     @Optional()
     @Inject(SUPERVISED_LOGIN_EVENTS)
-    events?: SupervisedLoginEvents,
+    events?: Partial<SupervisedLoginEvents>,
   ) {
-    this.events = events ?? NOOP_SUPERVISED_LOGIN_EVENTS;
+    this.events = resolveSupervisedLoginEvents(events);
   }
 
   // -- keys -----------------------------------------------------------------
@@ -197,18 +198,18 @@ export class LoginFailureCounter {
 
     if (idOutcome.lockStarted) {
       // Fire and forget: a notification problem never reaches the login.
-      void Promise.resolve()
-        .then(() =>
+      void fireEvent(
+        () =>
           this.events.onLoginLocked({
             identifier: this.normalize(identifier),
             retryAfterSeconds: idOutcome.retryAfterSeconds,
           }),
-        )
-        .catch((error: unknown) => {
+        (error) => {
           this.logger.warn(
             `login lock event failed: ${error instanceof Error ? error.message : String(error)}`,
           );
-        });
+        },
+      );
     }
     return { lockStarted, retryAfterSeconds };
   }

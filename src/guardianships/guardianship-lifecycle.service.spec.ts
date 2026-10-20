@@ -43,6 +43,10 @@ function setup() {
         .fn()
         .mockResolvedValue({ name: 'Ana', paternal_last_name: 'Pérez' }),
     },
+    // Dependents are guardian-managed children (no account) unless a test says
+    // otherwise.
+    account: { count: jest.fn().mockResolvedValue(0) },
+    supervised_logins: { upsert: jest.fn().mockResolvedValue({}) },
   };
   const prisma: any = {
     ...tx,
@@ -54,12 +58,17 @@ function setup() {
   const notifications = {
     sendToSectionRole: jest.fn().mockResolvedValue(undefined),
   };
+  const deviceRevoker = {
+    revokeAllForDependent: jest.fn().mockResolvedValue(0),
+    revokeByGuardianship: jest.fn().mockResolvedValue(0),
+  };
   const service = new GuardianshipLifecycleService(
     prisma,
     cache as any,
     notifications as any,
+    deviceRevoker as any,
   );
-  return { service, tx, prisma, cache, notifications };
+  return { service, tx, prisma, cache, notifications, deviceRevoker };
 }
 
 const assignment = (status: string, mainClubId: number | null = 9) => ({
@@ -524,6 +533,279 @@ describe('GuardianshipLifecycleService.deletionImpact', () => {
       prisma.guardianships.findMany.mock.calls[0][0].where.dependent,
     ).toEqual({
       dependent_profile: { is: { frozen_at: null, purged_at: null } },
+    });
+  });
+});
+
+describe('GuardianshipLifecycleService: teens and linked devices (phase 3a)', () => {
+  const TEEN_ROW = row({
+    consent_status: 'verified',
+    verification_method: 'director_paper_form',
+    verified_at: new Date('2026-10-01T00:00:00Z'),
+    verified_by_user_id: 'director-1',
+  });
+
+  describe('outcome matrix when the LAST guardian of a teen (account holder) leaves', () => {
+    it('no club assignment: pending_guardian, NEVER frozen, the guardian-less clock restarts', async () => {
+      const { service, tx, deviceRevoker } = setup();
+      tx.account.count.mockResolvedValue(1);
+
+      const result = await service.detachRow(tx, TEEN_ROW, 'guardian_left');
+
+      expect(result.outcome).toBe('pending_guardian');
+      expect(tx.dependent_profiles.updateMany).not.toHaveBeenCalled();
+      expect(tx.guardianships.create).not.toHaveBeenCalled();
+      expect(tx.supervised_logins.upsert).toHaveBeenCalledWith({
+        where: { user_id: DEP },
+        update: { pending_since: expect.any(Date), pending_reminder_level: 0 },
+        create: expect.objectContaining({
+          user_id: DEP,
+          method: 'email',
+          origin: 'self_registered',
+          password_set_by: 'self',
+          pending_since: expect.any(Date),
+          pending_reminder_level: 0,
+        }),
+      });
+      expect(deviceRevoker.revokeAllForDependent).toHaveBeenCalledWith(
+        tx,
+        DEP,
+        'dependent_no_guardian',
+      );
+    });
+
+    it('with an active/pending club assignment: club_custody, and the teen is still pending (the clock restarts)', async () => {
+      const { service, tx } = setup();
+      tx.account.count.mockResolvedValue(1);
+      tx.club_role_assignments.findMany.mockResolvedValue([
+        assignment('active'),
+      ]);
+
+      const result = await service.detachRow(tx, TEEN_ROW, 'guardian_left');
+
+      expect(result.outcome).toBe('club_custody');
+      expect(tx.guardianships.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          is_custodian: true,
+          custodian_club_id: 9,
+          consent_status: 'verified',
+        }),
+      });
+      expect(tx.supervised_logins.upsert).toHaveBeenCalledTimes(1);
+      expect(tx.dependent_profiles.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('a secondary guardian leaving keeps other_guardian and does not touch the clock', async () => {
+      const { service, tx } = setup();
+      tx.account.count.mockResolvedValue(1);
+      tx.guardianships.findMany.mockResolvedValue([
+        { guardianship_id: 'gs-primary', is_primary: true },
+      ]);
+
+      const result = await service.detachRow(
+        tx,
+        row({ is_primary: false }),
+        'guardian_left',
+      );
+
+      expect(result.outcome).toBe('other_guardian');
+      expect(tx.supervised_logins.upsert).not.toHaveBeenCalled();
+    });
+
+    it('an old dependent WITHOUT an account keeps the Phase 2 outcome: frozen for 90 days', async () => {
+      const { service, tx, deviceRevoker } = setup();
+      tx.account.count.mockResolvedValue(0);
+
+      const result = await service.detachRow(tx, row(), 'guardian_left');
+
+      expect(result.outcome).toBe('frozen');
+      expect(tx.dependent_profiles.updateMany).toHaveBeenCalledTimes(1);
+      expect(tx.supervised_logins.upsert).not.toHaveBeenCalled();
+      expect(deviceRevoker.revokeAllForDependent).toHaveBeenCalledWith(
+        tx,
+        DEP,
+        'dependent_frozen',
+      );
+    });
+
+    it('a handle teen (guardian-enabled) loses its last guardian: pending_guardian too, login untouched', async () => {
+      const { service, tx } = setup();
+      tx.account.count.mockResolvedValue(1);
+
+      const result = await service.detachRow(
+        tx,
+        TEEN_ROW,
+        'guardian_account_closed',
+      );
+
+      expect(result.outcome).toBe('pending_guardian');
+      // Only the clock fields move: nothing disables the login.
+      const update = tx.supervised_logins.upsert.mock.calls[0][0].update;
+      expect(Object.keys(update).sort()).toEqual([
+        'pending_reminder_level',
+        'pending_since',
+      ]);
+    });
+  });
+
+  describe('linked devices', () => {
+    it('revokes the devices paired through the leaving guardianship, inside the transaction', async () => {
+      const { service, tx, deviceRevoker } = setup();
+      tx.guardianships.findMany.mockResolvedValue([
+        { guardianship_id: 'gs-other', is_primary: true },
+      ]);
+
+      await service.detachRow(tx, row(), 'guardian_left');
+
+      expect(deviceRevoker.revokeByGuardianship).toHaveBeenCalledWith(
+        tx,
+        'gs-1',
+        'guardianship_revoked',
+      );
+      // Another guardian remains: the other devices stay.
+      expect(deviceRevoker.revokeAllForDependent).not.toHaveBeenCalled();
+    });
+
+    it('uses guardian_account_closed when the guardian deletes the account', async () => {
+      const { service, tx, deviceRevoker } = setup();
+      tx.guardianships.findMany.mockResolvedValue([
+        { guardianship_id: 'gs-other', is_primary: true },
+      ]);
+
+      await service.detachRow(tx, row(), 'guardian_account_closed');
+
+      expect(deviceRevoker.revokeByGuardianship).toHaveBeenCalledWith(
+        tx,
+        'gs-1',
+        'guardian_account_closed',
+      );
+    });
+
+    it('revokes EVERY device when the last guardian leaves to custody', async () => {
+      const { service, tx, deviceRevoker } = setup();
+      tx.club_role_assignments.findMany.mockResolvedValue([
+        assignment('active'),
+      ]);
+
+      await service.detachRow(tx, row(), 'guardian_left');
+
+      expect(deviceRevoker.revokeAllForDependent).toHaveBeenCalledWith(
+        tx,
+        DEP,
+        'dependent_no_guardian',
+      );
+    });
+
+    it('a failing device revoke rolls the whole detach back (it throws out of the transaction)', async () => {
+      const { service, tx, deviceRevoker } = setup();
+      deviceRevoker.revokeByGuardianship.mockRejectedValue(new Error('boom'));
+
+      await expect(
+        service.detachRow(tx, row(), 'guardian_left'),
+      ).rejects.toThrow('boom');
+    });
+  });
+
+  describe('account deletion preview', () => {
+    it('lists pending_guardian for a teen and frozen for an old dependent', async () => {
+      const { service, tx } = setup();
+      tx.guardianships.findMany.mockResolvedValue([
+        {
+          dependent_user_id: 'teen-1',
+          dependent: { name: 'Luz', paternal_last_name: 'R' },
+        },
+        {
+          dependent_user_id: 'kid-1',
+          dependent: { name: 'Teo', paternal_last_name: 'P' },
+        },
+      ]);
+      tx.guardianships.count.mockResolvedValue(0);
+      tx.account.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.userId === 'teen-1' ? 1 : 0),
+      );
+
+      const impact = await service.deletionImpact(G1, tx);
+
+      expect(impact.dependents.map((d) => [d.user_id, d.outcome])).toEqual([
+        ['teen-1', 'pending_guardian'],
+        ['kid-1', 'frozen'],
+      ]);
+    });
+  });
+
+  describe('revokePendingLinkByDependent (the teen removes a wrong pending link)', () => {
+    const PENDING = row({
+      guardianship_id: 'gs-pending',
+      guardian_user_id: G1,
+    });
+
+    it('revokes a PENDING link of this teen with reason removed_by_dependent and restarts the clock', async () => {
+      const { service, tx, cache } = setup();
+      tx.account.count.mockResolvedValue(1);
+      tx.guardianships.findFirst.mockResolvedValue(PENDING);
+
+      const result = await service.revokePendingLinkByDependent(
+        DEP,
+        'gs-pending',
+      );
+
+      expect(tx.guardianships.findFirst.mock.calls[0][0].where).toEqual({
+        guardianship_id: 'gs-pending',
+        dependent_user_id: DEP,
+        is_custodian: false,
+        guardian_user_id: { not: null },
+        consent_status: 'pending',
+      });
+      expect(tx.guardianships.update).toHaveBeenCalledWith({
+        where: { guardianship_id: 'gs-pending' },
+        data: expect.objectContaining({
+          consent_status: 'revoked',
+          revoked_reason: 'removed_by_dependent',
+        }),
+      });
+      expect(result).toEqual({
+        guardianship_id: 'gs-pending',
+        consent_status: 'revoked',
+        dependent_outcome: 'pending_guardian',
+      });
+      expect(tx.supervised_logins.upsert).toHaveBeenCalledTimes(1);
+      expect(cache.bump).toHaveBeenCalledWith(DEP);
+    });
+
+    it('locks the teen BEFORE reading the link', async () => {
+      const { service, tx } = setup();
+      tx.guardianships.findFirst.mockResolvedValue(PENDING);
+
+      await service.revokePendingLinkByDependent(DEP, 'gs-pending');
+
+      expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.guardianships.findFirst.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("a VERIFIED guardian, another teen's link or a custody row cannot be removed: 404 and nothing is written", async () => {
+      const { service, tx, cache } = setup();
+      tx.guardianships.findFirst.mockResolvedValue(null);
+
+      expect(
+        await errorOf(service.revokePendingLinkByDependent(DEP, 'gs-verified')),
+      ).toMatchObject({ code: ErrorCode.GUARDIANSHIP_NOT_FOUND });
+      expect(tx.guardianships.update).not.toHaveBeenCalled();
+      expect(cache.bump).not.toHaveBeenCalled();
+    });
+
+    it('revokes the open link codes the removed guardian issued and the devices paired through the link', async () => {
+      const { service, tx, deviceRevoker } = setup();
+      tx.guardianships.findFirst.mockResolvedValue(PENDING);
+
+      await service.revokePendingLinkByDependent(DEP, 'gs-pending');
+
+      expect(tx.guardianship_link_codes.updateMany).toHaveBeenCalled();
+      expect(deviceRevoker.revokeByGuardianship).toHaveBeenCalledWith(
+        tx,
+        'gs-pending',
+        'guardianship_revoked',
+      );
     });
   });
 });

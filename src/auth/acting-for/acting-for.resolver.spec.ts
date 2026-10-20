@@ -8,6 +8,7 @@ import {
   ActingForCache,
 } from './acting-for.cache';
 import { ActingForResolver } from './acting-for.resolver';
+import { GUARDIAN_MANAGED_DEPENDENT } from '../../guardianships/guardianship-queries';
 import {
   GUARDIAN_PENDING_SCOPES,
   GUARDIAN_VERIFIED_SCOPES,
@@ -85,12 +86,41 @@ describe('ActingForResolver', () => {
           guardian: { active: true },
           dependent: {
             active: true,
-            account: { none: {} },
             dependent_profile: { is: { frozen_at: null, purged_at: null } },
+            OR: [
+              { account: { none: {} }, supervised_login: { is: null } },
+              {
+                supervised_login: {
+                  is: {
+                    origin: 'guardian_enabled',
+                    disabled_at: { not: null },
+                  },
+                },
+              },
+            ],
           },
         },
       }),
     );
+  });
+
+  it('uses the managed-dependent fragment: enabled and self-registered logins are not actable, a disabled guardian-enabled login is', async () => {
+    prisma.guardianships.findFirst.mockResolvedValue(guardianshipRow());
+    await resolver.resolve(GUARDIAN, DEPENDENT);
+
+    const where = prisma.guardianships.findFirst.mock.calls[0][0].where;
+    expect(where.dependent).toEqual(GUARDIAN_MANAGED_DEPENDENT);
+    // R6: only a guardian_enabled row that was disabled lets acting resume.
+    expect(where.dependent.OR[1]).toEqual({
+      supervised_login: {
+        is: { origin: 'guardian_enabled', disabled_at: { not: null } },
+      },
+    });
+    // A pure dependent must have NO supervised login row either.
+    expect(where.dependent.OR[0]).toEqual({
+      account: { none: {} },
+      supervised_login: { is: null },
+    });
   });
 
   it('grants the pending scopes for a pending guardianship', async () => {
@@ -241,10 +271,38 @@ describe('ActingForResolver', () => {
           dependent: {
             active: true,
             account: [{ id: 'acc' }],
+            supervised_login: null,
             dependent_profile: { frozen_at: null, purged_at: null },
           },
         }),
         'has_account',
+      ],
+      [
+        'dependent with an ENABLED supervised login',
+        diagnostic({
+          dependent: {
+            active: true,
+            account: [{ id: 'acc' }],
+            supervised_login: { origin: 'guardian_enabled', disabled_at: null },
+            dependent_profile: { frozen_at: null, purged_at: null },
+          },
+        }),
+        'supervised_login_active',
+      ],
+      [
+        'self-registered teen (never actable, even when disabled)',
+        diagnostic({
+          dependent: {
+            active: true,
+            account: [{ id: 'acc' }],
+            supervised_login: {
+              origin: 'self_registered',
+              disabled_at: new Date(),
+            },
+            dependent_profile: { frozen_at: null, purged_at: null },
+          },
+        }),
+        'supervised_login_active',
       ],
       [
         'no dependent profile',

@@ -74,6 +74,16 @@ const SUMMARY_SELECT = {
       country_id: true,
       users_pr: { select: { complete: true } },
       dependent_profile: { select: { frozen_at: true } },
+      account: { select: { id: true }, take: 1 },
+      supervised_login: {
+        select: {
+          method: true,
+          login_handle: true,
+          origin: true,
+          enabled_at: true,
+          disabled_at: true,
+        },
+      },
     },
   },
 } satisfies Prisma.guardianshipsSelect;
@@ -201,8 +211,9 @@ export class GuardianshipsService {
       throw unprocessable(ErrorCode.GUARDIANSHIP_DEPENDENT_AGE_OUT_OF_RANGE);
     }
     const age = ageAt(birthday, calendarDateIn(policy.timeZone));
-    if (age < 0 || age >= policy.minSelfLoginAge) {
-      // 13 and older get their own account (Phase 3), not a managed profile.
+    if (age < 0 || age >= policy.ageOfMajority) {
+      // Any minor can be created as a managed profile (Phase 3a): a 14-year-old
+      // without an email gets a guardian-enabled handle login on top of it.
       throw unprocessable(ErrorCode.GUARDIANSHIP_DEPENDENT_AGE_OUT_OF_RANGE);
     }
 
@@ -405,6 +416,15 @@ export class GuardianshipsService {
     return rows.map((row) => {
       const { dependent } = row;
       const policy = policies.get(dependent.country_id) as CountryAgePolicy;
+      const age = dependent.birthday
+        ? ageToday(dependent.birthday, policy.timeZone)
+        : null;
+      const login = dependent.supervised_login;
+      // A guardian-enabled login that was disabled hands the child back to the
+      // guardian (acting resumes); every other account holder acts alone.
+      const guardianManaged =
+        dependent.account.length === 0 ||
+        (login?.origin === 'guardian_enabled' && login.disabled_at !== null);
       return {
         user_id: dependent.user_id,
         name: dependent.name,
@@ -413,11 +433,30 @@ export class GuardianshipsService {
         birthday: dependent.birthday
           ? dependent.birthday.toISOString().slice(0, 10)
           : null,
-        age: dependent.birthday
-          ? ageToday(dependent.birthday, policy.timeZone)
-          : null,
+        age,
         user_image: dependent.user_image,
-        access_mode: 'guardian_managed',
+        access_mode: guardianManaged ? 'guardian_managed' : 'supervised_login',
+        supervised_login: login
+          ? {
+              method: login.method as 'email' | 'handle',
+              // The handle is for VERIFIED guardians only.
+              login_handle:
+                row.consent_status === 'verified' ? login.login_handle : null,
+              enabled_at: login.enabled_at
+                ? login.enabled_at.toISOString()
+                : null,
+              disabled_at: login.disabled_at
+                ? login.disabled_at.toISOString()
+                : null,
+            }
+          : null,
+        linked_devices_count: 0,
+        age_milestone_reached:
+          age !== null &&
+          age >= policy.minSelfLoginAge &&
+          age < policy.ageOfMajority &&
+          dependent.account.length === 0 &&
+          login === null,
         post_register_complete: dependent.users_pr?.complete ?? false,
         frozen: dependent.dependent_profile?.frozen_at != null,
         guardianship: {
