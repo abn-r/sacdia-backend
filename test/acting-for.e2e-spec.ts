@@ -139,6 +139,9 @@ describe('Acting-for E2E', () => {
       country_id: null,
       users_pr: { complete: false },
       dependent_profile: { frozen_at: null },
+      // 3a: a dependent without credentials is guardian-managed.
+      account: [],
+      supervised_login: null,
     },
   });
 

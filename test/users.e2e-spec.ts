@@ -20,7 +20,7 @@ describe('Users E2E Tests', () => {
   let jwtService: JwtService;
 
   const mockBetterAuthService = {
-    signInWithPassword: jest.fn(),
+    signInWithIdentifier: jest.fn(),
     refreshSession: jest.fn(),
     signOut: jest.fn(),
     createUser: jest.fn(),

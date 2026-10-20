@@ -735,7 +735,7 @@ async function roleId(client: Client, name: string): Promise<string> {
 }
 
 const ANNUAL_CYCLE_BETTER_AUTH_MOCK = {
-  signInWithPassword: jest.fn(),
+  signInWithIdentifier: jest.fn(),
   refreshSession: jest.fn(),
   signOut: jest.fn().mockResolvedValue(undefined),
   createUser: jest.fn(),
