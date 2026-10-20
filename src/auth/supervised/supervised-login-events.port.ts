@@ -72,11 +72,29 @@ export const NOOP_SUPERVISED_LOGIN_EVENTS: SupervisedLoginEvents = {
   onGuardianLinked: () => undefined,
 };
 
-/** Merges a (possibly partial or missing) binding over the no-op default. */
+/**
+ * Resolves a (possibly partial or missing) binding over the no-op default.
+ *
+ * Each method is looked up through the normal property chain and BOUND to the
+ * binding, so a class instance (the real Nest provider, whose methods live on
+ * its prototype) works exactly like a plain object. Do NOT replace this with an
+ * object spread: a spread only copies OWN properties, so every prototype method
+ * of a class instance would silently fall back to the no-op.
+ */
 export function resolveSupervisedLoginEvents(
   bound?: Partial<SupervisedLoginEvents> | null,
 ): SupervisedLoginEvents {
-  return { ...NOOP_SUPERVISED_LOGIN_EVENTS, ...(bound ?? {}) };
+  if (!bound) return NOOP_SUPERVISED_LOGIN_EVENTS;
+  const source = bound as Record<string, unknown>;
+  const resolved = {} as Record<string, unknown>;
+  for (const key of Object.keys(NOOP_SUPERVISED_LOGIN_EVENTS)) {
+    const method = source[key];
+    resolved[key] =
+      typeof method === 'function'
+        ? (method as (...args: unknown[]) => unknown).bind(bound)
+        : NOOP_SUPERVISED_LOGIN_EVENTS[key as keyof SupervisedLoginEvents];
+  }
+  return resolved as unknown as SupervisedLoginEvents;
 }
 
 /**
