@@ -558,6 +558,56 @@ describe('BetterAuthService', () => {
         },
       );
 
+      it.each([
+        ['an email', 'nobody@example.com', 'test@example.com'],
+        ['a handle', 'nobody-xx99zz', HANDLE],
+      ])(
+        'an unknown %s makes the SAME lookups as a wrong password (no DB round-trip skipped, QA BUG-6)',
+        async (_label, unknown, known) => {
+          // Timing parity: the unknown path used to skip the credential lookup,
+          // ~1 DB round-trip (~68 ms on Neon) faster than a wrong password.
+          const lookups = () => ({
+            users: mockUsersFindUnique.mock.calls.length,
+            handles: mockSupervisedLoginsFindFirst.mock.calls.length,
+            accounts: mockAccountFindFirst.mock.calls.length,
+          });
+          const { svc } = buildService();
+          const compare = jest.spyOn(bcrypt, 'compare');
+
+          mockUsersFindUnique.mockResolvedValue(mockDbUser);
+          mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+          mockAccountFindFirst.mockResolvedValue(
+            await realAccount('CorrectPassword!'),
+          );
+          await expect(
+            svc.signInWithIdentifier(known, 'WrongPassword1!'),
+          ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+          const wrongPassword = lookups();
+
+          jest.clearAllMocks();
+          compare.mockClear();
+          mockUsersFindUnique.mockResolvedValue(null);
+          mockSupervisedLoginsFindFirst.mockResolvedValue(null);
+          mockAccountFindFirst.mockResolvedValue(null);
+          await expect(
+            svc.signInWithIdentifier(unknown, 'WrongPassword1!'),
+          ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+          expect(lookups()).toEqual(wrongPassword);
+          expect(mockAccountFindFirst).toHaveBeenCalledWith({
+            where: {
+              userId: '00000000-0000-0000-0000-000000000000',
+              providerId: 'credential',
+            },
+          });
+          expect(compare).toHaveBeenCalledTimes(1);
+          expect(compare).toHaveBeenCalledWith(
+            'WrongPassword1!',
+            DUMMY_BCRYPT_HASH,
+          );
+        },
+      );
+
       it('runs the dummy comparison when the user has no credential (email and handle)', async () => {
         const { svc } = buildService();
         mockUsersFindUnique.mockResolvedValue(mockDbUser);

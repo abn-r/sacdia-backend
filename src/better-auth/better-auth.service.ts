@@ -159,6 +159,13 @@ const BCRYPT_ROUNDS = 12;
 export const DUMMY_BCRYPT_HASH =
   '$2b$12$VEzbMLXeQB2uCqe9wamzsuaTRHu4NPwtsxjXG5SBeu31k9umfJemm';
 
+/**
+ * Stand-in user id for the credential lookup of an unknown login identifier
+ * (timing parity with a wrong password). A valid UUID, so the uuid column
+ * accepts it, that no user ever gets.
+ */
+const NO_USER_ID = '00000000-0000-0000-0000-000000000000';
+
 /** Server-generated handle format (lowercase, 6-40 chars). */
 const LOGIN_HANDLE_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
 
@@ -394,13 +401,17 @@ export class BetterAuthService implements IBetterAuthService {
     // 1. Find user
     const dbUser = await this.findUserForLogin(identifier);
 
-    // 2. Find credential account
-    const dbAccount = dbUser
-      ? await this.prisma.account.findFirst({
-          where: { userId: dbUser.user_id, providerId: 'credential' },
-        })
-      : null;
-    const storedHash = dbAccount?.password ?? null;
+    // 2. Find credential account. ALWAYS one lookup, against the nil UUID when
+    //    there is no user: skipping it made an unknown identifier a whole DB
+    //    round-trip faster than a wrong password (timing oracle). The nil UUID
+    //    never belongs to a user, and the result is ignored without a user.
+    const dbAccount = await this.prisma.account.findFirst({
+      where: {
+        userId: dbUser?.user_id ?? NO_USER_ID,
+        providerId: 'credential',
+      },
+    });
+    const storedHash = dbUser ? (dbAccount?.password ?? null) : null;
 
     // 3. Verify password. One compare on EVERY path (timing oracle fix).
     const isValid = await bcrypt.compare(
