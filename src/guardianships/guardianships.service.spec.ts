@@ -116,6 +116,7 @@ function setup(options: { guardianBirthday?: string | null } = {}) {
       findMany: jest.fn().mockResolvedValue([]),
     },
     club_role_assignments: { findMany: jest.fn().mockResolvedValue([]) },
+    linked_devices: { groupBy: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(async (callback: (t: typeof tx) => unknown) => {
       const result = await callback(tx);
       committed = true;
@@ -549,7 +550,7 @@ describe('GuardianshipsService reads', () => {
         dependent_profile: { is: { frozen_at: null, purged_at: null } },
       },
     });
-    expect(result.limits).toEqual({ max_dependents: 10 });
+    expect(result.limits).toEqual({ max_dependents: 10, max_devices: 2 });
     expect(result.dependents).toHaveLength(2);
     expect(result.dependents[0].club_membership).toEqual({
       assignment_id: 'a-live',
@@ -600,6 +601,26 @@ describe('GuardianshipsService reads', () => {
         supervised_login: null,
         linked_devices_count: 0,
         age_milestone_reached: false,
+      });
+    });
+
+    it('counts the ACTIVE linked devices of each dependent with one grouped query (3b)', async () => {
+      const { service, prisma } = setup();
+      const withDevices = summaryRow('d-1');
+      const without = summaryRow('d-2');
+      prisma.guardianships.findMany.mockResolvedValue([withDevices, without]);
+      prisma.linked_devices.groupBy.mockResolvedValue([
+        { dependent_user_id: 'd-1', _count: { _all: 2 } },
+      ]);
+
+      const { dependents } = await service.listForGuardian(GUARDIAN);
+
+      expect(dependents.map((d) => d.linked_devices_count)).toEqual([2, 0]);
+      expect(prisma.linked_devices.groupBy).toHaveBeenCalledTimes(1);
+      expect(prisma.linked_devices.groupBy).toHaveBeenCalledWith({
+        by: ['dependent_user_id'],
+        where: { dependent_user_id: { in: ['d-1', 'd-2'] }, revoked_at: null },
+        _count: { _all: true },
       });
     });
 

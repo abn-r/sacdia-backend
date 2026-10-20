@@ -37,6 +37,15 @@ export const DIRECTOR_CLAIM_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const LINK_CODE_MAX_FAILURES = 10;
 export const LINK_CODE_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** Linked devices (Phase 3b). A child can have at most this many active paired phones (ruling R1). */
+export const MAX_LINKED_DEVICES_PER_DEPENDENT = 2;
+/** The single-use QR pairing token lives 10 minutes. */
+export const DEVICE_PAIRING_TOKEN_TTL_MS = 10 * 60 * 1000;
+/** A device session can never be extended past this many days from pairing (P3-A13). */
+export const DEVICE_ABSOLUTE_LIFETIME_MS = 180 * 24 * 60 * 60 * 1000;
+/** A revoked device stays listed for the guardians this long (history). */
+export const REVOKED_DEVICE_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
+
 /** A frozen dependent is purged this long after the freeze. */
 export const FROZEN_PURGE_AFTER_DAYS = 90;
 

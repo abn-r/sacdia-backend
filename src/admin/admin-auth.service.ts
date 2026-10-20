@@ -7,6 +7,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import { AdminUsersService } from './admin-users.service';
+import { LinkedDeviceRevocation } from '../auth/device/linked-device-revocation';
 
 // ---------------------------------------------------------------------------
 // Response shapes
@@ -19,6 +20,9 @@ export interface AdminSessionDto {
   expiresAt: Date;
   ipAddress: string | null;
   userAgent: string | null;
+  /** `device` for a child's paired phone (3b). */
+  kind: 'user' | 'device';
+  linkedDeviceId: string | null;
 }
 
 export interface AdminSessionListDto {
@@ -64,6 +68,7 @@ export class AdminAuthService {
     private readonly prisma: PrismaService,
     private readonly betterAuthService: BetterAuthService,
     private readonly adminUsersService: AdminUsersService,
+    private readonly deviceRevocation: LinkedDeviceRevocation,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -98,6 +103,18 @@ export class AdminAuthService {
       },
     });
 
+    // A session is a device session only if a linked_devices row names it.
+    const devices =
+      sessions.length === 0
+        ? []
+        : await this.prisma.linked_devices.findMany({
+            where: { session_id: { in: sessions.map((s) => s.id) } },
+            select: { session_id: true, linked_device_id: true },
+          });
+    const deviceBySession = new Map(
+      devices.map((d) => [d.session_id, d.linked_device_id]),
+    );
+
     const mapped: AdminSessionDto[] = sessions.map((s) => ({
       sessionId: s.id,
       userId: s.userId,
@@ -105,6 +122,8 @@ export class AdminAuthService {
       expiresAt: s.expiresAt,
       ipAddress: s.ipAddress ?? null,
       userAgent: s.userAgent ?? null,
+      kind: deviceBySession.has(s.id) ? ('device' as const) : ('user' as const),
+      linkedDeviceId: deviceBySession.get(s.id) ?? null,
     }));
 
     this.logger.log(
@@ -148,6 +167,11 @@ export class AdminAuthService {
     }
 
     await this.prisma.session.delete({ where: { id: sessionId } });
+    // A paired phone whose session an admin deleted is unlinked, and says why.
+    await this.deviceRevocation.markMissingSessionsRevoked(
+      targetUserId,
+      actorUserId,
+    );
 
     this.logger.log(
       `Admin revoked session ${sessionId} for user ${targetUserId}`,
@@ -172,6 +196,10 @@ export class AdminAuthService {
     const result = await this.prisma.session.deleteMany({
       where: { userId: targetUserId },
     });
+    await this.deviceRevocation.markMissingSessionsRevoked(
+      targetUserId,
+      actorUserId,
+    );
 
     this.logger.log(
       `Admin revoked ${result.count} sessions for user ${targetUserId}`,

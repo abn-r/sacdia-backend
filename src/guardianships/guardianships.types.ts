@@ -38,7 +38,7 @@ export interface DependentSummary {
    * has no supervised login.
    */
   supervised_login: DependentSupervisedLogin | null;
-  /** Paired devices (3b). Always 0 in 3a. */
+  /** Paired devices still active (3b). */
   linked_devices_count: number;
   /** Old enough for an own login (>= min self-login age, < majority) and has none yet. */
   age_milestone_reached: boolean;

@@ -1018,6 +1018,24 @@ describe('SupervisedLoginsService.reactivate', () => {
     ).toBe(404);
   });
 
+  it('a login disabled at the age of majority (age_majority, added by the 3b migration) cannot be reactivated or disabled again: the child is an adult, so it is the stranger 404', async () => {
+    const ctx = await disabled();
+    ctx.state.users[DEP].birthday = yearsAgo(18);
+    ctx.state.logins[DEP].disabled_reason = 'age_majority';
+    ctx.state.logins[DEP].disabled_by_user_id = null;
+
+    for (const call of [
+      () =>
+        ctx.service.reactivate(GUARDIAN, DEP, { password: 'N3w@Password!xyz' }),
+      () => ctx.service.disable(GUARDIAN, DEP, {}),
+    ]) {
+      expect((await failure(call())).status).toBe(404);
+    }
+    // Nothing was written over the recorded reason.
+    expect(ctx.state.logins[DEP].disabled_reason).toBe('age_majority');
+    expect(ctx.state.logins[DEP].disabled_at).not.toBeNull();
+  });
+
   it('notifies the other guardians', async () => {
     const ctx = await disabled();
     await ctx.service.reactivate(GUARDIAN, DEP, {

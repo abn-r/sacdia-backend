@@ -34,6 +34,7 @@ import {
 import {
   GUARDIAN_RELATIONSHIP_TYPE_NAMES,
   MAX_DEPENDENTS_PER_GUARDIAN,
+  MAX_LINKED_DEVICES_PER_DEPENDENT,
 } from './guardianships.constants';
 import type {
   DependentDetail,
@@ -301,7 +302,7 @@ export class GuardianshipsService {
 
   async listForGuardian(guardianId: string): Promise<{
     dependents: DependentSummary[];
-    limits: { max_dependents: number };
+    limits: { max_dependents: number; max_devices: number };
   }> {
     const rows = await this.prisma.guardianships.findMany({
       where: {
@@ -316,7 +317,10 @@ export class GuardianshipsService {
     });
     return {
       dependents: await this.buildSummaries(rows),
-      limits: { max_dependents: MAX_DEPENDENTS_PER_GUARDIAN },
+      limits: {
+        max_dependents: MAX_DEPENDENTS_PER_GUARDIAN,
+        max_devices: MAX_LINKED_DEVICES_PER_DEPENDENT,
+      },
     };
   }
 
@@ -413,6 +417,20 @@ export class GuardianshipsService {
       }
     }
 
+    // Paired phones still active, one grouped query for every dependent.
+    const deviceCounts = new Map<string, number>();
+    const deviceGroups = await this.prisma.linked_devices.groupBy({
+      by: ['dependent_user_id'],
+      where: {
+        dependent_user_id: { in: rows.map((row) => row.dependent_user_id) },
+        revoked_at: null,
+      },
+      _count: { _all: true },
+    });
+    for (const group of deviceGroups) {
+      deviceCounts.set(group.dependent_user_id, group._count._all);
+    }
+
     return rows.map((row) => {
       const { dependent } = row;
       const policy = policies.get(dependent.country_id) as CountryAgePolicy;
@@ -450,7 +468,7 @@ export class GuardianshipsService {
                 : null,
             }
           : null,
-        linked_devices_count: 0,
+        linked_devices_count: deviceCounts.get(row.dependent_user_id) ?? 0,
         age_milestone_reached:
           age !== null &&
           age >= policy.minSelfLoginAge &&

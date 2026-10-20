@@ -11,6 +11,22 @@ export class SessionItemDto {
   declare session_id: string;
 
   @ApiProperty({
+    description:
+      "`device` when the session belongs to a child's paired phone (3b), otherwise `user`",
+    enum: ['user', 'device'],
+    example: 'user',
+  })
+  declare kind: 'user' | 'device';
+
+  @ApiProperty({
+    description: 'Linked device id for a device session, null otherwise',
+    nullable: true,
+    type: String,
+    example: null,
+  })
+  declare linked_device_id: string | null;
+
+  @ApiProperty({
     description: 'Device type inferred from User-Agent',
     enum: ['ios', 'android', 'web', 'unknown'],
     example: 'ios',

@@ -43,7 +43,9 @@ import {
   SetSupervisedPasswordDto,
 } from './dto';
 import { GuardianEvidenceService } from './guardian-evidence.service';
+import { DevicePairingService } from './device-pairing.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
+import { LinkedDevicesService } from './linked-devices.service';
 import { GuardianshipsService } from './guardianships.service';
 import { LinkCodesService } from './link-codes.service';
 import { SupervisedLoginsService } from './supervised-logins.service';
@@ -77,6 +79,8 @@ export class GuardianshipsController {
     private readonly lifecycle: GuardianshipLifecycleService,
     private readonly evidence: GuardianEvidenceService,
     private readonly supervisedLogins: SupervisedLoginsService,
+    private readonly devicePairing: DevicePairingService,
+    private readonly linkedDevices: LinkedDevicesService,
   ) {}
 
   @Get('relationship-types')
@@ -419,6 +423,92 @@ export class GuardianshipsController {
         dependentId,
         dto,
       ),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/devices/pairing-tokens')
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 10 }))
+  @ApiOperation({
+    summary: "Create the QR token that links a child's phone",
+    description:
+      'Verified guardian, as self (acting is 403). The child must have no account, be under the minimum self-login age of its country and have fewer than 2 active devices. The token is single use and lives 10 minutes; a new one revokes the earlier open ones. It is returned ONCE and stored only as an HMAC. 404 FAMILY_FEATURE_DISABLED while FAMILY_LINKED_DEVICE_ENABLED is off.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '{ pairing_token, qr_payload, expires_at, expires_in }',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'GUARDIANSHIP_CONSENT_NOT_VERIFIED (pending link) or ACTING_FOR_SCOPE_DENIED (acting)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'GUARDIANSHIP_NOT_FOUND or FAMILY_FEATURE_DISABLED',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'DEVICE_LIMIT_REACHED {max_devices}',
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'DEVICE_PAIRING_NOT_ELIGIBLE {reason: has_supervised_login | age_not_under_min_self_login}',
+  })
+  async issueDevicePairingToken(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.devicePairing.issue(user.sub, dependentId),
+    };
+  }
+
+  @Get('me/dependents/:dependentId/devices')
+  @ApiOperation({
+    summary: 'Linked devices of a child (active, and revoked for 30 days)',
+    description:
+      'Any VERIFIED guardian of the child, not only the one who paired the phone. Pending link 403, stranger 404.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ devices, limits: { max_devices } }',
+  })
+  async listDevices(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.linkedDevices.list(user.sub, dependentId),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/devices/:deviceId/revoke')
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 30 }))
+  @ApiOperation({
+    summary: 'Unlink a device (immediate)',
+    description:
+      'Any verified guardian. The device session is deleted and the epoch moves: the phone gets 401 AUTH_DEVICE_REVOKED on its very next request, even with an unexpired token. Idempotent (a repeat answers 200 and writes nothing). The other verified guardians are told.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ linked_device_id, revoked_at, revoked_reason }',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'DEVICE_NOT_FOUND (also a device of another child)',
+  })
+  async revokeDevice(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.linkedDevices.revoke(user.sub, dependentId, deviceId),
     };
   }
 

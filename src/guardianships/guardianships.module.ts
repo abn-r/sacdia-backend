@@ -22,10 +22,11 @@ import { GuardianshipsController } from './guardianships.controller';
 import { GuardianshipsService } from './guardianships.service';
 import { LinkCodeFailureCounter } from './link-code-failure-counter';
 import { LinkCodesService } from './link-codes.service';
-import {
-  LINKED_DEVICE_REVOKER,
-  NOOP_LINKED_DEVICE_REVOKER,
-} from './linked-device-revoker.port';
+import { LINKED_DEVICE_REVOKER } from './linked-device-revoker.port';
+import { LinkedDeviceModule } from '../auth/device/linked-device.module';
+import { DevicePairingFailureCounter } from './device-pairing-failure-counter';
+import { DevicePairingService } from './device-pairing.service';
+import { LinkedDevicesService } from './linked-devices.service';
 import { SupervisionStateService } from './supervision-state.service';
 
 /**
@@ -43,6 +44,8 @@ import { SupervisionStateService } from './supervision-state.service';
     FamilyFeatureFlagsModule,
     // SupervisedLoginsService sends the standard reset email to email teens.
     BetterAuthModule,
+    // The device gate / revocation core, shared with the auth layer.
+    LinkedDeviceModule,
   ],
   controllers: [
     GuardianshipsController,
@@ -68,8 +71,13 @@ import { SupervisionStateService } from './supervision-state.service';
       provide: SUPERVISED_LOGIN_EVENTS,
       useExisting: GuardianSecurityNotificationsService,
     },
-    // 3a default: there are no linked devices yet. 3b rebinds this token.
-    { provide: LINKED_DEVICE_REVOKER, useValue: NOOP_LINKED_DEVICE_REVOKER },
+    LinkedDevicesService,
+    DevicePairingService,
+    DevicePairingFailureCounter,
+    // The 3a flows (enable a teen login, a guardian leaves, account closure, a
+    // teen links a guardian, the cron freeze) revoke devices through this port.
+    // REQUIRED and real since 3b: there is no no-op default any more.
+    { provide: LINKED_DEVICE_REVOKER, useExisting: LinkedDevicesService },
   ],
   exports: [
     GuardianshipsService,
@@ -83,6 +91,8 @@ import { SupervisionStateService } from './supervision-state.service';
     GuardianSecurityNotificationsService,
     SUPERVISED_LOGIN_EVENTS,
     LINKED_DEVICE_REVOKER,
+    LinkedDevicesService,
+    DevicePairingService,
   ],
 })
 export class GuardianshipsModule {}

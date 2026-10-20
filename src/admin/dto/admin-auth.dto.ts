@@ -31,6 +31,19 @@ export class AdminSessionItemDto {
     description: 'User-Agent string of the session origin',
   })
   userAgent!: string | null;
+
+  @ApiProperty({
+    enum: ['user', 'device'],
+    example: 'user',
+    description: "`device` for a child's paired phone (3b)",
+  })
+  kind!: 'user' | 'device';
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Linked device id for a device session',
+  })
+  linkedDeviceId!: string | null;
 }
 
 export class AdminSessionListResponseDto {

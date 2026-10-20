@@ -54,14 +54,28 @@ function setup() {
     deleteMany: jest.fn().mockResolvedValue(undefined),
     extractKeyFromPublicUrl: jest.fn().mockReturnValue(null),
   };
+  const deviceRevoker = {
+    revokeAllForDependent: jest.fn().mockResolvedValue(0),
+    revokeByGuardianship: jest.fn().mockResolvedValue(0),
+  };
   const service = new DependentProfilesPurgeCronService(
     prisma,
     lock as any,
     cronLogger as any,
     cache as any,
     fileStorage as any,
+    deviceRevoker,
   );
-  return { service, prisma, tx, lock, cronLogger, cache, fileStorage };
+  return {
+    service,
+    prisma,
+    tx,
+    lock,
+    cronLogger,
+    cache,
+    fileStorage,
+    deviceRevoker,
+  };
 }
 
 describe('DependentProfilesPurgeCronService scheduling and locking', () => {
@@ -560,7 +574,6 @@ describe('DependentProfilesPurgeCronService account-holder path (3a teen)', () =
       ctx.tx.account,
       ctx.tx.session,
       ctx.tx.verification,
-      ctx.tx.user_fcm_tokens,
       ctx.tx.supervised_logins,
     ]) {
       expect(
@@ -573,6 +586,43 @@ describe('DependentProfilesPurgeCronService account-holder path (3a teen)', () =
     const ctx = setup();
     teen(ctx, 'ana@example.com');
     ctx.tx.account.deleteMany.mockRejectedValue(new Error('db'));
+
+    const summary = await ctx.service.purgeDue();
+
+    expect(summary).toEqual({ purged: 0, failed: 1 });
+    expect(ctx.cache.bump).not.toHaveBeenCalled();
+  });
+
+  it('revokes the linked devices of the child inside the SAME transaction and deletes the push tokens they registered (3b)', async () => {
+    const ctx = setup();
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+
+    await ctx.service.purgeDue();
+
+    expect(ctx.deviceRevoker.revokeAllForDependent).toHaveBeenCalledWith(
+      ctx.tx,
+      D1,
+      'dependent_frozen',
+    );
+    expect(ctx.tx.user_fcm_tokens.deleteMany).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+    });
+    // The revoke happens before the profile is marked purged.
+    const revokeOrder =
+      ctx.deviceRevoker.revokeAllForDependent.mock.invocationCallOrder[0];
+    const purgedOrder =
+      ctx.tx.dependent_profiles.update.mock.invocationCallOrder[0];
+    expect(revokeOrder).toBeLessThan(purgedOrder);
+  });
+
+  it('a device revoke failure rolls the purge back (retried next run)', async () => {
+    const ctx = setup();
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+    ctx.deviceRevoker.revokeAllForDependent.mockRejectedValue(new Error('db'));
 
     const summary = await ctx.service.purgeDue();
 

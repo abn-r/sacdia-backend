@@ -20,6 +20,7 @@ import { ActingForModule } from './acting-for/acting-for.module';
 import { GuardianshipsModule } from '../guardianships/guardianships.module';
 import { LoginFailureCounter } from './login-failure-counter';
 import { LinkedDeviceModule } from './device/linked-device.module';
+import { DeviceAuthController } from './device/device-auth.controller';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { LinkedDeviceModule } from './device/linked-device.module';
     MfaController,
     SessionsController,
     OAuthController,
+    DeviceAuthController,
   ],
   providers: [
     AuthService,

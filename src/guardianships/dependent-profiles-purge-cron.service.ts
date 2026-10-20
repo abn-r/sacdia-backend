@@ -11,6 +11,10 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  LINKED_DEVICE_REVOKER,
+  type LinkedDeviceRevoker,
+} from './linked-device-revoker.port';
 
 export const DEPENDENT_PROFILES_PURGE_JOB = 'dependent-profiles-purge';
 const LOCK_KEY = 'cron:dependent-profiles-purge';
@@ -57,6 +61,8 @@ export class DependentProfilesPurgeCronService {
     private readonly actingForCache: ActingForCache,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    @Inject(LINKED_DEVICE_REVOKER)
+    private readonly deviceRevoker: LinkedDeviceRevoker,
   ) {}
 
   @Cron('20 4 * * *', { name: DEPENDENT_PROFILES_PURGE_JOB, timeZone: 'UTC' })
@@ -214,6 +220,15 @@ export class DependentProfilesPurgeCronService {
         where: { user_id: dependentId },
         data: { ip_address: null, user_agent: null },
       });
+      // Linked phones (3b) were revoked when the child was frozen; revoking
+      // again is a no-op, and covers a child purged by another path. The push
+      // tokens a device registered belong to the child and go with it.
+      await this.deviceRevoker.revokeAllForDependent(
+        tx,
+        dependentId,
+        'dependent_frozen',
+      );
+      await tx.user_fcm_tokens.deleteMany({ where: { user_id: dependentId } });
       if (holdsAccount) {
         await this.deleteCredentials(tx, dependentId, email);
       }
@@ -251,7 +266,6 @@ export class DependentProfilesPurgeCronService {
         ],
       },
     });
-    await tx.user_fcm_tokens.deleteMany({ where: { user_id: dependentId } });
     // The handle becomes reusable (the CHECK ties method='handle' to a handle,
     // so the method drops to 'email'); the row stays as legal history.
     await tx.supervised_logins.updateMany({

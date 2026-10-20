@@ -22,6 +22,7 @@ import { MasterHonorsQueueModule } from '../honors/master-honors-queue.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CoordinationModule } from '../coordination/coordination.module';
 import { GuardianshipsModule } from '../guardianships/guardianships.module';
+import { LinkedDeviceModule } from '../auth/device/linked-device.module';
 
 @Module({
   imports: [
@@ -39,6 +40,8 @@ import { GuardianshipsModule } from '../guardianships/guardianships.module';
     CoordinationModule,
     // GuardianEvidenceService: signed read of a minor's consent form.
     GuardianshipsModule,
+    // LinkedDeviceRevocation: an admin session revoke unlinks the device too.
+    LinkedDeviceModule,
   ],
   controllers: [
     AdminAuthController,
