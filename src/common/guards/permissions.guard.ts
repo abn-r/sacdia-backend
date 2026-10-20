@@ -52,6 +52,19 @@ type ResolvedInstanceScope = {
   instanceId: number;
 };
 
+/**
+ * What a `coordinatorSections` route hands to validateInstanceScope.
+ * `clubAuthority`: the requirement is met WITHOUT the coordinator roles'
+ * permissions (active club role, direct grants, other global roles). When it
+ * is false, the permission came from a coordinator role, and a coordinator's
+ * authority is their assignments only: the club branches cannot open the
+ * section, the coordinator path decides.
+ */
+type CoordinatorSectionsCheck = {
+  requirement: PermissionRequirement;
+  clubAuthority: boolean;
+};
+
 type ResolvedJointActivityScope = {
   mainClubId: number;
   participatingSectionIds: number[];
@@ -220,7 +233,7 @@ export class PermissionsGuard implements CanActivate {
           userId,
           resolved,
           await this.resolveClubSectionScope(request, resource),
-          resource.coordinatorSections ? requirement : undefined,
+          this.coordinatorSectionsCheck(resolved, requirement, resource),
           request,
         );
       case 'camporee':
@@ -306,7 +319,7 @@ export class PermissionsGuard implements CanActivate {
           userId,
           resolved,
           await this.resolveClubAssignmentScope(request, resource),
-          resource.coordinatorSections ? requirement : undefined,
+          this.coordinatorSectionsCheck(resolved, requirement, resource),
           request,
         );
       case 'class_counselor_assignment':
@@ -354,11 +367,15 @@ export class PermissionsGuard implements CanActivate {
     requirement: PermissionRequirement,
     resource: AuthorizationResourceMetadata,
     sensitiveUserSubresource?: SensitiveUserSubresourceMetadata,
+    {
+      excludeCoordinatorRoles = false,
+    }: { excludeCoordinatorRoles?: boolean } = {},
   ): boolean {
     // Reached only after the owner bypass failed: on an owner-aware resource
     // the actor is a non-owner here, so the base role does not count.
     const globalPermissions = this.getGlobalPermissions(resolved, {
       excludeBaseRole: this.isOwnerAwareResource(resource),
+      excludeCoordinatorRoles,
     });
 
     if (resource.type === 'user' && sensitiveUserSubresource) {
@@ -413,14 +430,21 @@ export class PermissionsGuard implements CanActivate {
 
   private getGlobalPermissions(
     resolved: ResolvedAuthorizationProfile,
-    { excludeBaseRole }: { excludeBaseRole: boolean },
+    {
+      excludeBaseRole,
+      excludeCoordinatorRoles = false,
+    }: { excludeBaseRole: boolean; excludeCoordinatorRoles?: boolean },
   ): Set<string> {
     return new Set([
       ...resolved.authorization.grants.global_roles
         .filter(
           (grant) =>
-            !excludeBaseRole ||
-            grant.role_name.toLowerCase() !== BASE_GLOBAL_ROLE_NAME,
+            (!excludeBaseRole ||
+              grant.role_name.toLowerCase() !== BASE_GLOBAL_ROLE_NAME) &&
+            (!excludeCoordinatorRoles ||
+              !COORDINATOR_GLOBAL_ROLE_NAMES.has(
+                grant.role_name.toLowerCase(),
+              )),
         )
         .flatMap((grant) => grant.permissions),
       ...(resolved.authorization.grants.direct_permissions ?? []),
@@ -600,46 +624,81 @@ export class PermissionsGuard implements CanActivate {
   }
 
   /**
-   * `coordinatorRequirement` is set only when the route opted in with
-   * `coordinatorSections` (see AuthorizationResourceMetadata). When the request
-   * gets in ONLY through that coordinator path, `request.coordinatorSectionGrant`
-   * is set to true: the caller has coordinator authority over the section, not
-   * club authority, so a permission that came from somewhere else (a club role
-   * in ANOTHER club that happens to be the active one) must not widen what they
-   * see here.
+   * Only for routes that opted in with `coordinatorSections` (see
+   * AuthorizationResourceMetadata); undefined everywhere else, so every other
+   * route keeps the generic rule.
+   */
+  private coordinatorSectionsCheck(
+    resolved: ResolvedAuthorizationProfile,
+    requirement: PermissionRequirement,
+    resource: AuthorizationResourceMetadata,
+  ): CoordinatorSectionsCheck | undefined {
+    if (!resource.coordinatorSections) {
+      return undefined;
+    }
+    return {
+      requirement,
+      clubAuthority: this.hasRequiredPermissions(
+        resolved,
+        requirement,
+        resource,
+        undefined,
+        { excludeCoordinatorRoles: true },
+      ),
+    };
+  }
+
+  /**
+   * `coordinator` is set only when the route opted in with
+   * `coordinatorSections`. There, the club branches (territory via
+   * canManageClub, the active club section) count only when the requirement
+   * is met WITHOUT the coordinator roles' permissions: a coordinator's
+   * permission is coordinator authority, and only their assignments open a
+   * section (a coordinator who is a plain member of the section, or whose
+   * territory comes from another role lacking the permission, is not let in
+   * by it). A coordinator who is also a director/secretary of the section
+   * keeps those club powers: their club role satisfies the requirement alone.
+   *
+   * When the request gets in ONLY through the coordinator path,
+   * `request.coordinatorSectionGrant` is set to true: the caller has
+   * coordinator authority over the section, not club authority, so a
+   * permission that came from somewhere else (a club role in ANOTHER club
+   * that happens to be the active one) must not widen what they see here.
    */
   private async validateInstanceScope(
     userId: string,
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedInstanceScope,
-    coordinatorRequirement?: PermissionRequirement,
+    coordinator?: CoordinatorSectionsCheck,
     request?: Record<string, unknown>,
   ): Promise<boolean> {
-    if (
-      await this.authorizationContext.canManageClub(
-        userId,
-        resourceScope.mainClubId,
-      )
-    ) {
-      return true;
+    if (coordinator?.clubAuthority ?? true) {
+      if (
+        await this.authorizationContext.canManageClub(
+          userId,
+          resourceScope.mainClubId,
+        )
+      ) {
+        return true;
+      }
+
+      const activeClubScope = resolved.authorization.effective.scope.club;
+
+      if (
+        activeClubScope &&
+        activeClubScope.club.club_id === resourceScope.mainClubId &&
+        activeClubScope.section.club_section_id === resourceScope.instanceId
+      ) {
+        return true;
+      }
     }
 
-    const activeClubScope = resolved.authorization.effective.scope.club;
-
     if (
-      activeClubScope &&
-      activeClubScope.club.club_id === resourceScope.mainClubId &&
-      activeClubScope.section.club_section_id === resourceScope.instanceId
-    ) {
-      return true;
-    }
-
-    if (
-      coordinatorRequirement &&
+      coordinator &&
       (await this.coordinatorCoversSection(
         userId,
         resolved,
-        coordinatorRequirement,
+        coordinator.requirement,
         resourceScope.instanceId,
       ))
     ) {
