@@ -213,6 +213,7 @@ describe('ConsentGateService', () => {
     const dependentA = 'aaaaaaaa-0000-4000-8000-00000000000a';
     const dependentB = 'bbbbbbbb-0000-4000-8000-00000000000b';
     const adult = 'cccccccc-0000-4000-8000-00000000000c';
+    const VIEWER = 'dddddddd-0000-4000-8000-00000000000d';
 
     const row = (overrides: Record<string, unknown> = {}) => ({
       guardianship_id: 'g-1',
@@ -224,7 +225,13 @@ describe('ConsentGateService', () => {
       relationship_type: { name: 'Madre' },
       guardian: { name: 'María', paternal_last_name: 'Pérez' },
       custodian_club: null,
-      consent_evidences: [] as Array<{ evidence_id: string }>,
+      consent_evidences: [] as Array<{
+        evidence_id: string;
+        uploaded_by_user_id?: string;
+      }>,
+      dependent: {
+        dependent_profile: { created_by_user_id: null as string | null },
+      },
       ...overrides,
     });
 
@@ -232,7 +239,7 @@ describe('ConsentGateService', () => {
       const db = makeDb();
       db.users.findMany.mockResolvedValue([userRow(adult)]);
 
-      const blocks = await gate.loadConsentBlocks(asDb(db), [adult]);
+      const blocks = await gate.loadConsentBlocks(asDb(db), [adult], VIEWER);
 
       expect(blocks.size).toBe(0);
       expect(db.guardianships.findMany).not.toHaveBeenCalled();
@@ -241,37 +248,68 @@ describe('ConsentGateService', () => {
     it('does not query at all for an empty page', async () => {
       const db = makeDb();
 
-      expect((await gate.loadConsentBlocks(asDb(db), [])).size).toBe(0);
+      expect((await gate.loadConsentBlocks(asDb(db), [], VIEWER)).size).toBe(0);
       expect(db.users.findMany).not.toHaveBeenCalled();
       expect(db.guardianships.findMany).not.toHaveBeenCalled();
     });
 
-    it('builds the block of every dependent from TWO queries, however many requests', async () => {
+    /**
+     * The three guardianship reads of the block, told apart by their filter:
+     * the page rows, the viewer's own live rows (test data counts) and the
+     * hand-over rows (revoked with a custody trigger reason).
+     */
+    const routeGuardianships = (
+      db: Db,
+      routes: {
+        page: unknown[];
+        viewerOwn?: unknown[];
+        handovers?: unknown[];
+      },
+    ) => {
+      db.guardianships.findMany.mockImplementation(
+        ({ where }: { where: Record<string, unknown> }) => {
+          if (where.is_test_data === false) return Promise.resolve(routes.page);
+          if (typeof where.guardian_user_id === 'string') {
+            return Promise.resolve(routes.viewerOwn ?? []);
+          }
+          if (where.consent_status === 'revoked') {
+            return Promise.resolve(routes.handovers ?? []);
+          }
+          throw new Error(`unexpected guardianships read ${String(where)}`);
+        },
+      );
+    };
+
+    it('builds the block of every dependent from a FIXED number of queries, however many requests', async () => {
       const db = makeDb();
       db.users.findMany.mockResolvedValue([
         userRow(adult),
         dependentRow(dependentA),
         dependentRow(dependentB),
       ]);
-      db.guardianships.findMany.mockResolvedValue([
-        row({ consent_evidences: [{ evidence_id: 'e-1' }] }),
-        row({
-          guardianship_id: 'g-2',
-          dependent_user_id: dependentB,
-          consent_status: 'verified',
-          guardian: { name: 'Luis', paternal_last_name: 'Gómez' },
-          relationship_type: { name: 'Padre' },
-        }),
-      ]);
+      routeGuardianships(db, {
+        page: [
+          row({ consent_evidences: [{ evidence_id: 'e-1' }] }),
+          row({
+            guardianship_id: 'g-2',
+            dependent_user_id: dependentB,
+            consent_status: 'verified',
+            guardian: { name: 'Luis', paternal_last_name: 'Gómez' },
+            relationship_type: { name: 'Padre' },
+          }),
+        ],
+      });
 
-      const blocks = await gate.loadConsentBlocks(asDb(db), [
-        adult,
-        dependentA,
-        dependentB,
-      ]);
+      const blocks = await gate.loadConsentBlocks(
+        asDb(db),
+        [adult, dependentA, dependentB],
+        VIEWER,
+      );
 
       expect(db.users.findMany).toHaveBeenCalledTimes(1);
-      expect(db.guardianships.findMany).toHaveBeenCalledTimes(1);
+      // page rows + the viewer's own rows (only dependentA has a form to verify)
+      // and no hand-over read: nothing there is custody.
+      expect(db.guardianships.findMany).toHaveBeenCalledTimes(2);
       expect(blocks.has(adult)).toBe(false);
       expect(blocks.get(dependentA)).toEqual({
         required: true,
@@ -287,6 +325,8 @@ describe('ConsentGateService', () => {
             is_primary: true,
           },
         ],
+        viewer_can_verify: true,
+        viewer_verify_block: null,
       });
       expect(blocks.get(dependentB)).toMatchObject({
         guardianship_id: 'g-2',
@@ -300,7 +340,7 @@ describe('ConsentGateService', () => {
       db.users.findMany.mockResolvedValue([dependentRow(dependentA)]);
       db.guardianships.findMany.mockResolvedValue([]);
 
-      await gate.loadConsentBlocks(asDb(db), [dependentA]);
+      await gate.loadConsentBlocks(asDb(db), [dependentA], VIEWER);
 
       expect(db.guardianships.findMany.mock.calls[0][0].where).toEqual({
         dependent_user_id: { in: [dependentA] },
@@ -314,7 +354,11 @@ describe('ConsentGateService', () => {
       db.users.findMany.mockResolvedValue([dependentRow(dependentA)]);
       db.guardianships.findMany.mockResolvedValue([]);
 
-      const blocks = await gate.loadConsentBlocks(asDb(db), [dependentA]);
+      const blocks = await gate.loadConsentBlocks(
+        asDb(db),
+        [dependentA],
+        VIEWER,
+      );
 
       expect(blocks.get(dependentA)).toEqual({
         required: true,
@@ -324,6 +368,8 @@ describe('ConsentGateService', () => {
         status: 'pending',
         evidence_uploaded: false,
         guardians: [],
+        viewer_can_verify: false,
+        viewer_verify_block: null,
       });
     });
 
@@ -354,9 +400,9 @@ describe('ConsentGateService', () => {
         }),
       ]);
 
-      const block = (await gate.loadConsentBlocks(asDb(db), [dependentA])).get(
-        dependentA,
-      );
+      const block = (
+        await gate.loadConsentBlocks(asDb(db), [dependentA], VIEWER)
+      ).get(dependentA);
 
       expect(block?.guardianship_id).toBe('g-custody');
       expect(block?.guardians).toEqual([
@@ -382,7 +428,7 @@ describe('ConsentGateService', () => {
       const db = makeDb();
       db.users.findMany.mockResolvedValue([teenRow(adult, 15)]);
 
-      const blocks = await gate.loadConsentBlocks(asDb(db), [adult]);
+      const blocks = await gate.loadConsentBlocks(asDb(db), [adult], VIEWER);
 
       expect(blocks.get(adult)).toEqual({
         required: true,
@@ -392,6 +438,8 @@ describe('ConsentGateService', () => {
         status: 'pending',
         evidence_uploaded: false,
         guardians: [],
+        viewer_can_verify: false,
+        viewer_verify_block: null,
       });
       expect(db.guardianships.findMany).not.toHaveBeenCalled();
     });
@@ -400,7 +448,7 @@ describe('ConsentGateService', () => {
       const db = makeDb();
       db.users.findMany.mockResolvedValue([userRow(adult, { birthday: null })]);
 
-      const blocks = await gate.loadConsentBlocks(asDb(db), [adult]);
+      const blocks = await gate.loadConsentBlocks(asDb(db), [adult], VIEWER);
 
       expect(blocks.get(adult)).toMatchObject({
         required: true,
@@ -425,13 +473,181 @@ describe('ConsentGateService', () => {
         row({ guardianship_id: 'g-parent', dependent_user_id: dependentB }),
       ]);
 
-      const blocks = await gate.loadConsentBlocks(asDb(db), [
-        dependentA,
-        dependentB,
-      ]);
+      const blocks = await gate.loadConsentBlocks(
+        asDb(db),
+        [dependentA, dependentB],
+        VIEWER,
+      );
 
       expect(blocks.get(dependentA)?.guardian_linked).toBe(false);
       expect(blocks.get(dependentB)?.guardian_linked).toBe(true);
+    });
+
+    describe('viewer verdict (viewer_can_verify / viewer_verify_block)', () => {
+      const CREATOR = 'eeeeeeee-0000-4000-8000-00000000000e';
+      const UPLOADER = 'ffffffff-0000-4000-8000-00000000000f';
+      const HANDER = '11111111-0000-4000-8000-000000000011';
+      const withForm = (uploader: string) => [
+        { evidence_id: 'e-1', uploaded_by_user_id: uploader },
+      ];
+      const custodyRow = (overrides: Record<string, unknown> = {}) =>
+        row({
+          is_custodian: true,
+          guardian: null,
+          custodian_club: { name: 'Club Central' },
+          consent_evidences: withForm(UPLOADER),
+          dependent: { dependent_profile: { created_by_user_id: CREATOR } },
+          ...overrides,
+        });
+      const verdictOf = async (
+        viewer: string,
+        routes: Parameters<typeof routeGuardianships>[1],
+      ) => {
+        const db = makeDb();
+        db.users.findMany.mockResolvedValue([dependentRow(dependentA)]);
+        routeGuardianships(db, routes);
+        const block = (
+          await gate.loadConsentBlocks(asDb(db), [dependentA], viewer)
+        ).get(dependentA);
+        return {
+          db,
+          can: block?.viewer_can_verify,
+          why: block?.viewer_verify_block,
+          block,
+        };
+      };
+
+      it('the CREATOR of a director-created minor cannot verify: false / self_custodian', async () => {
+        const v = await verdictOf(CREATOR, { page: [custodyRow()] });
+        expect([v.can, v.why]).toEqual([false, 'self_custodian']);
+      });
+
+      it('the UPLOADER of the current form cannot verify: false / self_custodian', async () => {
+        const v = await verdictOf(UPLOADER, { page: [custodyRow()] });
+        expect([v.can, v.why]).toEqual([false, 'self_custodian']);
+      });
+
+      it('the guardian who handed the child over (latest hand-over only) cannot verify: false / self_custodian', async () => {
+        const handovers = [
+          { dependent_user_id: dependentA, guardian_user_id: HANDER },
+          { dependent_user_id: dependentA, guardian_user_id: 'older-handover' },
+        ];
+        const v = await verdictOf(HANDER, { page: [custodyRow()], handovers });
+        expect([v.can, v.why]).toEqual([false, 'self_custodian']);
+        // verify-consent bars only the most recent hand-over (orderBy desc, first)
+        const older = await verdictOf('older-handover', {
+          page: [custodyRow()],
+          handovers,
+        });
+        expect([older.can, older.why]).toEqual([true, null]);
+      });
+
+      it('a LIVE guardian of the child cannot verify: false / self_guardian (custody or not, test-data rows count)', async () => {
+        const viewerOwn = [{ dependent_user_id: dependentA }];
+        const onGuardianRow = await verdictOf(VIEWER, {
+          page: [row({ consent_evidences: withForm(UPLOADER) })],
+          viewerOwn,
+        });
+        expect([onGuardianRow.can, onGuardianRow.why]).toEqual([
+          false,
+          'self_guardian',
+        ]);
+        const onCustodyRow = await verdictOf(VIEWER, {
+          page: [custodyRow()],
+          viewerOwn,
+        });
+        expect([onCustodyRow.can, onCustodyRow.why]).toEqual([
+          false,
+          'self_guardian',
+        ]);
+      });
+
+      it('an independent secretary can verify: true / null', async () => {
+        const v = await verdictOf(VIEWER, { page: [custodyRow()] });
+        expect([v.can, v.why]).toEqual([true, null]);
+      });
+
+      it('the custody list does not apply to a guardian-managed row (creator may verify a parent consent)', async () => {
+        const v = await verdictOf(CREATOR, {
+          page: [
+            row({
+              consent_evidences: withForm(CREATOR),
+              dependent: {
+                dependent_profile: { created_by_user_id: CREATOR },
+              },
+            }),
+          ],
+        });
+        expect([v.can, v.why]).toEqual([true, null]);
+      });
+
+      it('no form uploaded or already verified: false / null for everyone, and no extra read', async () => {
+        const noForm = await verdictOf(CREATOR, {
+          page: [custodyRow({ consent_evidences: [] })],
+        });
+        expect([noForm.can, noForm.why]).toEqual([false, null]);
+        expect(noForm.db.guardianships.findMany).toHaveBeenCalledTimes(1);
+
+        const verified = await verdictOf(CREATOR, {
+          page: [custodyRow({ consent_status: 'verified' })],
+        });
+        expect([verified.can, verified.why]).toEqual([false, null]);
+        expect(verified.db.guardianships.findMany).toHaveBeenCalledTimes(1);
+      });
+
+      it('reads the viewer rows and the hand-overs for ALL candidates in one query each', async () => {
+        const db = makeDb();
+        db.users.findMany.mockResolvedValue([
+          dependentRow(dependentA),
+          dependentRow(dependentB),
+        ]);
+        routeGuardianships(db, {
+          page: [
+            custodyRow(),
+            custodyRow({
+              guardianship_id: 'g-b',
+              dependent_user_id: dependentB,
+            }),
+          ],
+        });
+
+        await gate.loadConsentBlocks(
+          asDb(db),
+          [dependentA, dependentB],
+          VIEWER,
+        );
+
+        const wheres = db.guardianships.findMany.mock.calls.map(
+          (c) => c[0].where,
+        );
+        expect(wheres).toHaveLength(3);
+        expect(wheres[1]).toEqual({
+          dependent_user_id: { in: [dependentA, dependentB] },
+          guardian_user_id: VIEWER,
+          consent_status: { not: 'revoked' },
+        });
+        expect(wheres[2]).toEqual({
+          dependent_user_id: { in: [dependentA, dependentB] },
+          is_custodian: false,
+          guardian_user_id: { not: null },
+          consent_status: 'revoked',
+          revoked_reason: { in: ['guardian_left', 'guardian_account_closed'] },
+        });
+      });
+
+      it('never exposes a creator, uploader or hand-over user id', async () => {
+        const v = await verdictOf(CREATOR, {
+          page: [custodyRow()],
+          handovers: [
+            { dependent_user_id: dependentA, guardian_user_id: HANDER },
+          ],
+        });
+        const json = JSON.stringify(v.block);
+        for (const id of [CREATOR, UPLOADER, HANDER]) {
+          expect(json).not.toContain(id);
+        }
+        expect(Object.keys(v.block ?? {})).not.toContain('uploaded_by_user_id');
+      });
     });
   });
 });

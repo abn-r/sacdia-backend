@@ -74,7 +74,7 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 200,
     description:
-      'Lista de solicitudes pendientes. Cada item incluye `expires_at` (timeout base almacenado, sin cambios) y `effective_expires_at` (ISO): el vencimiento real que aplica el cron. Adulto: created_at + timeout base; menor con consentimiento pendiente: created_at + max(base, 30) dias; menor con consentimiento verificado: max(created_at, verified_at) + timeout base.',
+      'Lista de solicitudes pendientes. Cada item incluye `expires_at` (timeout base almacenado, sin cambios) y `effective_expires_at` (ISO): el vencimiento real que aplica el cron. `consent.viewer_can_verify` (boolean) dice si QUIEN CONSULTA puede verificar el consentimiento ahora (true solo con ficha vigente subida, consentimiento pendiente y sin impedimento de cuatro ojos); `consent.viewer_verify_block` es `self_guardian` (es tutor vigente del menor), `self_custodian` (custodia del club y creó al menor, subió la ficha vigente o cedió al menor) o null (puede verificar, o no hay nada que verificar). Nunca se exponen ids de usuario. Adulto: created_at + timeout base; menor con consentimiento pendiente: created_at + max(base, 30) dias; menor con consentimiento verificado: max(created_at, verified_at) + timeout base.',
     schema: {
       example: {
         status: 'success',
@@ -90,10 +90,13 @@ export class MembershipRequestsController {
             consent: {
               required: true,
               dependent: true,
+              guardian_linked: false,
               guardianship_id: 'b2f6c9a0-1d3e-4a7b-8c5d-6e9f0a1b2c3d',
               status: 'pending',
-              evidence_uploaded: false,
+              evidence_uploaded: true,
               guardians: [],
+              viewer_can_verify: false,
+              viewer_verify_block: 'self_custodian',
             },
           },
         ],
@@ -111,9 +114,12 @@ export class MembershipRequestsController {
   })
   async listPending(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
+    @CurrentUser() currentUser: CurrentUserPayload,
   ) {
-    const data =
-      await this.membershipRequestsService.listPending(clubSectionId);
+    const data = await this.membershipRequestsService.listPending(
+      clubSectionId,
+      currentUser.sub,
+    );
     return { status: 'success', data };
   }
 

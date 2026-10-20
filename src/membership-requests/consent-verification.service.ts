@@ -20,6 +20,12 @@ import {
   lockDependent,
 } from '../guardianships/guardianship-queries';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  CUSTODY_TRIGGER_REASONS,
+  custodyBarredUserIds,
+  findVerifierBlock,
+  verifierBlockErrorCode,
+} from './consent-four-eyes';
 import type { VerifyConsentDto } from './dto';
 import { MembershipRequestsService } from './membership-requests.service';
 
@@ -45,9 +51,6 @@ export interface VerifyConsentResult {
    */
   approve_error: string | null;
 }
-
-/** Revoked reasons that mean "this guardian handed the child over to the club". */
-const CUSTODY_TRIGGER_REASONS = ['guardian_left', 'guardian_account_closed'];
 
 const VERIFY_ROW_SELECT = {
   guardianship_id: true,
@@ -261,15 +264,13 @@ export class ConsentVerificationService {
     if (!evidence) {
       throw new AppConflictException(ErrorCode.GUARDIANSHIP_EVIDENCE_REQUIRED);
     }
-    await this.assertVerifierIsNotGuardian(tx, dependentId, verifierId);
-    if (row.is_custodian) {
-      await this.assertFourEyes(
-        tx,
-        row,
-        evidence.uploaded_by_user_id,
-        verifierId,
-      );
-    }
+    await this.assertFourEyes(
+      tx,
+      row,
+      dependentId,
+      evidence.uploaded_by_user_id,
+      verifierId,
+    );
 
     const now = new Date();
     const updated = await tx.guardianships.updateMany({
@@ -362,14 +363,24 @@ export class ConsentVerificationService {
   }
 
   /**
-   * Four-eyes for every row (verify 2c W2): whoever answers for the child
-   * cannot verify the child's consent, whatever permission they hold in the
-   * section. Any live guardianship counts (primary, secondary, invited,
-   * test data); a revoked one does not.
+   * Four-eyes (verify 2c W2 + ruling A14), decided by the SAME pure predicate
+   * the `consent` block of the request list shows the viewer
+   * ({@link findVerifierBlock}), so the UI and this 403 never disagree:
+   *  - every row: whoever answers for the child (any live guardianship: primary,
+   *    secondary, invited, test data; a revoked one does not count) cannot
+   *    verify it;
+   *  - custody rows have no guardian user, so "the custodian" is whoever put
+   *    the child there: the uploader of the current form, the creator of the
+   *    dependent and the guardian who handed the child over. Another authorized
+   *    person of the club (or an admin) must verify.
+   * Reads are lazy: the hand-over is only looked up for a custody row of a
+   * verifier who is not already blocked as a guardian.
    */
-  private async assertVerifierIsNotGuardian(
+  private async assertFourEyes(
     tx: Prisma.TransactionClient,
+    row: VerifyRow,
     dependentId: string,
+    evidenceUploaderId: string,
     verifierId: string,
   ): Promise<void> {
     const ownRows = await tx.guardianships.count({
@@ -379,49 +390,35 @@ export class ConsentVerificationService {
         ...NOT_REVOKED,
       },
     });
-    if (ownRows > 0) {
-      throw new AppForbiddenException(
-        ErrorCode.GUARDIANSHIP_GUARDIAN_SELF_VERIFY,
-      );
+    const viewerIsLiveGuardian = ownRows > 0;
+
+    let barred: string[] = [];
+    if (row.is_custodian && !viewerIsLiveGuardian) {
+      const handedOver = await tx.guardianships.findFirst({
+        where: {
+          dependent_user_id: row.dependent_user_id,
+          is_custodian: false,
+          guardian_user_id: { not: null },
+          consent_status: 'revoked',
+          revoked_reason: { in: [...CUSTODY_TRIGGER_REASONS] },
+        },
+        orderBy: { revoked_at: 'desc' },
+        select: { guardian_user_id: true },
+      });
+      barred = custodyBarredUserIds({
+        evidenceUploaderId,
+        creatorId: row.dependent.dependent_profile?.created_by_user_id,
+        handedOverGuardianId: handedOver?.guardian_user_id,
+      });
     }
-  }
 
-  /**
-   * Custody rows have no guardian user, so "the custodian" is whoever put the
-   * child there: the uploader of the current form, the creator of the
-   * dependent and the guardian who handed the child over. None of them may
-   * verify the custody; another authorized person of the club (or an admin)
-   * must.
-   */
-  private async assertFourEyes(
-    tx: Prisma.TransactionClient,
-    row: VerifyRow,
-    evidenceUploaderId: string,
-    verifierId: string,
-  ): Promise<void> {
-    const forbidden = new Set<string>([evidenceUploaderId]);
-    const creatorId = row.dependent.dependent_profile?.created_by_user_id;
-    if (creatorId) forbidden.add(creatorId);
-
-    const handedOver = await tx.guardianships.findFirst({
-      where: {
-        dependent_user_id: row.dependent_user_id,
-        is_custodian: false,
-        guardian_user_id: { not: null },
-        consent_status: 'revoked',
-        revoked_reason: { in: CUSTODY_TRIGGER_REASONS },
-      },
-      orderBy: { revoked_at: 'desc' },
-      select: { guardian_user_id: true },
+    const block = findVerifierBlock({
+      viewerId: verifierId,
+      viewerIsLiveGuardian,
+      custody: row.is_custodian,
+      custodyBarredUserIds: barred,
     });
-    if (handedOver?.guardian_user_id)
-      forbidden.add(handedOver.guardian_user_id);
-
-    if (forbidden.has(verifierId)) {
-      throw new AppForbiddenException(
-        ErrorCode.GUARDIANSHIP_CUSTODIAN_SELF_VERIFY,
-      );
-    }
+    if (block) throw new AppForbiddenException(verifierBlockErrorCode(block));
   }
 
   /**

@@ -23,6 +23,9 @@ describe('MembershipRequestsController (consent)', () => {
   const verification = {
     verify: jest.fn().mockResolvedValue({ approve_error: null }),
   };
+  const requests = {
+    listPending: jest.fn().mockResolvedValue([{ assignment_id: 'a-1' }]),
+  };
   let controller: MembershipRequestsController;
 
   beforeEach(async () => {
@@ -30,7 +33,7 @@ describe('MembershipRequestsController (consent)', () => {
     const module = await Test.createTestingModule({
       controllers: [MembershipRequestsController],
       providers: [
-        { provide: MembershipRequestsService, useValue: {} },
+        { provide: MembershipRequestsService, useValue: requests },
         { provide: GuardianEvidenceService, useValue: evidence },
         { provide: ConsentVerificationService, useValue: verification },
       ],
@@ -41,6 +44,14 @@ describe('MembershipRequestsController (consent)', () => {
       .useValue({ canActivate: () => true })
       .compile();
     controller = module.get(MembershipRequestsController);
+  });
+
+  it('lists the pending requests for the caller, who the consent verdict is computed for', async () => {
+    expect(await controller.listPending(5, USER)).toEqual({
+      status: 'success',
+      data: [{ assignment_id: 'a-1' }],
+    });
+    expect(requests.listPending).toHaveBeenCalledWith(5, 'director-1');
   });
 
   it('uploads the form as the director of the section in the path', async () => {

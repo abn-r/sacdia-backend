@@ -1319,6 +1319,7 @@ describe('MembershipRequestsService', () => {
   describe('listPending consent block (FP-72)', () => {
     const dependentA = 'aaaaaaaa-0000-4000-8000-00000000000a';
     const dependentB = 'bbbbbbbb-0000-4000-8000-00000000000b';
+    const VIEWER = 'dddddddd-0000-4000-8000-00000000000d';
     const request = (user_id: string, email: string | null) => ({
       assignment_id: `as-${user_id}`,
       user_id,
@@ -1341,7 +1342,7 @@ describe('MembershipRequestsService', () => {
       mockPrismaService.users.findMany.mockResolvedValue(
         gateDependentRows([dependentA, dependentB]),
       );
-      mockPrismaService.guardianships.findMany.mockResolvedValue([
+      const pageRows = [
         {
           guardianship_id: 'g-a',
           dependent_user_id: dependentA,
@@ -1352,7 +1353,10 @@ describe('MembershipRequestsService', () => {
           relationship_type: { name: 'Madre' },
           guardian: { name: 'María', paternal_last_name: 'Pérez' },
           custodian_club: null,
-          consent_evidences: [{ evidence_id: 'e-1' }],
+          consent_evidences: [
+            { evidence_id: 'e-1', uploaded_by_user_id: 'uploader' },
+          ],
+          dependent: { dependent_profile: { created_by_user_id: null } },
         },
         {
           guardianship_id: 'g-b',
@@ -1365,10 +1369,15 @@ describe('MembershipRequestsService', () => {
           guardian: { name: 'Luis', paternal_last_name: 'Gómez' },
           custodian_club: null,
           consent_evidences: [],
+          dependent: { dependent_profile: { created_by_user_id: null } },
         },
-      ]);
+      ];
+      mockPrismaService.guardianships.findMany.mockImplementation(
+        async ({ where }: any) =>
+          where.is_test_data === false ? pageRows : [],
+      );
 
-      const result = await service.listPending(10);
+      const result = await service.listPending(10, VIEWER);
 
       expect(result.map((item) => item.consent === null)).toEqual([
         true,
@@ -1390,16 +1399,65 @@ describe('MembershipRequestsService', () => {
             is_primary: true,
           },
         ],
+        // a form is waiting and the viewer is neither guardian nor custodian
+        viewer_can_verify: true,
+        viewer_verify_block: null,
       });
       expect(result[3].consent).toMatchObject({
         guardianship_id: 'g-b',
         status: 'verified',
         evidence_uploaded: false,
+        viewer_can_verify: false,
+        viewer_verify_block: null,
       });
       // Constant: the reads are batched for the whole page (consent blocks +
       // verification dates), never one per request.
       expect(mockPrismaService.users.findMany).toHaveBeenCalledTimes(2);
-      expect(mockPrismaService.guardianships.findMany).toHaveBeenCalledTimes(2);
+      // + the viewer's own guardianships (one read for the whole page).
+      expect(mockPrismaService.guardianships.findMany).toHaveBeenCalledTimes(3);
+    });
+
+    it('evaluates the consent block for the viewer who asked (the caller id reaches the verdict)', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        request(dependentA, null),
+      ]);
+      mockPrismaService.users.findMany.mockResolvedValue(
+        gateDependentRows([dependentA]),
+      );
+      mockPrismaService.guardianships.findMany.mockImplementation(
+        async ({ where }: any) => {
+          if (where.is_test_data === false) {
+            return [
+              {
+                guardianship_id: 'g-a',
+                dependent_user_id: dependentA,
+                is_primary: true,
+                is_custodian: false,
+                consent_status: 'pending',
+                external_name: null,
+                relationship_type: null,
+                guardian: { name: 'María', paternal_last_name: 'Pérez' },
+                custodian_club: null,
+                consent_evidences: [
+                  { evidence_id: 'e-1', uploaded_by_user_id: 'u' },
+                ],
+                dependent: { dependent_profile: { created_by_user_id: null } },
+              },
+            ];
+          }
+          // the viewer's own guardianship of the child
+          return where.guardian_user_id === VIEWER
+            ? [{ dependent_user_id: dependentA }]
+            : [];
+        },
+      );
+
+      const [item] = await service.listPending(10, VIEWER);
+
+      expect(item.consent).toMatchObject({
+        viewer_can_verify: false,
+        viewer_verify_block: 'self_guardian',
+      });
     });
 
     describe('effective_expires_at (same rule as the cron)', () => {
@@ -1430,7 +1488,7 @@ describe('MembershipRequestsService', () => {
               ? [{ dependent_user_id: userId, verified_at: opts.verifiedAt }]
               : [],
         );
-        const [item] = await service.listPending(10);
+        const [item] = await service.listPending(10, VIEWER);
         return item;
       };
 
@@ -1467,7 +1525,7 @@ describe('MembershipRequestsService', () => {
         mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
           { ...request('a1', 'x@x.org'), expires_at: stored },
         ]);
-        const [item] = await service.listPending(10);
+        const [item] = await service.listPending(10, VIEWER);
         expect(item.expires_at).toBe(stored);
       });
     });
@@ -1477,7 +1535,7 @@ describe('MembershipRequestsService', () => {
         request(dependentA, null),
       ]);
 
-      const [item] = await service.listPending(10);
+      const [item] = await service.listPending(10, VIEWER);
 
       expect(item.users.email).toBeNull();
     });
@@ -1487,7 +1545,7 @@ describe('MembershipRequestsService', () => {
         request('a1', 'a1@x.org'),
       ]);
 
-      const result = await service.listPending(10);
+      const result = await service.listPending(10, VIEWER);
 
       expect(result[0].consent).toBeNull();
       expect(mockPrismaService.guardianships.findMany).not.toHaveBeenCalled();

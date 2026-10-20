@@ -61,10 +61,11 @@ export class MembershipRequestsService {
    *
    * Each item carries a `consent` block: `null` for adults, and for dependents
    * (minors without an account) the consent status, whether the signed form is
-   * uploaded and who the guardians are. The blocks come from ONE batched read
-   * for the whole page. `users.email` is null for dependents.
+   * uploaded, who the guardians are and whether the CALLER (`viewerId`) may
+   * verify it (`viewer_can_verify`, four-eyes). The blocks come from batched
+   * reads for the whole page. `users.email` is null for dependents.
    */
-  async listPending(clubSectionId: number) {
+  async listPending(clubSectionId: number, viewerId: string) {
     const requests = await this.prisma.club_role_assignments.findMany({
       where: {
         club_section_id: clubSectionId,
@@ -94,7 +95,7 @@ export class MembershipRequestsService {
 
     const userIds = [...new Set(requests.map((request) => request.user_id))];
     const [consent, consentStates, timeoutDays] = await Promise.all([
-      this.consentGate.loadConsentBlocks(this.prisma, userIds),
+      this.consentGate.loadConsentBlocks(this.prisma, userIds, viewerId),
       this.consentGate.loadDependentConsent(this.prisma, userIds),
       this.getPendingTimeoutDays(),
     ]);

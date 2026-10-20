@@ -6,6 +6,12 @@ import {
   assertAssignmentActivationAllowed,
   findMinorsForActivation,
 } from './assignment-activation-gate';
+import {
+  CUSTODY_TRIGGER_REASONS,
+  custodyBarredUserIds,
+  evaluateConsentVerifier,
+  type ViewerVerifyBlock,
+} from './consent-four-eyes';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -44,6 +50,31 @@ export interface ConsentBlock {
   status: 'pending' | 'verified';
   evidence_uploaded: boolean;
   guardians: ConsentBlockGuardian[];
+  /**
+   * May the CURRENT viewer (the caller of the list) verify this consent right
+   * now, by the same four-eyes predicate `verify-consent` enforces
+   * ({@link evaluateConsentVerifier}). Exact semantics:
+   *  - `true` only when there is something to verify (the dependent has an
+   *    active primary guardianship that is still `pending` AND a current signed
+   *    form was uploaded) and the viewer is not barred: not a live guardian of
+   *    the child (any row), and, for club custody, not the uploader of the
+   *    current form, the creator of the dependent nor the guardian who handed
+   *    the child over;
+   *  - `false` when the viewer is barred (see `viewer_verify_block`) OR when
+   *    there is nothing to verify (no form uploaded yet, already verified, no
+   *    primary row, or a self-registered teen nobody has linked);
+   *  - it says nothing about permissions (`consent:verify` /
+   *    `club_members:approve`): the list already needs the latter.
+   * The block is a hint for the UI; `verify-consent` stays the authority (403).
+   */
+  viewer_can_verify: boolean;
+  /**
+   * Why the viewer is barred: `self_guardian` (a live guardian of the child),
+   * `self_custodian` (custody and the viewer created the minor, uploaded the
+   * current form or handed the child over). `null` when the viewer may verify
+   * and when there is nothing to verify. No user id is ever exposed.
+   */
+  viewer_verify_block: ViewerVerifyBlock | null;
 }
 
 /**
@@ -113,11 +144,14 @@ export class ConsentGateService {
    * The `consent` block of every minor among `userIds` in a fixed number of
    * queries, however many requests are listed (no N+1). Adults are absent from
    * the result. `status` follows the approve gate: verified
-   * only when a real (non-test, non-revoked) row is verified.
+   * only when a real (non-test, non-revoked) row is verified. `viewerId` is the
+   * caller: it drives `viewer_can_verify` / `viewer_verify_block` (the extra
+   * reads are batched too and skipped when no request has a form to verify).
    */
   async loadConsentBlocks(
     db: Db,
     userIds: string[],
+    viewerId: string,
   ): Promise<Map<string, ConsentBlock>> {
     const blocks = new Map<string, ConsentBlock>();
     if (userIds.length === 0) return blocks;
@@ -141,6 +175,8 @@ export class ConsentGateService {
         status: 'pending',
         evidence_uploaded: false,
         guardians: [],
+        viewer_can_verify: false,
+        viewer_verify_block: null,
       });
     }
     if (withProfile.length === 0) return blocks;
@@ -164,11 +200,18 @@ export class ConsentGateService {
         custodian_club: { select: { name: true } },
         consent_evidences: {
           where: { superseded_at: null, purged_at: null },
-          select: { evidence_id: true },
+          select: { evidence_id: true, uploaded_by_user_id: true },
           take: 1,
+        },
+        dependent: {
+          select: {
+            dependent_profile: { select: { created_by_user_id: true } },
+          },
         },
       },
     });
+
+    const verifyFacts = await this.loadVerifyFacts(db, rows, viewerId);
 
     for (const user_id of withProfile) {
       const own = rows
@@ -176,6 +219,20 @@ export class ConsentGateService {
         // Primary first, then oldest first (rows come ordered by created_at).
         .sort((a, b) => Number(b.is_primary) - Number(a.is_primary));
       const primary = own.find((row) => row.is_primary);
+      const verdict = evaluateConsentVerifier({
+        viewerId,
+        hasPrimary: primary !== undefined,
+        consentStatus: primary?.consent_status ?? 'pending',
+        evidenceUploaded: (primary?.consent_evidences.length ?? 0) > 0,
+        viewerIsLiveGuardian: verifyFacts.viewerGuardianOf.has(user_id),
+        custody: primary?.is_custodian ?? false,
+        custodyBarredUserIds: custodyBarredUserIds({
+          evidenceUploaderId:
+            primary?.consent_evidences[0]?.uploaded_by_user_id,
+          creatorId: primary?.dependent.dependent_profile?.created_by_user_id,
+          handedOverGuardianId: verifyFacts.handedOverBy.get(user_id),
+        }),
+      });
       blocks.set(user_id, {
         required: true,
         dependent: true,
@@ -194,8 +251,82 @@ export class ConsentGateService {
           relationship_type_name: row.relationship_type?.name ?? null,
           is_primary: row.is_primary,
         })),
+        ...verdict,
       });
     }
     return blocks;
+  }
+
+  /**
+   * The facts the four-eyes verdict needs beyond the page rows, for the
+   * dependents that have a pending primary row WITH a current form (the only
+   * ones where the verdict can be anything but "nothing to verify"):
+   *  - which of them the viewer is a live guardian of (any non-revoked row, test
+   *    data included, exactly what verify-consent counts);
+   *  - for the custody ones, the guardian who handed the child over (the latest
+   *    hand-over, as verify-consent reads it).
+   * One query each however many requests; none when no request qualifies.
+   */
+  private async loadVerifyFacts(
+    db: Db,
+    pageRows: Array<{
+      dependent_user_id: string;
+      is_primary: boolean;
+      is_custodian: boolean;
+      consent_status: string;
+      consent_evidences: unknown[];
+    }>,
+    viewerId: string,
+  ): Promise<{
+    viewerGuardianOf: Set<string>;
+    handedOverBy: Map<string, string>;
+  }> {
+    const candidates = pageRows.filter(
+      (row) =>
+        row.is_primary &&
+        row.consent_status === 'pending' &&
+        row.consent_evidences.length > 0,
+    );
+    const viewerGuardianOf = new Set<string>();
+    const handedOverBy = new Map<string, string>();
+    if (candidates.length === 0) return { viewerGuardianOf, handedOverBy };
+
+    const candidateIds = candidates.map((row) => row.dependent_user_id);
+    const custodyIds = candidates
+      .filter((row) => row.is_custodian)
+      .map((row) => row.dependent_user_id);
+
+    const [viewerRows, handovers] = await Promise.all([
+      db.guardianships.findMany({
+        where: {
+          dependent_user_id: { in: candidateIds },
+          guardian_user_id: viewerId,
+          consent_status: { not: 'revoked' },
+        },
+        select: { dependent_user_id: true },
+      }),
+      custodyIds.length === 0
+        ? Promise.resolve([])
+        : db.guardianships.findMany({
+            where: {
+              dependent_user_id: { in: custodyIds },
+              is_custodian: false,
+              guardian_user_id: { not: null },
+              consent_status: 'revoked',
+              revoked_reason: { in: [...CUSTODY_TRIGGER_REASONS] },
+            },
+            orderBy: { revoked_at: 'desc' },
+            select: { dependent_user_id: true, guardian_user_id: true },
+          }),
+    ]);
+
+    for (const row of viewerRows) viewerGuardianOf.add(row.dependent_user_id);
+    for (const row of handovers) {
+      // Rows come latest hand-over first: keep the first per dependent.
+      if (row.guardian_user_id && !handedOverBy.has(row.dependent_user_id)) {
+        handedOverBy.set(row.dependent_user_id, row.guardian_user_id);
+      }
+    }
+    return { viewerGuardianOf, handedOverBy };
   }
 }

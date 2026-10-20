@@ -682,6 +682,26 @@ describe('Director-created minor E2E', () => {
       );
     });
 
+    const listRequests = (userId: string) =>
+      request(app.getHttpServer())
+        .get(api(`/club-sections/${SECTION_ID}/membership-requests`))
+        .set(bearer(userId));
+    const consentOf = (body: {
+      data: Array<{ assignment_id: string; consent: Record<string, unknown> }>;
+    }) =>
+      body.data.find((item) => item.assignment_id === assignmentId)!.consent;
+
+    it('before any form exists the list says nothing can be verified yet: false / null for the creator too', async () => {
+      const response = await listRequests(DIRECTOR_1);
+
+      expect(response.status).toBe(200);
+      expect(consentOf(response.body)).toMatchObject({
+        evidence_uploaded: false,
+        viewer_can_verify: false,
+        viewer_verify_block: null,
+      });
+    });
+
     describe('the paper form is uploaded by the creator (state flip: R2 is not configured here)', () => {
       beforeAll(() => {
         evidences.push({
@@ -719,6 +739,28 @@ describe('Director-created minor E2E', () => {
         expect(
           audits.rows.some((row) => row.action === 'consent_verified'),
         ).toBe(false);
+      });
+
+      it('the list tells the CREATOR he may not verify (false / self_custodian) and an independent director may (true / null), without any user id', async () => {
+        const creator = await listRequests(DIRECTOR_1);
+        const independent = await listRequests(DIRECTOR_2);
+
+        expect(creator.status).toBe(200);
+        expect(consentOf(creator.body)).toMatchObject({
+          evidence_uploaded: true,
+          viewer_can_verify: false,
+          viewer_verify_block: 'self_custodian',
+        });
+        expect(independent.status).toBe(200);
+        expect(consentOf(independent.body)).toMatchObject({
+          viewer_can_verify: true,
+          viewer_verify_block: null,
+        });
+        for (const body of [creator.body, independent.body]) {
+          const json = JSON.stringify(consentOf(body));
+          expect(json).not.toContain(DIRECTOR_1);
+          expect(json).not.toContain(minorId);
+        }
       });
 
       it('the creator cannot get around it by asking to approve in the same call', async () => {
@@ -782,6 +824,16 @@ describe('Director-created minor E2E', () => {
         expect(onConsentVerified).toHaveBeenCalledWith({
           dependentUserId: minorId,
           verifierUserId: SECRETARY,
+        });
+      });
+
+      it('once verified the list says false / null for everyone (nothing left to verify)', async () => {
+        const response = await listRequests(DIRECTOR_2);
+
+        expect(consentOf(response.body)).toMatchObject({
+          status: 'verified',
+          viewer_can_verify: false,
+          viewer_verify_block: null,
         });
       });
 
