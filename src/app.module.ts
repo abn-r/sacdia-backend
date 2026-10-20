@@ -62,6 +62,7 @@ import { AchievementsModule } from './achievements/achievements.module';
 import { DataExportModule } from './data-export/data-export.module';
 import { LegalModule } from './legal/legal.module';
 import { GuardianshipsModule } from './guardianships/guardianships.module';
+import { GuardianSummaryModule } from './guardianships/guardian-summary.module';
 import { EmailModule } from './common/email/email.module';
 import { QrModule } from './qr/qr.module';
 import { SupportModule } from './support/support.module';
@@ -263,6 +264,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     DataExportModule,
     LegalModule,
     GuardianshipsModule,
+    GuardianSummaryModule,
     EmailModule,
     QrModule,
     SupportModule,
