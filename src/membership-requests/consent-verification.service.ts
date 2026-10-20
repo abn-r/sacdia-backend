@@ -20,6 +20,12 @@ import {
   lockDependent,
 } from '../guardianships/guardianship-queries';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  CUSTODY_TRIGGER_REASONS,
+  custodyBarredUserIds,
+  findVerifierBlock,
+  verifierBlockErrorCode,
+} from './consent-four-eyes';
 import type { VerifyConsentDto } from './dto';
 import { MembershipRequestsService } from './membership-requests.service';
 
@@ -33,7 +39,10 @@ export interface VerifiedGuardianship {
 
 export interface VerifyConsentResult {
   guardianship: VerifiedGuardianship;
-  /** The approved request when `approve` was asked and succeeded, else null. */
+  /**
+   * The approved request when `approve` was asked and succeeded, else null.
+   * Always null when the assignment was already active (verify-only).
+   */
   assignment: unknown;
   /**
    * Set when `approve` was asked and approving failed AFTER the consent was
@@ -42,9 +51,6 @@ export interface VerifyConsentResult {
    */
   approve_error: string | null;
 }
-
-/** Revoked reasons that mean "this guardian handed the child over to the club". */
-const CUSTODY_TRIGGER_REASONS = ['guardian_left', 'guardian_account_closed'];
 
 const VERIFY_ROW_SELECT = {
   guardianship_id: true,
@@ -78,6 +84,11 @@ interface VerifyTransactionResult {
   newlyVerified: boolean;
   /** Set when the request was already approved by an earlier identical call. */
   alreadyApproved: unknown;
+  /**
+   * The assignment was ALREADY active (a teen who joined before Phase 3): the
+   * consent is verified and there is nothing to approve.
+   */
+  verifyOnly?: boolean;
 }
 
 /**
@@ -85,7 +96,10 @@ interface VerifyTransactionResult {
  * (FP-73). One transaction, serialized per dependent with the same advisory lock
  * as revoke/leave/upload:
  *
- *  - the request must be a pending one of the section in the path;
+ *  - the request must be a pending one of the section in the path, OR an
+ *    already ACTIVE one whose consent is still pending (a minor who joined
+ *    before the age-based gate existed): that case only verifies, it approves
+ *    nothing (`assignment: null`);
  *  - the consent lives on the dependent's ACTIVE PRIMARY row (guardian or club
  *    custody); with no such row nothing is written (no orphan verified row);
  *  - a current signed form must exist (409 GUARDIANSHIP_EVIDENCE_REQUIRED);
@@ -143,7 +157,11 @@ export class ConsentVerificationService {
       assignment: dto.approve === true ? outcome.alreadyApproved : null,
       approve_error: null,
     };
-    if (dto.approve === true && outcome.alreadyApproved === null) {
+    if (
+      dto.approve === true &&
+      outcome.alreadyApproved === null &&
+      !outcome.verifyOnly
+    ) {
       try {
         result.assignment = await this.membershipRequests.approve(
           clubSectionId,
@@ -212,20 +230,25 @@ export class ConsentVerificationService {
       throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
     }
 
-    if (assignment.status !== 'pending') {
-      // A repeated call after the first one already approved the request is a
-      // no-op success; any other processed state is the usual 409.
-      if (assignment.status === 'active' && row.consent_status === 'verified') {
-        return {
-          dependentUserId: dependentId,
-          row: this.toVerified(row),
-          newlyVerified: false,
-          alreadyApproved: await tx.club_role_assignments.findUnique({
-            where: { assignment_id: assignmentId },
-          }),
-        };
-      }
+    // An ACTIVE assignment is accepted too: a minor who joined before the
+    // consent gate covered their age keeps the membership and only needs the
+    // consent verified (verify-only, nothing to approve).
+    const verifyOnly = assignment.status === 'active';
+    if (assignment.status !== 'pending' && !verifyOnly) {
       throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+    }
+    if (verifyOnly && row.consent_status === 'verified') {
+      // A repeated call after the first one already approved the request is a
+      // no-op success.
+      return {
+        dependentUserId: dependentId,
+        row: this.toVerified(row),
+        newlyVerified: false,
+        alreadyApproved: await tx.club_role_assignments.findUnique({
+          where: { assignment_id: assignmentId },
+        }),
+        verifyOnly: true,
+      };
     }
 
     if (row.consent_status === 'verified') {
@@ -241,15 +264,13 @@ export class ConsentVerificationService {
     if (!evidence) {
       throw new AppConflictException(ErrorCode.GUARDIANSHIP_EVIDENCE_REQUIRED);
     }
-    await this.assertVerifierIsNotGuardian(tx, dependentId, verifierId);
-    if (row.is_custodian) {
-      await this.assertFourEyes(
-        tx,
-        row,
-        evidence.uploaded_by_user_id,
-        verifierId,
-      );
-    }
+    await this.assertFourEyes(
+      tx,
+      row,
+      dependentId,
+      evidence.uploaded_by_user_id,
+      verifierId,
+    );
 
     const now = new Date();
     const updated = await tx.guardianships.updateMany({
@@ -277,6 +298,10 @@ export class ConsentVerificationService {
       now,
     );
 
+    if (!row.is_custodian) {
+      await this.syncSupervisedLogin(tx, dependentId);
+    }
+
     await this.recordAudit(tx, {
       guardianshipId: row.guardianship_id,
       dependentId,
@@ -300,18 +325,62 @@ export class ConsentVerificationService {
       },
       newlyVerified: true,
       alreadyApproved: null,
+      ...(verifyOnly ? { verifyOnly: true } : {}),
     };
   }
 
   /**
-   * Four-eyes for every row (verify 2c W2): whoever answers for the child
-   * cannot verify the child's consent, whatever permission they hold in the
-   * section. Any live guardianship counts (primary, secondary, invited,
-   * test data); a revoked one does not.
+   * A real guardian's consent was just verified for a minor who HOLDS an
+   * account (a teen): make sure the `supervised_logins` row exists (method
+   * 'email', so the guardian can see, disable or reset it) and stop the
+   * guardian-less clock. Idempotent. Club custody never reaches this: custody
+   * is not a guardian, so a custody-only teen keeps running the clock.
    */
-  private async assertVerifierIsNotGuardian(
+  private async syncSupervisedLogin(
     tx: Prisma.TransactionClient,
     dependentId: string,
+  ): Promise<void> {
+    const holdsAccount =
+      (await tx.account.count({ where: { userId: dependentId } })) > 0;
+    if (!holdsAccount) return;
+
+    await tx.supervised_logins.createMany({
+      data: [
+        {
+          user_id: dependentId,
+          method: 'email',
+          origin: 'self_registered',
+          password_set_by: 'self',
+          pending_since: null,
+        },
+      ],
+      skipDuplicates: true,
+    });
+    await tx.supervised_logins.updateMany({
+      where: { user_id: dependentId, pending_since: { not: null } },
+      data: { pending_since: null, pending_reminder_level: 0 },
+    });
+  }
+
+  /**
+   * Four-eyes (verify 2c W2 + ruling A14), decided by the SAME pure predicate
+   * the `consent` block of the request list shows the viewer
+   * ({@link findVerifierBlock}), so the UI and this 403 never disagree:
+   *  - every row: whoever answers for the child (any live guardianship: primary,
+   *    secondary, invited, test data; a revoked one does not count) cannot
+   *    verify it;
+   *  - custody rows have no guardian user, so "the custodian" is whoever put
+   *    the child there: the uploader of the current form, the creator of the
+   *    dependent and the guardian who handed the child over. Another authorized
+   *    person of the club (or an admin) must verify.
+   * Reads are lazy: the hand-over is only looked up for a custody row of a
+   * verifier who is not already blocked as a guardian.
+   */
+  private async assertFourEyes(
+    tx: Prisma.TransactionClient,
+    row: VerifyRow,
+    dependentId: string,
+    evidenceUploaderId: string,
     verifierId: string,
   ): Promise<void> {
     const ownRows = await tx.guardianships.count({
@@ -321,49 +390,35 @@ export class ConsentVerificationService {
         ...NOT_REVOKED,
       },
     });
-    if (ownRows > 0) {
-      throw new AppForbiddenException(
-        ErrorCode.GUARDIANSHIP_GUARDIAN_SELF_VERIFY,
-      );
+    const viewerIsLiveGuardian = ownRows > 0;
+
+    let barred: string[] = [];
+    if (row.is_custodian && !viewerIsLiveGuardian) {
+      const handedOver = await tx.guardianships.findFirst({
+        where: {
+          dependent_user_id: row.dependent_user_id,
+          is_custodian: false,
+          guardian_user_id: { not: null },
+          consent_status: 'revoked',
+          revoked_reason: { in: [...CUSTODY_TRIGGER_REASONS] },
+        },
+        orderBy: { revoked_at: 'desc' },
+        select: { guardian_user_id: true },
+      });
+      barred = custodyBarredUserIds({
+        evidenceUploaderId,
+        creatorId: row.dependent.dependent_profile?.created_by_user_id,
+        handedOverGuardianId: handedOver?.guardian_user_id,
+      });
     }
-  }
 
-  /**
-   * Custody rows have no guardian user, so "the custodian" is whoever put the
-   * child there: the uploader of the current form, the creator of the
-   * dependent and the guardian who handed the child over. None of them may
-   * verify the custody; another authorized person of the club (or an admin)
-   * must.
-   */
-  private async assertFourEyes(
-    tx: Prisma.TransactionClient,
-    row: VerifyRow,
-    evidenceUploaderId: string,
-    verifierId: string,
-  ): Promise<void> {
-    const forbidden = new Set<string>([evidenceUploaderId]);
-    const creatorId = row.dependent.dependent_profile?.created_by_user_id;
-    if (creatorId) forbidden.add(creatorId);
-
-    const handedOver = await tx.guardianships.findFirst({
-      where: {
-        dependent_user_id: row.dependent_user_id,
-        is_custodian: false,
-        guardian_user_id: { not: null },
-        consent_status: 'revoked',
-        revoked_reason: { in: CUSTODY_TRIGGER_REASONS },
-      },
-      orderBy: { revoked_at: 'desc' },
-      select: { guardian_user_id: true },
+    const block = findVerifierBlock({
+      viewerId: verifierId,
+      viewerIsLiveGuardian,
+      custody: row.is_custodian,
+      custodyBarredUserIds: barred,
     });
-    if (handedOver?.guardian_user_id)
-      forbidden.add(handedOver.guardian_user_id);
-
-    if (forbidden.has(verifierId)) {
-      throw new AppForbiddenException(
-        ErrorCode.GUARDIANSHIP_CUSTODIAN_SELF_VERIFY,
-      );
-    }
+    if (block) throw new AppForbiddenException(verifierBlockErrorCode(block));
   }
 
   /**

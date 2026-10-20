@@ -33,6 +33,16 @@ export interface DashboardSummaryDto {
   upcoming_activities: UpcomingActivityDto[];
 }
 
+export interface DashboardSummaryOptions {
+  /**
+   * False for a principal that must not see club data (a teen with no verified
+   * guardian, an unknown-age account): club name, type, role and the club's
+   * upcoming activities come back null / empty. The own progress (class,
+   * honors) is personal data and stays. Default true.
+   */
+  includeClubData?: boolean;
+}
+
 // Signed URL TTL matches the one used by AuthService (5 minutes).
 const AVATAR_SIGNED_URL_TTL_SECONDS = 300;
 
@@ -47,7 +57,11 @@ export class DashboardService {
     private readonly requirementEligibility: ClassRequirementEligibilityService,
   ) {}
 
-  async getSummary(userId: string): Promise<DashboardSummaryDto> {
+  async getSummary(
+    userId: string,
+    options: DashboardSummaryOptions = {},
+  ): Promise<DashboardSummaryDto> {
+    const includeClubData = options.includeClubData ?? true;
     // One Prisma round-trip for identity + active context + honors + class.
     // Club pick is in-memory from users_pr.active_club_assignment_id (same
     // canon as AuthorizationContextService / PATCH /auth/me/context).
@@ -113,11 +127,16 @@ export class DashboardService {
 
     const enrollment = user?.enrollments[0] ?? null;
     const honors = user?.users_honors ?? [];
-    const clubAssignment = this.pickActiveClubAssignment(
-      userId,
-      user?.users_pr?.active_club_assignment_id,
-      user?.club_role_assignments ?? [],
-    );
+    // No club assignment at all without club data: club fields stay null and
+    // the section's activities are never queried (an active assignment from
+    // before Phase 3 must not leak to a pending teen, FP3-07).
+    const clubAssignment = includeClubData
+      ? this.pickActiveClubAssignment(
+          userId,
+          user?.users_pr?.active_club_assignment_id,
+          user?.club_role_assignments ?? [],
+        )
+      : null;
 
     const nameParts = [
       user?.name,

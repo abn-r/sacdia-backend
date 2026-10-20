@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
-  ACCESS_JWT_AUDIENCE,
+  ACCEPTED_BEARER_AUDIENCES,
   ACCESS_JWT_ISSUER,
 } from '../common/constants/jwt-audiences';
 import { resolveClientIp } from './client-ip';
@@ -66,7 +66,9 @@ export class UserAwareThrottlerGuard extends ThrottlerGuard {
         secret,
         algorithms: ['HS256'],
         issuer: ACCESS_JWT_ISSUER,
-        audience: ACCESS_JWT_AUDIENCE,
+        // Access and device tokens: a device is throttled as the dependent
+        // (`user:{dependentId}`), never as the IP it happens to share.
+        audience: ACCEPTED_BEARER_AUDIENCES,
       });
 
       if (

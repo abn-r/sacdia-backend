@@ -1,3 +1,4 @@
+import * as vm from 'node:vm';
 import {
   ageAt,
   ageToday,
@@ -5,11 +6,60 @@ import {
   DEFAULT_AGE_TIMEZONE,
   isBirthdayInFuture,
   parseCalendarDate,
+  toDateValue,
 } from './age.util';
 
 const day = (iso: string): Date => new Date(`${iso}T00:00:00.000Z`);
 
 describe('age.util', () => {
+  describe('ageAt with values that went through a JSON cache', () => {
+    it('accepts an ISO string birthday (a Prisma Date after a Redis round-trip)', () => {
+      expect(ageAt('2010-10-17T00:00:00.000Z', day('2026-10-17'))).toBe(16);
+      expect(ageAt('2010-10-17', day('2026-10-16'))).toBe(15);
+    });
+
+    it('ageToday accepts an ISO string birthday', () => {
+      const now = new Date('2026-10-20T18:00:00.000Z');
+      expect(
+        ageToday('2008-10-20T00:00:00.000Z', DEFAULT_AGE_TIMEZONE, now),
+      ).toBe(18);
+    });
+
+    it('fails closed on an unreadable birthday: age 0, the youngest (every minor gate applies)', () => {
+      expect(ageAt('not-a-date', day('2026-10-17'))).toBe(0);
+      expect(ageAt(new Date('invalid'), day('2026-10-17'))).toBe(0);
+      expect(
+        ageToday(
+          undefined as unknown as Date,
+          DEFAULT_AGE_TIMEZONE,
+          new Date('2026-10-20T18:00:00.000Z'),
+        ),
+      ).toBe(0);
+    });
+
+    it('accepts a Date from another realm (structuredClone / vm), not only this realm instanceof', () => {
+      const foreign = vm.runInNewContext(
+        "new Date('2010-10-17T00:00:00.000Z')",
+      ) as Date;
+      expect(foreign instanceof Date).toBe(false);
+      expect(toDateValue(foreign)?.getTime()).toBe(day('2010-10-17').getTime());
+      expect(ageAt(foreign, day('2026-10-17'))).toBe(16);
+    });
+
+    it('toDateValue revives Date, ISO strings and rejects garbage', () => {
+      const d = day('2010-01-02');
+      expect(toDateValue(d)).toBe(d);
+      expect(toDateValue('2010-01-02T00:00:00.000Z')?.getTime()).toBe(
+        d.getTime(),
+      );
+      expect(toDateValue('nope')).toBeNull();
+      expect(toDateValue(null)).toBeNull();
+      expect(toDateValue(undefined)).toBeNull();
+      expect(toDateValue(12 as unknown as string)).toBeNull();
+      expect(toDateValue(new Date('invalid'))).toBeNull();
+    });
+  });
+
   describe('ageAt', () => {
     it('counts whole years once the birthday has passed', () => {
       expect(ageAt(day('2000-01-01'), day('2026-03-20'))).toBe(26);

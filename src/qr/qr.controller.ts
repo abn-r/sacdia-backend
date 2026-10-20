@@ -52,7 +52,7 @@ export class QrController {
   }
 
   @Get('member/token')
-  @ActingScope('self:read')
+  @ActingScope('credential:read')
   @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
@@ -74,7 +74,7 @@ export class QrController {
   }
 
   @Get('me')
-  @ActingScope('self:read')
+  @ActingScope('credential:read')
   @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
@@ -95,7 +95,7 @@ export class QrController {
   }
 
   @Get('me/card')
-  @ActingScope('self:read')
+  @ActingScope('credential:read')
   @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
@@ -116,7 +116,7 @@ export class QrController {
   }
 
   @Get('me/card.pdf')
-  @ActingScope('self:read')
+  @ActingScope('credential:read')
   @SkipPermissions()
   @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiProduces('application/pdf')

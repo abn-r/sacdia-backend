@@ -1,3 +1,8 @@
+import {
+  gateAwareUserFindUnique,
+  gateDependentUser,
+  gateTeenUser,
+} from '../membership-requests/activation-gate.testing';
 import { RequestsService } from './requests.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -57,20 +62,16 @@ describe('RequestsService', () => {
         start_date: new Date('2026-01-01'),
       }),
     },
+    // `birthday` serves class-enrollment logic; the consent gate selects
+    // `dependent_profile` and gets an adult unless a test says otherwise.
     users: {
-      findUnique: jest.fn().mockResolvedValue({
-        birthday: new Date('2016-01-01'),
-      }),
+      findUnique: gateAwareUserFindUnique({ birthday: new Date('2016-01-01') }),
     },
     enrollments: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ enrollment_id: 101 }),
       update: jest.fn().mockResolvedValue({ enrollment_id: 101 }),
-    },
-    // Consent gate: adults by default (no dependent_profiles row).
-    dependent_profiles: {
-      findUnique: jest.fn().mockResolvedValue(null),
     },
     guardianships: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -677,9 +678,8 @@ describe('RequestsService', () => {
    */
   describe('consent gate on activation (family-profiles)', () => {
     const asDependent = (verified: boolean) => {
-      transactionMock.dependent_profiles.findUnique.mockResolvedValue({
-        user_id: 'dependent',
-      });
+      transactionMock.users.findUnique.gateRef.current =
+        gateDependentUser('dependent');
       transactionMock.guardianships.findFirst.mockResolvedValue(
         verified ? { guardianship_id: 'g-1' } : null,
       );
@@ -716,6 +716,24 @@ describe('RequestsService', () => {
         ).not.toHaveBeenCalled();
         expect(
           transactionMock.role_assignment_requests.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('rejects an unverified self-registered 16-year-old (no dependent profile) with 409 (FP3-01)', async () => {
+        transactionMock.users.findUnique.gateRef.current = gateTeenUser(
+          'user-2',
+          16,
+        );
+        transactionMock.guardianships.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.reviewAssignment('role-request-1', 'approver-1', 'approved'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+        expect(
+          transactionMock.club_role_assignments.create,
         ).not.toHaveBeenCalled();
       });
 

@@ -34,6 +34,7 @@ import { ResourceQueryDto } from './dto/resource-query.dto';
 import { GenerateUploadUrlDto } from './dto/generate-upload-url.dto';
 import { CreateResourceFromUploadedDto } from './dto/create-resource-from-uploaded.dto';
 import { ResourcesService } from './resources.service';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('Resources')
 @Controller('resources')
@@ -175,6 +176,7 @@ export class ResourcesController {
   // GET /resources — Listar todos los recursos (admin, paginado + filtrado)
   // ---------------------------------------------------------------------------
 
+  @ActingScope('member:read')
   @Get()
   @RequirePermissions('resources:read')
   @ApiOperation({
@@ -192,6 +194,7 @@ export class ResourcesController {
   // GET /resources/:id — Obtener recurso con URL firmada
   // ---------------------------------------------------------------------------
 
+  @ActingScope('member:read')
   @Get(':id')
   @RequirePermissions('resources:read')
   @ApiOperation({
@@ -210,6 +213,7 @@ export class ResourcesController {
   // GET /resources/:id/signed-url — Obtener URL firmada fresca
   // ---------------------------------------------------------------------------
 
+  @ActingScope('member:read')
   @Get(':id/signed-url')
   @RequirePermissions('resources:read')
   @ApiOperation({

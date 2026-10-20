@@ -1,3 +1,8 @@
+import {
+  gateAdultUser,
+  gateDependentUser,
+  gateTeenUser,
+} from '../membership-requests/activation-gate.testing';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -143,10 +148,13 @@ function makePrismaMock() {
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
-    // Consent gate: adults by default (no dependent_profiles row).
-    dependent_profiles: {
-      findUnique: jest.fn().mockResolvedValue(null),
-      findMany: jest.fn().mockResolvedValue([]),
+    // Consent gate: everybody is an adult by default (the gate reads the users
+    // row: birthday, country and dependent profile).
+    users: {
+      findUnique: jest.fn().mockResolvedValue(gateAdultUser()),
+      findMany: jest.fn((args: { where: { user_id: { in: string[] } } }) =>
+        Promise.resolve(args.where.user_id.in.map((id) => gateAdultUser(id))),
+      ),
     },
     guardianships: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -422,9 +430,9 @@ describe('YearCutService', () => {
         scheduledCqPlan(),
       ]);
       prisma.club_role_assignments.findFirst.mockResolvedValue(null);
-      prisma.dependent_profiles.findUnique.mockResolvedValue({
-        user_id: USER_SUCCESSOR,
-      });
+      prisma.users.findUnique.mockResolvedValue(
+        gateDependentUser(USER_SUCCESSOR),
+      );
       prisma.guardianships.findFirst.mockResolvedValue(null);
       const warn = jest.spyOn(
         (service as unknown as { logger: { warn: jest.Mock } }).logger,
@@ -454,9 +462,9 @@ describe('YearCutService', () => {
         scheduledCqPlan(),
       ]);
       prisma.club_role_assignments.findFirst.mockResolvedValue(null);
-      prisma.dependent_profiles.findUnique.mockResolvedValue({
-        user_id: USER_SUCCESSOR,
-      });
+      prisma.users.findUnique.mockResolvedValue(
+        gateDependentUser(USER_SUCCESSOR),
+      );
       prisma.guardianships.findFirst.mockResolvedValue({
         guardianship_id: 'g-1',
       });
@@ -596,21 +604,15 @@ describe('YearCutService', () => {
 
     function markAsDependents(...ids: string[]) {
       const dependents = new Set(ids);
-      prisma.dependent_profiles.findMany.mockImplementation(
+      const rowOf = (id: string) =>
+        dependents.has(id) ? gateDependentUser(id) : gateAdultUser(id);
+      prisma.users.findMany.mockImplementation(
         (args: { where: { user_id: { in: string[] } } }) =>
-          Promise.resolve(
-            args.where.user_id.in
-              .filter((id) => dependents.has(id))
-              .map((id) => ({ user_id: id })),
-          ),
+          Promise.resolve(args.where.user_id.in.map(rowOf)),
       );
-      prisma.dependent_profiles.findUnique.mockImplementation(
+      prisma.users.findUnique.mockImplementation(
         (args: { where: { user_id: string } }) =>
-          Promise.resolve(
-            dependents.has(args.where.user_id)
-              ? { user_id: args.where.user_id }
-              : null,
-          ),
+          Promise.resolve(rowOf(args.where.user_id)),
       );
       prisma.guardianships.findFirst.mockResolvedValue({
         guardianship_id: 'g-1',
@@ -684,6 +686,48 @@ describe('YearCutService', () => {
         'dep-m-uuid',
         'dep-z-uuid',
       ]);
+    });
+
+    it('year cut over 30 successors with 3 unconsented teens blocks only those 3 and reports them (FP3-02)', async () => {
+      const successors = Array.from(
+        { length: 30 },
+        (_, i) => `succ-${String(i).padStart(2, '0')}`,
+      );
+      const teens = new Set([successors[3], successors[11], successors[27]]);
+      const rowOf = (id: string) =>
+        teens.has(id) ? gateTeenUser(id, 16) : gateAdultUser(id);
+      prisma.users.findMany.mockImplementation(
+        (args: { where: { user_id: { in: string[] } } }) =>
+          Promise.resolve(args.where.user_id.in.map(rowOf)),
+      );
+      prisma.users.findUnique.mockImplementation(
+        (args: { where: { user_id: string } }) =>
+          Promise.resolve(rowOf(args.where.user_id)),
+      );
+      // No guardianship at all: every teen lacks verified consent.
+      prisma.guardianships.findFirst.mockResolvedValue(null);
+      prisma.director_succession_plans.findMany.mockResolvedValue(
+        successors.map((id, i) => planFor(id, 200 + i)),
+      );
+
+      const summary = await service.applyCut();
+
+      expect(summary.activated).toBe(27);
+      expect(prisma.club_role_assignments.create).toHaveBeenCalledTimes(27);
+      const activatedFor = prisma.club_role_assignments.create.mock.calls.map(
+        (call: [{ data: { user_id: string } }]) => call[0].data.user_id,
+      );
+      for (const teen of teens) {
+        expect(activatedFor).not.toContain(teen);
+      }
+      // The blocked ones are reported to the admins, one by one.
+      const reported = notifications.sendToGlobalRole.mock.calls.map(
+        (call: unknown[]) =>
+          (call[3] as { successionId?: string }).successionId,
+      );
+      for (const teen of teens) {
+        expect(reported).toContain(`plan-${teen}`);
+      }
     });
 
     it('does not lock adults', async () => {

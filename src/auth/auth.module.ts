@@ -18,6 +18,9 @@ import { SocialSignInModule } from './social-sign-in/social-sign-in.module';
 import { LegalModule } from '../legal/legal.module';
 import { ActingForModule } from './acting-for/acting-for.module';
 import { GuardianshipsModule } from '../guardianships/guardianships.module';
+import { LoginFailureCounter } from './login-failure-counter';
+import { LinkedDeviceModule } from './device/linked-device.module';
+import { DeviceAuthController } from './device/device-auth.controller';
 
 @Module({
   imports: [
@@ -48,12 +51,16 @@ import { GuardianshipsModule } from '../guardianships/guardianships.module';
     // dependents in the same transaction. Dependency is Auth -> Guardianships
     // only (GuardianshipsModule never imports AuthModule).
     GuardianshipsModule,
+    // The per-request device check (JwtStrategy), device refresh/logout and the
+    // session revoke hooks. Auth -> LinkedDevice only: that module never imports Auth.
+    LinkedDeviceModule,
   ],
   controllers: [
     AuthController,
     MfaController,
     SessionsController,
     OAuthController,
+    DeviceAuthController,
   ],
   providers: [
     AuthService,
@@ -63,6 +70,7 @@ import { GuardianshipsModule } from '../guardianships/guardianships.module';
     AuthorizationContextService,
     MfaGuard,
     SessionsService,
+    LoginFailureCounter,
   ],
   exports: [
     AuthService,

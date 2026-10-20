@@ -335,4 +335,75 @@ describe('HttpAuditInterceptor', () => {
       });
     });
   });
+
+  describe('a linked device (3b)', () => {
+    const deviceRequest = () =>
+      makeRequest({
+        method: 'POST',
+        url: '/api/v1/users/child-1/classes/3/sections/7/files',
+        params: { userId: 'child-1' },
+        user: {
+          user_id: 'child-1',
+          sub: 'child-1',
+          actor_sub: 'child-1',
+          acting_for: false,
+          kind: 'linked_device',
+          linked_device_id: 'dev-1',
+        },
+      });
+
+    it('logs the request as device:<id> and never as the child id', async () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+
+      await runInterceptor(deviceRequest());
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'device:dev-1' }),
+      );
+      expect(JSON.stringify(logSpy.mock.calls)).not.toContain('child-1"');
+      logSpy.mockRestore();
+    });
+
+    it('end to end: the persisted HTTP row has actor_kind linked_device, the child as actor and the device in the request context', async () => {
+      const create = jest.fn().mockResolvedValue({ audit_log_id: 1n });
+      const realService = new AuditLogsService({
+        audit_logs: { create },
+      } as never);
+      const reflector = {
+        getAllAndOverride: jest.fn(() => undefined),
+      } as unknown as Reflector;
+      const realInterceptor = new HttpAuditInterceptor(reflector, realService);
+
+      await runWithAuditContext(async () => {
+        const context = getAuditContext();
+        if (context) {
+          context.actingFor = {
+            actorUserId: 'child-1',
+            subjectUserId: 'child-1',
+            guardianshipId: 'gs-1',
+            linkedDeviceId: 'dev-1',
+            kind: 'linked_device',
+          };
+        }
+        await lastValueFrom(
+          realInterceptor.intercept(makeContext(deviceRequest()), next),
+          { defaultValue: undefined },
+        );
+        await new Promise(process.nextTick);
+      });
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create.mock.calls[0][0].data).toMatchObject({
+        source: 'http',
+        actor_user_id: 'child-1',
+        actor_kind: 'linked_device',
+        request_context: expect.objectContaining({
+          method: 'POST',
+          linked_device_id: 'dev-1',
+        }),
+      });
+    });
+  });
 });

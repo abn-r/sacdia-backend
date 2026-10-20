@@ -62,6 +62,7 @@ import { AchievementsModule } from './achievements/achievements.module';
 import { DataExportModule } from './data-export/data-export.module';
 import { LegalModule } from './legal/legal.module';
 import { GuardianshipsModule } from './guardianships/guardianships.module';
+import { GuardianSummaryModule } from './guardianships/guardian-summary.module';
 import { EmailModule } from './common/email/email.module';
 import { QrModule } from './qr/qr.module';
 import { SupportModule } from './support/support.module';
@@ -146,8 +147,14 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
             'req.headers.cookie',
             'req.body.password',
             'req.body.refreshToken',
+            // Login identifier: an email or a supervised login handle.
+            'req.body.identifier',
+            // Device pairing token (QR): a credential until it is consumed.
+            'req.body.pairing_token',
             'requestBody.password',
             'requestBody.refreshToken',
+            'requestBody.identifier',
+            'requestBody.pairing_token',
             'req.body.birthday',
             'req.body.blood',
             'req.body.allergies',
@@ -260,6 +267,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     DataExportModule,
     LegalModule,
     GuardianshipsModule,
+    GuardianSummaryModule,
     EmailModule,
     QrModule,
     SupportModule,

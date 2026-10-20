@@ -30,6 +30,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { DependentPushRouterService } from './dependent-push-router.service';
+import { ClubDataRecipientsService } from './club-data-recipients.service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -101,6 +102,16 @@ const mockDependentPushRouter = {
     .mockResolvedValue({ successCount: 0, failureCount: 0 }),
 };
 
+// Club-data gate: passes everyone through unless a test denies some ids.
+const mockClubDataRecipients = {
+  filterClubDataRecipients: jest.fn(),
+};
+const passThroughClubData = () =>
+  mockClubDataRecipients.filterClubDataRecipients.mockImplementation(
+    (ids: string[]) => Promise.resolve([...new Set(ids)]),
+  );
+passThroughClubData();
+
 describe('NotificationsProcessor — realtime.invalidate', () => {
   let processor: NotificationsProcessor;
   let mockSendEachForMulticast: jest.Mock;
@@ -127,6 +138,10 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
         {
           provide: DependentPushRouterService,
           useValue: mockDependentPushRouter,
+        },
+        {
+          provide: ClubDataRecipientsService,
+          useValue: mockClubDataRecipients,
         },
       ],
     }).compile();
@@ -394,6 +409,10 @@ describe('NotificationsProcessor — send-to-club-members', () => {
           provide: DependentPushRouterService,
           useValue: mockDependentPushRouter,
         },
+        {
+          provide: ClubDataRecipientsService,
+          useValue: mockClubDataRecipients,
+        },
       ],
     }).compile();
 
@@ -605,6 +624,10 @@ describe('NotificationsProcessor — broadcast-chunk', () => {
           provide: DependentPushRouterService,
           useValue: mockDependentPushRouter,
         },
+        {
+          provide: ClubDataRecipientsService,
+          useValue: mockClubDataRecipients,
+        },
       ],
     }).compile();
 
@@ -797,6 +820,10 @@ describe('NotificationsProcessor — dependent push routing', () => {
           provide: DependentPushRouterService,
           useValue: mockDependentPushRouter,
         },
+        {
+          provide: ClubDataRecipientsService,
+          useValue: mockClubDataRecipients,
+        },
       ],
     }).compile();
 
@@ -983,5 +1010,174 @@ describe('NotificationsProcessor — dependent push routing', () => {
     await processor.process(makeJob(makePayload()) as any);
 
     expect(mockDependentPushRouter.routeAndSend).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FP3-03: no club data for a teen without a verified guardian / unknown age
+// ---------------------------------------------------------------------------
+describe('NotificationsProcessor — club data recipients gate', () => {
+  let processor: NotificationsProcessor;
+  let mockSendEachForMulticast: jest.Mock;
+  let firebaseAdminMock: any;
+
+  const PENDING_TEEN_ID = '00000000-0000-0000-0000-0000000000f1';
+
+  beforeEach(async () => {
+    firebaseAdminMock = jest.requireMock(
+      '../config/firebase-admin.module',
+    ).firebaseAdmin;
+    mockSendEachForMulticast = jest.fn().mockResolvedValue({
+      successCount: 1,
+      failureCount: 0,
+      responses: [{ success: true }],
+    });
+    (firebaseAdminMock.getMessaging as jest.Mock).mockReturnValue({
+      sendEachForMulticast: mockSendEachForMulticast,
+    });
+
+    jest.clearAllMocks();
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
+
+    mockPrismaService.$transaction.mockImplementation(
+      (fn: (tx: any) => Promise<any>) => fn(mockPrismaService),
+    );
+    mockPrismaService.notification_logs.create.mockResolvedValue({
+      log_id: 99,
+    });
+    mockPrismaService.notification_logs.update.mockResolvedValue({});
+    mockPrismaService.notification_deliveries.createMany.mockResolvedValue({
+      count: 1,
+    });
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+    mockPreferencesService.filterAllowedUsers.mockImplementation(
+      async (userIds: string[]) => new Set(userIds),
+    );
+    // The gate denies the pending teen only.
+    mockClubDataRecipients.filterClubDataRecipients.mockImplementation(
+      (ids: string[]) =>
+        Promise.resolve(
+          [...new Set(ids)].filter((id) => id !== PENDING_TEEN_ID),
+        ),
+    );
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        NotificationsProcessor,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FcmTokensService, useValue: mockFcmTokensService },
+        {
+          provide: NotificationPreferencesService,
+          useValue: mockPreferencesService,
+        },
+        {
+          provide: DependentPushRouterService,
+          useValue: mockDependentPushRouter,
+        },
+        {
+          provide: ClubDataRecipientsService,
+          useValue: mockClubDataRecipients,
+        },
+      ],
+    }).compile();
+
+    processor = module.get<NotificationsProcessor>(NotificationsProcessor);
+  });
+
+  afterEach(() => {
+    passThroughClubData();
+    jest.clearAllMocks();
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
+  });
+
+  it('send-to-club-members: a pending teen gets neither inbox row nor push', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: PENDING_TEEN_ID },
+      { user_id: MEMBER_ID_A },
+    ]);
+
+    const result = await processor.process(makeClubMembersJob() as any);
+
+    expect(
+      mockPrismaService.notification_deliveries.createMany,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [{ log_id: 99, user_id: MEMBER_ID_A }],
+      }),
+    );
+    expect(mockPrismaService.user_fcm_tokens.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          user_id: { in: [MEMBER_ID_A] },
+        }),
+      }),
+    );
+    expect(mockDependentPushRouter.routeAndSend.mock.calls[0][0]).toEqual([
+      MEMBER_ID_A,
+    ]);
+    expect(result).toMatchObject({ memberCount: 1 });
+  });
+
+  it('send-to-club-members: skips the job when only pending teens are members', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: PENDING_TEEN_ID },
+    ]);
+
+    const result = await processor.process(makeClubMembersJob() as any);
+
+    expect(result).toMatchObject({ skipped: true, reason: 'no-members' });
+    expect(mockPrismaService.notification_logs.create).not.toHaveBeenCalled();
+  });
+
+  it('send-to-section-role: a pending teen holding the role is excluded', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: PENDING_TEEN_ID },
+      { user_id: MEMBER_ID_A },
+    ]);
+
+    await processor.process({
+      id: 'job-role',
+      name: 'send-to-section-role',
+      data: {
+        clubSectionId: 5,
+        roleNames: ['member'],
+        title: 'T',
+        body: 'B',
+        source: 'activities:created',
+      },
+    } as any);
+
+    expect(
+      mockPrismaService.notification_deliveries.createMany,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [{ log_id: 99, user_id: MEMBER_ID_A }],
+      }),
+    );
+  });
+
+  it('realtime.invalidate: no silent push (section, resource, entity ids) to a pending teen device', async () => {
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+      { user_id: PENDING_TEEN_ID, token: 'teen-token' },
+      { user_id: MEMBER_ID_A, token: 'member-token' },
+    ]);
+
+    const result = await processor.process(makeJob(makePayload()) as any);
+
+    expect(result).toMatchObject({ recipientCount: 1, successCount: 1 });
+    expect(mockSendEachForMulticast).toHaveBeenCalledWith(
+      expect.objectContaining({ tokens: ['member-token'] }),
+    );
+  });
+
+  it('realtime.invalidate: skips when the only devices belong to pending teens', async () => {
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+      { user_id: PENDING_TEEN_ID, token: 'teen-token' },
+    ]);
+
+    const result = await processor.process(makeJob(makePayload()) as any);
+
+    expect(result).toMatchObject({ recipientCount: 0, skipped: true });
+    expect(mockSendEachForMulticast).not.toHaveBeenCalled();
   });
 });

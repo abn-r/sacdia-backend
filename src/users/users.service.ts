@@ -24,6 +24,7 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { ageToday, parseCalendarDate } from '../common/age/age.util';
 import type { AuthPrincipal } from '../auth/acting-for/auth-principal';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 
 @Injectable()
 export class UsersService {
@@ -35,6 +36,7 @@ export class UsersService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly countryAgePolicy: CountryAgePolicyService,
+    private readonly actingForCache: ActingForCache,
   ) {}
 
   private async ensureUserExists(userId: string) {
@@ -212,7 +214,11 @@ export class UsersService {
     }
   }
 
-  async findOne(userId: string) {
+  /**
+   * `withoutHealth` drops the blood type: a child's paired phone (3b) reads
+   * its own profile but never health data (design §2.2).
+   */
+  async findOne(userId: string, opts: { withoutHealth?: boolean } = {}) {
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
       select: {
@@ -225,7 +231,7 @@ export class UsersService {
         birthday: true,
         baptism: true,
         baptism_date: true,
-        blood: true,
+        blood: !opts.withoutHealth,
         user_image: true,
         country_id: true,
         union_id: true,
@@ -281,6 +287,80 @@ export class UsersService {
     }
   }
 
+  /**
+   * A supervised teen cannot move their own birthday: lowering it could dodge
+   * the consent gate, raising it past the age of majority would shed the
+   * supervision. The guardian (or an admin) corrects it instead.
+   */
+  private assertSupervisedBirthdayLocked(
+    userId: string,
+    updateUserDto: UpdateUserDto,
+    currentBirthday: Date | null,
+    actor?: Pick<AuthPrincipal, 'sub' | 'kind'>,
+  ): void {
+    if (
+      updateUserDto.birthday !== undefined &&
+      actor?.kind === 'supervised_user' &&
+      actor.sub === userId &&
+      !isSameCalendarDay(updateUserDto.birthday, currentBirthday)
+    ) {
+      throw new AppUnprocessableEntityException(
+        ErrorCode.USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN,
+      );
+    }
+  }
+
+  /**
+   * After a birthday change: drop every cached principal decision (the age may
+   * have crossed the majority or the teen range) and make sure an account
+   * holder who now falls in the supervised range has the `self_registered`
+   * supervised_logins row that starts the guardian-less clock. Idempotent.
+   */
+  private async afterBirthdayChanged(
+    userId: string,
+    birthday: Date | null,
+    countryId: number | null,
+  ): Promise<void> {
+    try {
+      if (birthday) {
+        const policy = await this.countryAgePolicy.getPolicy(countryId);
+        const age = ageToday(birthday, policy.timeZone);
+        if (age >= policy.minSelfLoginAge && age < policy.ageOfMajority) {
+          const holdsAccount =
+            (await this.prisma.account.count({ where: { userId } })) > 0;
+          if (holdsAccount) {
+            const guarded = await this.prisma.guardianships.count({
+              where: {
+                dependent_user_id: userId,
+                is_custodian: false,
+                consent_status: { not: 'revoked' },
+              },
+            });
+            await this.prisma.supervised_logins.createMany({
+              data: [
+                {
+                  user_id: userId,
+                  method: 'email',
+                  origin: 'self_registered',
+                  password_set_by: 'self',
+                  pending_since: guarded > 0 ? null : new Date(),
+                },
+              ],
+              skipDuplicates: true,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Supervised row sync failed after a birthday change for ${userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    await this.actingForCache.bump(userId);
+  }
+
   async update(
     userId: string,
     updateUserDto: UpdateUserDto,
@@ -289,10 +369,18 @@ export class UsersService {
     // Validar que el usuario existe
     const existingUser = await this.ensureUserExists(userId);
     this.assertNoSelfServiceGeographyUpdate(updateUserDto);
+    this.assertSupervisedBirthdayLocked(
+      userId,
+      updateUserDto,
+      existingUser.birthday,
+      actor,
+    );
 
+    // The account holder editing THEMSELVES: an adult, or an unknown-age
+    // account saving its birthday in post-registration step 2.
     if (
       updateUserDto.birthday !== undefined &&
-      actor?.kind === 'user' &&
+      (actor?.kind === 'user' || actor?.kind === 'age_unknown_user') &&
       actor.sub === userId
     ) {
       await this.assertSelfBirthdayAllowed(
@@ -311,7 +399,15 @@ export class UsersService {
 
     const updatedUser = await this.prisma.users.update({
       where: { user_id: userId },
-      data: updateUserDto,
+      data: {
+        ...updateUserDto,
+        ...(updateUserDto.birthday !== undefined
+          ? { birthday: toPrismaDate(updateUserDto.birthday) }
+          : {}),
+        ...(updateUserDto.baptism_date !== undefined
+          ? { baptism_date: toPrismaDate(updateUserDto.baptism_date) }
+          : {}),
+      },
       select: {
         user_id: true,
         email: true,
@@ -329,6 +425,14 @@ export class UsersService {
         modified_at: true,
       },
     });
+
+    if (updateUserDto.birthday !== undefined) {
+      await this.afterBirthdayChanged(
+        userId,
+        updatedUser.birthday,
+        updatedUser.country_id,
+      );
+    }
 
     this.logger.log(`User updated: ${userId}`);
 
@@ -1050,4 +1154,29 @@ export class UsersService {
       return value;
     }
   }
+}
+
+/**
+ * Prisma rejects a date-only string for a DateTime column (500), while the DTO
+ * documents YYYY-MM-DD. A date-only value becomes UTC midnight, the same parse
+ * the register uses (`parseCalendarDate`); a full ISO date-time keeps its
+ * instant (the column is @db.Date, Postgres keeps the UTC calendar date).
+ */
+function toPrismaDate(value: string): Date {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? (parseCalendarDate(value) ?? new Date(value))
+    : new Date(value);
+}
+
+/**
+ * True when `input` names the same calendar day as the stored birthday. Forms
+ * re-send the unchanged birthday on save; that is not a change.
+ */
+function isSameCalendarDay(input: string, stored: Date | null): boolean {
+  if (!stored) return false;
+  const parsed = parseCalendarDate(input.slice(0, 10));
+  if (!parsed) return false;
+  return (
+    parsed.toISOString().slice(0, 10) === stored.toISOString().slice(0, 10)
+  );
 }

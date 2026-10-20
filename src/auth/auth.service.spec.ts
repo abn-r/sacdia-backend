@@ -4,7 +4,10 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
-import { accessJwtClaims } from '../common/constants/jwt-audiences';
+import {
+  accessJwtClaims,
+  deviceJwtClaims,
+} from '../common/constants/jwt-audiences';
 import {
   Logger,
   ServiceUnavailableException,
@@ -19,10 +22,26 @@ import { EcclesiasticalYearService } from '../common/services/ecclesiastical-yea
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
-import { AppBadRequestException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppException,
+  AppForbiddenException,
+  AppUnauthorizedException,
+} from '../common/errors/app.exception';
 import { ClubCycleReadinessService } from '../common/services/club-cycle-readiness.service';
 import { LegalService } from '../legal/legal.service';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
+import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
+import { SupervisionStateService } from '../guardianships/supervision-state.service';
+import { LoginFailureCounter } from './login-failure-counter';
+import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
+import { LinkedDeviceGate } from './device/linked-device.gate';
+import { LinkedDevicesService } from '../guardianships/linked-devices.service';
+import { SUPERVISED_LOGIN_EVENTS } from './supervised/supervised-login-events.port';
+import {
+  AppException,
+  AppServiceUnavailableException,
+} from '../common/errors/app.exception';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -46,6 +65,9 @@ describe('AuthService', () => {
     users_roles: {
       create: jest.fn(),
     },
+    supervised_logins: {
+      create: jest.fn(),
+    },
   };
 
   const mockPrismaService = {
@@ -57,6 +79,9 @@ describe('AuthService', () => {
     users_pr: {
       findUnique: jest.fn(),
       upsert: jest.fn(),
+    },
+    supervised_logins: {
+      updateMany: jest.fn(),
     },
     club_role_assignments: {
       findFirst: jest.fn(),
@@ -72,6 +97,9 @@ describe('AuthService', () => {
     guardianships: {
       count: jest.fn().mockResolvedValue(0),
     },
+    countries: {
+      findUnique: jest.fn().mockResolvedValue({ country_id: 9 }),
+    },
   };
 
   // -------------------------------------------------------------------------
@@ -79,7 +107,9 @@ describe('AuthService', () => {
   // -------------------------------------------------------------------------
   const mockBetterAuthService = {
     createUser: jest.fn(),
-    signInWithPassword: jest.fn(),
+    signInWithIdentifier: jest.fn(),
+    getSessionOwnerId: jest.fn(),
+    findLinkedDeviceOfSession: jest.fn(),
     refreshSession: jest.fn(),
     signOut: jest.fn(),
     resetPasswordForEmail: jest.fn(),
@@ -151,14 +181,14 @@ describe('AuthService', () => {
     documents: [
       {
         document_type: 'terms',
-        version: '1.0.0-store',
+        version: '2.0.0-family',
         url: 'https://sacdia.com/terms',
         accepted: true,
         accepted_at: '2026-10-15T22:01:00.000Z',
       },
       {
         document_type: 'privacy',
-        version: '1.0.0-store',
+        version: '2.0.0-family',
         url: 'https://sacdia.com/privacy',
         accepted: true,
         accepted_at: '2026-10-15T22:01:00.000Z',
@@ -176,7 +206,67 @@ describe('AuthService', () => {
     getPolicy: jest.fn(),
   };
 
+  const FAMILY_FEATURES = {
+    teen_login: true,
+    linked_device: false,
+    director_create_minor: false,
+  };
+
+  const mockFamilyFlags = {
+    getAll: jest.fn(),
+  };
+
+  const mockSupervisionState = {
+    describe: jest.fn(),
+  };
+
+  const mockLoginFailures = {
+    check: jest.fn(),
+    recordFailure: jest.fn(),
+    recordSuccess: jest.fn(),
+  };
+
+  const mockSupervisedResolver = {
+    resolve: jest.fn(),
+  };
+
+  const mockDeviceGate = {
+    assertActive: jest.fn(),
+  };
+
+  const mockLinkedDevices = {
+    revokeByLogout: jest.fn(),
+  };
+
+  const mockEvents = {
+    onTeenSessionStarted: jest.fn(),
+    onTeenPasswordChanged: jest.fn(),
+    onPasswordReset: jest.fn(),
+  };
+  const flushEvents = () => new Promise<void>((r) => setImmediate(r));
+
   beforeEach(async () => {
+    mockFamilyFlags.getAll.mockReset().mockReturnValue(FAMILY_FEATURES);
+    mockSupervisionState.describe.mockReset();
+    mockLoginFailures.check.mockReset().mockResolvedValue({ locked: false });
+    mockLoginFailures.recordFailure
+      .mockReset()
+      .mockResolvedValue({ lockStarted: false, retryAfterSeconds: 0 });
+    mockLoginFailures.recordSuccess.mockReset().mockResolvedValue(undefined);
+    mockSupervisedResolver.resolve
+      .mockReset()
+      .mockResolvedValue({ state: 'adult' });
+    mockBetterAuthService.findLinkedDeviceOfSession
+      .mockReset()
+      .mockResolvedValue(null);
+    mockDeviceGate.assertActive.mockReset().mockResolvedValue({ active: true });
+    mockLinkedDevices.revokeByLogout.mockReset().mockResolvedValue(undefined);
+    mockEvents.onTeenSessionStarted.mockReset();
+    mockEvents.onTeenPasswordChanged.mockReset();
+    mockEvents.onPasswordReset.mockReset();
+    mockPrismaService.supervised_logins.updateMany
+      .mockReset()
+      .mockResolvedValue({ count: 1 });
     mockCountryAgePolicy.getPolicy.mockReset().mockResolvedValue({
       minSelfLoginAge: 13,
       ageOfMajority: 18,
@@ -229,6 +319,16 @@ describe('AuthService', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: LegalService, useValue: mockLegalService },
         { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
+        { provide: FamilyFeatureFlagsService, useValue: mockFamilyFlags },
+        { provide: SupervisionStateService, useValue: mockSupervisionState },
+        { provide: LoginFailureCounter, useValue: mockLoginFailures },
+        {
+          provide: SupervisedPrincipalResolver,
+          useValue: mockSupervisedResolver,
+        },
+        { provide: LinkedDeviceGate, useValue: mockDeviceGate },
+        { provide: LinkedDevicesService, useValue: mockLinkedDevices },
+        { provide: SUPERVISED_LOGIN_EVENTS, useValue: mockEvents },
       ],
     }).compile();
 
@@ -255,10 +355,10 @@ describe('AuthService', () => {
       name: 'Juan',
       paternal_last_name: 'Garcia',
       maternal_last_name: 'Lopez',
-      accepted_terms_version: '1.0.0-store',
-      accepted_privacy_version: '1.0.0-store',
+      accepted_terms_version: '2.0.0-family',
+      accepted_privacy_version: '2.0.0-family',
     };
-    const acceptedVersions = { terms: '1.0.0-store', privacy: '1.0.0-store' };
+    const acceptedVersions = { terms: '2.0.0-family', privacy: '2.0.0-family' };
 
     const mockBaResult = {
       user: {
@@ -411,6 +511,147 @@ describe('AuthService', () => {
         expect(mockBetterAuthService.createUser).toHaveBeenCalled();
       });
 
+      it.each([
+        ['15', 15],
+        ['13 (turned 13 yesterday)', 13],
+        ['17', 17],
+      ])(
+        'creates the self_registered supervised row (clock starts now) inside the register transaction for a %s-year-old',
+        async (_label, years) => {
+          stubSuccessfulCreate();
+          mockTx.supervised_logins.create.mockResolvedValue({});
+
+          await service.register({
+            ...registerDto,
+            birthday: yearsAgo(years, years === 13 ? -1 : -10),
+          });
+
+          expect(mockTx.supervised_logins.create).toHaveBeenCalledWith({
+            data: {
+              user_id: 'user-123',
+              method: 'email',
+              origin: 'self_registered',
+              password_set_by: 'self',
+              pending_since: expect.any(Date),
+            },
+          });
+        },
+      );
+
+      it('creates no supervised row for an adult (18+)', async () => {
+        stubSuccessfulCreate();
+
+        await service.register({ ...registerDto, birthday: yearsAgo(18, -5) });
+
+        expect(mockTx.supervised_logins.create).not.toHaveBeenCalled();
+      });
+
+      it('creates no supervised row when the birthday is omitted (it is created when the birthday is saved)', async () => {
+        stubSuccessfulCreate();
+
+        await service.register(registerDto);
+
+        expect(mockTx.supervised_logins.create).not.toHaveBeenCalled();
+      });
+
+      it('a 12-year-old stays blocked and nothing is created', async () => {
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(12) }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
+        });
+        expect(mockTx.supervised_logins.create).not.toHaveBeenCalled();
+      });
+
+      it('follows the country majority: a 17-year-old is an adult where the majority is 16', async () => {
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 13,
+          ageOfMajority: 16,
+          timeZone: 'America/Mexico_City',
+        });
+        stubSuccessfulCreate();
+
+        await service.register({
+          ...registerDto,
+          birthday: yearsAgo(17, -10),
+          country_id: 9,
+        });
+
+        expect(mockTx.supervised_logins.create).not.toHaveBeenCalled();
+      });
+
+      it('rolls the registration back (revokes the BA session) when the supervised row cannot be written', async () => {
+        stubSuccessfulCreate();
+        mockBetterAuthService.signOut.mockResolvedValue(undefined);
+        mockTx.supervised_logins.create.mockRejectedValue(new Error('db'));
+
+        await expect(
+          service.register({ ...registerDto, birthday: yearsAgo(15, -10) }),
+        ).rejects.toThrow('db');
+        expect(mockBetterAuthService.signOut).toHaveBeenCalled();
+      });
+
+      describe('persists the age facts (QA BUG-3)', () => {
+        // Without the birthday on file the principal resolver sees an adult,
+        // so a self-registered 15-year-old had ADULT powers until PATCH /users.
+        it('stores the birthday as UTC midnight and the country inside the register transaction', async () => {
+          stubSuccessfulCreate();
+          mockTx.supervised_logins.create.mockResolvedValue({});
+          const birthday = yearsAgo(15, -10);
+
+          await service.register({ ...registerDto, birthday, country_id: 9 });
+
+          expect(mockTx.users.update).toHaveBeenCalledWith({
+            where: { user_id: 'user-123' },
+            data: {
+              paternal_last_name: registerDto.paternal_last_name,
+              maternal_last_name: registerDto.maternal_last_name,
+              birthday: new Date(`${birthday}T00:00:00.000Z`),
+              country_id: 9,
+            },
+          });
+        });
+
+        it('stores the birthday of an adult too', async () => {
+          stubSuccessfulCreate();
+          const birthday = yearsAgo(30);
+
+          await service.register({ ...registerDto, birthday });
+
+          expect(mockTx.users.update.mock.calls[0][0].data).toMatchObject({
+            birthday: new Date(`${birthday}T00:00:00.000Z`),
+          });
+          expect(mockTx.users.update.mock.calls[0][0].data).not.toHaveProperty(
+            'country_id',
+          );
+        });
+
+        it('does not store an unknown country (the age was checked with the default policy)', async () => {
+          stubSuccessfulCreate();
+          mockPrismaService.countries.findUnique.mockResolvedValueOnce(null);
+
+          await service.register({
+            ...registerDto,
+            birthday: yearsAgo(30),
+            country_id: 404,
+          });
+
+          expect(mockTx.users.update.mock.calls[0][0].data).not.toHaveProperty(
+            'country_id',
+          );
+        });
+
+        it('writes neither field when they are omitted', async () => {
+          stubSuccessfulCreate();
+
+          await service.register(registerDto);
+
+          const data = mockTx.users.update.mock.calls[0][0].data;
+          expect(data).not.toHaveProperty('birthday');
+          expect(data).not.toHaveProperty('country_id');
+        });
+      });
+
       it('rejects an unparsable calendar date before creating anything', async () => {
         await expect(
           service.register({ ...registerDto, birthday: '2017-02-31' }),
@@ -521,7 +762,7 @@ describe('AuthService', () => {
       const warnSpy = jest
         .spyOn((service as any).logger, 'warn')
         .mockImplementation();
-      mockBetterAuthService.signInWithPassword.mockRejectedValue(
+      mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
         new UnauthorizedException('Invalid login credentials'),
       );
 
@@ -535,7 +776,9 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException when user is not in local database', async () => {
-      mockBetterAuthService.signInWithPassword.mockResolvedValue(mockBaResult);
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+        mockBaResult,
+      );
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
       await expect(service.login(loginDto)).rejects.toMatchObject({
@@ -544,7 +787,9 @@ describe('AuthService', () => {
     });
 
     it('should return tokens, user data, and post-registration state', async () => {
-      mockBetterAuthService.signInWithPassword.mockResolvedValue(mockBaResult);
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+        mockBaResult,
+      );
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-123',
         email: loginDto.email,
@@ -567,7 +812,7 @@ describe('AuthService', () => {
       const context = { ipAddress: '203.0.113.7', userAgent: 'Dart/3.11' };
       const result = await service.login(loginDto, context);
 
-      expect(mockBetterAuthService.signInWithPassword).toHaveBeenCalledWith(
+      expect(mockBetterAuthService.signInWithIdentifier).toHaveBeenCalledWith(
         loginDto.email,
         loginDto.password,
         context,
@@ -589,6 +834,7 @@ describe('AuthService', () => {
             maternal_last_name: 'Lopez',
             avatar: 'https://avatar.test/user-123.png',
             roles: ['user', 'director'],
+            principal: { kind: 'user', supervision: null },
           },
           needsPostRegistration: true,
           postRegistrationStatus: {
@@ -602,7 +848,9 @@ describe('AuthService', () => {
     });
 
     it('should compute needsPostRegistration=false when users_pr.complete is true', async () => {
-      mockBetterAuthService.signInWithPassword.mockResolvedValue(mockBaResult);
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+        mockBaResult,
+      );
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-123',
         email: loginDto.email,
@@ -622,6 +870,318 @@ describe('AuthService', () => {
       const result = await service.login(loginDto);
 
       expect(result.data.needsPostRegistration).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // login() with identifiers, lockout and the principal (phase 3a)
+  // ---------------------------------------------------------------------------
+  describe('login by identifier (phase 3a)', () => {
+    const sessionExpiresAt = new Date(1900000000 * 1000);
+    const baResult = (id = 'teen-1') => ({
+      user: { id, email: null },
+      session: {
+        token: 'ba-opaque-session-token',
+        expiresAt: sessionExpiresAt,
+      },
+      accessToken: 'sacdia-hs256-jwt',
+    });
+    const userRow = (id = 'teen-1') => ({
+      user_id: id,
+      email: null,
+      name: 'Ana',
+      paternal_last_name: 'Perez',
+      maternal_last_name: null,
+      user_image: null,
+      users_pr: {
+        complete: true,
+        profile_picture_complete: true,
+        personal_info_complete: true,
+        club_selection_complete: true,
+      },
+      users_roles: [],
+    });
+    const context = { ipAddress: '203.0.113.7', userAgent: 'Dart/3.11' };
+
+    it('passes a handle through as the identifier (trimmed) and logs it nowhere', async () => {
+      const warn = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation();
+      mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+        new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+      );
+
+      await expect(
+        service.login(
+          { identifier: '  ana-7kq4m9tx ', password: 'Password123!' },
+          context,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+      expect(mockBetterAuthService.signInWithIdentifier).toHaveBeenCalledWith(
+        'ana-7kq4m9tx',
+        'Password123!',
+        context,
+      );
+      const logged = warn.mock.calls.map((call) => String(call[0])).join('\n');
+      expect(logged).not.toContain('ana-7kq4m9tx');
+      expect(logged).toContain('[handle]');
+    });
+
+    it('keeps the legacy email field working and masks it in the log', async () => {
+      const warn = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation();
+      mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+        new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+      );
+
+      await expect(
+        service.login({ email: 'juan.garcia@example.com', password: 'x' }),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+      expect(mockBetterAuthService.signInWithIdentifier).toHaveBeenCalledWith(
+        'juan.garcia@example.com',
+        'x',
+        undefined,
+      );
+      expect(String(warn.mock.calls[0]?.[0])).not.toContain('juan.garcia@');
+    });
+
+    it('logs in an email teen and a handle teen with the standard payload plus the principal', async () => {
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(baResult());
+      mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+      mockSupervisedResolver.resolve.mockResolvedValue({
+        state: 'supervised',
+        supervision: 'pending_guardian',
+      });
+
+      for (const identifier of ['teen@example.com', 'ana-7kq4m9tx']) {
+        const result = await service.login(
+          { identifier, password: 'Password123!' },
+          context,
+        );
+        expect(result.data.user.principal).toEqual({
+          kind: 'supervised_user',
+          supervision: 'pending_guardian',
+        });
+        expect(result.data).toMatchObject({
+          accessToken: 'sacdia-hs256-jwt',
+          refreshToken: 'ba-opaque-session-token',
+          tokenType: 'bearer',
+        });
+      }
+    });
+
+    it('answers an active teen with supervision active and an adult with kind user', async () => {
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(baResult());
+      mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+
+      mockSupervisedResolver.resolve.mockResolvedValue({
+        state: 'supervised',
+        supervision: 'active',
+      });
+      expect(
+        (await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }))
+          .data.user.principal,
+      ).toEqual({ kind: 'supervised_user', supervision: 'active' });
+
+      mockSupervisedResolver.resolve.mockResolvedValue({ state: 'adult' });
+      expect(
+        (await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }))
+          .data.user.principal,
+      ).toEqual({ kind: 'user', supervision: null });
+    });
+
+    it('answers an unknown-age account (NULL birthday, post-registration open) with kind age_unknown_user', async () => {
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(baResult());
+      mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+      mockSupervisedResolver.resolve.mockResolvedValue({
+        state: 'profile_incomplete',
+      });
+
+      expect(
+        (await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }))
+          .data.user.principal,
+      ).toEqual({ kind: 'age_unknown_user', supervision: null });
+    });
+
+    describe('guardian notices', () => {
+      beforeEach(() => {
+        mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+          baResult(),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+      });
+
+      it('a supervised teen password login tells the verified guardians (new session)', async () => {
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'supervised',
+          supervision: 'active',
+        });
+
+        await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' });
+        await flushEvents();
+
+        expect(mockEvents.onTeenSessionStarted).toHaveBeenCalledWith({
+          userId: 'teen-1',
+        });
+      });
+
+      it('an adult login sends nothing', async () => {
+        await service.login({ identifier: 'adult@example.com', password: 'p' });
+        await flushEvents();
+        expect(mockEvents.onTeenSessionStarted).not.toHaveBeenCalled();
+      });
+
+      it('the login still answers 200 when the notifier throws', async () => {
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'supervised',
+          supervision: 'active',
+        });
+        mockEvents.onTeenSessionStarted.mockRejectedValue(
+          new Error('fcm down'),
+        );
+
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+        ).resolves.toMatchObject({ status: 'success' });
+        await flushEvents();
+      });
+
+      it('a failed login (wrong password) sends no new-session notice', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+          new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+        );
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'wrong' }),
+        ).rejects.toBeDefined();
+        await flushEvents();
+        expect(mockEvents.onTeenSessionStarted).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('lockout', () => {
+      it('checks the lock BEFORE the credentials: 429 AUTH_LOGIN_LOCKED, no credential check, no failure counted', async () => {
+        mockLoginFailures.check.mockResolvedValue({
+          locked: true,
+          retryAfterSeconds: 900,
+        });
+
+        let thrown: unknown;
+        try {
+          await service.login(
+            { identifier: 'ana-7kq4m9tx', password: 'Password123!' },
+            context,
+          );
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(AppException);
+        expect(thrown).toMatchObject({
+          code: ErrorCode.AUTH_LOGIN_LOCKED,
+          status: 429,
+        });
+        expect((thrown as AppException).getResponse().namedArgs).toEqual({
+          retry_after_seconds: 900,
+        });
+        expect(mockLoginFailures.check).toHaveBeenCalledWith(
+          'ana-7kq4m9tx',
+          '203.0.113.7',
+        );
+        expect(
+          mockBetterAuthService.signInWithIdentifier,
+        ).not.toHaveBeenCalled();
+        expect(mockLoginFailures.recordFailure).not.toHaveBeenCalled();
+        expect(mockLoginFailures.recordSuccess).not.toHaveBeenCalled();
+      });
+
+      it('counts a wrong password against the identifier and the IP', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+          new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+        );
+
+        await expect(
+          service.login(
+            { identifier: 'ana-7kq4m9tx', password: 'wrong' },
+            context,
+          ),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+        expect(mockLoginFailures.recordFailure).toHaveBeenCalledWith(
+          'ana-7kq4m9tx',
+          '203.0.113.7',
+        );
+      });
+
+      it('does not count unexpected errors (a database blip is not a guess) but still answers the uniform 401', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+        expect(mockLoginFailures.recordFailure).not.toHaveBeenCalled();
+      });
+
+      it('resets the counter of the identifier after a successful login', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+          baResult(),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+
+        await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' });
+
+        expect(mockLoginFailures.recordSuccess).toHaveBeenCalledWith(
+          'ana-7kq4m9tx',
+        );
+      });
+
+      it('a counter that cannot be reset never fails a good login', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
+          baResult(),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+        mockLoginFailures.recordSuccess.mockRejectedValue(new Error('redis'));
+
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+        ).resolves.toMatchObject({ status: 'success' });
+      });
+
+      it('a counter that cannot record never turns the 401 into a 500', async () => {
+        mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+          new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS),
+        );
+        mockLoginFailures.recordFailure.mockRejectedValue(new Error('redis'));
+
+        await expect(
+          service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+      });
+    });
+
+    describe('blocked after a CORRECT password', () => {
+      it.each([
+        [ErrorCode.AUTH_SUPERVISED_LOGIN_DISABLED],
+        [ErrorCode.AUTH_ACCOUNT_FROZEN],
+      ])(
+        'passes the 403 %s through untouched and counts no failure',
+        async (code) => {
+          mockBetterAuthService.signInWithIdentifier.mockRejectedValue(
+            new AppForbiddenException(code),
+          );
+
+          await expect(
+            service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }),
+          ).rejects.toMatchObject({ code, status: 403 });
+
+          expect(mockLoginFailures.recordFailure).not.toHaveBeenCalled();
+        },
+      );
     });
   });
 
@@ -647,6 +1207,101 @@ describe('AuthService', () => {
         revocationSucceeded: true,
         path: 'session',
       });
+    });
+
+    it('a device logging out ("Desvincular") revokes the device BEFORE the session is deleted (the revoke deletes the session atomically)', async () => {
+      const device = {
+        sessionId: 'sid-device',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: null,
+        absoluteExpiresAt: new Date(Date.now() + 86_400_000),
+      };
+      mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue(device);
+      const order: string[] = [];
+      mockBetterAuthService.signOut.mockImplementation(() => {
+        order.push('signOut');
+        return Promise.resolve(undefined);
+      });
+      mockLinkedDevices.revokeByLogout.mockImplementation(() => {
+        order.push('revoke');
+        return Promise.resolve(undefined);
+      });
+
+      const result = await service.logout({ refreshToken: 'device-session' });
+
+      expect(order).toEqual(['revoke', 'signOut']);
+      expect(mockLinkedDevices.revokeByLogout).toHaveBeenCalledWith('device-1');
+      expect(result.revocationSucceeded).toBe(true);
+    });
+
+    it('when the device revoke fails the session is STILL signed out (the cap self-heals the orphan row later)', async () => {
+      mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue({
+        sessionId: 's',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: null,
+        absoluteExpiresAt: new Date(Date.now() + 86_400_000),
+      });
+      mockLinkedDevices.revokeByLogout.mockRejectedValue(new Error('boom'));
+      mockBetterAuthService.signOut.mockResolvedValue(undefined);
+
+      const result = await service.logout({ refreshToken: 'device-session' });
+
+      expect(mockBetterAuthService.signOut).toHaveBeenCalledWith(
+        'device-session',
+      );
+      expect(result).toMatchObject({
+        success: true,
+        revocationAttempted: true,
+        revocationSucceeded: true,
+      });
+    });
+
+    it('an already revoked device is not revoked again on logout', async () => {
+      mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue({
+        sessionId: 's',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: new Date(),
+        absoluteExpiresAt: new Date(),
+      });
+      mockBetterAuthService.signOut.mockResolvedValue(undefined);
+
+      await service.logout({ refreshToken: 'device-session' });
+
+      expect(mockLinkedDevices.revokeByLogout).not.toHaveBeenCalled();
+    });
+
+    it('a user logout never touches the device service', async () => {
+      mockBetterAuthService.signOut.mockResolvedValue(undefined);
+
+      await service.logout({ refreshToken: 'ba-session-token' });
+
+      expect(mockLinkedDevices.revokeByLogout).not.toHaveBeenCalled();
+    });
+
+    it('a failing device revoke or lookup never breaks the logout', async () => {
+      mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue({
+        sessionId: 's',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: null,
+        absoluteExpiresAt: new Date(),
+      });
+      mockBetterAuthService.signOut.mockResolvedValue(undefined);
+      mockLinkedDevices.revokeByLogout.mockRejectedValue(new Error('boom'));
+
+      await expect(
+        service.logout({ refreshToken: 'device-session' }),
+      ).resolves.toMatchObject({ success: true });
+
+      mockBetterAuthService.findLinkedDeviceOfSession.mockRejectedValue(
+        new Error('db'),
+      );
+      await expect(
+        service.logout({ refreshToken: 'device-session' }),
+      ).resolves.toMatchObject({ success: true });
     });
 
     it('should return success even when BA signOut throws (best effort)', async () => {
@@ -820,6 +1475,268 @@ describe('AuthService', () => {
       expect(mockTokenBlacklistService.blacklistToken).not.toHaveBeenCalled();
     });
 
+    describe('supervised state (FP3-35: a cut handle session cannot slide back in)', () => {
+      beforeEach(() => {
+        mockBetterAuthService.getSessionOwnerId
+          .mockReset()
+          .mockResolvedValue('user-123');
+      });
+
+      it.each(['teen_login_disabled', 'login_disabled', 'frozen'])(
+        'refuses a blocked (%s) principal with 401 AUTH_SUPERVISED_ACCESS_REVOKED and hands out no token',
+        async (cause) => {
+          mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+          mockSupervisedResolver.resolve.mockResolvedValue({
+            state: 'blocked',
+            cause,
+          });
+
+          await expect(
+            service.refreshSession({ refreshToken: 'ba-session-token' }),
+          ).rejects.toMatchObject({
+            code: ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+            status: 401,
+          });
+          expect(mockBetterAuthService.getSessionOwnerId).toHaveBeenCalledWith(
+            'ba-session-token',
+          );
+          expect(mockSupervisedResolver.resolve).toHaveBeenCalledWith(
+            'user-123',
+          );
+        },
+      );
+
+      it('a refused refresh never touches the session row (the state is checked BEFORE the slide)', async () => {
+        mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'blocked',
+          cause: 'teen_login_disabled',
+        });
+
+        await expect(
+          service.refreshSession({ refreshToken: 'ba-session-token' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+        });
+
+        // refreshSession is what slides the session expiry.
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+        expect(mockTokenBlacklistService.blacklistToken).not.toHaveBeenCalled();
+      });
+
+      it('resolves the state before it refreshes', async () => {
+        const order: string[] = [];
+        mockSupervisedResolver.resolve.mockImplementation(() => {
+          order.push('resolve');
+          return Promise.resolve({ state: 'adult' });
+        });
+        mockBetterAuthService.refreshSession.mockImplementation(() => {
+          order.push('refresh');
+          return Promise.resolve(mockBaResult);
+        });
+
+        await service.refreshSession({ refreshToken: 'ba-session-token' });
+
+        expect(order).toEqual(['resolve', 'refresh']);
+      });
+
+      it('an unknown or expired token has no owner: it goes straight to the refresh, which reports it', async () => {
+        mockBetterAuthService.getSessionOwnerId.mockResolvedValue(null);
+        mockBetterAuthService.refreshSession.mockRejectedValue(
+          new UnauthorizedException('Session not found or expired'),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'expired-token' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID });
+
+        expect(mockSupervisedResolver.resolve).not.toHaveBeenCalled();
+        expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith(
+          'expired-token',
+        );
+      });
+
+      it('a failed owner lookup is the invalid-token 401 and nothing is refreshed', async () => {
+        mockBetterAuthService.getSessionOwnerId.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'ba-session-token' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID });
+
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
+
+      it('a supervised teen who is not blocked (an email teen while the flag is off) refreshes normally', async () => {
+        mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'supervised',
+          supervision: 'active',
+          login_method: 'email',
+        });
+
+        const result = await service.refreshSession({
+          refreshToken: 'ba-session-token',
+        });
+
+        expect(result.data.accessToken).toBe('new-sacdia-jwt');
+      });
+
+      it('a failed state lookup is the 503, never a refresh that fails open (and the session is not slid)', async () => {
+        mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+        mockSupervisedResolver.resolve.mockRejectedValue(
+          new AppServiceUnavailableException(
+            ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+          ),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'ba-session-token' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+          status: 503,
+        });
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('a device session (3b)', () => {
+      const device = {
+        sessionId: 'sid-device',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: null as Date | null,
+        absoluteExpiresAt: new Date(Date.now() + 90 * 86_400_000),
+      };
+
+      beforeEach(() => {
+        mockBetterAuthService.getSessionOwnerId
+          .mockReset()
+          .mockResolvedValue('child-1');
+        mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue(
+          device,
+        );
+      });
+
+      it('runs the DEVICE gate (not the supervised resolver) before the session slides, and refreshes as a device', async () => {
+        const order: string[] = [];
+        mockDeviceGate.assertActive.mockImplementation(() => {
+          order.push('gate');
+          return Promise.resolve({ active: true });
+        });
+        mockBetterAuthService.refreshSession.mockImplementation(() => {
+          order.push('refresh');
+          return Promise.resolve(mockBaResult);
+        });
+
+        await service.refreshSession({ refreshToken: 'device-session' });
+
+        expect(order).toEqual(['gate', 'refresh']);
+        expect(mockDeviceGate.assertActive).toHaveBeenCalledWith({
+          dependentId: 'child-1',
+          sid: 'sid-device',
+          deviceId: 'device-1',
+        });
+        expect(mockSupervisedResolver.resolve).not.toHaveBeenCalled();
+        expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith(
+          'device-session',
+          { device },
+        );
+      });
+
+      it('a revoked device row answers AUTH_DEVICE_REVOKED and never slides the session', async () => {
+        mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue({
+          ...device,
+          revokedAt: new Date(),
+        });
+
+        await expect(
+          service.refreshSession({ refreshToken: 'device-session' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_DEVICE_REVOKED,
+          status: 401,
+        });
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
+
+      it('the gate refusals (guardianship gone, majority, flag off) are passed through untouched', async () => {
+        const refusal = Object.assign(new Error('revoked'), {
+          code: ErrorCode.AUTH_DEVICE_REVOKED,
+        });
+        mockDeviceGate.assertActive.mockRejectedValue(refusal);
+
+        await expect(
+          service.refreshSession({ refreshToken: 'device-session' }),
+        ).rejects.toBe(refusal);
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
+
+      it('past the absolute cap the device code (not the generic refresh failure) reaches the app', async () => {
+        mockBetterAuthService.refreshSession.mockRejectedValue(
+          new AppException(ErrorCode.AUTH_DEVICE_SESSION_EXPIRED, 401),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'device-session' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_DEVICE_SESSION_EXPIRED,
+          status: 401,
+        });
+      });
+
+      it('a user session never runs the device gate (adult regression)', async () => {
+        mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue(null);
+        mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+
+        await service.refreshSession({ refreshToken: 'ba-session-token' });
+
+        expect(mockDeviceGate.assertActive).not.toHaveBeenCalled();
+        expect(mockSupervisedResolver.resolve).toHaveBeenCalledWith('child-1');
+        expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith(
+          'ba-session-token',
+          { device: null },
+        );
+      });
+
+      it('a failed device lookup is the invalid-token 401 and nothing is refreshed', async () => {
+        mockBetterAuthService.findLinkedDeviceOfSession.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'device-session' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID });
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
+
+      it('blacklists the old device JWT presented with the refresh (same subject)', async () => {
+        mockBetterAuthService.refreshSession.mockResolvedValue({
+          ...mockBaResult,
+          user: { ...mockBaResult.user, id: 'child-1' },
+        });
+        const presented = new JwtService({ secret: TEST_ACCESS_SECRET }).sign(
+          {
+            sub: 'child-1',
+            sid: 'sid-device',
+            dev: 'device-1',
+            ...deviceJwtClaims(),
+          },
+          { algorithm: 'HS256', expiresIn: '1h' },
+        );
+
+        await service.refreshSession(
+          { refreshToken: 'device-session' },
+          { accessToken: presented },
+        );
+
+        expect(mockTokenBlacklistService.blacklistToken).toHaveBeenCalledWith(
+          presented,
+          28800,
+        );
+      });
+    });
+
     it('does not fail refresh when blacklist storage rejects', async () => {
       mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
       mockTokenBlacklistService.blacklistToken.mockRejectedValue(
@@ -868,6 +1785,36 @@ describe('AuthService', () => {
         'juan.garcia@example.com',
         undefined,
       );
+    });
+
+    it('answers the neutral response for a login handle and queues NO email (guardian resets handle passwords)', async () => {
+      const log = jest
+        .spyOn((service as any).logger, 'log')
+        .mockImplementation();
+
+      const result = await service.requestPasswordReset({
+        email: 'ana-7kq4m9tx',
+      });
+
+      expect(result).toEqual({
+        success: true,
+        message: 'Correo de recuperación enviado',
+      });
+      expect(
+        mockBetterAuthService.resetPasswordForEmail,
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
+      // The response is byte-identical to the one for an email.
+      mockBetterAuthService.resetPasswordForEmail.mockResolvedValue(undefined);
+      expect(
+        await service.requestPasswordReset({
+          email: 'juan.garcia@example.com',
+        }),
+      ).toEqual(result);
+      // The handle is never logged.
+      expect(
+        log.mock.calls.map((call) => String(call[0])).join('\n'),
+      ).not.toContain('ana-7kq4m9tx');
     });
 
     it('should throw BadRequestException when BA resetPasswordForEmail throws', async () => {
@@ -924,6 +1871,29 @@ describe('AuthService', () => {
       expect(result).toEqual({
         success: true,
         message: 'Contraseña actualizada. Inicie sesión de nuevo',
+      });
+    });
+
+    it('tells the verified guardians when a (teen) password is reset by email, and never breaks the reset', async () => {
+      mockBetterAuthService.resetPasswordWithToken.mockResolvedValue({
+        userId: 'teen-1',
+      });
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 1 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockResolvedValue(
+        undefined,
+      );
+      mockEvents.onPasswordReset.mockRejectedValue(new Error('push down'));
+
+      await expect(
+        service.confirmPasswordReset({
+          token: 'reset-token',
+          password: 'NewPassword123!',
+        }),
+      ).resolves.toMatchObject({ success: true });
+      await flushEvents();
+
+      expect(mockEvents.onPasswordReset).toHaveBeenCalledWith({
+        dependentUserId: 'teen-1',
       });
     });
 
@@ -1012,6 +1982,86 @@ describe('AuthService', () => {
       expect(
         mockTokenBlacklistService.blacklistAllUserTokens,
       ).toHaveBeenCalledWith('user-123', 28800);
+    });
+
+    describe('supervised teen (phase 3a)', () => {
+      beforeEach(() => {
+        mockBetterAuthService.updateOwnPassword.mockResolvedValue(undefined);
+        mockPrismaService.session.deleteMany.mockResolvedValue({ count: 1 });
+        mockTokenBlacklistService.blacklistAllUserTokens.mockResolvedValue(
+          undefined,
+        );
+      });
+
+      it('after the CORRECT current password the guardians are told and password_set_by becomes self', async () => {
+        await service.updateOwnPassword(
+          'teen-1',
+          'Current123!',
+          'NewPass123!',
+          {
+            supervised: true,
+          },
+        );
+        await flushEvents();
+
+        expect(mockEvents.onTeenPasswordChanged).toHaveBeenCalledWith({
+          userId: 'teen-1',
+        });
+        expect(
+          mockPrismaService.supervised_logins.updateMany,
+        ).toHaveBeenCalledWith({
+          where: { user_id: 'teen-1' },
+          data: { password_set_by: 'self' },
+        });
+      });
+
+      it('a WRONG current password sends no notice and changes nothing', async () => {
+        mockBetterAuthService.updateOwnPassword.mockRejectedValue(
+          new UnauthorizedException('Invalid password'),
+        );
+
+        await expect(
+          service.updateOwnPassword('teen-1', 'wrong', 'NewPass123!', {
+            supervised: true,
+          }),
+        ).rejects.toThrow(UnauthorizedException);
+        await flushEvents();
+
+        expect(mockEvents.onTeenPasswordChanged).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.supervised_logins.updateMany,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('an adult (or any non-supervised caller) triggers no notice', async () => {
+        await service.updateOwnPassword('user-1', 'Current123!', 'NewPass123!');
+        await flushEvents();
+        expect(mockEvents.onTeenPasswordChanged).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.supervised_logins.updateMany,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('the update succeeds even when the notifier throws', async () => {
+        mockEvents.onTeenPasswordChanged.mockRejectedValue(new Error('x'));
+        await expect(
+          service.updateOwnPassword('teen-1', 'Current123!', 'NewPass123!', {
+            supervised: true,
+          }),
+        ).resolves.toBeUndefined();
+        await flushEvents();
+      });
+
+      it('a failure recording password_set_by never fails the update', async () => {
+        mockPrismaService.supervised_logins.updateMany.mockRejectedValue(
+          new Error('db'),
+        );
+        await expect(
+          service.updateOwnPassword('teen-1', 'Current123!', 'NewPass123!', {
+            supervised: true,
+          }),
+        ).resolves.toBeUndefined();
+      });
     });
 
     it('should still succeed when the JWT blacklist write fails after the password changed', async () => {
@@ -1164,6 +2214,521 @@ describe('AuthService', () => {
           is_guardian: false,
           dependents_count: 0,
         });
+      });
+    });
+
+    describe('a linked device (3b)', () => {
+      const resolvedChild = {
+        profile: {
+          user_id: 'child-1',
+          email: null,
+          name: 'Ana',
+          paternal_last_name: 'Perez',
+          maternal_last_name: null,
+          birthday: new Date('2017-03-01T00:00:00.000Z'),
+          country_id: 1,
+          user_image: null,
+        },
+        post_register_complete: true,
+        authorization: {
+          grants: { global_roles: [], club_assignments: [] },
+          active_assignment: { assignment_id: null },
+          effective: { permissions: [], scope: { global: {}, club: null } },
+        },
+        legacy: {
+          roles: ['user'],
+          permissions: [],
+          club: null,
+          club_context: {
+            active_assignment_id: null,
+            active: null,
+            available: [],
+          },
+        },
+      };
+
+      beforeEach(() => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedChild,
+        );
+        mockPrismaService.linked_devices = {
+          findUnique: jest.fn().mockResolvedValue({
+            label: 'Tablet de Ana',
+            paired_at: new Date('2026-10-20T12:00:00.000Z'),
+          }),
+        };
+      });
+
+      const devicePrincipal = {
+        acting_for: false,
+        actor_sub: 'child-1',
+        scopes: ['self:read'],
+        kind: 'linked_device' as const,
+        linked_device_id: 'device-1',
+      };
+
+      it('reports principal.device {id, label, paired_at}, mode device, family null and anonymous analytics', async () => {
+        const result = await service.getProfile('child-1', devicePrincipal);
+
+        expect(result.data.principal).toEqual({
+          kind: 'linked_device',
+          scopes: ['self:read'],
+          supervision: null,
+          device: {
+            linked_device_id: 'device-1',
+            label: 'Tablet de Ana',
+            paired_at: '2026-10-20T12:00:00.000Z',
+          },
+        });
+        expect(result.data.mode).toBe('device');
+        expect(result.data.family).toBeNull();
+        expect(result.data.acting_for).toBeNull();
+        expect(result.data.analytics_anonymous).toBe(true);
+        expect(result.data.legal).toEqual(LEGAL_STATUS);
+        expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
+        expect(mockSupervisionState.describe).not.toHaveBeenCalled();
+      });
+
+      it('analytics stay anonymous even if the birthday/country policy could not prove a minor', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          {
+            ...resolvedChild,
+            profile: { ...resolvedChild.profile, birthday: null },
+          },
+        );
+
+        const result = await service.getProfile('child-1', devicePrincipal);
+
+        expect(result.data.analytics_anonymous).toBe(true);
+      });
+
+      it('an adult principal carries NO device key (the adult payload is unchanged)', async () => {
+        const result = await service.getProfile('child-1', {
+          acting_for: false,
+          actor_sub: 'child-1',
+          scopes: null,
+          kind: 'user',
+        });
+
+        expect(result.data.principal).toEqual({
+          kind: 'user',
+          scopes: null,
+          supervision: null,
+        });
+        expect('device' in result.data.principal).toBe(false);
+      });
+    });
+
+    describe('supervised principal, mode and analytics (phase 3a)', () => {
+      const resolvedWith = (
+        birthday: Date | null,
+        email: string | null = 'teen@example.com',
+      ) => ({
+        profile: {
+          user_id: 'teen-1',
+          email,
+          name: 'Ana',
+          paternal_last_name: 'Perez',
+          maternal_last_name: null,
+          birthday,
+          country_id: 1,
+          user_image: null,
+        },
+        post_register_complete: false,
+        authorization: {
+          grants: { global_roles: [], club_assignments: [] },
+          active_assignment: { assignment_id: null },
+          effective: { permissions: [], scope: { global: {}, club: null } },
+        },
+        legacy: {
+          roles: ['user'],
+          permissions: [],
+          club: null,
+          club_context: {
+            active_assignment_id: null,
+            active: null,
+            available: [],
+          },
+        },
+      });
+      const yearsAgo = (years: number): Date => {
+        const d = new Date();
+        d.setUTCFullYear(d.getUTCFullYear() - years);
+        d.setUTCDate(d.getUTCDate() - 5);
+        return d;
+      };
+
+      it('adult: kind user, mode adult, no supervision, family summary kept, identify allowed', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(30)),
+        );
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: null,
+          kind: 'user',
+        });
+
+        expect(result.data.principal).toEqual({
+          kind: 'user',
+          scopes: null,
+          supervision: null,
+        });
+        expect(result.data.mode).toBe('adult');
+        expect(result.data.analytics_anonymous).toBe(false);
+        expect(result.data.family_features).toEqual(FAMILY_FEATURES);
+        expect(result.data.family).not.toBeNull();
+        expect(mockSupervisionState.describe).not.toHaveBeenCalled();
+      });
+
+      it('unknown age (social sign-up before step 2): kind age_unknown_user, mode profile_incomplete, family hidden, anonymous', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(null),
+        );
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read', 'account:manage'],
+          kind: 'age_unknown_user',
+        });
+
+        expect(result.data.principal).toEqual({
+          kind: 'age_unknown_user',
+          scopes: ['self:read', 'account:manage'],
+          supervision: null,
+        });
+        expect(result.data.mode).toBe('profile_incomplete');
+        expect(result.data.family).toBeNull();
+        expect(result.data.analytics_anonymous).toBe(true);
+        expect(mockSupervisionState.describe).not.toHaveBeenCalled();
+        expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
+      });
+
+      it('no principal at all behaves as an adult user', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(30)),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.principal).toEqual({
+          kind: 'user',
+          scopes: null,
+          supervision: null,
+        });
+        expect(result.data.mode).toBe('adult');
+      });
+
+      it('pending teen: mode teen_pending, supervision view with days_left, family null, anonymous analytics', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(15)),
+        );
+        const view = {
+          status: 'pending_guardian',
+          pending_since: '2026-10-01T00:00:00.000Z',
+          guardians: [],
+          summary_visible_to_guardians: true,
+          days_left: 70,
+        };
+        mockSupervisionState.describe.mockResolvedValue(view);
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+          supervision: 'pending_guardian',
+        });
+
+        expect(mockSupervisionState.describe).toHaveBeenCalledWith(
+          'teen-1',
+          'pending_guardian',
+        );
+        expect(result.data.principal).toEqual({
+          kind: 'supervised_user',
+          scopes: ['self:read'],
+          supervision: view,
+        });
+        expect(result.data.mode).toBe('teen_pending');
+        expect(result.data.family).toBeNull();
+        expect(result.data.analytics_anonymous).toBe(true);
+        expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
+      });
+
+      it('active teen: mode teen_supervised and the guardians carry names only (no contact data)', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(16)),
+        );
+        const view = {
+          status: 'active',
+          pending_since: null,
+          guardians: [
+            { display_name: 'Maria Perez', relationship_type_name: 'Madre' },
+          ],
+          summary_visible_to_guardians: true,
+          days_left: null,
+        };
+        mockSupervisionState.describe.mockResolvedValue(view);
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+          supervision: 'active',
+        });
+
+        expect(result.data.mode).toBe('teen_supervised');
+        expect(result.data.principal.supervision).toEqual(view);
+        const serialized = JSON.stringify(result.data.principal);
+        for (const forbidden of ['email', 'phone', 'handle', 'login_handle']) {
+          expect(serialized).not.toContain(forbidden);
+        }
+      });
+
+      it('a NULL birthday is anonymous (unknown age fails closed)', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(null),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(true);
+      });
+
+      it('a birthday that comes back from the cache as an ISO string never 500s (teen stays anonymous)', async () => {
+        const teen = yearsAgo(15).toISOString();
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(teen as unknown as Date),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(true);
+      });
+
+      it('an adult birthday as an ISO string is still identifiable', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(30).toISOString() as unknown as Date),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(false);
+      });
+
+      it('an unreadable birthday fails closed (anonymous), never a 500', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith('garbage' as unknown as Date),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(true);
+      });
+
+      it('analytics follow the country policy (majority 16 makes a 17-year-old identifiable)', async () => {
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 13,
+          ageOfMajority: 16,
+          timeZone: 'America/Mexico_City',
+        });
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(17)),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(false);
+        expect(mockCountryAgePolicy.getPolicy).toHaveBeenCalledWith(1);
+      });
+
+      it('a guardian acting keeps the acting contract and mode adult', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(9), null),
+        );
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: true,
+          actor_sub: 'guardian-1',
+          guardianship_id: 'gs-1',
+          consent_status: 'verified',
+          scopes: ['self:read'],
+          kind: 'guardian_acting',
+        });
+
+        expect(result.data.mode).toBe('adult');
+        expect(result.data.principal).toEqual({
+          kind: 'guardian_acting',
+          scopes: ['self:read'],
+          supervision: null,
+        });
+        expect(result.data.acting_for).not.toBeNull();
+        expect(result.data.family).toBeNull();
+      });
+    });
+
+    describe('club data for a principal without club-data rights (option A)', () => {
+      const clubGrant = {
+        assignment_id: 'assign-1',
+        role_name: 'member',
+        permissions: ['club_members:read'],
+        operational: true,
+        ecclesiastical_year_id: 7,
+        club: { club_id: 10, club_name: 'Club Aguila' },
+        section: { club_section_id: 20, club_type_id: 2 },
+        scope: {},
+        status: 'active',
+      };
+      // A user with an ACTIVE club assignment from before the deploy.
+      const withActiveAssignment = () => ({
+        profile: {
+          user_id: 'teen-1',
+          email: 'teen@example.com',
+          name: 'Ana',
+          paternal_last_name: 'Perez',
+          maternal_last_name: null,
+          birthday: new Date('2011-01-01'),
+          country_id: 1,
+          user_image: null,
+        },
+        post_register_complete: true,
+        authorization: {
+          grants: {
+            global_roles: [],
+            club_assignments: [clubGrant],
+            direct_permissions: [],
+          },
+          active_assignment: { assignment_id: 'assign-1' },
+          effective: {
+            permissions: ['club_members:read'],
+            scope: {
+              global: {},
+              club: {
+                assignment_id: 'assign-1',
+                role_name: 'member',
+                club: clubGrant.club,
+                section: clubGrant.section,
+              },
+            },
+          },
+        },
+        legacy: {
+          roles: ['user'],
+          permissions: [],
+          club: { club_id: 10, club_name: 'Club Aguila', club_type: 'JA' },
+          club_context: {
+            active_assignment_id: 'assign-1',
+            active: { assignment_id: 'assign-1', club_name: 'Club Aguila' },
+            available: [
+              { assignment_id: 'assign-1', club_name: 'Club Aguila' },
+            ],
+          },
+        },
+      });
+      const emptyContext = {
+        active_assignment_id: null,
+        active: null,
+        available: [],
+      };
+
+      beforeEach(() => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          withActiveAssignment(),
+        );
+        mockSupervisionState.describe.mockResolvedValue({
+          status: 'pending_guardian',
+          pending_since: null,
+          guardians: [],
+          summary_visible_to_guardians: true,
+          days_left: 70,
+        });
+      });
+
+      const expectNoClubData = (data: Record<string, any>) => {
+        expect(data.club).toBeNull();
+        expect(data.club_context).toEqual(emptyContext);
+        expect(data.authorization.grants.club_assignments).toEqual([]);
+        expect(data.authorization.active_assignment).toEqual({
+          assignment_id: null,
+        });
+        expect(data.authorization.effective.scope.club).toBeNull();
+        expect(data.authorization.effective.permissions).toEqual([]);
+        expect(JSON.stringify(data)).not.toContain('Club Aguila');
+      };
+
+      it('pending teen with an active pre-deploy assignment: no club in /auth/me, structure intact', async () => {
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+          supervision: 'pending_guardian',
+        });
+
+        expectNoClubData(result.data);
+        // The app parser keeps working: same keys, empty lists, not a missing block.
+        expect(result.data.authorization.grants.global_roles).toEqual([]);
+        expect(result.data.mode).toBe('teen_pending');
+        expect(result.data.user_id).toBe('teen-1');
+      });
+
+      it('unknown age with an active assignment: no club in /auth/me', async () => {
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'age_unknown_user',
+        });
+
+        expectNoClubData(result.data);
+        expect(result.data.mode).toBe('profile_incomplete');
+      });
+
+      it('a supervised principal with no supervision status fails closed', async () => {
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+        });
+
+        expectNoClubData(result.data);
+      });
+
+      it('an ACTIVE teen keeps the club context', async () => {
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+          supervision: 'active',
+        });
+
+        expect(result.data.club?.club_name).toBe('Club Aguila');
+        expect(result.data.authorization.grants.club_assignments).toHaveLength(
+          1,
+        );
+        expect(result.data.authorization.active_assignment).toEqual({
+          assignment_id: 'assign-1',
+        });
+      });
+
+      it('an adult and a guardian acting keep the club context', async () => {
+        const adult = await service.getProfile('teen-1');
+        expect(adult.data.club?.club_name).toBe('Club Aguila');
+
+        const acting = await service.getProfile('teen-1', {
+          acting_for: true,
+          actor_sub: 'guardian-1',
+          guardianship_id: 'gs-1',
+          consent_status: 'verified',
+          scopes: ['self:read'],
+          kind: 'guardian_acting',
+        });
+        expect(acting.data.club?.club_name).toBe('Club Aguila');
       });
     });
 

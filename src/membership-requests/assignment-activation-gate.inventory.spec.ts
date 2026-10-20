@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import ts from 'typescript';
+import { assertAssignmentActivationAllowed } from './assignment-activation-gate';
 
 /**
  * Guard for family-profiles verify 2c C1/C2 (+ r2 W-N1): EVERY production write
@@ -884,6 +885,9 @@ const EXPECTED_WRITE_SITES = [
   'membership-requests/membership-requests.service.ts | MembershipRequestsService.cancelPendingForUser | updateMany | no-activation | ungated',
   'membership-requests/membership-requests.service.ts | MembershipRequestsService.expireStaleRequests | updateManyAndReturn | no-activation | ungated',
   'membership-requests/membership-requests.service.ts | MembershipRequestsService.reject | updateMany | no-activation | ungated',
+  // POST /club-sections/:clubSectionId/dependents (phase 3c): a PENDING request for a
+  // director-created minor under club custody; approve stays gated by the consent
+  'guardianships/director-dependents.service.ts | DirectorDependentsService.createInTransaction | create | no-activation | ungated',
   // club selection: status 'pending' (a request, approved later through approve)
   'post-registration/post-registration.service.ts | PostRegistrationService.resolveMemberAssignment | create | no-activation | ungated',
   'post-registration/post-registration.service.ts | PostRegistrationService.resolveMemberAssignment | update | no-activation | ungated',
@@ -1299,5 +1303,89 @@ describe('club role activation consent gate inventory (family-profiles C1/C2)', 
       expect(sites).toEqual([]);
       expect(violations).toEqual([]);
     });
+  });
+});
+
+/**
+ * Phase 3a (FP3-01/FP3-02): the gate is keyed on AGE, not on a dependent
+ * profile. These checks keep the inventory honest about that: the seven files
+ * that run the gate are the expected ones, the gate source encodes the
+ * age-based rule, and the real gate refuses a 16-year-old without consent.
+ */
+describe('activation gate is age-based (family-profiles phase 3a)', () => {
+  const srcRoot = join(process.cwd(), 'src');
+  const gateSource = readFileSync(
+    join(srcRoot, 'membership-requests/assignment-activation-gate.ts'),
+    'utf8',
+  );
+
+  const GATE_HELPERS =
+    /\b(?:assertAssignmentActivationAllowed|isAssignmentActivationAllowed|lockActivationDependentsAscending|assertApprovable)\b/;
+  const EXPECTED_GATE_FILES = [
+    'annual-membership/annual-membership.service.ts',
+    'clubs/clubs.service.ts',
+    'membership-requests/assignment-activation-gate.ts',
+    'membership-requests/consent-gate.service.ts',
+    'membership-requests/membership-requests.service.ts',
+    'requests/requests.service.ts',
+    'year-cut/year-cut.service.ts',
+  ];
+
+  it('is invoked by exactly the seven expected activating files', () => {
+    const files = productionFiles(srcRoot).filter((path) =>
+      GATE_HELPERS.test(readFileSync(join(srcRoot, path), 'utf8')),
+    );
+    expect(files.sort()).toEqual(EXPECTED_GATE_FILES);
+  });
+
+  it('encodes the age rule: country majority, calendar math in the country TZ, NULL birthday fails closed', () => {
+    expect(gateSource).toMatch(/ageToday\(/);
+    expect(gateSource).toMatch(/ageOfMajority/);
+    expect(gateSource).toMatch(/age_of_majority/);
+    expect(gateSource).toMatch(/!user\.birthday|!birthday/);
+    // It reads the users row (birthday), not only the dependent profile table.
+    expect(gateSource).toMatch(/tx\.users\.findUnique|db\.users\.findMany/);
+    expect(gateSource).not.toMatch(/tx\.dependent_profiles\.findUnique/);
+  });
+
+  it('the real gate refuses a 16-year-old with no consent (409 MR_CONSENT_NOT_VERIFIED)', async () => {
+    const birthday = new Date();
+    birthday.setUTCFullYear(birthday.getUTCFullYear() - 16);
+    const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      users: {
+        findUnique: jest.fn().mockResolvedValue({
+          birthday,
+          country_id: null,
+          dependent_profile: null,
+        }),
+      },
+      guardianships: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+
+    await expect(
+      assertAssignmentActivationAllowed(tx as never, 'teen-1'),
+    ).rejects.toMatchObject({ code: 'MR_CONSENT_NOT_VERIFIED', status: 409 });
+  });
+
+  it('classifies the director-create site (phase 3c): a PENDING request, never an activation', () => {
+    const sites = scanSource(srcRoot)
+      .sites.filter((site) => site.path.startsWith('guardianships/'))
+      .map(format);
+    // The one guardianships write of club_role_assignments is the director-create
+    // request. It carries the literal status 'pending'.
+    expect(sites).toEqual([
+      'guardianships/director-dependents.service.ts | DirectorDependentsService.createInTransaction | create | no-activation | ungated',
+    ]);
+    const source = readFileSync(
+      join(srcRoot, 'guardianships/director-dependents.service.ts'),
+      'utf8',
+    );
+    const write = source.slice(
+      source.indexOf('tx.club_role_assignments.create'),
+      source.indexOf('select: { assignment_id: true }'),
+    );
+    expect(write).toMatch(/status:\s*'pending'/);
+    expect(write).not.toMatch(/status:\s*'active'/);
   });
 });

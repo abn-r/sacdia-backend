@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
@@ -11,6 +12,13 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ConsentGateService } from './consent-gate.service';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
+import { FROZEN_PURGE_AFTER_DAYS } from '../guardianships/guardianships.constants';
+import { lockDependentsAscending } from '../guardianships/guardianship-queries';
+import {
+  LINKED_DEVICE_REVOKER,
+  type LinkedDeviceRevoker,
+} from '../guardianships/linked-device-revoker.port';
 import {
   addDays,
   effectiveMembershipExpiry,
@@ -43,6 +51,9 @@ export class MembershipRequestsService {
     private readonly roleEligibility: ClubRoleEligibilityService,
     private readonly consentGate: ConsentGateService,
     private readonly auditLogs: AuditLogsService,
+    private readonly actingForCache: ActingForCache,
+    @Inject(LINKED_DEVICE_REVOKER)
+    private readonly deviceRevoker: LinkedDeviceRevoker,
   ) {}
 
   /**
@@ -50,10 +61,11 @@ export class MembershipRequestsService {
    *
    * Each item carries a `consent` block: `null` for adults, and for dependents
    * (minors without an account) the consent status, whether the signed form is
-   * uploaded and who the guardians are. The blocks come from ONE batched read
-   * for the whole page. `users.email` is null for dependents.
+   * uploaded, who the guardians are and whether the CALLER (`viewerId`) may
+   * verify it (`viewer_can_verify`, four-eyes). The blocks come from batched
+   * reads for the whole page. `users.email` is null for dependents.
    */
-  async listPending(clubSectionId: number) {
+  async listPending(clubSectionId: number, viewerId: string) {
     const requests = await this.prisma.club_role_assignments.findMany({
       where: {
         club_section_id: clubSectionId,
@@ -83,7 +95,7 @@ export class MembershipRequestsService {
 
     const userIds = [...new Set(requests.map((request) => request.user_id))];
     const [consent, consentStates, timeoutDays] = await Promise.all([
-      this.consentGate.loadConsentBlocks(this.prisma, userIds),
+      this.consentGate.loadConsentBlocks(this.prisma, userIds, viewerId),
       this.consentGate.loadDependentConsent(this.prisma, userIds),
       this.getPendingTimeoutDays(),
     ]);
@@ -346,6 +358,9 @@ export class MembershipRequestsService {
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    // users_pr.complete went back to false: the principal kind depends on it
+    // (unknown-age restriction), so re-resolve it on the next request.
+    await this.actingForCache.bump(userId);
 
     this.emitRealtimeInvalidation(
       cancelledAssignment.club_section_id,
@@ -420,6 +435,14 @@ export class MembershipRequestsService {
    *    from max(created_at, verified_at), so a request that waited weeks for the
    *    paper form is not expired the moment the director verifies it;
    *  - everybody else: the base timeout from creation, unchanged.
+   *
+   * Phase 3c (P3-A18, ruling 6): when the request of a CUSTODIAL minor expires
+   * (a minor a director registered that no family claimed: club custody only,
+   * no guardian, nothing else live) the minor is frozen on the Phase 2 schedule
+   * (`frozen_at = now`, `purge_after = now + 90 days`, devices revoked) and the
+   * purge cron removes it later. The dependent locks are taken BEFORE the bulk
+   * write: approve locks the dependent and then writes the assignment, so the
+   * opposite order could deadlock.
    */
   async expireStaleRequests(): Promise<number> {
     const timeoutDays = await this.getPendingTimeoutDays();
@@ -427,24 +450,30 @@ export class MembershipRequestsService {
     const now = new Date();
     const baseCutoff = addDays(now, -timeoutDays);
 
-    const { count, userIds } = await this.prisma.$transaction(async (tx) => {
-      // Nothing can expire before the base cutoff: dependents only get MORE time.
-      const candidates = await tx.club_role_assignments.findMany({
-        where: {
-          status: 'pending',
-          active: true,
-          created_at: { lt: baseCutoff },
-        },
-        select: { assignment_id: true, user_id: true, created_at: true },
-      });
-      if (candidates.length === 0) return { count: 0, userIds: [] as string[] };
+    const { count, userIds, frozenUserIds } = await this.prisma.$transaction(
+      async (tx) => {
+        // Nothing can expire before the base cutoff: dependents only get MORE time.
+        const candidates = await tx.club_role_assignments.findMany({
+          where: {
+            status: 'pending',
+            active: true,
+            created_at: { lt: baseCutoff },
+          },
+          select: { assignment_id: true, user_id: true, created_at: true },
+        });
+        if (candidates.length === 0) {
+          return {
+            count: 0,
+            userIds: [] as string[],
+            frozenUserIds: [] as string[],
+          };
+        }
 
-      const consent = await this.consentGate.loadDependentConsent(tx, [
-        ...new Set(candidates.map(({ user_id }) => user_id)),
-      ]);
+        const consent = await this.consentGate.loadDependentConsent(tx, [
+          ...new Set(candidates.map(({ user_id }) => user_id)),
+        ]);
 
-      const expirableIds = candidates
-        .filter(({ user_id, created_at }) =>
+        const expirable = candidates.filter(({ user_id, created_at }) =>
           isMembershipRequestExpired(
             {
               createdAt: created_at,
@@ -453,36 +482,144 @@ export class MembershipRequestsService {
             },
             now,
           ),
-        )
-        .map(({ assignment_id }) => assignment_id);
-      if (expirableIds.length === 0)
-        return { count: 0, userIds: [] as string[] };
+        );
+        if (expirable.length === 0) {
+          return {
+            count: 0,
+            userIds: [] as string[],
+            frozenUserIds: [] as string[],
+          };
+        }
 
-      const affected = await tx.club_role_assignments.updateManyAndReturn({
-        where: {
-          assignment_id: { in: expirableIds },
-          status: 'pending',
-          active: true,
-        },
-        data: {
-          status: 'expired',
-          modified_at: new Date(),
-        },
-        select: { user_id: true },
-      });
-      const userIds = [...new Set(affected.map(({ user_id }) => user_id))];
-      if (userIds.length) {
-        await this.authorizationContextVersion.bumpMany(tx, userIds);
-      }
-      return { count: affected.length, userIds };
-    });
+        // Dependents among the expiring requests, locked (ascending) before
+        // anything is written.
+        const lockedMinors = await this.lockExpiringDependents(
+          tx,
+          expirable.map(({ user_id }) => user_id),
+        );
+
+        const affected = await tx.club_role_assignments.updateManyAndReturn({
+          where: {
+            assignment_id: {
+              in: expirable.map(({ assignment_id }) => assignment_id),
+            },
+            status: 'pending',
+            active: true,
+          },
+          data: {
+            status: 'expired',
+            modified_at: new Date(),
+          },
+          select: { user_id: true },
+        });
+        const userIds = [...new Set(affected.map(({ user_id }) => user_id))];
+        if (userIds.length) {
+          await this.authorizationContextVersion.bumpMany(tx, userIds);
+        }
+
+        const frozenUserIds = await this.freezeAbandonedCustodialMinors(
+          tx,
+          lockedMinors.filter((id) => userIds.includes(id)),
+          now,
+        );
+        return { count: affected.length, userIds, frozenUserIds };
+      },
+    );
 
     await Promise.all(
       userIds.map((userId) =>
         this.authorizationContext.invalidateUserAuthorizationCache(userId),
       ),
     );
+    // After the commit; the bump never throws. A frozen minor stops resolving
+    // as a managed dependent on its next request.
+    await Promise.all(
+      frozenUserIds.map((dependentId) => this.actingForCache.bump(dependentId)),
+    );
     return count;
+  }
+
+  /**
+   * Takes the advisory lock of every dependent among `userIds` (ascending id
+   * order) and returns their ids. Adults have no profile and take no lock.
+   */
+  private async lockExpiringDependents(
+    tx: Prisma.TransactionClient,
+    userIds: string[],
+  ): Promise<string[]> {
+    const profiles = await tx.dependent_profiles.findMany({
+      where: {
+        user_id: { in: [...new Set(userIds)] },
+        frozen_at: null,
+        purged_at: null,
+      },
+      select: { user_id: true },
+    });
+    return lockDependentsAscending(
+      tx,
+      profiles.map(({ user_id }) => user_id),
+    );
+  }
+
+  /**
+   * Freezes the given dependents (already locked, their request just expired)
+   * that nobody holds: exactly the club's custody row, no guardian of any kind
+   * (a family claim in flight or a pending guardian counts as a guardian) and no
+   * other pending or active membership. Returns the frozen ids.
+   */
+  private async freezeAbandonedCustodialMinors(
+    tx: Prisma.TransactionClient,
+    dependentIds: string[],
+    now: Date,
+  ): Promise<string[]> {
+    if (dependentIds.length === 0) return [];
+
+    const holders = await tx.guardianships.findMany({
+      where: {
+        dependent_user_id: { in: dependentIds },
+        consent_status: { not: 'revoked' },
+      },
+      select: { dependent_user_id: true, is_custodian: true },
+    });
+    const stillMembers = new Set(
+      (
+        await tx.club_role_assignments.findMany({
+          where: {
+            user_id: { in: dependentIds },
+            active: true,
+            status: { in: ['pending', 'active'] },
+          },
+          select: { user_id: true },
+        })
+      ).map(({ user_id }) => user_id),
+    );
+
+    const frozen: string[] = [];
+    for (const dependentId of dependentIds) {
+      const rows = holders.filter(
+        (row) => row.dependent_user_id === dependentId,
+      );
+      const custodialOnly =
+        rows.length > 0 && rows.every((row) => row.is_custodian);
+      if (!custodialOnly || stillMembers.has(dependentId)) continue;
+
+      await tx.dependent_profiles.updateMany({
+        where: { user_id: dependentId, frozen_at: null, purged_at: null },
+        data: {
+          frozen_at: now,
+          purge_after: new Date(
+            now.getTime() + FROZEN_PURGE_AFTER_DAYS * 24 * 60 * 60 * 1000,
+          ),
+        },
+      });
+      await this.deviceRevoker.revokeAllForDependent(
+        tx,
+        dependentId,
+        'dependent_frozen',
+      );
+      frozen.push(dependentId);
+    }
+    return frozen;
   }
 
   private async getPendingTimeoutDays(): Promise<number> {

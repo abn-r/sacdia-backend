@@ -86,6 +86,13 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   'family:custody_transferred': 'approvals',
   'family:evidence_uploaded': 'approvals',
   'family:consent_verified': 'approvals',
+  // Phase 3a. `family:security` is MANDATORY (see MANDATORY_SOURCE_PREFIXES):
+  // the category only decides where it shows in the app, a guardian cannot mute
+  // it. Reminders to the teen / nudges to the guardian are ordinary reminders.
+  'family:security': 'approvals',
+  'family:guardian_linked': 'approvals',
+  'family:teen_reminder': 'reminders',
+  'family:age_nudge': 'reminders',
   // Member-of-month (director notification = approval-adjacent)
   'units:member_of_month': 'approvals',
   'units:member_of_month_director': 'approvals',
@@ -121,11 +128,27 @@ export function getCategoryForSource(
 }
 
 /**
- * Sources that are explicitly excluded from all user opt-out filtering.
- * These are sent regardless of notification_preferences settings.
- * Currently only admin-initiated sends; extend as needed.
+ * Sources that are explicitly excluded from all user opt-out filtering and from
+ * the global category switch. They are sent regardless of
+ * notification_preferences settings:
+ *  - `admin`: admin-initiated sends;
+ *  - `family:security`: security notices to the guardians of a supervised teen
+ *    (new session, password change/reset, lockout, login enabled/disabled). A
+ *    guardian must never be able to mute these.
+ * A prefix matches the source itself and anything below it (`prefix:...`).
  */
-export const ADMIN_SOURCE_PREFIXES = ['admin'] as const;
+export const MANDATORY_SOURCE_PREFIXES = ['admin', 'family:security'] as const;
+
+/** @deprecated use {@link MANDATORY_SOURCE_PREFIXES}. */
+export const ADMIN_SOURCE_PREFIXES = MANDATORY_SOURCE_PREFIXES;
+
+/** True when the source can never be opted out of. */
+export function isMandatorySource(source: string | undefined | null): boolean {
+  if (!source) return false;
+  return MANDATORY_SOURCE_PREFIXES.some(
+    (prefix) => source === prefix || source.startsWith(`${prefix}:`),
+  );
+}
 
 /**
  * Validate whether a source string has been explicitly mapped.

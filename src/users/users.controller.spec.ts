@@ -48,4 +48,24 @@ describe('UsersController', () => {
       principal,
     );
   });
+
+  it.each([
+    ['linked_device', true],
+    ['user', false],
+    ['guardian_acting', false],
+  ])(
+    'a %s principal gets withoutHealth=%s on GET /users/:userId',
+    async (kind, withoutHealth) => {
+      mockUsersService.findOne.mockResolvedValue({ status: 'success' });
+
+      await controller.findOne('20a9a762-a4fa-49dd-93a6-3851e27f8b69', {
+        user: { sub: 'u1', kind } as never,
+      });
+
+      expect(mockUsersService.findOne).toHaveBeenLastCalledWith(
+        '20a9a762-a4fa-49dd-93a6-3851e27f8b69',
+        { withoutHealth },
+      );
+    },
+  );
 });

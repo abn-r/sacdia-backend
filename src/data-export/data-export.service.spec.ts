@@ -443,7 +443,7 @@ describe('DataExportService', () => {
       const rows = [
         {
           document_type: 'terms',
-          document_version: '1.0.0-store',
+          document_version: '2.0.0-family',
           accepted_at: new Date('2026-10-15T22:01:00.000Z'),
           method: 'register_checkbox',
           ip_address: '203.0.113.45',

@@ -12,7 +12,7 @@ describe('Auth E2E Tests', () => {
   let prisma: PrismaService;
 
   const mockBetterAuthService = {
-    signInWithPassword: jest.fn().mockResolvedValue({
+    signInWithIdentifier: jest.fn().mockResolvedValue({
       user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
       session: {
         token: 'fake-session-token',
@@ -20,6 +20,8 @@ describe('Auth E2E Tests', () => {
       },
       accessToken: 'fake-jwt',
     }),
+    getSessionOwnerId: jest.fn().mockResolvedValue('test-user-id'),
+    findLinkedDeviceOfSession: jest.fn().mockResolvedValue(null),
     refreshSession: jest.fn().mockResolvedValue({
       user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
       session: {
@@ -118,7 +120,7 @@ describe('Auth E2E Tests', () => {
     });
 
     it('should fail with invalid credentials', async () => {
-      mockBetterAuthService.signInWithPassword.mockRejectedValueOnce(
+      mockBetterAuthService.signInWithIdentifier.mockRejectedValueOnce(
         new Error('Invalid login credentials'),
       );
 

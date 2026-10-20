@@ -34,14 +34,21 @@ import { JwtAuthGuard } from '../common/guards';
 import { ConsentEvidenceFilePipe } from './consent-evidence-file.pipe';
 import {
   CreateDependentDto,
+  DisableSupervisedLoginDto,
+  EnableSupervisedLoginDto,
   IssueLinkCodeDto,
+  ReactivateSupervisedLoginDto,
   RedeemLinkCodeDto,
   RevokeGuardianshipDto,
+  SetSupervisedPasswordDto,
 } from './dto';
 import { GuardianEvidenceService } from './guardian-evidence.service';
+import { DevicePairingService } from './device-pairing.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
+import { LinkedDevicesService } from './linked-devices.service';
 import { GuardianshipsService } from './guardianships.service';
 import { LinkCodesService } from './link-codes.service';
+import { SupervisedLoginsService } from './supervised-logins.service';
 
 type CurrentUserPayload = { sub: string };
 
@@ -71,6 +78,9 @@ export class GuardianshipsController {
     private readonly linkCodes: LinkCodesService,
     private readonly lifecycle: GuardianshipLifecycleService,
     private readonly evidence: GuardianEvidenceService,
+    private readonly supervisedLogins: SupervisedLoginsService,
+    private readonly devicePairing: DevicePairingService,
+    private readonly linkedDevices: LinkedDevicesService,
   ) {}
 
   @Get('relationship-types')
@@ -263,6 +273,243 @@ export class GuardianshipsController {
     return {
       status: 'success',
       data: await this.linkCodes.redeem(user.sub, dto),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Supervised login (Phase 3a, FAMILY_TEEN_LOGIN_ENABLED)
+  // ---------------------------------------------------------------------------
+
+  @Get('me/dependents/:dependentId/supervised-login')
+  @ApiOperation({
+    summary: "Eligibility and state of the minor's own login",
+    description:
+      'Verified guardians see the login (with the generated handle). A guardian whose link is still pending gets `eligible: false` / `consent_not_verified` and nothing else. 404 FAMILY_FEATURE_DISABLED while the flag is off.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ eligible, ineligible_reason, supervised_login }',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'GUARDIANSHIP_NOT_FOUND or FAMILY_FEATURE_DISABLED',
+  })
+  async getSupervisedLogin(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.get(user.sub, dependentId),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/supervised-login')
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 5 }))
+  @ApiOperation({
+    summary: 'Give a 13-17 year old their own login (handle or email)',
+    description:
+      'Verified guardian, as self. Creates the credential with the guardian-chosen password, the server-generated handle (method `handle`), revokes any linked device and ends acting for the child. The password is never returned or logged.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '{ supervised_login, devices_revoked }',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'GUARDIANSHIP_CONSENT_NOT_VERIFIED (pending link) or ACTING_FOR_SCOPE_DENIED (acting)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'GUARDIANSHIP_NOT_FOUND or FAMILY_FEATURE_DISABLED',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'SUPERVISED_LOGIN_ALREADY_ENABLED or SUPERVISED_LOGIN_EMAIL_UNAVAILABLE',
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'SUPERVISED_LOGIN_NOT_ELIGIBLE (age) or SUPERVISED_LOGIN_PASSWORD_INVALID',
+  })
+  async enableSupervisedLogin(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Body() dto: EnableSupervisedLoginDto,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.enable(user.sub, dependentId, dto),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/supervised-login/disable')
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 20 }))
+  @ApiOperation({
+    summary: "Disable the minor's own login (reversible while a minor)",
+    description:
+      'All sessions are deleted and the next request of the child is a 401. Acting for the child resumes when the login was guardian-enabled.',
+  })
+  @ApiResponse({ status: 200, description: '{ supervised_login }' })
+  @ApiResponse({
+    status: 404,
+    description: 'SUPERVISED_LOGIN_NOT_FOUND or GUARDIANSHIP_NOT_FOUND',
+  })
+  async disableSupervisedLogin(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Body() dto: DisableSupervisedLoginDto,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.disable(user.sub, dependentId, dto),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/supervised-login/reactivate')
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 20 }))
+  @ApiOperation({
+    summary: 'Re-enable a disabled login',
+    description:
+      'A handle login needs a NEW password (the old one is replaced). Sessions are not restored.',
+  })
+  @ApiResponse({ status: 200, description: '{ supervised_login }' })
+  @ApiResponse({ status: 409, description: 'SUPERVISED_LOGIN_ALREADY_ENABLED' })
+  @ApiResponse({
+    status: 422,
+    description: 'SUPERVISED_LOGIN_PASSWORD_INVALID',
+  })
+  async reactivateSupervisedLogin(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Body() dto: ReactivateSupervisedLoginDto,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.reactivate(user.sub, dependentId, dto),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/supervised-login/password')
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 20 }))
+  @ApiOperation({
+    summary: "Reset the minor's password",
+    description:
+      'Handle login: the guardian sets a new password. Email login: sessions are cut and the standard reset email goes to the child. 5 per hour per dependent (429).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ sessions_revoked, method, email_sent }',
+  })
+  @ApiResponse({
+    status: 422,
+    description: 'SUPERVISED_LOGIN_PASSWORD_INVALID',
+  })
+  @ApiResponse({ status: 429, description: '5 resets per hour per dependent' })
+  async resetSupervisedPassword(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Body() dto: SetSupervisedPasswordDto,
+  ) {
+    return {
+      status: 'success',
+      data: await this.supervisedLogins.resetPassword(
+        user.sub,
+        dependentId,
+        dto,
+      ),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/devices/pairing-tokens')
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 10 }))
+  @ApiOperation({
+    summary: "Create the QR token that links a child's phone",
+    description:
+      'Verified guardian, as self (acting is 403). The child must have no account, be under the minimum self-login age of its country and have fewer than 2 active devices. The token is single use and lives 10 minutes; a new one revokes the earlier open ones. It is returned ONCE and stored only as an HMAC. 404 FAMILY_FEATURE_DISABLED while FAMILY_LINKED_DEVICE_ENABLED is off.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '{ pairing_token, qr_payload, expires_at, expires_in }',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'GUARDIANSHIP_CONSENT_NOT_VERIFIED (pending link) or ACTING_FOR_SCOPE_DENIED (acting)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'GUARDIANSHIP_NOT_FOUND or FAMILY_FEATURE_DISABLED',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'DEVICE_LIMIT_REACHED (the body carries only the code: read the cap from limits.max_devices in GET .../devices or GET /guardianships/me/dependents)',
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'DEVICE_PAIRING_NOT_ELIGIBLE {reason: has_supervised_login | age_not_under_min_self_login}',
+  })
+  async issueDevicePairingToken(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.devicePairing.issue(user.sub, dependentId),
+    };
+  }
+
+  @Get('me/dependents/:dependentId/devices')
+  @ApiOperation({
+    summary: 'Linked devices of a child (active, and revoked for 30 days)',
+    description:
+      'Any VERIFIED guardian of the child, not only the one who paired the phone. Pending link 403, stranger 404.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ devices, limits: { max_devices } }',
+  })
+  async listDevices(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.linkedDevices.list(user.sub, dependentId),
+    };
+  }
+
+  @Post('me/dependents/:dependentId/devices/:deviceId/revoke')
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 30 }))
+  @ApiOperation({
+    summary: 'Unlink a device (immediate)',
+    description:
+      'Any verified guardian. The device session is deleted and the epoch moves: the phone gets 401 AUTH_DEVICE_REVOKED on its very next request, even with an unexpired token. Idempotent (a repeat answers 200 and writes nothing). The other verified guardians are told.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '{ linked_device_id, revoked_at, revoked_reason }',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'DEVICE_NOT_FOUND (also a device of another child)',
+  })
+  async revokeDevice(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.linkedDevices.revoke(user.sub, dependentId, deviceId),
     };
   }
 

@@ -1,4 +1,5 @@
 import {
+  HttpStatus,
   Inject,
   Injectable,
   ServiceUnavailableException,
@@ -13,7 +14,20 @@ import {
 } from '../better-auth/better-auth.service';
 import { isPresentedAccessJwtForUser } from './presented-access-jwt';
 import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, loginIdentifierOf } from './dto/login.dto';
+import { LoginFailureCounter } from './login-failure-counter';
+import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
+import {
+  deviceRevoked,
+  isDeviceAccessError,
+  supervisedAccessRevoked,
+} from './acting-for/acting-for.errors';
+import {
+  fireEvent,
+  resolveSupervisedLoginEvents,
+  SUPERVISED_LOGIN_EVENTS,
+  type SupervisedLoginEvents,
+} from './supervised/supervised-login-events.port';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
@@ -33,15 +47,29 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { EmailService } from '../common/email/email.service';
 import {
   AppBadRequestException,
+  AppException,
   AppNotFoundException,
   AppUnauthorizedException,
   AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { LegalService } from '../legal/legal.service';
-import { ageToday, parseCalendarDate } from '../common/age/age.util';
+import {
+  ageToday,
+  parseCalendarDate,
+  toDateValue,
+} from '../common/age/age.util';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
-import type { AuthPrincipal } from './acting-for/auth-principal';
+import {
+  principalSeesClubData,
+  type AuthPrincipal,
+} from './acting-for/auth-principal';
+import { stripClubContext } from './acting-for/strip-club-context';
+import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
+import { SupervisionStateService } from '../guardianships/supervision-state.service';
+import { LinkedDeviceGate } from './device/linked-device.gate';
+import { LinkedDevicesService } from '../guardianships/linked-devices.service';
+import type { LinkedDeviceSessionInfo } from '../better-auth/better-auth.service';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -88,10 +116,47 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly legalService: LegalService,
     private readonly countryAgePolicy: CountryAgePolicyService,
-  ) {}
+    private readonly familyFlags: FamilyFeatureFlagsService,
+    private readonly supervisionState: SupervisionStateService,
+    private readonly loginFailures: LoginFailureCounter,
+    private readonly supervisedResolver: SupervisedPrincipalResolver,
+    private readonly linkedDeviceGate: LinkedDeviceGate,
+    private readonly linkedDevices: LinkedDevicesService,
+    // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
+    // every guardian security notice into a silent no-op (FP3-23).
+    @Inject(SUPERVISED_LOGIN_EVENTS)
+    events?: Partial<SupervisedLoginEvents>,
+  ) {
+    this.events = resolveSupervisedLoginEvents(events);
+  }
 
-  private async assertRegistrationAge(dto: RegisterDto): Promise<void> {
-    if (!dto.birthday) return;
+  private readonly events: SupervisedLoginEvents;
+
+  /**
+   * Blocks anyone below the minimum self-login age and returns the age facts
+   * the register transaction must persist:
+   *  - `supervised`: the person falls in the supervised range (minimum age <=
+   *    age < majority); they get a `supervised_logins` row with the
+   *    registration so the guardian-less clock starts.
+   *  - `birthday`: the parsed calendar date (UTC midnight). It MUST be stored
+   *    with the account: the principal resolver reads it from `users`, and
+   *    without it a self-registered teen is treated as an adult until the
+   *    birthday is saved through PATCH /users/:id.
+   *  - `countryId`: the country whose policy decided the age, only when it
+   *    exists (an unknown id was evaluated with the default policy, the same
+   *    one a NULL country gets, so leaving it NULL keeps the decision).
+   * Without a birthday nothing is known; the supervised row is then created
+   * when the birthday is saved (UsersService).
+   */
+  private async assertRegistrationAge(dto: RegisterDto): Promise<{
+    supervised: boolean;
+    birthday: Date | null;
+    countryId: number | null;
+  }> {
+    const countryId = await this.knownCountryId(dto.country_id);
+    if (!dto.birthday) {
+      return { supervised: false, birthday: null, countryId };
+    }
 
     const birthday = parseCalendarDate(dto.birthday);
     if (!birthday) {
@@ -102,11 +167,25 @@ export class AuthService {
     }
 
     const policy = await this.countryAgePolicy.getPolicy(dto.country_id);
-    if (ageToday(birthday, policy.timeZone) < policy.minSelfLoginAge) {
+    const age = ageToday(birthday, policy.timeZone);
+    if (age < policy.minSelfLoginAge) {
       throw new AppUnprocessableEntityException(
         ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
       );
     }
+    return { supervised: age < policy.ageOfMajority, birthday, countryId };
+  }
+
+  /** The register country, only when it exists (the column is a foreign key). */
+  private async knownCountryId(
+    countryId: number | undefined,
+  ): Promise<number | null> {
+    if (countryId === undefined || countryId === null) return null;
+    const country = await this.prisma.countries.findUnique({
+      where: { country_id: countryId },
+      select: { country_id: true },
+    });
+    return country ? country.country_id : null;
   }
 
   async register(dto: RegisterDto, context?: SessionRequestContext) {
@@ -123,7 +202,7 @@ export class AuthService {
     //     "Mi familia". Runs BEFORE createUser so nothing is created. The
     //     birthday is optional here (API clients can omit it); the authoritative
     //     gate is UsersService.update (FP-24).
-    await this.assertRegistrationAge(dto);
+    const ageFacts = await this.assertRegistrationAge(dto);
 
     // 1. Create user in Better Auth (outside transaction — BA manages its own DB writes).
     //    BA creates the row in `users` (mapped via prismaAdapter: user_id, user_image, etc.)
@@ -139,12 +218,19 @@ export class AuthService {
     //    If this fails we roll back by revoking the BA session (soft cleanup).
     try {
       await this.prisma.$transaction(async (tx) => {
-        // 2a. Persist last names (BA only stores name; SACDIA needs granular fields)
+        // 2a. Persist last names (BA only stores name; SACDIA needs granular
+        //     fields) and the age facts: the principal resolver reads the
+        //     birthday from here, so a self-registered teen is supervised from
+        //     the very first request instead of an adult until PATCH /users.
         await tx.users.update({
           where: { user_id: baResult.user.id },
           data: {
             paternal_last_name: dto.paternal_last_name,
             maternal_last_name: dto.maternal_last_name,
+            ...(ageFacts.birthday ? { birthday: ageFacts.birthday } : {}),
+            ...(ageFacts.countryId !== null
+              ? { country_id: ageFacts.countryId }
+              : {}),
           },
         });
 
@@ -177,6 +263,20 @@ export class AuthService {
             role_id: userRole.role_id,
           },
         });
+
+        // 2c-bis. A self-registered 13-17 starts supervised: the row also starts
+        //         the 90-day guardian-less clock (pending_since = now).
+        if (ageFacts.supervised) {
+          await tx.supervised_logins.create({
+            data: {
+              user_id: baResult.user.id,
+              method: 'email',
+              origin: 'self_registered',
+              password_set_by: 'self',
+              pending_since: new Date(),
+            },
+          });
+        }
 
         // 2d. Record Terms/Privacy acceptance (append-only evidence)
         await this.legalService.recordOnRegister(
@@ -256,22 +356,51 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, context?: SessionRequestContext) {
-    const maskedEmail = maskEmail(dto.email);
+    const identifier = loginIdentifierOf(dto);
+    // The identifier is sensitive (an email or a login handle): logs only get
+    // the masked email, or just the kind of identifier for a handle.
+    const loggedAs = identifier.includes('@')
+      ? maskEmail(identifier)
+      : '[handle]';
+    const ip = context?.ipAddress;
+
+    // 0. Progressive lockout, checked BEFORE the credentials. A lock applies to
+    //    the correct password too and to identifiers that do not exist, with the
+    //    same answer.
+    const lock = await this.loginFailures.check(identifier, ip);
+    if (lock.locked) {
+      throw new AppException(
+        ErrorCode.AUTH_LOGIN_LOCKED,
+        HttpStatus.TOO_MANY_REQUESTS,
+        { retry_after_seconds: lock.retryAfterSeconds },
+      );
+    }
 
     // 1. Authenticate with Better Auth
     let baResult: Awaited<
-      ReturnType<typeof this.betterAuthService.signInWithPassword>
+      ReturnType<typeof this.betterAuthService.signInWithIdentifier>
     >;
     try {
-      baResult = await this.betterAuthService.signInWithPassword(
-        dto.email,
+      baResult = await this.betterAuthService.signInWithIdentifier(
+        identifier,
         dto.password,
         context,
       );
     } catch (error) {
+      // 403 AUTH_ACCOUNT_FROZEN / AUTH_SUPERVISED_LOGIN_DISABLED: the password
+      // was CORRECT, so this is not a guess. Say why, count nothing.
+      if (
+        error instanceof AppException &&
+        error.getStatus() === HttpStatus.FORBIDDEN
+      ) {
+        throw error;
+      }
       this.logger.warn(
-        `Login failed for ${maskedEmail}: ${error instanceof Error ? error.message : String(error)}`,
+        `Login failed for ${loggedAs}: ${error instanceof Error ? error.message : String(error)}`,
       );
+      if (error instanceof AppUnauthorizedException) {
+        await this.recordLoginFailureBestEffort(identifier, ip);
+      }
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
@@ -279,10 +408,31 @@ export class AuthService {
       this.logger.warn(
         JSON.stringify({
           event: 'auth_login_missing_session',
-          email: maskedEmail,
+          email: loggedAs,
         }),
       );
       throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+    }
+
+    await this.loginFailures
+      .recordSuccess(identifier)
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Could not reset the login counter: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+
+    // A password login of a supervised teen opens a NEW session: the verified
+    // guardians are told (deduplicated, best effort; refresh never reaches here).
+    const principal = await this.loginPrincipalOf(baResult.user.id);
+    if (principal.kind === 'supervised_user') {
+      void fireEvent(
+        () => this.events.onTeenSessionStarted({ userId: baResult.user.id }),
+        (error) =>
+          this.logger.warn(
+            `Teen session notice failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+      );
     }
 
     // 2. Load SACDIA user profile and verify post-registration state
@@ -353,11 +503,44 @@ export class AuthService {
           maternal_last_name: user.maternal_last_name,
           avatar: await this.resolvePrivateProfilePicture(user.user_image),
           roles,
+          principal,
         },
         needsPostRegistration,
         postRegistrationStatus: user.users_pr ?? null,
       },
     };
+  }
+
+  /** A lockout counting problem must never turn into a 500 on the login path. */
+  private async recordLoginFailureBestEffort(
+    identifier: string,
+    ip: string | undefined,
+  ): Promise<void> {
+    try {
+      await this.loginFailures.recordFailure(identifier, ip);
+    } catch (error) {
+      this.logger.warn(
+        `Could not record the login failure: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * The principal kind the login response advertises (the same server-side
+   * decision the JWT strategy takes on every later request).
+   */
+  private async loginPrincipalOf(userId: string): Promise<{
+    kind: 'user' | 'supervised_user' | 'age_unknown_user';
+    supervision: 'pending_guardian' | 'active' | null;
+  }> {
+    const state = await this.supervisedResolver.resolve(userId);
+    if (state.state === 'supervised') {
+      return { kind: 'supervised_user', supervision: state.supervision };
+    }
+    if (state.state === 'profile_incomplete') {
+      return { kind: 'age_unknown_user', supervision: null };
+    }
+    return { kind: 'user', supervision: null };
   }
 
   async refreshSession(
@@ -410,14 +593,92 @@ export class AuthService {
       throw new AppBadRequestException(ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED);
     }
 
+    // A blocked principal never gets its session extended nor a fresh access
+    // JWT: above all a handle session while FAMILY_TEEN_LOGIN_ENABLED is off
+    // (FP3-35), whose session row is kept so the flag can be switched back on.
+    // The decision is taken BEFORE the refresh, because refreshing slides the
+    // session row. Disable, reset and freeze already delete the sessions; this
+    // is their safety net. An unknown or expired token has no owner: it falls
+    // through so the refresh reports it as it always did. A failed state lookup
+    // is the resolver's 503, never a refresh that fails open.
+    let sessionOwnerId: string | null;
+    try {
+      sessionOwnerId =
+        await this.betterAuthService.getSessionOwnerId(refreshToken);
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_refresh_failed',
+          reason: error instanceof Error ? error.message : String(error),
+          payloadFormat,
+          userAgent: context?.userAgent ?? 'unknown',
+        }),
+      );
+      throw new AppUnauthorizedException(ErrorCode.AUTH_REFRESH_TOKEN_INVALID);
+    }
+    // A device session (a child's paired phone, 3b) is told apart by its
+    // linked_devices row. It runs the DEVICE gate (revoked, capped, guardianship,
+    // majority, ...) instead of the supervised resolver, BEFORE the session
+    // slides, and refreshes into a device JWT only. A user session is unchanged.
+    let device: LinkedDeviceSessionInfo | null = null;
+    if (sessionOwnerId) {
+      try {
+        device =
+          (await this.betterAuthService.findLinkedDeviceOfSession(
+            refreshToken,
+          )) ?? null;
+      } catch (error) {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth_refresh_failed',
+            reason: error instanceof Error ? error.message : String(error),
+            payloadFormat,
+            userAgent: context?.userAgent ?? 'unknown',
+          }),
+        );
+        throw new AppUnauthorizedException(
+          ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
+        );
+      }
+    }
+    if (device) {
+      if (device.revokedAt) {
+        throw deviceRevoked();
+      }
+      await this.linkedDeviceGate.assertActive({
+        dependentId: device.dependentUserId,
+        sid: device.sessionId,
+        deviceId: device.linkedDeviceId,
+      });
+    } else if (sessionOwnerId) {
+      const supervised = await this.supervisedResolver.resolve(sessionOwnerId);
+      if (supervised.state === 'blocked') {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth_refresh_supervised_blocked',
+            sub: sessionOwnerId,
+            cause: supervised.cause,
+          }),
+        );
+        throw supervisedAccessRevoked();
+      }
+    }
+
     // The "refresh token" sent by clients IS the BA opaque session token.
     // BA does not have a separate refresh token — the session slides on each getSession call.
     let baResult: Awaited<
       ReturnType<typeof this.betterAuthService.refreshSession>
     >;
     try {
-      baResult = await this.betterAuthService.refreshSession(refreshToken);
+      baResult = sessionOwnerId
+        ? await this.betterAuthService.refreshSession(refreshToken, { device })
+        : await this.betterAuthService.refreshSession(refreshToken);
     } catch (error) {
+      // The device codes explain the 401 to the child's app (unlinked / past the
+      // lifetime cap); everything else stays the generic refresh failure.
+      if (isDeviceAccessError(error)) {
+        throw error;
+      }
       this.logger.warn(
         JSON.stringify({
           event: 'auth_refresh_failed',
@@ -494,7 +755,17 @@ export class AuthService {
     if (refreshToken) {
       path = 'session';
       revocationAttempted = true;
+      // A device logging out ("Desvincular") unlinks itself. The device is
+      // revoked FIRST: that one transaction marks the row revoked AND deletes
+      // the session, so there is no window with a deleted session and a device
+      // still active. The plain sign-out that follows is then a no-op. If the
+      // revoke fails (best effort) the sign-out still runs and the orphan row is
+      // healed when the child's device cap is next checked.
+      const loggedOutDevice = await this.findDeviceForLogout(refreshToken);
       try {
+        if (loggedOutDevice) {
+          await this.revokeLoggedOutDevice(loggedOutDevice, userAgent);
+        }
         await this.betterAuthService.signOut(refreshToken);
         revocationSucceeded = true;
       } catch (error) {
@@ -562,7 +833,57 @@ export class AuthService {
     };
   }
 
+  /** The ACTIVE linked device behind a logout refresh token, or null (never throws). */
+  private async findDeviceForLogout(
+    refreshToken: string,
+  ): Promise<LinkedDeviceSessionInfo | null> {
+    try {
+      const device =
+        (await this.betterAuthService.findLinkedDeviceOfSession(
+          refreshToken,
+        )) ?? null;
+      return device && !device.revokedAt ? device : null;
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_logout_device_lookup_failed',
+          reason: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return null;
+    }
+  }
+
+  private async revokeLoggedOutDevice(
+    device: LinkedDeviceSessionInfo,
+    userAgent: string,
+  ): Promise<void> {
+    try {
+      await this.linkedDevices.revokeByLogout(device.linkedDeviceId);
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_logout_device_revoke_failed',
+          device: device.linkedDeviceId,
+          reason: error instanceof Error ? error.message : String(error),
+          userAgent,
+        }),
+      );
+    }
+  }
+
   async requestPasswordReset(dto: ResetPasswordRequestDto) {
+    // A login handle has no email to write to: the guardian resets handle
+    // passwords. Same neutral answer as an unknown email, nothing queued, no
+    // lookup, and the handle is never logged.
+    if (!dto.email.includes('@')) {
+      this.logger.log('Password reset requested for a handle: no email queued');
+      return {
+        success: true,
+        message: 'Correo de recuperación enviado',
+      };
+    }
+
     const redirectTo = process.env.FRONTEND_URL
       ? `${process.env.FRONTEND_URL}/reset-password`
       : undefined;
@@ -605,6 +926,15 @@ export class AuthService {
       this.logger.log(
         `Password reset confirmed; sessions revoked for ${userId}`,
       );
+      // A supervised teen's emailed reset tells the verified guardians. The
+      // adapter does nothing for adults and for children without guardians.
+      void fireEvent(
+        () => this.events.onPasswordReset({ dependentUserId: userId }),
+        (error) =>
+          this.logger.warn(
+            `Password reset notice failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+      );
       return {
         success: true,
         message: 'Contraseña actualizada. Inicie sesión de nuevo',
@@ -635,7 +965,9 @@ export class AuthService {
     userId: string,
     currentPassword: string,
     newPassword: string,
+    options: { supervised?: boolean } = {},
   ): Promise<void> {
+    // A WRONG current password throws here: no notice, nothing changes.
     await this.betterAuthService.updateOwnPassword(
       userId,
       currentPassword,
@@ -644,6 +976,28 @@ export class AuthService {
     await this.prisma.session.deleteMany({ where: { userId } });
     await this.blacklistUserTokensBestEffort(userId, 'password_change');
     this.logger.log(`Self-service password updated for user: ${userId}`);
+
+    if (options.supervised) {
+      // The teen chose this password: the guardian no longer set it. Best
+      // effort, after the change is already committed.
+      await this.prisma.supervised_logins
+        .updateMany({
+          where: { user_id: userId },
+          data: { password_set_by: 'self' },
+        })
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Could not record password_set_by for ${userId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      void fireEvent(
+        () => this.events.onTeenPasswordChanged({ userId }),
+        (error) =>
+          this.logger.warn(
+            `Teen password notice failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+      );
+    }
   }
 
   /**
@@ -686,17 +1040,54 @@ export class AuthService {
       | 'guardianship_id'
       | 'consent_status'
       | 'scopes'
+      | 'kind'
+      | 'supervision'
+      | 'linked_device_id'
     >,
   ) {
-    const resolved =
+    const fullyResolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
+    // A teen without a verified guardian and an unknown-age account get no club
+    // context at all, also with an active assignment from before Phase 3.
+    const resolved =
+      principal && !principalSeesClubData(principal)
+        ? stripClubContext(fullyResolved)
+        : fullyResolved;
     const acting = principal?.acting_for === true;
-    const [signedUserImage, legal, family] = await Promise.all([
+    const supervisionStatus =
+      principal?.kind === 'supervised_user' ? principal.supervision : undefined;
+    const ageUnknown = principal?.kind === 'age_unknown_user';
+    // A child's paired phone (3b): no family of its own, no supervision state.
+    const isDevice = principal?.kind === 'linked_device';
+    const [
+      signedUserImage,
+      legal,
+      family,
+      supervision,
+      analyticsAnonymous,
+      device,
+    ] = await Promise.all([
       this.resolvePrivateProfilePicture(resolved.profile.user_image),
       // Outside the authorization cache: acceptance must reflect the DB right away.
       this.legalService.getStatus(userId),
-      // Hidden while acting: a dependent has no family of its own to show.
-      acting ? Promise.resolve(null) : this.loadFamilySummary(userId),
+      // Hidden while acting (a dependent has no family of its own to show),
+      // for supervised teens and for an unknown age (neither is a guardian).
+      acting || supervisionStatus || ageUnknown || isDevice
+        ? Promise.resolve(null)
+        : this.loadFamilySummary(userId),
+      supervisionStatus
+        ? this.supervisionState.describe(userId, supervisionStatus)
+        : Promise.resolve(null),
+      // A device child is always anonymous for analytics (privacy 6.1).
+      isDevice
+        ? Promise.resolve(true)
+        : this.isAnalyticsAnonymous(
+            resolved.profile.birthday,
+            resolved.profile.country_id,
+          ),
+      isDevice && principal?.linked_device_id
+        ? this.loadDeviceInfo(principal.linked_device_id)
+        : Promise.resolve(null),
     ]);
 
     return {
@@ -721,8 +1112,66 @@ export class AuthService {
             }
           : null,
         family,
+        // Phase 3a. The app routes by `mode` and decides analytics BEFORE
+        // identifying anyone: an absent or unknown field means anonymous.
+        principal: {
+          kind: principal?.kind ?? 'user',
+          scopes: principal?.scopes ?? null,
+          supervision,
+          // Only a linked device carries this block (3b); absent otherwise.
+          ...(isDevice ? { device } : {}),
+        },
+        // profile_incomplete: unknown age (NULL birthday, post-registration
+        // open). The app finishes the post-registration before anything else.
+        // device: a child's paired phone (3b).
+        mode: isDevice
+          ? 'device'
+          : ageUnknown
+            ? 'profile_incomplete'
+            : !supervisionStatus
+              ? 'adult'
+              : supervisionStatus === 'active'
+                ? 'teen_supervised'
+                : 'teen_pending',
+        family_features: this.familyFlags.getAll(),
+        analytics_anonymous: analyticsAnonymous,
       },
     };
+  }
+
+  /** The paired phone behind a device principal: its label and when it was linked. */
+  private async loadDeviceInfo(linkedDeviceId: string): Promise<{
+    linked_device_id: string;
+    label: string;
+    paired_at: string;
+  } | null> {
+    const device = await this.prisma.linked_devices.findUnique({
+      where: { linked_device_id: linkedDeviceId },
+      select: { label: true, paired_at: true },
+    });
+    return device
+      ? {
+          linked_device_id: linkedDeviceId,
+          label: device.label,
+          paired_at: device.paired_at.toISOString(),
+        }
+      : null;
+  }
+
+  /**
+   * True for anyone under the age of majority and for an unknown age (NULL
+   * birthday): the app never identifies them in PostHog or Sentry. Fails closed.
+   */
+  private async isAnalyticsAnonymous(
+    birthday: Date | string | null,
+    countryId: number | null,
+  ): Promise<boolean> {
+    // The profile can come from the authorization cache; tolerate a string and
+    // treat an unreadable value like an unknown age.
+    const born = toDateValue(birthday);
+    if (!born) return true;
+    const policy = await this.countryAgePolicy.getPolicy(countryId);
+    return ageToday(born, policy.timeZone) < policy.ageOfMajority;
   }
 
   /**

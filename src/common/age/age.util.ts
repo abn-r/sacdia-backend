@@ -2,17 +2,46 @@
 export const DEFAULT_AGE_TIMEZONE = 'America/Mexico_City';
 
 /**
+ * A date that may have gone through a JSON cache (Redis via Keyv serializes a
+ * Prisma `Date` as an ISO string). Returns a valid Date, or null for null,
+ * undefined, a non-date type or an unparsable value.
+ */
+export function toDateValue(
+  value: Date | string | null | undefined,
+): Date | null {
+  // Tag check, not `instanceof`: a Date from another realm (structuredClone in
+  // a vm context, a worker) is still a Date.
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    const date = value as Date;
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
  * Whole years between `birthday` and `reference`, comparing the UTC calendar
  * date of both. `users.birthday` is `@db.Date` (a UTC-midnight instant), so
  * the UTC getters are the only ones that read the stored calendar date back
  * without drifting with the server time zone.
  *
+ * Accepts the ISO string a cached Date turns into. Fails CLOSED on an
+ * unreadable birthday: it answers 0 (the youngest age), so every minor gate
+ * applies and analytics stay anonymous, instead of throwing a 500.
+ *
  * The result is negative when the birthday is after the reference date.
  */
-export function ageAt(birthday: Date, reference: Date): number {
-  let age = reference.getUTCFullYear() - birthday.getUTCFullYear();
-  const monthDiff = reference.getUTCMonth() - birthday.getUTCMonth();
-  const dayDiff = reference.getUTCDate() - birthday.getUTCDate();
+export function ageAt(birthday: Date | string, reference: Date): number {
+  const born = toDateValue(birthday);
+  if (!born) {
+    return 0;
+  }
+  let age = reference.getUTCFullYear() - born.getUTCFullYear();
+  const monthDiff = reference.getUTCMonth() - born.getUTCMonth();
+  const dayDiff = reference.getUTCDate() - born.getUTCDate();
 
   if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
     age -= 1;
@@ -52,7 +81,7 @@ export function calendarDateIn(timeZone: string, at: Date = new Date()): Date {
 
 /** Age today in the given time zone (the country's reference zone). */
 export function ageToday(
-  birthday: Date,
+  birthday: Date | string,
   timeZone: string,
   now: Date = new Date(),
 ): number {

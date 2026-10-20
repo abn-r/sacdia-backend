@@ -1701,6 +1701,95 @@ describe('ClassesService', () => {
     );
   });
 
+  // FP3-45: a linked device is the child's own account (actor === target), so
+  // the route owner rule is satisfied for the child's own userId. The only
+  // handle left to reach a SIBLING's progress through that userId is the
+  // optional `enrollmentId`; the service must refuse an enrollment that is not
+  // the target's, before any access check, upload, insert or update.
+  describe('a linked device passing its own userId with a sibling enrollmentId', () => {
+    const CHILD = 'child-1';
+    const SIBLING = 'sibling-1';
+    const SIBLING_ENROLLMENT = 902;
+
+    beforeEach(() => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: SIBLING_ENROLLMENT,
+        user_id: SIBLING,
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'EN_PROGRESO',
+        locked_for_validation: false,
+        record_kind: 'OPERATIONAL',
+      });
+    });
+
+    const expectNothingWritten = () => {
+      expect(
+        mockClassProgressAccessService.assertCanAccessProgress,
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      expect(mockPrismaService.class_section_progress.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.class_section_progress.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.evidence_files.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.evidence_files.update).not.toHaveBeenCalled();
+      expect((service as any).fileStorage.upload).not.toHaveBeenCalled();
+      expect(
+        mockGuardianNotifications.onDependentEvidenceUploaded,
+      ).not.toHaveBeenCalled();
+    };
+
+    it('upload is CLASS_ENROLLMENT_NOT_FOUND and writes nothing', async () => {
+      await expect(
+        (service as any).uploadSectionFile(
+          CHILD,
+          CHILD,
+          7,
+          101,
+          {
+            buffer: Buffer.from('pdf'),
+            mimetype: 'application/pdf',
+            originalname: 'evidence.pdf',
+          },
+          SIBLING_ENROLLMENT,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ENROLLMENT_NOT_FOUND });
+      expectNothingWritten();
+    });
+
+    it('submit is CLASS_ENROLLMENT_NOT_FOUND and writes nothing', async () => {
+      await expect(
+        (service as any).submitSection(CHILD, CHILD, 7, 101, SIBLING_ENROLLMENT),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ENROLLMENT_NOT_FOUND });
+      expectNothingWritten();
+    });
+
+    it('delete is CLASS_ENROLLMENT_NOT_FOUND and writes nothing', async () => {
+      await expect(
+        (service as any).deleteSectionFile(
+          CHILD,
+          CHILD,
+          7,
+          101,
+          55,
+          SIBLING_ENROLLMENT,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ENROLLMENT_NOT_FOUND });
+      expectNothingWritten();
+    });
+
+    it('read is CLASS_ENROLLMENT_NOT_FOUND and returns no progress', async () => {
+      await expect(
+        service.getUserProgress(CHILD, 7, SIBLING_ENROLLMENT, CHILD),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ENROLLMENT_NOT_FOUND });
+      expect(
+        mockClassProgressAccessService.assertCanAccessProgress,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.class_section_progress.findMany,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findOne', () => {
     it('includes active prerequisites and excludes inactive ones via query filter', async () => {
       mockPrismaService.classes.findUnique.mockResolvedValue({

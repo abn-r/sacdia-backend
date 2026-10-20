@@ -10,16 +10,24 @@ import type { NextFunction, Request, Response } from 'express';
  * - `explicitAuditRecorded` is the dedup flag: when a service writes a rich
  *   domain event during the request, the HTTP interceptor skips its generic
  *   row so the operation produces one meaningful entry instead of two.
- * - `actingFor` is set by JwtStrategy when a guardian acts for a dependent, so
- *   `recordEvent` and the critical writer attribute the row to the real actor.
+ * - `actingFor` is set by JwtStrategy for every non-`user` principal, so
+ *   `recordEvent` and the critical writer attribute the row to the real actor
+ *   and tag it with the principal kind: a guardian acting for a dependent
+ *   (actor = guardian), a supervised teen or a linked device (actor = subject).
  */
+export type AuditActorKind =
+  'guardian_acting' | 'supervised_user' | 'linked_device';
+
 export interface AuditActingFor {
-  /** The real person (guardian). */
+  /** The real person: the guardian when acting, the subject itself otherwise. */
   actorUserId: string;
-  /** The profile being acted for (dependent): `request.user.sub`. */
+  /** The profile the request is about: `request.user.sub`. */
   subjectUserId: string;
-  guardianshipId: string;
-  kind: 'guardian_acting';
+  /** Only for `guardian_acting`. */
+  guardianshipId?: string;
+  /** Only for `linked_device` (3b). */
+  linkedDeviceId?: string;
+  kind: AuditActorKind;
 }
 
 export interface AuditRequestContext {

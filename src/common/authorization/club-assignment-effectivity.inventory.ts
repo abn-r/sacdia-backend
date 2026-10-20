@@ -78,6 +78,10 @@ const baseline = {
     'effectiveWhere|T09|1|257d0ba772be',
   'guardianships/guardianship-queries.ts':
     'workflowWhere|allowlist|3|5acfc142566f',
+  'guardianships/director-dependents.service.ts':
+    'workflowWhere|allowlist|1|85e349b66389',
+  'guardianships/guardian-summary.service.ts':
+    'effectiveWhere|allowlist|1|3affa23bfc46',
   'honors/honor-validation-workflow.service.ts':
     'effectiveWhere|T08|1|73e3474e6bd8',
   'honors/honors.service.ts': 'effectiveWhere|T08|2|61643760d639',
@@ -95,7 +99,7 @@ const baseline = {
   'member-of-month/member-of-month.service.ts':
     'effectiveWhere|T09|2|4a63b7e684b3',
   'membership-requests/membership-requests.service.ts':
-    'workflowWhere|allowlist|8|d6d8ca6e0f98',
+    'workflowWhere|allowlist|9|1946f65ccb36',
   'monthly-reports/monthly-reports.service.ts':
     'effectiveWhere|T09|3|b00f9c8d194d',
   'notifications/notifications.processor.ts':

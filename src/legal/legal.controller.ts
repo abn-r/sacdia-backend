@@ -37,7 +37,7 @@ export class LegalController {
                 type: 'object',
                 properties: {
                   document_type: { type: 'string', example: 'terms' },
-                  version: { type: 'string', example: '1.0.0-store' },
+                  version: { type: 'string', example: '2.0.0-family' },
                   url: { type: 'string', example: 'https://sacdia.com/terms' },
                 },
               },

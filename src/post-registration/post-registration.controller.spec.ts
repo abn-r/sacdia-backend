@@ -2,6 +2,7 @@ import { PostRegistrationController } from './post-registration.controller';
 import { PostRegistrationService } from './post-registration.service';
 import type { Request } from 'express';
 import { ACTING_SCOPE_KEY } from '../auth/acting-for/acting-scope.decorator';
+import { GuardianEvidenceService } from '../guardianships/guardian-evidence.service';
 
 describe('PostRegistrationController', () => {
   let controller: PostRegistrationController;
@@ -16,10 +17,15 @@ describe('PostRegistrationController', () => {
     cancelPendingMembershipRequest: jest.fn(),
   };
 
+  const mockGuardianEvidence = {
+    uploadWhileActing: jest.fn(),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     controller = new PostRegistrationController(
       mockPostRegistrationService as unknown as PostRegistrationService,
+      mockGuardianEvidence as unknown as GuardianEvidenceService,
     );
   });
 
@@ -179,5 +185,59 @@ describe('PostRegistrationController', () => {
         PostRegistrationController.prototype.completeGuardianOnly,
       ),
     ).toBeUndefined();
+  });
+
+  describe('POST step-3/consent-evidence (guardian acting)', () => {
+    const principal = {
+      kind: 'guardian_acting',
+      sub: 'dep-1',
+      actor_sub: 'guardian-1',
+    } as never;
+    const file = { mimetype: 'application/pdf' } as Express.Multer.File;
+
+    it('delegates to the evidence service with the PRINCIPAL (never the body) and wraps the envelope', async () => {
+      mockGuardianEvidence.uploadWhileActing.mockResolvedValue({
+        evidence_id: 'ev-1',
+      });
+
+      const result = await controller.uploadConsentEvidence(
+        'dep-1',
+        principal,
+        file,
+      );
+
+      expect(mockGuardianEvidence.uploadWhileActing).toHaveBeenCalledWith(
+        principal,
+        'dep-1',
+        file,
+      );
+      expect(result).toEqual({
+        status: 'success',
+        data: { evidence_id: 'ev-1' },
+      });
+    });
+
+    it('declares the consent:evidence scope, skips RBAC and limits to 20 per hour', () => {
+      const handler =
+        PostRegistrationController.prototype.uploadConsentEvidence;
+      expect(Reflect.getMetadata(ACTING_SCOPE_KEY, handler)).toBe(
+        'consent:evidence',
+      );
+      expect(Reflect.getMetadata('skipPermissions', handler)).toBe(true);
+      for (const tier of ['short', 'medium', 'long']) {
+        expect(Reflect.getMetadata(`THROTTLER:LIMIT${tier}`, handler)).toBe(20);
+        expect(Reflect.getMetadata(`THROTTLER:TTL${tier}`, handler)).toBe(
+          3_600_000,
+        );
+      }
+    });
+
+    it('propagates the refusals of the service (not acting, verified, bucket missing)', async () => {
+      const refusal = Object.assign(new Error('x'), { status: 403 });
+      mockGuardianEvidence.uploadWhileActing.mockRejectedValue(refusal);
+      await expect(
+        controller.uploadConsentEvidence('dep-1', principal, file),
+      ).rejects.toBe(refusal);
+    });
   });
 });

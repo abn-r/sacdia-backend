@@ -1,14 +1,17 @@
 import { JwtService } from '@nestjs/jwt';
 import {
-  ACCESS_JWT_AUDIENCE,
+  ACCEPTED_BEARER_AUDIENCES,
   ACCESS_JWT_ISSUER,
   QR_MEMBER_AUDIENCE,
   isAccessJwtClaims,
+  isDeviceJwtClaims,
   jwtAudienceIncludes,
 } from '../common/constants/jwt-audiences';
 
 /**
- * True when `token` is an HS256 SACDIA access JWT for `expectedUserId`.
+ * True when `token` is an HS256 SACDIA access JWT, or a linked-device JWT
+ * (aud = sacdia:device), for `expectedUserId`. A device refresh therefore
+ * blacklists the previous device token like any access refresh.
  * Expired signatures still count — refresh often happens after a 401.
  * QR audience, wrong secret, or another subject → false. Never throws.
  *
@@ -34,7 +37,7 @@ export function isPresentedAccessJwtForUser(
     }>(token, {
       algorithms: ['HS256'],
       issuer: ACCESS_JWT_ISSUER,
-      audience: ACCESS_JWT_AUDIENCE,
+      audience: ACCEPTED_BEARER_AUDIENCES,
       ignoreExpiration: true,
     });
 
@@ -46,7 +49,7 @@ export function isPresentedAccessJwtForUser(
       return false;
     }
 
-    if (!isAccessJwtClaims(payload)) {
+    if (!isAccessJwtClaims(payload) && !isDeviceJwtClaims(payload)) {
       return false;
     }
 

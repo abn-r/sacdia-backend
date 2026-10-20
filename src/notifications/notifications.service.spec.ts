@@ -6,6 +6,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { DependentPushRouterService } from './dependent-push-router.service';
+import { ClubDataRecipientsService } from './club-data-recipients.service';
+import {
+  CountryAgePolicyService,
+  DEFAULT_COUNTRY_AGE_POLICY,
+} from '../common/age/country-age-policy.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { buildAuthorizationSnapshot } from '../../test/helpers/rbac-test-helpers';
 import {
@@ -57,6 +62,10 @@ describe('NotificationsService', () => {
     routeAndSend: jest
       .fn()
       .mockResolvedValue({ successCount: 0, failureCount: 0 }),
+  };
+
+  const mockCountryAgePolicy = {
+    getPolicy: jest.fn().mockResolvedValue({ ...DEFAULT_COUNTRY_AGE_POLICY }),
   };
 
   const mockAuthorizationContextService = {
@@ -114,6 +123,13 @@ describe('NotificationsService', () => {
       {
         provide: DependentPushRouterService,
         useValue: mockDependentPushRouter,
+      },
+      // The REAL gate over the mocked prisma: the pending-teen rules are
+      // exercised end to end through the send paths.
+      ClubDataRecipientsService,
+      {
+        provide: CountryAgePolicyService,
+        useValue: mockCountryAgePolicy,
       },
     ];
 
@@ -1441,6 +1457,215 @@ describe('NotificationsService', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // FP3-03: no club data for a teen without a verified guardian / unknown age
+  // ---------------------------------------------------------------------------
+  describe('club data recipients (pending teen / unknown age)', () => {
+    const ADULT_ID = '00000000-0000-0000-0000-0000000000a1';
+    const ACTIVE_TEEN_ID = '00000000-0000-0000-0000-0000000000a2';
+    const PENDING_TEEN_ID = '00000000-0000-0000-0000-0000000000a3';
+    const UNKNOWN_AGE_ID = '00000000-0000-0000-0000-0000000000a4';
+    const SECTION_ID = 42;
+
+    const born = (years: number) =>
+      new Date(Date.UTC(new Date().getUTCFullYear() - years, 5, 15));
+
+    const userRow = (
+      userId: string,
+      facts: {
+        birthday: Date | null;
+        verifiedGuardian?: boolean;
+        postRegistrationComplete?: boolean;
+      },
+    ) => ({
+      user_id: userId,
+      birthday: facts.birthday,
+      country_id: null,
+      supervised_login: null,
+      dependent_profile: null,
+      guardianships_as_dependent: facts.verifiedGuardian
+        ? [{ guardianship_id: 'g-1' }]
+        : [],
+      access_panel: false,
+      users_pr:
+        facts.postRegistrationComplete === undefined
+          ? null
+          : { complete: facts.postRegistrationComplete },
+      users_roles: [],
+      account: [{ id: 'acc-1' }],
+    });
+
+    beforeEach(() => {
+      mockPrismaService.users.findMany.mockResolvedValue([
+        userRow(ADULT_ID, { birthday: born(30) }),
+        userRow(ACTIVE_TEEN_ID, { birthday: born(15), verifiedGuardian: true }),
+        userRow(PENDING_TEEN_ID, { birthday: born(15) }),
+        userRow(UNKNOWN_AGE_ID, {
+          birthday: null,
+          postRegistrationComplete: false,
+        }),
+      ]);
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+    });
+
+    const assignments = [
+      { user_id: ADULT_ID },
+      { user_id: ACTIVE_TEEN_ID },
+      { user_id: PENDING_TEEN_ID },
+      { user_id: UNKNOWN_AGE_ID },
+    ];
+
+    it('club broadcast: includes an adult and an active teen, excludes a pending teen and an unknown-age account', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue(
+        assignments,
+      );
+
+      const result = await service.sendToClubMembers(
+        SECTION_ID,
+        { title: 'Club', body: 'Reunión hoy' },
+        SENT_BY,
+      );
+
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [
+            { log_id: 1, user_id: ADULT_ID },
+            { log_id: 1, user_id: ACTIVE_TEEN_ID },
+          ],
+        }),
+      );
+      expect(result).toMatchObject({ success: true, memberCount: 2 });
+      expect(mockPreferencesService.filterAllowedUsers).toHaveBeenCalledWith(
+        [ADULT_ID, ACTIVE_TEEN_ID],
+        undefined,
+      );
+      // ONE gate query for the whole send, not one per recipient.
+      expect(mockPrismaService.users.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('club broadcast: a pending teen is not even a push target', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue(
+        assignments,
+      );
+
+      await service.sendToClubMembers(
+        SECTION_ID,
+        { title: 'Club', body: 'Reunión hoy' },
+        SENT_BY,
+      );
+
+      for (const [args] of mockPrismaService.user_fcm_tokens.findMany.mock
+        .calls) {
+        expect(args.where.user_id.in).not.toContain(PENDING_TEEN_ID);
+        expect(args.where.user_id.in).not.toContain(UNKNOWN_AGE_ID);
+      }
+      expect(mockDependentPushRouter.routeAndSend.mock.calls[0][0]).toEqual([
+        ADULT_ID,
+        ACTIVE_TEEN_ID,
+      ]);
+    });
+
+    it('club broadcast: only pending teens as members means nobody is notified', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { user_id: PENDING_TEEN_ID },
+      ]);
+
+      const result = await service.sendToClubMembers(
+        SECTION_ID,
+        { title: 'Club', body: 'Reunión hoy' },
+        SENT_BY,
+      );
+
+      expect(result).toEqual({ success: false, message: 'No members found' });
+      expect(mockPrismaService.notification_logs.create).not.toHaveBeenCalled();
+    });
+
+    it('section-role fan-out: a pending teen with the role is excluded', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue(
+        assignments,
+      );
+
+      await service.sendToSectionRole(
+        SECTION_ID,
+        ['member'],
+        'Alerta',
+        'Cuerpo',
+      );
+
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [
+            { log_id: 1, user_id: ADULT_ID },
+            { log_id: 1, user_id: ACTIVE_TEEN_ID },
+          ],
+        }),
+      );
+    });
+
+    it('personal family notices still reach a pending teen (sendToUser is not gated)', async () => {
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { token: 'teen-token' },
+      ]);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 1,
+        failureCount: 0,
+        responses: [{ success: true }],
+      });
+
+      await service.sendToUser(
+        {
+          userId: PENDING_TEEN_ID,
+          title: 'Falta tu tutor',
+          body: 'Vincula a un tutor',
+        },
+        'system',
+        'family:pending_teen_reminder',
+      );
+
+      expect(
+        mockPrismaService.notification_deliveries.create,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ user_id: PENDING_TEEN_ID }),
+        }),
+      );
+      expect(mockSendEachForMulticast).toHaveBeenCalled();
+      // No gate lookup happened for a personal notice.
+      expect(mockPrismaService.users.findMany).not.toHaveBeenCalled();
+    });
+
+    it('guardian fan-out for a plain dependent (no account) is not filtered', async () => {
+      const DEPENDENT_ID = '00000000-0000-0000-0000-0000000000a5';
+      mockPrismaService.users.findMany.mockResolvedValue([
+        { ...userRow(DEPENDENT_ID, { birthday: born(9) }), account: [] },
+      ]);
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { user_id: DEPENDENT_ID },
+      ]);
+
+      await service.sendToClubMembers(
+        SECTION_ID,
+        { title: 'Club', body: 'Reunión hoy' },
+        SENT_BY,
+      );
+
+      expect(mockDependentPushRouter.routeAndSend.mock.calls[0][0]).toEqual([
+        DEPENDENT_ID,
+      ]);
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [{ log_id: 1, user_id: DEPENDENT_ID }],
+        }),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // getUnreadCount
   // ---------------------------------------------------------------------------
   describe('getUnreadCount', () => {
@@ -1654,6 +1879,58 @@ describe('NotificationsService', () => {
         expect.any(Function),
         expect.stringContaining('sendToUserSync'),
       );
+    });
+
+    it('a device-paired child gets its OWN push on the device token AND the guardians still get the labeled copy (3b, decision 4)', async () => {
+      mockPrismaService.$transaction.mockImplementation(
+        (fn: (tx: any) => Promise<any>) => fn(mockPrismaService),
+      );
+      // The device registered a token for the child (the child has no account).
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { token: 'device-token', fcm_token_id: 'tok-1' },
+      ]);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 1,
+        failureCount: 0,
+        responses: [{ success: true }],
+      });
+
+      await service.sendToUser(
+        { userId: DEPENDENT, title: 'Campamento', body: 'Este sábado' },
+        SENT_BY,
+        'activities:created',
+      );
+
+      // 1) the device push, to the child's own token only
+      expect(mockSendEachForMulticast).toHaveBeenCalledTimes(1);
+      expect(mockSendEachForMulticast.mock.calls[0][0].tokens).toEqual([
+        'device-token',
+      ]);
+      // 2) the guardian copies, through the router (labeled there)
+      expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledTimes(1);
+      expect(mockDependentPushRouter.routeAndSend.mock.calls[0][0]).toEqual([
+        DEPENDENT,
+      ]);
+    });
+
+    it('a revoked device leaves no token behind: the child push has nothing to send but the guardian copy still goes', async () => {
+      mockPrismaService.$transaction.mockImplementation(
+        (fn: (tx: any) => Promise<any>) => fn(mockPrismaService),
+      );
+      // Revoke deactivated the token: the active-token query returns nothing.
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+
+      await service.sendToUser(
+        { userId: DEPENDENT, title: 'Campamento', body: 'Este sábado' },
+        SENT_BY,
+        'activities:created',
+      );
+
+      expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+      expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledTimes(1);
+      expect(
+        mockPrismaService.user_fcm_tokens.findMany.mock.calls[0][0].where,
+      ).toMatchObject({ user_id: DEPENDENT, active: true });
     });
 
     it('silent realtime pushes are never routed', async () => {

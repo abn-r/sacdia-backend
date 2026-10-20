@@ -9,6 +9,10 @@ import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../common/guards';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
+import {
+  principalSeesClubData,
+  type AuthPrincipal,
+} from '../auth/acting-for/auth-principal';
 
 @ApiTags('dashboard')
 @Controller('dashboard')
@@ -23,7 +27,7 @@ export class DashboardController {
   @ApiOperation({
     summary: 'Resumen del dashboard del usuario autenticado',
     description:
-      'Retorna estadísticas agregadas: clase actual y progreso, honores, actividades próximas e información del club',
+      'Retorna estadísticas agregadas: clase actual y progreso, honores, actividades próximas e información del club. Un adolescente sin tutor verificado (supervised_user pendiente) o una cuenta sin edad conocida recibe club_name, club_type y user_role en null y upcoming_activities vacío: ven su propio progreso, nunca datos del club.',
   })
   @ApiResponse({
     status: 200,
@@ -62,7 +66,9 @@ export class DashboardController {
     status: 403,
     description: 'Token válido pero sin acceso al recurso',
   })
-  async getSummary(@Request() req) {
-    return this.dashboardService.getSummary(req.user.sub);
+  async getSummary(@Request() req: { user: AuthPrincipal }) {
+    return this.dashboardService.getSummary(req.user.sub, {
+      includeClubData: principalSeesClubData(req.user),
+    });
   }
 }

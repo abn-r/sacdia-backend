@@ -26,7 +26,12 @@ export interface RecordEventDto {
   /** Defaults to the ambient request correlation id when available. */
   correlation_id?: string;
   actor_kind?:
-    'user' | 'anonymous' | 'system' | 'guardian_acting' | 'linked_device';
+    | 'user'
+    | 'anonymous'
+    | 'system'
+    | 'guardian_acting'
+    | 'supervised_user'
+    | 'linked_device';
 }
 
 export interface AuditLogItem {

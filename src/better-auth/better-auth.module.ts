@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { BetterAuthService } from './better-auth.service';
 import { createBetterAuth, BetterAuthInstance } from './better-auth.config';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActingForModule } from '../auth/acting-for/acting-for.module';
+import { FamilyFeatureFlagsModule } from '../guardianships/family-feature-flags.module';
 
 /**
  * BetterAuthModule
@@ -29,6 +31,9 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Module({
   imports: [
+    // Login checks the supervised state (frozen / disabled) after the password.
+    ActingForModule,
+    FamilyFeatureFlagsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {

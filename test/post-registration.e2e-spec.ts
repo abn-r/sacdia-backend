@@ -20,7 +20,7 @@ describe('Post-registration step 3 E2E', () => {
   let jwtService: JwtService;
 
   const mockBetterAuthService = {
-    signInWithPassword: jest.fn(),
+    signInWithIdentifier: jest.fn(),
     refreshSession: jest.fn(),
     signOut: jest.fn(),
     createUser: jest.fn(),

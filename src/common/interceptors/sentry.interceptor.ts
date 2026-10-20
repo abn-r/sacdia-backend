@@ -17,6 +17,12 @@ const SENSITIVE_HEADERS = new Set([
 
 const SENSITIVE_BODY_FIELDS = new Set([
   'password',
+  // Login identifier (email or supervised login handle) and the handle.
+  'identifier',
+  'login_handle',
+  // Device pairing token (QR) and its deep-link payload.
+  'pairing_token',
+  'qr_payload',
   'refresh_token',
   'refreshToken',
   'access_token',

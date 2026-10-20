@@ -48,6 +48,7 @@ import {
   type TrajectoryClassDto,
 } from './mappers/formative-read-model.mapper';
 import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
+import { REVOKED_DEVICE_HISTORY_MS } from '../guardianships/guardianships.constants';
 
 // ── Bulk upload types ────────────────────────────────────────────────────────
 export type BulkUserRowResult = {
@@ -520,6 +521,42 @@ export interface AdminGuardianshipsBlock {
   } | null;
 }
 
+/**
+ * Own login and paired phones of a minor (family profiles 3c, FP3-65). Only for
+ * readers who pass `canReadSensitiveFamily('legal_representative')`: it carries
+ * the login handle. `supervision` is derived from what is STORED (a login row +
+ * a verified, non-test, non-revoked guardianship, custody included), exactly
+ * like the request-time resolver, but it does not look at the age.
+ */
+export interface AdminFamilyAccessBlock {
+  supervision: 'pending_guardian' | 'active' | null;
+  supervised_login: {
+    status: 'active' | 'pending_guardian' | 'disabled';
+    method: 'email' | 'handle';
+    login_handle: string | null;
+    origin: 'self_registered' | 'guardian_enabled';
+    enabled_at: Date | null;
+    enabled_by: { user_id: string; display_name: string } | null;
+    disabled_at: Date | null;
+    disabled_reason: string | null;
+    password_set_by: 'guardian' | 'self';
+    pending_since: Date | null;
+  } | null;
+  linked_devices: Array<{
+    linked_device_id: string;
+    label: string;
+    platform: string;
+    app_version: string | null;
+    status: 'active' | 'revoked';
+    paired_by: { user_id: string; display_name: string };
+    paired_at: Date;
+    last_seen_at: Date | null;
+    absolute_expires_at: Date;
+    revoked_at: Date | null;
+    revoked_reason: string | null;
+  }>;
+}
+
 interface AdminUserDetail extends AdminUserListItem {
   gender: string | null;
   birthday: Date | null;
@@ -553,6 +590,7 @@ interface AdminUserDetail extends AdminUserListItem {
   emergency_contacts: AdminUserDetailRecord['emergency_contact'] | null;
   legal_representative: AdminUserDetailRecord['legal_representative'] | null;
   guardianships: AdminGuardianshipsBlock | null;
+  family_access: AdminFamilyAccessBlock | null;
   post_registration: MinimalPostRegistrationBlock | null;
   scope: ScopeMeta;
 }
@@ -684,6 +722,14 @@ export class AdminUsersService {
     )
       ? await this.buildGuardianshipsBlock(user.user_id)
       : null;
+    // Same gate as the guardianships block: the handle is as sensitive as the
+    // guardian data.
+    const familyAccess = this.canReadSensitiveFamily(
+      actorGlobalPermissions,
+      'legal_representative',
+    )
+      ? await this.buildFamilyAccessBlock(user.user_id)
+      : null;
 
     return {
       ...listItem,
@@ -719,6 +765,7 @@ export class AdminUsersService {
       emergency_contacts: sensitiveBlocks.emergency_contacts,
       legal_representative: sensitiveBlocks.legal_representative,
       guardianships,
+      family_access: familyAccess,
       post_registration: sensitiveBlocks.post_registration,
       scope: this.toScopeMeta(scope),
     };
@@ -1284,6 +1331,118 @@ export class AdminUsersService {
         consent_status: row.consent_status,
       })),
       dependent_profile: profile,
+    };
+  }
+
+  /**
+   * Own login + paired phones of the user (family profiles 3c). Two reads, plus
+   * one existence check for the consent state only when a login exists.
+   */
+  private async buildFamilyAccessBlock(
+    userId: string,
+  ): Promise<AdminFamilyAccessBlock> {
+    const historySince = new Date(Date.now() - REVOKED_DEVICE_HISTORY_MS);
+    const [login, devices] = await Promise.all([
+      this.prisma.supervised_logins.findUnique({
+        where: { user_id: userId },
+        select: {
+          method: true,
+          login_handle: true,
+          origin: true,
+          enabled_at: true,
+          password_set_by: true,
+          pending_since: true,
+          disabled_at: true,
+          disabled_reason: true,
+          enabled_by: {
+            select: { user_id: true, name: true, paternal_last_name: true },
+          },
+        },
+      }),
+      this.prisma.linked_devices.findMany({
+        where: {
+          dependent_user_id: userId,
+          OR: [{ revoked_at: null }, { revoked_at: { gte: historySince } }],
+        },
+        orderBy: { paired_at: 'desc' },
+        select: {
+          linked_device_id: true,
+          label: true,
+          platform: true,
+          app_version: true,
+          paired_at: true,
+          last_seen_at: true,
+          absolute_expires_at: true,
+          revoked_at: true,
+          revoked_reason: true,
+          paired_by: {
+            select: { user_id: true, name: true, paternal_last_name: true },
+          },
+        },
+      }),
+    ]);
+
+    const fullName = (
+      person: { name: string | null; paternal_last_name: string | null } | null,
+    ) =>
+      [person?.name, person?.paternal_last_name]
+        .filter((part): part is string => !!part && part.trim().length > 0)
+        .join(' ');
+
+    let supervision: AdminFamilyAccessBlock['supervision'] = null;
+    if (login) {
+      // The same consent the request-time resolver counts: verified, real
+      // (not seeded test data), not revoked. Club custody counts.
+      const consent = await this.prisma.guardianships.findFirst({
+        where: {
+          dependent_user_id: userId,
+          consent_status: 'verified',
+          is_test_data: false,
+          revoked_at: null,
+        },
+        select: { guardianship_id: true },
+      });
+      supervision = consent ? 'active' : 'pending_guardian';
+    }
+
+    return {
+      supervision,
+      supervised_login:
+        login && supervision
+          ? {
+              status: login.disabled_at ? 'disabled' : supervision,
+              method: login.method as 'email' | 'handle',
+              login_handle: login.login_handle,
+              origin: login.origin as 'self_registered' | 'guardian_enabled',
+              enabled_at: login.enabled_at,
+              enabled_by: login.enabled_by
+                ? {
+                    user_id: login.enabled_by.user_id,
+                    display_name: fullName(login.enabled_by),
+                  }
+                : null,
+              disabled_at: login.disabled_at,
+              disabled_reason: login.disabled_reason,
+              password_set_by: login.password_set_by as 'guardian' | 'self',
+              pending_since: login.pending_since,
+            }
+          : null,
+      linked_devices: devices.map((device) => ({
+        linked_device_id: device.linked_device_id,
+        label: device.label,
+        platform: device.platform,
+        app_version: device.app_version,
+        status: device.revoked_at ? ('revoked' as const) : ('active' as const),
+        paired_by: {
+          user_id: device.paired_by.user_id,
+          display_name: fullName(device.paired_by),
+        },
+        paired_at: device.paired_at,
+        last_seen_at: device.last_seen_at,
+        absolute_expires_at: device.absolute_expires_at,
+        revoked_at: device.revoked_at,
+        revoked_reason: device.revoked_reason,
+      })),
     };
   }
 

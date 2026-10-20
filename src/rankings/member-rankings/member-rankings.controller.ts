@@ -30,6 +30,7 @@ import { MemberRankingResponseDto } from './dto/member-ranking-response.dto';
 import { MemberBreakdownDto } from './dto/member-breakdown.dto';
 import { MemberMyRankingDto } from './dto/member-my-ranking.dto';
 import { namedThrottle } from '../../config/throttler.helpers';
+import { ActingScope } from '../../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('Member Rankings')
 @ApiBearerAuth()
@@ -46,6 +47,7 @@ export class MemberRankingsController {
   // (engram #1883 / #1888)
   // ========================================
 
+  @ActingScope('member:read')
   @Get('me')
   @RequirePermissions('member_rankings:read_self')
   @ApiOperation({

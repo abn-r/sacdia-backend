@@ -262,6 +262,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   // Rate limit: max 3 sends per minute to prevent token farming
+  @ActingScope('self:password')
   @Throttle(namedThrottle({ ttl: 60000, limit: 3 }))
   @ApiOperation({
     summary: 'Enviar email de verificación al usuario autenticado',
@@ -305,6 +306,7 @@ export class AuthController {
     return this.authService.confirmEmailVerification(dto);
   }
 
+  @ActingScope('self:password')
   @Post('update-password')
   @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
   @UseGuards(JwtAuthGuard)
@@ -315,13 +317,14 @@ export class AuthController {
     description: 'Password updated',
   })
   async updatePassword(
-    @CurrentUser() user: { userId: string },
+    @CurrentUser() user: { userId: string; kind?: string },
     @Body() dto: UpdatePasswordDto,
   ) {
     await this.authService.updateOwnPassword(
       user.userId,
       dto.currentPassword,
       dto.password,
+      { supervised: user.kind === 'supervised_user' },
     );
     return { status: 'success', message: 'Password updated' };
   }
@@ -382,7 +385,7 @@ export class AuthController {
                     type: 'object',
                     properties: {
                       document_type: { type: 'string', example: 'terms' },
-                      version: { type: 'string', example: '1.0.0-store' },
+                      version: { type: 'string', example: '2.0.0-family' },
                       url: {
                         type: 'string',
                         example: 'https://sacdia.com/terms',
@@ -426,11 +429,92 @@ export class AuthController {
               type: 'object',
               nullable: true,
               description:
-                'Resumen de tutoría del usuario. Null mientras se actúa por un dependiente.',
+                'Resumen de tutoría del usuario. Null mientras se actúa por un dependiente y para menores supervisados.',
               properties: {
                 is_guardian: { type: 'boolean', example: true },
                 dependents_count: { type: 'number', example: 2 },
               },
+            },
+            principal: {
+              type: 'object',
+              description:
+                'Tipo de principal resuelto por el servidor (nunca por un claim del token).',
+              properties: {
+                kind: {
+                  type: 'string',
+                  enum: [
+                    'user',
+                    'guardian_acting',
+                    'supervised_user',
+                    'linked_device',
+                    'age_unknown_user',
+                  ],
+                },
+                scopes: {
+                  type: 'array',
+                  nullable: true,
+                  items: { type: 'string' },
+                },
+                supervision: {
+                  type: 'object',
+                  nullable: true,
+                  description:
+                    'Solo para supervised_user. Sin datos de contacto de los tutores.',
+                  properties: {
+                    status: {
+                      type: 'string',
+                      enum: ['pending_guardian', 'active'],
+                    },
+                    pending_since: {
+                      type: 'string',
+                      format: 'date-time',
+                      nullable: true,
+                    },
+                    guardians: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          display_name: { type: 'string' },
+                          relationship_type_name: {
+                            type: 'string',
+                            nullable: true,
+                          },
+                        },
+                      },
+                    },
+                    summary_visible_to_guardians: {
+                      type: 'boolean',
+                      example: true,
+                    },
+                    days_left: { type: 'number', nullable: true, example: 83 },
+                  },
+                },
+              },
+            },
+            mode: {
+              type: 'string',
+              enum: [
+                'adult',
+                'teen_pending',
+                'teen_supervised',
+                'profile_incomplete',
+              ],
+              description:
+                'profile_incomplete: edad desconocida (sin fecha de nacimiento y post-registro abierto, p. ej. alta con Google/Apple antes del paso 2). Solo puede terminar el post-registro; el resto responde 403 PRINCIPAL_SCOPE_DENIED.',
+            },
+            family_features: {
+              type: 'object',
+              properties: {
+                teen_login: { type: 'boolean' },
+                linked_device: { type: 'boolean' },
+                director_create_minor: { type: 'boolean' },
+              },
+            },
+            analytics_anonymous: {
+              type: 'boolean',
+              description:
+                'true para menores de edad y edad desconocida: la app nunca identifica en PostHog/Sentry.',
             },
           },
           required: [
@@ -452,7 +536,7 @@ export class AuthController {
   }
 
   @Patch('me/context')
-  @ActingScope('profile:write')
+  @ActingScope('club:context')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
@@ -502,6 +586,9 @@ export class AuthController {
    * Response: 204 No Content
    */
   @Delete('me')
+  // account:manage: an unknown-age account (social sign-up before step 2) must
+  // still be able to leave. Teens, guardians acting and devices never hold it.
+  @ActingScope('account:manage')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)

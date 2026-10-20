@@ -2254,6 +2254,39 @@ ON CONFLICT (role_id, permission_id) DO UPDATE SET
   active = true,
   modified_at = now();
 
+-- BEGIN family permissions (phase 3c)
+-- ============================
+-- dependents:create / consent:verify (director-created minors, independent consent verification)
+-- ============================
+-- Must live here: role blocks DELETE+INSERT wipe grants if they are not re-asserted after every
+-- seed run. Same rows as migration 20261022130000_seed_family_permissions; admin, assistant-admin and
+-- super-admin get both through their wildcard blocks above.
+-- GLOBAL coordinator / zone-coordinator / general-coordinator are deliberately NOT here: the
+-- PermissionsGuard cannot resolve their territory for club_assignment resources
+-- (src/auth/permissions-consent-verify.spec.ts).
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director', 'deputy-director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'dependents:create'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director', 'deputy-director', 'secretary', 'secretary-treasurer')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'consent:verify'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+-- END family permissions (phase 3c)
+
 COMMIT;
 
 -- ============================================================================

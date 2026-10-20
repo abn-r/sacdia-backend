@@ -59,12 +59,14 @@ function setup() {
       create: jest.fn().mockResolvedValue({}),
     },
     users: { findFirst: jest.fn().mockResolvedValue({ user_id: DEPENDENT }) },
+    dependent_profiles: { upsert: jest.fn().mockResolvedValue({}) },
+    supervised_logins: { upsert: jest.fn().mockResolvedValue({}) },
     guardianships: {
       findFirst: jest.fn(),
       count: jest.fn().mockResolvedValue(1),
       create: jest.fn().mockImplementation(async (args: any) => {
         created.push(args.data);
-        return {};
+        return { guardianship_id: 'gs-new' };
       }),
       updateMany: jest.fn().mockImplementation(async (args: any) => {
         updates.push({ model: 'guardianships', args });
@@ -78,6 +80,7 @@ function setup() {
       findFirst: jest.fn(),
       count: jest.fn().mockResolvedValue(1),
     },
+    users: { findFirst: jest.fn() },
     dependent_profiles: { findFirst: jest.fn() },
     club_role_assignments: { findFirst: jest.fn() },
     $transaction: jest.fn(async (callback: (t: any) => unknown) => {
@@ -99,17 +102,36 @@ function setup() {
     getSummaryForGuardian: jest.fn().mockResolvedValue({ user_id: DEPENDENT }),
   };
 
+  const agePolicy = {
+    getPolicy: jest.fn().mockResolvedValue({
+      minSelfLoginAge: 13,
+      ageOfMajority: 18,
+      timeZone: 'America/Mexico_City',
+    }),
+  };
+  const deviceRevoker = {
+    revokeAllForDependent: jest.fn().mockResolvedValue(0),
+    revokeByGuardianship: jest.fn().mockResolvedValue(0),
+  };
+
+  const events = { onGuardianLinked: jest.fn() };
   const service = new LinkCodesService(
     prisma,
     config as any,
     failures,
     actingForCache as any,
     guardianships as any,
+    agePolicy as any,
+    deviceRevoker as any,
+    events as any,
   );
   return {
     service,
     prisma,
     tx,
+    events,
+    agePolicy,
+    deviceRevoker,
     failures,
     actingForCache,
     guardianships,
@@ -118,6 +140,14 @@ function setup() {
     updates,
   };
 }
+
+/** The guardian's own row as issueSecondGuardianCode reads it. */
+const ownRow = (overrides: Record<string, unknown> = {}) => ({
+  guardianship_id: 'g',
+  consent_status: 'verified',
+  dependent: { account: [] as Array<{ id: string }> },
+  ...overrides,
+});
 
 async function errorOf(promise: Promise<unknown>) {
   try {
@@ -141,7 +171,7 @@ describe('LinkCodesService.issueSecondGuardianCode', () => {
 
   it('refuses at 4 active guardians with 409 GUARDIAN_LIMIT_REACHED', async () => {
     const { service, prisma } = setup();
-    prisma.guardianships.findFirst.mockResolvedValue({ guardianship_id: 'g' });
+    prisma.guardianships.findFirst.mockResolvedValue(ownRow());
     prisma.guardianships.count.mockResolvedValue(4);
     const error = await errorOf(
       service.issueSecondGuardianCode(INVITER, DEPENDENT),
@@ -152,7 +182,7 @@ describe('LinkCodesService.issueSecondGuardianCode', () => {
 
   it('issues XXXX-XXXX, stores only the HMAC, expires in 72h and revokes open codes first', async () => {
     const { service, prisma, tx } = setup();
-    prisma.guardianships.findFirst.mockResolvedValue({ guardianship_id: 'g' });
+    prisma.guardianships.findFirst.mockResolvedValue(ownRow());
     prisma.guardianships.count.mockResolvedValue(1);
     const before = Date.now();
 
@@ -196,7 +226,7 @@ describe('LinkCodesService.issueSecondGuardianCode', () => {
 
   it('retries on a code hash collision', async () => {
     const { service, prisma, tx } = setup();
-    prisma.guardianships.findFirst.mockResolvedValue({ guardianship_id: 'g' });
+    prisma.guardianships.findFirst.mockResolvedValue(ownRow());
     tx.guardianship_link_codes.create
       .mockRejectedValueOnce(
         new Prisma.PrismaClientKnownRequestError('unique', {
@@ -689,5 +719,646 @@ describe('LinkCodesService.redeem: director claim', () => {
     expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_INVALID);
     expect(committed.codeConsumed).toBe(false);
     expect(tx.guardianships.create).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Phase 3c (FP3-63): the Phase 2 `director_claim` code hands a director-created
+ * 13-17 minor to the parent unchanged. The claim path never looks at the age.
+ */
+describe('LinkCodesService.redeem: director claim of a 13-17 minor (phase 3c)', () => {
+  const claimCode = codeRow({
+    purpose: 'director_claim',
+    issued_by_user_id: DIRECTOR,
+    issued_for_club_section_id: 5,
+  });
+
+  it('claims a 14-year-old: custody revoked as claimed, parent becomes PRIMARY non-custodian PENDING, nothing inherited', async () => {
+    const { service, tx, created, committed, actingForCache } = setup();
+    tx.guardianship_link_codes.findFirst.mockResolvedValue(claimCode);
+    tx.guardianships.count.mockResolvedValue(0);
+    // The minor is 14: a director-created teen under club custody, no account.
+    tx.users.findFirst.mockResolvedValue({
+      user_id: DEPENDENT,
+      birthday: new Date('2012-05-01T00:00:00.000Z'),
+    });
+
+    await service.redeem(REDEEMER, redeemDto());
+
+    expect(tx.guardianships.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { dependent_user_id: DEPENDENT, guardian_user_id: null },
+      data: { consent_status: 'revoked', revoked_reason: 'claimed' },
+    });
+    expect(created).toEqual([
+      {
+        dependent_user_id: DEPENDENT,
+        guardian_user_id: REDEEMER,
+        relationship_type_id: REL,
+        is_primary: true,
+        consent_status: 'pending',
+        sworn_declaration_at: expect.any(Date),
+      },
+    ]);
+    // Verification is NOT inherited: no verified_* fields on the new row.
+    for (const key of [
+      'verified_at',
+      'verified_by_user_id',
+      'verification_method',
+    ]) {
+      expect(created[0]).not.toHaveProperty(key);
+    }
+    expect(committed.codeConsumed).toBe(true);
+    expect(actingForCache.bump).toHaveBeenCalledWith(DEPENDENT);
+  });
+
+  it('the claim lookup has no age filter: only active, account-less and not frozen or purged', async () => {
+    const { service, tx } = setup();
+    tx.guardianship_link_codes.findFirst.mockResolvedValue(claimCode);
+    tx.guardianships.count.mockResolvedValue(0);
+
+    await service.redeem(REDEEMER, redeemDto());
+
+    expect(tx.users.findFirst).toHaveBeenCalledWith({
+      where: {
+        user_id: DEPENDENT,
+        active: true,
+        account: { none: {} },
+        dependent_profile: { is: { frozen_at: null, purged_at: null } },
+      },
+      select: { user_id: true },
+    });
+  });
+
+  it('the director who created the minor may issue the claim code (same permission and section)', async () => {
+    const { service, prisma } = setup();
+    prisma.dependent_profiles.findFirst.mockResolvedValue({
+      user_id: DEPENDENT,
+    });
+    prisma.club_role_assignments.findFirst.mockResolvedValue({
+      assignment_id: 'a-pending',
+    });
+    prisma.guardianships.count.mockResolvedValue(0);
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        guardianship_link_codes: {
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          create: jest.fn().mockResolvedValue({}),
+        },
+      }),
+    );
+
+    const issued = await service.issueDirectorClaimCode(DIRECTOR, 5, DEPENDENT);
+
+    expect(issued.code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    // A PENDING request counts as a live assignment in the section (the minor
+    // was just created, nobody approved it yet).
+    expect(
+      prisma.club_role_assignments.findFirst.mock.calls[0][0].where,
+    ).toMatchObject({ user_id: DEPENDENT, club_section_id: 5, active: true });
+  });
+});
+
+describe('LinkCodesService.issueSecondGuardianCode for a teen (phase 3a)', () => {
+  it('a PENDING guardian of a teen (account holder) cannot invite another adult: 409 GUARDIANSHIP_CONSENT_NOT_VERIFIED', async () => {
+    const { service, prisma, tx } = setup();
+    prisma.guardianships.findFirst.mockResolvedValue(
+      ownRow({
+        consent_status: 'pending',
+        dependent: { account: [{ id: 'acc' }] },
+      }),
+    );
+
+    const error = await errorOf(
+      service.issueSecondGuardianCode(INVITER, DEPENDENT),
+    );
+
+    expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_CONSENT_NOT_VERIFIED);
+    expect(error?.getStatus?.()).toBe(409);
+    expect(tx.guardianship_link_codes.create).not.toHaveBeenCalled();
+  });
+
+  it('a VERIFIED guardian of a teen can', async () => {
+    const { service, prisma } = setup();
+    prisma.guardianships.findFirst.mockResolvedValue(
+      ownRow({ dependent: { account: [{ id: 'acc' }] } }),
+    );
+    prisma.guardianships.count.mockResolvedValue(1);
+    await expect(
+      service.issueSecondGuardianCode(INVITER, DEPENDENT),
+    ).resolves.toMatchObject({ code: expect.any(String) });
+  });
+
+  it('a pending guardian of a plain dependent (no account) still can (Phase 2 behavior)', async () => {
+    const { service, prisma } = setup();
+    prisma.guardianships.findFirst.mockResolvedValue(
+      ownRow({ consent_status: 'pending' }),
+    );
+    prisma.guardianships.count.mockResolvedValue(1);
+    await expect(
+      service.issueSecondGuardianCode(INVITER, DEPENDENT),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('LinkCodesService.issueTeenGuardianLink (phase 3a)', () => {
+  const TEEN = '88888888-8888-4888-8888-888888888888';
+  const birthdayOf = (years: number) => {
+    const d = new Date();
+    d.setUTCFullYear(d.getUTCFullYear() - years);
+    d.setUTCDate(d.getUTCDate() - 5);
+    return d;
+  };
+  const teenRow = (overrides: Record<string, unknown> = {}) => ({
+    birthday: birthdayOf(15),
+    country_id: null,
+    dependent_profile: null,
+    ...overrides,
+  });
+
+  function arrange(teen: unknown, linked = 0) {
+    const ctx = setup();
+    ctx.prisma.users.findFirst.mockResolvedValue(teen);
+    ctx.prisma.guardianships.count.mockResolvedValue(linked);
+    return ctx;
+  }
+
+  it('issues XXXX-XXXX valid 72h, issued by and for the teen, HMAC at rest, replacing the open codes of the same (teen, purpose)', async () => {
+    const { service, tx } = arrange(teenRow());
+    const before = Date.now();
+
+    const issued = await service.issueTeenGuardianLink(TEEN);
+
+    expect(issued.code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+    const ttl = new Date(issued.expires_at).getTime() - before;
+    expect(ttl).toBeGreaterThanOrEqual(72 * HOUR - 2000);
+    expect(ttl).toBeLessThanOrEqual(72 * HOUR + 2000);
+
+    const stored = tx.guardianship_link_codes.create.mock.calls[0][0].data;
+    expect(stored).toMatchObject({
+      dependent_user_id: TEEN,
+      purpose: 'teen_guardian_link',
+      issued_by_user_id: TEEN,
+      issued_for_club_section_id: null,
+    });
+    expect(stored.code_hash).toBe(
+      hashLinkCode(normalizeLinkCode(issued.code), KEY),
+    );
+    expect(JSON.stringify(stored)).not.toContain(issued.code);
+    expect(
+      tx.guardianship_link_codes.updateMany.mock.calls[0][0].where,
+    ).toMatchObject({
+      dependent_user_id: TEEN,
+      purpose: 'teen_guardian_link',
+      consumed_at: null,
+      revoked_at: null,
+    });
+  });
+
+  it('a second issue kills the first (the open code of the same purpose is revoked before the new one is created)', async () => {
+    const { service, tx } = arrange(teenRow());
+    await service.issueTeenGuardianLink(TEEN);
+    await service.issueTeenGuardianLink(TEEN);
+
+    expect(tx.guardianship_link_codes.updateMany).toHaveBeenCalledTimes(2);
+    expect(tx.guardianship_link_codes.create).toHaveBeenCalledTimes(2);
+    const [firstCreate, secondCreate] =
+      tx.guardianship_link_codes.create.mock.calls.map(
+        (call: any[]) => call[0].data.code_hash,
+      );
+    expect(firstCreate).not.toBe(secondCreate);
+  });
+
+  it('only reads an active account holder', async () => {
+    const { service, prisma } = arrange(teenRow());
+    await service.issueTeenGuardianLink(TEEN);
+    expect(prisma.users.findFirst.mock.calls[0][0].where).toEqual({
+      user_id: TEEN,
+      active: true,
+      account: { some: {} },
+    });
+  });
+
+  it('an adult (kind user passes the scope check) is refused 403 PRINCIPAL_SCOPE_DENIED', async () => {
+    const { service, tx } = arrange(teenRow({ birthday: birthdayOf(30) }));
+    const error = await errorOf(service.issueTeenGuardianLink(TEEN));
+    expect(error?.code).toBe(ErrorCode.PRINCIPAL_SCOPE_DENIED);
+    expect(error?.getStatus?.()).toBe(403);
+    expect(tx.guardianship_link_codes.create).not.toHaveBeenCalled();
+  });
+
+  it('turns 18 today: no more codes (majority by the country calendar)', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    try {
+      jest.setSystemTime(new Date('2026-10-20T15:00:00.000Z'));
+      const { service } = arrange(
+        teenRow({ birthday: new Date('2008-10-20T00:00:00.000Z') }),
+      );
+      expect((await errorOf(service.issueTeenGuardianLink(TEEN)))?.code).toBe(
+        ErrorCode.PRINCIPAL_SCOPE_DENIED,
+      );
+      const stillMinor = arrange(
+        teenRow({ birthday: new Date('2008-10-21T00:00:00.000Z') }),
+      );
+      await expect(
+        stillMinor.service.issueTeenGuardianLink(TEEN),
+      ).resolves.toBeDefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a user without a birthday or without an account row is refused (cannot prove a minor)', async () => {
+    expect(
+      (
+        await errorOf(
+          arrange(teenRow({ birthday: null })).service.issueTeenGuardianLink(
+            TEEN,
+          ),
+        )
+      )?.code,
+    ).toBe(ErrorCode.PRINCIPAL_SCOPE_DENIED);
+    expect(
+      (await errorOf(arrange(null).service.issueTeenGuardianLink(TEEN)))?.code,
+    ).toBe(ErrorCode.PRINCIPAL_SCOPE_DENIED);
+  });
+
+  it('a frozen or purged teen gets no code (404)', async () => {
+    const frozen = arrange(
+      teenRow({
+        dependent_profile: { frozen_at: new Date(), purged_at: null },
+      }),
+    );
+    expect(
+      (await errorOf(frozen.service.issueTeenGuardianLink(TEEN)))?.code,
+    ).toBe(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+    const purged = arrange(
+      teenRow({
+        dependent_profile: { frozen_at: null, purged_at: new Date() },
+      }),
+    );
+    expect(
+      (await errorOf(purged.service.issueTeenGuardianLink(TEEN)))?.code,
+    ).toBe(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+  });
+
+  it('a teen who already has a guardian (even a pending link) gets 409 GUARDIANSHIP_ALREADY_GUARDIAN', async () => {
+    const { service, tx } = arrange(teenRow(), 1);
+    const error = await errorOf(service.issueTeenGuardianLink(TEEN));
+    expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_ALREADY_GUARDIAN);
+    expect(error?.getStatus?.()).toBe(409);
+    expect(tx.guardianship_link_codes.create).not.toHaveBeenCalled();
+  });
+
+  it('follows the country majority (16 makes a 16-year-old an adult)', async () => {
+    const ctx = arrange(teenRow({ birthday: birthdayOf(16), country_id: 9 }));
+    ctx.agePolicy.getPolicy.mockResolvedValue({
+      minSelfLoginAge: 13,
+      ageOfMajority: 16,
+      timeZone: 'America/Mexico_City',
+    });
+    expect((await errorOf(ctx.service.issueTeenGuardianLink(TEEN)))?.code).toBe(
+      ErrorCode.PRINCIPAL_SCOPE_DENIED,
+    );
+    expect(ctx.agePolicy.getPolicy).toHaveBeenCalledWith(9);
+  });
+});
+
+describe('LinkCodesService.redeem: teen_guardian_link (phase 3a)', () => {
+  const TEEN = DEPENDENT;
+  const teenCode = codeRow({
+    purpose: 'teen_guardian_link',
+    issued_by_user_id: TEEN,
+  });
+  const birthdayOf = (years: number) => {
+    const d = new Date();
+    d.setUTCFullYear(d.getUTCFullYear() - years);
+    d.setUTCDate(d.getUTCDate() - 5);
+    return d;
+  };
+  const teenRow = (overrides: Record<string, unknown> = {}) => ({
+    birthday: birthdayOf(15),
+    country_id: null,
+    dependent_profile: null,
+    ...overrides,
+  });
+
+  function arrange(
+    options: {
+      teen?: unknown;
+      alreadyGuardian?: boolean;
+      activeGuardiansOfTeen?: number;
+      redeemerDependents?: number;
+    } = {},
+  ) {
+    const ctx = setup();
+    ctx.tx.guardianship_link_codes.findFirst.mockResolvedValue(teenCode);
+    ctx.tx.users.findFirst.mockResolvedValue(
+      options.teen === undefined ? teenRow() : options.teen,
+    );
+    ctx.tx.guardianships.findFirst.mockResolvedValue(
+      options.alreadyGuardian ? { guardianship_id: 'g-me' } : null,
+    );
+    // count(): first the teen's active guardians, then the redeemer's dependents.
+    ctx.tx.guardianships.count
+      .mockReset()
+      .mockResolvedValueOnce(options.activeGuardiansOfTeen ?? 0)
+      .mockResolvedValue(options.redeemerDependents ?? 0);
+    return ctx;
+  }
+
+  it('creates the teen profile, a NON-custodian primary PENDING guardianship without inviter, and never verifies it', async () => {
+    const { service, tx, created, actingForCache, guardianships } = arrange();
+
+    const result = await service.redeem(REDEEMER, redeemDto());
+
+    expect(tx.dependent_profiles.upsert).toHaveBeenCalledWith({
+      where: { user_id: TEEN },
+      update: {},
+      create: { user_id: TEEN, created_by_user_id: TEEN },
+    });
+    expect(created).toEqual([
+      expect.objectContaining({
+        dependent_user_id: TEEN,
+        guardian_user_id: REDEEMER,
+        relationship_type_id: REL,
+        is_primary: true,
+        is_custodian: false,
+        consent_status: 'pending',
+        invited_by_guardianship_id: null,
+        sworn_declaration_at: expect.any(Date),
+      }),
+    ]);
+    expect(created[0]).not.toHaveProperty('verified_at');
+    expect(created[0]).not.toHaveProperty('verification_method');
+    expect(created[0]).not.toHaveProperty('verified_by_user_id');
+    expect(actingForCache.bump).toHaveBeenCalledWith(TEEN);
+    expect(guardianships.getSummaryForGuardian).toHaveBeenCalledWith(
+      REDEEMER,
+      TEEN,
+    );
+    expect(result).toEqual({ user_id: TEEN });
+  });
+
+  it('stops the guardian-less clock and records who linked (supervised_logins upsert)', async () => {
+    const { service, tx } = arrange();
+    await service.redeem(REDEEMER, redeemDto());
+
+    const call = tx.supervised_logins.upsert.mock.calls[0][0];
+    expect(call.where).toEqual({ user_id: TEEN });
+    expect(call.update).toMatchObject({
+      enabled_by_guardianship_id: 'gs-new',
+      enabled_by_user_id: REDEEMER,
+      enabled_at: expect.any(Date),
+      pending_since: null,
+      pending_reminder_level: 0,
+    });
+    expect(call.create).toMatchObject({
+      user_id: TEEN,
+      method: 'email',
+      origin: 'self_registered',
+      password_set_by: 'self',
+      pending_since: null,
+    });
+  });
+
+  it('asks the linked-device port to cut any device of the teen in the same transaction', async () => {
+    const { service, tx, deviceRevoker } = arrange();
+    await service.redeem(REDEEMER, redeemDto());
+    expect(deviceRevoker.revokeAllForDependent).toHaveBeenCalledWith(
+      tx,
+      TEEN,
+      'teen_login_enabled',
+    );
+  });
+
+  it('hands club custody over like a director claim (custody revoked as claimed BEFORE the new primary)', async () => {
+    const { service, tx } = arrange();
+    await service.redeem(REDEEMER, redeemDto());
+
+    expect(tx.guardianships.updateMany.mock.calls[0][0]).toEqual({
+      where: {
+        dependent_user_id: TEEN,
+        guardian_user_id: null,
+        consent_status: { not: 'revoked' },
+      },
+      data: {
+        consent_status: 'revoked',
+        revoked_at: expect.any(Date),
+        revoked_reason: 'claimed',
+        modified_at: expect.any(Date),
+      },
+    });
+    expect(
+      tx.guardianships.updateMany.mock.invocationCallOrder[0],
+    ).toBeLessThan(tx.guardianships.create.mock.invocationCallOrder[0]);
+  });
+
+  it('locks the teen first and takes the redeemer create-lock for the 10-dependent cap', async () => {
+    const { service, tx } = arrange();
+    await service.redeem(REDEEMER, redeemDto());
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a redeemer who is 17 or has no birthday before the code is touched (422, nothing consumed)', async () => {
+    const { service, guardianships, committed, prisma } = arrange();
+    guardianships.assertAdult.mockRejectedValue(
+      Object.assign(new Error('x'), {
+        code: ErrorCode.GUARDIANSHIP_GUARDIAN_NOT_ADULT,
+      }),
+    );
+    expect((await errorOf(service.redeem(REDEEMER, redeemDto())))?.code).toBe(
+      ErrorCode.GUARDIANSHIP_GUARDIAN_NOT_ADULT,
+    );
+    guardianships.assertAdult.mockRejectedValue(
+      Object.assign(new Error('x'), {
+        code: ErrorCode.GUARDIANSHIP_GUARDIAN_BIRTHDAY_REQUIRED,
+      }),
+    );
+    expect((await errorOf(service.redeem(REDEEMER, redeemDto())))?.code).toBe(
+      ErrorCode.GUARDIANSHIP_GUARDIAN_BIRTHDAY_REQUIRED,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(committed.codeConsumed).toBe(false);
+  });
+
+  it('refuses the teen redeeming their own code (403 SELF_REDEEM) without consuming it', async () => {
+    const { service, committed } = arrange();
+    const error = await errorOf(service.redeem(TEEN, redeemDto()));
+    expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_SELF_REDEEM);
+    expect(committed.codeConsumed).toBe(false);
+  });
+
+  it('409 ALREADY_GUARDIAN when the redeemer already guards the teen; the code is not consumed', async () => {
+    const { service, committed, failures } = arrange({ alreadyGuardian: true });
+    const error = await errorOf(service.redeem(REDEEMER, redeemDto()));
+    expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_ALREADY_GUARDIAN);
+    expect(error?.getStatus?.()).toBe(409);
+    expect(committed.codeConsumed).toBe(false);
+    expect(await failures.current(REDEEMER)).toBe(0);
+  });
+
+  it('409 DEPENDENT_LIMIT_REACHED at 10 dependents (teens count); the code is not consumed', async () => {
+    const { service, committed, created } = arrange({ redeemerDependents: 10 });
+    const error = await errorOf(service.redeem(REDEEMER, redeemDto()));
+    expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_DEPENDENT_LIMIT_REACHED);
+    expect(committed.codeConsumed).toBe(false);
+    expect(created).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      'a frozen teen',
+      teenRow({
+        dependent_profile: { frozen_at: new Date(), purged_at: null },
+      }),
+    ],
+    [
+      'a purged teen',
+      teenRow({
+        dependent_profile: { frozen_at: null, purged_at: new Date() },
+      }),
+    ],
+    ['a teen who turned 18 meanwhile', teenRow({ birthday: birthdayOf(19) })],
+    ['a teen with no birthday', teenRow({ birthday: null })],
+    ['a teen that is gone or has no account', null],
+  ])(
+    'is the uniform invalid code for %s, counts a failure and rolls back',
+    async (_label, teen) => {
+      const { service, committed, failures, created } = arrange({ teen });
+      const error = await errorOf(service.redeem(REDEEMER, redeemDto()));
+      expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_INVALID);
+      expect(error?.getStatus?.()).toBe(400);
+      expect(committed.codeConsumed).toBe(false);
+      expect(await failures.current(REDEEMER)).toBe(1);
+      expect(created).toHaveLength(0);
+    },
+  );
+
+  it('is invalid when somebody linked the teen first (already has an active user guardian)', async () => {
+    const { service, committed, created } = arrange({
+      activeGuardiansOfTeen: 1,
+    });
+    const error = await errorOf(service.redeem(REDEEMER, redeemDto()));
+    expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_INVALID);
+    expect(committed.codeConsumed).toBe(false);
+    expect(created).toHaveLength(0);
+  });
+
+  it('single use: the loser of a race gets the uniform 400', async () => {
+    const { service, tx, created } = arrange();
+    tx.guardianship_link_codes.updateMany.mockResolvedValue({ count: 0 });
+    const error = await errorOf(service.redeem(REDEEMER, redeemDto()));
+    expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_INVALID);
+    expect(created).toHaveLength(0);
+  });
+
+  it('tells the TEEN after the commit that an adult linked (a notice, never a failure of the redeem)', async () => {
+    const { service, events } = arrange();
+    events.onGuardianLinked.mockRejectedValue(new Error('push down'));
+
+    await expect(service.redeem(REDEEMER, redeemDto())).resolves.toBeDefined();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(events.onGuardianLinked).toHaveBeenCalledWith({
+      teenUserId: TEEN,
+      guardianUserId: REDEEMER,
+    });
+  });
+
+  it('a second_guardian redeem sends no teen notice', async () => {
+    const { service, tx, events } = setup();
+    tx.guardianships.findFirst
+      .mockResolvedValueOnce({
+        guardianship_id: 'g-inv',
+        consent_status: 'verified',
+      })
+      .mockResolvedValueOnce(null);
+    tx.guardianships.count.mockResolvedValue(1);
+
+    await service.redeem(REDEEMER, redeemDto());
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(events.onGuardianLinked).not.toHaveBeenCalled();
+  });
+
+  it('a failed teen redeem sends no notice', async () => {
+    const { service, events } = arrange({ alreadyGuardian: true });
+    await errorOf(service.redeem(REDEEMER, redeemDto()));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(events.onGuardianLinked).not.toHaveBeenCalled();
+  });
+
+  it('the redeem result is the DependentSummary of the teen (access_mode comes from the summary service)', async () => {
+    const { service, guardianships } = arrange();
+    guardianships.getSummaryForGuardian.mockResolvedValue({
+      user_id: TEEN,
+      access_mode: 'supervised_login',
+    });
+    expect(await service.redeem(REDEEMER, redeemDto())).toEqual({
+      user_id: TEEN,
+      access_mode: 'supervised_login',
+    });
+  });
+});
+
+describe('LinkCodesService.redeem: purposes are isolated (phase 3a)', () => {
+  it('a second_guardian code can be redeemed for a teen (account holder): the dependent lookup does not require "no account"', async () => {
+    const { service, tx } = setup();
+    tx.guardianships.findFirst
+      .mockResolvedValueOnce({
+        guardianship_id: 'g-inv',
+        consent_status: 'verified',
+      })
+      .mockResolvedValueOnce(null);
+    tx.guardianships.count.mockResolvedValue(1);
+
+    await service.redeem(REDEEMER, redeemDto());
+
+    const where = tx.users.findFirst.mock.calls[0][0].where;
+    expect(where).not.toHaveProperty('account');
+    expect(where.dependent_profile).toEqual({
+      is: { frozen_at: null, purged_at: null },
+    });
+  });
+
+  it('a director_claim code stays custodial-only (requires no account)', async () => {
+    const { service, tx } = setup();
+    tx.guardianship_link_codes.findFirst.mockResolvedValue(
+      codeRow({
+        purpose: 'director_claim',
+        issued_by_user_id: DIRECTOR,
+        issued_for_club_section_id: 5,
+      }),
+    );
+    tx.guardianships.count.mockResolvedValue(0);
+
+    await service.redeem(REDEEMER, redeemDto());
+
+    expect(tx.users.findFirst.mock.calls[0][0].where.account).toEqual({
+      none: {},
+    });
+  });
+
+  it('a teen code never creates a second-guardian row on an unrelated dependent: it only ever builds a pending primary for the issuer', async () => {
+    const ctx = setup();
+    ctx.tx.guardianship_link_codes.findFirst.mockResolvedValue(
+      codeRow({ purpose: 'teen_guardian_link', issued_by_user_id: DEPENDENT }),
+    );
+    ctx.tx.users.findFirst.mockResolvedValue({
+      birthday: new Date('2011-01-01'),
+      country_id: null,
+      dependent_profile: null,
+    });
+    ctx.tx.guardianships.findFirst.mockResolvedValue(null);
+    ctx.tx.guardianships.count.mockReset().mockResolvedValue(0);
+
+    await ctx.service.redeem(REDEEMER, redeemDto());
+
+    expect(ctx.created).toHaveLength(1);
+    expect(ctx.created[0]).toMatchObject({
+      dependent_user_id: DEPENDENT,
+      is_primary: true,
+      consent_status: 'pending',
+    });
   });
 });

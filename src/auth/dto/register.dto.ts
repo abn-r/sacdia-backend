@@ -41,7 +41,7 @@ export class RegisterDto {
   declare password: string;
 
   @ApiProperty({
-    example: '1.0.0-store',
+    example: '2.0.0-family',
     description:
       'Versión vigente de los Términos y Condiciones (GET /legal/current)',
   })
@@ -52,7 +52,7 @@ export class RegisterDto {
   declare accepted_terms_version: string;
 
   @ApiProperty({
-    example: '1.0.0-store',
+    example: '2.0.0-family',
     description: 'Versión vigente del Aviso de Privacidad (GET /legal/current)',
   })
   @Transform(trimLegalVersion)

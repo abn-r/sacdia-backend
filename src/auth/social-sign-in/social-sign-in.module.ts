@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createRemoteJWKSet } from 'jose';
 import { BetterAuthModule } from '../../better-auth/better-auth.module';
+import { GuardianshipsModule } from '../../guardianships/guardianships.module';
+import { ActingForModule } from '../acting-for/acting-for.module';
 import {
   AppleIdTokenVerifier,
   APPLE_JWKS_URL,
@@ -29,7 +31,8 @@ const JWKS_OPTIONS = { timeoutDuration: 5_000 };
  * docs/plans/2026-10-14-native-social-sign-in-design.md).
  */
 @Module({
-  imports: [BetterAuthModule],
+  // The supervised classification and the guardian security notices.
+  imports: [BetterAuthModule, ActingForModule, GuardianshipsModule],
   controllers: [SocialSignInController],
   providers: [
     {

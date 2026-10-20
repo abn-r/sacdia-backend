@@ -7,3 +7,4 @@ export * from './notification-stats-response.dto';
 export * from './reference.dto';
 export * from './users.dto';
 export * from './notification-category-settings.dto';
+export * from './family-access.dto';

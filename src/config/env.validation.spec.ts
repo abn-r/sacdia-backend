@@ -671,3 +671,31 @@ describe('THROTTLER_REDIS_FALLBACK validation', () => {
     expect(value.THROTTLER_FAIL_OPEN).toBe(true);
   });
 });
+
+describe('family profiles phase 3 flags', () => {
+  const FLAGS = [
+    'FAMILY_TEEN_LOGIN_ENABLED',
+    'FAMILY_LINKED_DEVICE_ENABLED',
+    'FAMILY_DIRECTOR_CREATE_MINOR_ENABLED',
+  ] as const;
+
+  it('defaults all three flags to false', () => {
+    const { error, value } = validate();
+
+    expect(error).toBeUndefined();
+    for (const flag of FLAGS) {
+      expect(value[flag]).toBe(false);
+    }
+  });
+
+  it.each(FLAGS)('parses %s=true as a boolean', (flag) => {
+    const { error, value } = validate({ [flag]: 'true' });
+
+    expect(error).toBeUndefined();
+    expect(value[flag]).toBe(true);
+  });
+
+  it.each(FLAGS)('rejects %s=maybe', (flag) => {
+    expect(validate({ [flag]: 'maybe' }).error).toBeDefined();
+  });
+});

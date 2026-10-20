@@ -205,8 +205,45 @@ describe('UserNotificationPreferencesController', () => {
       expect(mockFcmTokensService.registerToken).toHaveBeenCalledWith(
         USER_ID,
         expect.objectContaining({ token: 'fcm-token-abc', device_type: 'ios' }),
+        { linkedDeviceId: null },
       );
       expect(result).toBe(tokenRecord);
+    });
+
+    it('a linked device passes its device id so the token is remembered on the device row (3b)', async () => {
+      mockFcmTokensService.registerToken.mockResolvedValue({});
+
+      await controller.registerFcmToken(
+        { token: 'fcm-token-abc' },
+        {
+          user: {
+            sub: USER_ID,
+            kind: 'linked_device',
+            linked_device_id: 'dev-1',
+          },
+        },
+      );
+
+      expect(mockFcmTokensService.registerToken).toHaveBeenCalledWith(
+        USER_ID,
+        expect.anything(),
+        { linkedDeviceId: 'dev-1' },
+      );
+    });
+
+    it('a teen or a guardian never passes a device id', async () => {
+      mockFcmTokensService.registerToken.mockResolvedValue({});
+
+      await controller.registerFcmToken(
+        { token: 'fcm-token-abc' },
+        { user: { sub: USER_ID, kind: 'supervised_user' } },
+      );
+
+      expect(mockFcmTokensService.registerToken).toHaveBeenCalledWith(
+        USER_ID,
+        expect.anything(),
+        { linkedDeviceId: null },
+      );
     });
   });
 

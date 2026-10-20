@@ -7,6 +7,9 @@ import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
 import { GuardianshipsController } from './guardianships.controller';
 import { GuardianshipsService } from './guardianships.service';
 import { LinkCodesService } from './link-codes.service';
+import { SupervisedLoginsService } from './supervised-logins.service';
+import { DevicePairingService } from './device-pairing.service';
+import { LinkedDevicesService } from './linked-devices.service';
 
 const USER = { sub: 'guardian-1' };
 
@@ -36,6 +39,22 @@ describe('GuardianshipsController', () => {
     getForGuardian: jest.fn().mockResolvedValue({ url: 'https://signed/x' }),
   };
 
+  const supervisedLogins = {
+    get: jest.fn().mockResolvedValue({ eligible: true }),
+    enable: jest.fn().mockResolvedValue({ supervised_login: {} }),
+    disable: jest.fn().mockResolvedValue({ supervised_login: {} }),
+    reactivate: jest.fn().mockResolvedValue({ supervised_login: {} }),
+    resetPassword: jest.fn().mockResolvedValue({ sessions_revoked: 1 }),
+  };
+
+  const devicePairing = {
+    issue: jest.fn().mockResolvedValue({ pairing_token: 'T'.repeat(22) }),
+  };
+  const linkedDevices = {
+    list: jest.fn().mockResolvedValue({ devices: [] }),
+    revoke: jest.fn().mockResolvedValue({ linked_device_id: 'dev-1' }),
+  };
+
   let controller: GuardianshipsController;
   let claimController: DependentClaimCodesController;
 
@@ -48,6 +67,9 @@ describe('GuardianshipsController', () => {
         { provide: LinkCodesService, useValue: linkCodes },
         { provide: GuardianshipLifecycleService, useValue: lifecycle },
         { provide: GuardianEvidenceService, useValue: evidence },
+        { provide: SupervisedLoginsService, useValue: supervisedLogins },
+        { provide: DevicePairingService, useValue: devicePairing },
+        { provide: LinkedDevicesService, useValue: linkedDevices },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -138,6 +160,125 @@ describe('GuardianshipsController', () => {
         3_600_000,
       );
     }
+  });
+
+  describe('supervised login routes (phase 3a)', () => {
+    it('delegate to the service as the token subject and wrap the envelope', async () => {
+      const enable = { method: 'handle', password: 'x' } as never;
+      expect(
+        await controller.enableSupervisedLogin(USER, 'd-1', enable),
+      ).toEqual({ status: 'success', data: { supervised_login: {} } });
+      expect(supervisedLogins.enable).toHaveBeenCalledWith(
+        'guardian-1',
+        'd-1',
+        enable,
+      );
+
+      await controller.getSupervisedLogin(USER, 'd-1');
+      expect(supervisedLogins.get).toHaveBeenCalledWith('guardian-1', 'd-1');
+
+      const disable = { reason: 'x' } as never;
+      await controller.disableSupervisedLogin(USER, 'd-1', disable);
+      expect(supervisedLogins.disable).toHaveBeenCalledWith(
+        'guardian-1',
+        'd-1',
+        disable,
+      );
+
+      const reactivate = { password: 'x' } as never;
+      await controller.reactivateSupervisedLogin(USER, 'd-1', reactivate);
+      expect(supervisedLogins.reactivate).toHaveBeenCalledWith(
+        'guardian-1',
+        'd-1',
+        reactivate,
+      );
+
+      const reset = { password: 'x' } as never;
+      expect(
+        await controller.resetSupervisedPassword(USER, 'd-1', reset),
+      ).toEqual({ status: 'success', data: { sessions_revoked: 1 } });
+      expect(supervisedLogins.resetPassword).toHaveBeenCalledWith(
+        'guardian-1',
+        'd-1',
+        reset,
+      );
+    });
+
+    it('throttles enable to 5 per hour on every tier', () => {
+      const handler = GuardianshipsController.prototype.enableSupervisedLogin;
+      for (const tier of ['short', 'medium', 'long']) {
+        expect(Reflect.getMetadata(`THROTTLER:LIMIT${tier}`, handler)).toBe(5);
+        expect(Reflect.getMetadata(`THROTTLER:TTL${tier}`, handler)).toBe(
+          3_600_000,
+        );
+      }
+    });
+  });
+
+  describe('linked device routes (phase 3b)', () => {
+    const HOUR = 3_600_000;
+
+    it('issue, list and revoke act as the token subject and wrap the envelope', async () => {
+      expect(await controller.issueDevicePairingToken(USER, 'd-1')).toEqual({
+        status: 'success',
+        data: { pairing_token: 'T'.repeat(22) },
+      });
+      expect(devicePairing.issue).toHaveBeenCalledWith('guardian-1', 'd-1');
+
+      expect(await controller.listDevices(USER, 'd-1')).toEqual({
+        status: 'success',
+        data: { devices: [] },
+      });
+      expect(linkedDevices.list).toHaveBeenCalledWith('guardian-1', 'd-1');
+
+      expect(await controller.revokeDevice(USER, 'd-1', 'dev-1')).toEqual({
+        status: 'success',
+        data: { linked_device_id: 'dev-1' },
+      });
+      expect(linkedDevices.revoke).toHaveBeenCalledWith(
+        'guardian-1',
+        'd-1',
+        'dev-1',
+      );
+    });
+
+    it.each([
+      ['issueDevicePairingToken', 10],
+      ['revokeDevice', 30],
+    ] as const)('throttles %s to %d per hour on every tier', (name, limit) => {
+      const handler = GuardianshipsController.prototype[name];
+      for (const tier of ['short', 'medium', 'long']) {
+        expect(Reflect.getMetadata(`THROTTLER:LIMIT${tier}`, handler)).toBe(
+          limit,
+        );
+        expect(Reflect.getMetadata(`THROTTLER:TTL${tier}`, handler)).toBe(HOUR);
+      }
+    });
+
+    it('uses the design paths and verbs', () => {
+      const route = (name: keyof GuardianshipsController) => ({
+        path: Reflect.getMetadata(
+          'path',
+          GuardianshipsController.prototype[name],
+        ),
+        method: Reflect.getMetadata(
+          'method',
+          GuardianshipsController.prototype[name],
+        ),
+      });
+      expect(route('issueDevicePairingToken')).toEqual({
+        path: 'me/dependents/:dependentId/devices/pairing-tokens',
+        method: 1, // POST
+      });
+      expect(route('listDevices')).toEqual({
+        path: 'me/dependents/:dependentId/devices',
+        method: 0, // GET
+      });
+      expect(route('revokeDevice')).toEqual({
+        path: 'me/dependents/:dependentId/devices/:deviceId/revoke',
+        method: 1,
+      });
+    });
   });
 
   it('delegates the director claim code to the service with the section', async () => {

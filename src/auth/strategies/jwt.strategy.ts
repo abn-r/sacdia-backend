@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  AppException,
   AppServiceUnavailableException,
   AppUnauthorizedException,
 } from '../../common/errors/app.exception';
@@ -15,24 +16,40 @@ import {
   type AuthBlacklistDegradedMode,
 } from '../../config/redis-degraded.config';
 import {
-  ACCESS_JWT_AUDIENCE,
+  ACCEPTED_BEARER_AUDIENCES,
   ACCESS_JWT_ISSUER,
   DEVICE_AUDIENCE,
   QR_MEMBER_AUDIENCE,
   isAccessJwtClaims,
+  isDeviceJwtClaims,
   jwtAudienceIncludes,
 } from '../../common/constants/jwt-audiences';
 import { setAuditActingFor } from '../../audit-logs/audit-request-context';
 import {
   actingForForbidden,
   actingForHeaderInvalid,
+  deviceRevoked,
+  supervisedAccessRevoked,
 } from '../acting-for/acting-for.errors';
 import type { ActingGrant } from '../acting-for/acting-for.cache';
 import { ActingForResolver } from '../acting-for/acting-for.resolver';
 import {
+  scopesForSupervision,
+  SupervisedPrincipalResolver,
+} from '../supervised/supervised-principal.resolver';
+import {
   ACTING_GRANT_MEMO,
+  AGE_UNKNOWN_SCOPES,
+  DEVICE_SCOPES,
+  LINKED_DEVICE_MEMO,
   type AuthPrincipal,
+  type SupervisionStatus,
 } from '../acting-for/auth-principal';
+import { FamilyFeatureFlagsService } from '../../guardianships/family-feature-flags.service';
+import {
+  LinkedDeviceGate,
+  type DeviceGateActive,
+} from '../device/linked-device.gate';
 
 /** Header a guardian sends to act for one of their dependents. */
 export const ACTING_FOR_HEADER = 'x-acting-for';
@@ -46,12 +63,21 @@ interface ActingGrantMemo {
   grant: ActingGrant;
 }
 
+interface LinkedDeviceMemo {
+  dependentId: string;
+  deviceId: string;
+  sid: string;
+  decision: DeviceGateActive;
+}
+
 export interface JwtPayload {
   sub: string; // user_id
   /** Null when the subject has no email (dependent profiles). */
   email: string | null;
   /**
    * Access JWTs require iss=https://api.sacdia.app and aud=sacdia:access.
+   * Device JWTs (a child's paired phone) require the same issuer and aud EXACTLY
+   * the string sacdia:device, plus `sid` and `dev`.
    * QR member tokens set aud=sacdia:qr-member and must not authenticate API routes.
    */
   iss?: string;
@@ -68,6 +94,8 @@ export interface JwtPayload {
    * Absent in tokens issued before this change or via MFA verify endpoint.
    */
   sid?: string;
+  /** Linked device id. Only on device JWTs; ignored on every other token. */
+  dev?: string;
   iat?: number;
   exp?: number;
 }
@@ -86,6 +114,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly tokenBlacklistService: TokenBlacklistService,
     private readonly prisma: PrismaService,
     private readonly actingForResolver: ActingForResolver,
+    private readonly supervisedResolver: SupervisedPrincipalResolver,
+    private readonly linkedDeviceGate: LinkedDeviceGate,
+    private readonly familyFlags: FamilyFeatureFlagsService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -94,7 +125,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       secretOrKey: configService.getOrThrow<string>('BETTER_AUTH_SECRET'),
       algorithms: ['HS256'],
       issuer: ACCESS_JWT_ISSUER,
-      audience: ACCESS_JWT_AUDIENCE,
+      // Access AND device tokens verify here; `validate` tells them apart (a
+      // token naming both, or the device audience as an array, is rejected).
+      audience: ACCEPTED_BEARER_AUDIENCES,
     });
 
     this.degradedMode = resolveAuthBlacklistDegradedMode(
@@ -107,13 +140,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(req: Request, payload: JwtPayload): Promise<AuthPrincipal> {
     if (jwtAudienceIncludes(payload.aud, DEVICE_AUDIENCE)) {
-      this.logger.warn(
-        JSON.stringify({
-          event: 'auth_jwt_device_audience_rejected',
-          sub: payload.sub,
-        }),
-      );
-      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
+      return this.validateDeviceToken(req, payload);
     }
 
     if (jwtAudienceIncludes(payload.aud, QR_MEMBER_AUDIENCE)) {
@@ -136,6 +163,67 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
     }
 
+    await this.assertTokenNotRevoked(req, payload);
+
+    const basePrincipal: AuthPrincipal = {
+      sub: payload.sub,
+      userId: payload.sub,
+      user_id: payload.sub,
+      email: payload.email ?? null,
+      mfa_pending: payload.mfa_pending ?? false,
+      sid: payload.sid ?? null,
+      kind: 'user',
+      actor_sub: payload.sub,
+      acting_for: false,
+      scopes: null,
+    };
+
+    // The principal kind is derived from SERVER state, never from a token
+    // claim: a forged `kind` is simply ignored. Runs before X-Acting-For.
+    const supervised = await this.supervisedResolver.resolveForRequest(
+      req,
+      payload.sub,
+    );
+    if (supervised.state === 'blocked') {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_supervised_blocked',
+          sub: payload.sub,
+          cause: supervised.cause,
+        }),
+      );
+      throw supervisedAccessRevoked();
+    }
+    if (supervised.state === 'supervised') {
+      return this.buildSupervisedPrincipal(
+        req,
+        payload,
+        basePrincipal,
+        supervised.supervision,
+      );
+    }
+
+    if (supervised.state === 'profile_incomplete') {
+      return this.buildAgeUnknownPrincipal(req, payload, basePrincipal);
+    }
+
+    const dependentId = this.readActingForHeader(req);
+    if (dependentId === null) {
+      return basePrincipal;
+    }
+
+    return this.buildActingPrincipal(req, payload, basePrincipal, dependentId);
+  }
+
+  /**
+   * The blacklist checks every bearer token goes through (access and device):
+   * the token itself, then every token of the subject issued before a
+   * user-level revoke. A cache outage applies the configured degraded mode.
+   */
+  private async assertTokenNotRevoked(
+    req: Request,
+    payload: JwtPayload,
+  ): Promise<void> {
     const token = this.extractToken(req);
 
     let revocationCheckUnavailable = false;
@@ -167,7 +255,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             sub: payload.sub,
           }),
         );
-        throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
+        throw await this.userBlacklistedError(req, payload.sub);
       }
       revocationCheckUnavailable = userStatus === 'unavailable';
     }
@@ -175,26 +263,217 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (revocationCheckUnavailable) {
       await this.applyDegradedMode(payload);
     }
+  }
 
-    const basePrincipal: AuthPrincipal = {
-      sub: payload.sub,
-      userId: payload.sub,
-      user_id: payload.sub,
-      email: payload.email ?? null,
-      mfa_pending: payload.mfa_pending ?? false,
-      sid: payload.sid ?? null,
-      kind: 'user',
-      actor_sub: payload.sub,
-      acting_for: false,
-      scopes: null,
-    };
-
-    const dependentId = this.readActingForHeader(req);
-    if (dependentId === null) {
-      return basePrincipal;
+  /**
+   * A linked device (a child's paired phone), `aud` = sacdia:device.
+   *
+   * The token only proves WHO signed it; whether the device may act right now is
+   * the gate's decision, on every request (a revoke has to cut access inside the
+   * 1 h lifetime). The principal is NEVER derived from a claim: `sub`, `sid` and
+   * `dev` are inputs to the gate, which checks them against the database, so a
+   * forged or stale token cannot name a device it does not own.
+   *
+   * Rejections, all before any principal exists: the audience is not EXACTLY
+   * the device string (an array, or both audiences) -> 401; the kill switch
+   * (FAMILY_LINKED_DEVICE_ENABLED off) -> 401 AUTH_DEVICE_REVOKED; missing
+   * sub/sid/dev -> 401; a revoked token -> 401; X-Acting-For -> 403
+   * ACTING_FOR_FORBIDDEN (a device never acts for anyone).
+   */
+  private async validateDeviceToken(
+    req: Request,
+    payload: JwtPayload,
+  ): Promise<AuthPrincipal> {
+    if (!isDeviceJwtClaims(payload)) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_device_claims_rejected',
+          sub: payload.sub,
+        }),
+      );
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
     }
 
-    return this.buildActingPrincipal(req, payload, basePrincipal, dependentId);
+    // The kill switch comes first: no Redis, no database while it is off.
+    if (!this.familyFlags.isEnabled('linked_device')) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_device_flag_off',
+          sub: payload.sub,
+        }),
+      );
+      throw deviceRevoked();
+    }
+
+    if (
+      typeof payload.sub !== 'string' ||
+      !UUID_PATTERN.test(payload.sub) ||
+      typeof payload.sid !== 'string' ||
+      payload.sid.length === 0 ||
+      typeof payload.dev !== 'string' ||
+      !UUID_PATTERN.test(payload.dev)
+    ) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_device_claims_incomplete',
+          sub: payload.sub,
+        }),
+      );
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
+    }
+    const dependentId = payload.sub.toLowerCase();
+    const sid = payload.sid;
+    const deviceId = payload.dev.toLowerCase();
+
+    await this.assertTokenNotRevoked(req, payload);
+
+    if (req.headers?.[ACTING_FOR_HEADER] !== undefined) {
+      this.logActingDenied(dependentId, dependentId, 'device_token');
+      throw actingForForbidden();
+    }
+
+    // A local @UseGuards(JwtAuthGuard) re-runs validate() on the same request:
+    // reuse the first decision instead of repeating the lookup.
+    const memoHolder = req as Request & {
+      [LINKED_DEVICE_MEMO]?: LinkedDeviceMemo;
+    };
+    const memo = memoHolder[LINKED_DEVICE_MEMO];
+    let decision: DeviceGateActive;
+    if (
+      memo &&
+      memo.dependentId === dependentId &&
+      memo.deviceId === deviceId &&
+      memo.sid === sid
+    ) {
+      decision = memo.decision;
+    } else {
+      decision = await this.linkedDeviceGate.assertActive({
+        dependentId,
+        sid,
+        deviceId,
+      });
+      memoHolder[LINKED_DEVICE_MEMO] = { dependentId, deviceId, sid, decision };
+    }
+
+    setAuditActingFor({
+      actorUserId: dependentId,
+      subjectUserId: dependentId,
+      guardianshipId: decision.guardianshipId,
+      linkedDeviceId: decision.linkedDeviceId,
+      kind: 'linked_device',
+    });
+
+    return {
+      sub: dependentId,
+      userId: dependentId,
+      user_id: dependentId,
+      // A dependent has no account email, and a device carries no MFA state.
+      email: null,
+      mfa_pending: false,
+      sid,
+      kind: 'linked_device',
+      actor_sub: dependentId,
+      acting_for: false,
+      scopes: DEVICE_SCOPES,
+      guardianship_id: decision.guardianshipId,
+      linked_device_id: decision.linkedDeviceId,
+    };
+  }
+
+  /**
+   * The 401 for a token caught by the user-level blacklist. The request is
+   * rejected no matter what; only the REASON differs. A guardian disable (and a
+   * reset) blacklists every token of the minor, and that check runs before the
+   * supervised one, so without this the old teen token got the generic
+   * GUARD_JWT_UNAUTHORIZED instead of AUTH_SUPERVISED_ACCESS_REVOKED, the code
+   * the app uses to explain the cut. Adults keep the generic code, and a failed
+   * state lookup falls back to it (never a 503, never a pass).
+   */
+  private async userBlacklistedError(
+    req: Request,
+    userId: string,
+  ): Promise<AppException> {
+    try {
+      const state = await this.supervisedResolver.resolveForRequest(
+        req,
+        userId,
+      );
+      if (state.state === 'blocked' || state.state === 'supervised') {
+        return supervisedAccessRevoked();
+      }
+    } catch {
+      // Fall through to the generic code: the token is rejected regardless.
+    }
+    return new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
+  }
+
+  /**
+   * A supervised teen (account holder under the age of majority). Never a
+   * guardian, so `X-Acting-For` is refused (uniform 403, before any grant
+   * lookup). The token's session must still exist: disable, reset and password
+   * change delete the sessions and bump the epoch, so the very next request is
+   * a 401 even inside the 8h JWT.
+   */
+  private async buildSupervisedPrincipal(
+    req: Request,
+    payload: JwtPayload,
+    basePrincipal: AuthPrincipal,
+    supervision: SupervisionStatus,
+  ): Promise<AuthPrincipal> {
+    if (req.headers?.[ACTING_FOR_HEADER] !== undefined) {
+      this.logActingDenied(payload.sub, payload.sub, 'supervised_token');
+      throw actingForForbidden();
+    }
+
+    const sessionActive = await this.supervisedResolver.isSessionActive(
+      payload.sub,
+      payload.sid ?? null,
+    );
+    if (!sessionActive) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_supervised_session_missing',
+          sub: payload.sub,
+        }),
+      );
+      throw supervisedAccessRevoked();
+    }
+
+    setAuditActingFor({
+      actorUserId: payload.sub,
+      subjectUserId: payload.sub,
+      kind: 'supervised_user',
+    });
+
+    return {
+      ...basePrincipal,
+      kind: 'supervised_user',
+      scopes: scopesForSupervision(supervision),
+      supervision,
+    };
+  }
+
+  /**
+   * NULL birthday while the self-service post-registration is open (a social
+   * sign-up before step 2): the age is unknown, so the account only gets the
+   * onboarding surface. It is the user's OWN account (no substitution, no
+   * acting audit). It can never act for a dependent: an unknown age is not a
+   * guardian, so `X-Acting-For` is the uniform 403 before any grant lookup.
+   */
+  private buildAgeUnknownPrincipal(
+    req: Request,
+    payload: JwtPayload,
+    basePrincipal: AuthPrincipal,
+  ): AuthPrincipal {
+    if (req.headers?.[ACTING_FOR_HEADER] !== undefined) {
+      this.logActingDenied(payload.sub, payload.sub, 'age_unknown_token');
+      throw actingForForbidden();
+    }
+    return {
+      ...basePrincipal,
+      kind: 'age_unknown_user',
+      scopes: AGE_UNKNOWN_SCOPES,
+    };
   }
 
   /**

@@ -5,17 +5,24 @@ import {
   Param,
   Body,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
+import 'multer';
 import type { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { PostRegistrationService } from './post-registration.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
@@ -27,6 +34,13 @@ import {
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
+import type { AuthPrincipal } from '../auth/acting-for/auth-principal';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
+import { CurrentUser } from '../common/decorators';
+import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
+import { namedThrottle } from '../config/throttler.helpers';
+import { ConsentEvidenceFilePipe } from '../guardianships/consent-evidence-file.pipe';
+import { GuardianEvidenceService } from '../guardianships/guardian-evidence.service';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -41,6 +55,7 @@ type AuthenticatedRequest = Request & {
 export class PostRegistrationController {
   constructor(
     private readonly postRegistrationService: PostRegistrationService,
+    private readonly guardianEvidence: GuardianEvidenceService,
   ) {}
 
   private buildActorContext(userId: string, request: AuthenticatedRequest) {
@@ -180,6 +195,64 @@ export class PostRegistrationController {
       dto,
       this.buildActorContext(userId, request),
     );
+  }
+
+  /**
+   * Step 3 for a MINOR: the guardian acting for the child uploads the signed
+   * consent form here, with the acting header (no more guardian-endpoint
+   * workaround). `consent:evidence` lives only in the guardian scope sets: a
+   * teen or a device is refused by the scope guard. The guardian comes from the
+   * token (`actor_sub`) and the child from the token too (`sub`, which must be
+   * the path id): nothing in the body can aim the write at another child.
+   */
+  @Post('step-3/consent-evidence')
+  @ActingScope('consent:evidence')
+  @SkipPermissions()
+  @Throttle(namedThrottle({ ttl: 3_600_000, limit: 20 }))
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOperation({
+    summary: 'Subir la ficha de consentimiento firmada actuando por el menor',
+    description:
+      'Solo un tutor actuando (X-Acting-For) por ese menor. JPEG, PNG, WebP o PDF hasta 10 MB, campo multipart `file`; HEIC se rechaza. Misma validación y mismo contador (20/h por tutor) que POST /guardianships/me/dependents/:id/consent-evidence.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '{ evidence_id, content_type, size_bytes, uploaded_at }',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'ACTING_FOR_SCOPE_DENIED (not acting for this user) o PRINCIPAL_SCOPE_DENIED (teen / dispositivo)',
+  })
+  @ApiResponse({ status: 404, description: 'GUARDIANSHIP_NOT_FOUND' })
+  @ApiResponse({
+    status: 409,
+    description: 'GUARDIANSHIP_CONSENT_ALREADY_VERIFIED',
+  })
+  @ApiResponse({
+    status: 503,
+    description: 'GUARDIANSHIP_EVIDENCE_UNAVAILABLE',
+  })
+  async uploadConsentEvidence(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser() principal: AuthPrincipal,
+    @UploadedFile(new ConsentEvidenceFilePipe()) file: Express.Multer.File,
+  ) {
+    return {
+      status: 'success',
+      data: await this.guardianEvidence.uploadWhileActing(
+        principal,
+        userId,
+        file,
+      ),
+    };
   }
 
   // Deliberately NO @ActingScope: a guardian acting for a dependent must never

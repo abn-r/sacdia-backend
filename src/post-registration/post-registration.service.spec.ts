@@ -9,6 +9,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { AppForbiddenException } from '../common/errors/app.exception';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 
 const GUARDIAN_ID = '9f1d9a40-79f0-4e0c-a8c7-5f0f1c7d9a11';
 
@@ -130,6 +131,10 @@ describe('PostRegistrationService', () => {
     assertAssignment: jest.fn(),
   };
 
+  const mockActingForCache = {
+    bump: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     mockRoleEligibility.assertAssignment.mockReset().mockResolvedValue({
@@ -171,6 +176,7 @@ describe('PostRegistrationService', () => {
           useValue: mockAuthorizationContextVersionService,
         },
         { provide: ClubRoleEligibilityService, useValue: mockRoleEligibility },
+        { provide: ActingForCache, useValue: mockActingForCache },
       ],
     }).compile();
 
@@ -595,6 +601,30 @@ describe('PostRegistrationService', () => {
       ).toHaveBeenCalledWith(expect.objectContaining({ userId }));
     });
 
+    it('refuses to close the post-registration without a birthday on file (an unknown age never turns into an adult by skipping step 2)', async () => {
+      transactionMock.users.findUnique.mockResolvedValue({ birthday: null });
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toMatchObject({
+        code: ErrorCode.POST_REG_PERSONAL_INFO_INCOMPLETE,
+        status: 400,
+      });
+      expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
+      expect(mockActingForCache.bump).not.toHaveBeenCalled();
+    });
+
+    it('moves the principal epoch after the commit (the cached principal kind is re-read)', async () => {
+      await service.completeStep3(userId, dto, ownerActor);
+
+      expect(mockActingForCache.bump).toHaveBeenCalledWith(userId);
+      expect(
+        mockActingForCache.bump.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(
+        Math.max(...transactionMock.users_pr.update.mock.invocationCallOrder),
+      );
+    });
+
     it('should invalidate authorization cache after completing membership request', async () => {
       await service.completeStep3(userId, dto, ownerActor);
 
@@ -885,6 +915,7 @@ describe('PostRegistrationService', () => {
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(GUARDIAN_ID);
+      expect(mockActingForCache.bump).toHaveBeenCalledWith(GUARDIAN_ID);
     });
 
     it('stores the optional geography when provided and uses its country policy', async () => {

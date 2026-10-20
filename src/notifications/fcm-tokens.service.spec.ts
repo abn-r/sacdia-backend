@@ -19,6 +19,10 @@ describe('FcmTokensService', () => {
 
   // Inner mock used inside the $transaction callback
   const txMock = {
+    linked_devices: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
     user_fcm_tokens: {
       findFirst: jest.fn(),
       update: jest.fn(),
@@ -120,6 +124,131 @@ describe('FcmTokensService', () => {
   // ---------------------------------------------------------------------------
   // registerToken — token cap (Step 7)
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // registerToken — a linked device (3b)
+  // ---------------------------------------------------------------------------
+  describe('registerToken — linked device (3b)', () => {
+    const CHILD = 'child-1';
+
+    beforeEach(() => {
+      txMock.user_fcm_tokens.findFirst.mockResolvedValue(null);
+      txMock.user_fcm_tokens.create.mockResolvedValue({
+        fcm_token_id: 'tok-new',
+        user_id: CHILD,
+      });
+      txMock.user_fcm_tokens.findMany.mockResolvedValue([
+        { fcm_token_id: 'tok-new' },
+      ]);
+      txMock.user_fcm_tokens.deleteMany.mockResolvedValue({ count: 0 });
+    });
+
+    it('links the registered token to the ACTIVE device row of the child', async () => {
+      txMock.linked_devices.findFirst.mockResolvedValue({ fcm_token_id: null });
+
+      await service.registerToken(
+        CHILD,
+        { token: 'fcm' },
+        { linkedDeviceId: 'dev-1' },
+      );
+
+      expect(txMock.linked_devices.findFirst).toHaveBeenCalledWith({
+        where: {
+          linked_device_id: 'dev-1',
+          dependent_user_id: CHILD,
+          revoked_at: null,
+        },
+        select: { fcm_token_id: true },
+      });
+      expect(txMock.linked_devices.update).toHaveBeenCalledWith({
+        where: { linked_device_id: 'dev-1' },
+        data: { fcm_token_id: 'tok-new' },
+      });
+    });
+
+    it('a rotated token replaces the old one, which is deactivated', async () => {
+      txMock.linked_devices.findFirst.mockResolvedValue({
+        fcm_token_id: 'tok-old',
+      });
+
+      await service.registerToken(
+        CHILD,
+        { token: 'fcm' },
+        { linkedDeviceId: 'dev-1' },
+      );
+
+      expect(txMock.user_fcm_tokens.updateMany).toHaveBeenCalledWith({
+        where: { fcm_token_id: 'tok-old', user_id: CHILD },
+        data: { active: false },
+      });
+    });
+
+    it('re-registering the same token does not deactivate it', async () => {
+      txMock.linked_devices.findFirst.mockResolvedValue({
+        fcm_token_id: 'tok-new',
+      });
+
+      await service.registerToken(
+        CHILD,
+        { token: 'fcm' },
+        { linkedDeviceId: 'dev-1' },
+      );
+
+      expect(txMock.user_fcm_tokens.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('a revoked or foreign device row links nothing (the token is still registered for the child)', async () => {
+      txMock.linked_devices.findFirst.mockResolvedValue(null);
+
+      await service.registerToken(
+        CHILD,
+        { token: 'fcm' },
+        { linkedDeviceId: 'dev-gone' },
+      );
+
+      expect(txMock.linked_devices.update).not.toHaveBeenCalled();
+      expect(txMock.user_fcm_tokens.create).toHaveBeenCalled();
+    });
+
+    it('without a device context nothing about devices is read (adult / teen unchanged)', async () => {
+      await service.registerToken(CHILD, { token: 'fcm' });
+      await service.registerToken(
+        CHILD,
+        { token: 'fcm' },
+        { linkedDeviceId: null },
+      );
+
+      expect(txMock.linked_devices.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('the 5 token cap and the re-register move are untouched for a device', async () => {
+      txMock.linked_devices.findFirst.mockResolvedValue({ fcm_token_id: null });
+      txMock.user_fcm_tokens.findFirst.mockResolvedValue({
+        fcm_token_id: 'tok-new',
+        user_id: 'guardian-phone-owner',
+      });
+      txMock.user_fcm_tokens.update.mockResolvedValue({
+        fcm_token_id: 'tok-new',
+        user_id: CHILD,
+      });
+
+      await service.registerToken(
+        CHILD,
+        { token: 'shared-phone-token' },
+        { linkedDeviceId: 'dev-1' },
+      );
+
+      // The existing "move the token to the caller" behavior (shared phone).
+      expect(txMock.user_fcm_tokens.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ user_id: CHILD, active: true }),
+        }),
+      );
+      expect(txMock.user_fcm_tokens.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 5 }),
+      );
+    });
+  });
+
   describe('registerToken — token cap enforcement', () => {
     it('should NOT prune when user has fewer than 5 active tokens', async () => {
       txMock.user_fcm_tokens.findFirst.mockResolvedValue(null);

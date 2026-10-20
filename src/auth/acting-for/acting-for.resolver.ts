@@ -5,6 +5,7 @@ import {
 } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { ageToday } from '../../common/age/age.util';
+import { GUARDIAN_MANAGED_DEPENDENT } from '../../guardianships/guardianship-queries';
 import { CountryAgePolicyService } from '../../common/age/country-age-policy.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -20,10 +21,11 @@ import {
 /**
  * Decides whether `guardianId` may act for `dependentId` right now.
  *
- * Phase 2 cuts acting off at the AGE OF MAJORITY, not at 13: the 13 cutoff is
- * enforced only when a dependent is created, so a child who turns 13 before the
- * Phase 3 supervised login is not locked out. Once an `account` row exists for
- * the dependent, acting stops working.
+ * Acting is cut off at the AGE OF MAJORITY, not at 13: the 13 cutoff is only
+ * enforced when a dependent is created. It also stops while the dependent has
+ * an ENABLED supervised login (Phase 3a; deny cause `supervised_login_active`)
+ * and resumes when a guardian-enabled login is disabled. A self-registered teen
+ * is never actable. See GUARDIAN_MANAGED_DEPENDENT.
  *
  * The guardian must still be an active user. (Adulthood is checked when the
  * guardianship is created or redeemed, not on every request.)
@@ -101,11 +103,9 @@ export class ActingForResolver {
           consent_status: { in: ['pending', 'verified'] },
           // A deleted or deactivated guardian cannot act, whatever the row says.
           guardian: { active: true },
-          dependent: {
-            active: true,
-            account: { none: {} },
-            dependent_profile: { is: { frozen_at: null, purged_at: null } },
-          },
+          // Phase 3a: a child with an ENABLED supervised login is not managed by
+          // the guardian anymore; a guardian-enabled login that was disabled is.
+          dependent: GUARDIAN_MANAGED_DEPENDENT,
         },
         select: {
           guardianship_id: true,
@@ -180,6 +180,9 @@ export class ActingForResolver {
             select: {
               active: true,
               account: { select: { id: true }, take: 1 },
+              supervised_login: {
+                select: { origin: true, disabled_at: true },
+              },
               dependent_profile: {
                 select: { frozen_at: true, purged_at: true },
               },
@@ -194,7 +197,16 @@ export class ActingForResolver {
       if (row.consent_status === 'revoked') return 'revoked';
       if (!row.guardian?.active) return 'guardian_inactive';
       if (!row.dependent.active) return 'dependent_inactive';
-      if (row.dependent.account.length > 0) return 'has_account';
+      if (row.dependent.supervised_login) {
+        const login = row.dependent.supervised_login;
+        // Enabled, or a self-registered teen (never actable): the child runs
+        // its own account.
+        if (login.disabled_at === null || login.origin !== 'guardian_enabled') {
+          return 'supervised_login_active';
+        }
+      } else if (row.dependent.account.length > 0) {
+        return 'has_account';
+      }
       if (!row.dependent.dependent_profile) return 'no_dependent_profile';
       if (
         row.dependent.dependent_profile.frozen_at ||

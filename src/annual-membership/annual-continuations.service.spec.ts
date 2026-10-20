@@ -1,3 +1,8 @@
+import {
+  gateAdultUser,
+  gateDependentUser,
+  gateTeenUser,
+} from '../membership-requests/activation-gate.testing';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualMembershipService } from './annual-membership.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -69,9 +74,9 @@ function makePrismaMock() {
       create: jest.fn(),
       update: jest.fn(),
     },
-    // Consent gate: adults by default (no dependent_profiles row).
-    dependent_profiles: {
-      findUnique: jest.fn().mockResolvedValue(null),
+    // Consent gate: adults by default (the gate reads the users row).
+    users: {
+      findUnique: jest.fn().mockResolvedValue(gateAdultUser()),
     },
     guardianships: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -1278,9 +1283,7 @@ describe('AnnualMembershipService', () => {
     const DEPENDENT = 'dependent-minor-uuid';
 
     const asDependent = (verified: boolean) => {
-      prisma.dependent_profiles.findUnique.mockResolvedValue({
-        user_id: DEPENDENT,
-      });
+      prisma.users.findUnique.mockResolvedValue(gateDependentUser(DEPENDENT));
       prisma.guardianships.findFirst.mockResolvedValue(
         verified ? { guardianship_id: 'g-1' } : null,
       );
@@ -1314,6 +1317,27 @@ describe('AnnualMembershipService', () => {
       expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
       expect(authContextVersion.bumpMany).not.toHaveBeenCalled();
       expect(auditLogs.recordEvent).not.toHaveBeenCalled();
+    });
+
+    it('continueUsers blocks reactivating an unverified self-registered 16-year-old (no dependent profile, FP3-02)', async () => {
+      prisma.users.findUnique.mockResolvedValue(gateTeenUser(DEPENDENT, 16));
+      prisma.guardianships.findFirst.mockResolvedValue(null);
+      reactivate();
+
+      const result = await service.continueUsers(
+        GM_SECTION_ID,
+        [DEPENDENT],
+        ACTOR_ID,
+      );
+
+      expect(result.results).toEqual([
+        expect.objectContaining({
+          user_id: DEPENDENT,
+          outcome: 'blocked',
+          error_code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+        }),
+      ]);
+      expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
     });
 
     it('continueUsers blocks activating the base-section placeholder of an unverified dependent', async () => {

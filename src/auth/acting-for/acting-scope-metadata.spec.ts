@@ -1,119 +1,32 @@
-import { RequestMethod } from '@nestjs/common';
-import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { AppException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
-import { ACTING_SCOPE_KEY } from './acting-scope.decorator';
 import { assertActingScope } from './acting-scope.policy';
 import {
   ACTING_FOR_SCOPES,
+  AGE_UNKNOWN_SCOPES,
+  DEVICE_SCOPES,
   GUARDIAN_PENDING_SCOPES,
   GUARDIAN_VERIFIED_SCOPES,
+  TEEN_PENDING_SCOPES,
+  TEEN_SCOPES,
   type ActingForScope,
+  type PrincipalKind,
 } from './auth-principal';
+import { collectRoutes, type RouteInfo } from './route-registry.testing';
 
 /**
  * Snapshot of every route that declares `@ActingScope(...)`.
  *
  * A route that gains or loses a scope fails this spec, so widening what a
- * guardian can do on behalf of a child is always a reviewed, explicit change.
- * Anything not listed here is denied while acting (deny by default).
+ * guardian, a supervised teen or a device can do is always a reviewed,
+ * explicit change. Anything not listed here is denied to every non-`user`
+ * kind (deny by default).
+ *
+ * Per-kind reachability (guardian pending/verified, teen pending/active, linked
+ * device) is asserted against the REAL controller registry, so a set can never
+ * silently grow a route.
  */
-
-type AnyFn = (...args: never[]) => unknown;
-
-interface RouteInfo {
-  key: string; // "GET /users/:userId"
-  method: string;
-  fullPath: string;
-  controller: AnyFn;
-  handler: AnyFn;
-  /** What the policy actually enforces: the handler's scope, else the class's. */
-  scope: ActingForScope | undefined;
-  handlerScope: ActingForScope | undefined;
-  classScope: ActingForScope | undefined;
-}
-
-const SRC_ROOT = path.resolve(__dirname, '../..');
-
-function listControllerFiles(dir: string, acc: string[] = []): string[] {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      listControllerFiles(full, acc);
-    } else if (
-      entry.name.endsWith('.controller.ts') &&
-      !entry.name.endsWith('.spec.ts')
-    ) {
-      acc.push(full);
-    }
-  }
-  return acc;
-}
-
-function joinPaths(...parts: string[]): string {
-  const joined = '/' + parts.filter((p) => p !== '').join('/');
-  const normalized = joined.replace(/\/+/g, '/');
-  return normalized.length > 1 ? normalized.replace(/\/$/, '') : normalized;
-}
-
-function collectRoutes(): RouteInfo[] {
-  const routes: RouteInfo[] = [];
-  const seen = new Set<AnyFn>();
-  for (const file of listControllerFiles(SRC_ROOT)) {
-    const mod = require(file) as Record<string, unknown>;
-    for (const exported of Object.values(mod)) {
-      if (typeof exported !== 'function' || seen.has(exported)) continue;
-      const controllerPath = Reflect.getMetadata(PATH_METADATA, exported) as
-        string | string[] | undefined;
-      if (controllerPath === undefined) continue;
-      seen.add(exported);
-      const bases = Array.isArray(controllerPath)
-        ? controllerPath
-        : [controllerPath];
-      const proto = (exported as { prototype: Record<string, unknown> })
-        .prototype;
-      for (const name of Object.getOwnPropertyNames(proto)) {
-        const handler = proto[name];
-        if (typeof handler !== 'function') continue;
-        const methodPath = Reflect.getMetadata(PATH_METADATA, handler) as
-          string | string[] | undefined;
-        const method = Reflect.getMetadata(METHOD_METADATA, handler) as
-          RequestMethod | undefined;
-        if (methodPath === undefined || method === undefined) continue;
-        const methodPaths = Array.isArray(methodPath)
-          ? methodPath
-          : [methodPath];
-        const handlerScope = Reflect.getMetadata(ACTING_SCOPE_KEY, handler) as
-          ActingForScope | undefined;
-        const classScope = Reflect.getMetadata(ACTING_SCOPE_KEY, exported) as
-          ActingForScope | undefined;
-        // Same resolution as readActingScope (handler wins over class), so a
-        // class-level decorator can never hide from the equality check below.
-        const scope = handlerScope ?? classScope;
-        for (const base of bases) {
-          for (const mp of methodPaths) {
-            const fullPath = joinPaths(base, mp);
-            const verb = RequestMethod[method];
-            routes.push({
-              key: `${verb} ${fullPath}`,
-              method: verb,
-              fullPath,
-              controller: exported,
-              handler,
-              scope,
-              handlerScope,
-              classScope,
-            });
-          }
-        }
-      }
-    }
-  }
-  return routes;
-}
 
 /** METHOD path => scope. Edit deliberately: every line is a security decision. */
 const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
@@ -122,12 +35,7 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'GET /auth/profile/completion-status': 'self:read',
   'GET /dashboard/summary': 'self:read',
   'GET /users/:userId': 'self:read',
-  'GET /users/:userId/allergies': 'self:read',
-  'GET /users/:userId/diseases': 'self:read',
-  'GET /users/:userId/medicines': 'self:read',
   'GET /users/:userId/age': 'self:read',
-  'GET /users/:userId/emergency-contacts': 'self:read',
-  'GET /users/:userId/emergency-contacts/:contactId': 'self:read',
   'GET /users/:userId/post-registration/status': 'self:read',
   'GET /users/:userId/post-registration/photo-status': 'self:read',
   'GET /users/:userId/classes': 'self:read',
@@ -137,15 +45,20 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'GET /users/:userId/honors/:honorId/requirements/progress': 'self:read',
   'GET /users/:userId/honors/:honorId/requirements/:requirementId/evidence':
     'self:read',
-  'GET /qr/member/token': 'self:read',
-  'GET /qr/me': 'self:read',
-  'GET /qr/me/card': 'self:read',
-  'GET /qr/me/card.pdf': 'self:read',
   'GET /notifications/history': 'self:read',
   'GET /notifications/unread-count': 'self:read',
   'PATCH /notifications/read-all': 'self:read',
   'PATCH /notifications/:deliveryId/read': 'self:read',
   'GET /users/me/legal-acceptance': 'self:read',
+  // The teen's own supervision (status, guardians, clock). Adults get status null.
+  'GET /users/me/supervision': 'self:read',
+  // ---- health:read (retagged from self:read in Phase 3: a child's phone must
+  // not read health or emergency-contact data; guardians and teens hold both)
+  'GET /users/:userId/allergies': 'health:read',
+  'GET /users/:userId/diseases': 'health:read',
+  'GET /users/:userId/medicines': 'health:read',
+  'GET /users/:userId/emergency-contacts': 'health:read',
+  'GET /users/:userId/emergency-contacts/:contactId': 'health:read',
   // ---- profile:write
   'PATCH /users/:userId': 'profile:write',
   'PUT /users/:userId/allergies': 'profile:write',
@@ -159,7 +72,6 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'POST /users/:userId/emergency-contacts': 'profile:write',
   'PATCH /users/:userId/emergency-contacts/:contactId': 'profile:write',
   'DELETE /users/:userId/emergency-contacts/:contactId': 'profile:write',
-  'PATCH /auth/me/context': 'profile:write',
   // ---- registration:write
   'POST /users/:userId/post-registration/step-1/complete': 'registration:write',
   'POST /users/:userId/post-registration/step-2/complete': 'registration:write',
@@ -167,30 +79,38 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'POST /users/:userId/post-registration/membership-request/cancel':
     'registration:write',
   'POST /users/:userId/membership/annual-enroll': 'registration:write',
+  // The signed consent form of the child, uploaded by the guardian ACTING for it.
+  // Guardians only: teens and devices hold no `consent:evidence`.
+  'POST /users/:userId/post-registration/step-3/consent-evidence':
+    'consent:evidence',
   // Post-registration step 3 club picker (read-only reference data). Scoped as
-  // registration:write, not self:read, so a Phase 3 linked device (self:read +
-  // evidence:upload) cannot browse clubs: only a guardian finishing the child's
-  // registration can. Every other /clubs route stays never-scope.
+  // registration:write, not self:read, so a linked device (self:read +
+  // evidence:upload) cannot browse clubs: only someone finishing the
+  // registration can. The other /clubs reads are teen-only (member:read).
   'GET /clubs': 'registration:write',
   'GET /clubs/:clubId/sections': 'registration:write',
   // ---- classes:write
   'POST /users/:userId/classes/enroll': 'classes:write',
   'PATCH /users/:userId/classes/:classId/progress': 'classes:write',
+  // ---- evidence:submit (retagged from classes:write: the device can submit a
+  // section without being able to enroll or patch progress)
   'POST /users/:userId/classes/:classId/sections/:sectionId/submit':
-    'classes:write',
+    'evidence:submit',
   // ---- evidence:upload
   'POST /users/:userId/classes/:classId/sections/:sectionId/files':
     'evidence:upload',
   'DELETE /users/:userId/classes/:classId/sections/:sectionId/files/:fileId':
     'evidence:upload',
-  'POST /users/:userId/honors/:honorId/files': 'evidence:upload',
+  // (honor evidence is NOT here: a child's device may upload CLASS evidence only,
+  // so the honor evidence mutations moved to honors:write in 3b, FP3-47)
+  // ---- honors:write (incl. the honor evidence mutations: never the device)
+  'POST /users/:userId/honors/:honorId/files': 'honors:write',
   'POST /users/:userId/honors/:honorId/requirements/:requirementId/evidence/upload':
-    'evidence:upload',
+    'honors:write',
   'POST /users/:userId/honors/:honorId/requirements/:requirementId/evidence/link':
-    'evidence:upload',
+    'honors:write',
   'DELETE /users/:userId/honors/:honorId/requirements/:requirementId/evidence/:evidenceId':
-    'evidence:upload',
-  // ---- honors:write
+    'honors:write',
   'POST /users/:userId/honors': 'honors:write',
   'POST /users/:userId/honors/bulk': 'honors:write',
   'POST /users/:userId/honors/:honorId': 'honors:write',
@@ -202,29 +122,339 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
     'honors:write',
   // ---- legal:accept
   'POST /users/me/legal-acceptance': 'legal:accept',
+
+  // ======== Phase 3: scopes held by teens (and, where noted, the device) ========
+  // ---- agenda:read (teen + linked device; the device payload drops attendees in 3b)
+  'GET /clubs/:clubId/activities': 'agenda:read',
+  'GET /activities/:activityId': 'agenda:read',
+  'GET /activity-series/:seriesId': 'agenda:read',
+  // ---- member:read (teen only)
+  'GET /clubs/:clubId': 'member:read',
+  'GET /clubs/:clubId/sections/:sectionId': 'member:read',
+  // The own section's current annual enrollment (member app home). The list
+  // (GET .../enrollments) stays unscoped.
+  'GET /clubs/:clubId/sections/:sectionId/enrollments/current': 'member:read',
+  'GET /clubs/:clubId/leadership': 'member:read',
+  'GET /activities/:activityId/rsvp': 'member:read',
+  'GET /activities/:activityId/attendance': 'member:read',
+  'GET /clubs/:clubId/units': 'member:read',
+  'GET /clubs/:clubId/units/:unitId': 'member:read',
+  'GET /clubs/:clubId/units/:unitId/weekly-records': 'member:read',
+  'GET /clubs/:clubId/sections/:sectionId/member-of-month': 'member:read',
+  'GET /clubs/:clubId/sections/:sectionId/member-of-month/history':
+    'member:read',
+  'GET /member-rankings/me': 'member:read',
+  // "Am I a camporee judge?" (member app home, asked for everyone). Own
+  // assignments only; the judging routes stay unscoped.
+  'GET /camporee-judges/me/assignments': 'member:read',
+  'GET /achievements/me': 'member:read',
+  'GET /achievements/categories': 'member:read',
+  'GET /achievements': 'member:read',
+  'GET /achievements/:achievementId': 'member:read',
+  'GET /resources/me': 'member:read',
+  'GET /resources/me/:id': 'member:read',
+  'GET /resources/me/:id/signed-url': 'member:read',
+  'GET /resources': 'member:read',
+  'GET /resources/:id': 'member:read',
+  'GET /resources/:id/signed-url': 'member:read',
+  'GET /resource-categories': 'member:read',
+  'GET /resource-categories/:id': 'member:read',
+  'GET /validation/:entityType/:entityId/history': 'member:read',
+  'GET /validation/eligibility/:userId': 'member:read',
+  'GET /requests/transfers': 'member:read',
+  'GET /requests/transfers/:requestId': 'member:read',
+  'GET /requests/assignments': 'member:read',
+  'GET /requests/assignments/:requestId': 'member:read',
+  'GET /investiture/enrollments/:enrollmentId/history': 'member:read',
+  'GET /enrollments/:enrollmentId/investiture-history': 'member:read',
+  'GET /divisions/scoring-categories': 'member:read',
+  'GET /unions/:unionId/scoring-categories': 'member:read',
+  'GET /local-fields/:fieldId/scoring-categories': 'member:read',
+  // ---- member:write (teen only)
+  'PUT /activities/:activityId/rsvp': 'member:write',
+  'POST /validation/submit': 'member:write',
+  'POST /users/:userId/honors/:honorId/instructor-proposal': 'member:write',
+  'DELETE /users/:userId/honors/:honorId/instructor-proposal': 'member:write',
+  // ---- self:password (teen only; credentials are never reachable while acting)
+  'POST /auth/update-password': 'self:password',
+  'POST /auth/verify-email/send': 'self:password',
+  // ---- self:preferences (teen only)
+  'GET /users/me/notification-preferences': 'self:preferences',
+  'PATCH /users/me/notification-preferences': 'self:preferences',
+  // ---- guardian_link:issue (a pending teen links a guardian; never a guardian/device)
+  'POST /users/me/guardian-link-codes': 'guardian_link:issue',
+  'POST /users/me/guardian-links/:guardianshipId/revoke': 'guardian_link:issue',
+  // ---- credential:read (the member QR credential: guardian acting, ACTIVE teen
+  // and device; never a pending teen or an unknown age: FP3-03/FP3-07, option A)
+  'GET /qr/member/token': 'credential:read',
+  'GET /qr/me': 'credential:read',
+  'GET /qr/me/card': 'credential:read',
+  'GET /qr/me/card.pdf': 'credential:read',
+  // ---- club:context (switch the active club assignment; guardian acting and
+  // ACTIVE teen only: a pending teen / unknown age has no club context)
+  'PATCH /auth/me/context': 'club:context',
+  // ---- push:register (teen + linked device; own token only)
+  'POST /users/me/fcm-tokens': 'push:register',
+  'DELETE /users/me/fcm-tokens/:tokenId': 'push:register',
+
+  // ======== Unknown age (NULL birthday, post-registration open) ========
+  // ---- account:manage (age_unknown_user ONLY: an adult who signs up with
+  // Google/Apple must be able to see and close sessions and delete the
+  // account before step 2; teens, guardians acting and devices never hold it)
+  'GET /auth/sessions': 'account:manage',
+  'DELETE /auth/sessions': 'account:manage',
+  'DELETE /auth/sessions/:sessionId': 'account:manage',
+  'DELETE /auth/me': 'account:manage',
+  'GET /auth/oauth/providers': 'account:manage',
 };
 
 /**
- * Routes (or families) that MUST NEVER carry a scope: credentials, sessions,
- * MFA, account deletion, data export, push tokens, guardianship management and
- * everything staff/admin/club facing. Each pattern must match at least one
- * discovered route (a renamed route must not silently drop out of the list).
+ * Who may hold each scope. This is the `teen` column of the snapshot:
+ *  - 'pending':      a teen without a verified guardian AND one with a verified guardian
+ *  - 'pending_only': only a teen still without a verified guardian (issuing a link code)
+ *  - 'active':       only a teen with a verified guardian
+ *  - 'none':    never a teen
+ * It is asserted against TEEN_PENDING_SCOPES / TEEN_SCOPES and against every
+ * route of the real registry.
+ */
+const TEEN_ACCESS: Record<
+  ActingForScope,
+  'pending' | 'pending_only' | 'active' | 'none'
+> = {
+  'self:read': 'pending',
+  'health:read': 'pending',
+  'profile:write': 'pending',
+  'registration:write': 'pending',
+  'legal:accept': 'pending',
+  'guardian_link:issue': 'pending_only',
+  'self:password': 'pending',
+  'self:preferences': 'pending',
+  'push:register': 'pending',
+  'classes:write': 'active',
+  'evidence:submit': 'active',
+  'honors:write': 'active',
+  'evidence:upload': 'active',
+  'member:read': 'active',
+  'member:write': 'active',
+  'agenda:read': 'active',
+  'consent:evidence': 'none',
+  'account:manage': 'none',
+  'credential:read': 'active',
+  'club:context': 'active',
+};
+
+/**
+ * Routes a pending teen reaches although they belong to a club-data family:
+ * the response is shaped for them (club fields null, no activities). Each one
+ * needs a controller test of the shaping.
+ */
+const SHAPED_FOR_PENDING_TEEN: string[] = [
+  'GET /dashboard/summary',
+  'GET /auth/me',
+];
+
+/**
+ * The WHOLE surface of a pending teen (no verified guardian), reviewed route
+ * by route. FP3-03: no club data. Rulings applied:
+ *  - own_progress: the teen's OWN classes and honors (and their own honor
+ *    evidence) stay readable: personal data, not club data (orchestrator
+ *    ruling on verify W1; classes was the documented 3a deviation).
+ *  - shaped: reachable, club fields stripped (SHAPED_FOR_PENDING_TEEN).
+ *  - The QR credential routes and PATCH /auth/me/context are NOT here: they
+ *    carry `credential:read` / `club:context`, which a pending teen does not
+ *    hold (ruling option A: no club data and no member credential until a
+ *    guardian is verified, also with an active pre-deploy assignment).
+ */
+const PENDING_TEEN_SURFACE: Record<
+  string,
+  | 'onboarding'
+  | 'own_profile'
+  | 'own_health'
+  | 'own_progress'
+  | 'account'
+  | 'notifications'
+  | 'shaped'
+> = {
+  // Onboarding: post-registration, club pickers, the join request, legal, guardian link.
+  'GET /users/:userId/post-registration/status': 'onboarding',
+  'GET /users/:userId/post-registration/photo-status': 'onboarding',
+  'POST /users/:userId/post-registration/step-1/complete': 'onboarding',
+  'POST /users/:userId/post-registration/step-2/complete': 'onboarding',
+  'POST /users/:userId/post-registration/step-3/complete': 'onboarding',
+  'POST /users/:userId/post-registration/membership-request/cancel':
+    'onboarding',
+  'POST /users/:userId/membership/annual-enroll': 'onboarding',
+  'GET /clubs': 'onboarding',
+  'GET /clubs/:clubId/sections': 'onboarding',
+  'GET /users/me/legal-acceptance': 'onboarding',
+  'POST /users/me/legal-acceptance': 'onboarding',
+  'GET /users/me/supervision': 'onboarding',
+  'POST /users/me/guardian-link-codes': 'onboarding',
+  'POST /users/me/guardian-links/:guardianshipId/revoke': 'onboarding',
+  // Own profile.
+  'GET /users/:userId': 'own_profile',
+  'GET /users/:userId/age': 'own_profile',
+  'PATCH /users/:userId': 'own_profile',
+  'POST /users/:userId/profile-picture': 'own_profile',
+  'DELETE /users/:userId/profile-picture': 'own_profile',
+  // Own health and emergency contacts.
+  'GET /users/:userId/allergies': 'own_health',
+  'GET /users/:userId/diseases': 'own_health',
+  'GET /users/:userId/medicines': 'own_health',
+  'PUT /users/:userId/allergies': 'own_health',
+  'PUT /users/:userId/diseases': 'own_health',
+  'PUT /users/:userId/medicines': 'own_health',
+  'DELETE /users/:userId/allergies/:allergyId': 'own_health',
+  'DELETE /users/:userId/diseases/:diseaseId': 'own_health',
+  'DELETE /users/:userId/medicines/:medicineId': 'own_health',
+  'GET /users/:userId/emergency-contacts': 'own_health',
+  'GET /users/:userId/emergency-contacts/:contactId': 'own_health',
+  'POST /users/:userId/emergency-contacts': 'own_health',
+  'PATCH /users/:userId/emergency-contacts/:contactId': 'own_health',
+  'DELETE /users/:userId/emergency-contacts/:contactId': 'own_health',
+  // Own progress (read only; writes are active-only scopes).
+  'GET /users/:userId/classes': 'own_progress',
+  'GET /users/:userId/classes/:classId/progress': 'own_progress',
+  'GET /users/:userId/honors': 'own_progress',
+  'GET /users/:userId/honors/stats': 'own_progress',
+  'GET /users/:userId/honors/:honorId/requirements/progress': 'own_progress',
+  'GET /users/:userId/honors/:honorId/requirements/:requirementId/evidence':
+    'own_progress',
+  // Own account.
+  'GET /auth/profile/completion-status': 'account',
+  'POST /auth/update-password': 'account',
+  'POST /auth/verify-email/send': 'account',
+  // Notifications and push.
+  'GET /notifications/history': 'notifications',
+  'GET /notifications/unread-count': 'notifications',
+  'PATCH /notifications/read-all': 'notifications',
+  'PATCH /notifications/:deliveryId/read': 'notifications',
+  'GET /users/me/notification-preferences': 'notifications',
+  'PATCH /users/me/notification-preferences': 'notifications',
+  'POST /users/me/fcm-tokens': 'notifications',
+  'DELETE /users/me/fcm-tokens/:tokenId': 'notifications',
+  // Shaped for a pending teen.
+  'GET /dashboard/summary': 'shaped',
+  'GET /auth/me': 'shaped',
+};
+
+/**
+ * Who may hold each scope, device column (3b). It is asserted against
+ * DEVICE_SCOPES. `credential:read` is held (the member QR credential) but
+ * `club:context` and `health:read` are not.
+ */
+const DEVICE_ACCESS: Record<ActingForScope, boolean> = {
+  'self:read': true,
+  'health:read': false,
+  'profile:write': false,
+  'registration:write': false,
+  'classes:write': false,
+  'evidence:submit': true,
+  'honors:write': false,
+  'evidence:upload': true,
+  'legal:accept': false,
+  'consent:evidence': false,
+  'member:read': false,
+  'member:write': false,
+  'agenda:read': true,
+  'push:register': true,
+  'self:password': false,
+  'self:preferences': false,
+  'guardian_link:issue': false,
+  'account:manage': false,
+  'credential:read': true,
+  'club:context': false,
+};
+
+/**
+ * The WHOLE surface of a linked device (a child's paired phone), reviewed route
+ * by route: a new self:read route cannot slip in unseen. Reasons:
+ *  - own_read: the child's own profile, progress, notifications and dashboard;
+ *  - class_evidence: the class-section evidence upload / delete / submit;
+ *  - agenda: the club agenda WITHOUT attendee lists (stripped in the service);
+ *  - push: register / unregister the OWN push token;
+ *  - credential: the member QR credential.
+ */
+const DEVICE_SURFACE: Record<
+  string,
+  'own_read' | 'class_evidence' | 'agenda' | 'push' | 'credential'
+> = {
+  'GET /auth/me': 'own_read',
+  'GET /auth/profile/completion-status': 'own_read',
+  'GET /dashboard/summary': 'own_read',
+  'GET /notifications/history': 'own_read',
+  'GET /notifications/unread-count': 'own_read',
+  'PATCH /notifications/read-all': 'own_read',
+  'PATCH /notifications/:deliveryId/read': 'own_read',
+  'GET /users/:userId': 'own_read',
+  'GET /users/:userId/age': 'own_read',
+  'GET /users/:userId/post-registration/status': 'own_read',
+  'GET /users/:userId/post-registration/photo-status': 'own_read',
+  'GET /users/:userId/classes': 'own_read',
+  'GET /users/:userId/classes/:classId/progress': 'own_read',
+  'GET /users/:userId/honors': 'own_read',
+  'GET /users/:userId/honors/stats': 'own_read',
+  'GET /users/:userId/honors/:honorId/requirements/progress': 'own_read',
+  'GET /users/:userId/honors/:honorId/requirements/:requirementId/evidence':
+    'own_read',
+  'GET /users/me/legal-acceptance': 'own_read',
+  'GET /users/me/supervision': 'own_read',
+  'POST /users/:userId/classes/:classId/sections/:sectionId/files':
+    'class_evidence',
+  'DELETE /users/:userId/classes/:classId/sections/:sectionId/files/:fileId':
+    'class_evidence',
+  'POST /users/:userId/classes/:classId/sections/:sectionId/submit':
+    'class_evidence',
+  'GET /clubs/:clubId/activities': 'agenda',
+  'GET /activities/:activityId': 'agenda',
+  'GET /activity-series/:seriesId': 'agenda',
+  'POST /users/me/fcm-tokens': 'push',
+  'DELETE /users/me/fcm-tokens/:tokenId': 'push',
+  'GET /qr/member/token': 'credential',
+  'GET /qr/me': 'credential',
+  'GET /qr/me/card': 'credential',
+  'GET /qr/me/card.pdf': 'credential',
+};
+
+/** Scopes only a supervised teen holds: never a guardian, never a device. */
+const TEEN_ONLY_SCOPES: ActingForScope[] = [
+  'member:read',
+  'member:write',
+  'self:password',
+  'self:preferences',
+  'guardian_link:issue',
+];
+
+/**
+ * Routes (or families) that MUST NEVER carry a scope, so no non-`user` kind
+ * (guardian acting, supervised teen, linked device) can ever reach them:
+ * credentials recovery, sessions, MFA, OAuth linking, account deletion, data
+ * export, legacy push-token endpoints, guardianship management and everything
+ * staff/admin facing. Each pattern must match at least one discovered route (a
+ * renamed route must not silently drop out of the list).
+ *
+ * Removed from this list in Phase 3 because they are now tagged TEEN-ONLY
+ * (see TEEN_ONLY_SCOPES and the NOT_FOR_GUARDIAN_OR_DEVICE block): update-password,
+ * users/me notification preferences, the honor instructor proposal and the
+ * member-app club reads.
+ *
+ * Removed for the unknown-age principal: account deletion and sessions now
+ * carry `account:manage`, held by `age_unknown_user` ONLY (see
+ * AGE_UNKNOWN_ONLY). They stay denied to every guardian, teen and device.
  */
 const NEVER_SCOPE: Array<{
   label: string;
   pattern: RegExp;
 }> = [
-  { label: 'update-password', pattern: /^POST \/auth\/update-password$/ },
-  { label: 'account deletion', pattern: /^DELETE \/auth\/me$/ },
-  { label: 'sessions', pattern: /^[A-Z]+ \/auth\/sessions(\/|$)/ },
   { label: 'mfa', pattern: /^[A-Z]+ \/auth\/mfa(\/|$)/ },
-  { label: 'oauth', pattern: /^[A-Z]+ \/auth\/oauth(\/|$)/ },
+  // GET providers is AGE_UNKNOWN_ONLY (reauth before deletion); linking,
+  // unlinking and sign-in stay unscoped.
+  {
+    label: 'oauth',
+    pattern: /^(?!GET \/auth\/oauth\/providers$)[A-Z]+ \/auth\/oauth(\/|$)/,
+  },
   { label: 'data export', pattern: /^[A-Z]+ \/users\/me\/data-export/ },
   { label: 'fcm tokens', pattern: /^[A-Z]+ \/fcm-tokens(\/|$)/ },
-  {
-    label: 'notification preferences (users/me)',
-    pattern: /^[A-Z]+ \/users\/me\/notification-preferences/,
-  },
   {
     label: 'notification preferences (notifications)',
     pattern: /^[A-Z]+ \/notifications\/preferences/,
@@ -236,6 +466,13 @@ const NEVER_SCOPE: Array<{
   {
     label: 'director claim codes',
     pattern: /^POST \/club-sections\/:clubSectionId\/dependents\//,
+  },
+  {
+    // Phase 3c: a director registers a minor. Staff-only (dependents:create on
+    // the section): guardian_acting, supervised_user, linked_device and the
+    // unknown-age principal are all denied by default.
+    label: 'director-created minors',
+    pattern: /^POST \/club-sections\/:clubSectionId\/dependents$/,
   },
   {
     label: 'legal representative',
@@ -251,22 +488,11 @@ const NEVER_SCOPE: Array<{
     pattern: /^GET \/users\/:userId\/requires-legal-representative$/,
   },
   {
-    label: 'honor instructor proposal',
-    pattern: /^[A-Z]+ \/users\/:userId\/honors\/:honorId\/instructor-proposal/,
-  },
-  {
     label: 'master honors',
     pattern: /^[A-Z]+ \/users\/:userId\/master-honors/,
   },
   { label: 'certifications', pattern: /^[A-Z]+ \/certifications(\/|$)/ },
   { label: 'admin', pattern: /^[A-Z]+ \/admin(\/|$)/ },
-  {
-    // Every /clubs route except the two step-3 club picker reads (see the
-    // registration:write entries above).
-    label: 'club routes',
-    pattern:
-      /^(?!GET \/clubs$|GET \/clubs\/:clubId\/sections$)[A-Z]+ \/clubs(\/|$)/,
-  },
   { label: 'club sections', pattern: /^[A-Z]+ \/club-sections(\/|$)/ },
   {
     label: 'membership requests',
@@ -278,7 +504,92 @@ const NEVER_SCOPE: Array<{
     pattern: /^POST \/notifications\/(send|broadcast|club)/,
   },
   { label: 'legal catalog', pattern: /^GET \/legal\/current$/ },
+  {
+    // Staff-only club mutations stay unreachable for every kind. The teen-only
+    // member-app reads (member:read / agenda:read) and the two step-3 pickers
+    // are tagged and therefore excluded here.
+    label: 'club write routes',
+    pattern: /^(POST|PUT|PATCH|DELETE) \/clubs(\/|$)/,
+  },
+  {
+    // `enrollments$` is the staff list only: `enrollments/current` (the own
+    // section's enrollment, read by the member app home) is tagged member:read.
+    label: 'club staff reads (overview, history, finances, reports, rosters)',
+    pattern:
+      /^GET \/clubs\/:clubId\/(overview|history|finances|annual-reports|quarterly-reports|investiture-authorizers|sections\/:sectionId\/(members|enrollments$|classes|class-counselor-assignments|director-designation))/,
+  },
 ];
+
+/**
+ * Routes reachable by the unknown-age principal ONLY (own account management).
+ * Each pattern must match a route; each matched route carries exactly
+ * `account:manage` and is denied to guardians, teens and devices.
+ */
+const AGE_UNKNOWN_ONLY: Array<{ label: string; pattern: RegExp }> = [
+  { label: 'account deletion', pattern: /^DELETE \/auth\/me$/ },
+  { label: 'sessions', pattern: /^[A-Z]+ \/auth\/sessions(\/|$)/ },
+  {
+    label: 'linked providers (reauth before deletion)',
+    pattern: /^GET \/auth\/oauth\/providers$/,
+  },
+];
+
+/** Routes that must carry no scope for ANY non-`user` kind (the teen included). */
+const PRINCIPALS: Array<{
+  label: string;
+  kind: PrincipalKind;
+  scopes: readonly ActingForScope[];
+  expectedCode: ErrorCode;
+}> = [
+  {
+    label: 'guardian verified',
+    kind: 'guardian_acting',
+    scopes: GUARDIAN_VERIFIED_SCOPES,
+    expectedCode: ErrorCode.ACTING_FOR_SCOPE_DENIED,
+  },
+  {
+    label: 'teen pending',
+    kind: 'supervised_user',
+    scopes: TEEN_PENDING_SCOPES,
+    expectedCode: ErrorCode.PRINCIPAL_SCOPE_DENIED,
+  },
+  {
+    label: 'teen active',
+    kind: 'supervised_user',
+    scopes: TEEN_SCOPES,
+    expectedCode: ErrorCode.PRINCIPAL_SCOPE_DENIED,
+  },
+  {
+    label: 'linked device',
+    kind: 'linked_device',
+    scopes: DEVICE_SCOPES,
+    expectedCode: ErrorCode.PRINCIPAL_SCOPE_DENIED,
+  },
+  {
+    label: 'unknown age',
+    kind: 'age_unknown_user',
+    scopes: AGE_UNKNOWN_SCOPES,
+    expectedCode: ErrorCode.PRINCIPAL_SCOPE_DENIED,
+  },
+];
+
+const contextOf = (route: RouteInfo) =>
+  ({
+    getHandler: () => route.handler,
+    getClass: () => route.controller,
+  }) as never;
+
+const isAllowed = (
+  route: RouteInfo,
+  principal: { kind: PrincipalKind; scopes: readonly ActingForScope[] },
+): boolean => {
+  try {
+    assertActingScope(new Reflector(), contextOf(route), principal);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 describe('acting-scope metadata snapshot', () => {
   let routes: RouteInfo[];
@@ -335,91 +646,599 @@ describe('acting-scope metadata snapshot', () => {
     });
 
     it.each(NEVER_SCOPE)(
-      '$label carries no scope and is denied for a verified guardian',
+      '$label carries no scope and is denied for every restricted kind (guardian, teen pending/active, device, unknown age)',
       ({ pattern }) => {
-        const reflector = new Reflector();
         for (const route of routes.filter((r) => pattern.test(r.key))) {
-          expect(route.scope).toBeUndefined();
-          const context = {
-            getHandler: () => route.handler,
-            getClass: () => route.controller,
-          } as never;
-          const principal = {
-            kind: 'guardian_acting' as const,
-            scopes: GUARDIAN_VERIFIED_SCOPES,
-          };
-          let thrown: unknown;
-          try {
-            assertActingScope(reflector, context, principal);
-          } catch (error) {
-            thrown = error;
+          expect({ route: route.key, scope: route.scope }).toEqual({
+            route: route.key,
+            scope: undefined,
+          });
+          for (const principal of PRINCIPALS) {
+            let thrown: unknown;
+            try {
+              assertActingScope(new Reflector(), contextOf(route), principal);
+            } catch (error) {
+              thrown = error;
+            }
+            expect(thrown).toBeInstanceOf(AppException);
+            expect((thrown as AppException).code).toBe(principal.expectedCode);
           }
-          expect(thrown).toBeInstanceOf(AppException);
-          expect((thrown as AppException).code).toBe(
-            ErrorCode.ACTING_FOR_SCOPE_DENIED,
-          );
         }
       },
     );
+
+    it('a handle teen can never reach email-add, oauth-link, mfa, sessions, delete or export routes', () => {
+      const credentialFamily =
+        /^[A-Z]+ \/(auth\/(oauth|mfa|sessions)(\/|$)|users\/me\/data-export)|^DELETE \/auth\/me$/;
+      const matched = routes.filter((r) => credentialFamily.test(r.key));
+      expect(matched.length).toBeGreaterThan(5);
+      for (const route of matched) {
+        expect(
+          isAllowed(route, { kind: 'supervised_user', scopes: TEEN_SCOPES }),
+        ).toBe(false);
+        expect(
+          isAllowed(route, {
+            kind: 'supervised_user',
+            scopes: TEEN_PENDING_SCOPES,
+          }),
+        ).toBe(false);
+      }
+    });
   });
 
-  describe('scope vs grant status', () => {
-    it('a pending grant cannot reach classes/honors/evidence routes', () => {
-      const reflector = new Reflector();
+  describe('scope vs grant status (guardian)', () => {
+    it('a pending grant reaches exactly the routes whose scope is in the pending set', () => {
       const pending = new Set<string>(GUARDIAN_PENDING_SCOPES);
       for (const route of routes.filter((r) => r.scope !== undefined)) {
-        const context = {
-          getHandler: () => route.handler,
-          getClass: () => route.controller,
-        } as never;
-        const principal = {
-          kind: 'guardian_acting' as const,
-          scopes: GUARDIAN_PENDING_SCOPES,
-        };
-        const expectAllowed = pending.has(route.scope as string);
-        let allowed = true;
-        try {
-          assertActingScope(reflector, context, principal);
-        } catch {
-          allowed = false;
-        }
-        expect({ route: route.key, allowed }).toEqual({
+        expect({
           route: route.key,
-          allowed: expectAllowed,
+          allowed: isAllowed(route, {
+            kind: 'guardian_acting',
+            scopes: GUARDIAN_PENDING_SCOPES,
+          }),
+        }).toEqual({
+          route: route.key,
+          allowed: pending.has(route.scope as string),
         });
       }
     });
 
-    it('a verified grant reaches every scoped route', () => {
-      const reflector = new Reflector();
+    it('a verified grant reaches exactly the routes whose scope is in the verified set', () => {
+      const verified = new Set<string>(GUARDIAN_VERIFIED_SCOPES);
       for (const route of routes.filter((r) => r.scope !== undefined)) {
-        const context = {
-          getHandler: () => route.handler,
-          getClass: () => route.controller,
-        } as never;
-        expect(() =>
-          assertActingScope(reflector, context, {
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, {
             kind: 'guardian_acting',
             scopes: GUARDIAN_VERIFIED_SCOPES,
           }),
-        ).not.toThrow();
+        }).toEqual({
+          route: route.key,
+          allowed: verified.has(route.scope as string),
+        });
+      }
+    });
+
+    it('every Phase 2 guardian route is still reachable by a verified guardian (no Phase 2 regression)', () => {
+      // The Phase 2 snapshot minus the two retags (health:read / evidence:submit)
+      // are still inside GUARDIAN_VERIFIED_SCOPES.
+      const phase2Scopes = new Set<ActingForScope>([
+        'self:read',
+        'health:read',
+        'profile:write',
+        'registration:write',
+        'classes:write',
+        'evidence:submit',
+        'honors:write',
+        'evidence:upload',
+        'legal:accept',
+        // Retagged from self:read / profile:write (QR credential, context switch).
+        'credential:read',
+        'club:context',
+      ]);
+      const phase2Routes = routes.filter(
+        (r) => r.scope !== undefined && phase2Scopes.has(r.scope),
+      );
+      expect(phase2Routes.length).toBeGreaterThan(60);
+      for (const route of phase2Routes) {
+        expect(
+          isAllowed(route, {
+            kind: 'guardian_acting',
+            scopes: GUARDIAN_VERIFIED_SCOPES,
+          }),
+        ).toBe(true);
       }
     });
 
     it('an unscoped route is denied even for a verified grant', () => {
-      const reflector = new Reflector();
       const unscoped = routes.find((r) => r.scope === undefined);
       expect(unscoped).toBeDefined();
-      expect(() =>
-        assertActingScope(
-          reflector,
-          {
-            getHandler: () => unscoped!.handler,
-            getClass: () => unscoped!.controller,
-          } as never,
-          { kind: 'guardian_acting', scopes: GUARDIAN_VERIFIED_SCOPES },
+      expect(
+        isAllowed(unscoped!, {
+          kind: 'guardian_acting',
+          scopes: GUARDIAN_VERIFIED_SCOPES,
+        }),
+      ).toBe(false);
+    });
+  });
+
+  describe('teen column (supervised_user reachability against the real registry)', () => {
+    it('TEEN_ACCESS agrees with the two teen scope sets', () => {
+      for (const scope of ACTING_FOR_SCOPES) {
+        const inPending = (TEEN_PENDING_SCOPES as readonly string[]).includes(
+          scope,
+        );
+        const inActive = (TEEN_SCOPES as readonly string[]).includes(scope);
+        const expected = TEEN_ACCESS[scope];
+        expect({ scope, inPending, inActive }).toEqual({
+          scope,
+          inPending: expected === 'pending' || expected === 'pending_only',
+          inActive: expected === 'pending' || expected === 'active',
+        });
+      }
+    });
+
+    it('a pending teen reaches exactly the routes tagged "pending" or "pending_only"', () => {
+      for (const route of routes.filter((r) => r.scope !== undefined)) {
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, {
+            kind: 'supervised_user',
+            scopes: TEEN_PENDING_SCOPES,
+          }),
+        }).toEqual({
+          route: route.key,
+          allowed: ['pending', 'pending_only'].includes(
+            TEEN_ACCESS[route.scope as ActingForScope],
+          ),
+        });
+      }
+    });
+
+    it('an active teen reaches every route tagged "pending" or "active", never a pending-only or guardian-only one', () => {
+      for (const route of routes.filter((r) => r.scope !== undefined)) {
+        const access = TEEN_ACCESS[route.scope as ActingForScope];
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, {
+            kind: 'supervised_user',
+            scopes: TEEN_SCOPES,
+          }),
+        }).toEqual({
+          route: route.key,
+          allowed: access === 'pending' || access === 'active',
+        });
+      }
+    });
+
+    it('a pending teen reaches NO club data, member list, unit, activity or dashboard route, except the reviewed SHAPED ones', () => {
+      // /dashboard and the /users/:userId club, unit, activity and ranking
+      // families are included: the old pattern left them out and hid the
+      // dashboard leak (club name and activities for a pending teen).
+      const clubData =
+        /^[A-Z]+ \/(clubs\/:clubId(\/(?!sections$)|$)|activities|activity-series|member-rankings|achievements|resources|requests|dashboard|units|camporee|users\/:userId\/(club|section|unit|activit|ranking|attendance|camporee|insurance|finance|payment))/;
+      const matched = routes.filter((r) => clubData.test(r.key));
+      expect(matched.some((r) => r.key === 'GET /dashboard/summary')).toBe(
+        true,
+      );
+      for (const route of matched) {
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, {
+            kind: 'supervised_user',
+            scopes: TEEN_PENDING_SCOPES,
+          }),
+        }).toEqual({
+          route: route.key,
+          allowed: SHAPED_FOR_PENDING_TEEN.includes(route.key),
+        });
+      }
+    });
+
+    it('a SHAPED route is reachable by a pending teen (its controller strips the club data; DashboardController spec + supervised-login e2e)', () => {
+      for (const key of SHAPED_FOR_PENDING_TEEN) {
+        const route = routes.find((r) => r.key === key);
+        expect(route).toBeDefined();
+        expect(
+          isAllowed(route!, {
+            kind: 'supervised_user',
+            scopes: TEEN_PENDING_SCOPES,
+          }),
+        ).toBe(true);
+      }
+    });
+
+    it('EVERY route a pending teen reaches is reviewed in PENDING_TEEN_SURFACE (a new self:read route cannot slip in unseen)', () => {
+      const reached = routes
+        .filter(
+          (r) =>
+            r.scope !== undefined &&
+            isAllowed(r, {
+              kind: 'supervised_user',
+              scopes: TEEN_PENDING_SCOPES,
+            }),
+        )
+        .map((r) => r.key)
+        .sort();
+      expect(reached).toEqual(Object.keys(PENDING_TEEN_SURFACE).sort());
+    });
+
+    it('a pending teen can still finish post-registration (steps 1-3 and the club pickers)', () => {
+      for (const key of [
+        'POST /users/:userId/post-registration/step-1/complete',
+        'POST /users/:userId/post-registration/step-2/complete',
+        'POST /users/:userId/post-registration/step-3/complete',
+        'GET /clubs',
+        'GET /clubs/:clubId/sections',
+        'POST /auth/update-password',
+        'POST /users/me/legal-acceptance',
+        'POST /users/me/fcm-tokens',
+        'GET /users/me/notification-preferences',
+      ]) {
+        const route = routes.find((r) => r.key === key);
+        expect(route).toBeDefined();
+        expect(
+          isAllowed(route!, {
+            kind: 'supervised_user',
+            scopes: TEEN_PENDING_SCOPES,
+          }),
+        ).toBe(true);
+      }
+    });
+  });
+
+  describe('AGE_UNKNOWN_ONLY (own account management)', () => {
+    it.each(AGE_UNKNOWN_ONLY)(
+      '$label matches at least one route',
+      ({ pattern }) => {
+        expect(routes.some((r) => pattern.test(r.key))).toBe(true);
+      },
+    );
+
+    it.each(AGE_UNKNOWN_ONLY)(
+      '$label carries account:manage and is denied to guardians, teens and devices',
+      ({ pattern }) => {
+        for (const route of routes.filter((r) => pattern.test(r.key))) {
+          expect({ route: route.key, scope: route.scope }).toEqual({
+            route: route.key,
+            scope: 'account:manage',
+          });
+          for (const principal of PRINCIPALS.filter(
+            (p) => p.kind !== 'age_unknown_user',
+          )) {
+            let thrown: unknown;
+            try {
+              assertActingScope(new Reflector(), contextOf(route), principal);
+            } catch (error) {
+              thrown = error;
+            }
+            expect(thrown).toBeInstanceOf(AppException);
+            expect((thrown as AppException).code).toBe(principal.expectedCode);
+          }
+          expect(
+            isAllowed(route, {
+              kind: 'age_unknown_user',
+              scopes: AGE_UNKNOWN_SCOPES,
+            }),
+          ).toBe(true);
+        }
+      },
+    );
+
+    it('account:manage is carried by exactly the AGE_UNKNOWN_ONLY routes', () => {
+      const tagged = routes
+        .filter((r) => r.scope === 'account:manage')
+        .map((r) => r.key)
+        .sort();
+      const listed = routes
+        .filter((r) => AGE_UNKNOWN_ONLY.some((f) => f.pattern.test(r.key)))
+        .map((r) => r.key)
+        .sort();
+      expect(tagged).toEqual(listed);
+    });
+  });
+
+  describe('unknown-age column (age_unknown_user reachability against the real registry)', () => {
+    const newcomer = {
+      kind: 'age_unknown_user' as const,
+      scopes: AGE_UNKNOWN_SCOPES,
+    };
+
+    it('reaches exactly the routes whose scope is in AGE_UNKNOWN_SCOPES', () => {
+      const held = new Set<string>(AGE_UNKNOWN_SCOPES);
+      for (const route of routes.filter((r) => r.scope !== undefined)) {
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, newcomer),
+        }).toEqual({ route: route.key, allowed: held.has(route.scope!) });
+      }
+    });
+
+    it('never reaches an unscoped route', () => {
+      for (const route of routes.filter((r) => r.scope === undefined)) {
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, newcomer),
+        }).toEqual({ route: route.key, allowed: false });
+      }
+    });
+
+    it('can finish the post-registration, accept the legal terms, register push and manage the own account', () => {
+      for (const key of [
+        'GET /auth/me',
+        'GET /auth/profile/completion-status',
+        'GET /users/:userId',
+        'PATCH /users/:userId',
+        'POST /users/:userId/profile-picture',
+        'GET /users/:userId/post-registration/status',
+        'GET /users/:userId/post-registration/photo-status',
+        'POST /users/:userId/post-registration/step-1/complete',
+        'POST /users/:userId/post-registration/step-2/complete',
+        'POST /users/:userId/post-registration/step-3/complete',
+        'POST /users/:userId/post-registration/membership-request/cancel',
+        'GET /clubs',
+        'GET /clubs/:clubId/sections',
+        'GET /users/:userId/allergies',
+        'PUT /users/:userId/allergies',
+        'GET /users/:userId/emergency-contacts',
+        'POST /users/:userId/emergency-contacts',
+        'GET /users/me/legal-acceptance',
+        'POST /users/me/legal-acceptance',
+        'POST /users/me/fcm-tokens',
+        'DELETE /users/me/fcm-tokens/:tokenId',
+        'POST /auth/update-password',
+        'GET /auth/sessions',
+        'DELETE /auth/sessions',
+        'DELETE /auth/sessions/:sessionId',
+        'DELETE /auth/me',
+      ]) {
+        const route = routes.find((r) => r.key === key);
+        expect({ key, exists: route !== undefined }).toEqual({
+          key,
+          exists: true,
+        });
+        expect({ key, allowed: isAllowed(route!, newcomer) }).toEqual({
+          key,
+          allowed: true,
+        });
+      }
+    });
+
+    it('reaches no club data, guardian tool, link code, preference or guardian-only exit', () => {
+      for (const key of [
+        'GET /clubs/:clubId',
+        'GET /clubs/:clubId/units',
+        'GET /clubs/:clubId/activities',
+        'GET /member-rankings/me',
+        'GET /resources',
+        'POST /users/:userId/classes/enroll',
+        'POST /users/:userId/honors',
+        'POST /users/me/guardian-link-codes',
+        'GET /users/me/notification-preferences',
+        'POST /users/:userId/post-registration/step-3/guardian-only',
+        'POST /users/:userId/post-registration/step-3/consent-evidence',
+        'GET /guardianships/me/dependents',
+        'POST /support/reports',
+      ]) {
+        const route = routes.find((r) => r.key === key);
+        expect({ key, exists: route !== undefined }).toEqual({
+          key,
+          exists: true,
+        });
+        expect({ key, allowed: isAllowed(route!, newcomer) }).toEqual({
+          key,
+          allowed: false,
+        });
+      }
+    });
+  });
+
+  describe('device column (linked_device reachability against the real registry)', () => {
+    const device = {
+      kind: 'linked_device' as const,
+      scopes: DEVICE_SCOPES,
+    };
+
+    it('DEVICE_ACCESS agrees with DEVICE_SCOPES', () => {
+      for (const scope of ACTING_FOR_SCOPES) {
+        expect({
+          scope,
+          held: (DEVICE_SCOPES as readonly string[]).includes(scope),
+        }).toEqual({ scope, held: DEVICE_ACCESS[scope] });
+      }
+    });
+
+    it('the device holds credential:read but NOT club:context, health:read or any write scope', () => {
+      expect(DEVICE_SCOPES).toContain('credential:read');
+      for (const scope of [
+        'club:context',
+        'health:read',
+        'classes:write',
+        'honors:write',
+        'profile:write',
+        'registration:write',
+        'legal:accept',
+        'account:manage',
+        'consent:evidence',
+      ] as const) {
+        expect(DEVICE_SCOPES).not.toContain(scope);
+      }
+    });
+
+    it('reaches exactly the routes tagged with a scope it holds, and nothing else', () => {
+      for (const route of routes) {
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, device),
+        }).toEqual({
+          route: route.key,
+          allowed:
+            route.scope !== undefined && DEVICE_ACCESS[route.scope] === true,
+        });
+      }
+    });
+
+    it('EVERY route a device reaches is reviewed in DEVICE_SURFACE (a new self:read route cannot slip in unseen)', () => {
+      const reached = routes
+        .filter((r) => r.scope !== undefined && isAllowed(r, device))
+        .map((r) => r.key)
+        .sort();
+      expect(reached).toEqual(Object.keys(DEVICE_SURFACE).sort());
+    });
+
+    it('never reaches an unscoped route', () => {
+      for (const route of routes.filter((r) => r.scope === undefined)) {
+        expect({ route: route.key, allowed: isAllowed(route, device) }).toEqual(
+          { route: route.key, allowed: false },
+        );
+      }
+    });
+
+    it('is denied on the account, security, profile, health, enrollment, honors, family and legacy push routes', () => {
+      for (const key of [
+        'POST /auth/update-password',
+        'POST /auth/verify-email/send',
+        'PATCH /users/:userId',
+        'POST /users/:userId/profile-picture',
+        'GET /auth/sessions',
+        'DELETE /auth/sessions',
+        'DELETE /auth/me',
+        'GET /users/:userId/allergies',
+        'GET /users/:userId/diseases',
+        'GET /users/:userId/medicines',
+        'GET /users/:userId/emergency-contacts',
+        'POST /users/:userId/classes/enroll',
+        'PATCH /users/:userId/classes/:classId/progress',
+        'POST /users/:userId/honors',
+        'POST /users/:userId/honors/:honorId/files',
+        'POST /users/:userId/honors/:honorId/requirements/:requirementId/evidence/upload',
+        'POST /users/:userId/honors/:honorId/requirements/:requirementId/evidence/link',
+        'DELETE /users/:userId/honors/:honorId/requirements/:requirementId/evidence/:evidenceId',
+        'POST /users/me/legal-acceptance',
+        'GET /users/me/notification-preferences',
+        'PATCH /users/me/notification-preferences',
+        'PATCH /auth/me/context',
+        'POST /users/me/guardian-link-codes',
+        'GET /guardianships/me/dependents',
+        'POST /guardianships/me/dependents',
+        'POST /auth/device/pair',
+      ]) {
+        const route = routes.find((r) => r.key === key);
+        expect({ key, exists: route !== undefined }).toEqual({
+          key,
+          exists: true,
+        });
+        expect({ key, allowed: isAllowed(route!, device) }).toEqual({
+          key,
+          allowed: false,
+        });
+      }
+    });
+
+    it('the legacy /fcm-tokens family (including the list) is denied to the device', () => {
+      const legacy = routes.filter((r) => /^[A-Z]+ \/fcm-tokens/.test(r.key));
+      expect(legacy.length).toBeGreaterThan(0);
+      for (const route of legacy) {
+        expect({ route: route.key, allowed: isAllowed(route, device) }).toEqual(
+          { route: route.key, allowed: false },
+        );
+      }
+    });
+
+    it('a device never reaches ANY honor mutation, club write, member or staff route', () => {
+      const reached = routes
+        .filter((r) => r.scope !== undefined && isAllowed(r, device))
+        .map((r) => r.key);
+      expect(
+        reached.filter(
+          (key) => /\/honors(\/|$)/.test(key) && !key.startsWith('GET '),
         ),
-      ).toThrow();
+      ).toEqual([]);
+      expect(
+        reached.filter((key) =>
+          /^[A-Z]+ \/(club-sections|admin|members|units|resources|achievements|requests|validation)/.test(
+            key,
+          ),
+        ),
+      ).toEqual([]);
+    });
+
+    it('a device is denied with PRINCIPAL_SCOPE_DENIED (never the acting code that exits "acting" in the app)', () => {
+      const route = routes.find((r) => r.key === 'PATCH /users/:userId')!;
+      let thrown: unknown;
+      try {
+        assertActingScope(new Reflector(), contextOf(route), device);
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as AppException).code).toBe(
+        ErrorCode.PRINCIPAL_SCOPE_DENIED,
+      );
+    });
+  });
+
+  describe('NOT_FOR_GUARDIAN_OR_DEVICE (teen-only scopes)', () => {
+    it('the teen-only scopes are in neither guardian set nor the device set', () => {
+      for (const scope of TEEN_ONLY_SCOPES) {
+        expect(GUARDIAN_PENDING_SCOPES).not.toContain(scope);
+        expect(GUARDIAN_VERIFIED_SCOPES).not.toContain(scope);
+        expect(DEVICE_SCOPES).not.toContain(scope);
+      }
+      // agenda:read and push:register are shared with the device by design,
+      // but never with a guardian acting.
+      for (const scope of ['agenda:read', 'push:register'] as const) {
+        expect(GUARDIAN_PENDING_SCOPES).not.toContain(scope);
+        expect(GUARDIAN_VERIFIED_SCOPES).not.toContain(scope);
+      }
+    });
+
+    it('no route carrying a teen-only scope is reachable by a guardian acting or a device', () => {
+      const teenOnlyRoutes = routes.filter(
+        (r) => r.scope && TEEN_ONLY_SCOPES.includes(r.scope),
+      );
+      expect(teenOnlyRoutes.length).toBeGreaterThan(30);
+      for (const route of teenOnlyRoutes) {
+        for (const scopes of [
+          GUARDIAN_PENDING_SCOPES,
+          GUARDIAN_VERIFIED_SCOPES,
+        ]) {
+          expect(isAllowed(route, { kind: 'guardian_acting', scopes })).toBe(
+            false,
+          );
+        }
+        expect(
+          isAllowed(route, { kind: 'linked_device', scopes: DEVICE_SCOPES }),
+        ).toBe(false);
+      }
+    });
+
+    it('the device reaches no /clubs route other than the club agenda', () => {
+      const clubRoutes = routes.filter(
+        (r) =>
+          /^[A-Z]+ \/clubs(\/|$)/.test(r.key) &&
+          isAllowed(r, { kind: 'linked_device', scopes: DEVICE_SCOPES }),
+      );
+      expect(clubRoutes.map((r) => r.key)).toEqual([
+        'GET /clubs/:clubId/activities',
+      ]);
+    });
+
+    it('the device cannot read health data, change the password, accept legal terms or touch profiles', () => {
+      for (const key of [
+        'GET /users/:userId/allergies',
+        'GET /users/:userId/emergency-contacts',
+        'POST /auth/update-password',
+        'POST /users/me/legal-acceptance',
+        'PATCH /users/:userId',
+        'POST /users/:userId/classes/enroll',
+        'POST /users/:userId/honors',
+      ]) {
+        const route = routes.find((r) => r.key === key);
+        expect(route).toBeDefined();
+        expect(
+          isAllowed(route!, { kind: 'linked_device', scopes: DEVICE_SCOPES }),
+        ).toBe(false);
+      }
     });
   });
 });

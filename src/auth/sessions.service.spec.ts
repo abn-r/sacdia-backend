@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SessionsService } from './sessions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { LinkedDeviceRevocation } from './device/linked-device-revocation';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -50,6 +51,13 @@ const mockPrisma = {
     delete: jest.fn(),
     deleteMany: jest.fn(),
   },
+  linked_devices: {
+    findMany: jest.fn(),
+  },
+};
+
+const mockDeviceRevocation = {
+  markMissingSessionsRevoked: jest.fn(),
 };
 
 // ---------------------------------------------------------------------------
@@ -64,10 +72,13 @@ describe('SessionsService', () => {
       providers: [
         SessionsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: LinkedDeviceRevocation, useValue: mockDeviceRevocation },
       ],
     }).compile();
 
     service = module.get<SessionsService>(SessionsService);
+    mockPrisma.linked_devices.findMany.mockResolvedValue([]);
+    mockDeviceRevocation.markMissingSessionsRevoked.mockResolvedValue([]);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -93,6 +104,37 @@ describe('SessionsService', () => {
 
       expect(current?.is_current).toBe(true);
       expect(other?.is_current).toBe(false);
+    });
+
+    it('labels a session as a device session only when a linked_devices row names it (3b)', async () => {
+      mockPrisma.session.findMany.mockResolvedValue([
+        makeRow({ id: SESSION_A }),
+        makeRow({ id: SESSION_B }),
+      ]);
+      mockPrisma.linked_devices.findMany.mockResolvedValue([
+        { session_id: SESSION_B, linked_device_id: 'dev-1' },
+      ]);
+
+      const { sessions } = await service.listSessions(USER_ID, SESSION_A);
+
+      expect(
+        sessions.map((s) => [s.session_id, s.kind, s.linked_device_id]),
+      ).toEqual([
+        [SESSION_A, 'user', null],
+        [SESSION_B, 'device', 'dev-1'],
+      ]);
+      expect(mockPrisma.linked_devices.findMany).toHaveBeenCalledWith({
+        where: { session_id: { in: [SESSION_A, SESSION_B] } },
+        select: { session_id: true, linked_device_id: true },
+      });
+    });
+
+    it('does not query devices when there are no sessions', async () => {
+      mockPrisma.session.findMany.mockResolvedValue([]);
+
+      await service.listSessions(USER_ID, null);
+
+      expect(mockPrisma.linked_devices.findMany).not.toHaveBeenCalled();
     });
 
     it('returns is_current false for all sessions when sid is null', async () => {
@@ -242,6 +284,23 @@ describe('SessionsService', () => {
       });
     });
 
+    it('records the device of a revoked session as revoked (session_revoked) after the delete', async () => {
+      mockPrisma.session.findUnique.mockResolvedValue(makeRow());
+      mockPrisma.session.delete.mockResolvedValue(makeRow());
+
+      await service.revokeSession(USER_ID, SESSION_B, SESSION_A);
+
+      expect(
+        mockDeviceRevocation.markMissingSessionsRevoked,
+      ).toHaveBeenCalledWith(USER_ID, USER_ID);
+      expect(
+        mockPrisma.session.delete.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        mockDeviceRevocation.markMissingSessionsRevoked.mock
+          .invocationCallOrder[0],
+      );
+    });
+
     it('allows revoking when currentSid is null (legacy token)', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(makeRow());
       mockPrisma.session.delete.mockResolvedValue(makeRow());
@@ -285,6 +344,16 @@ describe('SessionsService', () => {
           expiresAt: { gt: expect.any(Date) },
         },
       });
+    });
+
+    it('reconciles the devices of the user after deleting the sessions', async () => {
+      mockPrisma.session.deleteMany.mockResolvedValue({ count: 1 });
+
+      await service.revokeAllOtherSessions(USER_ID, SESSION_A);
+
+      expect(
+        mockDeviceRevocation.markMissingSessionsRevoked,
+      ).toHaveBeenCalledWith(USER_ID, USER_ID);
     });
 
     it('returns zero when no sessions exist to revoke', async () => {

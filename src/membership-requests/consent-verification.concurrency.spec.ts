@@ -217,6 +217,13 @@ class FakeDb {
             : [];
         },
       },
+      // The dependent holds no account here (a guardian-managed child).
+      account: {
+        count: async () => {
+          await tick();
+          return 0;
+        },
+      },
       dependent_profiles: {
         findUnique: async () => {
           await tick();
@@ -320,6 +327,10 @@ function build(lockingEnabled: boolean) {
     db as any,
     actingCache as any,
     notificationsService as any,
+    {
+      revokeAllForDependent: jest.fn().mockResolvedValue(0),
+      revokeByGuardianship: jest.fn().mockResolvedValue(0),
+    } as any,
   );
   const membershipRequests = { approve: jest.fn().mockResolvedValue({}) };
   const guardianNotifications = {

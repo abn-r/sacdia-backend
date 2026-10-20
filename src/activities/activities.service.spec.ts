@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ActivitiesService } from './activities.service';
+import { ActivitiesService, withoutMemberLists } from './activities.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -377,6 +377,81 @@ describe('ActivitiesService', () => {
           user_image: 'https://signed.example/profiles/juan.jpg',
         },
       ]);
+    });
+
+    describe('a linked device (3b): the agenda WITHOUT member lists', () => {
+      const withLists = {
+        activity_id: 1,
+        name: 'Campamento',
+        attendees: ['kid-2', 'kid-3'],
+        rsvp: { 'kid-2': 'going', 'kid-3': 'not_going' },
+      };
+
+      const hasMemberKey = (value: unknown): boolean =>
+        /attendee|rsvp/i.test(JSON.stringify(Object.keys(value as object)));
+
+      it('findOne drops attendees, rsvp and attendee_profiles and never loads the profiles', async () => {
+        mockPrismaService.activities.findUnique.mockResolvedValue(withLists);
+
+        const result: any = await service.findOne(1, null, {
+          withoutMemberLists: true,
+        });
+
+        expect(hasMemberKey(result)).toBe(false);
+        expect(JSON.stringify(result)).not.toMatch(/kid-2|kid-3/);
+        expect(result.name).toBe('Campamento');
+        expect(result.instances).toEqual([]);
+        expect(mockPrismaService.users.findMany).not.toHaveBeenCalled();
+      });
+
+      it('findByClub drops the member lists from every activity of the page', async () => {
+        mockPrismaService.clubs.findUnique.mockResolvedValue({
+          club_id: 1,
+          club_sections: [{ club_section_id: 1, club_type_id: 1 }],
+        });
+        mockPrismaService.activities.findMany.mockResolvedValue([
+          withLists,
+          { ...withLists, activity_id: 2 },
+        ]);
+        mockPrismaService.activities.count.mockResolvedValue(2);
+
+        const result = await service.findByClub(
+          1,
+          undefined,
+          undefined,
+          1,
+          'kid-1',
+          { withoutMemberLists: true },
+        );
+
+        expect(result.data).toHaveLength(2);
+        for (const activity of result.data) {
+          expect(hasMemberKey(activity)).toBe(false);
+        }
+        expect(JSON.stringify(result)).not.toMatch(/kid-2|kid-3/);
+      });
+
+      it('teens, guardians and adults (no option) keep the full payload', async () => {
+        mockPrismaService.activities.findUnique.mockResolvedValue(withLists);
+
+        const result: any = await service.findOne(1);
+
+        expect(result.attendees).toEqual(['kid-2', 'kid-3']);
+        expect(result.rsvp).toEqual(withLists.rsvp);
+        expect(result.attendee_profiles).toBeDefined();
+      });
+
+      it('withoutMemberLists does not mutate the source object', () => {
+        const source = {
+          a: 1,
+          attendees: ['x'],
+          rsvp: {},
+          attendee_profiles: [],
+        };
+        const stripped = withoutMemberLists(source);
+        expect(stripped).toEqual({ a: 1 });
+        expect(source.attendees).toEqual(['x']);
+      });
     });
 
     it('should throw NotFoundException when not found', async () => {

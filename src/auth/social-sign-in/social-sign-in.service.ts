@@ -12,6 +12,14 @@ import {
 import type { FileStorageService } from '../../common/services/file-storage.service';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  fireEvent,
+  resolveSupervisedLoginEvents,
+  SUPERVISED_LOGIN_EVENTS,
+  type SupervisedLoginEvents,
+} from '../supervised/supervised-login-events.port';
+import { SupervisedPrincipalResolver } from '../supervised/supervised-principal.resolver';
+import { ActingForCache } from '../acting-for/acting-for.cache';
 import { AppleTokenClient } from './apple-token.client';
 import type { SocialTokenSignInDto } from './dto/social-token-sign-in.dto';
 import { SocialAccountResolver } from './social-account.resolver';
@@ -71,9 +79,18 @@ export class SocialSignInService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly tokenBlacklist: TokenBlacklistService,
+    private readonly supervisedResolver: SupervisedPrincipalResolver,
+    private readonly actingForCache: ActingForCache,
+    // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
+    // every guardian security notice into a silent no-op (FP3-23).
+    @Inject(SUPERVISED_LOGIN_EVENTS)
+    events?: Partial<SupervisedLoginEvents>,
   ) {
     this.verifiers = { google, apple };
+    this.events = resolveSupervisedLoginEvents(events);
   }
+
+  private readonly events: SupervisedLoginEvents;
 
   async signIn(
     provider: SocialProvider,
@@ -116,6 +133,14 @@ export class SocialSignInService {
       await this.storeAppleRefreshToken(identity.sub, dto.authorizationCode);
     }
 
+    if (!created) {
+      // The provisioning creates the post-registration row when it is missing
+      // (an admin-created or legacy account signing in with Google/Apple), and
+      // the principal kind reads it (unknown-age restriction). Re-resolve it.
+      // A brand-new account has no cached principal yet.
+      await this.actingForCache.bump(userId);
+    }
+
     if (revokedPriorAccess) {
       // The resolver deleted the previous holder's sessions; their access JWTs
       // stay valid until expiry unless the user is blacklisted. Do it before
@@ -147,6 +172,8 @@ export class SocialSignInService {
       `${provider} sign-in for user ${userId} (created=${created} linked=${linked})`,
     );
 
+    await this.notifyGuardiansOfSupervisedSession(userId);
+
     return {
       accessToken,
       sessionToken: session.token,
@@ -174,6 +201,30 @@ export class SocialSignInService {
    * and never blacklist again. Retry once here; if the cache is still down,
    * log and carry on: the damage is bounded by the remaining JWT lifetime.
    */
+  /**
+   * A social sign-in of a supervised teen opens a new session: the verified
+   * guardians are told (deduplicated). Best effort, only for supervised teens.
+   */
+  private async notifyGuardiansOfSupervisedSession(
+    userId: string,
+  ): Promise<void> {
+    try {
+      const state = await this.supervisedResolver.resolve(userId);
+      if (state.state !== 'supervised') return;
+      void fireEvent(
+        () => this.events.onTeenSessionStarted({ userId }),
+        (error) =>
+          this.logger.warn(
+            `Teen session notice failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not classify the social sign-in principal: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   private async blacklistPriorTokens(userId: string): Promise<void> {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {

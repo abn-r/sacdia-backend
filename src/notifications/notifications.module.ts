@@ -9,6 +9,7 @@ import { NotificationPreferencesService } from './notification-preferences.servi
 import { NotificationCategorySettingsService } from './notification-category-settings.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { DependentPushRouterService } from './dependent-push-router.service';
+import { ClubDataRecipientsService } from './club-data-recipients.service';
 import {
   NotificationsProcessor,
   NOTIFICATIONS_QUEUE,
@@ -57,6 +58,7 @@ function isRedisConfigured(): boolean {
     NotificationCategorySettingsService,
     FcmTokensService,
     DependentPushRouterService,
+    ClubDataRecipientsService,
     ...(isRedisConfigured() && isBullmqWorkerEnabled('notifications')
       ? [NotificationsProcessor]
       : []),
@@ -66,6 +68,7 @@ function isRedisConfigured(): boolean {
     NotificationPreferencesService,
     NotificationCategorySettingsService,
     FcmTokensService,
+    ClubDataRecipientsService,
   ],
 })
 export class NotificationsModule {}

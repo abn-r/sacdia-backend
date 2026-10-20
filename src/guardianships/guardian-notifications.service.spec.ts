@@ -54,7 +54,7 @@ describe('GuardianNotificationsService.onDependentEvidenceUploaded', () => {
     expect(notifications.sendToUser.mock.calls[1][0].userId).toBe(G2);
   });
 
-  it('is a no-op when the target is not a dependent (or is frozen / has an account)', async () => {
+  it('is a no-op when the target is not a dependent (or is frozen / purged / inactive)', async () => {
     const { service, notifications, prisma } = setup(null);
     await service.onDependentEvidenceUploaded({
       dependentUserId: DEPENDENT,
@@ -64,8 +64,150 @@ describe('GuardianNotificationsService.onDependentEvidenceUploaded', () => {
     expect(prisma.users.findFirst.mock.calls[0][0].where).toMatchObject({
       user_id: DEPENDENT,
       active: true,
-      account: { none: {} },
       dependent_profile: { is: { frozen_at: null, purged_at: null } },
+    });
+    // A linked teen HAS an account: the lookup must not exclude them.
+    expect(prisma.users.findFirst.mock.calls[0][0].where).not.toHaveProperty(
+      'account',
+    );
+  });
+
+  it('notifies the guardians of a dependent that holds an account (a linked teen) when STAFF upload', async () => {
+    const { service, notifications } = setup(dependentWith([G1]));
+
+    await service.onDependentEvidenceUploaded({
+      dependentUserId: DEPENDENT,
+      kind: 'class_section',
+      actorUserId: 'staff-1',
+    });
+
+    expect(notifications.sendToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT notify when a supervised teen uploads their own evidence (P3-A11: the summary covers it)', async () => {
+    const { service, notifications, prisma } = setup(dependentWith([G1]));
+
+    await runWithAuditContext(async () => {
+      setAuditActingFor({
+        actorUserId: DEPENDENT,
+        subjectUserId: DEPENDENT,
+        kind: 'supervised_user',
+      });
+      await service.onDependentEvidenceUploaded({
+        dependentUserId: DEPENDENT,
+        kind: 'class_section',
+        actorUserId: DEPENDENT,
+      });
+    });
+
+    expect(notifications.sendToUser).not.toHaveBeenCalled();
+    expect(prisma.users.findFirst).not.toHaveBeenCalled();
+  });
+
+  describe('a linked device uploads (3b, FP3-47)', () => {
+    const asDevice = <T>(fn: () => Promise<T>) =>
+      runWithAuditContext(async () => {
+        setAuditActingFor({
+          actorUserId: DEPENDENT,
+          subjectUserId: DEPENDENT,
+          guardianshipId: 'gs-1',
+          linkedDeviceId: 'dev-1',
+          kind: 'linked_device',
+        });
+        return fn();
+      });
+
+    it('notifies EVERY verified guardian even though the audit subject is the child (the regression: a subject-only check silenced the device)', async () => {
+      const { service, notifications } = setup(dependentWith([G1, G2]));
+
+      await asDevice(() =>
+        service.onDependentEvidenceUploaded({
+          dependentUserId: DEPENDENT,
+          kind: 'class_section',
+          actorUserId: DEPENDENT,
+        }),
+      );
+
+      expect(notifications.sendToUser).toHaveBeenCalledTimes(2);
+      expect(
+        notifications.sendToUser.mock.calls.map((c: any[]) => c[0].userId),
+      ).toEqual([G1, G2]);
+      expect(notifications.sendToUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Ana subió evidencia',
+          data: {
+            type: 'dependent_evidence_uploaded',
+            dependent_user_id: DEPENDENT,
+          },
+        }),
+        'system',
+        'family:evidence_uploaded',
+      );
+    });
+
+    it('10 uploads in a row are 10 notices per guardian (each upload, no coalescing)', async () => {
+      const { service, notifications } = setup(dependentWith([G1]));
+
+      for (let i = 0; i < 10; i += 1) {
+        await asDevice(() =>
+          service.onDependentEvidenceUploaded({
+            dependentUserId: DEPENDENT,
+            kind: 'class_section',
+            actorUserId: DEPENDENT,
+          }),
+        );
+      }
+
+      expect(notifications.sendToUser).toHaveBeenCalledTimes(10);
+    });
+
+    it('a notifier failure never throws (the upload already returned 201)', async () => {
+      const { service, notifications } = setup(dependentWith([G1, G2]));
+      notifications.sendToUser.mockRejectedValue(new Error('push down'));
+
+      await expect(
+        asDevice(() =>
+          service.onDependentEvidenceUploaded({
+            dependentUserId: DEPENDENT,
+            kind: 'class_section',
+            actorUserId: DEPENDENT,
+          }),
+        ),
+      ).resolves.toBeUndefined();
+      expect(notifications.sendToUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('a lookup failure never throws either', async () => {
+      const { service, prisma } = setup(dependentWith([G1]));
+      prisma.users.findFirst.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        asDevice(() =>
+          service.onDependentEvidenceUploaded({
+            dependentUserId: DEPENDENT,
+            kind: 'class_section',
+            actorUserId: DEPENDENT,
+          }),
+        ),
+      ).resolves.toBeUndefined();
+    });
+
+    it('a teen still suppresses (P3-A11) and a guardian acting still suppresses: only the DEVICE changed', async () => {
+      for (const kind of ['supervised_user', 'guardian_acting'] as const) {
+        const { service, notifications } = setup(dependentWith([G1]));
+        await runWithAuditContext(async () => {
+          setAuditActingFor({
+            actorUserId: DEPENDENT,
+            subjectUserId: DEPENDENT,
+            kind,
+          });
+          await service.onDependentEvidenceUploaded({
+            dependentUserId: DEPENDENT,
+            kind: 'class_section',
+          });
+        });
+        expect(notifications.sendToUser).not.toHaveBeenCalled();
+      }
     });
   });
 
@@ -129,7 +271,7 @@ describe('GuardianNotificationsService.onDependentEvidenceUploaded', () => {
     expect(notifications.sendToUser).not.toHaveBeenCalled();
   });
 
-  it('only reads real, active, non-test user guardians', async () => {
+  it('only reads real, active, non-test, VERIFIED user guardians', async () => {
     const { service, prisma } = setup(dependentWith([G1]));
     await service.onDependentEvidenceUploaded({
       dependentUserId: DEPENDENT,
@@ -139,7 +281,7 @@ describe('GuardianNotificationsService.onDependentEvidenceUploaded', () => {
       prisma.users.findFirst.mock.calls[0][0].select.guardianships_as_dependent
         .where,
     ).toMatchObject({
-      consent_status: { not: 'revoked' },
+      consent_status: 'verified',
       is_custodian: false,
       is_test_data: false,
       guardian_user_id: { not: null },
@@ -192,7 +334,21 @@ describe('GuardianNotificationsService.onConsentVerified', () => {
     );
   });
 
-  it('is a no-op for a dependent that is gone, frozen or has an account', async () => {
+  it('tells the guardians of a linked teen (who holds an account) that consent was verified', async () => {
+    const { service, notifications, prisma } = setup(dependentWith([G1]));
+
+    await service.onConsentVerified({
+      dependentUserId: DEPENDENT,
+      verifierUserId: 'director-1',
+    });
+
+    expect(notifications.sendToUser).toHaveBeenCalledTimes(1);
+    expect(prisma.users.findFirst.mock.calls[0][0].where).not.toHaveProperty(
+      'account',
+    );
+  });
+
+  it('is a no-op for a dependent that is gone, frozen or purged', async () => {
     const { service, notifications } = setup(null);
 
     await service.onConsentVerified({
@@ -224,5 +380,88 @@ describe('GuardianNotificationsService.onConsentVerified', () => {
         verifierUserId: G2,
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('GuardianNotificationsService device evidence notices reach VERIFIED guardians only (ruling 3)', () => {
+  type Row = { guardian_user_id: string; consent_status: string };
+
+  /** A users.findFirst fake that applies the consent filter of the relation. */
+  function setupWithRows(rows: Row[]) {
+    const prisma: any = {
+      users: {
+        findFirst: jest.fn().mockImplementation((args: any) => {
+          const where = args.select.guardianships_as_dependent.where;
+          const matches = (row: Row): boolean => {
+            const status = where.consent_status;
+            if (status === undefined) return true;
+            if (typeof status === 'string')
+              return row.consent_status === status;
+            if (status.not !== undefined)
+              return row.consent_status !== status.not;
+            return true;
+          };
+          return Promise.resolve({
+            name: 'Ana María',
+            guardianships_as_dependent: rows
+              .filter(matches)
+              .map((row) => ({ guardian_user_id: row.guardian_user_id })),
+          });
+        }),
+      },
+    };
+    const notifications: any = {
+      sendToUser: jest.fn().mockResolvedValue({ success: true }),
+    };
+    return {
+      service: new GuardianNotificationsService(prisma, notifications),
+      notifications,
+    };
+  }
+
+  const asDevice = <T>(fn: () => Promise<T>) =>
+    runWithAuditContext(async () => {
+      setAuditActingFor({
+        actorUserId: DEPENDENT,
+        subjectUserId: DEPENDENT,
+        guardianshipId: 'gs-1',
+        linkedDeviceId: 'dev-1',
+        kind: 'linked_device',
+      });
+      return fn();
+    });
+
+  it('a pending guardian gets nothing from a device upload, a verified one does', async () => {
+    const { service, notifications } = setupWithRows([
+      { guardian_user_id: G1, consent_status: 'pending' },
+      { guardian_user_id: G2, consent_status: 'verified' },
+    ]);
+
+    await asDevice(() =>
+      service.onDependentEvidenceUploaded({
+        dependentUserId: DEPENDENT,
+        kind: 'class_section',
+        actorUserId: DEPENDENT,
+      }),
+    );
+
+    expect(notifications.sendToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendToUser.mock.calls[0][0].userId).toBe(G2);
+  });
+
+  it('a child whose only guardian is still pending produces no notice at all', async () => {
+    const { service, notifications } = setupWithRows([
+      { guardian_user_id: G1, consent_status: 'pending' },
+    ]);
+
+    await asDevice(() =>
+      service.onDependentEvidenceUploaded({
+        dependentUserId: DEPENDENT,
+        kind: 'honor',
+        actorUserId: DEPENDENT,
+      }),
+    );
+
+    expect(notifications.sendToUser).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,20 @@ describe('redactBody', () => {
     });
   });
 
+  it('redacts the device pairing token and its QR payload (3b)', () => {
+    expect(
+      redactBody({
+        pairing_token: 'abcdefghijklmnopqrstuv',
+        qr_payload: 'sacdia://pair?t=abcdefghijklmnopqrstuv',
+        platform: 'ios',
+      }),
+    ).toEqual({
+      pairing_token: '[REDACTED]',
+      qr_payload: '[REDACTED]',
+      platform: 'ios',
+    });
+  });
+
   it('does not mutate the original body', () => {
     const body = { nonce: 'n' };
     redactBody(body);

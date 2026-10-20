@@ -240,6 +240,13 @@ class FakeDb {
           return { count: 1 };
         },
       },
+      // The dependents here hold no account (guardian-managed children).
+      account: {
+        count: async () => {
+          await tick();
+          return 0;
+        },
+      },
       users: {
         findUnique: async () => {
           await tick();
@@ -274,6 +281,10 @@ function build(lockingEnabled: boolean) {
     db as any,
     cache as any,
     notifications as any,
+    {
+      revokeAllForDependent: jest.fn().mockResolvedValue(0),
+      revokeByGuardianship: jest.fn().mockResolvedValue(0),
+    } as any,
   );
   return { db, service };
 }

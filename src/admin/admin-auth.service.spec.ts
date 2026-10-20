@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminUsersService } from './admin-users.service';
+import { LinkedDeviceRevocation } from '../auth/device/linked-device-revocation';
 
 describe('AdminAuthService', () => {
   let service: AdminAuthService;
@@ -22,6 +23,13 @@ describe('AdminAuthService', () => {
     verification: {
       deleteMany: jest.fn(),
     },
+    linked_devices: {
+      findMany: jest.fn(),
+    },
+  };
+
+  const mockDeviceRevocation = {
+    markMissingSessionsRevoked: jest.fn(),
   };
 
   const mockBetterAuthService = {
@@ -40,9 +48,12 @@ describe('AdminAuthService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: BetterAuthService, useValue: mockBetterAuthService },
         { provide: AdminUsersService, useValue: mockAdminUsersService },
+        { provide: LinkedDeviceRevocation, useValue: mockDeviceRevocation },
       ],
     }).compile();
 
+    mockPrismaService.linked_devices.findMany.mockResolvedValue([]);
+    mockDeviceRevocation.markMissingSessionsRevoked.mockResolvedValue([]);
     service = module.get<AdminAuthService>(AdminAuthService);
   });
 
@@ -66,9 +77,10 @@ describe('AdminAuthService', () => {
 
       const result = await service.listUserSessions('actor-lf', 'target-1');
 
-      expect(
-        mockAdminUsersService.assertUserInActorScope,
-      ).toHaveBeenCalledWith('actor-lf', 'target-1');
+      expect(mockAdminUsersService.assertUserInActorScope).toHaveBeenCalledWith(
+        'actor-lf',
+        'target-1',
+      );
       expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
       expect(result).toEqual({
         userId: 'target-1',
@@ -81,9 +93,38 @@ describe('AdminAuthService', () => {
             expiresAt: new Date('2026-09-08T10:00:00.000Z'),
             ipAddress: '1.2.3.4',
             userAgent: 'Mozilla/5.0',
+            kind: 'user',
+            linkedDeviceId: null,
           },
         ],
       });
+    });
+
+    it('labels the session of a linked device with kind device and its id (3b)', async () => {
+      mockAdminUsersService.assertUserInActorScope.mockResolvedValue(undefined);
+      const base = {
+        userId: 'child-1',
+        createdAt: new Date('2026-09-01T10:00:00.000Z'),
+        expiresAt: new Date('2026-09-08T10:00:00.000Z'),
+        ipAddress: null,
+        userAgent: null,
+      };
+      mockPrismaService.session.findMany.mockResolvedValue([
+        { id: 'sess-device', ...base },
+        { id: 'sess-user', ...base },
+      ]);
+      mockPrismaService.linked_devices.findMany.mockResolvedValue([
+        { session_id: 'sess-device', linked_device_id: 'dev-1' },
+      ]);
+
+      const result = await service.listUserSessions('actor-lf', 'child-1');
+
+      expect(
+        result.sessions.map((s) => [s.sessionId, s.kind, s.linkedDeviceId]),
+      ).toEqual([
+        ['sess-device', 'device', 'dev-1'],
+        ['sess-user', 'user', null],
+      ]);
     });
 
     it('does not list sessions when the target is outside the actor scope', async () => {
@@ -107,12 +148,17 @@ describe('AdminAuthService', () => {
 
       await service.revokeUserSession('actor-lf', 'target-1', 'sess-1');
 
-      expect(
-        mockAdminUsersService.assertUserInActorScope,
-      ).toHaveBeenCalledWith('actor-lf', 'target-1');
+      expect(mockAdminUsersService.assertUserInActorScope).toHaveBeenCalledWith(
+        'actor-lf',
+        'target-1',
+      );
       expect(mockPrismaService.session.delete).toHaveBeenCalledWith({
         where: { id: 'sess-1' },
       });
+      // A device whose session an admin deleted is recorded as revoked, by the admin.
+      expect(
+        mockDeviceRevocation.markMissingSessionsRevoked,
+      ).toHaveBeenCalledWith('target-1', 'actor-lf');
     });
   });
 
@@ -123,10 +169,14 @@ describe('AdminAuthService', () => {
 
       const count = await service.revokeAllUserSessions('actor-lf', 'target-1');
 
-      expect(
-        mockAdminUsersService.assertUserInActorScope,
-      ).toHaveBeenCalledWith('actor-lf', 'target-1');
+      expect(mockAdminUsersService.assertUserInActorScope).toHaveBeenCalledWith(
+        'actor-lf',
+        'target-1',
+      );
       expect(count).toBe(2);
+      expect(
+        mockDeviceRevocation.markMissingSessionsRevoked,
+      ).toHaveBeenCalledWith('target-1', 'actor-lf');
     });
   });
 });

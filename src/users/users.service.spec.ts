@@ -7,6 +7,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import { SeverityLevel } from './dto/update-user-medical.dto';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 
 describe('UsersService', () => {
@@ -84,6 +85,16 @@ describe('UsersService', () => {
     account: {
       count: jest.fn(),
     },
+    guardianships: {
+      count: jest.fn(),
+    },
+    supervised_logins: {
+      createMany: jest.fn(),
+    },
+  };
+
+  const mockActingForCache = {
+    bump: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockFileStorageService = {
@@ -123,6 +134,7 @@ describe('UsersService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
         { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
+        { provide: ActingForCache, useValue: mockActingForCache },
       ],
     }).compile();
 
@@ -846,6 +858,36 @@ describe('UsersService', () => {
       // The service catches the error and returns the original value
       expect(result.data.user_image).toBe(storedUrl);
     });
+
+    it('TC-F05 - a linked device never selects the blood type', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...baseUserRow,
+        user_image: null,
+      });
+
+      await service.findOne('u1', { withoutHealth: true });
+
+      expect(mockPrismaService.users.findUnique).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ blood: false }),
+        }),
+      );
+    });
+
+    it('TC-F06 - everyone else still gets the blood type', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...baseUserRow,
+        user_image: null,
+      });
+
+      await service.findOne('u1');
+
+      expect(mockPrismaService.users.findUnique).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ blood: true }),
+        }),
+      );
+    });
   });
 
   // ============================================================
@@ -902,6 +944,59 @@ describe('UsersService', () => {
       expect(result.message).toBe('Usuario actualizado exitosamente');
     });
 
+    describe('date-only inputs (QA BUG-4)', () => {
+      // The DTO documents YYYY-MM-DD, but Prisma rejects a date-only string for
+      // a DateTime column: the raw string made PATCH /users/:id a 500.
+      beforeEach(() => {
+        mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
+        mockPrismaService.users.update.mockResolvedValue(updatedUserRow);
+        mockPrismaService.unions.findUnique.mockResolvedValue({
+          union_id: 2,
+          country_id: 1,
+        });
+        mockPrismaService.local_fields.findUnique.mockResolvedValue({
+          local_field_id: 3,
+          union_id: 2,
+        });
+        mockPrismaService.account.count.mockResolvedValue(1);
+      });
+
+      it('sends a YYYY-MM-DD birthday to Prisma as a UTC-midnight Date', async () => {
+        await service.update(
+          'u1',
+          { birthday: '2000-01-15' },
+          { sub: 'u1', kind: 'user' },
+        );
+
+        const data = mockPrismaService.users.update.mock.calls[0][0].data;
+        expect(data.birthday).toEqual(new Date('2000-01-15T00:00:00.000Z'));
+      });
+
+      it('sends a YYYY-MM-DD baptism_date as a UTC-midnight Date too', async () => {
+        await service.update('u1', {
+          baptism: true,
+          baptism_date: '2015-06-20',
+        });
+
+        const data = mockPrismaService.users.update.mock.calls[0][0].data;
+        expect(data.baptism_date).toEqual(new Date('2015-06-20T00:00:00.000Z'));
+      });
+
+      it('keeps the instant of a full ISO date-time (what the app sends)', async () => {
+        await service.update('u1', { birthday: '2000-01-15T06:00:00.000Z' });
+
+        const data = mockPrismaService.users.update.mock.calls[0][0].data;
+        expect(data.birthday).toEqual(new Date('2000-01-15T06:00:00.000Z'));
+      });
+
+      it('leaves the other fields as they were sent', async () => {
+        await service.update('u1', { gender: 'M' });
+
+        const data = mockPrismaService.users.update.mock.calls[0][0].data;
+        expect(data).toEqual({ gender: 'M' });
+      });
+    });
+
     describe('self-edit birthday age gate (FP-24)', () => {
       const yearsAgo = (years: number, extraDays = 0): string => {
         const d = new Date();
@@ -933,6 +1028,30 @@ describe('UsersService', () => {
           status: 422,
         });
         expect(mockPrismaService.users.update).not.toHaveBeenCalled();
+      });
+
+      it('gates an unknown-age account (social sign-up before step 2) the same way: a 10-year-old birthday is 422', async () => {
+        await expect(
+          service.update(
+            'u1',
+            { birthday: yearsAgo(10) },
+            { sub: 'u1', kind: 'age_unknown_user' },
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE,
+          status: 422,
+        });
+        expect(mockPrismaService.users.update).not.toHaveBeenCalled();
+      });
+
+      it('an unknown-age account saving a 15-year-old birthday bumps the principal epoch (teen_pending right away)', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(15) },
+          { sub: 'u1', kind: 'age_unknown_user' },
+        );
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+        expect(mockActingForCache.bump).toHaveBeenCalledWith('u1');
       });
 
       it('allows an account holder aged 13 or more', async () => {
@@ -985,6 +1104,202 @@ describe('UsersService', () => {
         await service.update('u1', { gender: 'M' }, selfUser);
         await service.update('u1', { birthday: yearsAgo(10) });
         expect(mockPrismaService.account.count).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('supervised birthday lock and supervision sync (phase 3a)', () => {
+      const yearsAgo = (years: number, extraDays = 0): string => {
+        const d = new Date();
+        d.setUTCFullYear(d.getUTCFullYear() - years);
+        d.setUTCDate(d.getUTCDate() + extraDays);
+        return d.toISOString().slice(0, 10);
+      };
+      const teenSelf = { sub: 'u1', kind: 'supervised_user' as const };
+
+      beforeEach(() => {
+        mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
+        mockPrismaService.unions.findUnique.mockResolvedValue({
+          union_id: 2,
+          country_id: 1,
+        });
+        mockPrismaService.local_fields.findUnique.mockResolvedValue({
+          local_field_id: 3,
+          union_id: 2,
+        });
+        mockPrismaService.account.count.mockResolvedValue(1);
+        mockPrismaService.guardianships.count.mockResolvedValue(0);
+        mockPrismaService.supervised_logins.createMany.mockResolvedValue({
+          count: 1,
+        });
+        mockPrismaService.users.update.mockImplementation(
+          ({ data }: { data: { birthday?: string } }) =>
+            Promise.resolve({
+              ...updatedUserRow,
+              birthday: data.birthday
+                ? new Date(data.birthday)
+                : updatedUserRow.birthday,
+            }),
+        );
+      });
+
+      it('blocks a supervised teen changing THEIR OWN birthday with 422 and saves nothing', async () => {
+        await expect(
+          service.update('u1', { birthday: yearsAgo(20) }, teenSelf),
+        ).rejects.toMatchObject({
+          code: ErrorCode.USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN,
+          status: 422,
+        });
+        expect(mockPrismaService.users.update).not.toHaveBeenCalled();
+        expect(mockActingForCache.bump).not.toHaveBeenCalled();
+      });
+
+      it('lets a supervised teen re-send their UNCHANGED birthday (post-registration step 2 save)', async () => {
+        const birthday = yearsAgo(15);
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          ...existingUser,
+          birthday: new Date(`${birthday}T00:00:00.000Z`),
+        });
+
+        await service.update('u1', { birthday, gender: 'M' }, teenSelf);
+
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+      });
+
+      it('still blocks a supervised teen whose stored birthday is unknown', async () => {
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          ...existingUser,
+          birthday: null,
+        });
+
+        await expect(
+          service.update('u1', { birthday: yearsAgo(15) }, teenSelf),
+        ).rejects.toMatchObject({
+          code: ErrorCode.USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN,
+        });
+      });
+
+      it('lets a supervised teen edit anything else (no birthday in the body)', async () => {
+        await service.update('u1', { gender: 'F' }, teenSelf);
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+        expect(mockActingForCache.bump).not.toHaveBeenCalled();
+      });
+
+      it('lets an admin correct the birthday of a teen', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(15) },
+          { sub: 'admin-1', kind: 'user' },
+        );
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+      });
+
+      it('bumps the epoch after ANY successful birthday change', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(30) },
+          { sub: 'u1', kind: 'user' },
+        );
+        expect(mockActingForCache.bump).toHaveBeenCalledWith('u1');
+      });
+
+      it('creates the self_registered supervised row (clock starts now) when an account holder enters 13-17', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(15) },
+          { sub: 'u1', kind: 'user' },
+        );
+
+        expect(
+          mockPrismaService.supervised_logins.createMany,
+        ).toHaveBeenCalledWith({
+          data: [
+            {
+              user_id: 'u1',
+              method: 'email',
+              origin: 'self_registered',
+              password_set_by: 'self',
+              pending_since: expect.any(Date),
+            },
+          ],
+          skipDuplicates: true,
+        });
+      });
+
+      it('does not start the clock when the teen already has a guardianship', async () => {
+        mockPrismaService.guardianships.count.mockResolvedValue(1);
+
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(15) },
+          { sub: 'u1', kind: 'user' },
+        );
+
+        expect(
+          mockPrismaService.supervised_logins.createMany.mock.calls[0][0]
+            .data[0].pending_since,
+        ).toBeNull();
+      });
+
+      it('is idempotent: skipDuplicates covers an existing row', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(15) },
+          { sub: 'u1', kind: 'user' },
+        );
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(16) },
+          { sub: 'u1', kind: 'user' },
+        );
+
+        for (const call of mockPrismaService.supervised_logins.createMany.mock
+          .calls) {
+          expect(call[0].skipDuplicates).toBe(true);
+        }
+      });
+
+      it.each([
+        ['an adult', yearsAgo(30)],
+        ['a child below the minimum age', yearsAgo(10)],
+      ])('creates no row for %s', async (_label, birthday) => {
+        await service.update(
+          'u1',
+          { birthday },
+          { sub: 'admin-1', kind: 'user' },
+        );
+        expect(
+          mockPrismaService.supervised_logins.createMany,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('creates no row for a user without an account (dependent)', async () => {
+        mockPrismaService.account.count.mockResolvedValue(0);
+
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(15) },
+          { sub: 'guardian-1', kind: 'guardian_acting' },
+        );
+
+        expect(
+          mockPrismaService.supervised_logins.createMany,
+        ).not.toHaveBeenCalled();
+        expect(mockActingForCache.bump).toHaveBeenCalledWith('u1');
+      });
+
+      it('a failure syncing the supervised row never fails the update (still bumps the epoch)', async () => {
+        mockPrismaService.supervised_logins.createMany.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        await expect(
+          service.update(
+            'u1',
+            { birthday: yearsAgo(15) },
+            { sub: 'u1', kind: 'user' },
+          ),
+        ).resolves.toMatchObject({ status: 'success' });
+        expect(mockActingForCache.bump).toHaveBeenCalledWith('u1');
       });
     });
 

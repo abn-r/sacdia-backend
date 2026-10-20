@@ -46,6 +46,27 @@ import {
   type ActivityAudience,
 } from './activity-audience';
 
+/**
+ * How the caller may see an activity. A linked device (a child's paired phone,
+ * Phase 3b) gets the agenda WITHOUT any member list: no `attendees` (user ids),
+ * no `rsvp` (user id -> intention) and no `attendee_profiles` (names, avatars).
+ * Teens, guardians and adults keep the full payload.
+ */
+export interface ActivityViewOptions {
+  withoutMemberLists?: boolean;
+}
+
+/** The activity payload minus every field that lists other members. */
+export function withoutMemberLists<T extends object>(
+  activity: T,
+): Omit<T, 'attendees' | 'rsvp' | 'attendee_profiles'> {
+  const rest = { ...activity } as Record<string, unknown>;
+  delete rest.attendees;
+  delete rest.rsvp;
+  delete rest.attendee_profiles;
+  return rest as Omit<T, 'attendees' | 'rsvp' | 'attendee_profiles'>;
+}
+
 @Injectable()
 export class ActivitiesService {
   private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
@@ -106,6 +127,7 @@ export class ActivitiesService {
      */
     userSectionId?: number | null,
     viewerUserId?: string | null,
+    view?: ActivityViewOptions,
   ): Promise<PaginatedResult<any>> {
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
@@ -197,7 +219,9 @@ export class ActivitiesService {
     const withAudience = await this.attachAudienceClasses(signedActivities);
 
     return createPaginatedResult(
-      withAudience,
+      view?.withoutMemberLists
+        ? withAudience.map(withoutMemberLists)
+        : withAudience,
       total,
       pagination ?? new PaginationDto(),
     );
@@ -206,6 +230,7 @@ export class ActivitiesService {
   async findOne(
     activityId: number,
     viewer?: { userId: string; sectionId: number } | null,
+    view?: ActivityViewOptions,
   ) {
     const activity = await this.prisma.activities.findUnique({
       where: { activity_id: activityId },
@@ -227,6 +252,10 @@ export class ActivitiesService {
     }
 
     const presented = await this.presentActivity(activity);
+    if (view?.withoutMemberLists) {
+      // A child's phone never receives who else is going (names, avatars or ids).
+      return withoutMemberLists(presented);
+    }
     return {
       ...presented,
       attendee_profiles: await this.loadAttendeeProfiles(

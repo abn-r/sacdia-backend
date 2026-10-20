@@ -59,12 +59,17 @@ export class UsersController {
   @ApiOperation({ summary: 'Obtener información de un usuario' })
   @ApiResponse({ status: 200, description: 'Usuario encontrado' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async findOne(@Param('userId', ParseUUIDPipe) userId: string) {
-    return this.usersService.findOne(userId);
+  async findOne(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() req?: { user?: AuthPrincipal },
+  ) {
+    return this.usersService.findOne(userId, {
+      withoutHealth: req?.user?.kind === 'linked_device',
+    });
   }
 
   @Get(':userId/allergies')
-  @ActingScope('self:read')
+  @ActingScope('health:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener alergias activas del usuario' })
   @ApiResponse({
@@ -86,7 +91,7 @@ export class UsersController {
   }
 
   @Get(':userId/diseases')
-  @ActingScope('self:read')
+  @ActingScope('health:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener enfermedades activas del usuario' })
   @ApiResponse({
@@ -108,7 +113,7 @@ export class UsersController {
   }
 
   @Get(':userId/medicines')
-  @ActingScope('self:read')
+  @ActingScope('health:read')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener medicamentos activos del usuario' })
   @ApiResponse({

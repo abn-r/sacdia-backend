@@ -14,7 +14,11 @@ import {
 } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { SKIP_MFA_CHECK_KEY } from './mfa.guard';
-import { isActingForError } from '../../auth/acting-for/acting-for.errors';
+import {
+  isActingForError,
+  isDeviceAccessError,
+  isSupervisedAccessError,
+} from '../../auth/acting-for/acting-for.errors';
 import { assertActingScope } from '../../auth/acting-for/acting-scope.policy';
 
 /** True for the 503 JwtStrategy raises when revocation cannot be verified. */
@@ -66,6 +70,18 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       throw err;
     }
 
+    // A supervised teen whose access was disabled, reset or frozen gets the
+    // specific 401 (not the generic one) so the app can explain it.
+    if (isSupervisedAccessError(err)) {
+      throw err;
+    }
+
+    // A linked device that was unlinked, ended its lifetime or stopped being
+    // eligible gets its own 401 so the app returns to the pairing screen.
+    if (isDeviceAccessError(err)) {
+      throw err;
+    }
+
     if (err || !user) {
       const request = context.switchToHttp().getRequest<Request>();
       const reason = this.resolveReason(err, info);
@@ -91,8 +107,20 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       throw new AppForbiddenException(ErrorCode.GUARD_MFA_REQUIRED);
     }
 
-    // A substituted principal (guardian acting for a dependent) only reaches
-    // routes that declare a scope it holds. Checked here, next to the principal
+    // A supervised teen (or an unknown-age account with a legacy TOTP) holds
+    // an aal1 token until they complete the second factor. The route that
+    // completes it (@SkipMfaCheck) is MFA machinery, not part of any scope
+    // set, so it must stay reachable.
+    if (
+      skipMfaCheck &&
+      (user.kind === 'supervised_user' || user.kind === 'age_unknown_user') &&
+      user.mfa_pending === true
+    ) {
+      return user;
+    }
+
+    // A restricted principal (guardian acting for a dependent, supervised teen,
+    // linked device) only reaches routes that declare a scope it holds. Checked here, next to the principal
     // creation, so the global guard and every local re-run always agree.
     assertActingScope(this.reflector, context, user);
 

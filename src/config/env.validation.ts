@@ -231,6 +231,16 @@ export const envValidationSchema = Joi.object({
     .optional(),
   THROTTLER_FAIL_OPEN: Joi.boolean().default(false),
 
+  // Family profiles phase 3 feature flags (read through FamilyFeatureFlagsService).
+  // Default false: the consent gate, pending-guardian mode and teen link codes are
+  // NOT flagged; these only gate the new optional surfaces.
+  // FAMILY_TEEN_LOGIN_ENABLED: guardian-enabled handle logins and the management endpoints.
+  FAMILY_TEEN_LOGIN_ENABLED: Joi.boolean().default(false),
+  // FAMILY_LINKED_DEVICE_ENABLED: QR pairing and device JWT authentication (3b).
+  FAMILY_LINKED_DEVICE_ENABLED: Joi.boolean().default(false),
+  // FAMILY_DIRECTOR_CREATE_MINOR_ENABLED: POST /club-sections/:id/dependents (3c).
+  FAMILY_DIRECTOR_CREATE_MINOR_ENABLED: Joi.boolean().default(false),
+
   // BullMQ workers - idle Redis command budget (see bullmq-workers.config.ts).
   // Master switch: false creates no worker in this process (producers still
   // enqueue, nothing consumes). Default true.

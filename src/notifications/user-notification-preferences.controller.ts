@@ -30,6 +30,7 @@ import {
 } from './dto/notification-preferences.dto';
 import { MOBILE_NOTIFICATION_CATEGORIES } from './notification-categories.constants';
 import type { MobileNotificationCategory } from './notification-categories.constants';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 /**
  * User-scoped notification preferences and FCM token management.
@@ -63,6 +64,7 @@ export class UserNotificationPreferencesController {
    *
    * Missing rows in DB default to enabled=true (opt-out model).
    */
+  @ActingScope('self:preferences')
   @Get('notification-preferences')
   @ApiOperation({
     summary: 'Get notification preferences for the authenticated user',
@@ -105,6 +107,7 @@ export class UserNotificationPreferencesController {
    * If master and individual categories are both provided, master is applied
    * first, then individual overrides are applied on top.
    */
+  @ActingScope('self:preferences')
   @Patch('notification-preferences')
   @ApiOperation({
     summary: 'Update notification preferences',
@@ -170,6 +173,7 @@ export class UserNotificationPreferencesController {
    * If the token already exists (from another user or inactive), it is
    * re-associated with the current user and re-activated.
    */
+  @ActingScope('push:register')
   @Post('fcm-tokens')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -198,7 +202,13 @@ export class UserNotificationPreferencesController {
     @Body() dto: RegisterFcmTokenRequestDto,
     @Request() req,
   ) {
-    return this.fcmTokensService.registerToken(req.user.sub, dto);
+    return this.fcmTokensService.registerToken(req.user.sub, dto, {
+      // A child's paired phone: the token is remembered on its device row.
+      linkedDeviceId:
+        req.user.kind === 'linked_device'
+          ? (req.user.linked_device_id ?? null)
+          : null,
+    });
   }
 
   /**
@@ -207,6 +217,7 @@ export class UserNotificationPreferencesController {
    * Unregister a device token by its DB record ID (UUID).
    * The raw FCM token value is never exposed in the URL for security.
    */
+  @ActingScope('push:register')
   @Delete('fcm-tokens/:tokenId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({

@@ -192,7 +192,7 @@ export class UserHonorRequirementsController {
   }
 
   @Post(':honorId/requirements/:requirementId/evidence/upload')
-  @ActingScope('evidence:upload')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
@@ -235,7 +235,7 @@ export class UserHonorRequirementsController {
   }
 
   @Post(':honorId/requirements/:requirementId/evidence/link')
-  @ActingScope('evidence:upload')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @ApiOperation({ summary: 'Agregar enlace como evidencia para un requisito' })
@@ -296,7 +296,7 @@ export class UserHonorRequirementsController {
   }
 
   @Delete(':honorId/requirements/:requirementId/evidence/:evidenceId')
-  @ActingScope('evidence:upload')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:delete')
   @ApiOperation({ summary: 'Eliminar una evidencia de un requisito' })

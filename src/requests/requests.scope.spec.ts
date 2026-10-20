@@ -1,3 +1,4 @@
+import { gateDependentUser } from '../membership-requests/activation-gate.testing';
 import { HttpStatus } from '@nestjs/common';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -422,8 +423,11 @@ describe('approval scope x consent gate (family-profiles)', () => {
         findFirst: jest.fn().mockResolvedValue({ year_id: 1 }),
       },
       roles: { findUnique: jest.fn().mockResolvedValue(null) },
-      dependent_profiles: {
-        findUnique: jest.fn().mockResolvedValue({ user_id: 'dependent-1' }),
+      // The consent gate reads the users row (dependent profile / age).
+      users: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(gateDependentUser('dependent-1')),
       },
       guardianships: { findFirst: jest.fn().mockResolvedValue(null) },
       $executeRaw: jest.fn().mockResolvedValue(1),
@@ -454,7 +458,7 @@ describe('approval scope x consent gate (family-profiles)', () => {
       ErrorCode.REQUEST_ASSIGNMENT_NOT_FOUND,
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(tx.dependent_profiles.findUnique).not.toHaveBeenCalled();
+    expect(tx.users.findUnique).not.toHaveBeenCalled();
     expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
   });
 
@@ -475,7 +479,7 @@ describe('approval scope x consent gate (family-profiles)', () => {
       ErrorCode.REQUEST_ASSIGNMENT_ALREADY_REVIEWED,
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(tx.dependent_profiles.findUnique).not.toHaveBeenCalled();
+    expect(tx.users.findUnique).not.toHaveBeenCalled();
   });
 
   it('answers 409 MR_CONSENT_NOT_VERIFIED to an in-scope director approving an unverified dependent', async () => {
@@ -511,7 +515,7 @@ describe('approval scope x consent gate (family-profiles)', () => {
       ErrorCode.REQUEST_TRANSFER_NOT_FOUND,
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(tx.dependent_profiles.findUnique).not.toHaveBeenCalled();
+    expect(tx.users.findUnique).not.toHaveBeenCalled();
   });
 
   it('answers 409 MR_CONSENT_NOT_VERIFIED to an in-scope director moving an unverified dependent', async () => {

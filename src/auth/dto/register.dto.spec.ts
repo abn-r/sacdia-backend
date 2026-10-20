@@ -8,8 +8,8 @@ const base = {
   maternal_last_name: 'López',
   email: 'juan.garcia@example.com',
   password: 'Password123!',
-  accepted_terms_version: '1.0.0-store',
-  accepted_privacy_version: '1.0.0-store',
+  accepted_terms_version: '2.0.0-family',
+  accepted_privacy_version: '2.0.0-family',
 };
 
 async function errorsFor(body: Record<string, unknown>) {
@@ -24,11 +24,11 @@ describe('RegisterDto legal versions', () => {
   it('trims the versions', () => {
     const dto = plainToInstance(RegisterDto, {
       ...base,
-      accepted_terms_version: ' 1.0.0-store ',
-      accepted_privacy_version: '\t1.0.0-store\n',
+      accepted_terms_version: ' 2.0.0-family ',
+      accepted_privacy_version: '\t2.0.0-family\n',
     });
-    expect(dto.accepted_terms_version).toBe('1.0.0-store');
-    expect(dto.accepted_privacy_version).toBe('1.0.0-store');
+    expect(dto.accepted_terms_version).toBe('2.0.0-family');
+    expect(dto.accepted_privacy_version).toBe('2.0.0-family');
   });
 
   it.each(['accepted_terms_version', 'accepted_privacy_version'])(

@@ -6,6 +6,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
+import { LinkedDeviceRevocation } from './device/linked-device-revocation';
 import type {
   DeviceType,
   SessionItemDto,
@@ -85,7 +86,10 @@ function parseDeviceName(userAgent: string | null): string | null {
 export class SessionsService {
   private readonly logger = new Logger(SessionsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly deviceRevocation: LinkedDeviceRevocation,
+  ) {}
 
   // ---------------------------------------------------------------------------
   // List
@@ -111,8 +115,15 @@ export class SessionsService {
       orderBy: { createdAt: 'desc' },
     });
 
+    // A session is a device session only if a linked_devices row names it.
+    const deviceBySession = await this.deviceSessions(
+      rows.map((row) => row.id),
+    );
+
     const sessions: SessionItemDto[] = rows.map((row) => ({
       session_id: row.id,
+      kind: deviceBySession.has(row.id) ? 'device' : 'user',
+      linked_device_id: deviceBySession.get(row.id) ?? null,
       device_type: parseDeviceType(row.userAgent),
       device_name: parseDeviceName(row.userAgent),
       ip_address: row.ipAddress ?? null,
@@ -180,6 +191,8 @@ export class SessionsService {
     }
 
     await this.prisma.session.delete({ where: { id: sessionId } });
+    // A paired phone whose session was deleted is unlinked, and says why.
+    await this.deviceRevocation.markMissingSessionsRevoked(userId, userId);
 
     this.logger.log(
       JSON.stringify({
@@ -214,6 +227,7 @@ export class SessionsService {
         : { userId, expiresAt: { gt: now } };
 
     const { count } = await this.prisma.session.deleteMany({ where });
+    await this.deviceRevocation.markMissingSessionsRevoked(userId, userId);
 
     this.logger.log(
       JSON.stringify({
@@ -225,5 +239,19 @@ export class SessionsService {
     );
 
     return { revoked_count: count };
+  }
+
+  /** session id -> linked device id, for the sessions that belong to a device. */
+  private async deviceSessions(
+    sessionIds: string[],
+  ): Promise<Map<string, string>> {
+    if (sessionIds.length === 0) return new Map();
+    const devices = await this.prisma.linked_devices.findMany({
+      where: { session_id: { in: sessionIds } },
+      select: { session_id: true, linked_device_id: true },
+    });
+    return new Map(
+      devices.map((device) => [device.session_id, device.linked_device_id]),
+    );
   }
 }

@@ -29,6 +29,7 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { GlobalRolesGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('scoring-categories')
 @Controller()
@@ -43,6 +44,7 @@ export class ScoringCategoriesController {
   // DIVISION LEVEL (admin / super-admin only)
   // ========================================
 
+  @ActingScope('member:read')
   @Get('divisions/scoring-categories')
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
@@ -107,6 +109,7 @@ export class ScoringCategoriesController {
   // UNION LEVEL
   // ========================================
 
+  @ActingScope('member:read')
   @Get('unions/:unionId/scoring-categories')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:read')
@@ -208,6 +211,7 @@ export class ScoringCategoriesController {
   // LOCAL FIELD LEVEL
   // ========================================
 
+  @ActingScope('member:read')
   @Get('local-fields/:fieldId/scoring-categories')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:read')

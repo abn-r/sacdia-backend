@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import type { Prisma } from '@prisma/client';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { isCertificateImportObjectKey } from '../certificate-bulk-imports/certificate-import-file-ref';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
@@ -10,6 +11,11 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PURGED_DEVICE_LABEL } from './guardianships.constants';
+import {
+  LINKED_DEVICE_REVOKER,
+  type LinkedDeviceRevoker,
+} from './linked-device-revoker.port';
 
 export const DEPENDENT_PROFILES_PURGE_JOB = 'dependent-profiles-purge';
 const LOCK_KEY = 'cron:dependent-profiles-purge';
@@ -38,7 +44,9 @@ export interface PurgeSummary {
  *      evidence rows and the notification inbox rows, blank the honor file
  *      columns, null the external holder's name / phone on the guardianship
  *      rows, null IP/user agent on the legal acceptances, set
- *      `dependent_profiles.purged_at`.
+ *      `dependent_profiles.purged_at`. The device pairing tokens are deleted and the
+ *      linked device rows are scrubbed (label overwritten, app version and push
+ *      token pointer cleared); the revoked rows stay as the audit.
  *
  * The users row is NOT hard-deleted (foreign keys from class progress, audit
  * and the guardianship rows kept for legal history). The guardianship rows
@@ -56,6 +64,8 @@ export class DependentProfilesPurgeCronService {
     private readonly actingForCache: ActingForCache,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    @Inject(LINKED_DEVICE_REVOKER)
+    private readonly deviceRevoker: LinkedDeviceRevoker,
   ) {}
 
   @Cron('20 4 * * *', { name: DEPENDENT_PROFILES_PURGE_JOB, timeZone: 'UTC' })
@@ -145,6 +155,16 @@ export class DependentProfilesPurgeCronService {
       await this.fileStorage.deleteMany(bucket, [...keys]);
     }
 
+    // A teen with an own login (3a) also loses every credential. Read before
+    // the transaction nulls the email: the email is what the verification
+    // rows are keyed by.
+    const identity = await this.prisma.users.findUnique({
+      where: { user_id: dependentId },
+      select: { email: true, account: { select: { id: true }, take: 1 } },
+    });
+    const holdsAccount = (identity?.account?.length ?? 0) > 0;
+    const email = identity?.email ?? null;
+
     await this.prisma.$transaction(async (tx) => {
       await tx.users.update({
         where: { user_id: dependentId },
@@ -203,6 +223,34 @@ export class DependentProfilesPurgeCronService {
         where: { user_id: dependentId },
         data: { ip_address: null, user_agent: null },
       });
+      // Linked phones (3b) were revoked when the child was frozen; revoking
+      // again is a no-op, and covers a child purged by another path. The push
+      // tokens a device registered belong to the child and go with it.
+      await this.deviceRevoker.revokeAllForDependent(
+        tx,
+        dependentId,
+        'dependent_frozen',
+      );
+      await tx.user_fcm_tokens.deleteMany({ where: { user_id: dependentId } });
+      // Pairing tokens carry nothing worth keeping (single use, hashed): they
+      // go. The device rows stay as the audit of which phones were paired and
+      // when, but their free text is personal data typed on the child's phone:
+      // the label is overwritten (NOT NULL column) and the app version and the
+      // push token pointer are cleared.
+      await tx.device_pairing_tokens.deleteMany({
+        where: { dependent_user_id: dependentId },
+      });
+      await tx.linked_devices.updateMany({
+        where: { dependent_user_id: dependentId },
+        data: {
+          label: PURGED_DEVICE_LABEL,
+          app_version: null,
+          fcm_token_id: null,
+        },
+      });
+      if (holdsAccount) {
+        await this.deleteCredentials(tx, dependentId, email);
+      }
       await tx.dependent_profiles.update({
         where: { user_id: dependentId },
         data: { purged_at: now },
@@ -210,6 +258,39 @@ export class DependentProfilesPurgeCronService {
     });
 
     await this.actingForCache.bump(dependentId);
+  }
+
+  /**
+   * Account-holder path: credential and OAuth `account` rows, `verification`
+   * rows (keyed by the email or carrying the user id), sessions and FCM tokens
+   * are deleted, and the handle is released. The users row stays (foreign keys)
+   * with email and PII already nulled, which also frees the email for a new
+   * registration (the unique index ignores NULL).
+   */
+  private async deleteCredentials(
+    tx: Prisma.TransactionClient,
+    dependentId: string,
+    email: string | null,
+  ): Promise<void> {
+    await tx.account.deleteMany({ where: { userId: dependentId } });
+    await tx.session.deleteMany({ where: { userId: dependentId } });
+    await tx.verification.deleteMany({
+      where: {
+        OR: [
+          { value: dependentId },
+          { identifier: { contains: dependentId } },
+          ...(email
+            ? [{ identifier: email }, { identifier: { endsWith: `:${email}` } }]
+            : []),
+        ],
+      },
+    });
+    // The handle becomes reusable (the CHECK ties method='handle' to a handle,
+    // so the method drops to 'email'); the row stays as legal history.
+    await tx.supervised_logins.updateMany({
+      where: { user_id: dependentId },
+      data: { method: 'email', login_handle: null },
+    });
   }
 
   /**

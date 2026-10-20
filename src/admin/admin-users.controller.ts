@@ -4,6 +4,8 @@ import {
   Controller,
   Get,
   Header,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -42,6 +44,7 @@ import {
 } from '../common/guards';
 import {
   AdminCurrentOperationalEnrollmentDto,
+  AdminFamilyAccessReasonDto,
   AdminListUsersQueryDto,
   AdminTrajectoryClassDto,
   CreateAdminUserDto,
@@ -50,6 +53,7 @@ import {
   UpdateUserApprovalDto,
 } from './dto';
 import { GuardianEvidenceService } from '../guardianships/guardian-evidence.service';
+import { AdminFamilyAccessService } from './admin-family-access.service';
 import { AdminUsersService, type BulkUsersResult } from './admin-users.service';
 
 const BULK_ALLOWED_MIME_TYPES = new Set([
@@ -91,6 +95,7 @@ export class AdminUsersController {
   constructor(
     private readonly adminUsersService: AdminUsersService,
     private readonly guardianEvidence: GuardianEvidenceService,
+    private readonly familyAccess: AdminFamilyAccessService,
   ) {}
 
   private getActorId(
@@ -283,6 +288,98 @@ export class AdminUsersController {
       actorId,
       userId,
       guardianshipId,
+    );
+    return { status: 'success', data };
+  }
+
+  @Post('users/:userId/supervised-login/disable')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('users:update_admin')
+  @SensitiveUserSubresource('legal_representative', 'update')
+  @ApiOperation({
+    summary: 'Desactivar el acceso propio (supervised login) de un menor',
+    description:
+      'Requiere users:update_admin y el permiso sensible legal_representative:update. ' +
+      'El motivo (min. 5 caracteres) es obligatorio y solo se guarda en la auditoría ' +
+      '(`admin.supervised_login.disabled`). Efectos iguales a los del tutor: sesiones ' +
+      'eliminadas, la siguiente petición del menor es 401, todos los tutores verificados ' +
+      'son notificados. NO existe ruta de admin para activar, reactivar ni cambiar la contraseña.',
+  })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiResponse({
+    status: 200,
+    description:
+      '{ supervised_login: { status:"disabled", method, origin, enabled_at, disabled_at, disabled_reason:"admin", password_set_by } }',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Motivo ausente o menor a 5 caracteres',
+  })
+  @ApiResponse({ status: 403, description: 'Sin permiso sensible' })
+  @ApiResponse({
+    status: 404,
+    description: 'ADMIN_USER_NOT_FOUND o SUPERVISED_LOGIN_NOT_FOUND',
+  })
+  async disableSupervisedLogin(
+    @Request() req: ExpressRequest & { user: { sub: string } },
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: AdminFamilyAccessReasonDto,
+  ): Promise<{
+    status: string;
+    data: Awaited<
+      ReturnType<AdminFamilyAccessService['disableSupervisedLogin']>
+    >;
+  }> {
+    const data = await this.familyAccess.disableSupervisedLogin(
+      this.getActorId(req),
+      userId,
+      dto.reason,
+    );
+    return { status: 'success', data };
+  }
+
+  @Post('users/:userId/linked-devices/:deviceId/revoke')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('users:update_admin')
+  @SensitiveUserSubresource('legal_representative', 'update')
+  @ApiOperation({
+    summary: 'Revocar un dispositivo vinculado de un menor',
+    description:
+      'Requiere users:update_admin y el permiso sensible legal_representative:update. ' +
+      'El motivo (min. 5 caracteres) es obligatorio y solo se guarda en la auditoría ' +
+      '(`admin.linked_device.revoked`). Idempotente. Efectos iguales a los del tutor: ' +
+      'sesión eliminada, limpieza de FCM, la siguiente petición del dispositivo es 401, ' +
+      'todos los tutores verificados son notificados.',
+  })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiParam({ name: 'deviceId', type: String })
+  @ApiResponse({
+    status: 200,
+    description: '{ linked_device_id, revoked_at, revoked_reason:"admin" }',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Motivo ausente o menor a 5 caracteres',
+  })
+  @ApiResponse({ status: 403, description: 'Sin permiso sensible' })
+  @ApiResponse({
+    status: 404,
+    description: 'ADMIN_USER_NOT_FOUND o DEVICE_NOT_FOUND',
+  })
+  async revokeLinkedDevice(
+    @Request() req: ExpressRequest & { user: { sub: string } },
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @Body() dto: AdminFamilyAccessReasonDto,
+  ): Promise<{
+    status: string;
+    data: Awaited<ReturnType<AdminFamilyAccessService['revokeLinkedDevice']>>;
+  }> {
+    const data = await this.familyAccess.revokeLinkedDevice(
+      this.getActorId(req),
+      userId,
+      deviceId,
+      dto.reason,
     );
     return { status: 'success', data };
   }

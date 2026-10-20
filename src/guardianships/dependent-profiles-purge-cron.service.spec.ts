@@ -3,6 +3,7 @@ import {
   DEPENDENT_PROFILES_PURGE_JOB,
   DependentProfilesPurgeCronService,
 } from './dependent-profiles-purge-cron.service';
+import { PURGED_DEVICE_LABEL } from './guardianships.constants';
 
 const D1 = 'dddddddd-0000-4000-8000-000000000001';
 const D2 = 'dddddddd-0000-4000-8000-000000000002';
@@ -24,6 +25,13 @@ function setup() {
     notification_deliveries: { deleteMany: jest.fn().mockResolvedValue({}) },
     guardianships: { updateMany: jest.fn().mockResolvedValue({}) },
     dependent_profiles: { update: jest.fn().mockResolvedValue({}) },
+    account: { deleteMany: jest.fn().mockResolvedValue({}) },
+    session: { deleteMany: jest.fn().mockResolvedValue({}) },
+    verification: { deleteMany: jest.fn().mockResolvedValue({}) },
+    user_fcm_tokens: { deleteMany: jest.fn().mockResolvedValue({}) },
+    supervised_logins: { updateMany: jest.fn().mockResolvedValue({}) },
+    linked_devices: { updateMany: jest.fn().mockResolvedValue({}) },
+    device_pairing_tokens: { deleteMany: jest.fn().mockResolvedValue({}) },
   };
   const prisma: any = {
     dependent_profiles: { findMany: jest.fn().mockResolvedValue([]) },
@@ -49,14 +57,28 @@ function setup() {
     deleteMany: jest.fn().mockResolvedValue(undefined),
     extractKeyFromPublicUrl: jest.fn().mockReturnValue(null),
   };
+  const deviceRevoker = {
+    revokeAllForDependent: jest.fn().mockResolvedValue(0),
+    revokeByGuardianship: jest.fn().mockResolvedValue(0),
+  };
   const service = new DependentProfilesPurgeCronService(
     prisma,
     lock as any,
     cronLogger as any,
     cache as any,
     fileStorage as any,
+    deviceRevoker,
   );
-  return { service, prisma, tx, lock, cronLogger, cache, fileStorage };
+  return {
+    service,
+    prisma,
+    tx,
+    lock,
+    cronLogger,
+    cache,
+    fileStorage,
+    deviceRevoker,
+  };
 }
 
 describe('DependentProfilesPurgeCronService scheduling and locking', () => {
@@ -482,5 +504,179 @@ describe('DependentProfilesPurgeCronService evidence, inbox and holder data (rul
     });
     // The guardianship rows themselves are kept as legal history.
     expect(tx.guardianships).not.toHaveProperty('deleteMany');
+  });
+});
+
+describe('DependentProfilesPurgeCronService account-holder path (3a teen)', () => {
+  function teen(ctx: ReturnType<typeof setup>, email: string | null) {
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+    ctx.prisma.users.findUnique.mockResolvedValue({
+      user_image: null,
+      email,
+      account: [{ id: 'acc-1' }],
+    });
+  }
+
+  it('deletes credentials, OAuth accounts, verifications, sessions and FCM tokens, and frees the handle', async () => {
+    const ctx = setup();
+    teen(ctx, 'ana@example.com');
+
+    await ctx.service.purgeDue();
+
+    const { tx } = ctx;
+    expect(tx.account.deleteMany).toHaveBeenCalledWith({
+      where: { userId: D1 },
+    });
+    expect(tx.session.deleteMany).toHaveBeenCalledWith({
+      where: { userId: D1 },
+    });
+    expect(tx.user_fcm_tokens.deleteMany).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+    });
+    const verification = tx.verification.deleteMany.mock.calls[0][0].where.OR;
+    expect(verification).toEqual(
+      expect.arrayContaining([
+        { value: D1 },
+        { identifier: 'ana@example.com' },
+      ]),
+    );
+    // CHECK: method='handle' requires a handle, so both change together.
+    expect(tx.supervised_logins.updateMany).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+      data: { method: 'email', login_handle: null },
+    });
+    // The users row stays (foreign keys) with the email nulled: reusable.
+    expect(tx.users.update).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+      data: expect.objectContaining({ email: null, active: false }),
+    });
+    expect(tx.dependent_profiles.update).toHaveBeenCalled();
+    expect(ctx.prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('works for a handle teen without an email', async () => {
+    const ctx = setup();
+    teen(ctx, null);
+    await ctx.service.purgeDue();
+    const where = ctx.tx.verification.deleteMany.mock.calls[0][0].where.OR;
+    expect(where).toHaveLength(2);
+    expect(ctx.tx.account.deleteMany).toHaveBeenCalled();
+  });
+
+  it('leaves the no-account dependent path unchanged', async () => {
+    const ctx = setup();
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+
+    await ctx.service.purgeDue();
+
+    for (const model of [
+      ctx.tx.account,
+      ctx.tx.session,
+      ctx.tx.verification,
+      ctx.tx.supervised_logins,
+    ]) {
+      expect(
+        Object.values(model).every((fn: any) => !fn.mock.calls.length),
+      ).toBe(true);
+    }
+  });
+
+  it('a credential failure rolls the purge back: purged_at is not set and the next run retries', async () => {
+    const ctx = setup();
+    teen(ctx, 'ana@example.com');
+    ctx.tx.account.deleteMany.mockRejectedValue(new Error('db'));
+
+    const summary = await ctx.service.purgeDue();
+
+    expect(summary).toEqual({ purged: 0, failed: 1 });
+    expect(ctx.cache.bump).not.toHaveBeenCalled();
+  });
+
+  it('revokes the linked devices of the child inside the SAME transaction and deletes the push tokens they registered (3b)', async () => {
+    const ctx = setup();
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+
+    await ctx.service.purgeDue();
+
+    expect(ctx.deviceRevoker.revokeAllForDependent).toHaveBeenCalledWith(
+      ctx.tx,
+      D1,
+      'dependent_frozen',
+    );
+    expect(ctx.tx.user_fcm_tokens.deleteMany).toHaveBeenCalledWith({
+      where: { user_id: D1 },
+    });
+    // The revoke happens before the profile is marked purged.
+    const revokeOrder =
+      ctx.deviceRevoker.revokeAllForDependent.mock.invocationCallOrder[0];
+    const purgedOrder =
+      ctx.tx.dependent_profiles.update.mock.invocationCallOrder[0];
+    expect(revokeOrder).toBeLessThan(purgedOrder);
+  });
+
+  it('deletes the pairing tokens and anonymizes EVERY device row (label is free text from the phone) while keeping the revoked audit row', async () => {
+    const ctx = setup();
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+
+    await ctx.service.purgeDue();
+
+    expect(ctx.tx.device_pairing_tokens.deleteMany).toHaveBeenCalledWith({
+      where: { dependent_user_id: D1 },
+    });
+    // No `revoked_at: null` filter: the revoked history rows are scrubbed too,
+    // and nothing is deleted (the row is the audit of who paired what).
+    expect(ctx.tx.linked_devices.updateMany).toHaveBeenCalledWith({
+      where: { dependent_user_id: D1 },
+      data: {
+        label: PURGED_DEVICE_LABEL,
+        app_version: null,
+        fcm_token_id: null,
+      },
+    });
+
+    // After the revoke (which sets the revoked columns), before purged_at.
+    const revokeOrder =
+      ctx.deviceRevoker.revokeAllForDependent.mock.invocationCallOrder[0];
+    const scrubOrder =
+      ctx.tx.linked_devices.updateMany.mock.invocationCallOrder[0];
+    const purgedOrder =
+      ctx.tx.dependent_profiles.update.mock.invocationCallOrder[0];
+    expect(revokeOrder).toBeLessThan(scrubOrder);
+    expect(scrubOrder).toBeLessThan(purgedOrder);
+  });
+
+  it('a device scrub failure rolls the purge back (retried next run)', async () => {
+    const ctx = setup();
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+    ctx.tx.linked_devices.updateMany.mockRejectedValue(new Error('db'));
+
+    const summary = await ctx.service.purgeDue();
+
+    expect(summary).toEqual({ purged: 0, failed: 1 });
+    expect(ctx.tx.dependent_profiles.update).not.toHaveBeenCalled();
+    expect(ctx.cache.bump).not.toHaveBeenCalled();
+  });
+
+  it('a device revoke failure rolls the purge back (retried next run)', async () => {
+    const ctx = setup();
+    ctx.prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+    ctx.deviceRevoker.revokeAllForDependent.mockRejectedValue(new Error('db'));
+
+    const summary = await ctx.service.purgeDue();
+
+    expect(summary).toEqual({ purged: 0, failed: 1 });
+    expect(ctx.cache.bump).not.toHaveBeenCalled();
   });
 });

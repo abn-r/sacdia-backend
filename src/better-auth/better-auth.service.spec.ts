@@ -1,7 +1,15 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ErrorCode } from '../common/errors/error-codes';
 import { JwtService } from '@nestjs/jwt';
-import { BetterAuthService } from './better-auth.service';
+import { BetterAuthService, DUMMY_BCRYPT_HASH } from './better-auth.service';
+
+const mockSupervisedResolver = {
+  resolve: jest.fn(),
+};
+
+const mockFamilyFlags = {
+  isEnabled: jest.fn(),
+};
 
 const mockEmailService = {
   sendDataExportReady: jest.fn().mockResolvedValue(undefined),
@@ -23,6 +31,7 @@ describe('BetterAuthService', () => {
   // -- Prisma method mocks ---------------------------------------------------
   const mockUsersFindUnique = jest.fn();
   const mockUsersCreate = jest.fn();
+  const mockSupervisedLoginsFindFirst = jest.fn();
   const mockAccountFindFirst = jest.fn();
   const mockAccountCreate = jest.fn();
   const mockAccountUpdate = jest.fn();
@@ -58,6 +67,9 @@ describe('BetterAuthService', () => {
       findFirst: mockVerificationFindFirst,
       delete: mockVerificationDelete,
       deleteMany: mockVerificationDeleteMany,
+    },
+    supervised_logins: {
+      findFirst: mockSupervisedLoginsFindFirst,
     },
     $queryRaw: mockQueryRaw,
     $transaction: mockTransaction,
@@ -97,6 +109,10 @@ describe('BetterAuthService', () => {
     jest.clearAllMocks();
     // Default: no TOTP enrolled — hasTotpEnabled returns null → mfa_pending: false
     mockVerificationFindFirst.mockResolvedValue(null);
+    mockSupervisedResolver.resolve.mockReset().mockResolvedValue({
+      state: 'adult',
+    });
+    mockFamilyFlags.isEnabled.mockReset().mockReturnValue(true);
   });
 
   // ---------------------------------------------------------------------------
@@ -113,6 +129,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const token = service.signJwt({
@@ -132,6 +150,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const token = service.signJwt({
@@ -153,6 +173,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const token = service.signJwt({
@@ -176,6 +198,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const token = service.signJwt({
@@ -197,6 +221,8 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
       );
 
       const before = Math.floor(Date.now() / 1000);
@@ -230,6 +256,8 @@ describe('BetterAuthService', () => {
       mockJwtService,
       mockPrisma as any,
       mockEmailService as any,
+      mockSupervisedResolver as any,
+      mockFamilyFlags as any,
     );
     return { svc, mockJwtService };
   }
@@ -346,7 +374,7 @@ describe('BetterAuthService', () => {
   // signInWithPassword
   // ---------------------------------------------------------------------------
 
-  describe('signInWithPassword', () => {
+  describe('signInWithIdentifier (email login)', () => {
     it('should return BaAuthResult on successful login', async () => {
       const { svc } = buildService();
 
@@ -359,7 +387,7 @@ describe('BetterAuthService', () => {
       mockAccountFindFirst.mockResolvedValue(accountWithRealHash);
       mockSessionCreate.mockResolvedValue(mockDbSession);
 
-      const result = await svc.signInWithPassword(
+      const result = await svc.signInWithIdentifier(
         'test@example.com',
         'Password123!',
       );
@@ -387,7 +415,7 @@ describe('BetterAuthService', () => {
       });
       mockSessionCreate.mockResolvedValue(mockDbSession);
 
-      await svc.signInWithPassword('test@example.com', 'Password123!', {
+      await svc.signInWithIdentifier('test@example.com', 'Password123!', {
         ipAddress: '203.0.113.7',
         userAgent: 'Dart/3.11 (dart:io)',
       });
@@ -407,7 +435,7 @@ describe('BetterAuthService', () => {
       mockUsersFindUnique.mockResolvedValue(null);
 
       await expect(
-        svc.signInWithPassword('unknown@example.com', 'Password123!'),
+        svc.signInWithIdentifier('unknown@example.com', 'Password123!'),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
     });
 
@@ -418,7 +446,7 @@ describe('BetterAuthService', () => {
       mockAccountFindFirst.mockResolvedValue(null);
 
       await expect(
-        svc.signInWithPassword('test@example.com', 'Password123!'),
+        svc.signInWithIdentifier('test@example.com', 'Password123!'),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
     });
 
@@ -433,8 +461,380 @@ describe('BetterAuthService', () => {
       mockAccountFindFirst.mockResolvedValue(accountWithRealHash);
 
       await expect(
-        svc.signInWithPassword('test@example.com', 'WrongPassword!'),
+        svc.signInWithIdentifier('test@example.com', 'WrongPassword!'),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // signInWithIdentifier: handles, uniform timing, blocked states (phase 3a)
+  // ---------------------------------------------------------------------------
+
+  describe('signInWithIdentifier (handles and uniform failures)', () => {
+    const bcrypt = require('bcryptjs');
+    const HANDLE = 'ana-7kq4m9tx';
+    const handleUser = { ...mockDbUser, user_id: 'teen-uuid-1', email: null };
+
+    async function realAccount(password = 'Password123!') {
+      return {
+        ...mockDbAccount,
+        userId: handleUser.user_id,
+        password: await bcrypt.hash(password, 12),
+      };
+    }
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('logs a handle teen in (the handle resolves through supervised_logins)', async () => {
+      const { svc } = buildService();
+      mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+      mockAccountFindFirst.mockResolvedValue(await realAccount());
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      const result = await svc.signInWithIdentifier(HANDLE, 'Password123!');
+
+      expect(result.user.id).toBe('teen-uuid-1');
+      expect(mockUsersFindUnique).not.toHaveBeenCalled();
+      expect(mockSupervisedLoginsFindFirst).toHaveBeenCalledWith({
+        where: { login_handle: HANDLE },
+        select: { user: true },
+      });
+    });
+
+    it('is case-insensitive and trims the handle', async () => {
+      const { svc } = buildService();
+      mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+      mockAccountFindFirst.mockResolvedValue(await realAccount());
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await svc.signInWithIdentifier('  Ana-7KQ4M9TX ', 'Password123!');
+
+      expect(mockSupervisedLoginsFindFirst).toHaveBeenCalledWith({
+        where: { login_handle: HANDLE },
+        select: { user: true },
+      });
+    });
+
+    it('treats an identifier with "@" as an email, never as a handle', async () => {
+      const { svc } = buildService();
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(await realAccount());
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await svc.signInWithIdentifier('test@example.com', 'Password123!');
+
+      expect(mockUsersFindUnique).toHaveBeenCalledWith({
+        where: { email: 'test@example.com' },
+      });
+      expect(mockSupervisedLoginsFindFirst).not.toHaveBeenCalled();
+    });
+
+    describe('uniform failure and timing', () => {
+      it.each([
+        ['an unknown email', 'nobody@example.com'],
+        ['an unknown handle', 'nobody-xx99zz'],
+        ['a malformed handle', 'x'],
+      ])(
+        'runs a dummy bcrypt comparison and answers the uniform 401 for %s',
+        async (_label, identifier) => {
+          const { svc } = buildService();
+          mockUsersFindUnique.mockResolvedValue(null);
+          mockSupervisedLoginsFindFirst.mockResolvedValue(null);
+          const compare = jest.spyOn(bcrypt, 'compare');
+
+          await expect(
+            svc.signInWithIdentifier(identifier, 'Password123!'),
+          ).rejects.toMatchObject({
+            code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+            status: 401,
+          });
+
+          expect(compare).toHaveBeenCalledTimes(1);
+          expect(compare).toHaveBeenCalledWith(
+            'Password123!',
+            DUMMY_BCRYPT_HASH,
+          );
+          expect(mockSessionCreate).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each([
+        ['an email', 'nobody@example.com', 'test@example.com'],
+        ['a handle', 'nobody-xx99zz', HANDLE],
+      ])(
+        'an unknown %s makes the SAME lookups as a wrong password (no DB round-trip skipped, QA BUG-6)',
+        async (_label, unknown, known) => {
+          // Timing parity: the unknown path used to skip the credential lookup,
+          // ~1 DB round-trip (~68 ms on Neon) faster than a wrong password.
+          const lookups = () => ({
+            users: mockUsersFindUnique.mock.calls.length,
+            handles: mockSupervisedLoginsFindFirst.mock.calls.length,
+            accounts: mockAccountFindFirst.mock.calls.length,
+          });
+          const { svc } = buildService();
+          // Only the lookups matter here: no real cost-12 hashing (CPU-bound,
+          // it times out under a loaded full run). The dummy compare itself is
+          // covered by the tests around this one.
+          const compare = jest
+            .spyOn(bcrypt, 'compare')
+            .mockResolvedValue(false);
+
+          mockUsersFindUnique.mockResolvedValue(mockDbUser);
+          mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+          mockAccountFindFirst.mockResolvedValue({
+            ...mockDbAccount,
+            userId: handleUser.user_id,
+            password: '$2b$12$not-a-real-hash-only-a-non-empty-value',
+          });
+          await expect(
+            svc.signInWithIdentifier(known, 'WrongPassword1!'),
+          ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+          const wrongPassword = lookups();
+
+          jest.clearAllMocks();
+          mockUsersFindUnique.mockResolvedValue(null);
+          mockSupervisedLoginsFindFirst.mockResolvedValue(null);
+          mockAccountFindFirst.mockResolvedValue(null);
+          await expect(
+            svc.signInWithIdentifier(unknown, 'WrongPassword1!'),
+          ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+
+          expect(lookups()).toEqual(wrongPassword);
+          expect(mockAccountFindFirst).toHaveBeenCalledWith({
+            where: {
+              userId: '00000000-0000-0000-0000-000000000000',
+              providerId: 'credential',
+            },
+          });
+          expect(compare).toHaveBeenCalledTimes(1);
+          expect(compare).toHaveBeenCalledWith(
+            'WrongPassword1!',
+            DUMMY_BCRYPT_HASH,
+          );
+        },
+      );
+
+      it('runs the dummy comparison when the user has no credential (email and handle)', async () => {
+        const { svc } = buildService();
+        mockUsersFindUnique.mockResolvedValue(mockDbUser);
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(null);
+        const compare = jest.spyOn(bcrypt, 'compare');
+
+        for (const identifier of ['test@example.com', HANDLE]) {
+          compare.mockClear();
+          await expect(
+            svc.signInWithIdentifier(identifier, 'Password123!'),
+          ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+          expect(compare).toHaveBeenCalledTimes(1);
+          expect(compare).toHaveBeenCalledWith(
+            'Password123!',
+            DUMMY_BCRYPT_HASH,
+          );
+        }
+      });
+
+      it('also runs the dummy comparison for an account with an empty password hash', async () => {
+        const { svc } = buildService();
+        mockUsersFindUnique.mockResolvedValue(mockDbUser);
+        mockAccountFindFirst.mockResolvedValue({
+          ...mockDbAccount,
+          password: null,
+        });
+        const compare = jest.spyOn(bcrypt, 'compare');
+
+        await expect(
+          svc.signInWithIdentifier('test@example.com', 'x'),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+        expect(compare).toHaveBeenCalledWith('x', DUMMY_BCRYPT_HASH);
+      });
+
+      it('answers byte-identical errors for an unknown handle, a known handle with a wrong password and a missing credential', async () => {
+        const { svc } = buildService();
+        const wrongHash = await realAccount('CorrectPassword!');
+        const outcomes: string[] = [];
+        const capture = async () => {
+          try {
+            await svc.signInWithIdentifier(HANDLE, 'WrongPassword!');
+            return 'no-error';
+          } catch (error) {
+            const e = error as {
+              code: string;
+              status: number;
+              getResponse: () => unknown;
+            };
+            return JSON.stringify({
+              code: e.code,
+              status: e.status,
+              response: e.getResponse(),
+            });
+          }
+        };
+
+        mockSupervisedLoginsFindFirst.mockResolvedValue(null);
+        outcomes.push(await capture()); // unknown handle
+
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(wrongHash);
+        outcomes.push(await capture()); // wrong password
+
+        mockAccountFindFirst.mockResolvedValue(null);
+        outcomes.push(await capture()); // no credential
+
+        expect(new Set(outcomes).size).toBe(1);
+        expect(JSON.parse(outcomes[0])).toMatchObject({
+          code: 'AUTH_INVALID_CREDENTIALS',
+          status: 401,
+        });
+      });
+
+      it('with FAMILY_TEEN_LOGIN_ENABLED off a handle is the uniform 401 even with the right password (and a dummy compare)', async () => {
+        const { svc } = buildService();
+        mockFamilyFlags.isEnabled.mockReturnValue(false);
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        const compare = jest.spyOn(bcrypt, 'compare');
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+          status: 401,
+        });
+
+        expect(mockFamilyFlags.isEnabled).toHaveBeenCalledWith('teen_login');
+        expect(mockSupervisedLoginsFindFirst).not.toHaveBeenCalled();
+        expect(compare).toHaveBeenCalledWith('Password123!', DUMMY_BCRYPT_HASH);
+      });
+
+      it('with the flag off an EMAIL teen still logs in', async () => {
+        const { svc } = buildService();
+        mockFamilyFlags.isEnabled.mockReturnValue(false);
+        mockUsersFindUnique.mockResolvedValue(mockDbUser);
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSessionCreate.mockResolvedValue(mockDbSession);
+
+        await expect(
+          svc.signInWithIdentifier('test@example.com', 'Password123!'),
+        ).resolves.toMatchObject({ accessToken: 'mocked-sacdia-jwt' });
+      });
+
+      it('the dummy hash is a valid bcrypt hash at the same cost as real ones', () => {
+        expect(DUMMY_BCRYPT_HASH).toMatch(/^\$2[aby]\$12\$[./A-Za-z0-9]{53}$/);
+        expect(bcrypt.getRounds(DUMMY_BCRYPT_HASH)).toBe(12);
+      });
+    });
+
+    describe('blocked states are revealed only AFTER a correct password', () => {
+      it('a disabled supervised login answers 403 AUTH_SUPERVISED_LOGIN_DISABLED with the right password', async () => {
+        const { svc } = buildService();
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'blocked',
+          cause: 'login_disabled',
+        });
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_SUPERVISED_LOGIN_DISABLED,
+          status: 403,
+        });
+        expect(mockSessionCreate).not.toHaveBeenCalled();
+      });
+
+      it('a handle login cut by FAMILY_TEEN_LOGIN_ENABLED=false is the uniform 401 even with the right password (FP3-08/FP3-35), and no session is created', async () => {
+        const { svc } = buildService();
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'blocked',
+          cause: 'teen_login_disabled',
+        });
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+          status: 401,
+        });
+        expect(mockSessionCreate).not.toHaveBeenCalled();
+      });
+
+      it('a frozen account answers 403 AUTH_ACCOUNT_FROZEN with the right password', async () => {
+        const { svc } = buildService();
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSupervisedResolver.resolve.mockResolvedValue({
+          state: 'blocked',
+          cause: 'frozen',
+        });
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_ACCOUNT_FROZEN,
+          status: 403,
+        });
+      });
+
+      it.each(['login_disabled', 'frozen'])(
+        'a WRONG password on a %s account is still the uniform 401 (nothing is revealed) and the state is not even read',
+        async (cause) => {
+          const { svc } = buildService();
+          mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+          mockAccountFindFirst.mockResolvedValue(await realAccount());
+          mockSupervisedResolver.resolve.mockResolvedValue({
+            state: 'blocked',
+            cause,
+          });
+
+          await expect(
+            svc.signInWithIdentifier(HANDLE, 'WrongPassword!'),
+          ).rejects.toMatchObject({
+            code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+            status: 401,
+          });
+          expect(mockSupervisedResolver.resolve).not.toHaveBeenCalled();
+        },
+      );
+
+      it('a teen who reached the age of majority keeps logging in (the resolver says adult)', async () => {
+        const { svc } = buildService();
+        mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSupervisedResolver.resolve.mockResolvedValue({ state: 'adult' });
+        mockSessionCreate.mockResolvedValue(mockDbSession);
+
+        await expect(
+          svc.signInWithIdentifier(HANDLE, 'Password123!'),
+        ).resolves.toMatchObject({ accessToken: 'mocked-sacdia-jwt' });
+      });
+
+      it('email logins of an adult never see a blocked state', async () => {
+        const { svc } = buildService();
+        mockUsersFindUnique.mockResolvedValue(mockDbUser);
+        mockAccountFindFirst.mockResolvedValue(await realAccount());
+        mockSessionCreate.mockResolvedValue(mockDbSession);
+
+        await svc.signInWithIdentifier('test@example.com', 'Password123!');
+
+        expect(mockSupervisedResolver.resolve).toHaveBeenCalledWith(
+          mockDbUser.user_id,
+        );
+      });
+    });
+
+    it('keeps the deprecated signInWithPassword alias working (email)', async () => {
+      const { svc } = buildService();
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(await realAccount());
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await expect(
+        svc.signInWithPassword('test@example.com', 'Password123!'),
+      ).resolves.toMatchObject({ accessToken: 'mocked-sacdia-jwt' });
     });
   });
 
@@ -497,10 +897,32 @@ describe('BetterAuthService', () => {
   };
 
   describe('refreshSession', () => {
+    /**
+     * `$queryRaw` serves two statements now: the read-only device lookup
+     * (mentions linked_devices) and the sliding UPDATE of the session. Tests
+     * answer each by its SQL text.
+     */
+    const mockRefresh = (rows: unknown[], deviceRows: unknown[] = []) => {
+      mockQueryRaw.mockImplementation((strings: TemplateStringsArray) =>
+        Promise.resolve(
+          strings.join('?').includes('linked_devices') ? deviceRows : rows,
+        ),
+      );
+    };
+    const refreshCalls = () =>
+      mockQueryRaw.mock.calls.filter(
+        ([strings]: [TemplateStringsArray]) =>
+          !strings.join('?').includes('linked_devices'),
+      );
+    const deviceLookupCalls = () =>
+      mockQueryRaw.mock.calls.filter(([strings]: [TemplateStringsArray]) =>
+        strings.join('?').includes('linked_devices'),
+      );
+
     it('should return a new BaAuthResult with a fresh SACDIA JWT on success', async () => {
       const { svc } = buildService();
 
-      mockQueryRaw.mockResolvedValue([mockRefreshRow]);
+      mockRefresh([mockRefreshRow]);
 
       const result = await svc.refreshSession('raw-opaque-session-token');
 
@@ -509,13 +931,13 @@ describe('BetterAuthService', () => {
         session: expect.objectContaining({ userId: 'user-uuid-123' }),
         accessToken: 'mocked-sacdia-jwt',
       });
-      expect(mockQueryRaw).toHaveBeenCalledTimes(1);
+      expect(refreshCalls()).toHaveLength(1);
     });
 
     it('should issue aal2 when TOTP is enrolled and session assurance is valid', async () => {
       const { svc, mockJwtService } = buildService();
 
-      mockQueryRaw.mockResolvedValue([mockRefreshRow]);
+      mockRefresh([mockRefreshRow]);
       mockVerificationFindFirst
         .mockResolvedValueOnce({ id: 'totp-record-id' })
         .mockResolvedValueOnce({ id: 'mfa-session-assurance-id' });
@@ -537,7 +959,7 @@ describe('BetterAuthService', () => {
     it('should issue aal1 mfa_pending when TOTP is enrolled but session assurance is missing', async () => {
       const { svc, mockJwtService } = buildService();
 
-      mockQueryRaw.mockResolvedValue([mockRefreshRow]);
+      mockRefresh([mockRefreshRow]);
       mockVerificationFindFirst
         .mockResolvedValueOnce({ id: 'totp-record-id' })
         .mockResolvedValueOnce(null);
@@ -557,7 +979,7 @@ describe('BetterAuthService', () => {
     it('should map all RefreshRow fields correctly onto BaSession and BaUser', async () => {
       const { svc } = buildService();
 
-      mockQueryRaw.mockResolvedValue([mockRefreshRow]);
+      mockRefresh([mockRefreshRow]);
 
       const result = await svc.refreshSession('raw-opaque-session-token');
 
@@ -580,7 +1002,7 @@ describe('BetterAuthService', () => {
       const { svc } = buildService();
 
       // $queryRaw returns no rows — token does not exist in DB at all
-      mockQueryRaw.mockResolvedValue([]);
+      mockRefresh([]);
       mockSessionFindFirst.mockResolvedValue(null);
 
       await expect(
@@ -588,7 +1010,7 @@ describe('BetterAuthService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.AUTH_SESSION_EXPIRED,
       });
-      expect(mockQueryRaw).toHaveBeenCalledTimes(1);
+      expect(refreshCalls()).toHaveLength(1);
       // Secondary lookup to distinguish not-found vs expired
       expect(mockSessionFindFirst).toHaveBeenCalledWith({
         where: { token: 'non-existent-token' },
@@ -600,7 +1022,7 @@ describe('BetterAuthService', () => {
       const { svc } = buildService();
 
       // $queryRaw returns no rows — token exists but is expired (WHERE expires_at > NOW() failed)
-      mockQueryRaw.mockResolvedValue([]);
+      mockRefresh([]);
       mockSessionFindFirst.mockResolvedValue({ id: 'session-id-abc' }); // token exists
       mockSessionDeleteMany.mockResolvedValue({ count: 1 });
 
@@ -609,7 +1031,7 @@ describe('BetterAuthService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.AUTH_SESSION_EXPIRED,
       });
-      expect(mockQueryRaw).toHaveBeenCalledTimes(1);
+      expect(refreshCalls()).toHaveLength(1);
       expect(mockSessionFindFirst).toHaveBeenCalledWith({
         where: { token: 'expired-session-token' },
         select: { id: true },
@@ -619,6 +1041,265 @@ describe('BetterAuthService', () => {
       expect(mockSessionDeleteMany).toHaveBeenCalledWith({
         where: { token: 'expired-session-token' },
       });
+    });
+
+    describe('a device session (3b)', () => {
+      const ABSOLUTE = new Date(Date.now() + 100 * 86_400_000);
+      const deviceRow = (over: Record<string, unknown> = {}) => ({
+        session_id: 'session-id-abc',
+        linked_device_id: 'device-uuid-1',
+        dependent_user_id: 'user-uuid-123',
+        revoked_at: null,
+        absolute_expires_at: ABSOLUTE,
+        ...over,
+      });
+      const updateExpiry = (): Date => {
+        const call = refreshCalls()[0] as unknown[];
+        return call.find((value) => value instanceof Date) as Date;
+      };
+
+      it('signs ONLY a device JWT (1 h, sub/sid/dev, aud sacdia:device) and never an access one', async () => {
+        const { svc, mockJwtService } = buildService();
+        mockRefresh([mockRefreshRow], [deviceRow()]);
+
+        const result = await svc.refreshSession('raw-opaque-session-token');
+
+        expect(mockJwtService.sign).toHaveBeenCalledTimes(1);
+        expect(mockJwtService.sign).toHaveBeenCalledWith(
+          {
+            sub: 'user-uuid-123',
+            sid: 'session-id-abc',
+            dev: 'device-uuid-1',
+            iss: 'https://api.sacdia.app',
+            aud: 'sacdia:device',
+            jti: expect.any(String),
+          },
+          { expiresIn: '1h' },
+        );
+        expect(result.accessToken).toBe('mocked-sacdia-jwt');
+        // No MFA lookup for a device.
+        expect(mockVerificationFindFirst).not.toHaveBeenCalled();
+      });
+
+      it('slides 30 days, capped at the absolute expiry', async () => {
+        const { svc } = buildService();
+        mockRefresh([mockRefreshRow], [deviceRow()]);
+
+        await svc.refreshSession('raw-opaque-session-token');
+
+        const expected = Date.now() + 30 * 86_400_000;
+        expect(Math.abs(updateExpiry().getTime() - expected)).toBeLessThan(
+          5_000,
+        );
+      });
+
+      it('never extends past the absolute cap (daily use for 181 days stops at 180)', async () => {
+        const { svc } = buildService();
+        const cap = new Date(Date.now() + 2 * 86_400_000);
+        mockRefresh(
+          [mockRefreshRow],
+          [deviceRow({ absolute_expires_at: cap })],
+        );
+
+        await svc.refreshSession('raw-opaque-session-token');
+
+        expect(updateExpiry().getTime()).toBe(cap.getTime());
+      });
+
+      it('past the cap: AUTH_DEVICE_SESSION_EXPIRED and the session is NOT extended', async () => {
+        const { svc } = buildService();
+        mockRefresh(
+          [mockRefreshRow],
+          [deviceRow({ absolute_expires_at: new Date(Date.now() - 1000) })],
+        );
+
+        await expect(
+          svc.refreshSession('raw-opaque-session-token'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_DEVICE_SESSION_EXPIRED,
+          status: 401,
+        });
+        expect(refreshCalls()).toHaveLength(0);
+      });
+
+      it('a revoked device row: AUTH_DEVICE_REVOKED, and never an access JWT for a child', async () => {
+        const { svc, mockJwtService } = buildService();
+        mockRefresh([mockRefreshRow], [deviceRow({ revoked_at: new Date() })]);
+
+        await expect(
+          svc.refreshSession('raw-opaque-session-token'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_DEVICE_REVOKED,
+          status: 401,
+        });
+        expect(refreshCalls()).toHaveLength(0);
+        expect(mockJwtService.sign).not.toHaveBeenCalled();
+      });
+
+      it('a user session keeps the 7 day slide and the access JWT (adult regression)', async () => {
+        const { svc, mockJwtService } = buildService();
+        mockRefresh([mockRefreshRow]);
+
+        await svc.refreshSession('raw-opaque-session-token');
+
+        const expected = Date.now() + 7 * 86_400_000;
+        expect(Math.abs(updateExpiry().getTime() - expected)).toBeLessThan(
+          5_000,
+        );
+        expect(mockJwtService.sign).toHaveBeenCalledWith(
+          expect.objectContaining({ aud: 'sacdia:access' }),
+        );
+      });
+
+      it('a caller that already looked the device up does not make the service look it up again', async () => {
+        const { svc } = buildService();
+        mockRefresh([mockRefreshRow]);
+
+        await svc.refreshSession('raw-opaque-session-token', { device: null });
+
+        expect(deviceLookupCalls()).toHaveLength(0);
+      });
+
+      it('the device lookup joins the session by token and reads nothing else', async () => {
+        const { svc } = buildService();
+        mockRefresh([mockRefreshRow]);
+
+        await svc.refreshSession('raw-opaque-session-token');
+
+        expect(deviceLookupCalls()).toHaveLength(1);
+        expect(deviceLookupCalls()[0][1]).toBe('raw-opaque-session-token');
+      });
+    });
+  });
+
+  describe('findLinkedDeviceOfSession', () => {
+    it('maps the joined row, including a revoked device (the row is what makes it a device)', async () => {
+      const { svc } = buildService();
+      const absolute = new Date('2027-01-01T00:00:00Z');
+      mockQueryRaw.mockResolvedValue([
+        {
+          session_id: 'sid-1',
+          linked_device_id: 'dev-1',
+          dependent_user_id: 'child-1',
+          revoked_at: '2026-10-20T10:00:00Z',
+          absolute_expires_at: absolute,
+        },
+      ]);
+
+      await expect(svc.findLinkedDeviceOfSession('tok')).resolves.toEqual({
+        sessionId: 'sid-1',
+        linkedDeviceId: 'dev-1',
+        dependentUserId: 'child-1',
+        revokedAt: new Date('2026-10-20T10:00:00Z'),
+        absoluteExpiresAt: absolute,
+      });
+    });
+
+    it('is null for a user session or an unknown token', async () => {
+      const { svc } = buildService();
+      mockQueryRaw.mockResolvedValue([]);
+
+      await expect(svc.findLinkedDeviceOfSession('tok')).resolves.toBeNull();
+    });
+  });
+
+  describe('signDeviceJwt', () => {
+    it('signs with the real JwtService: HS256, aud EXACTLY the device string, one hour, no email', () => {
+      const realJwtService = new JwtService({
+        secret: 'test-secret-min-32-chars-for-hs256-hmac',
+        signOptions: { expiresIn: '8h', algorithm: 'HS256' },
+      });
+      const service = new BetterAuthService(
+        realJwtService,
+        mockPrisma as any,
+        mockEmailService as any,
+        mockSupervisedResolver as any,
+        mockFamilyFlags as any,
+      );
+
+      const token = service.signDeviceJwt({
+        dependentUserId: 'child-1',
+        sessionId: 'sid-1',
+        linkedDeviceId: 'dev-1',
+      });
+      const payload = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64url').toString(),
+      );
+
+      expect(payload).toMatchObject({
+        sub: 'child-1',
+        sid: 'sid-1',
+        dev: 'dev-1',
+        iss: 'https://api.sacdia.app',
+        aud: 'sacdia:device',
+      });
+      expect(typeof payload.aud).toBe('string');
+      expect(payload.email).toBeUndefined();
+      expect(payload.mfa_pending).toBeUndefined();
+      // Two tokens signed in the same second are different strings.
+      const again = service.signDeviceJwt({
+        dependentUserId: 'child-1',
+        sessionId: 'sid-1',
+        linkedDeviceId: 'dev-1',
+      });
+      expect(again).not.toBe(token);
+      // 1 hour, not the module default of 8.
+      expect(payload.exp - payload.iat).toBe(3600);
+    });
+  });
+
+  describe('createSession duration', () => {
+    it('defaults to 7 days and honors durationMs and a transaction client', async () => {
+      const { svc } = buildService();
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await svc.createSession('user-uuid-123');
+      const sevenDays = mockSessionCreate.mock.calls[0][0].data.expiresAt;
+      expect(
+        Math.abs(sevenDays.getTime() - (Date.now() + 7 * 86_400_000)),
+      ).toBeLessThan(5_000);
+
+      const txCreate = jest.fn().mockResolvedValue(mockDbSession);
+      await svc.createSession('user-uuid-123', undefined, {
+        durationMs: 30 * 86_400_000,
+        tx: { session: { create: txCreate } } as never,
+      });
+      const thirtyDays = txCreate.mock.calls[0][0].data.expiresAt;
+      expect(
+        Math.abs(thirtyDays.getTime() - (Date.now() + 30 * 86_400_000)),
+      ).toBeLessThan(5_000);
+      // The default client is untouched when a transaction is given.
+      expect(mockSessionCreate).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getSessionOwnerId (read-only: the refresh decides BEFORE it slides)', () => {
+    it('returns the owner of a live session and writes nothing', async () => {
+      const { svc } = buildService();
+      mockSessionFindFirst.mockResolvedValue({ userId: 'user-uuid-123' });
+
+      await expect(
+        svc.getSessionOwnerId('raw-opaque-session-token'),
+      ).resolves.toBe('user-uuid-123');
+
+      expect(mockSessionFindFirst).toHaveBeenCalledWith({
+        where: {
+          token: 'raw-opaque-session-token',
+          expiresAt: { gt: expect.any(Date) },
+        },
+        select: { userId: true },
+      });
+      expect(mockQueryRaw).not.toHaveBeenCalled();
+      expect(mockSessionUpdate).not.toHaveBeenCalled();
+      expect(mockSessionDeleteMany).not.toHaveBeenCalled();
+    });
+
+    it('returns null for an unknown or expired token', async () => {
+      const { svc } = buildService();
+      mockSessionFindFirst.mockResolvedValue(null);
+
+      await expect(svc.getSessionOwnerId('nope')).resolves.toBeNull();
+      expect(mockSessionDeleteMany).not.toHaveBeenCalled();
     });
   });
 

@@ -87,6 +87,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
             })
           : translatedMessage;
 
+      // Throttling-style domain errors carry the wait in `retry_after_seconds`:
+      // clients read the Retry-After header, never `details`.
+      const retryAfter = (
+        namedArgs as { retry_after_seconds?: unknown } | undefined
+      )?.retry_after_seconds;
+      if (typeof retryAfter === 'number' && Number.isFinite(retryAfter)) {
+        response.setHeader(
+          'Retry-After',
+          String(Math.max(1, Math.ceil(retryAfter))),
+        );
+      }
+
       return response.status(status).json({
         status: 'error',
         statusCode: status,
@@ -231,6 +243,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
    */
   private static readonly SENSITIVE_KEYS = new Set([
     'password',
+    // Login identifier (an email or a supervised login handle) and the handle.
+    'identifier',
+    'login_handle',
+    // Device pairing token (QR) and its deep-link payload.
+    'pairing_token',
+    'qr_payload',
     'currentpassword',
     'newpassword',
     'oldpassword',

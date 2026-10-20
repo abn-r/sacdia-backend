@@ -139,6 +139,9 @@ describe('Acting-for E2E', () => {
       country_id: null,
       users_pr: { complete: false },
       dependent_profile: { frozen_at: null },
+      // 3a: a dependent without credentials is guardian-managed.
+      account: [],
+      supervised_login: null,
     },
   });
 
@@ -194,6 +197,12 @@ describe('Acting-for E2E', () => {
 
     const prismaDouble = createPrismaDouble({
       guardianships,
+      // No paired phones in this world (3b): the summary counts them.
+      linked_devices: createModelMock({
+        groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      }),
       users: createModelMock({
         findUnique: jest.fn().mockResolvedValue({
           birthday: new Date('1985-01-15T00:00:00.000Z'),
@@ -284,8 +293,8 @@ describe('Acting-for E2E', () => {
         birthday: '2017-04-02',
         relationship_type_id: RELATIONSHIP_ID,
         sworn_declaration: true,
-        accepted_terms_version: '1.0.0-store',
-        accepted_privacy_version: '1.0.0-store',
+        accepted_terms_version: '2.0.0-family',
+        accepted_privacy_version: '2.0.0-family',
       });
 
     expect(response.status).toBe(201);
@@ -311,8 +320,8 @@ describe('Acting-for E2E', () => {
         birthday: '2017-04-02',
         relationship_type_id: RELATIONSHIP_ID,
         sworn_declaration: true,
-        accepted_terms_version: '1.0.0-store',
-        accepted_privacy_version: '1.0.0-store',
+        accepted_terms_version: '2.0.0-family',
+        accepted_privacy_version: '2.0.0-family',
         access_mode: 'self',
         email: 'x@y.z',
       });
