@@ -774,6 +774,117 @@ describe('ConsentVerificationService.verify', () => {
   });
 });
 
+describe('ConsentVerificationService.verify for verify-only reviewers (their filtered list)', () => {
+  const REVIEWER = 'eeeeeeee-0000-4000-8000-0000000000aa';
+  const asReviewer = (
+    s: ReturnType<typeof setup>,
+    body = dto({ approve: false }),
+  ) =>
+    s.service.verify(SECTION, ASSIGNMENT, REVIEWER, body, { verifyOnly: true });
+  const untouched = (s: ReturnType<typeof setup>) => {
+    expect(s.tx.guardianships.updateMany).not.toHaveBeenCalled();
+    expect(s.tx.audit_logs.create).not.toHaveBeenCalled();
+    expect(s.actingCache.bump).not.toHaveBeenCalled();
+    expect(s.notifications.onConsentVerified).not.toHaveBeenCalled();
+    expect(s.membershipRequests.approve).not.toHaveBeenCalled();
+  };
+  const notFound = async (s: ReturnType<typeof setup>) => {
+    const error = await rejection(asReviewer(s));
+    expect({ code: error.code, status: error.getStatus() }).toEqual({
+      code: ErrorCode.MR_NOT_FOUND,
+      status: 404,
+    });
+    untouched(s);
+  };
+
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('inside the list (pending request, pending consent, current form) verifies as usual', async () => {
+    const s = setup();
+
+    const result = await asReviewer(s);
+
+    expect(result.guardianship).toMatchObject({
+      consent_status: 'verified',
+      verified_by_user_id: REVIEWER,
+    });
+    expect(s.tx.guardianships.updateMany).toHaveBeenCalledTimes(1);
+    expect(s.membershipRequests.approve).not.toHaveBeenCalled();
+  });
+
+  it('an adult (no dependent profile) is 404 MR_NOT_FOUND, not GUARDIANSHIP_NOT_FOUND', async () => {
+    const s = setup();
+    s.tx.dependent_profiles.findUnique.mockResolvedValue(null);
+    await notFound(s);
+  });
+
+  it('a minor without an active primary row is 404 MR_NOT_FOUND, not GUARDIANSHIP_NOT_FOUND', async () => {
+    const s = setup();
+    s.setRow(null);
+    await notFound(s);
+  });
+
+  it('a minor without a current form is 404 MR_NOT_FOUND, not 409 GUARDIANSHIP_EVIDENCE_REQUIRED', async () => {
+    const s = setup();
+    s.setRow(primaryRow({ consent_evidences: [] }));
+    await notFound(s);
+  });
+
+  it('an already verified consent is 404 MR_NOT_FOUND, not an idempotent 200', async () => {
+    const s = setup();
+    s.setRow(
+      primaryRow({
+        consent_status: 'verified',
+        verified_at: new Date('2026-10-18T10:00:00.000Z'),
+        verified_by_user_id: DIRECTOR,
+        verification_method: 'director_paper_form',
+      }),
+    );
+    await notFound(s);
+  });
+
+  it.each(['active', 'rejected', 'expired', 'cancelled'])(
+    'a %s request (not in the pending list) is 404 MR_NOT_FOUND, not 409 / a verify-only verification',
+    async (status) => {
+      const s = setup();
+      s.setAssignment({ ...pendingAssignment, status });
+      await notFound(s);
+    },
+  );
+
+  it('a request of another section stays 404 MR_NOT_FOUND', async () => {
+    const s = setup();
+    s.setAssignment(null);
+    await notFound(s);
+  });
+
+  it('a row IN the list where the reviewer is barred keeps its four-eyes 403 (the list shows that block)', async () => {
+    const s = setup();
+    s.liveGuardians.add(REVIEWER);
+
+    const error = await rejection(asReviewer(s));
+
+    expect(error.code).toBe(ErrorCode.GUARDIANSHIP_GUARDIAN_SELF_VERIFY);
+    untouched(s);
+  });
+
+  it('without the option (approvers) nothing changes: no form is still 409', async () => {
+    const s = setup();
+    s.setRow(primaryRow({ consent_evidences: [] }));
+
+    const error = await rejection(
+      s.service.verify(SECTION, ASSIGNMENT, DIRECTOR, dto(), {
+        verifyOnly: false,
+      }),
+    );
+
+    expect(error.code).toBe(ErrorCode.GUARDIANSHIP_EVIDENCE_REQUIRED);
+  });
+});
+
 describe('ConsentVerificationService.verify for teens and active memberships (phase 3a)', () => {
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);

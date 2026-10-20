@@ -238,8 +238,32 @@ describe('MembershipRequestsController (consent)', () => {
         ASSIGNMENT,
         'director-1',
         dto,
+        { verifyOnly: false },
       );
     });
+
+    it.each([
+      ['consent:verify alone', request(['consent:verify'])],
+      [
+        'a coordinator (approve from another club role)',
+        asRequest(['club_members:approve', 'consent:verify'], true),
+      ],
+    ])(
+      '%s: the service is told it is a verify-only reviewer (404 outside their list)',
+      async (_label, req) => {
+        const dto = { confirm_paper_form_reviewed: true, approve: false };
+
+        await controller.verifyConsent(5, ASSIGNMENT, dto, USER, req);
+
+        expect(verification.verify).toHaveBeenCalledWith(
+          5,
+          ASSIGNMENT,
+          'director-1',
+          dto,
+          { verifyOnly: true },
+        );
+      },
+    );
 
     it('a verify-only reviewer (consent:verify) may verify without approving', async () => {
       const dto = { confirm_paper_form_reviewed: true, approve: false };

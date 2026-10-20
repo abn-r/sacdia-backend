@@ -22,6 +22,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CUSTODY_TRIGGER_REASONS,
+  consentHasVerifyWork,
   custodyBarredUserIds,
   findVerifierBlock,
   verifierBlockErrorCode,
@@ -50,6 +51,17 @@ export interface VerifyConsentResult {
    * calling verify-consent again retries only the approval.
    */
   approve_error: string | null;
+}
+
+export interface VerifyConsentOptions {
+  /**
+   * The caller is a verify-only reviewer (consent:verify without
+   * club_members:approve in the section, e.g. a coordinator). They only act on
+   * the requests of their filtered list (pending request, pending consent,
+   * current form): anything else is 404 MR_NOT_FOUND, indistinguishable from
+   * an unknown request, like the consent-evidence routes.
+   */
+  verifyOnly?: boolean;
 }
 
 const VERIFY_ROW_SELECT = {
@@ -132,6 +144,7 @@ export class ConsentVerificationService {
     assignmentId: string,
     verifierId: string,
     dto: VerifyConsentDto,
+    options: VerifyConsentOptions = {},
   ): Promise<VerifyConsentResult> {
     if (dto.confirm_paper_form_reviewed !== true) {
       throw new AppBadRequestException(
@@ -140,7 +153,13 @@ export class ConsentVerificationService {
     }
 
     const outcome = await this.prisma.$transaction((tx) =>
-      this.verifyInTransaction(tx, clubSectionId, assignmentId, verifierId),
+      this.verifyInTransaction(
+        tx,
+        clubSectionId,
+        assignmentId,
+        verifierId,
+        options.verifyOnly === true,
+      ),
     );
 
     if (outcome.newlyVerified) {
@@ -188,6 +207,7 @@ export class ConsentVerificationService {
     clubSectionId: number,
     assignmentId: string,
     verifierId: string,
+    verifyOnlyReviewer: boolean,
   ): Promise<VerifyTransactionResult> {
     // The request decides WHICH dependent to lock; its state is re-read below.
     const probe = await findSectionAssignment(tx, clubSectionId, assignmentId);
@@ -201,7 +221,11 @@ export class ConsentVerificationService {
     });
     if (!profile) {
       // Adults have no guardian consent to verify.
-      throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+      throw new AppNotFoundException(
+        verifyOnlyReviewer
+          ? ErrorCode.MR_NOT_FOUND
+          : ErrorCode.GUARDIANSHIP_NOT_FOUND,
+      );
     }
 
     await lockDependent(tx, dependentId);
@@ -224,6 +248,20 @@ export class ConsentVerificationService {
       },
       select: VERIFY_ROW_SELECT,
     });
+    if (
+      verifyOnlyReviewer &&
+      (assignment.status !== 'pending' ||
+        !consentHasVerifyWork({
+          hasPrimary: row !== null,
+          consentStatus: row?.consent_status ?? '',
+          evidenceUploaded: (row?.consent_evidences.length ?? 0) > 0,
+        }))
+    ) {
+      // Outside the verify-only reviewer's filtered list: the same 404 as an
+      // unknown request (no GUARDIANSHIP_NOT_FOUND / 409 / idempotent 200 that
+      // would tell them what is behind it).
+      throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+    }
     if (!row) {
       // The last guardian left and nobody took over (or only test data): there
       // is nothing to verify. No row is written.

@@ -368,11 +368,13 @@ export class MembershipRequestsController {
   })
   @ApiResponse({
     status: 404,
-    description: 'MR_NOT_FOUND o GUARDIANSHIP_NOT_FOUND',
+    description:
+      'MR_NOT_FOUND o GUARDIANSHIP_NOT_FOUND. Un revisor solo-verificación (consent:verify sin club_members:approve en la sección, p. ej. un coordinador) recibe siempre MR_NOT_FOUND fuera de su lista filtrada: adulto, sin tutor primario, sin ficha vigente, consentimiento ya verificado o solicitud que no está pendiente',
   })
   @ApiResponse({
     status: 409,
-    description: 'GUARDIANSHIP_EVIDENCE_REQUIRED o MR_ALREADY_PENDING',
+    description:
+      'GUARDIANSHIP_EVIDENCE_REQUIRED o MR_ALREADY_PENDING (a un revisor solo-verificación le responde 404 MR_NOT_FOUND)',
   })
   async verifyConsent(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
@@ -393,6 +395,7 @@ export class MembershipRequestsController {
       assignmentId,
       currentUser.sub,
       dto,
+      { verifyOnly: isVerifyOnlyReviewer(request) },
     );
     return { status: 'success', data };
   }
