@@ -100,6 +100,8 @@ import { SupervisionStateService } from './supervision-state.service';
     LINKED_DEVICE_REVOKER,
     LinkedDevicesService,
     DevicePairingService,
+    // The admin can cut a minor's own login (3c).
+    SupervisedLoginsService,
   ],
 })
 export class GuardianshipsModule {}

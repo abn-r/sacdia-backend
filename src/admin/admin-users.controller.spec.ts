@@ -13,6 +13,8 @@ import {
   SENSITIVE_USER_SUBRESOURCE_KEY,
 } from '../common/decorators';
 import { GuardianEvidenceService } from '../guardianships/guardian-evidence.service';
+import { AdminFamilyAccessService } from './admin-family-access.service';
+import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import {
   JwtAuthGuard,
   GlobalRolesGuard,
@@ -32,6 +34,10 @@ describe('AdminUsersController', () => {
     assertUserInActorScope: jest.fn(),
   };
   const mockGuardianEvidence = { getForAdmin: jest.fn() };
+  const mockFamilyAccess = {
+    disableSupervisedLogin: jest.fn(),
+    revokeLinkedDevice: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -42,6 +48,7 @@ describe('AdminUsersController', () => {
           useValue: mockAdminUsersService,
         },
         { provide: GuardianEvidenceService, useValue: mockGuardianEvidence },
+        { provide: AdminFamilyAccessService, useValue: mockFamilyAccess },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -260,6 +267,109 @@ describe('AdminUsersController', () => {
         controller.getGuardianshipConsentEvidence(req, 'user-1', 'gs-1'),
       ).rejects.toThrow('out of scope');
       expect(mockGuardianEvidence.getForAdmin).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('family access actions (phase 3c, FP3-65/66)', () => {
+    const req = { user: { sub: 'actor-1' } } as Request & {
+      user: { sub: string };
+    };
+    const disable = AdminUsersController.prototype.disableSupervisedLogin;
+    const revoke = AdminUsersController.prototype.revokeLinkedDevice;
+
+    it.each([
+      ['disable the own login', disable],
+      ['revoke a paired device', revoke],
+    ])(
+      'to %s needs users:update_admin + the legal_representative sensitive WRITE on the target user, admin roles only',
+      (_label, handler) => {
+        expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+          permissions: ['users:update_admin'],
+          mode: 'all',
+        });
+        expect(
+          Reflect.getMetadata(SENSITIVE_USER_SUBRESOURCE_KEY, handler),
+        ).toEqual({ family: 'legal_representative', mode: 'update' });
+        expect(
+          Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler),
+        ).toEqual({ type: 'user', ownerParam: 'userId' });
+        // No method-level role override: the class-level admin fence applies.
+        expect(Reflect.getMetadata(GLOBAL_ROLES_KEY, handler)).toBeUndefined();
+        expect(Reflect.getMetadata(HTTP_CODE_METADATA, handler)).toBe(200);
+      },
+    );
+
+    it('there is NO admin route to enable, reactivate or reset a password of a minor login', () => {
+      const names = Object.getOwnPropertyNames(
+        AdminUsersController.prototype,
+      ).filter((name) => /supervised|password|reactivate|enable/i.test(name));
+      expect(names).toEqual(['disableSupervisedLogin']);
+    });
+
+    it('disable delegates with the actor from the JWT and the typed reason', async () => {
+      mockFamilyAccess.disableSupervisedLogin.mockResolvedValue({
+        supervised_login: { status: 'disabled' },
+      });
+
+      const result = await controller.disableSupervisedLogin(req, 'teen-1', {
+        reason: 'Solicitud del tutor',
+      });
+
+      expect(mockFamilyAccess.disableSupervisedLogin).toHaveBeenCalledWith(
+        'actor-1',
+        'teen-1',
+        'Solicitud del tutor',
+      );
+      expect(result).toEqual({
+        status: 'success',
+        data: { supervised_login: { status: 'disabled' } },
+      });
+    });
+
+    it('revoke delegates with the actor, the device and the typed reason', async () => {
+      mockFamilyAccess.revokeLinkedDevice.mockResolvedValue({
+        linked_device_id: 'dev-1',
+        revoked_at: '2026-10-20T10:00:00.000Z',
+        revoked_reason: 'admin',
+      });
+
+      const result = await controller.revokeLinkedDevice(
+        req,
+        'teen-1',
+        'dev-1',
+        { reason: 'Teléfono extraviado' },
+      );
+
+      expect(mockFamilyAccess.revokeLinkedDevice).toHaveBeenCalledWith(
+        'actor-1',
+        'teen-1',
+        'dev-1',
+        'Teléfono extraviado',
+      );
+      expect(result).toEqual({
+        status: 'success',
+        data: {
+          linked_device_id: 'dev-1',
+          revoked_at: '2026-10-20T10:00:00.000Z',
+          revoked_reason: 'admin',
+        },
+      });
+    });
+
+    it('the routes are POST .../supervised-login/disable and POST .../linked-devices/:deviceId/revoke', () => {
+      const route = (handler: unknown) => ({
+        path: Reflect.getMetadata('path', handler as object),
+        method: Reflect.getMetadata('method', handler as object),
+      });
+      // RequestMethod.POST === 1
+      expect(route(disable)).toEqual({
+        path: 'users/:userId/supervised-login/disable',
+        method: 1,
+      });
+      expect(route(revoke)).toEqual({
+        path: 'users/:userId/linked-devices/:deviceId/revoke',
+        method: 1,
+      });
     });
   });
 

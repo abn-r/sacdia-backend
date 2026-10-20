@@ -171,15 +171,23 @@ export class LinkedDevicesService implements LinkedDeviceRevoker {
     });
   }
 
-  /** The admin entry used by sub-phase 3c (permission checked by the caller). */
+  /**
+   * The admin entry (3c; permission and territory are checked by the caller).
+   * `reason` is the free text the admin typed: it goes ONLY into the audit row
+   * (`admin.linked_device.revoked`); the device keeps `revoked_reason='admin'`.
+   * Same effects as a guardian revoke: session deleted, FCM cleanup, epoch
+   * bump, every verified guardian told.
+   */
   async revokeAsAdmin(
     adminId: string,
     dependentId: string,
     deviceId: string,
+    reason?: string,
   ): Promise<RevokeDeviceResponse> {
     return this.revokeOne(dependentId, deviceId, {
       by: adminId,
       reason: 'admin',
+      ...(reason === undefined ? {} : { adminReason: reason }),
     });
   }
 
@@ -242,7 +250,11 @@ export class LinkedDevicesService implements LinkedDeviceRevoker {
   private async revokeOne(
     dependentId: string,
     deviceId: string,
-    input: { by: string; reason: LinkedDeviceRevokeReason },
+    input: {
+      by: string;
+      reason: LinkedDeviceRevokeReason;
+      adminReason?: string;
+    },
   ): Promise<RevokeDeviceResponse> {
     const result = await this.prisma.$transaction(async (tx) => {
       await lockDependent(tx, dependentId);

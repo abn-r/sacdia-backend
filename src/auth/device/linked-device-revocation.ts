@@ -20,6 +20,12 @@ export interface RevokeInput {
   /** Who revoked it; null for the system (lifecycle events, the request check). */
   by: string | null;
   reason: LinkedDeviceRevokeReason;
+  /**
+   * The free-text reason an ADMIN typed (3c, FP3-66). Stored ONLY in the audit
+   * row, which then reads `admin.linked_device.revoked`; the vocabulary column
+   * keeps `reason` ('admin'). Absent for every other revoke.
+   */
+  adminReason?: string;
 }
 
 /**
@@ -57,7 +63,9 @@ const DEVICE_SELECT = {
  *    belongs to the dependent (a token that moved to another user stays), and,
  *    when no other device of the child is left, any other token the child still
  *    holds (a child has no account: they were all registered by devices);
- *  - writes the `linked_device.revoked` audit row in the same transaction.
+ *  - writes the `linked_device.revoked` audit row in the same transaction (an
+ *    admin revoke with a typed reason writes `admin.linked_device.revoked`
+ *    instead, one row either way).
  *
  * Cache invalidation (the dependent's epoch bump) is NOT done here: the caller
  * does it after its transaction commits ({@link bumpAfterCommit}).
@@ -317,16 +325,27 @@ export class LinkedDeviceRevocation {
       data: {
         entity_type: 'linked_device',
         entity_id: row.linked_device_id,
-        action: 'linked_device.revoked',
+        action:
+          input.adminReason === undefined
+            ? 'linked_device.revoked'
+            : 'admin.linked_device.revoked',
         actor_user_id: input.by,
         actor_kind: input.by ? 'user' : 'system',
         target_user_id: row.dependent_user_id,
         summary: 'Dispositivo vinculado desvinculado',
-        changes: {
-          reason: input.reason,
-          label: row.label,
-          platform: row.platform,
-        },
+        changes:
+          input.adminReason === undefined
+            ? {
+                reason: input.reason,
+                label: row.label,
+                platform: row.platform,
+              }
+            : {
+                reason: input.adminReason,
+                revoked_reason: input.reason,
+                label: row.label,
+                platform: row.platform,
+              },
         request_context: { linked_device_id: row.linked_device_id },
         result: 'succeeded',
         source: 'service',

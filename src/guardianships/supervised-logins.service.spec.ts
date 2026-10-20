@@ -246,8 +246,8 @@ function setup(initial: Partial<State> = {}) {
     betterAuth as any,
     blacklist as any,
     limiter as unknown as DependentActionLimiter,
-    deviceRevoker as any,
-    events as any,
+    deviceRevoker,
+    events,
   );
   return {
     service,
@@ -395,7 +395,7 @@ describe('SupervisedLoginsService.enable', () => {
     expect(ctx.state.audits).toHaveLength(1);
     const audit = JSON.stringify(ctx.state.audits[0]);
     expect(audit).not.toContain(GOOD_PASSWORD);
-    expect(audit).not.toContain(result.supervised_login.login_handle as string);
+    expect(audit).not.toContain(result.supervised_login.login_handle);
     expect(ctx.state.audits[0]).toMatchObject({
       entity_type: 'supervised_login',
       entity_id: DEP,
@@ -984,6 +984,151 @@ describe('SupervisedLoginsService.disable', () => {
     await expect(
       ctx.service.reactivate(GUARDIAN_2, DEP, { password: 'N3w@Password!xyz' }),
     ).resolves.toBeDefined();
+  });
+});
+
+describe('SupervisedLoginsService.disableAsAdmin (phase 3c, FP3-66)', () => {
+  const ADMIN = 'eeeeeeee-0000-4000-8000-000000000001';
+
+  async function enabled() {
+    const ctx = setup();
+    await ctx.service.enable(GUARDIAN, DEP, {
+      method: 'handle',
+      password: GOOD_PASSWORD,
+    });
+    ctx.state.sessions.push(
+      { id: 's1', userId: DEP },
+      { id: 's2', userId: DEP },
+      { id: 'other', userId: 'someone' },
+    );
+    jest.clearAllMocks();
+    return ctx;
+  }
+
+  it('disables with reason admin: sessions deleted, tokens dropped, epoch bumped, every verified guardian told, audit stores the typed reason', async () => {
+    const ctx = await enabled();
+
+    const result = await ctx.service.disableAsAdmin(
+      ADMIN,
+      DEP,
+      'Solicitud escrita del tutor',
+    );
+    await flush();
+
+    expect(result.supervised_login).toMatchObject({
+      disabled_at: NOW.toISOString(),
+      disabled_reason: 'admin',
+    });
+    expect(ctx.state.logins[DEP]).toMatchObject({
+      disabled_by_user_id: ADMIN,
+      disabled_reason: 'admin',
+    });
+    expect(ctx.state.sessions).toEqual([{ id: 'other', userId: 'someone' }]);
+    expect(ctx.blacklist.blacklistAllUserTokens).toHaveBeenCalledWith(
+      DEP,
+      28800,
+    );
+    expect(ctx.actingForCache.bump).toHaveBeenCalledWith(DEP);
+    // The admin is not a guardian, so the exclusion leaves every guardian told.
+    expect(ctx.events.onLoginDisabled).toHaveBeenCalledWith({
+      dependentUserId: DEP,
+      actorUserId: ADMIN,
+    });
+    const audit = ctx.state.audits.at(-1);
+    expect(audit).toMatchObject({
+      action: 'admin.supervised_login.disabled',
+      actor_user_id: ADMIN,
+      target_user_id: DEP,
+      entity_id: DEP,
+    });
+    expect(audit.changes).toEqual({
+      reason: 'Solicitud escrita del tutor',
+      sessions_revoked: 2,
+    });
+  });
+
+  it('works while FAMILY_TEEN_LOGIN_ENABLED is off (an admin must always be able to cut access) and needs no guardian power', async () => {
+    const ctx = await enabled();
+    ctx.flags.assertEnabled.mockImplementation(() => {
+      throw new Error('flag off');
+    });
+    ctx.state.guardianships[0].consent_status = 'pending';
+
+    await expect(
+      ctx.service.disableAsAdmin(ADMIN, DEP, 'motivo valido'),
+    ).resolves.toBeDefined();
+    expect(ctx.flags.assertEnabled).not.toHaveBeenCalled();
+  });
+
+  it('also cuts the login of a person who already reached the age of majority (an admin override, no age rule)', async () => {
+    const ctx = await enabled();
+    ctx.state.users[DEP].birthday = yearsAgo(19);
+
+    const result = await ctx.service.disableAsAdmin(
+      ADMIN,
+      DEP,
+      'motivo valido',
+    );
+
+    expect(result.supervised_login.disabled_reason).toBe('admin');
+  });
+
+  it('never writes, returns or audits the password, the handle or the email', async () => {
+    const ctx = await enabled();
+
+    const result = await ctx.service.disableAsAdmin(
+      ADMIN,
+      DEP,
+      'motivo valido',
+    );
+    const everything = JSON.stringify([
+      result,
+      ctx.state.audits,
+      ctx.events.onLoginDisabled.mock.calls,
+    ]);
+
+    expect(everything).not.toContain(GOOD_PASSWORD);
+    expect(JSON.stringify(ctx.state.audits)).not.toContain(
+      ctx.state.logins[DEP].login_handle,
+    );
+  });
+
+  it('is idempotent: disabling an already disabled login cuts, bumps and notifies nothing again', async () => {
+    const ctx = await enabled();
+    await ctx.service.disableAsAdmin(ADMIN, DEP, 'motivo valido');
+    jest.clearAllMocks();
+
+    const again = await ctx.service.disableAsAdmin(ADMIN, DEP, 'otro motivo');
+
+    expect(again.supervised_login.disabled_reason).toBe('admin');
+    expect(ctx.client.session.deleteMany).not.toHaveBeenCalled();
+    expect(ctx.blacklist.blacklistAllUserTokens).not.toHaveBeenCalled();
+    expect(ctx.actingForCache.bump).not.toHaveBeenCalled();
+    expect(ctx.events.onLoginDisabled).not.toHaveBeenCalled();
+  });
+
+  it('a user with no supervised login is 404 SUPERVISED_LOGIN_NOT_FOUND and nothing is created', async () => {
+    const ctx = setup();
+
+    const error = await failure(
+      ctx.service.disableAsAdmin(ADMIN, DEP, 'motivo valido'),
+    );
+
+    expect(error.code).toBe(ErrorCode.SUPERVISED_LOGIN_NOT_FOUND);
+    expect(error.status).toBe(404);
+    expect(ctx.state.logins[DEP]).toBeUndefined();
+  });
+
+  it('a failing session delete rolls the disable back and bumps nothing', async () => {
+    const ctx = await enabled();
+    ctx.failures.deleteSessions = true;
+
+    await expect(
+      ctx.service.disableAsAdmin(ADMIN, DEP, 'motivo valido'),
+    ).rejects.toThrow();
+
+    expect(ctx.state.logins[DEP].disabled_at).toBeNull();
+    expect(ctx.actingForCache.bump).not.toHaveBeenCalled();
   });
 });
 

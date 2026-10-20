@@ -126,6 +126,49 @@ describe('LinkedDeviceRevocation', () => {
       });
     });
 
+    it('an ADMIN revoke with a reason writes ONE admin.linked_device.revoked row that stores the free-text reason', async () => {
+      await service.revokeInTx(
+        tx as never,
+        { linked_device_id: 'd1' },
+        {
+          by: GUARDIAN,
+          reason: 'admin',
+          adminReason: 'Solicitud del tutor legal',
+        },
+      );
+
+      expect(tx.audit_logs.create).toHaveBeenCalledTimes(1);
+      expect(tx.audit_logs.create.mock.calls[0][0].data).toMatchObject({
+        action: 'admin.linked_device.revoked',
+        actor_user_id: GUARDIAN,
+        actor_kind: 'user',
+        target_user_id: CHILD,
+        changes: {
+          reason: 'Solicitud del tutor legal',
+          revoked_reason: 'admin',
+          label: 'Tablet d1',
+          platform: 'android',
+        },
+      });
+      // The vocabulary column still says 'admin', never the free text.
+      expect(tx.linked_devices.updateMany.mock.calls[0][0].data).toMatchObject({
+        revoked_reason: 'admin',
+      });
+    });
+
+    it('without an admin reason the audit row keeps its generic shape (triangulation)', async () => {
+      await service.revokeInTx(
+        tx as never,
+        { linked_device_id: 'd1' },
+        { by: GUARDIAN, reason: 'admin' },
+      );
+
+      expect(tx.audit_logs.create.mock.calls[0][0].data).toMatchObject({
+        action: 'linked_device.revoked',
+        changes: { reason: 'admin' },
+      });
+    });
+
     it('a system revoke has no actor and audits as system', async () => {
       await service.revokeInTx(
         tx as never,

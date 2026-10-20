@@ -615,6 +615,42 @@ describe('teen route walk', () => {
     });
   });
 
+  describe('admin family access (phase 3c)', () => {
+    const KEYS = [
+      'POST /admin/users/:userId/supervised-login/disable',
+      'POST /admin/users/:userId/linked-devices/:deviceId/revoke',
+    ];
+
+    it.each(KEYS)(
+      '%s exists, carries NO acting scope and is out of reach of every non-user kind',
+      (key) => {
+        const route = routes.find((r) => r.key === key);
+        expect({ key, exists: route !== undefined }).toEqual({
+          key,
+          exists: true,
+        });
+        expect(route!.scope).toBeUndefined();
+        // /admin is never member-reachable (class-level admin roles) and the
+        // NEVER_SCOPE 'admin' family in acting-scope-metadata.spec covers it.
+        expect(memberReach(route!)).toBeNull();
+        expect(allowedFor(route!, TEEN_SCOPES)).toBe(false);
+        expect(allowedFor(route!, TEEN_PENDING_SCOPES)).toBe(false);
+      },
+    );
+
+    it('there is NO admin route that enables, reactivates or sets the password of a supervised login', () => {
+      const forbidden = routes
+        .map((r) => r.key)
+        .filter((key) =>
+          /^[A-Z]+ \/admin\/users\/:userId\/(supervised-login|linked-devices)/.test(
+            key,
+          ),
+        )
+        .filter((key) => !KEYS.includes(key));
+      expect(forbidden).toEqual([]);
+    });
+  });
+
   describe('the app teen flows', () => {
     it.each(TEEN_APP_FLOW)(
       '$key is allowed for a verified teen (pending: $pending)',

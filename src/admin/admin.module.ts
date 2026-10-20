@@ -11,6 +11,7 @@ import { AdminUsersController } from './admin-users.controller';
 import { AdminPhaseECatalogsController } from './admin-phase-e-catalogs.controller';
 import { AdminCronAlertsController } from './admin-cron-alerts.controller';
 import { AdminAuthService } from './admin-auth.service';
+import { AdminFamilyAccessService } from './admin-family-access.service';
 import { AdminCamporeeEventTypesService } from './admin-camporee-event-types.service';
 import { AdminGeographyService } from './admin-geography.service';
 import { AdminNotificationsService } from './admin-notifications.service';
@@ -60,6 +61,7 @@ import { LinkedDeviceModule } from '../auth/device/linked-device.module';
     AdminNotificationsService,
     AdminReferenceService,
     AdminUsersService,
+    AdminFamilyAccessService,
     AdminPhaseECatalogsService,
     AdminCronAlertsService,
   ],

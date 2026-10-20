@@ -277,6 +277,48 @@ describe('LinkedDevicesService', () => {
       );
       expect(result.revoked_reason).toBe('admin');
     });
+
+    it('the admin entry records the admin free-text reason on the revoke and tells every verified guardian', async () => {
+      arrangeActive();
+      revocation.revokeInTx.mockResolvedValue([
+        {
+          linkedDeviceId: DEV,
+          dependentUserId: CHILD,
+          label: 'Tablet de Ana',
+        },
+      ]);
+      tx.linked_devices.findUniqueOrThrow.mockResolvedValue({
+        revoked_at: NOW,
+        revoked_reason: 'admin',
+      });
+
+      await service.revokeAsAdmin(
+        'admin-1',
+        CHILD,
+        DEV,
+        'Solicitud del tutor legal',
+      );
+      await flush();
+
+      expect(revocation.revokeInTx).toHaveBeenCalledWith(
+        tx,
+        { linked_device_id: DEV },
+        {
+          by: 'admin-1',
+          reason: 'admin',
+          adminReason: 'Solicitud del tutor legal',
+        },
+      );
+      expect(revocation.bumpAfterCommit).toHaveBeenCalledTimes(1);
+      // The admin is not a guardian: the exclusion is harmless and every
+      // verified guardian is told.
+      expect(security.onDeviceRevoked).toHaveBeenCalledWith({
+        dependentUserId: CHILD,
+        label: 'Tablet de Ana',
+        excludeUserId: 'admin-1',
+        reason: 'admin',
+      });
+    });
   });
 
   describe('revokeByLogout', () => {

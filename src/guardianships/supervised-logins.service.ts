@@ -472,6 +472,83 @@ export class SupervisedLoginsService {
     return { supervised_login: outcome.view };
   }
 
+  /**
+   * The ADMIN entry (3c, FP3-66): cuts a minor's own login. Everything the
+   * guardian's {@link disable} does (login marked disabled, ALL the sessions
+   * deleted, tokens dropped, epoch bumped, the guardians told), minus the
+   * guardian rules: no flag (an admin must always be able to cut access), no
+   * guardian power, no age limit. `disabled_reason` is `admin`; the typed
+   * `reason` lives ONLY in the audit row `admin.supervised_login.disabled`
+   * (actor = the admin). Idempotent. There is deliberately NO admin enable,
+   * reactivate or password route: the guardian decides who may log in.
+   *
+   * Permission and territory are checked by the caller.
+   */
+  async disableAsAdmin(
+    adminId: string,
+    dependentId: string,
+    reason: string,
+  ): Promise<{ supervised_login: SupervisedLoginView }> {
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      await lockDependent(tx, dependentId);
+      const dependent = await this.loadDependent(tx, dependentId);
+      const login = dependent.supervised_login;
+      if (!login) {
+        throw new AppException(
+          ErrorCode.SUPERVISED_LOGIN_NOT_FOUND,
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // Already disabled: idempotent, nothing to cut again.
+      if (login.disabled_at) {
+        return {
+          changed: false as const,
+          view: this.toView(login, dependent.email),
+        };
+      }
+
+      const now = new Date();
+      const updated = await tx.supervised_logins.update({
+        where: { user_id: dependentId },
+        data: {
+          disabled_at: now,
+          disabled_by_user_id: adminId,
+          disabled_reason: 'admin',
+          modified_at: now,
+        },
+        select: LOGIN_VIEW_SELECT,
+      });
+      const sessions = await tx.session.deleteMany({
+        where: { userId: dependentId },
+      });
+      await this.recordAudit(tx, {
+        action: 'admin.supervised_login.disabled',
+        dependentId,
+        actorId: adminId,
+        at: now,
+        changes: { reason, sessions_revoked: sessions.count },
+      });
+      return {
+        changed: true as const,
+        view: this.toView(updated, dependent.email),
+      };
+    });
+
+    if (outcome.changed) {
+      await this.cutAccess(dependentId);
+      void fireEvent(
+        () =>
+          this.events.onLoginDisabled({
+            dependentUserId: dependentId,
+            actorUserId: adminId,
+          }),
+        (error) => this.warnEvent('disabled', error),
+      );
+    }
+    return { supervised_login: outcome.view };
+  }
+
   async reactivate(
     guardianId: string,
     dependentId: string,
@@ -789,7 +866,12 @@ export class SupervisedLoginsService {
   private async recordAudit(
     tx: Prisma.TransactionClient,
     input: {
-      action: 'enabled' | 'disabled' | 'reactivated' | 'password_reset';
+      action:
+        | 'enabled'
+        | 'disabled'
+        | 'reactivated'
+        | 'password_reset'
+        | 'admin.supervised_login.disabled';
       dependentId: string;
       actorId: string;
       at: Date;

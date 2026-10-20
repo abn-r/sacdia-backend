@@ -40,9 +40,17 @@ describe('AdminUsersService', () => {
     // Family block of the user detail (legal_representative:read readers).
     guardianships: {
       findMany: jest.fn(),
+      findFirst: jest.fn(),
     },
     dependent_profiles: {
       findUnique: jest.fn(),
+    },
+    // family_access block (Phase 3c): own login + paired devices.
+    supervised_logins: {
+      findUnique: jest.fn(),
+    },
+    linked_devices: {
+      findMany: jest.fn(),
     },
     $transaction: jest.fn(),
   };
@@ -99,6 +107,9 @@ describe('AdminUsersService', () => {
     mockPrismaService.enrollments.findMany.mockResolvedValue([]);
     mockPrismaService.guardianships.findMany.mockResolvedValue([]);
     mockPrismaService.dependent_profiles.findUnique.mockResolvedValue(null);
+    mockPrismaService.guardianships.findFirst.mockResolvedValue(null);
+    mockPrismaService.supervised_logins.findUnique.mockResolvedValue(null);
+    mockPrismaService.linked_devices.findMany.mockResolvedValue([]);
     mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
       [],
     );
@@ -1470,6 +1481,265 @@ describe('AdminUsersService', () => {
         expect(result.email).toBeNull();
         expect(result.is_deleted).toBe(false);
       });
+    });
+
+    describe('family_access block (Phase 3c)', () => {
+      const actor = {
+        user_id: 'actor-admin',
+        union_id: 2,
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'admin' } }],
+      };
+
+      const readerOf = (permissions: string[]) =>
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          buildResolvedAuthorization({
+            roles: ['admin'],
+            permissions,
+            unionId: 2,
+          }),
+        );
+
+      const loginRow = (over: Record<string, unknown> = {}) => ({
+        method: 'handle',
+        login_handle: 'ana-7kq4m9xz',
+        origin: 'guardian_enabled',
+        enabled_at: new Date('2026-10-10T10:00:00.000Z'),
+        password_set_by: 'guardian',
+        pending_since: null,
+        disabled_at: null,
+        disabled_reason: null,
+        enabled_by: {
+          user_id: 'u-mom',
+          name: 'María',
+          paternal_last_name: 'Pérez',
+        },
+        ...over,
+      });
+
+      const deviceRow = (over: Record<string, unknown> = {}) => ({
+        linked_device_id: 'dev-1',
+        label: 'Tablet de Ana',
+        platform: 'android',
+        app_version: '2.4.0',
+        paired_at: new Date('2026-10-01T10:00:00.000Z'),
+        last_seen_at: new Date('2026-10-19T10:00:00.000Z'),
+        absolute_expires_at: new Date('2027-03-30T10:00:00.000Z'),
+        revoked_at: null,
+        revoked_reason: null,
+        paired_by: {
+          user_id: 'u-mom',
+          name: 'María',
+          paternal_last_name: 'Pérez',
+        },
+        ...over,
+      });
+
+      beforeEach(() => {
+        mockPrismaService.users.findUnique.mockResolvedValue(actor);
+        mockPrismaService.users.findFirst.mockResolvedValue(
+          buildAdminDetailRecord(),
+        );
+      });
+
+      it('a handle teen with a verified guardian: active login with the handle, who enabled it, and no devices', async () => {
+        readerOf(['legal_representative:read']);
+        mockPrismaService.supervised_logins.findUnique.mockResolvedValue(
+          loginRow(),
+        );
+        mockPrismaService.guardianships.findFirst.mockResolvedValue({
+          guardianship_id: 'g-1',
+        });
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.family_access).toEqual({
+          supervision: 'active',
+          supervised_login: {
+            status: 'active',
+            method: 'handle',
+            login_handle: 'ana-7kq4m9xz',
+            origin: 'guardian_enabled',
+            enabled_at: new Date('2026-10-10T10:00:00.000Z'),
+            enabled_by: { user_id: 'u-mom', display_name: 'María Pérez' },
+            disabled_at: null,
+            disabled_reason: null,
+            password_set_by: 'guardian',
+            pending_since: null,
+          },
+          linked_devices: [],
+        });
+        expect(
+          mockPrismaService.supervised_logins.findUnique.mock.calls[0][0].where,
+        ).toEqual({ user_id: 'user-1' });
+        // Consent: verified, not seeded test data, not revoked (custody counts).
+        expect(
+          mockPrismaService.guardianships.findFirst.mock.calls[0][0].where,
+        ).toEqual({
+          dependent_user_id: 'user-1',
+          consent_status: 'verified',
+          is_test_data: false,
+          revoked_at: null,
+        });
+      });
+
+      it('a self-registered email teen with no verified guardian: pending_guardian, no handle, nobody enabled it', async () => {
+        readerOf(['legal_representative:read']);
+        mockPrismaService.supervised_logins.findUnique.mockResolvedValue(
+          loginRow({
+            method: 'email',
+            login_handle: null,
+            origin: 'self_registered',
+            enabled_at: null,
+            enabled_by: null,
+            password_set_by: 'self',
+            pending_since: new Date('2026-10-01T00:00:00.000Z'),
+          }),
+        );
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.family_access?.supervision).toBe('pending_guardian');
+        expect(result.family_access?.supervised_login).toEqual(
+          expect.objectContaining({
+            status: 'pending_guardian',
+            method: 'email',
+            login_handle: null,
+            origin: 'self_registered',
+            enabled_by: null,
+            pending_since: new Date('2026-10-01T00:00:00.000Z'),
+          }),
+        );
+      });
+
+      it('a disabled login reads as disabled with the reason and keeps the supervision state', async () => {
+        readerOf(['legal_representative:read']);
+        mockPrismaService.supervised_logins.findUnique.mockResolvedValue(
+          loginRow({
+            disabled_at: new Date('2026-10-18T10:00:00.000Z'),
+            disabled_reason: 'admin',
+          }),
+        );
+        mockPrismaService.guardianships.findFirst.mockResolvedValue({
+          guardianship_id: 'g-1',
+        });
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.family_access?.supervision).toBe('active');
+        expect(result.family_access?.supervised_login).toEqual(
+          expect.objectContaining({
+            status: 'disabled',
+            disabled_at: new Date('2026-10-18T10:00:00.000Z'),
+            disabled_reason: 'admin',
+          }),
+        );
+      });
+
+      it('lists the devices of a child with the pairer, expiry and recent revokes (30 days)', async () => {
+        readerOf(['legal_representative:read']);
+        mockPrismaService.linked_devices.findMany.mockResolvedValue([
+          deviceRow(),
+          deviceRow({
+            linked_device_id: 'dev-2',
+            label: 'Teléfono viejo',
+            platform: 'ios',
+            app_version: null,
+            last_seen_at: null,
+            revoked_at: new Date('2026-10-15T10:00:00.000Z'),
+            revoked_reason: 'guardian',
+          }),
+        ]);
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.family_access?.supervision).toBeNull();
+        expect(result.family_access?.supervised_login).toBeNull();
+        expect(result.family_access?.linked_devices).toEqual([
+          {
+            linked_device_id: 'dev-1',
+            label: 'Tablet de Ana',
+            platform: 'android',
+            app_version: '2.4.0',
+            status: 'active',
+            paired_by: { user_id: 'u-mom', display_name: 'María Pérez' },
+            paired_at: new Date('2026-10-01T10:00:00.000Z'),
+            last_seen_at: new Date('2026-10-19T10:00:00.000Z'),
+            absolute_expires_at: new Date('2027-03-30T10:00:00.000Z'),
+            revoked_at: null,
+            revoked_reason: null,
+          },
+          expect.objectContaining({
+            linked_device_id: 'dev-2',
+            platform: 'ios',
+            app_version: null,
+            last_seen_at: null,
+            status: 'revoked',
+            revoked_at: new Date('2026-10-15T10:00:00.000Z'),
+            revoked_reason: 'guardian',
+          }),
+        ]);
+        const where =
+          mockPrismaService.linked_devices.findMany.mock.calls[0][0].where;
+        expect(where.dependent_user_id).toBe('user-1');
+        expect(where.OR).toEqual([
+          { revoked_at: null },
+          { revoked_at: { gte: expect.any(Date) } },
+        ]);
+      });
+
+      it('a user with neither login nor devices still gets the (empty) block when the reader may see it', async () => {
+        readerOf(['legal_representative:read']);
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.family_access).toEqual({
+          supervision: null,
+          supervised_login: null,
+          linked_devices: [],
+        });
+        // No login: no need to look for a verified guardian.
+        expect(
+          mockPrismaService.guardianships.findFirst,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('is also exposed to the transitional users:read_detail readers', async () => {
+        readerOf(['users:read_detail']);
+        mockPrismaService.supervised_logins.findUnique.mockResolvedValue(
+          loginRow(),
+        );
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.family_access?.supervised_login?.login_handle).toBe(
+          'ana-7kq4m9xz',
+        );
+      });
+
+      it.each([['health:read'], ['emergency_contacts:read'], ['users:read']])(
+        'is null, with the handle never read, for a reader without the legal_representative family (%s)',
+        async (permission) => {
+          readerOf([permission]);
+          mockPrismaService.supervised_logins.findUnique.mockResolvedValue(
+            loginRow(),
+          );
+          mockPrismaService.linked_devices.findMany.mockResolvedValue([
+            deviceRow(),
+          ]);
+
+          const result = await service.getUserById('actor-admin', 'user-1');
+
+          expect(result.family_access).toBeNull();
+          expect(
+            mockPrismaService.supervised_logins.findUnique,
+          ).not.toHaveBeenCalled();
+          expect(
+            mockPrismaService.linked_devices.findMany,
+          ).not.toHaveBeenCalled();
+          expect(JSON.stringify(result)).not.toContain('ana-7kq4m9xz');
+        },
+      );
     });
 
     it('should map operational and trajectory sources with legacy classes alias', async () => {
