@@ -1,10 +1,4 @@
-import {
-  HttpStatus,
-  Inject,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
@@ -100,7 +94,8 @@ export class LinkCodesService {
     private readonly countryAgePolicy: CountryAgePolicyService,
     @Inject(LINKED_DEVICE_REVOKER)
     private readonly deviceRevoker: LinkedDeviceRevoker,
-    @Optional()
+    // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
+    // every guardian security notice into a silent no-op (FP3-23).
     @Inject(SUPERVISED_LOGIN_EVENTS)
     events?: Partial<SupervisedLoginEvents>,
   ) {

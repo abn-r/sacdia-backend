@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   BetterAuthService,
   type SessionRequestContext,
@@ -81,7 +81,8 @@ export class SocialSignInService {
     private readonly tokenBlacklist: TokenBlacklistService,
     private readonly supervisedResolver: SupervisedPrincipalResolver,
     private readonly actingForCache: ActingForCache,
-    @Optional()
+    // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
+    // every guardian security notice into a silent no-op (FP3-23).
     @Inject(SUPERVISED_LOGIN_EVENTS)
     events?: Partial<SupervisedLoginEvents>,
   ) {

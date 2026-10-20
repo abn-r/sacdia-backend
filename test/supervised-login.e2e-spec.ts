@@ -12,6 +12,16 @@ import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { AuthService } from '../src/auth/auth.service';
+import { LoginFailureCounter } from '../src/auth/login-failure-counter';
+import { SocialSignInService } from '../src/auth/social-sign-in/social-sign-in.service';
+import {
+  SUPERVISED_LOGIN_EVENTS,
+  type SupervisedLoginEvents,
+} from '../src/auth/supervised/supervised-login-events.port';
+import { GuardianSecurityNotificationsService } from '../src/guardianships/guardian-security-notifications.service';
+import { LinkCodesService } from '../src/guardianships/link-codes.service';
+import { NotificationsService } from '../src/notifications/notifications.service';
 import { ActingForCache } from '../src/auth/acting-for/acting-for.cache';
 import { accessJwtClaims } from '../src/common/constants/jwt-audiences';
 import { CURRENT_LEGAL_DOCUMENTS } from '../src/legal/legal-documents.constants';
@@ -95,6 +105,7 @@ describe('Supervised login E2E', () => {
   let actingCache: ActingForCache;
   let prisma: any;
   let config: ConfigService;
+  let moduleRef: TestingModule;
   let throttlerSpy: jest.SpyInstance;
   let issuedCode: string | null;
   let storedCode: Record<string, unknown> | null;
@@ -215,6 +226,7 @@ describe('Supervised login E2E', () => {
           : null,
       guardianships_as_dependent: verified.map((link) => ({
         guardianship_id: link.guardianship_id,
+        guardian_user_id: link.guardian_user_id,
       })),
       users_pr: {
         complete: person.prComplete ?? false,
@@ -644,6 +656,7 @@ describe('Supervised login E2E', () => {
       .useValue(prismaDouble)
       .compile();
 
+    moduleRef = moduleFixture;
     prisma = moduleFixture.get(PrismaService);
     config = moduleFixture.get(ConfigService);
     actingCache = moduleFixture.get(ActingForCache, { strict: false });
@@ -1350,5 +1363,57 @@ describe('Supervised login E2E', () => {
       });
       expect(summary.upcoming_activities).toHaveLength(1);
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // G. The security-notice port is bound through the real container (FP3-23)
+  // ---------------------------------------------------------------------------
+
+  describe('G. SUPERVISED_LOGIN_EVENTS reaches the real guardian notices', () => {
+    let sendToUser: jest.SpyInstance;
+
+    beforeAll(async () => {
+      resetWorld();
+      await actingCache.bump(CHILD_ID);
+    });
+
+    beforeEach(() => {
+      sendToUser = jest
+        .spyOn(NotificationsService.prototype, 'sendToUser')
+        .mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      sendToUser.mockRestore();
+    });
+
+    it('the token resolves to the real GuardianSecurityNotificationsService', () => {
+      expect(moduleRef.get(SUPERVISED_LOGIN_EVENTS, { strict: false })).toBe(
+        moduleRef.get(GuardianSecurityNotificationsService, { strict: false }),
+      );
+    });
+
+    it.each([
+      ['AuthService', AuthService],
+      ['LoginFailureCounter', LoginFailureCounter],
+      ['SocialSignInService', SocialSignInService],
+      ['LinkCodesService', LinkCodesService],
+    ] as const)(
+      '%s got the binding: an event it fires notifies the verified guardian',
+      async (_name, consumer) => {
+        const instance = moduleRef.get<unknown>(consumer, { strict: false });
+        // The resolved port the consumer calls (private: a wiring check).
+        const events = (instance as { events: SupervisedLoginEvents }).events;
+
+        await events.onTeenPasswordChanged({ userId: CHILD_ID });
+
+        // With no binding the port is a no-op and nothing is sent.
+        expect(sendToUser).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: ADULT_ID }),
+          expect.anything(),
+          expect.anything(),
+        );
+      },
+    );
   });
 });

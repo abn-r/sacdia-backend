@@ -2,7 +2,6 @@ import {
   HttpStatus,
   Inject,
   Injectable,
-  Optional,
   ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
@@ -110,7 +109,8 @@ export class AuthService {
     private readonly supervisionState: SupervisionStateService,
     private readonly loginFailures: LoginFailureCounter,
     private readonly supervisedResolver: SupervisedPrincipalResolver,
-    @Optional()
+    // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
+    // every guardian security notice into a silent no-op (FP3-23).
     @Inject(SUPERVISED_LOGIN_EVENTS)
     events?: Partial<SupervisedLoginEvents>,
   ) {

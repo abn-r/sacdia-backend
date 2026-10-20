@@ -1,5 +1,5 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 import { createHash } from 'node:crypto';
 import {
@@ -114,7 +114,8 @@ export class LoginFailureCounter {
 
   constructor(
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
-    @Optional()
+    // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
+    // every guardian security notice into a silent no-op (FP3-23).
     @Inject(SUPERVISED_LOGIN_EVENTS)
     events?: Partial<SupervisedLoginEvents>,
   ) {

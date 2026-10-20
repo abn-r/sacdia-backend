@@ -2,8 +2,14 @@
  * Outbound port of the supervised-login code towards the guardian security
  * notices (sub-phase 3a, B26/B39/B44). The login, enable, disable and reset code
  * reports WHAT happened; the adapter bound in GuardianshipsModule decides who to
- * tell and how. Without a binding every event is a no-op, so none of those
- * paths ever depends on the notification stack.
+ * tell and how.
+ *
+ * The binding is REQUIRED in the Nest container (no `@Optional()` on the
+ * consumers): a missing binding fails at boot instead of silently turning every
+ * guardian notice into a no-op. Tests that do not care bind
+ * NOOP_SUPERVISED_LOGIN_EVENTS explicitly. The no-op fallback of
+ * resolveSupervisedLoginEvents only serves direct `new` construction in unit
+ * tests and partial test doubles.
  *
  * Contract for implementations: best effort. They MUST NOT throw, and callers
  * never await them on a critical path (`fireEvent` swallows rejections).
