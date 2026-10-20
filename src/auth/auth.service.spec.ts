@@ -1976,6 +1976,37 @@ describe('AuthService', () => {
         expect(result.data.analytics_anonymous).toBe(true);
       });
 
+      it('a birthday that comes back from the cache as an ISO string never 500s (teen stays anonymous)', async () => {
+        const teen = yearsAgo(15).toISOString();
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(teen as unknown as Date),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(true);
+      });
+
+      it('an adult birthday as an ISO string is still identifiable', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(30).toISOString() as unknown as Date),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(false);
+      });
+
+      it('an unreadable birthday fails closed (anonymous), never a 500', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith('garbage' as unknown as Date),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(true);
+      });
+
       it('analytics follow the country policy (majority 16 makes a 17-year-old identifiable)', async () => {
         mockCountryAgePolicy.getPolicy.mockResolvedValue({
           minSelfLoginAge: 13,

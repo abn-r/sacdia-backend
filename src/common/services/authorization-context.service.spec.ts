@@ -1208,4 +1208,101 @@ describe('AuthorizationContextService', () => {
       30_000,
     );
   });
+  describe('cache HIT rehydrates dates (Redis stores JSON)', () => {
+    const dbUser = () => ({
+      user_id: 'user-json',
+      email: 'json@example.com',
+      name: 'Json',
+      paternal_last_name: null,
+      maternal_last_name: null,
+      gender: 'F',
+      birthday: new Date('2010-05-20'),
+      baptism: true,
+      baptism_date: new Date('2022-03-01'),
+      blood: null,
+      user_image: null,
+      country_id: null,
+      union_id: null,
+      local_field_id: null,
+      created_at: new Date('2026-01-02T10:00:00.000Z'),
+      countries: null,
+      unions: null,
+      local_fields: null,
+      users_pr: { complete: true, active_club_assignment_id: 'member-1' },
+      users_roles: [],
+      club_role_assignments: [
+        {
+          assignment_id: 'member-1',
+          ecclesiastical_year_id: CURRENT_YEAR_ID,
+          status: 'active',
+          start_date: new Date('2026-01-01'),
+          end_date: new Date('2026-12-31'),
+          expires_at: new Date('2027-01-01T00:00:00.000Z'),
+          roles: { role_name: 'member', role_permissions: [] },
+          club_sections: {
+            club_section_id: 1,
+            club_type_id: 1,
+            club_types: { name: 'Conquistadores' },
+            clubs: { club_id: 10, name: 'Club A', local_fields: null },
+          },
+        },
+      ],
+      users_permissions: [],
+    });
+
+    /** What the Keyv Redis store hands back: a JSON round-trip of the SET. */
+    const jsonRoundTripOfLastSet = (): unknown =>
+      JSON.parse(JSON.stringify(cacheManager.set.mock.calls[0][1]));
+
+    it('returns real Date objects on a JSON cache hit (not ISO strings)', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(dbUser());
+      await service.resolveUserAuthorization('user-json');
+      cacheManager.get.mockResolvedValue(jsonRoundTripOfLastSet());
+
+      const hit = await service.resolveUserAuthorization('user-json');
+
+      expect(mockPrismaService.users.findUnique).toHaveBeenCalledTimes(1);
+      expect(hit.profile.birthday).toBeInstanceOf(Date);
+      expect(hit.profile.birthday?.toISOString()).toBe(
+        '2010-05-20T00:00:00.000Z',
+      );
+      expect(hit.profile.baptism_date).toBeInstanceOf(Date);
+      expect(hit.profile.created_at).toBeInstanceOf(Date);
+      const grant = hit.authorization.grants.club_assignments[0];
+      expect(grant.start_date).toBeInstanceOf(Date);
+      expect(grant.end_date).toBeInstanceOf(Date);
+      expect(grant.expires_at).toBeInstanceOf(Date);
+    });
+
+    it('keeps null dates null on a cache hit', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        ...dbUser(),
+        birthday: null,
+        baptism_date: null,
+      });
+      await service.resolveUserAuthorization('user-json');
+      cacheManager.get.mockResolvedValue(jsonRoundTripOfLastSet());
+
+      const hit = await service.resolveUserAuthorization('user-json');
+
+      expect(mockPrismaService.users.findUnique).toHaveBeenCalledTimes(1);
+      expect(hit.profile.birthday).toBeNull();
+      expect(hit.profile.baptism_date).toBeNull();
+    });
+
+    it('treats an unreadable cached date as a cache miss and reloads from the database', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(dbUser());
+      await service.resolveUserAuthorization('user-json');
+      const corrupt = jsonRoundTripOfLastSet() as {
+        payload: { profile: { birthday: unknown } };
+      };
+      corrupt.payload.profile.birthday = 'not-a-date';
+      cacheManager.get.mockResolvedValue(corrupt);
+
+      const result = await service.resolveUserAuthorization('user-json');
+
+      expect(mockPrismaService.users.findUnique).toHaveBeenCalledTimes(2);
+      expect(result.profile.birthday).toBeInstanceOf(Date);
+    });
+  });
 });

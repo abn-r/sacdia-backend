@@ -50,7 +50,11 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { LegalService } from '../legal/legal.service';
-import { ageToday, parseCalendarDate } from '../common/age/age.util';
+import {
+  ageToday,
+  parseCalendarDate,
+  toDateValue,
+} from '../common/age/age.util';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import type { AuthPrincipal } from './acting-for/auth-principal';
 import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
@@ -965,12 +969,15 @@ export class AuthService {
    * birthday): the app never identifies them in PostHog or Sentry. Fails closed.
    */
   private async isAnalyticsAnonymous(
-    birthday: Date | null,
+    birthday: Date | string | null,
     countryId: number | null,
   ): Promise<boolean> {
-    if (!birthday) return true;
+    // The profile can come from the authorization cache; tolerate a string and
+    // treat an unreadable value like an unknown age.
+    const born = toDateValue(birthday);
+    if (!born) return true;
     const policy = await this.countryAgePolicy.getPolicy(countryId);
-    return ageToday(birthday, policy.timeZone) < policy.ageOfMajority;
+    return ageToday(born, policy.timeZone) < policy.ageOfMajority;
   }
 
   /**

@@ -22,6 +22,7 @@ import {
   type EcclesiasticalYear,
 } from './ecclesiastical-year.service';
 import { ClubCycleReadinessService } from './club-cycle-readiness.service';
+import { toDateValue } from '../age/age.util';
 import { CLOCK, type Clock } from '../clock/clock';
 import {
   type BusinessDate,
@@ -249,6 +250,75 @@ type AuthContextCacheEnvelope = {
   payload: ResolvedAuthorizationProfile;
 };
 
+/**
+ * Optional date read back from the cache. `undefined` means "unreadable" (the
+ * whole entry is then discarded); `null` stays null.
+ */
+function reviveOptionalDate(value: unknown): Date | null | undefined {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return toDateValue(value as Date | string) ?? undefined;
+}
+
+/**
+ * The Redis store (Keyv) serializes the payload as JSON, so every `Date` of a
+ * cache HIT comes back as an ISO string. Callers rely on real Dates
+ * (`ageToday(profile.birthday)`, `expires_at.getTime()`), so turn them back
+ * into Dates here, once, at the cache boundary. Returns null when a date is
+ * unreadable: the caller then treats the entry as a miss and reloads it.
+ */
+export function reviveCachedAuthorizationProfile(
+  payload: ResolvedAuthorizationProfile,
+): ResolvedAuthorizationProfile | null {
+  if (!payload?.profile || !payload.authorization?.grants) {
+    return null;
+  }
+  const birthday = reviveOptionalDate(payload.profile.birthday);
+  const baptismDate = reviveOptionalDate(payload.profile.baptism_date);
+  const createdAt = toDateValue(payload.profile.created_at);
+  if (birthday === undefined || baptismDate === undefined || !createdAt) {
+    return null;
+  }
+
+  const clubAssignments: ClubAuthorizationGrant[] = [];
+  for (const grant of payload.authorization.grants.club_assignments ?? []) {
+    const startDate = reviveOptionalDate(grant.start_date);
+    const endDate = reviveOptionalDate(grant.end_date);
+    const expiresAt = reviveOptionalDate(grant.expires_at);
+    if (
+      startDate === undefined ||
+      endDate === undefined ||
+      expiresAt === undefined
+    ) {
+      return null;
+    }
+    clubAssignments.push({
+      ...grant,
+      ...('start_date' in grant ? { start_date: startDate } : {}),
+      ...('end_date' in grant ? { end_date: endDate } : {}),
+      ...('expires_at' in grant ? { expires_at: expiresAt } : {}),
+    });
+  }
+
+  return {
+    ...payload,
+    profile: {
+      ...payload.profile,
+      birthday,
+      baptism_date: baptismDate,
+      created_at: createdAt,
+    },
+    authorization: {
+      ...payload.authorization,
+      grants: {
+        ...payload.authorization.grants,
+        club_assignments: clubAssignments,
+      },
+    },
+  };
+}
+
 @Injectable()
 export class AuthorizationContextService {
   private readonly logger = new Logger(AuthorizationContextService.name);
@@ -309,8 +379,14 @@ export class AuthorizationContextService {
         AuthContextCacheEnvelope | ResolvedAuthorizationProfile
       >(cacheKey);
       if (this.isFreshEnvelope(cached, calendarRevision)) {
-        this.logger.debug(`Auth context cache HIT  — ${cacheKey}`);
-        return cached.payload;
+        const revived = reviveCachedAuthorizationProfile(cached.payload);
+        if (revived) {
+          this.logger.debug(`Auth context cache HIT  — ${cacheKey}`);
+          return revived;
+        }
+        this.logger.warn(
+          `Auth context cache entry with unreadable dates ignored — ${cacheKey}`,
+        );
       }
     } catch (err) {
       this.logger.warn(
