@@ -86,7 +86,9 @@ export class GuardianNotificationsService {
         select: {
           name: true,
           guardianships_as_dependent: {
-            where: ACTIVE_USER_GUARDIAN,
+            // VERIFIED only (ruling 3): a pending link, e.g. a stranger holding
+            // a leaked code, grants no notices until the director verifies.
+            where: { ...ACTIVE_USER_GUARDIAN, consent_status: 'verified' },
             select: { guardian_user_id: true },
           },
         },
