@@ -104,6 +104,113 @@ describe('GuardianNotificationsService.onDependentEvidenceUploaded', () => {
     expect(prisma.users.findFirst).not.toHaveBeenCalled();
   });
 
+  describe('a linked device uploads (3b, FP3-47)', () => {
+    const asDevice = <T>(fn: () => Promise<T>) =>
+      runWithAuditContext(async () => {
+        setAuditActingFor({
+          actorUserId: DEPENDENT,
+          subjectUserId: DEPENDENT,
+          guardianshipId: 'gs-1',
+          linkedDeviceId: 'dev-1',
+          kind: 'linked_device',
+        });
+        return fn();
+      });
+
+    it('notifies EVERY verified guardian even though the audit subject is the child (the regression: a subject-only check silenced the device)', async () => {
+      const { service, notifications } = setup(dependentWith([G1, G2]));
+
+      await asDevice(() =>
+        service.onDependentEvidenceUploaded({
+          dependentUserId: DEPENDENT,
+          kind: 'class_section',
+          actorUserId: DEPENDENT,
+        }),
+      );
+
+      expect(notifications.sendToUser).toHaveBeenCalledTimes(2);
+      expect(
+        notifications.sendToUser.mock.calls.map((c: any[]) => c[0].userId),
+      ).toEqual([G1, G2]);
+      expect(notifications.sendToUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Ana subió evidencia',
+          data: {
+            type: 'dependent_evidence_uploaded',
+            dependent_user_id: DEPENDENT,
+          },
+        }),
+        'system',
+        'family:evidence_uploaded',
+      );
+    });
+
+    it('10 uploads in a row are 10 notices per guardian (each upload, no coalescing)', async () => {
+      const { service, notifications } = setup(dependentWith([G1]));
+
+      for (let i = 0; i < 10; i += 1) {
+        await asDevice(() =>
+          service.onDependentEvidenceUploaded({
+            dependentUserId: DEPENDENT,
+            kind: 'class_section',
+            actorUserId: DEPENDENT,
+          }),
+        );
+      }
+
+      expect(notifications.sendToUser).toHaveBeenCalledTimes(10);
+    });
+
+    it('a notifier failure never throws (the upload already returned 201)', async () => {
+      const { service, notifications } = setup(dependentWith([G1, G2]));
+      notifications.sendToUser.mockRejectedValue(new Error('push down'));
+
+      await expect(
+        asDevice(() =>
+          service.onDependentEvidenceUploaded({
+            dependentUserId: DEPENDENT,
+            kind: 'class_section',
+            actorUserId: DEPENDENT,
+          }),
+        ),
+      ).resolves.toBeUndefined();
+      expect(notifications.sendToUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('a lookup failure never throws either', async () => {
+      const { service, prisma } = setup(dependentWith([G1]));
+      prisma.users.findFirst.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        asDevice(() =>
+          service.onDependentEvidenceUploaded({
+            dependentUserId: DEPENDENT,
+            kind: 'class_section',
+            actorUserId: DEPENDENT,
+          }),
+        ),
+      ).resolves.toBeUndefined();
+    });
+
+    it('a teen still suppresses (P3-A11) and a guardian acting still suppresses: only the DEVICE changed', async () => {
+      for (const kind of ['supervised_user', 'guardian_acting'] as const) {
+        const { service, notifications } = setup(dependentWith([G1]));
+        await runWithAuditContext(async () => {
+          setAuditActingFor({
+            actorUserId: DEPENDENT,
+            subjectUserId: DEPENDENT,
+            kind,
+          });
+          await service.onDependentEvidenceUploaded({
+            dependentUserId: DEPENDENT,
+            kind: 'class_section',
+          });
+        });
+        expect(notifications.sendToUser).not.toHaveBeenCalled();
+      }
+    });
+  });
+
   it('is a no-op while a guardian acts for that very child (Phase 2 uploads)', async () => {
     const { service, notifications, prisma } = setup(dependentWith([G1]));
 

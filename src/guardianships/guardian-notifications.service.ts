@@ -35,11 +35,12 @@ export interface DependentConsentVerifiedInput {
 /**
  * Tells a dependent's guardians that evidence was uploaded FOR the child.
  *
- * Phase 2: a guardian acting for the child is the one uploading, so this is a
- * no-op in that case (nobody needs to be told about their own action). The
- * hook exists now so Phase 3 (the child's own linked device) and staff uploads
- * only need to call it. It is one-way and informational: there is no chat or
- * messaging between users, ever.
+ * A guardian acting for the child is the one uploading, so this is a no-op in
+ * that case (nobody needs to be told about their own action); the same goes for
+ * a supervised teen's own uploads. A child's linked device (3b) and staff
+ * uploads DO notify every verified guardian, after each successful upload. It
+ * is one-way and informational: there is no chat or messaging between users,
+ * ever.
  */
 @Injectable()
 export class GuardianNotificationsService {
@@ -61,7 +62,16 @@ export class GuardianNotificationsService {
       // A guardian acting for this very child already knows, and a supervised
       // teen's own uploads are covered by the guardian summary, not by a push
       // (Phase 3a, P3-A11). Both set the audit subject to the child.
-      if (getAuditActingFor()?.subjectUserId === input.dependentUserId) {
+      //
+      // A LINKED DEVICE also sets the subject to the child, but it is the one
+      // case where the guardian does NOT know: every successful device upload
+      // notifies every verified guardian (Phase 3b, FP3-47). So the check is on
+      // the principal KIND, never on the subject alone.
+      const acting = getAuditActingFor();
+      if (
+        acting?.subjectUserId === input.dependentUserId &&
+        (acting.kind === 'guardian_acting' || acting.kind === 'supervised_user')
+      ) {
         return;
       }
 
