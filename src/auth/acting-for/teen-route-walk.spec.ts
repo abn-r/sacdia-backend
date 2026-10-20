@@ -182,6 +182,9 @@ const TEEN_DENIED: Record<string, string> = {
     'score breakdown of another member (staff view)',
   'GET /coordination/me/scope': 'coordinator territory (staff only)',
   'GET /instructor-candidates': 'staff tool to pick honor instructors',
+  // ---- The signed consent form is the guardian's to upload
+  'POST /users/:userId/post-registration/step-3/consent-evidence':
+    'guardian-only (consent:evidence): the guardian acting uploads the signed form; a teen never does',
   // ---- Guias Mayores are adults
   'GET /users/:userId/master-honors': 'master honors belong to adult leaders',
   'GET /users/:userId/master-honors/:masterHonorId':

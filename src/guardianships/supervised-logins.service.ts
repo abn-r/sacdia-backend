@@ -576,7 +576,13 @@ export class SupervisedLoginsService {
   }> {
     this.flags.assertEnabled('teen_login');
     await this.powers.assertVerifiedGuardian(guardianId, dependentId);
-    await this.limiter.consume(`supervised-reset:${dependentId}`, 5, HOUR_MS);
+    // 429 with the generic "try again later" message and a Retry-After header.
+    await this.limiter.consume(
+      `supervised-reset:${dependentId}`,
+      5,
+      HOUR_MS,
+      ErrorCode.AUTH_LOGIN_LOCKED,
+    );
 
     const preview = await this.loadDependent(this.prisma, dependentId);
     if (!preview.supervised_login && preview.account.length === 0) {

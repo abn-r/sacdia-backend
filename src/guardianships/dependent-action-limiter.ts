@@ -1,5 +1,6 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
 import type { Cache } from 'cache-manager';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -27,12 +28,16 @@ export class DependentActionLimiter {
 
   constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache) {}
 
-  /** Counts one hit; throws 429 `code` when the window is already full. */
+  /**
+   * Counts one hit; throws 429 when the window is already full: the domain
+   * error `code` (with the wait as `retry_after_seconds`) when given, else the
+   * plain throttler 429.
+   */
   async consume(
     key: string,
     limit: number,
     windowMs: number,
-    code: ErrorCode = ErrorCode.AUTH_LOGIN_LOCKED,
+    code?: ErrorCode,
   ): Promise<void> {
     const cacheKey = `dependent-limit:${key}`;
     const now = Date.now();
@@ -42,6 +47,7 @@ export class DependentActionLimiter {
       window = { count: 0, resetAt: now + windowMs };
     }
     if (window.count >= limit) {
+      if (!code) throw new ThrottlerException();
       throw new AppException(code, HttpStatus.TOO_MANY_REQUESTS, {
         retry_after_seconds: Math.max(
           1,

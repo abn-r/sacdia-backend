@@ -83,6 +83,10 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'POST /users/:userId/post-registration/membership-request/cancel':
     'registration:write',
   'POST /users/:userId/membership/annual-enroll': 'registration:write',
+  // The signed consent form of the child, uploaded by the guardian ACTING for it.
+  // Guardians only: teens and devices hold no `consent:evidence`.
+  'POST /users/:userId/post-registration/step-3/consent-evidence':
+    'consent:evidence',
   // Post-registration step 3 club picker (read-only reference data). Scoped as
   // registration:write, not self:read, so a linked device (self:read +
   // evidence:upload) cannot browse clubs: only someone finishing the

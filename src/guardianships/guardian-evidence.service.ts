@@ -20,6 +20,8 @@ import {
   type FileStorageService,
 } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { actingForScopeDenied } from '../auth/acting-for/acting-for.errors';
+import { DependentActionLimiter } from './dependent-action-limiter';
 import type { Db } from './guardianship-queries';
 import { CONSENT_EVIDENCE_MIME_TYPES } from './consent-evidence-file.pipe';
 import {
@@ -43,6 +45,9 @@ const EXTENSION_BY_MIME: Record<string, string> = {
 };
 
 const EVIDENCE_BUCKET_ENV = 'R2_BUCKET_GUARDIANSHIP_EVIDENCE';
+
+/** Shared by the guardian and the acting upload endpoints (per guardian). */
+export const CONSENT_EVIDENCE_UPLOADS_PER_HOUR = 20;
 
 export type EvidenceReader = 'guardian' | 'director' | 'admin';
 
@@ -113,6 +118,7 @@ export class GuardianEvidenceService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly storage: FileStorageService,
     private readonly auditLogs: AuditLogsService,
+    private readonly limiter: DependentActionLimiter,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -126,7 +132,41 @@ export class GuardianEvidenceService {
   ): Promise<UploadedConsentEvidence> {
     this.assertConfigured();
     const target = await this.resolveGuardianTarget(guardianId, dependentId);
+    // ONE counter per guardian for the guardian endpoint AND the acting one:
+    // switching between the two does not double the allowance. 20 per hour.
+    await this.limiter.consume(
+      `consent-evidence:${guardianId}`,
+      CONSENT_EVIDENCE_UPLOADS_PER_HOUR,
+      3_600_000,
+    );
     return this.store(target, guardianId, file, 'guardian');
+  }
+
+  /**
+   * Step-3 upload while a guardian ACTS for the dependent (Phase 3a, FP3-27).
+   * The dependent is the acted profile of the token (`principal.sub`, which
+   * must equal the path id) and the guardian is the real actor
+   * (`principal.actor_sub`): nothing the client puts in the body or in another
+   * path id can aim the write at a different child. Same validations and the
+   * same shared counter as the guardian endpoint.
+   */
+  async uploadWhileActing(
+    principal: {
+      kind: string;
+      sub: string;
+      actor_sub: string;
+    },
+    pathUserId: string,
+    file: Express.Multer.File | undefined,
+  ): Promise<UploadedConsentEvidence> {
+    if (
+      principal.kind !== 'guardian_acting' ||
+      principal.sub !== pathUserId ||
+      principal.actor_sub === principal.sub
+    ) {
+      throw actingForScopeDenied('consent:evidence');
+    }
+    return this.uploadForGuardian(principal.actor_sub, pathUserId, file);
   }
 
   async getForGuardian(

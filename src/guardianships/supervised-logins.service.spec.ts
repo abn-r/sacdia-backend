@@ -1134,6 +1134,7 @@ describe('SupervisedLoginsService.resetPassword', () => {
       `supervised-reset:${DEP}`,
       5,
       3_600_000,
+      ErrorCode.AUTH_LOGIN_LOCKED,
     );
 
     ctx.limiter.consume.mockRejectedValue(

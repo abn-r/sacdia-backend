@@ -28,22 +28,27 @@ describe('DependentActionLimiter', () => {
   it('allows the limit and answers 429 on the next hit, with the wait', async () => {
     const limiter = new DependentActionLimiter(fakeCache() as any);
     for (let i = 0; i < 5; i += 1) {
-      await limiter.consume('reset:dep-1', 5, HOUR);
+      await limiter.consume(
+        'reset:dep-1',
+        5,
+        HOUR,
+        ErrorCode.AUTH_LOGIN_LOCKED,
+      );
     }
-    await expect(limiter.consume('reset:dep-1', 5, HOUR)).rejects.toMatchObject(
-      {
-        status: 429,
-        code: ErrorCode.AUTH_LOGIN_LOCKED,
-      },
-    );
+    await expect(
+      limiter.consume('reset:dep-1', 5, HOUR, ErrorCode.AUTH_LOGIN_LOCKED),
+    ).rejects.toMatchObject({
+      status: 429,
+      code: ErrorCode.AUTH_LOGIN_LOCKED,
+    });
   });
 
   it('carries retry_after_seconds in namedArgs (the filter turns it into Retry-After)', async () => {
     const limiter = new DependentActionLimiter(fakeCache() as any);
-    await limiter.consume('k', 1, HOUR);
+    await limiter.consume('k', 1, HOUR, ErrorCode.AUTH_LOGIN_LOCKED);
     jest.advanceTimersByTime(10 * 60_000);
     try {
-      await limiter.consume('k', 1, HOUR);
+      await limiter.consume('k', 1, HOUR, ErrorCode.AUTH_LOGIN_LOCKED);
       throw new Error('expected 429');
     } catch (error) {
       expect((error as any).getResponse().namedArgs).toEqual({
@@ -85,6 +90,14 @@ describe('DependentActionLimiter', () => {
     const limiter = new DependentActionLimiter(cache as any);
     for (let i = 0; i < 5; i += 1) await limiter.consume('k', 5, HOUR);
     await expect(limiter.consume('k', 5, HOUR)).rejects.toMatchObject({
+      status: 429,
+    });
+  });
+
+  it('without a domain code it is the plain throttler 429', async () => {
+    const limiter = new DependentActionLimiter(fakeCache() as any);
+    await limiter.consume('k', 1, HOUR);
+    await expect(limiter.consume('k', 1, HOUR)).rejects.toMatchObject({
       status: 429,
     });
   });

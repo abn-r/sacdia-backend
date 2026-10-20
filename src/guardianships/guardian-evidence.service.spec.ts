@@ -99,7 +99,14 @@ function setup(options: { bucket?: string | undefined } = {}) {
     recordEvent: jest.fn().mockResolvedValue(undefined),
     recordEventOrThrow: jest.fn().mockResolvedValue(undefined),
   };
-  const service = new GuardianEvidenceService(prisma, config, storage, audit);
+  const limiter = { consume: jest.fn().mockResolvedValue(undefined) };
+  const service = new GuardianEvidenceService(
+    prisma,
+    config,
+    storage,
+    audit,
+    limiter as any,
+  );
 
   /** guardian row found, then the dependent's primary consent row. */
   const asGuardian = () => {
@@ -130,6 +137,7 @@ function setup(options: { bucket?: string | undefined } = {}) {
 
   return {
     service,
+    limiter,
     prisma,
     tx,
     storage,
@@ -854,6 +862,116 @@ describe('GuardianEvidenceService', () => {
       );
 
       expect(codeOf(error)).toBe(ErrorCode.GUARDIANSHIP_EVIDENCE_NOT_FOUND);
+    });
+  });
+});
+
+describe('GuardianEvidenceService: shared counter and the acting entry point (phase 3a)', () => {
+  const GUARDIAN_ID = '11111111-1111-4111-8111-111111111111';
+  const pdf = {
+    mimetype: 'application/pdf',
+    size: 1024,
+    buffer: Buffer.from('%PDF-1.7 minimal'),
+    originalname: 'form.pdf',
+  } as Express.Multer.File;
+
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('the guardian upload consumes the shared 20/h per-guardian counter', async () => {
+    const ctx = setup();
+    ctx.asGuardian();
+    await ctx.service.uploadForGuardian(GUARDIAN_ID, DEPENDENT, pdf);
+    expect(ctx.limiter.consume).toHaveBeenCalledWith(
+      `consent-evidence:${GUARDIAN_ID}`,
+      20,
+      3_600_000,
+    );
+  });
+
+  it('the 21st upload in the hour is a 429 and nothing is stored', async () => {
+    const ctx = setup();
+    ctx.asGuardian();
+    ctx.limiter.consume.mockRejectedValue(
+      Object.assign(new Error('Too Many Requests'), { status: 429 }),
+    );
+    await expect(
+      ctx.service.uploadForGuardian(GUARDIAN_ID, DEPENDENT, pdf),
+    ).rejects.toMatchObject({ status: 429 });
+    expect(ctx.storage.upload).not.toHaveBeenCalled();
+  });
+
+  describe('uploadWhileActing', () => {
+    const acting = {
+      kind: 'guardian_acting',
+      sub: DEPENDENT,
+      actor_sub: GUARDIAN_ID,
+    };
+
+    it('uploads for the acted dependent as the REAL guardian (never the dependent)', async () => {
+      const ctx = setup();
+      ctx.asGuardian();
+
+      const result = await ctx.service.uploadWhileActing(
+        acting,
+        DEPENDENT,
+        pdf,
+      );
+
+      expect(result).toHaveProperty('evidence_id');
+      // The guardian row is looked up for (dependent, GUARDIAN), not the other way round.
+      expect(
+        ctx.prisma.guardianships.findFirst.mock.calls[0][0].where,
+      ).toMatchObject({
+        dependent_user_id: DEPENDENT,
+        guardian_user_id: GUARDIAN_ID,
+      });
+      expect(ctx.limiter.consume).toHaveBeenCalledWith(
+        `consent-evidence:${GUARDIAN_ID}`,
+        20,
+        3_600_000,
+      );
+    });
+
+    it('refuses a path id that is NOT the acted dependent (no cross-dependent write)', async () => {
+      const ctx = setup();
+      await expect(
+        ctx.service.uploadWhileActing(
+          acting,
+          '99999999-9999-4999-8999-999999999999',
+          pdf,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACTING_FOR_SCOPE_DENIED,
+        status: 403,
+      });
+      expect(ctx.prisma.guardianships.findFirst).not.toHaveBeenCalled();
+      expect(ctx.storage.upload).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a plain user', { kind: 'user', sub: DEPENDENT, actor_sub: DEPENDENT }],
+      [
+        'a supervised teen',
+        { kind: 'supervised_user', sub: DEPENDENT, actor_sub: DEPENDENT },
+      ],
+      [
+        'a linked device',
+        { kind: 'linked_device', sub: DEPENDENT, actor_sub: DEPENDENT },
+      ],
+      [
+        'an acting principal that is its own actor',
+        { kind: 'guardian_acting', sub: DEPENDENT, actor_sub: DEPENDENT },
+      ],
+    ])('refuses %s', async (_label, principal) => {
+      const ctx = setup();
+      await expect(
+        ctx.service.uploadWhileActing(principal, DEPENDENT, pdf),
+      ).rejects.toMatchObject({ code: ErrorCode.ACTING_FOR_SCOPE_DENIED });
+      expect(ctx.storage.upload).not.toHaveBeenCalled();
     });
   });
 });
