@@ -19,11 +19,12 @@ const FLAG_ENV: Record<FamilyFeatureFlag, string> = {
 };
 
 /**
- * Reads the three family-profiles Phase 3 flags. Values are read on every call
- * (never cached) so a flag flip takes effect without a restart in tests, and
- * the defaults are all false. Joi converts the env value to a boolean; a raw
- * 'true' string (tests, or a config source that skipped validation) is
- * accepted too.
+ * Reads the three family-profiles Phase 3 flags. The service itself caches
+ * nothing (every call asks the ConfigService), but a deployed server reads the
+ * environment validated at boot: flipping a flag in production needs a RESTART.
+ * Only tests can flip one live, through `ConfigService.set`. The defaults are
+ * all false. Joi converts the env value to a boolean; a raw 'true' string
+ * (tests, or a config source that skipped validation) is accepted too.
  *
  * The consent gate, pending-guardian mode, teen link codes, security notices,
  * the guardian summary and the crons are NOT flagged on purpose: closing the
