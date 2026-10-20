@@ -983,3 +983,162 @@ describe('ConsentVerificationService.verify for teens and active memberships (ph
     expect(s.tx.guardianships.updateMany).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Phase 3c (FP3-62): the four-eyes rule on a minor CREATED from a club section.
+ * The rule is by USER ID, never by role: the service does not even receive the
+ * verifier's roles, so an admin who created the minor, or a creator who later
+ * lost the director role, is blocked exactly like anybody else.
+ */
+describe('ConsentVerificationService.verify for director-created minors (phase 3c)', () => {
+  const ADMIN_CREATOR = 'ffffffff-0000-4000-8000-0000000000a1';
+  const SECRETARY = 'eeeeeeee-0000-4000-8000-000000000003';
+
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const custody = (creator: string, uploader: string) =>
+    primaryRow({
+      guardian_user_id: null,
+      is_custodian: true,
+      consent_evidences: [
+        { evidence_id: 'ev-dir', uploaded_by_user_id: uploader },
+      ],
+      dependent: { dependent_profile: { created_by_user_id: creator } },
+    });
+
+  const nothingWritten = (s: ReturnType<typeof setup>) => {
+    expect(s.tx.guardianships.updateMany).not.toHaveBeenCalled();
+    expect(s.tx.guardianships.update).not.toHaveBeenCalled();
+    expect(s.tx.audit_logs.create).not.toHaveBeenCalled();
+    expect(s.actingCache.bump).not.toHaveBeenCalled();
+    expect(s.notifications.onConsentVerified).not.toHaveBeenCalled();
+    expect(s.membershipRequests.approve).not.toHaveBeenCalled();
+  };
+
+  it('A creates, uploads the form and calls verify: 403 CUSTODIAN_SELF_VERIFY and nothing is written (approve included)', async () => {
+    const s = setup();
+    s.setRow(custody(DIRECTOR, DIRECTOR));
+
+    const error = await rejection(
+      s.service.verify(SECTION, ASSIGNMENT, DIRECTOR, dto({ approve: true })),
+    );
+
+    expect(error.code).toBe(ErrorCode.GUARDIANSHIP_CUSTODIAN_SELF_VERIFY);
+    expect(error.getStatus()).toBe(403);
+    nothingWritten(s);
+  });
+
+  it('B (a different person) verifies; the audit row names B as the actor, and B may approve', async () => {
+    const s = setup();
+    s.setRow(custody(DIRECTOR, DIRECTOR));
+
+    const result = await s.service.verify(SECTION, ASSIGNMENT, DEPUTY, dto());
+
+    expect(result.guardianship.verified_by_user_id).toBe(DEPUTY);
+    expect(s.tx.audit_logs.create.mock.calls[0][0].data).toMatchObject({
+      action: 'consent_verified',
+      actor_user_id: DEPUTY,
+      target_user_id: DEPENDENT,
+      changes: expect.objectContaining({ custody: true }),
+    });
+    expect(s.membershipRequests.approve).toHaveBeenCalledWith(
+      SECTION,
+      ASSIGNMENT,
+      DEPUTY,
+    );
+  });
+
+  it('B uploaded the current form and then verifies: 403 (the uploader rule), nothing written', async () => {
+    const s = setup();
+    s.setRow(custody(DIRECTOR, DEPUTY));
+
+    const error = await rejection(
+      s.service.verify(SECTION, ASSIGNMENT, DEPUTY, dto()),
+    );
+
+    expect(error.code).toBe(ErrorCode.GUARDIANSHIP_CUSTODIAN_SELF_VERIFY);
+    nothingWritten(s);
+  });
+
+  it('a third person (neither creator nor uploader) verifies', async () => {
+    const s = setup();
+    s.setRow(custody(DIRECTOR, DEPUTY));
+
+    const result = await s.service.verify(
+      SECTION,
+      ASSIGNMENT,
+      SECRETARY,
+      dto(),
+    );
+
+    expect(result.guardianship.consent_status).toBe('verified');
+    expect(result.guardianship.verified_by_user_id).toBe(SECRETARY);
+  });
+
+  it('a creator who is also an admin is still blocked: the rule is by user id', async () => {
+    const s = setup();
+    s.setRow(custody(ADMIN_CREATOR, DEPUTY));
+
+    const error = await rejection(
+      s.service.verify(SECTION, ASSIGNMENT, ADMIN_CREATOR, dto()),
+    );
+
+    expect(error.code).toBe(ErrorCode.GUARDIANSHIP_CUSTODIAN_SELF_VERIFY);
+    nothingWritten(s);
+  });
+
+  it('stays blocked after the creator lost the director role (nothing about roles is consulted)', async () => {
+    const s = setup();
+    s.setRow(custody(ADMIN_CREATOR, DEPUTY));
+
+    // Same user id, called again later: the answer cannot depend on roles
+    // because the service never receives them.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const error = await rejection(
+        s.service.verify(SECTION, ASSIGNMENT, ADMIN_CREATOR, dto()),
+      );
+      expect(error.code).toBe(ErrorCode.GUARDIANSHIP_CUSTODIAN_SELF_VERIFY);
+    }
+    nothingWritten(s);
+  });
+
+  it('the creator verifying the PARENT row after a claim is allowed (the rule covers custody rows only, P3-A26)', async () => {
+    const s = setup();
+    // The parent redeemed the claim code: a non-custodian primary row, pending.
+    s.setRow(
+      primaryRow({
+        guardian_user_id: GUARDIAN,
+        is_custodian: false,
+        consent_evidences: [
+          { evidence_id: 'ev-parent', uploaded_by_user_id: GUARDIAN },
+        ],
+        dependent: { dependent_profile: { created_by_user_id: DIRECTOR } },
+      }),
+    );
+
+    const result = await s.service.verify(
+      SECTION,
+      ASSIGNMENT,
+      DIRECTOR,
+      dto({ approve: false }),
+    );
+
+    expect(result.guardianship.verified_by_user_id).toBe(DIRECTOR);
+  });
+
+  it('a live guardian can never verify (GUARDIAN_SELF_VERIFY), even when they are not the creator', async () => {
+    const s = setup();
+    s.setRow(custody(DIRECTOR, DEPUTY));
+    s.liveGuardians.add(GUARDIAN);
+
+    const error = await rejection(
+      s.service.verify(SECTION, ASSIGNMENT, GUARDIAN, dto()),
+    );
+
+    expect(error.code).toBe(ErrorCode.GUARDIANSHIP_GUARDIAN_SELF_VERIFY);
+    nothingWritten(s);
+  });
+});

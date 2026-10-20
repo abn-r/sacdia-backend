@@ -7,6 +7,7 @@ import {
   Body,
   ParseIntPipe,
   ParseUUIDPipe,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -27,6 +28,8 @@ import { MembershipRequestsService } from './membership-requests.service';
 import { RejectRequestDto, VerifyConsentDto } from './dto';
 import { ConsentVerificationService } from './consent-verification.service';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { namedThrottle } from '../config/throttler.helpers';
 import { ConsentEvidenceFilePipe } from '../guardianships/consent-evidence-file.pipe';
 import { GuardianEvidenceService } from '../guardianships/guardian-evidence.service';
@@ -40,6 +43,13 @@ import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 type CurrentUserPayload = {
   sub: string;
 };
+
+/** What PermissionsGuard leaves on the request after a successful check. */
+type AuthorizedRequest = {
+  authorization?: { effective?: { permissions?: string[] } };
+};
+
+const APPROVE_PERMISSION = 'club_members:approve';
 
 @ApiTags('membership-requests')
 @Controller('club-sections/:clubSectionId/membership-requests')
@@ -263,12 +273,15 @@ export class MembershipRequestsController {
   }
   @Post(':assignmentId/verify-consent')
   @HttpCode(200)
-  @RequirePermissions('club_members:approve')
+  @RequirePermissions({
+    permissions: [APPROVE_PERMISSION, 'consent:verify'],
+    mode: 'any',
+  })
   @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({
     summary: 'Verificar el consentimiento del tutor de un menor',
     description:
-      'El director confirma haber revisado la ficha firmada. Requiere ficha vigente subida (409 GUARDIANSHIP_EVIDENCE_REQUIRED). Un tutor vigente del menor nunca puede verificar su consentimiento (403 GUARDIANSHIP_GUARDIAN_SELF_VERIFY). Si el menor está bajo custodia del club, quien subió la ficha, quien creó al menor o el tutor que lo cedió no pueden verificar (403 GUARDIANSHIP_CUSTODIAN_SELF_VERIFY). Con approve=true también aprueba la solicitud; si la aprobación falla el consentimiento queda verificado y `approve_error` trae el código (reintentar la misma llamada). Idempotente.',
+      'Basta club_members:approve o consent:verify; aprobar la solicitud (approve=true) exige además club_members:approve (403 MR_APPROVE_PERMISSION_REQUIRED). El director confirma haber revisado la ficha firmada. Requiere ficha vigente subida (409 GUARDIANSHIP_EVIDENCE_REQUIRED). Un tutor vigente del menor nunca puede verificar su consentimiento (403 GUARDIANSHIP_GUARDIAN_SELF_VERIFY). Si el menor está bajo custodia del club, quien subió la ficha, quien creó al menor o el tutor que lo cedió no pueden verificar (403 GUARDIANSHIP_CUSTODIAN_SELF_VERIFY). Con approve=true también aprueba la solicitud; si la aprobación falla el consentimiento queda verificado y `approve_error` trae el código (reintentar la misma llamada). Idempotente.',
   })
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiParam({ name: 'assignmentId', type: String })
@@ -281,7 +294,7 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 403,
     description:
-      'Sin club_members:approve, GUARDIANSHIP_GUARDIAN_SELF_VERIFY o GUARDIANSHIP_CUSTODIAN_SELF_VERIFY',
+      'Sin club_members:approve ni consent:verify, MR_APPROVE_PERMISSION_REQUIRED (approve=true sin club_members:approve), GUARDIANSHIP_GUARDIAN_SELF_VERIFY o GUARDIANSHIP_CUSTODIAN_SELF_VERIFY',
   })
   @ApiResponse({
     status: 404,
@@ -296,7 +309,20 @@ export class MembershipRequestsController {
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
     @Body() dto: VerifyConsentDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() request: AuthorizedRequest,
   ) {
+    // consent:verify alone is verify-only (a reviewer who is not a member of the
+    // club's leadership, e.g. a coordinator). Approving the membership stays
+    // with club_members:approve. Checked BEFORE anything is read or written, and
+    // fails closed when the guard left no resolved authorization on the request.
+    if (
+      dto.approve === true &&
+      !(request.authorization?.effective?.permissions ?? []).includes(
+        APPROVE_PERMISSION,
+      )
+    ) {
+      throw new AppForbiddenException(ErrorCode.MR_APPROVE_PERMISSION_REQUIRED);
+    }
     const data = await this.consentVerification.verify(
       clubSectionId,
       assignmentId,

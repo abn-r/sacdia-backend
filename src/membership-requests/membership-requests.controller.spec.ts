@@ -4,6 +4,8 @@ import {
   AUTHORIZATION_RESOURCE_KEY,
   PERMISSIONS_KEY,
 } from '../common/decorators';
+import { AppException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { GuardianEvidenceService } from '../guardianships/guardian-evidence.service';
 import { ConsentVerificationService } from './consent-verification.service';
@@ -93,32 +95,107 @@ describe('MembershipRequestsController (consent)', () => {
       );
     }
   });
-  it('verify-consent delegates with the section, the request, the director and the body', async () => {
-    const dto = { confirm_paper_form_reviewed: true, approve: true };
+  describe('verify-consent', () => {
+    const request = (permissions?: string[]) =>
+      ({
+        authorization: permissions ? { effective: { permissions } } : undefined,
+      }) as never;
+    const rejection = async (promise: Promise<unknown>) => {
+      try {
+        await promise;
+      } catch (error) {
+        return error as AppException;
+      }
+      throw new Error('expected a rejection');
+    };
 
-    expect(await controller.verifyConsent(5, ASSIGNMENT, dto, USER)).toEqual({
-      status: 'success',
-      data: { approve_error: null },
-    });
-    expect(verification.verify).toHaveBeenCalledWith(
-      5,
-      ASSIGNMENT,
-      'director-1',
-      dto,
-    );
-  });
+    it('delegates with the section, the request, the verifier and the body when the verifier can also approve', async () => {
+      const dto = { confirm_paper_form_reviewed: true, approve: true };
 
-  it('verify-consent needs club_members:approve on the club_assignment resource, answers 200 and has no acting scope', () => {
-    const handler = MembershipRequestsController.prototype.verifyConsent;
-    expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
-      permissions: ['club_members:approve'],
-      mode: 'all',
+      expect(
+        await controller.verifyConsent(
+          5,
+          ASSIGNMENT,
+          dto,
+          USER,
+          request(['club_members:approve', 'consent:verify']),
+        ),
+      ).toEqual({
+        status: 'success',
+        data: { approve_error: null },
+      });
+      expect(verification.verify).toHaveBeenCalledWith(
+        5,
+        ASSIGNMENT,
+        'director-1',
+        dto,
+      );
     });
-    expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
-      type: 'club_assignment',
-      idParam: 'assignmentId',
+
+    it('a verify-only reviewer (consent:verify) may verify without approving', async () => {
+      const dto = { confirm_paper_form_reviewed: true, approve: false };
+
+      await controller.verifyConsent(
+        5,
+        ASSIGNMENT,
+        dto,
+        USER,
+        request(['consent:verify']),
+      );
+      await controller.verifyConsent(
+        5,
+        ASSIGNMENT,
+        { confirm_paper_form_reviewed: true },
+        USER,
+        request(['consent:verify']),
+      );
+
+      expect(verification.verify).toHaveBeenCalledTimes(2);
     });
-    expect(Reflect.getMetadata('__httpCode__', handler)).toBe(200);
-    expect(Reflect.getMetadata(ACTING_SCOPE_KEY, handler)).toBeUndefined();
+
+    it('approve:true without club_members:approve is 403 MR_APPROVE_PERMISSION_REQUIRED and the service is never called', async () => {
+      const error = await rejection(
+        controller.verifyConsent(
+          5,
+          ASSIGNMENT,
+          { confirm_paper_form_reviewed: true, approve: true },
+          USER,
+          request(['consent:verify']),
+        ),
+      );
+
+      expect(error.code).toBe(ErrorCode.MR_APPROVE_PERMISSION_REQUIRED);
+      expect(error.getStatus()).toBe(403);
+      expect(verification.verify).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the request carries no resolved authorization', async () => {
+      const error = await rejection(
+        controller.verifyConsent(
+          5,
+          ASSIGNMENT,
+          { confirm_paper_form_reviewed: true, approve: true },
+          USER,
+          request(undefined),
+        ),
+      );
+
+      expect(error.code).toBe(ErrorCode.MR_APPROVE_PERMISSION_REQUIRED);
+      expect(verification.verify).not.toHaveBeenCalled();
+    });
+
+    it('accepts club_members:approve or consent:verify on the club_assignment resource, answers 200 and has no acting scope', () => {
+      const handler = MembershipRequestsController.prototype.verifyConsent;
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+        permissions: ['club_members:approve', 'consent:verify'],
+        mode: 'any',
+      });
+      expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
+        type: 'club_assignment',
+        idParam: 'assignmentId',
+      });
+      expect(Reflect.getMetadata('__httpCode__', handler)).toBe(200);
+      expect(Reflect.getMetadata(ACTING_SCOPE_KEY, handler)).toBeUndefined();
+    });
   });
 });
