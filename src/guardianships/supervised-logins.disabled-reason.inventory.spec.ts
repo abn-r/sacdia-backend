@@ -5,17 +5,18 @@ import { join } from 'node:path';
  * Verify W5 (FP3-16): `supervised_logins.disabled_reason` is limited by a CHECK.
  * The 3a migration allowed ('guardian', 'admin', 'unlinked_purged'); the 3b
  * migration (20261021120000_family_linked_devices) widens it with
- * 'age_majority', the value FP3-16 records at the age of majority. NO code path
- * may write a value the CHECK rejects (it would throw at runtime, inside a
- * transaction). This inventory scans every source file for
- * `disabled_reason: '<literal>'` and fails on any value outside the CHECK.
+ * 'age_majority'. NO code path may write a value the CHECK rejects (it would
+ * throw at runtime, inside a transaction). This inventory scans every source
+ * file for `disabled_reason: '<literal>'` and fails on any value outside the
+ * CHECK.
  *
  * It reads the allowed list from the LAST migration that (re)defines the CHECK,
  * so it follows a later widening automatically.
  *
- * A row disabled with 'age_majority' keeps `disabled_at` set (disabled_ck ties
- * the two): the pending-teen cron and its partial index skip it
- * (`disabled_at IS NULL`), and reactivate refuses it (the user is an adult).
+ * 'age_majority' is RESERVED and unused (FP3-16 ruling, option A, 2026-10-20):
+ * at the age of majority the principal is derived from the birthday on every
+ * request and the row is left alone, because a row with `disabled_at` blocks
+ * the sign-in and a handle-only adult would lose the account.
  */
 const ROOT = join(__dirname, '..');
 const MIGRATIONS = join(__dirname, '../../prisma/migrations');
