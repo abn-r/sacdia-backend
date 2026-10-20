@@ -1,9 +1,11 @@
 import { Controller, Get, Post } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ActingScope } from '../../auth/acting-for/acting-scope.decorator';
+import { SkipMfaCheck } from '../decorators/skip-mfa-check.decorator';
 import {
   actingForForbidden,
   actingForHeaderInvalid,
+  supervisedAccessRevoked,
 } from '../../auth/acting-for/acting-for.errors';
 import { ErrorCode } from '../errors/error-codes';
 import { AppUnauthorizedException } from '../errors/app.exception';
@@ -27,6 +29,12 @@ class ProbeController {
 
   @Get('unscoped')
   unscoped() {
+    return 'ok';
+  }
+
+  @Post('mfa-verify')
+  @SkipMfaCheck()
+  mfaVerify() {
     return 'ok';
   }
 }
@@ -54,6 +62,30 @@ const actingPrincipal = (scopes: string[]) => ({
   actor_sub: 'guardian',
   kind: 'guardian_acting',
   acting_for: true,
+  scopes,
+  mfa_pending: false,
+});
+
+const teenPrincipal = (
+  scopes: string[],
+  supervision: 'pending_guardian' | 'active' = 'pending_guardian',
+) => ({
+  sub: 'teen',
+  user_id: 'teen',
+  actor_sub: 'teen',
+  kind: 'supervised_user',
+  acting_for: false,
+  supervision,
+  scopes,
+  mfa_pending: false,
+});
+
+const devicePrincipal = (scopes: string[]) => ({
+  sub: 'child',
+  user_id: 'child',
+  actor_sub: 'child',
+  kind: 'linked_device',
+  acting_for: false,
   scopes,
   mfa_pending: false,
 });
@@ -126,6 +158,95 @@ describe('acting-for scope enforcement in the passport guards', () => {
       }
     });
 
+    it('denies a supervised teen on an unscoped route with PRINCIPAL_SCOPE_DENIED (403)', () => {
+      try {
+        guard.handleRequest(
+          null,
+          teenPrincipal(['self:read']),
+          null,
+          contextFor('unscoped'),
+        );
+        throw new Error('expected a denial');
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: ErrorCode.PRINCIPAL_SCOPE_DENIED,
+          status: 403,
+        });
+        expect((error as any).getResponse().details).toEqual({
+          required_scope: null,
+          kind: 'supervised_user',
+          supervision: 'pending_guardian',
+        });
+      }
+    });
+
+    it('denies a linked device that lacks the declared scope and allows one that holds it', () => {
+      expect(() =>
+        guard.handleRequest(
+          null,
+          devicePrincipal(['self:read']),
+          null,
+          contextFor('write'),
+        ),
+      ).toThrow(
+        expect.objectContaining({ code: ErrorCode.PRINCIPAL_SCOPE_DENIED }),
+      );
+      const device = devicePrincipal(['profile:write']);
+      expect(guard.handleRequest(null, device, null, contextFor('write'))).toBe(
+        device,
+      );
+    });
+
+    it('lets an aal1 teen reach the @SkipMfaCheck route that completes the second factor, but nothing else', () => {
+      const aal1Teen = { ...teenPrincipal(['self:read']), mfa_pending: true };
+      expect(
+        guard.handleRequest(null, aal1Teen, null, contextFor('mfaVerify')),
+      ).toBe(aal1Teen);
+      // An aal1 token still cannot use regular routes.
+      expect(() =>
+        guard.handleRequest(null, aal1Teen, null, contextFor('scoped')),
+      ).toThrow(
+        expect.objectContaining({ code: ErrorCode.GUARD_MFA_REQUIRED }),
+      );
+    });
+
+    it('does not extend the MFA exemption to a device or a guardian acting', () => {
+      const aal1Device = {
+        ...devicePrincipal(['self:read']),
+        mfa_pending: false,
+      };
+      expect(() =>
+        guard.handleRequest(null, aal1Device, null, contextFor('mfaVerify')),
+      ).toThrow(
+        expect.objectContaining({ code: ErrorCode.PRINCIPAL_SCOPE_DENIED }),
+      );
+      expect(() =>
+        guard.handleRequest(
+          null,
+          actingPrincipal(['self:read']),
+          null,
+          contextFor('mfaVerify'),
+        ),
+      ).toThrow(
+        expect.objectContaining({ code: ErrorCode.ACTING_FOR_SCOPE_DENIED }),
+      );
+    });
+
+    it('rethrows AUTH_SUPERVISED_ACCESS_REVOKED instead of converting it to GUARD_JWT_UNAUTHORIZED', () => {
+      const error = supervisedAccessRevoked();
+      let thrown: unknown;
+      try {
+        guard.handleRequest(error, false, null, contextFor('scoped'));
+      } catch (caught) {
+        thrown = caught;
+      }
+      expect(thrown).toBe(error);
+      expect((thrown as any).code).toBe(
+        ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+      );
+      expect((thrown as any).getStatus()).toBe(401);
+    });
+
     it('still maps ordinary strategy failures to GUARD_JWT_UNAUTHORIZED', () => {
       expect(() =>
         guard.handleRequest(
@@ -146,6 +267,9 @@ describe('acting-for scope enforcement in the passport guards', () => {
       actingPrincipal(['self:read']),
       actingPrincipal(['self:read', 'profile:write']),
       actingPrincipal([]),
+      teenPrincipal(['self:read']),
+      teenPrincipal(['self:read', 'profile:write'], 'active'),
+      devicePrincipal(['self:read']),
     ];
     const methods: Array<keyof ProbeController> = [
       'scoped',
@@ -204,6 +328,37 @@ describe('acting-for scope enforcement in the passport guards', () => {
 
     it('keeps an acting principal that holds the declared scope', () => {
       const principal = actingPrincipal(['self:read']);
+      expect(
+        optionalGuard.handleRequest(
+          null,
+          principal,
+          null,
+          contextFor('scoped'),
+        ),
+      ).toBe(principal);
+    });
+
+    it('downgrades a supervised teen and a device to anonymous on an unscoped route', () => {
+      expect(
+        optionalGuard.handleRequest(
+          null,
+          teenPrincipal(['self:read']),
+          null,
+          contextFor('unscoped'),
+        ),
+      ).toBeNull();
+      expect(
+        optionalGuard.handleRequest(
+          null,
+          devicePrincipal(['self:read']),
+          null,
+          contextFor('unscoped'),
+        ),
+      ).toBeNull();
+    });
+
+    it('keeps a teen that holds the declared scope', () => {
+      const principal = teenPrincipal(['self:read'], 'active');
       expect(
         optionalGuard.handleRequest(
           null,

@@ -426,11 +426,84 @@ export class AuthController {
               type: 'object',
               nullable: true,
               description:
-                'Resumen de tutoría del usuario. Null mientras se actúa por un dependiente.',
+                'Resumen de tutoría del usuario. Null mientras se actúa por un dependiente y para menores supervisados.',
               properties: {
                 is_guardian: { type: 'boolean', example: true },
                 dependents_count: { type: 'number', example: 2 },
               },
+            },
+            principal: {
+              type: 'object',
+              description:
+                'Tipo de principal resuelto por el servidor (nunca por un claim del token).',
+              properties: {
+                kind: {
+                  type: 'string',
+                  enum: [
+                    'user',
+                    'guardian_acting',
+                    'supervised_user',
+                    'linked_device',
+                  ],
+                },
+                scopes: {
+                  type: 'array',
+                  nullable: true,
+                  items: { type: 'string' },
+                },
+                supervision: {
+                  type: 'object',
+                  nullable: true,
+                  description:
+                    'Solo para supervised_user. Sin datos de contacto de los tutores.',
+                  properties: {
+                    status: {
+                      type: 'string',
+                      enum: ['pending_guardian', 'active'],
+                    },
+                    pending_since: {
+                      type: 'string',
+                      format: 'date-time',
+                      nullable: true,
+                    },
+                    guardians: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          display_name: { type: 'string' },
+                          relationship_type_name: {
+                            type: 'string',
+                            nullable: true,
+                          },
+                        },
+                      },
+                    },
+                    summary_visible_to_guardians: {
+                      type: 'boolean',
+                      example: true,
+                    },
+                    days_left: { type: 'number', nullable: true, example: 83 },
+                  },
+                },
+              },
+            },
+            mode: {
+              type: 'string',
+              enum: ['adult', 'teen_pending', 'teen_supervised'],
+            },
+            family_features: {
+              type: 'object',
+              properties: {
+                teen_login: { type: 'boolean' },
+                linked_device: { type: 'boolean' },
+                director_create_minor: { type: 'boolean' },
+              },
+            },
+            analytics_anonymous: {
+              type: 'boolean',
+              description:
+                'true para menores de edad y edad desconocida: la app nunca identifica en PostHog/Sentry.',
             },
           },
           required: [

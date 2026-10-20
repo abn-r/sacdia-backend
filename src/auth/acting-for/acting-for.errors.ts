@@ -42,3 +42,45 @@ export function actingForScopeDenied(
     { required_scope: requiredScope },
   );
 }
+
+/**
+ * Scope denial for the non-guardian restricted kinds (`supervised_user`,
+ * `linked_device`). It is a DIFFERENT code from ACTING_FOR_SCOPE_DENIED on
+ * purpose: the app's acting interceptor exits "acting" on the latter, and a
+ * teen or a device is never acting for anyone.
+ */
+export function principalScopeDenied(
+  requiredScope: string | null,
+  kind: string,
+  supervision?: string,
+): AppException {
+  return new AppException(
+    ErrorCode.PRINCIPAL_SCOPE_DENIED,
+    HttpStatus.FORBIDDEN,
+    undefined,
+    {
+      required_scope: requiredScope,
+      kind,
+      ...(supervision !== undefined ? { supervision } : {}),
+    },
+  );
+}
+
+/**
+ * True for the 401 the supervised-principal pipeline raises on purpose
+ * (disabled, reset, frozen). Guards rethrow it untouched so the app can show
+ * the reason instead of the generic GUARD_JWT_UNAUTHORIZED.
+ */
+export function isSupervisedAccessError(err: unknown): err is AppException {
+  return (
+    err instanceof AppException &&
+    err.code === ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED
+  );
+}
+
+export function supervisedAccessRevoked(): AppException {
+  return new AppException(
+    ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+    HttpStatus.UNAUTHORIZED,
+  );
+}

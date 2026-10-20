@@ -42,6 +42,8 @@ import { LegalService } from '../legal/legal.service';
 import { ageToday, parseCalendarDate } from '../common/age/age.util';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import type { AuthPrincipal } from './acting-for/auth-principal';
+import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
+import { SupervisionStateService } from '../guardianships/supervision-state.service';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -88,6 +90,8 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly legalService: LegalService,
     private readonly countryAgePolicy: CountryAgePolicyService,
+    private readonly familyFlags: FamilyFeatureFlagsService,
+    private readonly supervisionState: SupervisionStateService,
   ) {}
 
   private async assertRegistrationAge(dto: RegisterDto): Promise<void> {
@@ -686,18 +690,33 @@ export class AuthService {
       | 'guardianship_id'
       | 'consent_status'
       | 'scopes'
+      | 'kind'
+      | 'supervision'
     >,
   ) {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
     const acting = principal?.acting_for === true;
-    const [signedUserImage, legal, family] = await Promise.all([
-      this.resolvePrivateProfilePicture(resolved.profile.user_image),
-      // Outside the authorization cache: acceptance must reflect the DB right away.
-      this.legalService.getStatus(userId),
-      // Hidden while acting: a dependent has no family of its own to show.
-      acting ? Promise.resolve(null) : this.loadFamilySummary(userId),
-    ]);
+    const supervisionStatus =
+      principal?.kind === 'supervised_user' ? principal.supervision : undefined;
+    const [signedUserImage, legal, family, supervision, analyticsAnonymous] =
+      await Promise.all([
+        this.resolvePrivateProfilePicture(resolved.profile.user_image),
+        // Outside the authorization cache: acceptance must reflect the DB right away.
+        this.legalService.getStatus(userId),
+        // Hidden while acting (a dependent has no family of its own to show) and
+        // for supervised teens (they are not guardians).
+        acting || supervisionStatus
+          ? Promise.resolve(null)
+          : this.loadFamilySummary(userId),
+        supervisionStatus
+          ? this.supervisionState.describe(userId, supervisionStatus)
+          : Promise.resolve(null),
+        this.isAnalyticsAnonymous(
+          resolved.profile.birthday,
+          resolved.profile.country_id,
+        ),
+      ]);
 
     return {
       status: 'success',
@@ -721,8 +740,35 @@ export class AuthService {
             }
           : null,
         family,
+        // Phase 3a. The app routes by `mode` and decides analytics BEFORE
+        // identifying anyone: an absent or unknown field means anonymous.
+        principal: {
+          kind: principal?.kind ?? 'user',
+          scopes: principal?.scopes ?? null,
+          supervision,
+        },
+        mode: !supervisionStatus
+          ? 'adult'
+          : supervisionStatus === 'active'
+            ? 'teen_supervised'
+            : 'teen_pending',
+        family_features: this.familyFlags.getAll(),
+        analytics_anonymous: analyticsAnonymous,
       },
     };
+  }
+
+  /**
+   * True for anyone under the age of majority and for an unknown age (NULL
+   * birthday): the app never identifies them in PostHog or Sentry. Fails closed.
+   */
+  private async isAnalyticsAnonymous(
+    birthday: Date | null,
+    countryId: number | null,
+  ): Promise<boolean> {
+    if (!birthday) return true;
+    const policy = await this.countryAgePolicy.getPolicy(countryId);
+    return ageToday(birthday, policy.timeZone) < policy.ageOfMajority;
   }
 
   /**

@@ -820,5 +820,18 @@
   "GUARDIANSHIP_CUSTODIAN_SELF_VERIFY": "A minor under club custody must be verified by another authorized person of the club, not by whoever uploaded the form or took the minor into custody",
   "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirm that you reviewed the signed paper form before verifying the consent",
   "GUARDIANSHIP_CONSENT_ALREADY_VERIFIED": "This minor's guardian consent is already verified: the signed form can no longer be replaced",
-  "GUARDIANSHIP_GUARDIAN_SELF_VERIFY": "A guardian of this minor cannot verify their own consent: another authorized person of the club must do it"
+  "GUARDIANSHIP_GUARDIAN_SELF_VERIFY": "A guardian of this minor cannot verify their own consent: another authorized person of the club must do it",
+  "PRINCIPAL_SCOPE_DENIED": "This action is not available for your account type",
+  "AUTH_SUPERVISED_ACCESS_REVOKED": "Your access was disabled or changed. Sign in again or ask your guardian",
+  "AUTH_SUPERVISED_LOGIN_DISABLED": "Your guardian disabled sign-in for this account",
+  "AUTH_ACCOUNT_FROZEN": "This account was removed because no guardian was linked",
+  "AUTH_LOGIN_LOCKED": "Too many attempts. Try again later",
+  "USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN": "Changing the date of birth requires your guardian",
+  "SUPERVISED_LOGIN_NOT_ELIGIBLE": "This minor cannot have their own sign-in",
+  "SUPERVISED_LOGIN_ALREADY_ENABLED": "Own sign-in is already enabled",
+  "SUPERVISED_LOGIN_NOT_FOUND": "This minor has no own sign-in",
+  "SUPERVISED_LOGIN_EMAIL_UNAVAILABLE": "That email is not available",
+  "SUPERVISED_LOGIN_PASSWORD_INVALID": "The password does not meet the security requirements",
+  "GUARDIANSHIP_CONSENT_NOT_VERIFIED": "This minor's consent is not verified yet",
+  "FAMILY_FEATURE_DISABLED": "This feature is not available right now"
 }

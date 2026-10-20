@@ -24,6 +24,7 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { ageToday, parseCalendarDate } from '../common/age/age.util';
 import type { AuthPrincipal } from '../auth/acting-for/auth-principal';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 
 @Injectable()
 export class UsersService {
@@ -35,6 +36,7 @@ export class UsersService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly countryAgePolicy: CountryAgePolicyService,
+    private readonly actingForCache: ActingForCache,
   ) {}
 
   private async ensureUserExists(userId: string) {
@@ -281,6 +283,78 @@ export class UsersService {
     }
   }
 
+  /**
+   * A supervised teen cannot move their own birthday: lowering it could dodge
+   * the consent gate, raising it past the age of majority would shed the
+   * supervision. The guardian (or an admin) corrects it instead.
+   */
+  private assertSupervisedBirthdayLocked(
+    userId: string,
+    updateUserDto: UpdateUserDto,
+    actor?: Pick<AuthPrincipal, 'sub' | 'kind'>,
+  ): void {
+    if (
+      updateUserDto.birthday !== undefined &&
+      actor?.kind === 'supervised_user' &&
+      actor.sub === userId
+    ) {
+      throw new AppUnprocessableEntityException(
+        ErrorCode.USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN,
+      );
+    }
+  }
+
+  /**
+   * After a birthday change: drop every cached principal decision (the age may
+   * have crossed the majority or the teen range) and make sure an account
+   * holder who now falls in the supervised range has the `self_registered`
+   * supervised_logins row that starts the guardian-less clock. Idempotent.
+   */
+  private async afterBirthdayChanged(
+    userId: string,
+    birthday: Date | null,
+    countryId: number | null,
+  ): Promise<void> {
+    try {
+      if (birthday) {
+        const policy = await this.countryAgePolicy.getPolicy(countryId);
+        const age = ageToday(birthday, policy.timeZone);
+        if (age >= policy.minSelfLoginAge && age < policy.ageOfMajority) {
+          const holdsAccount =
+            (await this.prisma.account.count({ where: { userId } })) > 0;
+          if (holdsAccount) {
+            const guarded = await this.prisma.guardianships.count({
+              where: {
+                dependent_user_id: userId,
+                is_custodian: false,
+                consent_status: { not: 'revoked' },
+              },
+            });
+            await this.prisma.supervised_logins.createMany({
+              data: [
+                {
+                  user_id: userId,
+                  method: 'email',
+                  origin: 'self_registered',
+                  password_set_by: 'self',
+                  pending_since: guarded > 0 ? null : new Date(),
+                },
+              ],
+              skipDuplicates: true,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Supervised row sync failed after a birthday change for ${userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    await this.actingForCache.bump(userId);
+  }
+
   async update(
     userId: string,
     updateUserDto: UpdateUserDto,
@@ -289,6 +363,7 @@ export class UsersService {
     // Validar que el usuario existe
     const existingUser = await this.ensureUserExists(userId);
     this.assertNoSelfServiceGeographyUpdate(updateUserDto);
+    this.assertSupervisedBirthdayLocked(userId, updateUserDto, actor);
 
     if (
       updateUserDto.birthday !== undefined &&
@@ -329,6 +404,14 @@ export class UsersService {
         modified_at: true,
       },
     });
+
+    if (updateUserDto.birthday !== undefined) {
+      await this.afterBirthdayChanged(
+        userId,
+        updatedUser.birthday,
+        updatedUser.country_id,
+      );
+    }
 
     this.logger.log(`User updated: ${userId}`);
 

@@ -8,10 +8,13 @@ import { accessJwtClaims } from '../../common/constants/jwt-audiences';
 import { runWithAuditContext } from '../../audit-logs/audit-request-context';
 import { getAuditContext } from '../../audit-logs/audit-request-context';
 import { ActingForResolver } from '../acting-for/acting-for.resolver';
+import { SupervisedPrincipalResolver } from '../supervised/supervised-principal.resolver';
 import {
   ACTING_GRANT_MEMO,
   GUARDIAN_PENDING_SCOPES,
   GUARDIAN_VERIFIED_SCOPES,
+  TEEN_PENDING_SCOPES,
+  TEEN_SCOPES,
 } from '../acting-for/auth-principal';
 
 describe('JwtStrategy', () => {
@@ -40,12 +43,18 @@ describe('JwtStrategy', () => {
     resolve: jest.fn(),
   };
 
+  const mockSupervisedResolver = {
+    resolveForRequest: jest.fn(),
+    isSessionActive: jest.fn(),
+  };
+
   const buildStrategy = (degradedMode?: string) =>
     new JwtStrategy(
       buildConfigService(degradedMode),
       mockTokenBlacklistService as unknown as TokenBlacklistService,
       mockPrisma as unknown as PrismaService,
       mockActingResolver as unknown as ActingForResolver,
+      mockSupervisedResolver as unknown as SupervisedPrincipalResolver,
     );
 
   const buildReq = (token: string, headers: Record<string, unknown> = {}) =>
@@ -66,6 +75,12 @@ describe('JwtStrategy', () => {
     mockTokenBlacklistService.checkToken.mockResolvedValue('ok');
     mockTokenBlacklistService.checkUserTokens.mockResolvedValue('ok');
     mockActingResolver.resolve.mockReset();
+    mockSupervisedResolver.resolveForRequest.mockReset();
+    mockSupervisedResolver.resolveForRequest.mockResolvedValue({
+      state: 'adult',
+    });
+    mockSupervisedResolver.isSessionActive.mockReset();
+    mockSupervisedResolver.isSessionActive.mockResolvedValue(true);
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
@@ -597,6 +612,295 @@ describe('JwtStrategy', () => {
         ),
       ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
       expect(mockTokenBlacklistService.checkToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('supervised principal (server-side kind)', () => {
+    const TEEN = '33333333-3333-4333-8333-333333333333';
+    const SID = '0b1c7d1e-2222-4444-8888-bbbbbbbbbbbb';
+    const teenPayload = (overrides: Record<string, unknown> = {}) =>
+      accessPayload({ sub: TEEN, sid: SID, ...overrides });
+
+    const pending = { state: 'supervised', supervision: 'pending_guardian' };
+    const active = { state: 'supervised', supervision: 'active' };
+
+    it('adults keep the exact Phase 2 principal (regression snapshot)', async () => {
+      const result = await buildStrategy().validate(
+        buildReq('t'),
+        accessPayload({ sid: SID }),
+      );
+
+      expect(result).toEqual({
+        sub: 'user-123',
+        userId: 'user-123',
+        user_id: 'user-123',
+        email: 'user@example.com',
+        mfa_pending: false,
+        sid: SID,
+        kind: 'user',
+        actor_sub: 'user-123',
+        acting_for: false,
+        scopes: null,
+      });
+      expect(mockSupervisedResolver.isSessionActive).not.toHaveBeenCalled();
+    });
+
+    it('builds a pending supervised_user with the TEEN_PENDING scopes', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(pending);
+
+      const result = await buildStrategy().validate(
+        buildReq('t'),
+        teenPayload(),
+      );
+
+      expect(result).toMatchObject({
+        sub: TEEN,
+        userId: TEEN,
+        user_id: TEEN,
+        actor_sub: TEEN,
+        acting_for: false,
+        kind: 'supervised_user',
+        supervision: 'pending_guardian',
+        scopes: TEEN_PENDING_SCOPES,
+        sid: SID,
+        mfa_pending: false,
+      });
+    });
+
+    it('builds an active supervised_user with the TEEN scopes', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
+
+      const result = await buildStrategy().validate(
+        buildReq('t'),
+        teenPayload(),
+      );
+
+      expect(result).toMatchObject({
+        kind: 'supervised_user',
+        supervision: 'active',
+        scopes: TEEN_SCOPES,
+      });
+    });
+
+    it('resolves from the subject of the token, passing the request for the memo', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
+      const req = buildReq('t');
+
+      await buildStrategy().validate(req, teenPayload());
+
+      expect(mockSupervisedResolver.resolveForRequest).toHaveBeenCalledWith(
+        req,
+        TEEN,
+      );
+    });
+
+    it('gives password, social and refresh tokens the same kind (no claim is involved)', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
+      const strategy = buildStrategy();
+
+      const kinds = await Promise.all(
+        [
+          teenPayload(),
+          teenPayload({ email: null }),
+          teenPayload({ iat: 1800000000 }),
+        ].map(
+          async (payload) =>
+            (await strategy.validate(buildReq('t'), payload)).kind,
+        ),
+      );
+
+      expect(kinds).toEqual([
+        'supervised_user',
+        'supervised_user',
+        'supervised_user',
+      ]);
+    });
+
+    it('ignores a forged kind claim: an adult stays a user, whatever the token says', async () => {
+      const result = await buildStrategy().validate(
+        buildReq('t'),
+        accessPayload({ kind: 'supervised_user', scopes: ['self:read'] }),
+      );
+
+      expect(result).toMatchObject({ kind: 'user', scopes: null });
+    });
+
+    it('ignores a forged kind:user claim on a teen: the server derivation wins', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(pending);
+
+      const result = await buildStrategy().validate(
+        buildReq('t'),
+        teenPayload({ kind: 'user', scopes: null }),
+      );
+
+      expect(result.kind).toBe('supervised_user');
+      expect(result.scopes).toBe(TEEN_PENDING_SCOPES);
+    });
+
+    it('a blocked teen (disabled, frozen) gets 401 AUTH_SUPERVISED_ACCESS_REVOKED', async () => {
+      for (const cause of ['login_disabled', 'frozen']) {
+        mockSupervisedResolver.resolveForRequest.mockResolvedValue({
+          state: 'blocked',
+          cause,
+        });
+
+        await expect(
+          buildStrategy().validate(buildReq('t'), teenPayload()),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+          status: 401,
+        });
+      }
+    });
+
+    it('rejects with 401 when the session of the token was deleted (reset / disable inside the 8h JWT)', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
+      mockSupervisedResolver.isSessionActive.mockResolvedValue(false);
+
+      await expect(
+        buildStrategy().validate(buildReq('t'), teenPayload()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_SUPERVISED_ACCESS_REVOKED,
+        status: 401,
+      });
+      expect(mockSupervisedResolver.isSessionActive).toHaveBeenCalledWith(
+        TEEN,
+        SID,
+      );
+    });
+
+    it('checks the session with a null sid when the token has none (MFA completion tokens)', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
+
+      await buildStrategy().validate(
+        buildReq('t'),
+        teenPayload({ sid: undefined }),
+      );
+
+      expect(mockSupervisedResolver.isSessionActive).toHaveBeenCalledWith(
+        TEEN,
+        null,
+      );
+    });
+
+    it('answers 503 when the supervised lookup cannot be performed (never fails open)', async () => {
+      const { AppServiceUnavailableException } = jest.requireActual(
+        '../../common/errors/app.exception',
+      );
+      mockSupervisedResolver.resolveForRequest.mockRejectedValue(
+        new AppServiceUnavailableException(
+          ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+        ),
+      );
+
+      await expect(
+        buildStrategy().validate(buildReq('t'), teenPayload()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+        status: 503,
+      });
+    });
+
+    it('answers 503 when the session lookup cannot be performed', async () => {
+      const { AppServiceUnavailableException } = jest.requireActual(
+        '../../common/errors/app.exception',
+      );
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
+      mockSupervisedResolver.isSessionActive.mockRejectedValue(
+        new AppServiceUnavailableException(
+          ErrorCode.AUTH_REVOCATION_CHECK_UNAVAILABLE,
+        ),
+      );
+
+      await expect(
+        buildStrategy().validate(buildReq('t'), teenPayload()),
+      ).rejects.toMatchObject({ status: 503 });
+    });
+
+    it('refuses X-Acting-For on a teen token with 403 ACTING_FOR_FORBIDDEN before any grant lookup', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
+
+      await expect(
+        buildStrategy().validate(
+          buildReq('t', {
+            'x-acting-for': '22222222-2222-4222-8222-222222222222',
+          }),
+          teenPayload(),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACTING_FOR_FORBIDDEN,
+        status: 403,
+      });
+      expect(mockActingResolver.resolve).not.toHaveBeenCalled();
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('supervised_token'),
+      );
+    });
+
+    it('refuses even a malformed X-Acting-For on a teen with the uniform 403 (not a 400)', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(pending);
+
+      await expect(
+        buildStrategy().validate(
+          buildReq('t', { 'x-acting-for': 'not-a-uuid' }),
+          teenPayload(),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.ACTING_FOR_FORBIDDEN });
+    });
+
+    it('does not look the supervised state up for a revoked token (revocation checks run first)', async () => {
+      mockTokenBlacklistService.checkToken.mockResolvedValue('revoked');
+
+      await expect(
+        buildStrategy().validate(buildReq('t'), teenPayload()),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
+      expect(mockSupervisedResolver.resolveForRequest).not.toHaveBeenCalled();
+    });
+
+    it('attributes the audit rows to the teen with actor_kind supervised_user', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(active);
+
+      await runWithAuditContext(async () => {
+        await buildStrategy().validate(buildReq('t'), teenPayload());
+
+        expect(getAuditContext()?.actingFor).toEqual({
+          actorUserId: TEEN,
+          subjectUserId: TEEN,
+          kind: 'supervised_user',
+        });
+      });
+    });
+
+    it('sets no audit actor for an adult (byte-identical rows)', async () => {
+      await runWithAuditContext(async () => {
+        await buildStrategy().validate(buildReq('t'), accessPayload());
+
+        expect(getAuditContext()?.actingFor).toBeUndefined();
+      });
+    });
+
+    it('lets an adult guardian act exactly as before (supervised resolution is adult)', async () => {
+      mockActingResolver.resolve.mockResolvedValue({
+        granted: true,
+        grant: {
+          guardianshipId: 'gs-1',
+          consentStatus: 'verified',
+          scopes: GUARDIAN_VERIFIED_SCOPES,
+        },
+      });
+
+      const result = await buildStrategy().validate(
+        buildReq('t', {
+          'x-acting-for': '22222222-2222-4222-8222-222222222222',
+        }),
+        accessPayload({ sub: '11111111-1111-4111-8111-111111111111' }),
+      );
+
+      expect(result).toMatchObject({
+        kind: 'guardian_acting',
+        actor_sub: '11111111-1111-4111-8111-111111111111',
+        sub: '22222222-2222-4222-8222-222222222222',
+      });
     });
   });
 });

@@ -6,6 +6,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DependentClaimCodesController } from './dependent-claim-codes.controller';
 import { DependentProfilesPurgeCronService } from './dependent-profiles-purge-cron.service';
+import { FamilyFeatureFlagsService } from './family-feature-flags.service';
 import { GuardianEvidenceService } from './guardian-evidence.service';
 import { GuardianNotificationsService } from './guardian-notifications.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
@@ -13,6 +14,7 @@ import { GuardianshipsController } from './guardianships.controller';
 import { GuardianshipsService } from './guardianships.service';
 import { LinkCodeFailureCounter } from './link-code-failure-counter';
 import { LinkCodesService } from './link-codes.service';
+import { SupervisionStateService } from './supervision-state.service';
 
 /**
  * Dependents (minors without an account), their guardianships, second-guardian
@@ -36,6 +38,8 @@ import { LinkCodesService } from './link-codes.service';
     GuardianNotificationsService,
     GuardianEvidenceService,
     DependentProfilesPurgeCronService,
+    FamilyFeatureFlagsService,
+    SupervisionStateService,
   ],
   exports: [
     GuardianshipsService,
@@ -43,6 +47,8 @@ import { LinkCodesService } from './link-codes.service';
     LinkCodesService,
     GuardianNotificationsService,
     GuardianEvidenceService,
+    FamilyFeatureFlagsService,
+    SupervisionStateService,
   ],
 })
 export class GuardianshipsModule {}

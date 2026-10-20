@@ -820,5 +820,18 @@
   "GUARDIANSHIP_CUSTODIAN_SELF_VERIFY": "Un menor bajo custodia del club debe ser verificado por otra persona autorizada del club, no por quien subió la ficha ni por quien lo recibió en custodia",
   "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirma que revisaste la ficha firmada en papel antes de verificar el consentimiento",
   "GUARDIANSHIP_CONSENT_ALREADY_VERIFIED": "El consentimiento del tutor de este menor ya está verificado: la ficha firmada ya no se puede reemplazar",
-  "GUARDIANSHIP_GUARDIAN_SELF_VERIFY": "Un tutor de este menor no puede verificar su propio consentimiento: debe hacerlo otra persona autorizada del club"
+  "GUARDIANSHIP_GUARDIAN_SELF_VERIFY": "Un tutor de este menor no puede verificar su propio consentimiento: debe hacerlo otra persona autorizada del club",
+  "PRINCIPAL_SCOPE_DENIED": "Esta acción no está disponible para tu tipo de cuenta",
+  "AUTH_SUPERVISED_ACCESS_REVOKED": "Tu acceso fue desactivado o cambiado. Inicia sesión de nuevo o consulta a tu tutor",
+  "AUTH_SUPERVISED_LOGIN_DISABLED": "Tu tutor desactivó el inicio de sesión de esta cuenta",
+  "AUTH_ACCOUNT_FROZEN": "Esta cuenta fue eliminada por no tener un tutor vinculado",
+  "AUTH_LOGIN_LOCKED": "Demasiados intentos. Inténtalo de nuevo más tarde",
+  "USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN": "Para cambiar la fecha de nacimiento debe intervenir tu tutor",
+  "SUPERVISED_LOGIN_NOT_ELIGIBLE": "Este menor no puede tener inicio de sesión propio",
+  "SUPERVISED_LOGIN_ALREADY_ENABLED": "El inicio de sesión propio ya está activado",
+  "SUPERVISED_LOGIN_NOT_FOUND": "Este menor no tiene un inicio de sesión propio",
+  "SUPERVISED_LOGIN_EMAIL_UNAVAILABLE": "Ese correo no está disponible",
+  "SUPERVISED_LOGIN_PASSWORD_INVALID": "La contraseña no cumple los requisitos de seguridad",
+  "GUARDIANSHIP_CONSENT_NOT_VERIFIED": "El consentimiento de este menor aún no está verificado",
+  "FAMILY_FEATURE_DISABLED": "Esta función no está disponible por ahora"
 }

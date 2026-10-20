@@ -23,6 +23,8 @@ import { AppBadRequestException } from '../common/errors/app.exception';
 import { ClubCycleReadinessService } from '../common/services/club-cycle-readiness.service';
 import { LegalService } from '../legal/legal.service';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
+import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
+import { SupervisionStateService } from '../guardianships/supervision-state.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -176,7 +178,23 @@ describe('AuthService', () => {
     getPolicy: jest.fn(),
   };
 
+  const FAMILY_FEATURES = {
+    teen_login: true,
+    linked_device: false,
+    director_create_minor: false,
+  };
+
+  const mockFamilyFlags = {
+    getAll: jest.fn(),
+  };
+
+  const mockSupervisionState = {
+    describe: jest.fn(),
+  };
+
   beforeEach(async () => {
+    mockFamilyFlags.getAll.mockReset().mockReturnValue(FAMILY_FEATURES);
+    mockSupervisionState.describe.mockReset();
     mockCountryAgePolicy.getPolicy.mockReset().mockResolvedValue({
       minSelfLoginAge: 13,
       ageOfMajority: 18,
@@ -229,6 +247,8 @@ describe('AuthService', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: LegalService, useValue: mockLegalService },
         { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
+        { provide: FamilyFeatureFlagsService, useValue: mockFamilyFlags },
+        { provide: SupervisionStateService, useValue: mockSupervisionState },
       ],
     }).compile();
 
@@ -1164,6 +1184,202 @@ describe('AuthService', () => {
           is_guardian: false,
           dependents_count: 0,
         });
+      });
+    });
+
+    describe('supervised principal, mode and analytics (phase 3a)', () => {
+      const resolvedWith = (
+        birthday: Date | null,
+        email: string | null = 'teen@example.com',
+      ) => ({
+        profile: {
+          user_id: 'teen-1',
+          email,
+          name: 'Ana',
+          paternal_last_name: 'Perez',
+          maternal_last_name: null,
+          birthday,
+          country_id: 1,
+          user_image: null,
+        },
+        post_register_complete: false,
+        authorization: {
+          grants: { global_roles: [], club_assignments: [] },
+          active_assignment: { assignment_id: null },
+          effective: { permissions: [], scope: { global: {}, club: null } },
+        },
+        legacy: {
+          roles: ['user'],
+          permissions: [],
+          club: null,
+          club_context: {
+            active_assignment_id: null,
+            active: null,
+            available: [],
+          },
+        },
+      });
+      const yearsAgo = (years: number): Date => {
+        const d = new Date();
+        d.setUTCFullYear(d.getUTCFullYear() - years);
+        d.setUTCDate(d.getUTCDate() - 5);
+        return d;
+      };
+
+      it('adult: kind user, mode adult, no supervision, family summary kept, identify allowed', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(30)),
+        );
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: null,
+          kind: 'user',
+        });
+
+        expect(result.data.principal).toEqual({
+          kind: 'user',
+          scopes: null,
+          supervision: null,
+        });
+        expect(result.data.mode).toBe('adult');
+        expect(result.data.analytics_anonymous).toBe(false);
+        expect(result.data.family_features).toEqual(FAMILY_FEATURES);
+        expect(result.data.family).not.toBeNull();
+        expect(mockSupervisionState.describe).not.toHaveBeenCalled();
+      });
+
+      it('no principal at all behaves as an adult user', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(30)),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.principal).toEqual({
+          kind: 'user',
+          scopes: null,
+          supervision: null,
+        });
+        expect(result.data.mode).toBe('adult');
+      });
+
+      it('pending teen: mode teen_pending, supervision view with days_left, family null, anonymous analytics', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(15)),
+        );
+        const view = {
+          status: 'pending_guardian',
+          pending_since: '2026-10-01T00:00:00.000Z',
+          guardians: [],
+          summary_visible_to_guardians: true,
+          days_left: 70,
+        };
+        mockSupervisionState.describe.mockResolvedValue(view);
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+          supervision: 'pending_guardian',
+        });
+
+        expect(mockSupervisionState.describe).toHaveBeenCalledWith(
+          'teen-1',
+          'pending_guardian',
+        );
+        expect(result.data.principal).toEqual({
+          kind: 'supervised_user',
+          scopes: ['self:read'],
+          supervision: view,
+        });
+        expect(result.data.mode).toBe('teen_pending');
+        expect(result.data.family).toBeNull();
+        expect(result.data.analytics_anonymous).toBe(true);
+        expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
+      });
+
+      it('active teen: mode teen_supervised and the guardians carry names only (no contact data)', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(16)),
+        );
+        const view = {
+          status: 'active',
+          pending_since: null,
+          guardians: [
+            { display_name: 'Maria Perez', relationship_type_name: 'Madre' },
+          ],
+          summary_visible_to_guardians: true,
+          days_left: null,
+        };
+        mockSupervisionState.describe.mockResolvedValue(view);
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read'],
+          kind: 'supervised_user',
+          supervision: 'active',
+        });
+
+        expect(result.data.mode).toBe('teen_supervised');
+        expect(result.data.principal.supervision).toEqual(view);
+        const serialized = JSON.stringify(result.data.principal);
+        for (const forbidden of ['email', 'phone', 'handle', 'login_handle']) {
+          expect(serialized).not.toContain(forbidden);
+        }
+      });
+
+      it('a NULL birthday is anonymous (unknown age fails closed)', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(null),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(true);
+      });
+
+      it('analytics follow the country policy (majority 16 makes a 17-year-old identifiable)', async () => {
+        mockCountryAgePolicy.getPolicy.mockResolvedValue({
+          minSelfLoginAge: 13,
+          ageOfMajority: 16,
+          timeZone: 'America/Mexico_City',
+        });
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(17)),
+        );
+
+        const result = await service.getProfile('teen-1');
+
+        expect(result.data.analytics_anonymous).toBe(false);
+        expect(mockCountryAgePolicy.getPolicy).toHaveBeenCalledWith(1);
+      });
+
+      it('a guardian acting keeps the acting contract and mode adult', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(9), null),
+        );
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: true,
+          actor_sub: 'guardian-1',
+          guardianship_id: 'gs-1',
+          consent_status: 'verified',
+          scopes: ['self:read'],
+          kind: 'guardian_acting',
+        });
+
+        expect(result.data.mode).toBe('adult');
+        expect(result.data.principal).toEqual({
+          kind: 'guardian_acting',
+          scopes: ['self:read'],
+          supervision: null,
+        });
+        expect(result.data.acting_for).not.toBeNull();
+        expect(result.data.family).toBeNull();
       });
     });
 

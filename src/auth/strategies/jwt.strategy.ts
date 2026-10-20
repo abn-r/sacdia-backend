@@ -26,12 +26,18 @@ import { setAuditActingFor } from '../../audit-logs/audit-request-context';
 import {
   actingForForbidden,
   actingForHeaderInvalid,
+  supervisedAccessRevoked,
 } from '../acting-for/acting-for.errors';
 import type { ActingGrant } from '../acting-for/acting-for.cache';
 import { ActingForResolver } from '../acting-for/acting-for.resolver';
 import {
+  scopesForSupervision,
+  SupervisedPrincipalResolver,
+} from '../supervised/supervised-principal.resolver';
+import {
   ACTING_GRANT_MEMO,
   type AuthPrincipal,
+  type SupervisionStatus,
 } from '../acting-for/auth-principal';
 
 /** Header a guardian sends to act for one of their dependents. */
@@ -86,6 +92,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly tokenBlacklistService: TokenBlacklistService,
     private readonly prisma: PrismaService,
     private readonly actingForResolver: ActingForResolver,
+    private readonly supervisedResolver: SupervisedPrincipalResolver,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -189,12 +196,83 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       scopes: null,
     };
 
+    // The principal kind is derived from SERVER state, never from a token
+    // claim: a forged `kind` is simply ignored. Runs before X-Acting-For.
+    const supervised = await this.supervisedResolver.resolveForRequest(
+      req,
+      payload.sub,
+    );
+    if (supervised.state === 'blocked') {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_supervised_blocked',
+          sub: payload.sub,
+          cause: supervised.cause,
+        }),
+      );
+      throw supervisedAccessRevoked();
+    }
+    if (supervised.state === 'supervised') {
+      return this.buildSupervisedPrincipal(
+        req,
+        payload,
+        basePrincipal,
+        supervised.supervision,
+      );
+    }
+
     const dependentId = this.readActingForHeader(req);
     if (dependentId === null) {
       return basePrincipal;
     }
 
     return this.buildActingPrincipal(req, payload, basePrincipal, dependentId);
+  }
+
+  /**
+   * A supervised teen (account holder under the age of majority). Never a
+   * guardian, so `X-Acting-For` is refused (uniform 403, before any grant
+   * lookup). The token's session must still exist: disable, reset and password
+   * change delete the sessions and bump the epoch, so the very next request is
+   * a 401 even inside the 8h JWT.
+   */
+  private async buildSupervisedPrincipal(
+    req: Request,
+    payload: JwtPayload,
+    basePrincipal: AuthPrincipal,
+    supervision: SupervisionStatus,
+  ): Promise<AuthPrincipal> {
+    if (req.headers?.[ACTING_FOR_HEADER] !== undefined) {
+      this.logActingDenied(payload.sub, payload.sub, 'supervised_token');
+      throw actingForForbidden();
+    }
+
+    const sessionActive = await this.supervisedResolver.isSessionActive(
+      payload.sub,
+      payload.sid ?? null,
+    );
+    if (!sessionActive) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_jwt_supervised_session_missing',
+          sub: payload.sub,
+        }),
+      );
+      throw supervisedAccessRevoked();
+    }
+
+    setAuditActingFor({
+      actorUserId: payload.sub,
+      subjectUserId: payload.sub,
+      kind: 'supervised_user',
+    });
+
+    return {
+      ...basePrincipal,
+      kind: 'supervised_user',
+      scopes: scopesForSupervision(supervision),
+      supervision,
+    };
   }
 
   /**

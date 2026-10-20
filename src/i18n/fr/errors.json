@@ -807,5 +807,18 @@
   "GUARDIANSHIP_CUSTODIAN_SELF_VERIFY": "Un mineur sous la garde du club doit être vérifié par une autre personne autorisée du club, pas par celle qui a téléversé la fiche ni par celle qui l'a pris en charge",
   "MR_CONSENT_CONFIRMATION_REQUIRED": "Confirmez que vous avez examiné la fiche papier signée avant de vérifier le consentement",
   "GUARDIANSHIP_CONSENT_ALREADY_VERIFIED": "Le consentement du tuteur de ce mineur est déjà vérifié : la fiche signée ne peut plus être remplacée",
-  "GUARDIANSHIP_GUARDIAN_SELF_VERIFY": "Un tuteur de ce mineur ne peut pas vérifier son propre consentement : une autre personne autorisée du club doit le faire"
+  "GUARDIANSHIP_GUARDIAN_SELF_VERIFY": "Un tuteur de ce mineur ne peut pas vérifier son propre consentement : une autre personne autorisée du club doit le faire",
+  "PRINCIPAL_SCOPE_DENIED": "Cette action n'est pas disponible pour votre type de compte",
+  "AUTH_SUPERVISED_ACCESS_REVOKED": "Votre accès a été désactivé ou modifié. Reconnectez-vous ou demandez à votre tuteur",
+  "AUTH_SUPERVISED_LOGIN_DISABLED": "Votre tuteur a désactivé la connexion à ce compte",
+  "AUTH_ACCOUNT_FROZEN": "Ce compte a été supprimé faute de tuteur lié",
+  "AUTH_LOGIN_LOCKED": "Trop de tentatives. Réessayez plus tard",
+  "USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN": "Pour modifier la date de naissance, votre tuteur doit intervenir",
+  "SUPERVISED_LOGIN_NOT_ELIGIBLE": "Ce mineur ne peut pas avoir sa propre connexion",
+  "SUPERVISED_LOGIN_ALREADY_ENABLED": "La connexion propre est déjà activée",
+  "SUPERVISED_LOGIN_NOT_FOUND": "Ce mineur n'a pas de connexion propre",
+  "SUPERVISED_LOGIN_EMAIL_UNAVAILABLE": "Cet e-mail n'est pas disponible",
+  "SUPERVISED_LOGIN_PASSWORD_INVALID": "Le mot de passe ne respecte pas les exigences de sécurité",
+  "GUARDIANSHIP_CONSENT_NOT_VERIFIED": "Le consentement de ce mineur n'est pas encore vérifié",
+  "FAMILY_FEATURE_DISABLED": "Cette fonctionnalité n'est pas disponible pour le moment"
 }
