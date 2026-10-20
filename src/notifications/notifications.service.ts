@@ -32,6 +32,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { DependentPushRouterService } from './dependent-push-router.service';
+import { ClubDataRecipientsService } from './club-data-recipients.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import {
   NOTIFICATIONS_QUEUE,
@@ -117,6 +118,7 @@ export class NotificationsService {
     private readonly preferencesService: NotificationPreferencesService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly dependentPushRouter: DependentPushRouterService,
+    private readonly clubDataRecipients: ClubDataRecipientsService,
     @Optional()
     @InjectQueue(NOTIFICATIONS_QUEUE)
     private readonly queue: Queue | undefined,
@@ -1187,7 +1189,11 @@ export class NotificationsService {
       select: { user_id: true },
     });
 
-    const rawUserIds = [...new Set(members.map((m) => m.user_id))];
+    // A teen without a verified guardian and an unknown-age account get no
+    // club data (FP3-03): drop them before preferences, inbox and push.
+    const rawUserIds = await this.clubDataRecipients.filterClubDataRecipients(
+      members.map((m) => m.user_id),
+    );
     if (rawUserIds.length === 0) {
       return { success: false, message: 'No members found' };
     }
@@ -1310,7 +1316,11 @@ export class NotificationsService {
       select: { user_id: true },
     });
 
-    const rawUserIds = [...new Set(assignments.map((a) => a.user_id))];
+    // No club data for a teen without a verified guardian or an unknown-age
+    // account (FP3-03).
+    const rawUserIds = await this.clubDataRecipients.filterClubDataRecipients(
+      assignments.map((a) => a.user_id),
+    );
 
     if (rawUserIds.length === 0) {
       return;

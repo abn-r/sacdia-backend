@@ -18,6 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { DependentPushRouterService } from './dependent-push-router.service';
+import { ClubDataRecipientsService } from './club-data-recipients.service';
 import { isUuid, chunkArray } from '../common/utils/notification.utils';
 
 export const NOTIFICATIONS_QUEUE = 'notifications';
@@ -134,6 +135,7 @@ export class NotificationsProcessor
     private readonly fcmTokensService: FcmTokensService,
     private readonly preferencesService: NotificationPreferencesService,
     private readonly dependentPushRouter: DependentPushRouterService,
+    private readonly clubDataRecipients: ClubDataRecipientsService,
   ) {
     super();
   }
@@ -335,7 +337,11 @@ export class NotificationsProcessor
       select: { user_id: true },
     });
 
-    const rawUserIds = [...new Set(assignments.map((a) => a.user_id))];
+    // No club data for a teen without a verified guardian or an unknown-age
+    // account (FP3-03).
+    const rawUserIds = await this.clubDataRecipients.filterClubDataRecipients(
+      assignments.map((a) => a.user_id),
+    );
 
     if (rawUserIds.length === 0) {
       this.logger.debug(
@@ -578,7 +584,11 @@ export class NotificationsProcessor
       select: { user_id: true },
     });
 
-    const rawUserIds = [...new Set(members.map((m) => m.user_id))];
+    // No club data for a teen without a verified guardian or an unknown-age
+    // account (FP3-03).
+    const rawUserIds = await this.clubDataRecipients.filterClubDataRecipients(
+      members.map((m) => m.user_id),
+    );
     if (rawUserIds.length === 0) {
       this.logger.debug(
         `handleSendToClubMembers: no members for section ${clubSectionId} — job ${job.id}`,
@@ -940,10 +950,21 @@ export class NotificationsProcessor
           user_id: { not: actorId },
         },
       },
-      select: { token: true },
+      select: { user_id: true, token: true },
     });
 
-    if (tokenRows.length === 0) {
+    // The silent push still carries section, resource and entity ids: a teen
+    // without a verified guardian or an unknown-age account gets none (FP3-03).
+    const allowedUserIds = new Set(
+      await this.clubDataRecipients.filterClubDataRecipients(
+        tokenRows.map((row) => row.user_id),
+      ),
+    );
+    const recipientRows = tokenRows.filter((row) =>
+      allowedUserIds.has(row.user_id),
+    );
+
+    if (recipientRows.length === 0) {
       this.logger.log(
         `handleRealtimeInvalidate: no recipients for section ${sectionId} (action=${action}, entity=${entityId}) — job ${job.id}`,
       );
@@ -955,7 +976,7 @@ export class NotificationsProcessor
       };
     }
 
-    const tokens = tokenRows.map((r) => r.token);
+    const tokens = recipientRows.map((r) => r.token);
     const { successCount, failureCount } = await this.sendSilentMulticast(
       tokens,
       job.data,
