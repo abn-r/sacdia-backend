@@ -23,9 +23,9 @@ import { collectRoutes, type RouteInfo } from './route-registry.testing';
  * explicit change. Anything not listed here is denied to every non-`user`
  * kind (deny by default).
  *
- * Per-kind reachability (guardian pending/verified, teen pending/active) is
- * asserted against the REAL controller registry, so a set can never silently
- * grow a route. The device column is added in sub-phase 3b.
+ * Per-kind reachability (guardian pending/verified, teen pending/active, linked
+ * device) is asserted against the REAL controller registry, so a set can never
+ * silently grow a route.
  */
 
 /** METHOD path => scope. Edit deliberately: every line is a security decision. */
@@ -101,14 +101,16 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
     'evidence:upload',
   'DELETE /users/:userId/classes/:classId/sections/:sectionId/files/:fileId':
     'evidence:upload',
-  'POST /users/:userId/honors/:honorId/files': 'evidence:upload',
+  // (honor evidence is NOT here: a child's device may upload CLASS evidence only,
+  // so the honor evidence mutations moved to honors:write in 3b, FP3-47)
+  // ---- honors:write (incl. the honor evidence mutations: never the device)
+  'POST /users/:userId/honors/:honorId/files': 'honors:write',
   'POST /users/:userId/honors/:honorId/requirements/:requirementId/evidence/upload':
-    'evidence:upload',
+    'honors:write',
   'POST /users/:userId/honors/:honorId/requirements/:requirementId/evidence/link':
-    'evidence:upload',
+    'honors:write',
   'DELETE /users/:userId/honors/:honorId/requirements/:requirementId/evidence/:evidenceId':
-    'evidence:upload',
-  // ---- honors:write
+    'honors:write',
   'POST /users/:userId/honors': 'honors:write',
   'POST /users/:userId/honors/bulk': 'honors:write',
   'POST /users/:userId/honors/:honorId': 'honors:write',
@@ -334,6 +336,84 @@ const PENDING_TEEN_SURFACE: Record<
   // Shaped for a pending teen.
   'GET /dashboard/summary': 'shaped',
   'GET /auth/me': 'shaped',
+};
+
+/**
+ * Who may hold each scope, device column (3b). It is asserted against
+ * DEVICE_SCOPES. `credential:read` is held (the member QR credential) but
+ * `club:context` and `health:read` are not.
+ */
+const DEVICE_ACCESS: Record<ActingForScope, boolean> = {
+  'self:read': true,
+  'health:read': false,
+  'profile:write': false,
+  'registration:write': false,
+  'classes:write': false,
+  'evidence:submit': true,
+  'honors:write': false,
+  'evidence:upload': true,
+  'legal:accept': false,
+  'consent:evidence': false,
+  'member:read': false,
+  'member:write': false,
+  'agenda:read': true,
+  'push:register': true,
+  'self:password': false,
+  'self:preferences': false,
+  'guardian_link:issue': false,
+  'account:manage': false,
+  'credential:read': true,
+  'club:context': false,
+};
+
+/**
+ * The WHOLE surface of a linked device (a child's paired phone), reviewed route
+ * by route: a new self:read route cannot slip in unseen. Reasons:
+ *  - own_read: the child's own profile, progress, notifications and dashboard;
+ *  - class_evidence: the class-section evidence upload / delete / submit;
+ *  - agenda: the club agenda WITHOUT attendee lists (stripped in the service);
+ *  - push: register / unregister the OWN push token;
+ *  - credential: the member QR credential.
+ */
+const DEVICE_SURFACE: Record<
+  string,
+  'own_read' | 'class_evidence' | 'agenda' | 'push' | 'credential'
+> = {
+  'GET /auth/me': 'own_read',
+  'GET /auth/profile/completion-status': 'own_read',
+  'GET /dashboard/summary': 'own_read',
+  'GET /notifications/history': 'own_read',
+  'GET /notifications/unread-count': 'own_read',
+  'PATCH /notifications/read-all': 'own_read',
+  'PATCH /notifications/:deliveryId/read': 'own_read',
+  'GET /users/:userId': 'own_read',
+  'GET /users/:userId/age': 'own_read',
+  'GET /users/:userId/post-registration/status': 'own_read',
+  'GET /users/:userId/post-registration/photo-status': 'own_read',
+  'GET /users/:userId/classes': 'own_read',
+  'GET /users/:userId/classes/:classId/progress': 'own_read',
+  'GET /users/:userId/honors': 'own_read',
+  'GET /users/:userId/honors/stats': 'own_read',
+  'GET /users/:userId/honors/:honorId/requirements/progress': 'own_read',
+  'GET /users/:userId/honors/:honorId/requirements/:requirementId/evidence':
+    'own_read',
+  'GET /users/me/legal-acceptance': 'own_read',
+  'GET /users/me/supervision': 'own_read',
+  'POST /users/:userId/classes/:classId/sections/:sectionId/files':
+    'class_evidence',
+  'DELETE /users/:userId/classes/:classId/sections/:sectionId/files/:fileId':
+    'class_evidence',
+  'POST /users/:userId/classes/:classId/sections/:sectionId/submit':
+    'class_evidence',
+  'GET /clubs/:clubId/activities': 'agenda',
+  'GET /activities/:activityId': 'agenda',
+  'GET /activity-series/:seriesId': 'agenda',
+  'POST /users/me/fcm-tokens': 'push',
+  'DELETE /users/me/fcm-tokens/:tokenId': 'push',
+  'GET /qr/member/token': 'credential',
+  'GET /qr/me': 'credential',
+  'GET /qr/me/card': 'credential',
+  'GET /qr/me/card.pdf': 'credential',
 };
 
 /** Scopes only a supervised teen holds: never a guardian, never a device. */
@@ -943,6 +1023,150 @@ describe('acting-scope metadata snapshot', () => {
           allowed: false,
         });
       }
+    });
+  });
+
+  describe('device column (linked_device reachability against the real registry)', () => {
+    const device = {
+      kind: 'linked_device' as const,
+      scopes: DEVICE_SCOPES,
+    };
+
+    it('DEVICE_ACCESS agrees with DEVICE_SCOPES', () => {
+      for (const scope of ACTING_FOR_SCOPES) {
+        expect({
+          scope,
+          held: (DEVICE_SCOPES as readonly string[]).includes(scope),
+        }).toEqual({ scope, held: DEVICE_ACCESS[scope] });
+      }
+    });
+
+    it('the device holds credential:read but NOT club:context, health:read or any write scope', () => {
+      expect(DEVICE_SCOPES).toContain('credential:read');
+      for (const scope of [
+        'club:context',
+        'health:read',
+        'classes:write',
+        'honors:write',
+        'profile:write',
+        'registration:write',
+        'legal:accept',
+        'account:manage',
+        'consent:evidence',
+      ] as const) {
+        expect(DEVICE_SCOPES).not.toContain(scope);
+      }
+    });
+
+    it('reaches exactly the routes tagged with a scope it holds, and nothing else', () => {
+      for (const route of routes) {
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, device),
+        }).toEqual({
+          route: route.key,
+          allowed:
+            route.scope !== undefined && DEVICE_ACCESS[route.scope] === true,
+        });
+      }
+    });
+
+    it('EVERY route a device reaches is reviewed in DEVICE_SURFACE (a new self:read route cannot slip in unseen)', () => {
+      const reached = routes
+        .filter((r) => r.scope !== undefined && isAllowed(r, device))
+        .map((r) => r.key)
+        .sort();
+      expect(reached).toEqual(Object.keys(DEVICE_SURFACE).sort());
+    });
+
+    it('never reaches an unscoped route', () => {
+      for (const route of routes.filter((r) => r.scope === undefined)) {
+        expect({ route: route.key, allowed: isAllowed(route, device) }).toEqual(
+          { route: route.key, allowed: false },
+        );
+      }
+    });
+
+    it('is denied on the account, security, profile, health, enrollment, honors, family and legacy push routes', () => {
+      for (const key of [
+        'POST /auth/update-password',
+        'POST /auth/verify-email/send',
+        'PATCH /users/:userId',
+        'POST /users/:userId/profile-picture',
+        'GET /auth/sessions',
+        'DELETE /auth/sessions',
+        'DELETE /auth/me',
+        'GET /users/:userId/allergies',
+        'GET /users/:userId/diseases',
+        'GET /users/:userId/medicines',
+        'GET /users/:userId/emergency-contacts',
+        'POST /users/:userId/classes/enroll',
+        'PATCH /users/:userId/classes/:classId/progress',
+        'POST /users/:userId/honors',
+        'POST /users/:userId/honors/:honorId/files',
+        'POST /users/:userId/honors/:honorId/requirements/:requirementId/evidence/upload',
+        'POST /users/:userId/honors/:honorId/requirements/:requirementId/evidence/link',
+        'DELETE /users/:userId/honors/:honorId/requirements/:requirementId/evidence/:evidenceId',
+        'POST /users/me/legal-acceptance',
+        'GET /users/me/notification-preferences',
+        'PATCH /users/me/notification-preferences',
+        'PATCH /auth/me/context',
+        'POST /users/me/guardian-link-codes',
+        'GET /guardianships/me/dependents',
+        'POST /guardianships/me/dependents',
+        'POST /auth/device/pair',
+      ]) {
+        const route = routes.find((r) => r.key === key);
+        expect({ key, exists: route !== undefined }).toEqual({
+          key,
+          exists: true,
+        });
+        expect({ key, allowed: isAllowed(route!, device) }).toEqual({
+          key,
+          allowed: false,
+        });
+      }
+    });
+
+    it('the legacy /fcm-tokens family (including the list) is denied to the device', () => {
+      const legacy = routes.filter((r) => /^[A-Z]+ \/fcm-tokens/.test(r.key));
+      expect(legacy.length).toBeGreaterThan(0);
+      for (const route of legacy) {
+        expect({ route: route.key, allowed: isAllowed(route, device) }).toEqual(
+          { route: route.key, allowed: false },
+        );
+      }
+    });
+
+    it('a device never reaches ANY honor mutation, club write, member or staff route', () => {
+      const reached = routes
+        .filter((r) => r.scope !== undefined && isAllowed(r, device))
+        .map((r) => r.key);
+      expect(
+        reached.filter(
+          (key) => /\/honors(\/|$)/.test(key) && !key.startsWith('GET '),
+        ),
+      ).toEqual([]);
+      expect(
+        reached.filter((key) =>
+          /^[A-Z]+ \/(club-sections|admin|members|units|resources|achievements|requests|validation)/.test(
+            key,
+          ),
+        ),
+      ).toEqual([]);
+    });
+
+    it('a device is denied with PRINCIPAL_SCOPE_DENIED (never the acting code that exits "acting" in the app)', () => {
+      const route = routes.find((r) => r.key === 'PATCH /users/:userId')!;
+      let thrown: unknown;
+      try {
+        assertActingScope(new Reflector(), contextOf(route), device);
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as AppException).code).toBe(
+        ErrorCode.PRINCIPAL_SCOPE_DENIED,
+      );
     });
   });
 

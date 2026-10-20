@@ -244,7 +244,7 @@ export class UserHonorsController {
   }
 
   @Post(':honorId/files')
-  @ActingScope('evidence:upload')
+  @ActingScope('honors:write')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @UseInterceptors(

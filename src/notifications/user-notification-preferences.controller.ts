@@ -202,7 +202,13 @@ export class UserNotificationPreferencesController {
     @Body() dto: RegisterFcmTokenRequestDto,
     @Request() req,
   ) {
-    return this.fcmTokensService.registerToken(req.user.sub, dto);
+    return this.fcmTokensService.registerToken(req.user.sub, dto, {
+      // A child's paired phone: the token is remembered on its device row.
+      linkedDeviceId:
+        req.user.kind === 'linked_device'
+          ? (req.user.linked_device_id ?? null)
+          : null,
+    });
   }
 
   /**

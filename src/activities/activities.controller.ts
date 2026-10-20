@@ -117,6 +117,8 @@ export class ActivitiesController {
       pagination,
       userSectionId,
       userSectionId == null ? null : req?.user?.sub,
+      // A child's paired phone sees the agenda without who else is going.
+      { withoutMemberLists: req?.user?.kind === 'linked_device' },
     );
   }
 
@@ -189,8 +191,7 @@ export class ActivitiesController {
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Crear serie de actividades',
-    description:
-      'Crea la cabecera y materializa N actividades independientes.',
+    description: 'Crea la cabecera y materializa N actividades independientes.',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 201, description: 'Serie creada' })
@@ -282,6 +283,7 @@ export class ActivitiesController {
       userSectionId == null || !req?.user?.sub
         ? null
         : { userId: req.user.sub, sectionId: userSectionId },
+      { withoutMemberLists: req?.user?.kind === 'linked_device' },
     );
   }
 

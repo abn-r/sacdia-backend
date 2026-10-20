@@ -15,6 +15,11 @@ export interface RegisterFcmTokenDto {
   device_name?: string;
 }
 
+/** Who is registering: a child's paired phone also links the token to its device row. */
+export interface RegisterFcmTokenContext {
+  linkedDeviceId?: string | null;
+}
+
 @Injectable()
 export class FcmTokensService {
   private readonly logger = new Logger(FcmTokensService.name);
@@ -40,7 +45,11 @@ export class FcmTokensService {
    * If the cap is exceeded after registration, the oldest tokens (by last_used ASC)
    * are deleted inside the same transaction.
    */
-  async registerToken(userId: string, dto: RegisterFcmTokenDto) {
+  async registerToken(
+    userId: string,
+    dto: RegisterFcmTokenDto,
+    context?: RegisterFcmTokenContext,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       // Verificar si el token ya existe
       const existing = await tx.user_fcm_tokens.findFirst({
@@ -74,6 +83,35 @@ export class FcmTokensService {
           },
           select: this.safeSelect,
         });
+      }
+
+      // A linked device (3b) remembers the token it registered, so unlinking the
+      // device deactivates exactly that token. A rotated token replaces the old
+      // one, which is deactivated (it is no longer that phone's).
+      if (context?.linkedDeviceId) {
+        const device = await tx.linked_devices.findFirst({
+          where: {
+            linked_device_id: context.linkedDeviceId,
+            dependent_user_id: userId,
+            revoked_at: null,
+          },
+          select: { fcm_token_id: true },
+        });
+        if (device) {
+          if (
+            device.fcm_token_id &&
+            device.fcm_token_id !== result.fcm_token_id
+          ) {
+            await tx.user_fcm_tokens.updateMany({
+              where: { fcm_token_id: device.fcm_token_id, user_id: userId },
+              data: { active: false },
+            });
+          }
+          await tx.linked_devices.update({
+            where: { linked_device_id: context.linkedDeviceId },
+            data: { fcm_token_id: result.fcm_token_id },
+          });
+        }
       }
 
       // Cap: keep only the MAX_ACTIVE_TOKENS_PER_USER most recent active tokens.
