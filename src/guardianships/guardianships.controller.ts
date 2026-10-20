@@ -448,7 +448,8 @@ export class GuardianshipsController {
   })
   @ApiResponse({
     status: 409,
-    description: 'DEVICE_LIMIT_REACHED {max_devices}',
+    description:
+      'DEVICE_LIMIT_REACHED (the body carries only the code: read the cap from limits.max_devices in GET .../devices or GET /guardianships/me/dependents)',
   })
   @ApiResponse({
     status: 422,

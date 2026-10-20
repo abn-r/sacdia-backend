@@ -52,7 +52,8 @@ export class DeviceAuthController {
   @ApiResponse({ status: 400, description: 'DEVICE_PAIRING_TOKEN_INVALID' })
   @ApiResponse({
     status: 409,
-    description: 'DEVICE_LIMIT_REACHED {max_devices}',
+    description:
+      'DEVICE_LIMIT_REACHED (the body carries only the code: read the cap from limits.max_devices in GET .../devices or GET /guardianships/me/dependents)',
   })
   @ApiResponse({ status: 429, description: 'Throttled or AUTH_LOGIN_LOCKED' })
   async pair(@Body() dto: PairDeviceDto, @Req() req: SessionContextRequest) {
