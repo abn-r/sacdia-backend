@@ -84,6 +84,8 @@ interface PersonState {
   sessionAlive: boolean;
   /** users_pr.complete (default false: the post-registration is open). */
   prComplete?: boolean;
+  /** An ACTIVE club assignment (e.g. from before the Phase 3 deploy). */
+  activeClubAssignment?: boolean;
   user_image?: string | null;
 }
 
@@ -214,8 +216,27 @@ describe('Supervised login E2E', () => {
       guardianships_as_dependent: verified.map((link) => ({
         guardianship_id: link.guardianship_id,
       })),
-      users_pr: { complete: person.prComplete ?? false },
+      users_pr: {
+        complete: person.prComplete ?? false,
+        active_club_assignment_id: null,
+      },
       users_roles: [],
+      // GET /dashboard/summary reads these from the same users row.
+      users_honors: [{ validate: true }],
+      enrollments: [],
+      club_role_assignments: person.activeClubAssignment
+        ? [
+            {
+              assignment_id: `assign-${userId}`,
+              club_sections: {
+                club_section_id: 3,
+                club_types: { name: 'Conquistadores' },
+                clubs: { name: 'Club Orion' },
+              },
+              roles: { role_name: 'member' },
+            },
+          ]
+        : [],
     };
   };
 
@@ -493,6 +514,19 @@ describe('Supervised login E2E', () => {
         findMany: jest.fn().mockResolvedValue([]),
       }),
       units: createModelMock({ findMany: jest.fn().mockResolvedValue([]) }),
+      // The club section's upcoming activities (dashboard summary).
+      activities: createModelMock({
+        findMany: jest.fn().mockResolvedValue([
+          {
+            activity_id: 91,
+            name: 'Campamento de verano',
+            activity_date: new Date('2099-04-10T00:00:00.000Z'),
+            activity_time: '09:00',
+            activity_place: 'Parque Nacional',
+            activity_types: { name: 'Campamento' },
+          },
+        ]),
+      }),
       // The member app home asks "am I a judge?" for everyone: no assignments.
       camporee_event_judge_assignments: createModelMock({
         findMany: jest.fn().mockResolvedValue([]),
@@ -1260,6 +1294,61 @@ describe('Supervised login E2E', () => {
         .get(`/api/v1/users/${CHILD_ID}/post-registration/status`)
         .set({ Authorization: `Bearer ${handleToken}` });
       expect(response.status).toBe(200);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // F. A pending teen with an ACTIVE assignment from before the deploy (FP3-07)
+  // ---------------------------------------------------------------------------
+
+  describe('F. a pending teen whose club assignment predates Phase 3', () => {
+    beforeAll(async () => {
+      resetWorld();
+      people[TEEN_ID].activeClubAssignment = true;
+      await actingCache.bump(TEEN_ID);
+    });
+
+    it('GET /dashboard/summary answers 200 with NO club data: club fields null, no activities, own progress kept', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/dashboard/summary')
+        .set(bearer(TEEN_ID));
+
+      expect(response.status).toBe(200);
+      const summary = response.body?.data ?? response.body;
+      expect(summary).toMatchObject({
+        club_name: null,
+        club_type: null,
+        user_role: null,
+        upcoming_activities: [],
+        honors_completed: 1,
+      });
+      expect(JSON.stringify(response.body)).not.toContain('Club Orion');
+      expect(JSON.stringify(response.body)).not.toContain(
+        'Campamento de verano',
+      );
+    });
+
+    it('once a guardian is verified the same teen sees the club data', async () => {
+      links.push({
+        guardianship_id: 'gs-teen-verified',
+        dependent_user_id: TEEN_ID,
+        guardian_user_id: ADULT_ID,
+        consent_status: 'verified',
+      });
+      await actingCache.bump(TEEN_ID);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/dashboard/summary')
+        .set(bearer(TEEN_ID));
+
+      expect(response.status).toBe(200);
+      const summary = response.body?.data ?? response.body;
+      expect(summary).toMatchObject({
+        club_name: 'Club Orion',
+        club_type: 'Conquistadores',
+        user_role: 'member',
+      });
+      expect(summary.upcoming_activities).toHaveLength(1);
     });
   });
 });

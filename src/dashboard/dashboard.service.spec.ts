@@ -533,4 +533,85 @@ describe('DashboardService', () => {
       expect(result.investiture_status).toBeNull();
     });
   });
+
+  // ----------------------------------------
+  // Pending-guardian teen (FP3-03/FP3-07): own progress yes, club data never
+  // ----------------------------------------
+  describe('without club data (a teen with no verified guardian yet)', () => {
+    const pendingTeenRow = () => ({
+      name: 'Ana',
+      paternal_last_name: 'López',
+      maternal_last_name: null,
+      user_image: null,
+      // An ACTIVE assignment from before the deploy: exactly the leak case.
+      users_pr: {
+        active_club_assignment_id: assignmentClubCentral.assignment_id,
+      },
+      users_honors: [{ validate: true }, { validate: false }],
+      enrollments: [amigoEnrollment],
+      club_role_assignments: [assignmentClubCentral],
+    });
+
+    it('nulls every club field and lists no activities, even with an active assignment', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(pendingTeenRow());
+      mockPrismaService.activities.findMany.mockResolvedValue([
+        {
+          activity_id: 1,
+          name: 'Campamento',
+          activity_date: new Date('2099-01-01T00:00:00.000Z'),
+          activity_time: '09:00',
+          activity_place: 'Parque',
+          activity_types: { name: 'Campamento' },
+        },
+      ]);
+
+      const result = await service.getSummary('teen-1', {
+        includeClubData: false,
+      });
+
+      expect(result).toMatchObject({
+        club_name: null,
+        club_type: null,
+        user_role: null,
+        upcoming_activities: [],
+      });
+      // The activities of the club section are not even queried.
+      expect(mockPrismaService.activities.findMany).not.toHaveBeenCalled();
+      expect(JSON.stringify(result)).not.toContain('Club Central');
+      expect(JSON.stringify(result)).not.toContain('Conquistadores');
+    });
+
+    it('keeps the own progress (class and honors): personal data, not club data', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(pendingTeenRow());
+      mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValue(
+        { overall_progress: 40 },
+      );
+
+      const result = await service.getSummary('teen-1', {
+        includeClubData: false,
+      });
+
+      expect(result).toMatchObject({
+        user_name: 'Ana López',
+        current_class_name: 'Amigo',
+        current_class_id: 3,
+        class_progress: 40,
+        honors_completed: 1,
+        honors_in_progress: 1,
+      });
+    });
+
+    it('keeps the response shape (every key present) so the app home parses it', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(pendingTeenRow());
+      const withClub = await service.getSummary('teen-1');
+      const withoutClub = await service.getSummary('teen-1', {
+        includeClubData: false,
+      });
+      expect(Object.keys(withoutClub).sort()).toEqual(
+        Object.keys(withClub).sort(),
+      );
+      // The default still includes the club (adults, active teens).
+      expect(withClub.club_name).toBe('Club Central');
+    });
+  });
 });

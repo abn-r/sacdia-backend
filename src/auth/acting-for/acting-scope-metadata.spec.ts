@@ -235,6 +235,104 @@ const TEEN_ACCESS: Record<
   'account:manage': 'none',
 };
 
+/**
+ * Routes a pending teen reaches although they belong to a club-data family:
+ * the response is shaped for them (club fields null, no activities). Each one
+ * needs a controller test of the shaping.
+ */
+const SHAPED_FOR_PENDING_TEEN: string[] = ['GET /dashboard/summary'];
+
+/**
+ * The WHOLE surface of a pending teen (no verified guardian), reviewed route
+ * by route. FP3-03: no club data. Rulings applied:
+ *  - own_progress: the teen's OWN classes and honors (and their own honor
+ *    evidence) stay readable: personal data, not club data (orchestrator
+ *    ruling on verify W1; classes was the documented 3a deviation).
+ *  - shaped: reachable, club fields stripped (SHAPED_FOR_PENDING_TEEN).
+ *  - club_context_open: KNOWN to still show the club of an active pre-deploy
+ *    assignment (club name/section on the QR card, the /auth/me club
+ *    context). Reported on verify W1 for a ruling; not fixed here.
+ */
+const PENDING_TEEN_SURFACE: Record<
+  string,
+  | 'onboarding'
+  | 'own_profile'
+  | 'own_health'
+  | 'own_progress'
+  | 'account'
+  | 'notifications'
+  | 'shaped'
+  | 'club_context_open'
+> = {
+  // Onboarding: post-registration, club pickers, the join request, legal, guardian link.
+  'GET /users/:userId/post-registration/status': 'onboarding',
+  'GET /users/:userId/post-registration/photo-status': 'onboarding',
+  'POST /users/:userId/post-registration/step-1/complete': 'onboarding',
+  'POST /users/:userId/post-registration/step-2/complete': 'onboarding',
+  'POST /users/:userId/post-registration/step-3/complete': 'onboarding',
+  'POST /users/:userId/post-registration/membership-request/cancel':
+    'onboarding',
+  'POST /users/:userId/membership/annual-enroll': 'onboarding',
+  'GET /clubs': 'onboarding',
+  'GET /clubs/:clubId/sections': 'onboarding',
+  'GET /users/me/legal-acceptance': 'onboarding',
+  'POST /users/me/legal-acceptance': 'onboarding',
+  'GET /users/me/supervision': 'onboarding',
+  'POST /users/me/guardian-link-codes': 'onboarding',
+  'POST /users/me/guardian-links/:guardianshipId/revoke': 'onboarding',
+  // Own profile.
+  'GET /users/:userId': 'own_profile',
+  'GET /users/:userId/age': 'own_profile',
+  'PATCH /users/:userId': 'own_profile',
+  'POST /users/:userId/profile-picture': 'own_profile',
+  'DELETE /users/:userId/profile-picture': 'own_profile',
+  // Own health and emergency contacts.
+  'GET /users/:userId/allergies': 'own_health',
+  'GET /users/:userId/diseases': 'own_health',
+  'GET /users/:userId/medicines': 'own_health',
+  'PUT /users/:userId/allergies': 'own_health',
+  'PUT /users/:userId/diseases': 'own_health',
+  'PUT /users/:userId/medicines': 'own_health',
+  'DELETE /users/:userId/allergies/:allergyId': 'own_health',
+  'DELETE /users/:userId/diseases/:diseaseId': 'own_health',
+  'DELETE /users/:userId/medicines/:medicineId': 'own_health',
+  'GET /users/:userId/emergency-contacts': 'own_health',
+  'GET /users/:userId/emergency-contacts/:contactId': 'own_health',
+  'POST /users/:userId/emergency-contacts': 'own_health',
+  'PATCH /users/:userId/emergency-contacts/:contactId': 'own_health',
+  'DELETE /users/:userId/emergency-contacts/:contactId': 'own_health',
+  // Own progress (read only; writes are active-only scopes).
+  'GET /users/:userId/classes': 'own_progress',
+  'GET /users/:userId/classes/:classId/progress': 'own_progress',
+  'GET /users/:userId/honors': 'own_progress',
+  'GET /users/:userId/honors/stats': 'own_progress',
+  'GET /users/:userId/honors/:honorId/requirements/progress': 'own_progress',
+  'GET /users/:userId/honors/:honorId/requirements/:requirementId/evidence':
+    'own_progress',
+  // Own account.
+  'GET /auth/profile/completion-status': 'account',
+  'POST /auth/update-password': 'account',
+  'POST /auth/verify-email/send': 'account',
+  // Notifications and push.
+  'GET /notifications/history': 'notifications',
+  'GET /notifications/unread-count': 'notifications',
+  'PATCH /notifications/read-all': 'notifications',
+  'PATCH /notifications/:deliveryId/read': 'notifications',
+  'GET /users/me/notification-preferences': 'notifications',
+  'PATCH /users/me/notification-preferences': 'notifications',
+  'POST /users/me/fcm-tokens': 'notifications',
+  'DELETE /users/me/fcm-tokens/:tokenId': 'notifications',
+  // Shaped for a pending teen.
+  'GET /dashboard/summary': 'shaped',
+  // Known open: see the doc comment.
+  'GET /auth/me': 'club_context_open',
+  'PATCH /auth/me/context': 'club_context_open',
+  'GET /qr/me': 'club_context_open',
+  'GET /qr/me/card': 'club_context_open',
+  'GET /qr/me/card.pdf': 'club_context_open',
+  'GET /qr/member/token': 'club_context_open',
+};
+
 /** Scopes only a supervised teen holds: never a guardian, never a device. */
 const TEEN_ONLY_SCOPES: ActingForScope[] = [
   'member:read',
@@ -620,18 +718,56 @@ describe('acting-scope metadata snapshot', () => {
       }
     });
 
-    it('a pending teen reaches NO club data, member list, unit or activity route', () => {
+    it('a pending teen reaches NO club data, member list, unit, activity or dashboard route, except the reviewed SHAPED ones', () => {
+      // /dashboard and the /users/:userId club, unit, activity and ranking
+      // families are included: the old pattern left them out and hid the
+      // dashboard leak (club name and activities for a pending teen).
       const clubData =
-        /^[A-Z]+ \/(clubs\/:clubId(\/(?!sections$)|$)|activities|activity-series|member-rankings|achievements|resources|requests)/;
-      for (const route of routes.filter((r) => clubData.test(r.key))) {
+        /^[A-Z]+ \/(clubs\/:clubId(\/(?!sections$)|$)|activities|activity-series|member-rankings|achievements|resources|requests|dashboard|units|camporee|users\/:userId\/(club|section|unit|activit|ranking|attendance|camporee|insurance|finance|payment))/;
+      const matched = routes.filter((r) => clubData.test(r.key));
+      expect(matched.some((r) => r.key === 'GET /dashboard/summary')).toBe(
+        true,
+      );
+      for (const route of matched) {
         expect({
           route: route.key,
           allowed: isAllowed(route, {
             kind: 'supervised_user',
             scopes: TEEN_PENDING_SCOPES,
           }),
-        }).toEqual({ route: route.key, allowed: false });
+        }).toEqual({
+          route: route.key,
+          allowed: SHAPED_FOR_PENDING_TEEN.includes(route.key),
+        });
       }
+    });
+
+    it('a SHAPED route is reachable by a pending teen (its controller strips the club data; DashboardController spec + supervised-login e2e)', () => {
+      for (const key of SHAPED_FOR_PENDING_TEEN) {
+        const route = routes.find((r) => r.key === key);
+        expect(route).toBeDefined();
+        expect(
+          isAllowed(route!, {
+            kind: 'supervised_user',
+            scopes: TEEN_PENDING_SCOPES,
+          }),
+        ).toBe(true);
+      }
+    });
+
+    it('EVERY route a pending teen reaches is reviewed in PENDING_TEEN_SURFACE (a new self:read route cannot slip in unseen)', () => {
+      const reached = routes
+        .filter(
+          (r) =>
+            r.scope !== undefined &&
+            isAllowed(r, {
+              kind: 'supervised_user',
+              scopes: TEEN_PENDING_SCOPES,
+            }),
+        )
+        .map((r) => r.key)
+        .sort();
+      expect(reached).toEqual(Object.keys(PENDING_TEEN_SURFACE).sort());
     });
 
     it('a pending teen can still finish post-registration (steps 1-3 and the club pickers)', () => {

@@ -180,6 +180,25 @@ export interface AuthPrincipal {
   linked_device_id?: string;
 }
 
+/**
+ * Whether a route that is reachable by the principal may include CLUB data
+ * (club name, section, role, club activities) in its response. False for a
+ * teen without a verified guardian (FP3-03: "MUST NOT reach any club data",
+ * also with an active assignment from before Phase 3, FP3-07) and for an
+ * unknown-age account (AGE_UNKNOWN_SCOPES: no club data). A supervised
+ * principal with no supervision status fails closed. Every other kind keeps
+ * its behavior (the guardian acting rules are Phase 2's).
+ */
+export function principalSeesClubData(
+  principal: Pick<AuthPrincipal, 'kind' | 'supervision'>,
+): boolean {
+  if (principal.kind === 'age_unknown_user') return false;
+  if (principal.kind === 'supervised_user') {
+    return principal.supervision === 'active';
+  }
+  return true;
+}
+
 /** Request property that memoizes the resolved grant across guard re-runs. */
 export const ACTING_GRANT_MEMO = Symbol('sacdia.acting_grant_memo');
 
