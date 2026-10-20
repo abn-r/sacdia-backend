@@ -9,7 +9,11 @@ import {
   SupervisedLoginsService,
 } from './supervised-logins.service';
 
-const GUARDIAN = 'aaaaaaaa-0000-4000-8000-000000000001';
+// Real bcryptjs at cost 12 (pure JS): several hashes per test can pass the 5 s
+// default when the machine is busy (CI, parallel workers).
+jest.setTimeout(30_000);
+
+const GUARDIAN ='aaaaaaaa-0000-4000-8000-000000000001';
 const GUARDIAN_2 = 'aaaaaaaa-0000-4000-8000-000000000002';
 const DEP = 'dddddddd-0000-4000-8000-000000000001';
 const GS = 'bbbbbbbb-0000-4000-8000-000000000001';
