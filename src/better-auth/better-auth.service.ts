@@ -13,14 +13,22 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import type { Prisma } from '@prisma/client';
 import { randomUUID, randomBytes } from 'crypto';
 import { generateSecret, generateURI, verifySync } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import { maskEmail } from '../common/utils/mask-email.util';
 import { EmailService } from '../common/email/email.service';
-import { accessJwtClaims } from '../common/constants/jwt-audiences';
+import {
+  accessJwtClaims,
+  deviceJwtClaims,
+} from '../common/constants/jwt-audiences';
 import { SupervisedPrincipalResolver } from '../auth/supervised/supervised-principal.resolver';
 import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
+import {
+  deviceRevoked,
+  deviceSessionExpired,
+} from '../auth/acting-for/acting-for.errors';
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -81,6 +89,24 @@ export interface SessionRequestContext {
   userAgent?: string;
 }
 
+/**
+ * The linked device a session token belongs to, when it is a device session
+ * (3b). A device session is recognised ONLY by its `linked_devices` row.
+ */
+export interface LinkedDeviceSessionInfo {
+  sessionId: string;
+  linkedDeviceId: string;
+  dependentUserId: string;
+  revokedAt: Date | null;
+  absoluteExpiresAt: Date;
+}
+
+/** Device access tokens live one hour (FP3-43); the module default of 8h does not apply. */
+export const DEVICE_JWT_TTL = '1h';
+
+/** A device session slides 30 days at a time, never past its absolute cap (FP3-46). */
+export const DEVICE_SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+
 export interface IBetterAuthService {
   // -- Auth ------------------------------------------------------------------
   createUser(
@@ -105,10 +131,15 @@ export interface IBetterAuthService {
     password: string,
     context?: SessionRequestContext,
   ): Promise<BaAuthResult>;
-  /** Creates a 7-day opaque session for an already-authenticated user. */
+  /**
+   * Creates an opaque session for an already-authenticated user: 7 days by
+   * default, or `options.durationMs` (a linked device pairs for 30 days). With
+   * `options.tx` the row is written in the caller's transaction (pairing).
+   */
   createSession(
     userId: string,
     context?: SessionRequestContext,
+    options?: { durationMs?: number; tx?: Prisma.TransactionClient },
   ): Promise<BaSession>;
   /**
    * Who owns a LIVE session token, without touching the session (no slide, no
@@ -116,7 +147,23 @@ export interface IBetterAuthService {
    * extends the row. Null when the token is unknown or expired.
    */
   getSessionOwnerId(sessionToken: string): Promise<string | null>;
-  refreshSession(sessionToken: string): Promise<BaAuthResult>;
+  /**
+   * The linked device whose session this token is, even when the device was
+   * revoked (the row is what tells a device session from a user one). Null for
+   * a user session or an unknown token. Read-only.
+   */
+  findLinkedDeviceOfSession(
+    sessionToken: string,
+  ): Promise<LinkedDeviceSessionInfo | null>;
+  /**
+   * `known.device` lets a caller that already looked the device up (AuthService
+   * runs the device gate first) skip the second lookup; `null` means "looked,
+   * it is a user session".
+   */
+  refreshSession(
+    sessionToken: string,
+    known?: { device: LinkedDeviceSessionInfo | null },
+  ): Promise<BaAuthResult>;
   signOut(sessionToken: string): Promise<void>;
   resetPasswordForEmail(email: string, redirectTo?: string): Promise<void>;
   resetPasswordWithToken(
@@ -143,6 +190,12 @@ export interface IBetterAuthService {
     mfaPending?: boolean,
     sessionId?: string,
   ): string;
+  /** Signs the 1 h device JWT (aud sacdia:device) of a paired phone. */
+  signDeviceJwt(device: {
+    dependentUserId: string;
+    sessionId: string;
+    linkedDeviceId: string;
+  }): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -269,10 +322,13 @@ export class BetterAuthService implements IBetterAuthService {
   async createSession(
     userId: string,
     context?: SessionRequestContext,
+    options?: { durationMs?: number; tx?: Prisma.TransactionClient },
   ): Promise<BaSession> {
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + SESSION_DURATION_MS);
-    const dbSession = await this.prisma.session.create({
+    const expiresAt = new Date(
+      now.getTime() + (options?.durationMs ?? SESSION_DURATION_MS),
+    );
+    const dbSession = await (options?.tx ?? this.prisma).session.create({
       data: {
         id: randomUUID(),
         token: generateToken(),
@@ -481,6 +537,40 @@ export class BetterAuthService implements IBetterAuthService {
     return this.signInWithIdentifier(email, password, context);
   }
 
+  async findLinkedDeviceOfSession(
+    sessionToken: string,
+  ): Promise<LinkedDeviceSessionInfo | null> {
+    // No relation between sessions and linked_devices (ADR-4): join by hand.
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        session_id: string;
+        linked_device_id: string;
+        dependent_user_id: string;
+        revoked_at: Date | null;
+        absolute_expires_at: Date;
+      }>
+    >`
+      SELECT s.id AS session_id,
+             ld.linked_device_id,
+             ld.dependent_user_id,
+             ld.revoked_at,
+             ld.absolute_expires_at
+        FROM sessions s
+        JOIN linked_devices ld ON ld.session_id = s.id
+       WHERE s.token = ${sessionToken}
+       LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      sessionId: row.session_id,
+      linkedDeviceId: row.linked_device_id,
+      dependentUserId: row.dependent_user_id,
+      revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
+      absoluteExpiresAt: new Date(row.absolute_expires_at),
+    };
+  }
+
   async getSessionOwnerId(sessionToken: string): Promise<string | null> {
     const session = await this.prisma.session.findFirst({
       where: { token: sessionToken, expiresAt: { gt: new Date() } },
@@ -500,8 +590,36 @@ export class BetterAuthService implements IBetterAuthService {
    *      fire-and-forget so the error path adds no latency to the caller.
    *   3. Map raw result → BaSession + BaUser → sign SACDIA JWT.
    */
-  async refreshSession(sessionToken: string): Promise<BaAuthResult> {
-    const newExpiresAt = new Date(Date.now() + SESSION_DURATION_MS);
+  async refreshSession(
+    sessionToken: string,
+    known?: { device: LinkedDeviceSessionInfo | null },
+  ): Promise<BaAuthResult> {
+    // A device session is told apart by its linked_devices row, and only that
+    // row decides the lifetime and the kind of JWT: a device session slides 30
+    // days capped at its absolute expiry and signs ONLY a device JWT; a user
+    // session slides 7 days and signs ONLY an access JWT. A revoked or capped
+    // device NEVER falls through to the user path (it would mint an access JWT
+    // for a child).
+    const device =
+      known !== undefined
+        ? known.device
+        : await this.findLinkedDeviceOfSession(sessionToken);
+    const nowMs = Date.now();
+    let newExpiresAt = new Date(nowMs + SESSION_DURATION_MS);
+    if (device) {
+      if (device.revokedAt) {
+        throw deviceRevoked();
+      }
+      if (device.absoluteExpiresAt.getTime() <= nowMs) {
+        throw deviceSessionExpired();
+      }
+      newExpiresAt = new Date(
+        Math.min(
+          nowMs + DEVICE_SESSION_DURATION_MS,
+          device.absoluteExpiresAt.getTime(),
+        ),
+      );
+    }
 
     // Single round-trip: UPDATE + JOIN users, slide expiry, return all needed fields.
     // The WHERE clause enforces both token match and non-expiry atomically.
@@ -602,6 +720,17 @@ export class BetterAuthService implements IBetterAuthService {
       created_at: row.u_created_at,
       modified_at: row.u_modified_at,
     });
+
+    if (device) {
+      // No MFA on a device, and never an access JWT.
+      const deviceToken = this.signDeviceJwt({
+        dependentUserId: user.id,
+        sessionId: session.id,
+        linkedDeviceId: device.linkedDeviceId,
+      });
+      this.logger.log(`Device session refreshed for dependent: ${user.id}`);
+      return { user, session, accessToken: deviceToken };
+    }
 
     const { enabled: mfaEnabled } = await this.hasTotpEnabled(user.id);
     const sessionAssured = mfaEnabled
@@ -1090,5 +1219,32 @@ export class BetterAuthService implements IBetterAuthService {
       payload['mfa_pending'] = true;
     }
     return this.jwtService.sign(payload);
+  }
+
+  /**
+   * Signs the device JWT of a paired phone: HS256, iss=https://api.sacdia.app,
+   * aud EXACTLY the string `sacdia:device`, `sub` the dependent, `sid` the
+   * device session, `dev` the linked device id, 1 hour (overriding the module's
+   * 8h default). No email, no `mfa_pending`; a random `jti` keeps every token
+   * distinct. What the token may do is never in
+   * the token: the gate re-checks the device on every request.
+   */
+  signDeviceJwt(device: {
+    dependentUserId: string;
+    sessionId: string;
+    linkedDeviceId: string;
+  }): string {
+    return this.jwtService.sign(
+      {
+        sub: device.dependentUserId,
+        sid: device.sessionId,
+        dev: device.linkedDeviceId,
+        ...deviceJwtClaims(),
+        // Unique per token: two tokens signed in the same second would be the
+        // same string, and a refresh blacklists the PRESENTED token.
+        jti: randomUUID(),
+      },
+      { expiresIn: DEVICE_JWT_TTL },
+    );
   }
 }

@@ -17,7 +17,11 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto, loginIdentifierOf } from './dto/login.dto';
 import { LoginFailureCounter } from './login-failure-counter';
 import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
-import { supervisedAccessRevoked } from './acting-for/acting-for.errors';
+import {
+  deviceRevoked,
+  isDeviceAccessError,
+  supervisedAccessRevoked,
+} from './acting-for/acting-for.errors';
 import {
   fireEvent,
   resolveSupervisedLoginEvents,
@@ -63,6 +67,9 @@ import {
 import { stripClubContext } from './acting-for/strip-club-context';
 import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
 import { SupervisionStateService } from '../guardianships/supervision-state.service';
+import { LinkedDeviceGate } from './device/linked-device.gate';
+import { LinkedDevicesService } from '../guardianships/linked-devices.service';
+import type { LinkedDeviceSessionInfo } from '../better-auth/better-auth.service';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -113,6 +120,8 @@ export class AuthService {
     private readonly supervisionState: SupervisionStateService,
     private readonly loginFailures: LoginFailureCounter,
     private readonly supervisedResolver: SupervisedPrincipalResolver,
+    private readonly linkedDeviceGate: LinkedDeviceGate,
+    private readonly linkedDevices: LinkedDevicesService,
     // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
     // every guardian security notice into a silent no-op (FP3-23).
     @Inject(SUPERVISED_LOGIN_EVENTS)
@@ -607,7 +616,41 @@ export class AuthService {
       );
       throw new AppUnauthorizedException(ErrorCode.AUTH_REFRESH_TOKEN_INVALID);
     }
+    // A device session (a child's paired phone, 3b) is told apart by its
+    // linked_devices row. It runs the DEVICE gate (revoked, capped, guardianship,
+    // majority, ...) instead of the supervised resolver, BEFORE the session
+    // slides, and refreshes into a device JWT only. A user session is unchanged.
+    let device: LinkedDeviceSessionInfo | null = null;
     if (sessionOwnerId) {
+      try {
+        device =
+          (await this.betterAuthService.findLinkedDeviceOfSession(
+            refreshToken,
+          )) ?? null;
+      } catch (error) {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth_refresh_failed',
+            reason: error instanceof Error ? error.message : String(error),
+            payloadFormat,
+            userAgent: context?.userAgent ?? 'unknown',
+          }),
+        );
+        throw new AppUnauthorizedException(
+          ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
+        );
+      }
+    }
+    if (device) {
+      if (device.revokedAt) {
+        throw deviceRevoked();
+      }
+      await this.linkedDeviceGate.assertActive({
+        dependentId: device.dependentUserId,
+        sid: device.sessionId,
+        deviceId: device.linkedDeviceId,
+      });
+    } else if (sessionOwnerId) {
       const supervised = await this.supervisedResolver.resolve(sessionOwnerId);
       if (supervised.state === 'blocked') {
         this.logger.warn(
@@ -627,8 +670,15 @@ export class AuthService {
       ReturnType<typeof this.betterAuthService.refreshSession>
     >;
     try {
-      baResult = await this.betterAuthService.refreshSession(refreshToken);
+      baResult = sessionOwnerId
+        ? await this.betterAuthService.refreshSession(refreshToken, { device })
+        : await this.betterAuthService.refreshSession(refreshToken);
     } catch (error) {
+      // The device codes explain the 401 to the child's app (unlinked / past the
+      // lifetime cap); everything else stays the generic refresh failure.
+      if (isDeviceAccessError(error)) {
+        throw error;
+      }
       this.logger.warn(
         JSON.stringify({
           event: 'auth_refresh_failed',
@@ -705,9 +755,15 @@ export class AuthService {
     if (refreshToken) {
       path = 'session';
       revocationAttempted = true;
+      // A device logging out ("Desvincular") unlinks itself: remember the device
+      // BEFORE the session row disappears, revoke it afterwards (best effort).
+      const loggedOutDevice = await this.findDeviceForLogout(refreshToken);
       try {
         await this.betterAuthService.signOut(refreshToken);
         revocationSucceeded = true;
+        if (loggedOutDevice) {
+          await this.revokeLoggedOutDevice(loggedOutDevice, userAgent);
+        }
       } catch (error) {
         reason = error instanceof Error ? error.message : String(error);
         this.logger.warn(
@@ -771,6 +827,45 @@ export class AuthService {
       revocationSucceeded,
       path,
     };
+  }
+
+  /** The ACTIVE linked device behind a logout refresh token, or null (never throws). */
+  private async findDeviceForLogout(
+    refreshToken: string,
+  ): Promise<LinkedDeviceSessionInfo | null> {
+    try {
+      const device =
+        (await this.betterAuthService.findLinkedDeviceOfSession(
+          refreshToken,
+        )) ?? null;
+      return device && !device.revokedAt ? device : null;
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_logout_device_lookup_failed',
+          reason: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return null;
+    }
+  }
+
+  private async revokeLoggedOutDevice(
+    device: LinkedDeviceSessionInfo,
+    userAgent: string,
+  ): Promise<void> {
+    try {
+      await this.linkedDevices.revokeByLogout(device.linkedDeviceId);
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_logout_device_revoke_failed',
+          device: device.linkedDeviceId,
+          reason: error instanceof Error ? error.message : String(error),
+          userAgent,
+        }),
+      );
+    }
   }
 
   async requestPasswordReset(dto: ResetPasswordRequestDto) {
@@ -943,6 +1038,7 @@ export class AuthService {
       | 'scopes'
       | 'kind'
       | 'supervision'
+      | 'linked_device_id'
     >,
   ) {
     const fullyResolved =
@@ -957,24 +1053,38 @@ export class AuthService {
     const supervisionStatus =
       principal?.kind === 'supervised_user' ? principal.supervision : undefined;
     const ageUnknown = principal?.kind === 'age_unknown_user';
-    const [signedUserImage, legal, family, supervision, analyticsAnonymous] =
-      await Promise.all([
-        this.resolvePrivateProfilePicture(resolved.profile.user_image),
-        // Outside the authorization cache: acceptance must reflect the DB right away.
-        this.legalService.getStatus(userId),
-        // Hidden while acting (a dependent has no family of its own to show),
-        // for supervised teens and for an unknown age (neither is a guardian).
-        acting || supervisionStatus || ageUnknown
-          ? Promise.resolve(null)
-          : this.loadFamilySummary(userId),
-        supervisionStatus
-          ? this.supervisionState.describe(userId, supervisionStatus)
-          : Promise.resolve(null),
-        this.isAnalyticsAnonymous(
-          resolved.profile.birthday,
-          resolved.profile.country_id,
-        ),
-      ]);
+    // A child's paired phone (3b): no family of its own, no supervision state.
+    const isDevice = principal?.kind === 'linked_device';
+    const [
+      signedUserImage,
+      legal,
+      family,
+      supervision,
+      analyticsAnonymous,
+      device,
+    ] = await Promise.all([
+      this.resolvePrivateProfilePicture(resolved.profile.user_image),
+      // Outside the authorization cache: acceptance must reflect the DB right away.
+      this.legalService.getStatus(userId),
+      // Hidden while acting (a dependent has no family of its own to show),
+      // for supervised teens and for an unknown age (neither is a guardian).
+      acting || supervisionStatus || ageUnknown || isDevice
+        ? Promise.resolve(null)
+        : this.loadFamilySummary(userId),
+      supervisionStatus
+        ? this.supervisionState.describe(userId, supervisionStatus)
+        : Promise.resolve(null),
+      // A device child is always anonymous for analytics (privacy 6.1).
+      isDevice
+        ? Promise.resolve(true)
+        : this.isAnalyticsAnonymous(
+            resolved.profile.birthday,
+            resolved.profile.country_id,
+          ),
+      isDevice && principal?.linked_device_id
+        ? this.loadDeviceInfo(principal.linked_device_id)
+        : Promise.resolve(null),
+    ]);
 
     return {
       status: 'success',
@@ -1004,20 +1114,44 @@ export class AuthService {
           kind: principal?.kind ?? 'user',
           scopes: principal?.scopes ?? null,
           supervision,
+          // Only a linked device carries this block (3b); absent otherwise.
+          ...(isDevice ? { device } : {}),
         },
         // profile_incomplete: unknown age (NULL birthday, post-registration
         // open). The app finishes the post-registration before anything else.
-        mode: ageUnknown
-          ? 'profile_incomplete'
-          : !supervisionStatus
-            ? 'adult'
-            : supervisionStatus === 'active'
-              ? 'teen_supervised'
-              : 'teen_pending',
+        // device: a child's paired phone (3b).
+        mode: isDevice
+          ? 'device'
+          : ageUnknown
+            ? 'profile_incomplete'
+            : !supervisionStatus
+              ? 'adult'
+              : supervisionStatus === 'active'
+                ? 'teen_supervised'
+                : 'teen_pending',
         family_features: this.familyFlags.getAll(),
         analytics_anonymous: analyticsAnonymous,
       },
     };
+  }
+
+  /** The paired phone behind a device principal: its label and when it was linked. */
+  private async loadDeviceInfo(linkedDeviceId: string): Promise<{
+    linked_device_id: string;
+    label: string;
+    paired_at: string;
+  } | null> {
+    const device = await this.prisma.linked_devices.findUnique({
+      where: { linked_device_id: linkedDeviceId },
+      select: { label: true, paired_at: true },
+    });
+    return device
+      ? {
+          linked_device_id: linkedDeviceId,
+          label: device.label,
+          paired_at: device.paired_at.toISOString(),
+        }
+      : null;
   }
 
   /**

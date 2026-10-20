@@ -283,6 +283,67 @@ describe('HttpExceptionFilter — request body sanitization', () => {
   });
 });
 
+describe('HttpExceptionFilter — the device pairing token is never logged', () => {
+  let filter: HttpExceptionFilter;
+  const loggedPayloads: unknown[] = [];
+
+  beforeEach(async () => {
+    loggedPayloads.length = 0;
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        HttpExceptionFilter,
+        {
+          provide: I18nService,
+          useValue: { translate: jest.fn().mockReturnValue('bad') },
+        },
+      ],
+    }).compile();
+    filter = module.get(HttpExceptionFilter);
+    jest
+      .spyOn((filter as any).logger, 'error')
+      .mockImplementation((payload: unknown) => {
+        loggedPayloads.push(payload);
+      });
+  });
+
+  it('redacts pairing_token and qr_payload from the logged request body', () => {
+    const token = 'abcdefghijklmnopqrstuv';
+    const host = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          url: '/api/v1/auth/device/pair',
+          method: 'POST',
+          body: {
+            pairing_token: token,
+            qr_payload: `sacdia://pair?t=${token}`,
+            platform: 'android',
+          },
+          headers: {},
+        }),
+        getResponse: () => ({
+          status: jest.fn().mockReturnThis(),
+          json: jest.fn(),
+          setHeader: jest.fn(),
+        }),
+      }),
+    } as never;
+
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    try {
+      filter.catch(new HttpException('Bad', HttpStatus.BAD_REQUEST), host);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+
+    const logged = loggedPayloads[0] as any;
+    expect(logged.requestBody?.pairing_token).toBe('[REDACTED]');
+    expect(logged.requestBody?.qr_payload).toBe('[REDACTED]');
+    expect(logged.requestBody?.platform).toBe('android');
+    expect(JSON.stringify(logged)).not.toContain(token);
+  });
+});
+
 describe('HttpExceptionFilter — Retry-After for throttled domain errors', () => {
   const mockI18n = {
     translate: jest.fn().mockReturnValue('Too many attempts'),

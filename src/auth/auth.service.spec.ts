@@ -4,7 +4,10 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
-import { accessJwtClaims } from '../common/constants/jwt-audiences';
+import {
+  accessJwtClaims,
+  deviceJwtClaims,
+} from '../common/constants/jwt-audiences';
 import {
   Logger,
   ServiceUnavailableException,
@@ -21,6 +24,7 @@ import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
   AppBadRequestException,
+  AppException,
   AppForbiddenException,
   AppUnauthorizedException,
 } from '../common/errors/app.exception';
@@ -31,6 +35,8 @@ import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags
 import { SupervisionStateService } from '../guardianships/supervision-state.service';
 import { LoginFailureCounter } from './login-failure-counter';
 import { SupervisedPrincipalResolver } from './supervised/supervised-principal.resolver';
+import { LinkedDeviceGate } from './device/linked-device.gate';
+import { LinkedDevicesService } from '../guardianships/linked-devices.service';
 import { SUPERVISED_LOGIN_EVENTS } from './supervised/supervised-login-events.port';
 import {
   AppException,
@@ -103,6 +109,7 @@ describe('AuthService', () => {
     createUser: jest.fn(),
     signInWithIdentifier: jest.fn(),
     getSessionOwnerId: jest.fn(),
+    findLinkedDeviceOfSession: jest.fn(),
     refreshSession: jest.fn(),
     signOut: jest.fn(),
     resetPasswordForEmail: jest.fn(),
@@ -223,6 +230,14 @@ describe('AuthService', () => {
     resolve: jest.fn(),
   };
 
+  const mockDeviceGate = {
+    assertActive: jest.fn(),
+  };
+
+  const mockLinkedDevices = {
+    revokeByLogout: jest.fn(),
+  };
+
   const mockEvents = {
     onTeenSessionStarted: jest.fn(),
     onTeenPasswordChanged: jest.fn(),
@@ -241,6 +256,11 @@ describe('AuthService', () => {
     mockSupervisedResolver.resolve
       .mockReset()
       .mockResolvedValue({ state: 'adult' });
+    mockBetterAuthService.findLinkedDeviceOfSession
+      .mockReset()
+      .mockResolvedValue(null);
+    mockDeviceGate.assertActive.mockReset().mockResolvedValue({ active: true });
+    mockLinkedDevices.revokeByLogout.mockReset().mockResolvedValue(undefined);
     mockEvents.onTeenSessionStarted.mockReset();
     mockEvents.onTeenPasswordChanged.mockReset();
     mockEvents.onPasswordReset.mockReset();
@@ -306,6 +326,8 @@ describe('AuthService', () => {
           provide: SupervisedPrincipalResolver,
           useValue: mockSupervisedResolver,
         },
+        { provide: LinkedDeviceGate, useValue: mockDeviceGate },
+        { provide: LinkedDevicesService, useValue: mockLinkedDevices },
         { provide: SUPERVISED_LOGIN_EVENTS, useValue: mockEvents },
       ],
     }).compile();
@@ -1187,6 +1209,78 @@ describe('AuthService', () => {
       });
     });
 
+    it('a device logging out ("Desvincular") revokes the device after the session is gone', async () => {
+      const device = {
+        sessionId: 'sid-device',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: null,
+        absoluteExpiresAt: new Date(Date.now() + 86_400_000),
+      };
+      mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue(device);
+      const order: string[] = [];
+      mockBetterAuthService.signOut.mockImplementation(() => {
+        order.push('signOut');
+        return Promise.resolve(undefined);
+      });
+      mockLinkedDevices.revokeByLogout.mockImplementation(() => {
+        order.push('revoke');
+        return Promise.resolve(undefined);
+      });
+
+      const result = await service.logout({ refreshToken: 'device-session' });
+
+      expect(order).toEqual(['signOut', 'revoke']);
+      expect(mockLinkedDevices.revokeByLogout).toHaveBeenCalledWith('device-1');
+      expect(result.revocationSucceeded).toBe(true);
+    });
+
+    it('an already revoked device is not revoked again on logout', async () => {
+      mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue({
+        sessionId: 's',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: new Date(),
+        absoluteExpiresAt: new Date(),
+      });
+      mockBetterAuthService.signOut.mockResolvedValue(undefined);
+
+      await service.logout({ refreshToken: 'device-session' });
+
+      expect(mockLinkedDevices.revokeByLogout).not.toHaveBeenCalled();
+    });
+
+    it('a user logout never touches the device service', async () => {
+      mockBetterAuthService.signOut.mockResolvedValue(undefined);
+
+      await service.logout({ refreshToken: 'ba-session-token' });
+
+      expect(mockLinkedDevices.revokeByLogout).not.toHaveBeenCalled();
+    });
+
+    it('a failing device revoke or lookup never breaks the logout', async () => {
+      mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue({
+        sessionId: 's',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: null,
+        absoluteExpiresAt: new Date(),
+      });
+      mockBetterAuthService.signOut.mockResolvedValue(undefined);
+      mockLinkedDevices.revokeByLogout.mockRejectedValue(new Error('boom'));
+
+      await expect(
+        service.logout({ refreshToken: 'device-session' }),
+      ).resolves.toMatchObject({ success: true });
+
+      mockBetterAuthService.findLinkedDeviceOfSession.mockRejectedValue(
+        new Error('db'),
+      );
+      await expect(
+        service.logout({ refreshToken: 'device-session' }),
+      ).resolves.toMatchObject({ success: true });
+    });
+
     it('should return success even when BA signOut throws (best effort)', async () => {
       mockBetterAuthService.signOut.mockRejectedValue(
         new Error('Session not found'),
@@ -1481,6 +1575,142 @@ describe('AuthService', () => {
           status: 503,
         });
         expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('a device session (3b)', () => {
+      const device = {
+        sessionId: 'sid-device',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: null as Date | null,
+        absoluteExpiresAt: new Date(Date.now() + 90 * 86_400_000),
+      };
+
+      beforeEach(() => {
+        mockBetterAuthService.getSessionOwnerId
+          .mockReset()
+          .mockResolvedValue('child-1');
+        mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue(
+          device,
+        );
+      });
+
+      it('runs the DEVICE gate (not the supervised resolver) before the session slides, and refreshes as a device', async () => {
+        const order: string[] = [];
+        mockDeviceGate.assertActive.mockImplementation(() => {
+          order.push('gate');
+          return Promise.resolve({ active: true });
+        });
+        mockBetterAuthService.refreshSession.mockImplementation(() => {
+          order.push('refresh');
+          return Promise.resolve(mockBaResult);
+        });
+
+        await service.refreshSession({ refreshToken: 'device-session' });
+
+        expect(order).toEqual(['gate', 'refresh']);
+        expect(mockDeviceGate.assertActive).toHaveBeenCalledWith({
+          dependentId: 'child-1',
+          sid: 'sid-device',
+          deviceId: 'device-1',
+        });
+        expect(mockSupervisedResolver.resolve).not.toHaveBeenCalled();
+        expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith(
+          'device-session',
+          { device },
+        );
+      });
+
+      it('a revoked device row answers AUTH_DEVICE_REVOKED and never slides the session', async () => {
+        mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue({
+          ...device,
+          revokedAt: new Date(),
+        });
+
+        await expect(
+          service.refreshSession({ refreshToken: 'device-session' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_DEVICE_REVOKED,
+          status: 401,
+        });
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
+
+      it('the gate refusals (guardianship gone, majority, flag off) are passed through untouched', async () => {
+        const refusal = Object.assign(new Error('revoked'), {
+          code: ErrorCode.AUTH_DEVICE_REVOKED,
+        });
+        mockDeviceGate.assertActive.mockRejectedValue(refusal);
+
+        await expect(
+          service.refreshSession({ refreshToken: 'device-session' }),
+        ).rejects.toBe(refusal);
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
+
+      it('past the absolute cap the device code (not the generic refresh failure) reaches the app', async () => {
+        mockBetterAuthService.refreshSession.mockRejectedValue(
+          new AppException(ErrorCode.AUTH_DEVICE_SESSION_EXPIRED, 401),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'device-session' }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.AUTH_DEVICE_SESSION_EXPIRED,
+          status: 401,
+        });
+      });
+
+      it('a user session never runs the device gate (adult regression)', async () => {
+        mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue(null);
+        mockBetterAuthService.refreshSession.mockResolvedValue(mockBaResult);
+
+        await service.refreshSession({ refreshToken: 'ba-session-token' });
+
+        expect(mockDeviceGate.assertActive).not.toHaveBeenCalled();
+        expect(mockSupervisedResolver.resolve).toHaveBeenCalledWith('child-1');
+        expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith(
+          'ba-session-token',
+          { device: null },
+        );
+      });
+
+      it('a failed device lookup is the invalid-token 401 and nothing is refreshed', async () => {
+        mockBetterAuthService.findLinkedDeviceOfSession.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        await expect(
+          service.refreshSession({ refreshToken: 'device-session' }),
+        ).rejects.toMatchObject({ code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID });
+        expect(mockBetterAuthService.refreshSession).not.toHaveBeenCalled();
+      });
+
+      it('blacklists the old device JWT presented with the refresh (same subject)', async () => {
+        mockBetterAuthService.refreshSession.mockResolvedValue({
+          ...mockBaResult,
+          user: { ...mockBaResult.user, id: 'child-1' },
+        });
+        const presented = new JwtService({ secret: TEST_ACCESS_SECRET }).sign(
+          {
+            sub: 'child-1',
+            sid: 'sid-device',
+            dev: 'device-1',
+            ...deviceJwtClaims(),
+          },
+          { algorithm: 'HS256', expiresIn: '1h' },
+        );
+
+        await service.refreshSession(
+          { refreshToken: 'device-session' },
+          { accessToken: presented },
+        );
+
+        expect(mockTokenBlacklistService.blacklistToken).toHaveBeenCalledWith(
+          presented,
+          28800,
+        );
       });
     });
 
@@ -1961,6 +2191,108 @@ describe('AuthService', () => {
           is_guardian: false,
           dependents_count: 0,
         });
+      });
+    });
+
+    describe('a linked device (3b)', () => {
+      const resolvedChild = {
+        profile: {
+          user_id: 'child-1',
+          email: null,
+          name: 'Ana',
+          paternal_last_name: 'Perez',
+          maternal_last_name: null,
+          birthday: new Date('2017-03-01T00:00:00.000Z'),
+          country_id: 1,
+          user_image: null,
+        },
+        post_register_complete: true,
+        authorization: {
+          grants: { global_roles: [], club_assignments: [] },
+          active_assignment: { assignment_id: null },
+          effective: { permissions: [], scope: { global: {}, club: null } },
+        },
+        legacy: {
+          roles: ['user'],
+          permissions: [],
+          club: null,
+          club_context: {
+            active_assignment_id: null,
+            active: null,
+            available: [],
+          },
+        },
+      };
+
+      beforeEach(() => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedChild,
+        );
+        mockPrismaService.linked_devices = {
+          findUnique: jest.fn().mockResolvedValue({
+            label: 'Tablet de Ana',
+            paired_at: new Date('2026-10-20T12:00:00.000Z'),
+          }),
+        };
+      });
+
+      const devicePrincipal = {
+        acting_for: false,
+        actor_sub: 'child-1',
+        scopes: ['self:read'],
+        kind: 'linked_device' as const,
+        linked_device_id: 'device-1',
+      };
+
+      it('reports principal.device {id, label, paired_at}, mode device, family null and anonymous analytics', async () => {
+        const result = await service.getProfile('child-1', devicePrincipal);
+
+        expect(result.data.principal).toEqual({
+          kind: 'linked_device',
+          scopes: ['self:read'],
+          supervision: null,
+          device: {
+            linked_device_id: 'device-1',
+            label: 'Tablet de Ana',
+            paired_at: '2026-10-20T12:00:00.000Z',
+          },
+        });
+        expect(result.data.mode).toBe('device');
+        expect(result.data.family).toBeNull();
+        expect(result.data.acting_for).toBeNull();
+        expect(result.data.analytics_anonymous).toBe(true);
+        expect(result.data.legal).toEqual(LEGAL_STATUS);
+        expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
+        expect(mockSupervisionState.describe).not.toHaveBeenCalled();
+      });
+
+      it('analytics stay anonymous even if the birthday/country policy could not prove a minor', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          {
+            ...resolvedChild,
+            profile: { ...resolvedChild.profile, birthday: null },
+          },
+        );
+
+        const result = await service.getProfile('child-1', devicePrincipal);
+
+        expect(result.data.analytics_anonymous).toBe(true);
+      });
+
+      it('an adult principal carries NO device key (the adult payload is unchanged)', async () => {
+        const result = await service.getProfile('child-1', {
+          acting_for: false,
+          actor_sub: 'child-1',
+          scopes: null,
+          kind: 'user',
+        });
+
+        expect(result.data.principal).toEqual({
+          kind: 'user',
+          scopes: null,
+          supervision: null,
+        });
+        expect('device' in result.data.principal).toBe(false);
       });
     });
 

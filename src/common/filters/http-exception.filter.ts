@@ -246,6 +246,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // Login identifier (an email or a supervised login handle) and the handle.
     'identifier',
     'login_handle',
+    // Device pairing token (QR) and its deep-link payload.
+    'pairing_token',
+    'qr_payload',
     'currentpassword',
     'newpassword',
     'oldpassword',
