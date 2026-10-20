@@ -1000,6 +1000,30 @@ describe('UsersService', () => {
         expect(mockPrismaService.users.update).not.toHaveBeenCalled();
       });
 
+      it('gates an unknown-age account (social sign-up before step 2) the same way: a 10-year-old birthday is 422', async () => {
+        await expect(
+          service.update(
+            'u1',
+            { birthday: yearsAgo(10) },
+            { sub: 'u1', kind: 'age_unknown_user' },
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE,
+          status: 422,
+        });
+        expect(mockPrismaService.users.update).not.toHaveBeenCalled();
+      });
+
+      it('an unknown-age account saving a 15-year-old birthday bumps the principal epoch (teen_pending right away)', async () => {
+        await service.update(
+          'u1',
+          { birthday: yearsAgo(15) },
+          { sub: 'u1', kind: 'age_unknown_user' },
+        );
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+        expect(mockActingForCache.bump).toHaveBeenCalledWith('u1');
+      });
+
       it('allows an account holder aged 13 or more', async () => {
         await service.update('u1', { birthday: yearsAgo(13, -1) }, selfUser);
         expect(mockPrismaService.users.update).toHaveBeenCalled();

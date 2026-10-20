@@ -967,6 +967,19 @@ describe('AuthService', () => {
       ).toEqual({ kind: 'user', supervision: null });
     });
 
+    it('answers an unknown-age account (NULL birthday, post-registration open) with kind age_unknown_user', async () => {
+      mockBetterAuthService.signInWithIdentifier.mockResolvedValue(baResult());
+      mockPrismaService.users.findUnique.mockResolvedValue(userRow());
+      mockSupervisedResolver.resolve.mockResolvedValue({
+        state: 'profile_incomplete',
+      });
+
+      expect(
+        (await service.login({ identifier: 'ana-7kq4m9tx', password: 'p' }))
+          .data.user.principal,
+      ).toEqual({ kind: 'age_unknown_user', supervision: null });
+    });
+
     describe('guardian notices', () => {
       beforeEach(() => {
         mockBetterAuthService.signInWithIdentifier.mockResolvedValue(
@@ -1882,6 +1895,30 @@ describe('AuthService', () => {
         expect(result.data.family_features).toEqual(FAMILY_FEATURES);
         expect(result.data.family).not.toBeNull();
         expect(mockSupervisionState.describe).not.toHaveBeenCalled();
+      });
+
+      it('unknown age (social sign-up before step 2): kind age_unknown_user, mode profile_incomplete, family hidden, anonymous', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(null),
+        );
+
+        const result = await service.getProfile('teen-1', {
+          acting_for: false,
+          actor_sub: 'teen-1',
+          scopes: ['self:read', 'account:manage'],
+          kind: 'age_unknown_user',
+        });
+
+        expect(result.data.principal).toEqual({
+          kind: 'age_unknown_user',
+          scopes: ['self:read', 'account:manage'],
+          supervision: null,
+        });
+        expect(result.data.mode).toBe('profile_incomplete');
+        expect(result.data.family).toBeNull();
+        expect(result.data.analytics_anonymous).toBe(true);
+        expect(mockSupervisionState.describe).not.toHaveBeenCalled();
+        expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
       });
 
       it('no principal at all behaves as an adult user', async () => {

@@ -4,6 +4,7 @@ import { ErrorCode } from '../../common/errors/error-codes';
 import { assertActingScope } from './acting-scope.policy';
 import {
   ACTING_FOR_SCOPES,
+  AGE_UNKNOWN_SCOPES,
   DEVICE_SCOPES,
   GUARDIAN_PENDING_SCOPES,
   GUARDIAN_VERIFIED_SCOPES,
@@ -183,6 +184,15 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   // ---- push:register (teen + linked device; own token only)
   'POST /users/me/fcm-tokens': 'push:register',
   'DELETE /users/me/fcm-tokens/:tokenId': 'push:register',
+
+  // ======== Unknown age (NULL birthday, post-registration open) ========
+  // ---- account:manage (age_unknown_user ONLY: an adult who signs up with
+  // Google/Apple must be able to see and close sessions and delete the
+  // account before step 2; teens, guardians acting and devices never hold it)
+  'GET /auth/sessions': 'account:manage',
+  'DELETE /auth/sessions': 'account:manage',
+  'DELETE /auth/sessions/:sessionId': 'account:manage',
+  'DELETE /auth/me': 'account:manage',
 };
 
 /**
@@ -215,6 +225,7 @@ const TEEN_ACCESS: Record<
   'member:write': 'active',
   'agenda:read': 'active',
   'consent:evidence': 'none',
+  'account:manage': 'none',
 };
 
 /** Scopes only a supervised teen holds: never a guardian, never a device. */
@@ -238,13 +249,15 @@ const TEEN_ONLY_SCOPES: ActingForScope[] = [
  * (see TEEN_ONLY_SCOPES and the NOT_FOR_GUARDIAN_OR_DEVICE block): update-password,
  * users/me notification preferences, the honor instructor proposal and the
  * member-app club reads.
+ *
+ * Removed for the unknown-age principal: account deletion and sessions now
+ * carry `account:manage`, held by `age_unknown_user` ONLY (see
+ * AGE_UNKNOWN_ONLY). They stay denied to every guardian, teen and device.
  */
 const NEVER_SCOPE: Array<{
   label: string;
   pattern: RegExp;
 }> = [
-  { label: 'account deletion', pattern: /^DELETE \/auth\/me$/ },
-  { label: 'sessions', pattern: /^[A-Z]+ \/auth\/sessions(\/|$)/ },
   { label: 'mfa', pattern: /^[A-Z]+ \/auth\/mfa(\/|$)/ },
   { label: 'oauth', pattern: /^[A-Z]+ \/auth\/oauth(\/|$)/ },
   { label: 'data export', pattern: /^[A-Z]+ \/users\/me\/data-export/ },
@@ -305,6 +318,16 @@ const NEVER_SCOPE: Array<{
   },
 ];
 
+/**
+ * Routes reachable by the unknown-age principal ONLY (own account management).
+ * Each pattern must match a route; each matched route carries exactly
+ * `account:manage` and is denied to guardians, teens and devices.
+ */
+const AGE_UNKNOWN_ONLY: Array<{ label: string; pattern: RegExp }> = [
+  { label: 'account deletion', pattern: /^DELETE \/auth\/me$/ },
+  { label: 'sessions', pattern: /^[A-Z]+ \/auth\/sessions(\/|$)/ },
+];
+
 /** Routes that must carry no scope for ANY non-`user` kind (the teen included). */
 const PRINCIPALS: Array<{
   label: string;
@@ -334,6 +357,12 @@ const PRINCIPALS: Array<{
     label: 'linked device',
     kind: 'linked_device',
     scopes: DEVICE_SCOPES,
+    expectedCode: ErrorCode.PRINCIPAL_SCOPE_DENIED,
+  },
+  {
+    label: 'unknown age',
+    kind: 'age_unknown_user',
+    scopes: AGE_UNKNOWN_SCOPES,
     expectedCode: ErrorCode.PRINCIPAL_SCOPE_DENIED,
   },
 ];
@@ -411,7 +440,7 @@ describe('acting-scope metadata snapshot', () => {
     });
 
     it.each(NEVER_SCOPE)(
-      '$label carries no scope and is denied for every restricted kind (guardian, teen pending/active, device)',
+      '$label carries no scope and is denied for every restricted kind (guardian, teen pending/active, device, unknown age)',
       ({ pattern }) => {
         for (const route of routes.filter((r) => pattern.test(r.key))) {
           expect({ route: route.key, scope: route.scope }).toEqual({
@@ -607,6 +636,152 @@ describe('acting-scope metadata snapshot', () => {
             scopes: TEEN_PENDING_SCOPES,
           }),
         ).toBe(true);
+      }
+    });
+  });
+
+  describe('AGE_UNKNOWN_ONLY (own account management)', () => {
+    it.each(AGE_UNKNOWN_ONLY)(
+      '$label matches at least one route',
+      ({ pattern }) => {
+        expect(routes.some((r) => pattern.test(r.key))).toBe(true);
+      },
+    );
+
+    it.each(AGE_UNKNOWN_ONLY)(
+      '$label carries account:manage and is denied to guardians, teens and devices',
+      ({ pattern }) => {
+        for (const route of routes.filter((r) => pattern.test(r.key))) {
+          expect({ route: route.key, scope: route.scope }).toEqual({
+            route: route.key,
+            scope: 'account:manage',
+          });
+          for (const principal of PRINCIPALS.filter(
+            (p) => p.kind !== 'age_unknown_user',
+          )) {
+            let thrown: unknown;
+            try {
+              assertActingScope(new Reflector(), contextOf(route), principal);
+            } catch (error) {
+              thrown = error;
+            }
+            expect(thrown).toBeInstanceOf(AppException);
+            expect((thrown as AppException).code).toBe(principal.expectedCode);
+          }
+          expect(
+            isAllowed(route, {
+              kind: 'age_unknown_user',
+              scopes: AGE_UNKNOWN_SCOPES,
+            }),
+          ).toBe(true);
+        }
+      },
+    );
+
+    it('account:manage is carried by exactly the AGE_UNKNOWN_ONLY routes', () => {
+      const tagged = routes
+        .filter((r) => r.scope === 'account:manage')
+        .map((r) => r.key)
+        .sort();
+      const listed = routes
+        .filter((r) => AGE_UNKNOWN_ONLY.some((f) => f.pattern.test(r.key)))
+        .map((r) => r.key)
+        .sort();
+      expect(tagged).toEqual(listed);
+    });
+  });
+
+  describe('unknown-age column (age_unknown_user reachability against the real registry)', () => {
+    const newcomer = {
+      kind: 'age_unknown_user' as const,
+      scopes: AGE_UNKNOWN_SCOPES,
+    };
+
+    it('reaches exactly the routes whose scope is in AGE_UNKNOWN_SCOPES', () => {
+      const held = new Set<string>(AGE_UNKNOWN_SCOPES);
+      for (const route of routes.filter((r) => r.scope !== undefined)) {
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, newcomer),
+        }).toEqual({ route: route.key, allowed: held.has(route.scope!) });
+      }
+    });
+
+    it('never reaches an unscoped route', () => {
+      for (const route of routes.filter((r) => r.scope === undefined)) {
+        expect({
+          route: route.key,
+          allowed: isAllowed(route, newcomer),
+        }).toEqual({ route: route.key, allowed: false });
+      }
+    });
+
+    it('can finish the post-registration, accept the legal terms, register push and manage the own account', () => {
+      for (const key of [
+        'GET /auth/me',
+        'GET /auth/profile/completion-status',
+        'GET /users/:userId',
+        'PATCH /users/:userId',
+        'POST /users/:userId/profile-picture',
+        'GET /users/:userId/post-registration/status',
+        'GET /users/:userId/post-registration/photo-status',
+        'POST /users/:userId/post-registration/step-1/complete',
+        'POST /users/:userId/post-registration/step-2/complete',
+        'POST /users/:userId/post-registration/step-3/complete',
+        'POST /users/:userId/post-registration/membership-request/cancel',
+        'GET /clubs',
+        'GET /clubs/:clubId/sections',
+        'GET /users/:userId/allergies',
+        'PUT /users/:userId/allergies',
+        'GET /users/:userId/emergency-contacts',
+        'POST /users/:userId/emergency-contacts',
+        'GET /users/me/legal-acceptance',
+        'POST /users/me/legal-acceptance',
+        'POST /users/me/fcm-tokens',
+        'DELETE /users/me/fcm-tokens/:tokenId',
+        'POST /auth/update-password',
+        'GET /auth/sessions',
+        'DELETE /auth/sessions',
+        'DELETE /auth/sessions/:sessionId',
+        'DELETE /auth/me',
+      ]) {
+        const route = routes.find((r) => r.key === key);
+        expect({ key, exists: route !== undefined }).toEqual({
+          key,
+          exists: true,
+        });
+        expect({ key, allowed: isAllowed(route!, newcomer) }).toEqual({
+          key,
+          allowed: true,
+        });
+      }
+    });
+
+    it('reaches no club data, guardian tool, link code, preference or guardian-only exit', () => {
+      for (const key of [
+        'GET /clubs/:clubId',
+        'GET /clubs/:clubId/units',
+        'GET /clubs/:clubId/activities',
+        'GET /member-rankings/me',
+        'GET /resources',
+        'POST /users/:userId/classes/enroll',
+        'POST /users/:userId/honors',
+        'POST /users/me/guardian-link-codes',
+        'GET /users/me/notification-preferences',
+        'POST /users/:userId/post-registration/step-3/guardian-only',
+        'POST /users/:userId/post-registration/step-3/consent-evidence',
+        'GET /guardianships/me/dependents',
+        'POST /support/reports',
+      ]) {
+        const route = routes.find((r) => r.key === key);
+        expect({ key, exists: route !== undefined }).toEqual({
+          key,
+          exists: true,
+        });
+        expect({ key, allowed: isAllowed(route!, newcomer) }).toEqual({
+          key,
+          allowed: false,
+        });
       }
     });
   });

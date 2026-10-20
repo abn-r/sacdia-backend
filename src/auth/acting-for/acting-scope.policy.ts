@@ -49,7 +49,7 @@ export function isActingScopeAllowed(
  * or a scope the principal does not hold:
  *  - guardian_acting  -> ACTING_FOR_SCOPE_DENIED {required_scope} (the app's
  *    acting interceptor depends on this code);
- *  - supervised_user / linked_device -> PRINCIPAL_SCOPE_DENIED
+ *  - supervised_user / linked_device / age_unknown_user -> PRINCIPAL_SCOPE_DENIED
  *    {required_scope, kind, supervision?}, which never triggers the acting exit.
  */
 export function assertActingScope(
@@ -63,7 +63,8 @@ export function assertActingScope(
   const required = readActingScope(reflector, context) ?? null;
   if (
     principal?.kind === 'supervised_user' ||
-    principal?.kind === 'linked_device'
+    principal?.kind === 'linked_device' ||
+    principal?.kind === 'age_unknown_user'
   ) {
     throw principalScopeDenied(required, principal.kind, principal.supervision);
   }

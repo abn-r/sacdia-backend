@@ -365,9 +365,11 @@ export class UsersService {
     this.assertNoSelfServiceGeographyUpdate(updateUserDto);
     this.assertSupervisedBirthdayLocked(userId, updateUserDto, actor);
 
+    // The account holder editing THEMSELVES: an adult, or an unknown-age
+    // account saving its birthday in post-registration step 2.
     if (
       updateUserDto.birthday !== undefined &&
-      actor?.kind === 'user' &&
+      (actor?.kind === 'user' || actor?.kind === 'age_unknown_user') &&
       actor.sub === userId
     ) {
       await this.assertSelfBirthdayAllowed(

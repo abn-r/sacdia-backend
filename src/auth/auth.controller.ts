@@ -447,6 +447,7 @@ export class AuthController {
                     'guardian_acting',
                     'supervised_user',
                     'linked_device',
+                    'age_unknown_user',
                   ],
                 },
                 scopes: {
@@ -493,7 +494,14 @@ export class AuthController {
             },
             mode: {
               type: 'string',
-              enum: ['adult', 'teen_pending', 'teen_supervised'],
+              enum: [
+                'adult',
+                'teen_pending',
+                'teen_supervised',
+                'profile_incomplete',
+              ],
+              description:
+                'profile_incomplete: edad desconocida (sin fecha de nacimiento y post-registro abierto, p. ej. alta con Google/Apple antes del paso 2). Solo puede terminar el post-registro; el resto responde 403 PRINCIPAL_SCOPE_DENIED.',
             },
             family_features: {
               type: 'object',
@@ -578,6 +586,9 @@ export class AuthController {
    * Response: 204 No Content
    */
   @Delete('me')
+  // account:manage: an unknown-age account (social sign-up before step 2) must
+  // still be able to leave. Teens, guardians acting and devices never hold it.
+  @ActingScope('account:manage')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)

@@ -38,6 +38,32 @@ export function scopesForSupervision(
 }
 
 const ADULT: SupervisedState = { state: 'adult' };
+const PROFILE_INCOMPLETE: SupervisedState = { state: 'profile_incomplete' };
+
+interface UnknownAgeFacts {
+  access_panel: boolean | null;
+  users_pr: { complete: boolean } | null;
+  users_roles: Array<{ user_role_id: string }>;
+}
+
+/**
+ * A NULL birthday is only an adult when the account is NOT a self-service
+ * sign-up still in onboarding. Restricted when ALL of these hold:
+ *  - a post-registration row exists and is not complete (email register and
+ *    social sign-in create it; admin-created and seeded legacy accounts have
+ *    none, or a completed one);
+ *  - the account has no panel access and no staff global role (an admin who
+ *    later signs in with Google gets a fresh, incomplete row from the social
+ *    provisioning and must not lose the panel).
+ */
+function isOnboardingWithUnknownAge(user: UnknownAgeFacts): boolean {
+  return (
+    user.users_pr !== null &&
+    user.users_pr.complete !== true &&
+    user.access_panel !== true &&
+    user.users_roles.length === 0
+  );
+}
 
 /**
  * Decides, from SERVER state only, whether a user is an adult or a supervised
@@ -46,8 +72,15 @@ const ADULT: SupervisedState = { state: 'adult' };
  * sign-in, refresh and MFA completion all behave the same.
  *
  *  - adult:       age >= majority of the country policy, or NO birthday on file
- *                 (admin and legacy accounts must not break; the activation
- *                 gate fails closed for them instead).
+ *                 for an admin-created, staff or legacy account (no
+ *                 post-registration row, a completed one, panel access or a
+ *                 staff global role).
+ *  - profile_incomplete: NO birthday on a self-service account whose
+ *                 post-registration is still open (a Google/Apple sign-up
+ *                 before step 2). The age is unknown, so it gets a minimal
+ *                 scope set until step 2 saves the birthday. An adult birthday
+ *                 makes it a full adult right away (the app forces the rest of
+ *                 the post-registration anyway); a minor one, a teen.
  *  - blocked:     a minor whose dependent profile is frozen/purged, or whose
  *                 supervised login was disabled.
  *  - supervised:  any other minor. `active` when a VERIFIED, non-test,
@@ -199,11 +232,32 @@ export class SupervisedPrincipalResolver {
             select: { guardianship_id: true },
             take: 1,
           },
+          // Only consulted for a NULL birthday (unknown age).
+          access_panel: true,
+          users_pr: { select: { complete: true } },
+          users_roles: {
+            where: {
+              active: true,
+              roles: {
+                active: true,
+                role_category: 'GLOBAL',
+                role_name: { not: 'user' },
+              },
+            },
+            select: { user_role_id: true },
+            take: 1,
+          },
         },
       });
 
-      if (!user || !user.birthday) {
+      if (!user) {
         return { state: ADULT, timeZone: null };
+      }
+      if (!user.birthday) {
+        return {
+          state: isOnboardingWithUnknownAge(user) ? PROFILE_INCOMPLETE : ADULT,
+          timeZone: null,
+        };
       }
 
       const policy = await this.countryAgePolicy.getPolicy(user.country_id);

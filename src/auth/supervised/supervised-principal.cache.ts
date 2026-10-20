@@ -6,9 +6,14 @@ import type { SupervisionStatus } from '../acting-for/auth-principal';
 
 export type SupervisedBlockCause = 'login_disabled' | 'frozen';
 
-/** What the resolver decided about a user: adult, supervised or blocked. */
+/**
+ * What the resolver decided about a user: adult, supervised, blocked, or
+ * `profile_incomplete` (unknown age: NULL birthday while the self-service
+ * post-registration is still open).
+ */
 export type SupervisedState =
   | { state: 'adult' }
+  | { state: 'profile_incomplete' }
   | { state: 'supervised'; supervision: SupervisionStatus }
   | { state: 'blocked'; cause: SupervisedBlockCause };
 
@@ -59,7 +64,10 @@ export function msUntilNextLocalMidnight(
  * Epoch-versioned cache of the supervised-principal decision.
  *
  * Keys:
- *  - `supv:v1:{userId}:{epoch}`            the SupervisedState
+ *  - `supv:v2:{userId}:{epoch}`            the SupervisedState (v2 since the
+ *                                          `profile_incomplete` state: a v1
+ *                                          entry said "adult" for a NULL
+ *                                          birthday and must never be read)
  *  - `supv:sid:v1:{userId}:{epoch}:{sid}`  "this session still exists"
  * The epoch is the SAME one acting-for uses (`acting:epoch:{userId}`), so every
  * family mutation that already calls `ActingForCache.bump` also invalidates
@@ -86,7 +94,7 @@ export class SupervisedPrincipalCache {
     epoch: number,
   ): Promise<SupervisedState | null> {
     const cached = await this.cache.get<SupervisedState>(
-      `supv:v1:${userId}:${epoch}`,
+      `supv:v2:${userId}:${epoch}`,
     );
     return cached ?? null;
   }
@@ -100,13 +108,13 @@ export class SupervisedPrincipalCache {
     const base =
       state.state === 'adult'
         ? SUPERVISED_ADULT_TTL_MS
-        : state.state === 'supervised'
+        : state.state === 'supervised' || state.state === 'profile_incomplete'
           ? SUPERVISED_ACTIVE_TTL_MS
           : SUPERVISED_BLOCKED_TTL_MS;
     const ttl = timeZone
       ? Math.max(Math.min(base, msUntilNextLocalMidnight(timeZone)), MIN_TTL_MS)
       : base;
-    await this.cache.set(`supv:v1:${userId}:${epoch}`, state, ttl);
+    await this.cache.set(`supv:v2:${userId}:${epoch}`, state, ttl);
   }
 
   async getSession(

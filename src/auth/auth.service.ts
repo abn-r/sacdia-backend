@@ -516,12 +516,15 @@ export class AuthService {
    * decision the JWT strategy takes on every later request).
    */
   private async loginPrincipalOf(userId: string): Promise<{
-    kind: 'user' | 'supervised_user';
+    kind: 'user' | 'supervised_user' | 'age_unknown_user';
     supervision: 'pending_guardian' | 'active' | null;
   }> {
     const state = await this.supervisedResolver.resolve(userId);
     if (state.state === 'supervised') {
       return { kind: 'supervised_user', supervision: state.supervision };
+    }
+    if (state.state === 'profile_incomplete') {
+      return { kind: 'age_unknown_user', supervision: null };
     }
     return { kind: 'user', supervision: null };
   }
@@ -905,14 +908,15 @@ export class AuthService {
     const acting = principal?.acting_for === true;
     const supervisionStatus =
       principal?.kind === 'supervised_user' ? principal.supervision : undefined;
+    const ageUnknown = principal?.kind === 'age_unknown_user';
     const [signedUserImage, legal, family, supervision, analyticsAnonymous] =
       await Promise.all([
         this.resolvePrivateProfilePicture(resolved.profile.user_image),
         // Outside the authorization cache: acceptance must reflect the DB right away.
         this.legalService.getStatus(userId),
-        // Hidden while acting (a dependent has no family of its own to show) and
-        // for supervised teens (they are not guardians).
-        acting || supervisionStatus
+        // Hidden while acting (a dependent has no family of its own to show),
+        // for supervised teens and for an unknown age (neither is a guardian).
+        acting || supervisionStatus || ageUnknown
           ? Promise.resolve(null)
           : this.loadFamilySummary(userId),
         supervisionStatus
@@ -953,11 +957,15 @@ export class AuthService {
           scopes: principal?.scopes ?? null,
           supervision,
         },
-        mode: !supervisionStatus
-          ? 'adult'
-          : supervisionStatus === 'active'
-            ? 'teen_supervised'
-            : 'teen_pending',
+        // profile_incomplete: unknown age (NULL birthday, post-registration
+        // open). The app finishes the post-registration before anything else.
+        mode: ageUnknown
+          ? 'profile_incomplete'
+          : !supervisionStatus
+            ? 'adult'
+            : supervisionStatus === 'active'
+              ? 'teen_supervised'
+              : 'teen_pending',
         family_features: this.familyFlags.getAll(),
         analytics_anonymous: analyticsAnonymous,
       },

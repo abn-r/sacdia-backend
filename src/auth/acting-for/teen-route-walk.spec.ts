@@ -287,9 +287,11 @@ const TEEN_DENIED: Record<string, string> = {
 };
 
 /**
- * Member-reachable routes that are never tagged for ANY non-user kind
- * (credentials, sessions, MFA, deletion, export, legacy tokens, ...). Same
- * families as NEVER_SCOPE of the metadata snapshot.
+ * Member-reachable routes a teen never reaches by design (credentials,
+ * sessions, MFA, deletion, export, legacy tokens, ...). Same families as
+ * NEVER_SCOPE of the metadata snapshot, plus its AGE_UNKNOWN_ONLY block:
+ * account deletion and sessions carry `account:manage`, a scope held only by
+ * the unknown-age principal (never by a teen, see the assertion below).
  */
 const NEVER_SCOPE_FAMILIES: RegExp[] = [
   /^DELETE \/auth\/me$/,
@@ -508,6 +510,21 @@ describe('teen route walk', () => {
         key,
         allowed: false,
       });
+    }
+  });
+
+  it('the account routes (account:manage) stay out of every teen scope set', () => {
+    const accountRoutes = routes.filter((r) => r.scope === 'account:manage');
+    expect(accountRoutes.map((r) => r.key).sort()).toEqual([
+      'DELETE /auth/me',
+      'DELETE /auth/sessions',
+      'DELETE /auth/sessions/:sessionId',
+      'GET /auth/sessions',
+    ]);
+    for (const route of accountRoutes) {
+      expect(classify(route)).toBe('never-scope');
+      expect(allowedFor(route, TEEN_SCOPES)).toBe(false);
+      expect(allowedFor(route, TEEN_PENDING_SCOPES)).toBe(false);
     }
   });
 

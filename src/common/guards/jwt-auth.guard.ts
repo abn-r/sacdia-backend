@@ -100,12 +100,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       throw new AppForbiddenException(ErrorCode.GUARD_MFA_REQUIRED);
     }
 
-    // A supervised teen with TOTP enrolled holds an aal1 token until they
-    // complete the second factor. The route that completes it (@SkipMfaCheck)
-    // is MFA machinery, not part of any scope set, so it must stay reachable.
+    // A supervised teen (or an unknown-age account with a legacy TOTP) holds
+    // an aal1 token until they complete the second factor. The route that
+    // completes it (@SkipMfaCheck) is MFA machinery, not part of any scope
+    // set, so it must stay reachable.
     if (
       skipMfaCheck &&
-      user.kind === 'supervised_user' &&
+      (user.kind === 'supervised_user' || user.kind === 'age_unknown_user') &&
       user.mfa_pending === true
     ) {
       return user;

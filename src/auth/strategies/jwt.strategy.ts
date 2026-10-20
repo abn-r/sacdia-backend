@@ -37,6 +37,7 @@ import {
 } from '../supervised/supervised-principal.resolver';
 import {
   ACTING_GRANT_MEMO,
+  AGE_UNKNOWN_SCOPES,
   type AuthPrincipal,
   type SupervisionStatus,
 } from '../acting-for/auth-principal';
@@ -222,6 +223,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       );
     }
 
+    if (supervised.state === 'profile_incomplete') {
+      return this.buildAgeUnknownPrincipal(req, payload, basePrincipal);
+    }
+
     const dependentId = this.readActingForHeader(req);
     if (dependentId === null) {
       return basePrincipal;
@@ -300,6 +305,29 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       kind: 'supervised_user',
       scopes: scopesForSupervision(supervision),
       supervision,
+    };
+  }
+
+  /**
+   * NULL birthday while the self-service post-registration is open (a social
+   * sign-up before step 2): the age is unknown, so the account only gets the
+   * onboarding surface. It is the user's OWN account (no substitution, no
+   * acting audit). It can never act for a dependent: an unknown age is not a
+   * guardian, so `X-Acting-For` is the uniform 403 before any grant lookup.
+   */
+  private buildAgeUnknownPrincipal(
+    req: Request,
+    payload: JwtPayload,
+    basePrincipal: AuthPrincipal,
+  ): AuthPrincipal {
+    if (req.headers?.[ACTING_FOR_HEADER] !== undefined) {
+      this.logActingDenied(payload.sub, payload.sub, 'age_unknown_token');
+      throw actingForForbidden();
+    }
+    return {
+      ...basePrincipal,
+      kind: 'age_unknown_user',
+      scopes: AGE_UNKNOWN_SCOPES,
     };
   }
 

@@ -35,6 +35,9 @@ interface UserRow {
   supervised_login: { disabled_at: Date | null } | null;
   dependent_profile: { frozen_at: Date | null; purged_at: Date | null } | null;
   guardianships_as_dependent: Array<{ guardianship_id: string }>;
+  access_panel?: boolean | null;
+  users_pr?: { complete: boolean } | null;
+  users_roles?: Array<{ user_role_id: string }>;
 }
 
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
@@ -45,6 +48,9 @@ const user = (overrides: Partial<UserRow> = {}): UserRow => ({
   supervised_login: null,
   dependent_profile: null,
   guardianships_as_dependent: [],
+  access_panel: false,
+  users_pr: null,
+  users_roles: [],
   ...overrides,
 });
 
@@ -99,7 +105,7 @@ describe('SupervisedPrincipalResolver', () => {
       expect(result.state).toBe(expected);
     });
 
-    it('treats a NULL birthday as an adult (kind stays user)', async () => {
+    it('treats a NULL birthday with no post-registration row as an adult (admin-created and legacy accounts)', async () => {
       prisma.users.findUnique.mockResolvedValue(user({ birthday: null }));
       expect(await resolver.resolve('u1')).toEqual({ state: 'adult' });
     });
@@ -132,6 +138,99 @@ describe('SupervisedPrincipalResolver', () => {
       // After local midnight (06:00Z) the same birthday is 18.
       jest.setSystemTime(new Date('2026-10-21T07:00:00.000Z'));
       expect((await resolver.resolve('tz-2')).state).toBe('adult');
+    });
+  });
+
+  describe('unknown age (NULL birthday) while post-registration is open', () => {
+    const incomplete = { complete: false };
+
+    it('NULL birthday + post-registration NOT complete = profile_incomplete (restricted)', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: null, users_pr: incomplete }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'profile_incomplete',
+      });
+    });
+
+    it('NULL birthday + post-registration complete = adult (legacy accounts)', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: null, users_pr: { complete: true } }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({ state: 'adult' });
+    });
+
+    it('a staff account (panel access) with an open post-registration stays adult', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: null, users_pr: incomplete, access_panel: true }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({ state: 'adult' });
+    });
+
+    it('an account holding a staff global role (anything but "user") with an open post-registration stays adult', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({
+          birthday: null,
+          users_pr: incomplete,
+          users_roles: [{ user_role_id: 'ur-admin' }],
+        }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({ state: 'adult' });
+    });
+
+    it('reads post-registration, panel access and staff global roles in the SAME users query', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: null, users_pr: incomplete }),
+      );
+      await resolver.resolve('u1');
+      expect(prisma.users.findUnique).toHaveBeenCalledTimes(1);
+      const select = prisma.users.findUnique.mock.calls[0][0].select;
+      expect(select.users_pr).toEqual({ select: { complete: true } });
+      expect(select.access_panel).toBe(true);
+      expect(select.users_roles).toEqual({
+        where: {
+          active: true,
+          roles: {
+            active: true,
+            role_category: 'GLOBAL',
+            role_name: { not: 'user' },
+          },
+        },
+        select: { user_role_id: true },
+        take: 1,
+      });
+    });
+
+    it('a minor birthday with an open post-registration is a supervised teen (birthday wins)', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: date('2011-06-01'), users_pr: incomplete }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({
+        state: 'supervised',
+        supervision: 'pending_guardian',
+      });
+    });
+
+    it('an adult birthday with an open post-registration is a full adult right away (the app still forces post-registration)', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: date('1990-01-01'), users_pr: incomplete }),
+      );
+      expect(await resolver.resolve('u1')).toEqual({ state: 'adult' });
+    });
+
+    it('an epoch bump (birthday saved, post-registration completed) moves the restricted state on', async () => {
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: null, users_pr: incomplete }),
+      );
+      expect((await resolver.resolve('u1')).state).toBe('profile_incomplete');
+      // Served from the cache until the epoch moves.
+      prisma.users.findUnique.mockResolvedValue(
+        user({ birthday: date('2011-06-01'), users_pr: incomplete }),
+      );
+      expect((await resolver.resolve('u1')).state).toBe('profile_incomplete');
+
+      await epochs.bump('u1');
+      expect((await resolver.resolve('u1')).state).toBe('supervised');
     });
   });
 
@@ -273,7 +372,7 @@ describe('SupervisedPrincipalResolver', () => {
       jest.setSystemTime(new Date('2026-10-21T05:59:30.000Z'));
       await resolver.resolve('u1');
       expect(manager.set).toHaveBeenCalledWith(
-        expect.stringMatching(/^supv:v1:u1:/),
+        expect.stringMatching(/^supv:v2:u1:/),
         { state: 'supervised', supervision: 'pending_guardian' },
         30_000,
       );

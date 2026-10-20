@@ -9,6 +9,7 @@ import {
 } from './acting-scope.policy';
 import {
   ACTING_FOR_SCOPES,
+  AGE_UNKNOWN_SCOPES,
   GUARDIAN_PENDING_SCOPES,
   GUARDIAN_VERIFIED_SCOPES,
   DEVICE_SCOPES,
@@ -71,6 +72,7 @@ describe('acting scope metadata and policy', () => {
         'self:password',
         'self:preferences',
         'guardian_link:issue',
+        'account:manage',
       ].sort(),
     );
   });
@@ -147,6 +149,53 @@ describe('acting scope metadata and policy', () => {
     expect(TEEN_SCOPES).not.toContain('consent:evidence');
     expect(TEEN_SCOPES).not.toContain('guardian_link:issue');
     expect(TEEN_PENDING_SCOPES).not.toContain('consent:evidence');
+  });
+
+  it('defines the unknown-age set: onboarding, own profile, legal, push and own account only', () => {
+    expect([...AGE_UNKNOWN_SCOPES].sort()).toEqual(
+      [
+        'self:read',
+        'health:read',
+        'profile:write',
+        'registration:write',
+        'legal:accept',
+        'self:password',
+        'push:register',
+        'account:manage',
+      ].sort(),
+    );
+    // No club data, no class/evidence/honors writes, no guardian or link powers.
+    for (const forbidden of [
+      'member:read',
+      'member:write',
+      'agenda:read',
+      'classes:write',
+      'evidence:upload',
+      'evidence:submit',
+      'honors:write',
+      'consent:evidence',
+      'guardian_link:issue',
+      'self:preferences',
+    ]) {
+      expect(AGE_UNKNOWN_SCOPES).not.toContain(forbidden);
+    }
+    // Never wider than a pending teen, apart from managing the own account.
+    for (const scope of AGE_UNKNOWN_SCOPES) {
+      if (scope === 'account:manage') continue;
+      expect(TEEN_PENDING_SCOPES).toContain(scope);
+    }
+  });
+
+  it('account:manage belongs to the unknown-age set only (never a guardian, a teen or a device)', () => {
+    for (const set of [
+      GUARDIAN_PENDING_SCOPES,
+      GUARDIAN_VERIFIED_SCOPES,
+      TEEN_PENDING_SCOPES,
+      TEEN_SCOPES,
+      DEVICE_SCOPES,
+    ] as ReadonlyArray<readonly string[]>) {
+      expect(set).not.toContain('account:manage');
+    }
   });
 
   it('defines the device scopes (no health, no classes:write, no password)', () => {
@@ -319,6 +368,36 @@ describe('acting scope metadata and policy', () => {
       ).toThrow(
         expect.objectContaining({ code: ErrorCode.ACTING_FOR_SCOPE_DENIED }),
       );
+    });
+  });
+  describe('age_unknown_user', () => {
+    const newcomer = {
+      kind: 'age_unknown_user',
+      scopes: AGE_UNKNOWN_SCOPES,
+    } as any;
+
+    it('is denied on an unscoped route with PRINCIPAL_SCOPE_DENIED (kind, no supervision key)', () => {
+      const context = contextFor(UnscopedController, 'noScope');
+      try {
+        assertActingScope(reflector, context, newcomer);
+        throw new Error('expected a denial');
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: ErrorCode.PRINCIPAL_SCOPE_DENIED,
+          status: 403,
+        });
+        expect((error as any).getResponse().details).toEqual({
+          required_scope: null,
+          kind: 'age_unknown_user',
+        });
+      }
+    });
+
+    it('reaches a route whose scope it holds', () => {
+      const context = contextFor(ClassScopedController, 'handlerWins');
+      expect(() =>
+        assertActingScope(reflector, context, newcomer),
+      ).not.toThrow();
     });
   });
 });

@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { ActingScope } from './acting-for/acting-scope.decorator';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { namedThrottle } from '../config/throttler.helpers';
 import { SessionsService } from './sessions.service';
@@ -42,6 +43,8 @@ import {
  *   DELETE /auth/sessions        — 10 requests / 60 s / user
  */
 @ApiTags('auth')
+// account:manage: only an unknown-age account (own sessions while it finishes
+// the post-registration). Teens, guardians acting and devices never hold it.
 @Controller('auth/sessions')
 @UseGuards(JwtAuthGuard)
 @SkipPermissions()
@@ -54,6 +57,7 @@ export class SessionsController {
   // ---------------------------------------------------------------------------
 
   @Get()
+  @ActingScope('account:manage')
   @Throttle(namedThrottle({ ttl: 60000, limit: 30 }))
   @ApiOperation({
     summary: 'List active sessions',
@@ -80,6 +84,7 @@ export class SessionsController {
   // ---------------------------------------------------------------------------
 
   @Delete(':sessionId')
+  @ActingScope('account:manage')
   @Throttle(namedThrottle({ ttl: 60000, limit: 10 }))
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
@@ -129,6 +134,7 @@ export class SessionsController {
   // ---------------------------------------------------------------------------
 
   @Delete()
+  @ActingScope('account:manage')
   @Throttle(namedThrottle({ ttl: 60000, limit: 10 }))
   @ApiOperation({
     summary: 'Revoke all other sessions',

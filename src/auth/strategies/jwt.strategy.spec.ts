@@ -11,6 +11,7 @@ import { ActingForResolver } from '../acting-for/acting-for.resolver';
 import { SupervisedPrincipalResolver } from '../supervised/supervised-principal.resolver';
 import {
   ACTING_GRANT_MEMO,
+  AGE_UNKNOWN_SCOPES,
   GUARDIAN_PENDING_SCOPES,
   GUARDIAN_VERIFIED_SCOPES,
   TEEN_PENDING_SCOPES,
@@ -952,6 +953,67 @@ describe('JwtStrategy', () => {
         kind: 'guardian_acting',
         actor_sub: '11111111-1111-4111-8111-111111111111',
         sub: '22222222-2222-4222-8222-222222222222',
+      });
+    });
+  });
+
+  describe('unknown age (NULL birthday, post-registration open)', () => {
+    const NEWCOMER = '44444444-4444-4444-8444-444444444444';
+    const incomplete = { state: 'profile_incomplete' };
+
+    it('builds an age_unknown_user with the minimal AGE_UNKNOWN scopes', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(incomplete);
+
+      const result = await buildStrategy().validate(
+        buildReq('t'),
+        accessPayload({ sub: NEWCOMER }),
+      );
+
+      expect(result).toEqual({
+        sub: NEWCOMER,
+        userId: NEWCOMER,
+        user_id: NEWCOMER,
+        email: 'user@example.com',
+        mfa_pending: false,
+        sid: null,
+        kind: 'age_unknown_user',
+        actor_sub: NEWCOMER,
+        acting_for: false,
+        scopes: AGE_UNKNOWN_SCOPES,
+      });
+      expect(mockSupervisedResolver.isSessionActive).not.toHaveBeenCalled();
+    });
+
+    it('refuses X-Acting-For with the uniform 403 before any grant lookup (an unknown age is never a guardian)', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(incomplete);
+
+      await expect(
+        buildStrategy().validate(
+          buildReq('t', {
+            'x-acting-for': '22222222-2222-4222-8222-222222222222',
+          }),
+          accessPayload({ sub: NEWCOMER }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACTING_FOR_FORBIDDEN,
+        status: 403,
+      });
+      expect(mockActingResolver.resolve).not.toHaveBeenCalled();
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('age_unknown_token'),
+      );
+    });
+
+    it("sets no acting audit actor (it is the user's own account)", async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue(incomplete);
+
+      await runWithAuditContext(async () => {
+        await buildStrategy().validate(
+          buildReq('t'),
+          accessPayload({ sub: NEWCOMER }),
+        );
+
+        expect(getAuditContext()?.actingFor).toBeUndefined();
       });
     });
   });

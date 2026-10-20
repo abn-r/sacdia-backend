@@ -13,9 +13,17 @@
  *  - `supervised_user` (Phase 3a): an account holder under the age of majority,
  *    resolved SERVER-SIDE (never from a token claim).
  *  - `linked_device` (Phase 3b): a paired phone of an under-13 dependent.
+ *  - `age_unknown_user`: an account holder with NO birthday whose self-service
+ *    post-registration is still open (a Google/Apple sign-up before step 2).
+ *    Resolved server-side like `supervised_user`; it only gets
+ *    AGE_UNKNOWN_SCOPES until step 2 saves the birthday.
  */
 export type PrincipalKind =
-  'user' | 'guardian_acting' | 'supervised_user' | 'linked_device';
+  | 'user'
+  | 'guardian_acting'
+  | 'supervised_user'
+  | 'linked_device'
+  | 'age_unknown_user';
 
 /** Capability vocabulary. A route is reachable by a non-`user` kind only if it declares one of these. */
 export const ACTING_FOR_SCOPES = [
@@ -37,6 +45,9 @@ export const ACTING_FOR_SCOPES = [
   'self:password',
   'self:preferences',
   'guardian_link:issue',
+  // The own account (sessions, account deletion). Unknown-age principals only:
+  // a teen, a guardian acting and a device never manage sessions or delete.
+  'account:manage',
 ] as const;
 
 export type ActingForScope = (typeof ACTING_FOR_SCOPES)[number];
@@ -121,6 +132,25 @@ export const DEVICE_SCOPES = [
   'evidence:submit',
   'push:register',
   'agenda:read',
+] as const satisfies readonly ActingForScope[];
+
+/**
+ * Unknown age (NULL birthday, post-registration open). The pending-teen
+ * onboarding surface (finish post-registration, own profile and health data,
+ * legal acceptance, password, push token) plus `account:manage` (sessions and
+ * account deletion: an adult who signs up must still be able to leave). No
+ * club data, no guardian link codes, no notification preferences. Never wider
+ * than TEEN_PENDING_SCOPES apart from `account:manage`.
+ */
+export const AGE_UNKNOWN_SCOPES = [
+  'self:read',
+  'health:read',
+  'profile:write',
+  'registration:write',
+  'legal:accept',
+  'self:password',
+  'push:register',
+  'account:manage',
 ] as const satisfies readonly ActingForScope[];
 
 /** Supervision state of a `supervised_user` principal. */

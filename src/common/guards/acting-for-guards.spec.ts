@@ -210,6 +210,37 @@ describe('acting-for scope enforcement in the passport guards', () => {
       );
     });
 
+    it('lets an aal1 unknown-age account (legacy TOTP, post-registration open) reach the MFA completion route, but nothing else', () => {
+      const aal1Newcomer = {
+        sub: 'n1',
+        user_id: 'n1',
+        actor_sub: 'n1',
+        kind: 'age_unknown_user',
+        acting_for: false,
+        scopes: ['self:read'],
+        mfa_pending: true,
+      };
+      expect(
+        guard.handleRequest(null, aal1Newcomer, null, contextFor('mfaVerify')),
+      ).toBe(aal1Newcomer);
+      expect(() =>
+        guard.handleRequest(null, aal1Newcomer, null, contextFor('scoped')),
+      ).toThrow(
+        expect.objectContaining({ code: ErrorCode.GUARD_MFA_REQUIRED }),
+      );
+      // Fully authenticated, the unscoped route is the uniform scope denial.
+      expect(() =>
+        guard.handleRequest(
+          null,
+          { ...aal1Newcomer, mfa_pending: false },
+          null,
+          contextFor('unscoped'),
+        ),
+      ).toThrow(
+        expect.objectContaining({ code: ErrorCode.PRINCIPAL_SCOPE_DENIED }),
+      );
+    });
+
     it('does not extend the MFA exemption to a device or a guardian acting', () => {
       const aal1Device = {
         ...devicePrincipal(['self:read']),
