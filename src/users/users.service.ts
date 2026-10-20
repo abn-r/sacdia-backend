@@ -291,12 +291,14 @@ export class UsersService {
   private assertSupervisedBirthdayLocked(
     userId: string,
     updateUserDto: UpdateUserDto,
+    currentBirthday: Date | null,
     actor?: Pick<AuthPrincipal, 'sub' | 'kind'>,
   ): void {
     if (
       updateUserDto.birthday !== undefined &&
       actor?.kind === 'supervised_user' &&
-      actor.sub === userId
+      actor.sub === userId &&
+      !isSameCalendarDay(updateUserDto.birthday, currentBirthday)
     ) {
       throw new AppUnprocessableEntityException(
         ErrorCode.USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN,
@@ -363,7 +365,12 @@ export class UsersService {
     // Validar que el usuario existe
     const existingUser = await this.ensureUserExists(userId);
     this.assertNoSelfServiceGeographyUpdate(updateUserDto);
-    this.assertSupervisedBirthdayLocked(userId, updateUserDto, actor);
+    this.assertSupervisedBirthdayLocked(
+      userId,
+      updateUserDto,
+      existingUser.birthday,
+      actor,
+    );
 
     // The account holder editing THEMSELVES: an adult, or an unknown-age
     // account saving its birthday in post-registration step 2.
@@ -1155,4 +1162,17 @@ function toPrismaDate(value: string): Date {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
     ? (parseCalendarDate(value) ?? new Date(value))
     : new Date(value);
+}
+
+/**
+ * True when `input` names the same calendar day as the stored birthday. Forms
+ * re-send the unchanged birthday on save; that is not a change.
+ */
+function isSameCalendarDay(input: string, stored: Date | null): boolean {
+  if (!stored) return false;
+  const parsed = parseCalendarDate(input.slice(0, 10));
+  if (!parsed) return false;
+  return (
+    parsed.toISOString().slice(0, 10) === stored.toISOString().slice(0, 10)
+  );
 }

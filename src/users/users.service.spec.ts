@@ -1123,6 +1123,31 @@ describe('UsersService', () => {
         expect(mockActingForCache.bump).not.toHaveBeenCalled();
       });
 
+      it('lets a supervised teen re-send their UNCHANGED birthday (post-registration step 2 save)', async () => {
+        const birthday = yearsAgo(15);
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          ...existingUser,
+          birthday: new Date(`${birthday}T00:00:00.000Z`),
+        });
+
+        await service.update('u1', { birthday, gender: 'M' }, teenSelf);
+
+        expect(mockPrismaService.users.update).toHaveBeenCalled();
+      });
+
+      it('still blocks a supervised teen whose stored birthday is unknown', async () => {
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          ...existingUser,
+          birthday: null,
+        });
+
+        await expect(
+          service.update('u1', { birthday: yearsAgo(15) }, teenSelf),
+        ).rejects.toMatchObject({
+          code: ErrorCode.USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN,
+        });
+      });
+
       it('lets a supervised teen edit anything else (no birthday in the body)', async () => {
         await service.update('u1', { gender: 'F' }, teenSelf);
         expect(mockPrismaService.users.update).toHaveBeenCalled();
