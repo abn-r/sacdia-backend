@@ -88,6 +88,9 @@ describe('AuthService', () => {
     guardianships: {
       count: jest.fn().mockResolvedValue(0),
     },
+    countries: {
+      findUnique: jest.fn().mockResolvedValue({ country_id: 9 }),
+    },
   };
 
   // -------------------------------------------------------------------------
@@ -560,6 +563,67 @@ describe('AuthService', () => {
           service.register({ ...registerDto, birthday: yearsAgo(15, -10) }),
         ).rejects.toThrow('db');
         expect(mockBetterAuthService.signOut).toHaveBeenCalled();
+      });
+
+      describe('persists the age facts (QA BUG-3)', () => {
+        // Without the birthday on file the principal resolver sees an adult,
+        // so a self-registered 15-year-old had ADULT powers until PATCH /users.
+        it('stores the birthday as UTC midnight and the country inside the register transaction', async () => {
+          stubSuccessfulCreate();
+          mockTx.supervised_logins.create.mockResolvedValue({});
+          const birthday = yearsAgo(15, -10);
+
+          await service.register({ ...registerDto, birthday, country_id: 9 });
+
+          expect(mockTx.users.update).toHaveBeenCalledWith({
+            where: { user_id: 'user-123' },
+            data: {
+              paternal_last_name: registerDto.paternal_last_name,
+              maternal_last_name: registerDto.maternal_last_name,
+              birthday: new Date(`${birthday}T00:00:00.000Z`),
+              country_id: 9,
+            },
+          });
+        });
+
+        it('stores the birthday of an adult too', async () => {
+          stubSuccessfulCreate();
+          const birthday = yearsAgo(30);
+
+          await service.register({ ...registerDto, birthday });
+
+          expect(mockTx.users.update.mock.calls[0][0].data).toMatchObject({
+            birthday: new Date(`${birthday}T00:00:00.000Z`),
+          });
+          expect(mockTx.users.update.mock.calls[0][0].data).not.toHaveProperty(
+            'country_id',
+          );
+        });
+
+        it('does not store an unknown country (the age was checked with the default policy)', async () => {
+          stubSuccessfulCreate();
+          mockPrismaService.countries.findUnique.mockResolvedValueOnce(null);
+
+          await service.register({
+            ...registerDto,
+            birthday: yearsAgo(30),
+            country_id: 404,
+          });
+
+          expect(mockTx.users.update.mock.calls[0][0].data).not.toHaveProperty(
+            'country_id',
+          );
+        });
+
+        it('writes neither field when they are omitted', async () => {
+          stubSuccessfulCreate();
+
+          await service.register(registerDto);
+
+          const data = mockTx.users.update.mock.calls[0][0].data;
+          expect(data).not.toHaveProperty('birthday');
+          expect(data).not.toHaveProperty('country_id');
+        });
       });
 
       it('rejects an unparsable calendar date before creating anything', async () => {

@@ -12,6 +12,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { ActingForCache } from '../src/auth/acting-for/acting-for.cache';
+import { CURRENT_LEGAL_DOCUMENTS } from '../src/legal/legal-documents.constants';
 import { BetterAuthService } from '../src/better-auth/better-auth.service';
 import { AuthorizationContextService } from '../src/common/services/authorization-context.service';
 import { UserAwareThrottlerGuard } from '../src/config/user-aware-throttler.guard';
@@ -49,6 +50,7 @@ import {
 const TEEN_ID = '00000000-0000-4000-8000-0000000000b1';
 const CHILD_ID = '00000000-0000-4000-8000-0000000000b2';
 const ADULT_ID = '00000000-0000-4000-8000-0000000000a1';
+const REGISTERED_ID = '00000000-0000-4000-8000-0000000000b3';
 const RELATIONSHIP_ID = '00000000-0000-4000-8000-0000000000e1';
 const HANDLE = 'rayo-veloz-482913';
 
@@ -70,7 +72,8 @@ interface LinkState {
 }
 
 interface PersonState {
-  birthday: Date;
+  birthday: Date | null;
+  country_id?: number | null;
   hasAccount: boolean;
   login: LoginState | null;
   sessionAlive: boolean;
@@ -140,6 +143,7 @@ describe('Supervised login E2E', () => {
         consent_status: 'verified',
       },
     ];
+    delete people[REGISTERED_ID];
     issuedCode = null;
     storedCode = null;
   };
@@ -167,7 +171,7 @@ describe('Supervised login E2E', () => {
       user_image: null,
       active: true,
       birthday: person.birthday,
-      country_id: null,
+      country_id: person.country_id ?? null,
       account: person.hasAccount ? [{ id: `acc-${userId}` }] : [],
       supervised_login: person.login,
       dependent_profile:
@@ -268,6 +272,19 @@ describe('Supervised login E2E', () => {
       findFirst: jest.fn(async (args: any) =>
         userRow(args?.where?.user_id as string),
       ),
+      // The register transaction writes the SACDIA columns over the BA row.
+      update: jest.fn(async (args: any) => {
+        const person = people[args?.where?.user_id as string];
+        if (person) {
+          if (args.data.birthday !== undefined) {
+            person.birthday = args.data.birthday;
+          }
+          if (args.data.country_id !== undefined) {
+            person.country_id = args.data.country_id;
+          }
+        }
+        return userRow(args?.where?.user_id as string);
+      }),
     });
 
     const guardianships = createModelMock({
@@ -346,6 +363,19 @@ describe('Supervised login E2E', () => {
     });
 
     const supervisedLogins = createModelMock({
+      create: jest.fn(async (args: any) => {
+        const person = people[args.data.user_id as string];
+        person.login = {
+          method: args.data.method,
+          login_handle: null,
+          origin: args.data.origin,
+          enabled_at: null,
+          disabled_at: null,
+          disabled_reason: null,
+          password_set_by: args.data.password_set_by,
+        };
+        return person.login;
+      }),
       update: jest.fn(async (args: any) => {
         const person = people[args.where.user_id as string];
         person.login = { ...(person.login as LoginState), ...args.data };
@@ -409,6 +439,14 @@ describe('Supervised login E2E', () => {
         findMany: jest.fn().mockResolvedValue([]),
       }),
       units: createModelMock({ findMany: jest.fn().mockResolvedValue([]) }),
+      roles: createModelMock({
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ role_id: 1, role_name: 'user' }),
+      }),
+      legal_acceptances: createModelMock({
+        findMany: jest.fn().mockResolvedValue([]),
+      }),
       $transaction: jest.fn(async (arg: unknown) =>
         typeof arg === 'function'
           ? (arg as (tx: unknown) => Promise<unknown>)(prisma)
@@ -456,6 +494,30 @@ describe('Supervised login E2E', () => {
           ),
         };
       }),
+      // Better Auth creates the users row WITHOUT a birthday (it only knows the
+      // name and the email): the SACDIA columns come from the register tx.
+      createUser: jest.fn(
+        async (email: string, _password: string, name: string) => {
+          people[REGISTERED_ID] = {
+            birthday: null,
+            country_id: null,
+            hasAccount: true,
+            login: null,
+            sessionAlive: true,
+          };
+          return {
+            user: { id: REGISTERED_ID, email, name },
+            session: {
+              token: 'opaque-register-token',
+              expiresAt: new Date(Date.now() + 3_600_000),
+            },
+            accessToken: createBearerToken(jwtService, REGISTERED_ID).replace(
+              /^Bearer /,
+              '',
+            ),
+          };
+        },
+      ),
       signJwt: jest.fn().mockReturnValue('fake-jwt'),
       signOut: jest.fn().mockResolvedValue(undefined),
       hasTotpEnabled: jest.fn().mockResolvedValue({ enabled: false }),
@@ -620,6 +682,72 @@ describe('Supervised login E2E', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v1/users/me/guardian-link-codes')
         .set(bearer(TEEN_ID));
+
+      expect(response.status).toBe(403);
+      expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // C. Self-registration of a 15-year-old (QA BUG-3)
+  // ---------------------------------------------------------------------------
+
+  describe('C. a 15-year-old who registers through POST /auth/register', () => {
+    let accessToken: string;
+
+    beforeAll(() => {
+      resetWorld();
+    });
+
+    const birthdayOf15 = () => {
+      const date = new Date();
+      date.setUTCFullYear(date.getUTCFullYear() - 15);
+      date.setUTCDate(date.getUTCDate() - 20);
+      return date.toISOString().slice(0, 10);
+    };
+
+    it('registers (201) and the birthday is on file right away', async () => {
+      const birthday = birthdayOf15();
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Leo',
+          paternal_last_name: 'Ruiz',
+          maternal_last_name: 'Paz',
+          email: 'leo.ruiz@test.local',
+          password: 'Sup3r-Secret-Pass!',
+          accepted_terms_version: CURRENT_LEGAL_DOCUMENTS.terms.version,
+          accepted_privacy_version: CURRENT_LEGAL_DOCUMENTS.privacy.version,
+          birthday,
+        });
+
+      expect(response.status).toBe(201);
+      accessToken = response.body.data.accessToken;
+      expect(accessToken).toEqual(expect.any(String));
+      expect(people[REGISTERED_ID].birthday).toEqual(
+        new Date(`${birthday}T00:00:00.000Z`),
+      );
+      expect(people[REGISTERED_ID].login).toMatchObject({
+        origin: 'self_registered',
+      });
+    });
+
+    it('GET /auth/me: supervised_user in teen_pending mode, no PATCH needed', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set({ Authorization: `Bearer ${accessToken}` });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.mode).toBe('teen_pending');
+      expect(response.body.data.principal).toMatchObject({
+        kind: 'supervised_user',
+      });
+    });
+
+    it('an adult-only route is 403 PRINCIPAL_SCOPE_DENIED', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/guardianships/me/dependents')
+        .set({ Authorization: `Bearer ${accessToken}` });
 
       expect(response.status).toBe(403);
       expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');

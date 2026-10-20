@@ -115,14 +115,30 @@ export class AuthService {
   private readonly events: SupervisedLoginEvents;
 
   /**
-   * Blocks anyone below the minimum self-login age. Returns whether the person
-   * falls in the supervised range (minimum age <= age < majority): they get a
-   * `supervised_logins` row with the registration so the guardian-less clock
-   * starts. Without a birthday nothing is known (false); the row is then
-   * created when the birthday is saved (UsersService).
+   * Blocks anyone below the minimum self-login age and returns the age facts
+   * the register transaction must persist:
+   *  - `supervised`: the person falls in the supervised range (minimum age <=
+   *    age < majority); they get a `supervised_logins` row with the
+   *    registration so the guardian-less clock starts.
+   *  - `birthday`: the parsed calendar date (UTC midnight). It MUST be stored
+   *    with the account: the principal resolver reads it from `users`, and
+   *    without it a self-registered teen is treated as an adult until the
+   *    birthday is saved through PATCH /users/:id.
+   *  - `countryId`: the country whose policy decided the age, only when it
+   *    exists (an unknown id was evaluated with the default policy, the same
+   *    one a NULL country gets, so leaving it NULL keeps the decision).
+   * Without a birthday nothing is known; the supervised row is then created
+   * when the birthday is saved (UsersService).
    */
-  private async assertRegistrationAge(dto: RegisterDto): Promise<boolean> {
-    if (!dto.birthday) return false;
+  private async assertRegistrationAge(dto: RegisterDto): Promise<{
+    supervised: boolean;
+    birthday: Date | null;
+    countryId: number | null;
+  }> {
+    const countryId = await this.knownCountryId(dto.country_id);
+    if (!dto.birthday) {
+      return { supervised: false, birthday: null, countryId };
+    }
 
     const birthday = parseCalendarDate(dto.birthday);
     if (!birthday) {
@@ -139,7 +155,19 @@ export class AuthService {
         ErrorCode.AUTH_REGISTRATION_AGE_BELOW_MINIMUM,
       );
     }
-    return age < policy.ageOfMajority;
+    return { supervised: age < policy.ageOfMajority, birthday, countryId };
+  }
+
+  /** The register country, only when it exists (the column is a foreign key). */
+  private async knownCountryId(
+    countryId: number | undefined,
+  ): Promise<number | null> {
+    if (countryId === undefined || countryId === null) return null;
+    const country = await this.prisma.countries.findUnique({
+      where: { country_id: countryId },
+      select: { country_id: true },
+    });
+    return country ? country.country_id : null;
   }
 
   async register(dto: RegisterDto, context?: SessionRequestContext) {
@@ -156,7 +184,7 @@ export class AuthService {
     //     "Mi familia". Runs BEFORE createUser so nothing is created. The
     //     birthday is optional here (API clients can omit it); the authoritative
     //     gate is UsersService.update (FP-24).
-    const supervisedAge = await this.assertRegistrationAge(dto);
+    const ageFacts = await this.assertRegistrationAge(dto);
 
     // 1. Create user in Better Auth (outside transaction — BA manages its own DB writes).
     //    BA creates the row in `users` (mapped via prismaAdapter: user_id, user_image, etc.)
@@ -172,12 +200,19 @@ export class AuthService {
     //    If this fails we roll back by revoking the BA session (soft cleanup).
     try {
       await this.prisma.$transaction(async (tx) => {
-        // 2a. Persist last names (BA only stores name; SACDIA needs granular fields)
+        // 2a. Persist last names (BA only stores name; SACDIA needs granular
+        //     fields) and the age facts: the principal resolver reads the
+        //     birthday from here, so a self-registered teen is supervised from
+        //     the very first request instead of an adult until PATCH /users.
         await tx.users.update({
           where: { user_id: baResult.user.id },
           data: {
             paternal_last_name: dto.paternal_last_name,
             maternal_last_name: dto.maternal_last_name,
+            ...(ageFacts.birthday ? { birthday: ageFacts.birthday } : {}),
+            ...(ageFacts.countryId !== null
+              ? { country_id: ageFacts.countryId }
+              : {}),
           },
         });
 
@@ -213,7 +248,7 @@ export class AuthService {
 
         // 2c-bis. A self-registered 13-17 starts supervised: the row also starts
         //         the 90-day guardian-less clock (pending_since = now).
-        if (supervisedAge) {
+        if (ageFacts.supervised) {
           await tx.supervised_logins.create({
             data: {
               user_id: baResult.user.id,
