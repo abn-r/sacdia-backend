@@ -722,6 +722,102 @@ describe('LinkCodesService.redeem: director claim', () => {
   });
 });
 
+/**
+ * Phase 3c (FP3-63): the Phase 2 `director_claim` code hands a director-created
+ * 13-17 minor to the parent unchanged. The claim path never looks at the age.
+ */
+describe('LinkCodesService.redeem: director claim of a 13-17 minor (phase 3c)', () => {
+  const claimCode = codeRow({
+    purpose: 'director_claim',
+    issued_by_user_id: DIRECTOR,
+    issued_for_club_section_id: 5,
+  });
+
+  it('claims a 14-year-old: custody revoked as claimed, parent becomes PRIMARY non-custodian PENDING, nothing inherited', async () => {
+    const { service, tx, created, committed, actingForCache } = setup();
+    tx.guardianship_link_codes.findFirst.mockResolvedValue(claimCode);
+    tx.guardianships.count.mockResolvedValue(0);
+    // The minor is 14: a director-created teen under club custody, no account.
+    tx.users.findFirst.mockResolvedValue({
+      user_id: DEPENDENT,
+      birthday: new Date('2012-05-01T00:00:00.000Z'),
+    });
+
+    await service.redeem(REDEEMER, redeemDto());
+
+    expect(tx.guardianships.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { dependent_user_id: DEPENDENT, guardian_user_id: null },
+      data: { consent_status: 'revoked', revoked_reason: 'claimed' },
+    });
+    expect(created).toEqual([
+      {
+        dependent_user_id: DEPENDENT,
+        guardian_user_id: REDEEMER,
+        relationship_type_id: REL,
+        is_primary: true,
+        consent_status: 'pending',
+        sworn_declaration_at: expect.any(Date),
+      },
+    ]);
+    // Verification is NOT inherited: no verified_* fields on the new row.
+    for (const key of [
+      'verified_at',
+      'verified_by_user_id',
+      'verification_method',
+    ]) {
+      expect(created[0]).not.toHaveProperty(key);
+    }
+    expect(committed.codeConsumed).toBe(true);
+    expect(actingForCache.bump).toHaveBeenCalledWith(DEPENDENT);
+  });
+
+  it('the claim lookup has no age filter: only active, account-less and not frozen or purged', async () => {
+    const { service, tx } = setup();
+    tx.guardianship_link_codes.findFirst.mockResolvedValue(claimCode);
+    tx.guardianships.count.mockResolvedValue(0);
+
+    await service.redeem(REDEEMER, redeemDto());
+
+    expect(tx.users.findFirst).toHaveBeenCalledWith({
+      where: {
+        user_id: DEPENDENT,
+        active: true,
+        account: { none: {} },
+        dependent_profile: { is: { frozen_at: null, purged_at: null } },
+      },
+      select: { user_id: true },
+    });
+  });
+
+  it('the director who created the minor may issue the claim code (same permission and section)', async () => {
+    const { service, prisma } = setup();
+    prisma.dependent_profiles.findFirst.mockResolvedValue({
+      user_id: DEPENDENT,
+    });
+    prisma.club_role_assignments.findFirst.mockResolvedValue({
+      assignment_id: 'a-pending',
+    });
+    prisma.guardianships.count.mockResolvedValue(0);
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        guardianship_link_codes: {
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          create: jest.fn().mockResolvedValue({}),
+        },
+      }),
+    );
+
+    const issued = await service.issueDirectorClaimCode(DIRECTOR, 5, DEPENDENT);
+
+    expect(issued.code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    // A PENDING request counts as a live assignment in the section (the minor
+    // was just created, nobody approved it yet).
+    expect(
+      prisma.club_role_assignments.findFirst.mock.calls[0][0].where,
+    ).toMatchObject({ user_id: DEPENDENT, club_section_id: 5, active: true });
+  });
+});
+
 describe('LinkCodesService.issueSecondGuardianCode for a teen (phase 3a)', () => {
   it('a PENDING guardian of a teen (account holder) cannot invite another adult: 409 GUARDIANSHIP_CONSENT_NOT_VERIFIED', async () => {
     const { service, prisma, tx } = setup();

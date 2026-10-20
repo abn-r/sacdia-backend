@@ -548,6 +548,68 @@ describe('SupervisedLoginsService.enable', () => {
     });
   });
 
+  describe('a 13-17 minor claimed from club custody (phase 3c)', () => {
+    /** Custody revoked as `claimed`, the parent redeemed the director's code. */
+    const claimed = () =>
+      setup({
+        guardianships: [
+          {
+            guardianship_id: 'cccccccc-0000-4000-8000-000000000001',
+            dependent_user_id: DEP,
+            guardian_user_id: null,
+            consent_status: 'revoked',
+            is_custodian: true,
+          },
+          {
+            guardianship_id: GS,
+            dependent_user_id: DEP,
+            guardian_user_id: GUARDIAN,
+            consent_status: 'pending',
+            is_custodian: false,
+          },
+        ] as never,
+      });
+
+    it('the parent is PENDING after the claim: enabling a login is 403 and nothing is created', async () => {
+      const ctx = claimed();
+
+      const error = await failure(
+        ctx.service.enable(GUARDIAN, DEP, {
+          method: 'handle',
+          password: GOOD_PASSWORD,
+        }),
+      );
+
+      expect(error.code).toBe(ErrorCode.GUARDIANSHIP_CONSENT_NOT_VERIFIED);
+      expect(error.status).toBe(403);
+      expect(ctx.state.accounts).toEqual([]);
+      expect(ctx.state.logins).toEqual({});
+    });
+
+    it('once the director verifies the parent row the same call succeeds (handle login for a 14-year-old)', async () => {
+      const ctx = claimed();
+      await failure(
+        ctx.service.enable(GUARDIAN, DEP, {
+          method: 'handle',
+          password: GOOD_PASSWORD,
+        }),
+      );
+
+      // verify-consent flips the parent's row.
+      ctx.state.guardianships[1].consent_status = 'verified';
+      const result = await ctx.service.enable(GUARDIAN, DEP, {
+        method: 'handle',
+        password: GOOD_PASSWORD,
+      });
+
+      expect(result.supervised_login).toMatchObject({
+        method: 'handle',
+        origin: 'guardian_enabled',
+      });
+      expect(ctx.state.accounts).toHaveLength(1);
+    });
+  });
+
   describe('who may', () => {
     it('a PENDING guardian is 403 GUARDIANSHIP_CONSENT_NOT_VERIFIED and nothing is touched', async () => {
       const ctx = setup();
