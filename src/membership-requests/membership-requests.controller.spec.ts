@@ -117,28 +117,21 @@ describe('MembershipRequestsController (consent)', () => {
       5,
       ASSIGNMENT,
       file,
-      { verifyOnly: false },
     );
   });
 
-  it('uploads as a verify-only reviewer: the service is told, so it narrows to pending-consent minors', async () => {
-    const file = { mimetype: 'application/pdf' } as never;
-
-    await controller.uploadConsentEvidence(
-      5,
-      ASSIGNMENT,
-      file,
-      USER,
-      VERIFY_ONLY_REQUEST,
-    );
-
-    expect(evidence.uploadForDirector).toHaveBeenCalledWith(
-      'director-1',
-      5,
-      ASSIGNMENT,
-      file,
-      { verifyOnly: true },
-    );
+  it('uploading the form is for approvers only (ruling W5): club_members:approve on the club_assignment, no coordinator sections, no acting scope', () => {
+    const handler =
+      MembershipRequestsController.prototype.uploadConsentEvidence;
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+      permissions: ['club_members:approve'],
+      mode: 'all',
+    });
+    expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
+      type: 'club_assignment',
+      idParam: 'assignmentId',
+    });
+    expect(Reflect.getMetadata(ACTING_SCOPE_KEY, handler)).toBeUndefined();
   });
 
   it('reads the form as the director of the section in the path', async () => {
@@ -177,7 +170,7 @@ describe('MembershipRequestsController (consent)', () => {
     );
   });
 
-  it.each(['uploadConsentEvidence', 'getConsentEvidence'] as const)(
+  it.each(['getConsentEvidence'] as const)(
     '%s needs club_members:approve or consent:verify on the club_assignment resource (coordinator sections opted in) and no acting scope',
     (name) => {
       const handler = MembershipRequestsController.prototype[name];
@@ -351,7 +344,6 @@ describe('MembershipRequestsController (consent)', () => {
   describe('verify-only reviewers (consent:verify without club_members:approve)', () => {
     const REVIEW_ROUTES = [
       'listPending',
-      'uploadConsentEvidence',
       'getConsentEvidence',
       'verifyConsent',
     ] as const;

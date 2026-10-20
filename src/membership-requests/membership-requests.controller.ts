@@ -73,7 +73,7 @@ function isVerifyOnlyReviewer(request: AuthorizedRequest): boolean {
 }
 
 /**
- * Reviewing a minor's consent (list, read/upload the signed form, verify):
+ * Reviewing a minor's consent (list, read the signed form, verify):
  * club_members:approve OR consent:verify. Approving the membership stays
  * club_members:approve only. `coordinatorSections` lets a GLOBAL coordinator
  * whose role carries one of these reach the sections their
@@ -230,13 +230,17 @@ export class MembershipRequestsController {
     );
     return { status: 'success', data };
   }
+  /**
+   * Approvers only (ruling W5, 2026-10-20): a verify-only reviewer (a
+   * coordinator, or a club role with consent:verify alone) does not upload
+   * forms. The guard denies them before anything is read (403
+   * GUARD_PERMISSION_DENIED without club_members:approve; 403
+   * GUARD_CLUB_SCOPE_REQUIRED when their approve belongs to another club), the
+   * same denial approve/reject give them: nothing about the request leaks.
+   */
   @Post(':assignmentId/consent-evidence')
-  @RequirePermissions(CONSENT_REVIEW_PERMISSIONS)
-  @AuthorizationResource({
-    type: 'club_assignment',
-    idParam: 'assignmentId',
-    coordinatorSections: true,
-  })
+  @RequirePermissions('club_members:approve')
+  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @Throttle(namedThrottle({ ttl: 3_600_000, limit: 20 }))
   @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
@@ -249,7 +253,7 @@ export class MembershipRequestsController {
   @ApiOperation({
     summary: 'Subir la ficha de consentimiento firmada de un menor',
     description:
-      'Foto o PDF (JPEG, PNG, WebP, PDF; hasta 10 MB, campo multipart `file`). HEIC se rechaza: la app lo convierte a JPEG. Mientras el consentimiento está pendiente reemplaza la ficha vigente sin borrar la anterior; ya verificado responde 409 (a un revisor solo-verificación, sin club_members:approve en la sección, le responde 404 MR_NOT_FOUND: solo puede subir para menores con consentimiento pendiente). No verifica el consentimiento: usa verify-consent.',
+      'Foto o PDF (JPEG, PNG, WebP, PDF; hasta 10 MB, campo multipart `file`). HEIC se rechaza: la app lo convierte a JPEG. Mientras el consentimiento está pendiente reemplaza la ficha vigente sin borrar la anterior; ya verificado responde 409. Solo quien aprueba (club_members:approve en la sección): un revisor solo-verificación (consent:verify sin club_members:approve, p. ej. un coordinador) no sube fichas y recibe 403. No verifica el consentimiento: usa verify-consent.',
   })
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiParam({ name: 'assignmentId', type: String })
@@ -260,12 +264,12 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 403,
     description:
-      'Sin club_members:approve ni consent:verify en la sección (un coordinador: solo en secciones cubiertas por sus coordinator_assignments)',
+      'GUARD_PERMISSION_DENIED sin club_members:approve (incluye a los revisores solo-verificación y a los coordinadores) o GUARD_CLUB_SCOPE_REQUIRED fuera de la sección',
   })
   @ApiResponse({
     status: 404,
     description:
-      'MR_NOT_FOUND (solicitud inexistente, de otra sección o ya procesada) o GUARDIANSHIP_NOT_FOUND (no es un menor). Para un revisor solo-verificación todo caso fuera de "menor con consentimiento pendiente" es MR_NOT_FOUND',
+      'MR_NOT_FOUND (solicitud inexistente, de otra sección o ya procesada) o GUARDIANSHIP_NOT_FOUND (no es un menor)',
   })
   @ApiResponse({
     status: 409,
@@ -281,14 +285,12 @@ export class MembershipRequestsController {
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
     @UploadedFile(new ConsentEvidenceFilePipe()) file: Express.Multer.File,
     @CurrentUser() currentUser: CurrentUserPayload,
-    @Req() request: AuthorizedRequest,
   ) {
     const data = await this.evidence.uploadForDirector(
       currentUser.sub,
       clubSectionId,
       assignmentId,
       file,
-      { verifyOnly: isVerifyOnlyReviewer(request) },
     );
     return { status: 'success', data };
   }

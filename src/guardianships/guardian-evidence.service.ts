@@ -71,12 +71,13 @@ export interface DirectorConsentEvidenceDownload extends ConsentEvidenceDownload
 }
 
 /**
- * `verifyOnly`: the caller reached the director endpoints with `consent:verify`
- * but without `club_members:approve` for the section (a coordinator, or a club
- * role with only that). They are limited to the consents with work for them:
- * the same set as their filtered membership-request list. See
- * {@link GuardianEvidenceService.getForDirector} /
- * {@link GuardianEvidenceService.uploadForDirector}.
+ * `verifyOnly`: the caller reached the director read endpoint with
+ * `consent:verify` but without `club_members:approve` for the section (a
+ * coordinator, or a club role with only that). They are limited to the
+ * consents with work for them: the same set as their filtered
+ * membership-request list. See {@link GuardianEvidenceService.getForDirector}.
+ * Uploading is for approvers only (ruling W5): the route requires
+ * club_members:approve, so uploadForDirector takes no such option.
  */
 export interface DirectorEvidenceOptions {
   verifyOnly?: boolean;
@@ -197,34 +198,21 @@ export class GuardianEvidenceService {
   // ---------------------------------------------------------------------------
 
   /**
-   * `verifyOnly` reviewers may upload only for a PENDING request of a minor
-   * whose consent is still pending (a paper form they received); anything else
-   * is 404 MR_NOT_FOUND, like an unknown request (an already verified consent
-   * is not the 409 the director gets: it is not theirs to learn about).
+   * Approvers only: the route requires club_members:approve (ruling W5, a
+   * verify-only reviewer never uploads).
    */
   async uploadForDirector(
     directorId: string,
     clubSectionId: number,
     assignmentId: string,
     file: Express.Multer.File | undefined,
-    options: DirectorEvidenceOptions = {},
   ): Promise<UploadedConsentEvidence> {
     this.assertConfigured();
-    let target: EvidenceTarget;
-    if (options.verifyOnly) {
-      const resolved = await this.resolveVerifyOnlyTarget(
-        clubSectionId,
-        assignmentId,
-      );
-      if (resolved.consentStatus !== 'pending') {
-        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
-      }
-      target = resolved.target;
-    } else {
-      target = await this.resolveDirectorTarget(clubSectionId, assignmentId, [
-        'pending',
-      ]);
-    }
+    const target = await this.resolveDirectorTarget(
+      clubSectionId,
+      assignmentId,
+      ['pending'],
+    );
     return this.store(target, directorId, file, 'director');
   }
 

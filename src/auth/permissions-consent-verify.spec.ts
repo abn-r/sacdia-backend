@@ -549,10 +549,10 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
   });
 
   describe('verify-only reviewers reach the list and the consent form, never approve', () => {
+    // Uploading the form is NOT a review route: approvers only (ruling W5).
     const REVIEW_ROUTES = [
       'listPending',
       'getConsentEvidence',
-      'uploadConsentEvidence',
       'verifyConsent',
     ] as const;
 
@@ -590,8 +590,8 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
       },
     );
 
-    it.each(['approve', 'reject'] as const)(
-      '%s denies every verify-only reviewer before any scope check',
+    it.each(['approve', 'reject', 'uploadConsentEvidence'] as const)(
+      '%s denies every verify-only reviewer before any scope check (W5: uploading the form is for approvers)',
       async (route) => {
         for (const { label, guard } of reviewers()) {
           expect({ label, ...(await decide(guard, route)) }).toEqual({
@@ -603,11 +603,7 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
       },
     );
 
-    it.each([
-      'listPending',
-      'getConsentEvidence',
-      'uploadConsentEvidence',
-    ] as const)(
+    it.each(['listPending', 'getConsentEvidence'] as const)(
       '%s denies a coordinator outside their assigned sections',
       async (route) => {
         const { guard } = setup(
@@ -729,10 +725,10 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
   });
 
   describe('C1: for a coordinator the ASSIGNMENT is the authority, never their active club context', () => {
+    // Uploading the form is NOT a review route: approvers only (ruling W5).
     const REVIEW_ROUTES = [
       'listPending',
       'getConsentEvidence',
-      'uploadConsentEvidence',
       'verifyConsent',
     ] as const;
 
@@ -859,7 +855,12 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
       );
       const { controller, service, verification } = controllerWithSpies();
 
-      for (const route of [...REVIEW_ROUTES, 'approve', 'reject'] as const) {
+      for (const route of [
+        ...REVIEW_ROUTES,
+        'uploadConsentEvidence',
+        'approve',
+        'reject',
+      ] as const) {
         const request = newRequest();
         expect({ route, ...(await run(guard, route, request)) }).toEqual({
           route,
@@ -955,10 +956,13 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
         ErrorCode.MR_APPROVE_PERMISSION_REQUIRED,
       );
       expect(verification.verify).not.toHaveBeenCalled();
-      expect(await run(guard, 'approve', newRequest())).toEqual({
-        allowed: false,
-        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
-      });
+      for (const route of ['approve', 'uploadConsentEvidence'] as const) {
+        expect({ route, ...(await run(guard, route, newRequest())) }).toEqual({
+          route,
+          allowed: false,
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      }
     });
   });
 
