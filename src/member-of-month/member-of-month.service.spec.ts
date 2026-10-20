@@ -53,6 +53,7 @@ describe('MemberOfMonthService listForAdmin authorization', () => {
     service = new MemberOfMonthService(
       mockPrisma as any,
       {} as any,
+      {} as any,
       mockAuthorizationContext as any,
       {} as any,
       mockCoordinationService as any,
@@ -171,5 +172,83 @@ describe('MemberOfMonthService listForAdmin authorization', () => {
         },
       },
     });
+  });
+});
+
+describe('MemberOfMonthService notifications (club data recipients)', () => {
+  const PENDING_TEEN = 'pending-teen';
+  const ACTIVE_MEMBER = 'active-member';
+  const DIRECTOR = 'director-1';
+
+  const mockPrisma = {
+    club_sections: {
+      findUnique: jest.fn().mockResolvedValue({
+        clubs: { club_id: 3, name: 'Club Sur' },
+        club_types: { name: 'Conquistadores' },
+      }),
+    },
+    club_role_assignments: {
+      findMany: jest.fn().mockResolvedValue([{ user_id: DIRECTOR }]),
+    },
+    users: { findMany: jest.fn().mockResolvedValue([]) },
+    member_of_month: { updateMany: jest.fn().mockResolvedValue({}) },
+  };
+  const mockNotifications = {
+    notifySafe: jest.fn().mockResolvedValue(undefined),
+  };
+  const mockClubDataRecipients = {
+    // Denies the pending teen only.
+    filterClubDataRecipients: jest.fn((ids: string[]) =>
+      Promise.resolve([...new Set(ids)].filter((id) => id !== PENDING_TEEN)),
+    ),
+  };
+
+  const build = () =>
+    new MemberOfMonthService(
+      mockPrisma as any,
+      mockNotifications as any,
+      mockClubDataRecipients as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('congratulates an active member but not a pending teen, and does not mark the teen as notified', async () => {
+    const winners = [
+      { user_id: PENDING_TEEN, total_points: 10 },
+      { user_id: ACTIVE_MEMBER, total_points: 10 },
+    ];
+
+    await (build() as any).sendMemberOfMonthNotifications(5, winners, 3, 2026);
+
+    const notified = mockNotifications.notifySafe.mock.calls.map((c) => c[0]);
+    expect(notified).toContain(ACTIVE_MEMBER);
+    expect(notified).not.toContain(PENDING_TEEN);
+    expect(mockPrisma.member_of_month.updateMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.member_of_month.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ user_id: ACTIVE_MEMBER }),
+      }),
+    );
+  });
+
+  it('filters the director recipients through the same gate', async () => {
+    mockPrisma.club_role_assignments.findMany.mockResolvedValueOnce([
+      { user_id: DIRECTOR },
+      { user_id: PENDING_TEEN },
+    ]);
+
+    await (build() as any).sendMemberOfMonthNotifications(
+      5,
+      [{ user_id: ACTIVE_MEMBER, total_points: 10 }],
+      3,
+      2026,
+    );
+
+    const notified = mockNotifications.notifySafe.mock.calls.map((c) => c[0]);
+    expect(notified).toContain(DIRECTOR);
+    expect(notified).not.toContain(PENDING_TEEN);
   });
 });

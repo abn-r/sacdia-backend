@@ -7,6 +7,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ClubDataRecipientsService } from '../notifications/club-data-recipients.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import { AchievementsService } from '../achievements/achievements.service';
@@ -31,6 +32,7 @@ export class MemberOfMonthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly clubDataRecipients: ClubDataRecipientsService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly achievementsService: AchievementsService,
     private readonly coordinationService: CoordinationService,
@@ -493,7 +495,16 @@ export class MemberOfMonthService {
     const clubName = section.clubs?.name ?? 'Club';
     const clubId = section.clubs?.club_id;
 
+    // The congratulation names the club and the section: a teen without a
+    // verified guardian or an unknown-age account gets none (FP3-03).
+    const reachableWinners = new Set(
+      await this.clubDataRecipients.filterClubDataRecipients(
+        winners.map((w) => w.user_id),
+      ),
+    );
+
     for (const winner of winners) {
+      if (!reachableWinners.has(winner.user_id)) continue;
       try {
         // Notify the elected member
         await this.notificationsService.notifySafe(
@@ -555,9 +566,10 @@ export class MemberOfMonthService {
           select: { user_id: true },
         });
 
-      const directorIds = [
-        ...new Set(directorAssignments.map((a) => a.user_id)),
-      ];
+      const directorIds =
+        await this.clubDataRecipients.filterClubDataRecipients(
+          directorAssignments.map((a) => a.user_id),
+        );
 
       for (const directorId of directorIds) {
         try {

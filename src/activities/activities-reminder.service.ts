@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { ACTIVITY_BOARD_ROLE_NAMES, classIdsFromJson, parseActivityAudience } from './activity-audience';
+import { ClubDataRecipientsService } from '../notifications/club-data-recipients.service';
+import {
+  ACTIVITY_BOARD_ROLE_NAMES,
+  classIdsFromJson,
+  parseActivityAudience,
+} from './activity-audience';
 import { calendarDateInTimeZone, toUtcDate } from './activity-series-dates';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
@@ -14,6 +19,7 @@ export class ActivitiesReminderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly clubDataRecipients: ClubDataRecipientsService,
     private readonly lockService: DistributedLockService,
     private readonly cronLogger: CronRunLogger,
   ) {}
@@ -251,8 +257,14 @@ export class ActivitiesReminderService {
     });
     for (const row of board) recipients.add(row.user_id);
 
+    // The reminder names a club activity: a teen without a verified guardian or
+    // an unknown-age account gets none (FP3-03).
+    const reachable = await this.clubDataRecipients.filterClubDataRecipients([
+      ...recipients,
+    ]);
+
     await Promise.all(
-      [...recipients].map((userId) =>
+      reachable.map((userId) =>
         this.notificationsService.sendToUser(
           {
             userId,
