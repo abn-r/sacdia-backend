@@ -482,13 +482,14 @@ describe('family profiles phase 3b migration (20261021120000)', () => {
     const create = statements.find((s) =>
       s.startsWith('CREATE TABLE IF NOT EXISTS linked_devices'),
     )!;
-    const check = /linked_devices_revoked_reason_ck CHECK \(([^\n]*)\)\s*\)?\s*$/m.exec(
-      create,
-    );
+    const check =
+      /linked_devices_revoked_reason_ck CHECK \(([^\n]*)\)\s*\)?\s*$/m.exec(
+        create,
+      );
     expect(check).not.toBeNull();
-    expect(listOf(create.slice(create.indexOf('linked_devices_revoked_reason_ck')))).toEqual(
-      REVOKED_REASONS_3B,
-    );
+    expect(
+      listOf(create.slice(create.indexOf('linked_devices_revoked_reason_ck'))),
+    ).toEqual(REVOKED_REASONS_3B);
     expect(ddl).toMatch(
       /CONSTRAINT linked_devices_revoked_ck CHECK \(\(revoked_at IS NULL\) = \(revoked_reason IS NULL\)\)/,
     );
@@ -540,10 +541,7 @@ describe('family profiles phase 3b migration (20261021120000)', () => {
       ],
       ['DROP TABLE linked_devices', 'DROP TABLE linked_devices;'],
       ['UPDATE sessions', 'UPDATE sessions SET expires_at = now();'],
-      [
-        'INSERT',
-        "INSERT INTO linked_devices (label) VALUES ('x');",
-      ],
+      ['INSERT', "INSERT INTO linked_devices (label) VALUES ('x');"],
       ['TRUNCATE', 'TRUNCATE linked_devices;'],
       ['BEGIN', 'BEGIN;'],
       ['COMMIT', 'COMMIT;'],
@@ -561,9 +559,9 @@ describe('family profiles phase 3b migration (20261021120000)', () => {
       ],
       ['an unrelated table', 'CREATE TABLE IF NOT EXISTS other (id int);'],
     ])('fails when an extra %s statement is appended', (_label, extra) => {
-      expect(findLinkedViolations(`${linkedMigration}\n${extra}\n`)).not.toEqual(
-        [],
-      );
+      expect(
+        findLinkedViolations(`${linkedMigration}\n${extra}\n`),
+      ).not.toEqual([]);
     });
 
     it('rejects a narrowed disabled_reason CHECK that drops a 3a value even with the right name', () => {
