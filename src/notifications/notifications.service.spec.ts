@@ -1881,6 +1881,58 @@ describe('NotificationsService', () => {
       );
     });
 
+    it('a device-paired child gets its OWN push on the device token AND the guardians still get the labeled copy (3b, decision 4)', async () => {
+      mockPrismaService.$transaction.mockImplementation(
+        (fn: (tx: any) => Promise<any>) => fn(mockPrismaService),
+      );
+      // The device registered a token for the child (the child has no account).
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { token: 'device-token', fcm_token_id: 'tok-1' },
+      ]);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 1,
+        failureCount: 0,
+        responses: [{ success: true }],
+      });
+
+      await service.sendToUser(
+        { userId: DEPENDENT, title: 'Campamento', body: 'Este sábado' },
+        SENT_BY,
+        'activities:created',
+      );
+
+      // 1) the device push, to the child's own token only
+      expect(mockSendEachForMulticast).toHaveBeenCalledTimes(1);
+      expect(mockSendEachForMulticast.mock.calls[0][0].tokens).toEqual([
+        'device-token',
+      ]);
+      // 2) the guardian copies, through the router (labeled there)
+      expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledTimes(1);
+      expect(mockDependentPushRouter.routeAndSend.mock.calls[0][0]).toEqual([
+        DEPENDENT,
+      ]);
+    });
+
+    it('a revoked device leaves no token behind: the child push has nothing to send but the guardian copy still goes', async () => {
+      mockPrismaService.$transaction.mockImplementation(
+        (fn: (tx: any) => Promise<any>) => fn(mockPrismaService),
+      );
+      // Revoke deactivated the token: the active-token query returns nothing.
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+
+      await service.sendToUser(
+        { userId: DEPENDENT, title: 'Campamento', body: 'Este sábado' },
+        SENT_BY,
+        'activities:created',
+      );
+
+      expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+      expect(mockDependentPushRouter.routeAndSend).toHaveBeenCalledTimes(1);
+      expect(
+        mockPrismaService.user_fcm_tokens.findMany.mock.calls[0][0].where,
+      ).toMatchObject({ user_id: DEPENDENT, active: true });
+    });
+
     it('silent realtime pushes are never routed', async () => {
       (service as any).queue = undefined;
       await service.sendSilentToSection({

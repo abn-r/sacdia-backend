@@ -356,3 +356,83 @@ describe('DependentPushRouterService managed-dependent matrix', () => {
     expect(prisma.user_fcm_tokens.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe('DependentPushRouterService for a device-paired child (3b, FP3-48)', () => {
+  it("two guardians with phones: ONE labeled push carrying both guardians' tokens, and never the device's own token", async () => {
+    const { router, prisma } = setup();
+    prisma.users.findMany.mockResolvedValue([
+      dependentRow(D1, 'Ana', [G1, G2]),
+    ]);
+    // `user_fcm_tokens.token` is UNIQUE: the token the device registered belongs
+    // to the CHILD and cannot also be a guardian row, so a shared phone is sent
+    // once, as the device's own push (primary delivery), never as a copy too.
+    prisma.user_fcm_tokens.findMany.mockResolvedValue([
+      { user_id: G1, token: 'guardian-1-phone' },
+      { user_id: G2, token: 'guardian-2-phone' },
+    ]);
+
+    const pushes = await router.buildPushes([D1], {
+      title: 'Campamento',
+      body: 'Este sábado',
+      source: 'activities:created',
+    });
+
+    expect(prisma.user_fcm_tokens.findMany.mock.calls[0][0].where).toEqual({
+      user_id: { in: [G1, G2] },
+      active: true,
+    });
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0].title).toBe('Ana · Campamento');
+    expect(pushes[0].tokens).toEqual(['guardian-1-phone', 'guardian-2-phone']);
+  });
+
+  it('a guardian whose preference for the source is off gets no copy, the other still does', async () => {
+    const { router, prisma, preferences } = setup();
+    prisma.users.findMany.mockResolvedValue([
+      dependentRow(D1, 'Ana', [G1, G2]),
+    ]);
+    preferences.filterAllowedUsers.mockResolvedValue(new Set([G2]));
+    prisma.user_fcm_tokens.findMany.mockResolvedValue([
+      { user_id: G2, token: 'guardian-2-phone' },
+    ]);
+
+    const pushes = await router.buildPushes([D1], {
+      title: 'T',
+      body: 'B',
+      source: 'activities:created',
+    });
+
+    expect(pushes[0].guardianUserIds).toEqual([G2]);
+    expect(pushes[0].tokens).toEqual(['guardian-2-phone']);
+  });
+
+  it('a guardian token shared between two guardians is sent once', async () => {
+    const { router, prisma } = setup();
+    prisma.users.findMany.mockResolvedValue([
+      dependentRow(D1, 'Ana', [G1, G2]),
+    ]);
+    prisma.user_fcm_tokens.findMany.mockResolvedValue([
+      { user_id: G1, token: 'family-tablet' },
+      { user_id: G2, token: 'family-tablet' },
+    ]);
+
+    const pushes = await router.buildPushes([D1], { title: 'T', body: 'B' });
+
+    expect(pushes[0].tokens).toEqual(['family-tablet']);
+  });
+
+  it('family:* sources (device paired / revoked / evidence uploaded) are never fanned out again', async () => {
+    const { router, prisma } = setup();
+    for (const source of [
+      'family:security',
+      'family:evidence_uploaded',
+      'family:teen_reminder',
+    ]) {
+      expect(router.isRoutableSource(source)).toBe(false);
+      expect(
+        await router.buildPushes([D1], { title: 'T', body: 'B', source }),
+      ).toEqual([]);
+    }
+    expect(prisma.users.findMany).not.toHaveBeenCalled();
+  });
+});
