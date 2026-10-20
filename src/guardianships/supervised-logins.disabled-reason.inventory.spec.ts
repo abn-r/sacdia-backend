@@ -2,17 +2,20 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Verify W5 (FP3-16): `supervised_logins.disabled_reason` is limited by a CHECK
- * in the 3a migration ('guardian', 'admin', 'unlinked_purged'). FP3-16 wants
- * 'age_majority' recorded at the age of majority, but the CHECK does not allow
- * it yet: the widening is bundled with the 3b migration (user approval). Until
- * then NO code path may write a value the CHECK rejects (it would throw at
- * runtime, inside a transaction). This inventory scans every source file for
+ * Verify W5 (FP3-16): `supervised_logins.disabled_reason` is limited by a CHECK.
+ * The 3a migration allowed ('guardian', 'admin', 'unlinked_purged'); the 3b
+ * migration (20261021120000_family_linked_devices) widens it with
+ * 'age_majority', the value FP3-16 records at the age of majority. NO code path
+ * may write a value the CHECK rejects (it would throw at runtime, inside a
+ * transaction). This inventory scans every source file for
  * `disabled_reason: '<literal>'` and fails on any value outside the CHECK.
  *
- * When the CHECK is widened (drop + add of
- * supervised_logins_disabled_reason_ck), this spec follows it automatically:
- * it reads the allowed list from the latest migration that defines it.
+ * It reads the allowed list from the LAST migration that (re)defines the CHECK,
+ * so it follows a later widening automatically.
+ *
+ * A row disabled with 'age_majority' keeps `disabled_at` set (disabled_ck ties
+ * the two): the pending-teen cron and its partial index skip it
+ * (`disabled_at IS NULL`), and reactivate refuses it (the user is an adult).
  */
 const ROOT = join(__dirname, '..');
 const MIGRATIONS = join(__dirname, '../../prisma/migrations');
@@ -66,13 +69,17 @@ function writtenReasons(): Array<{ file: string; value: string }> {
 }
 
 describe('supervised_logins.disabled_reason writes stay inside the DB CHECK', () => {
-  it('the CHECK is found and today does NOT allow age_majority (bundled with 3b)', () => {
+  it('the CHECK is found and, since the 3b migration, allows age_majority', () => {
     const allowed = allowedByCheck();
     expect(allowed).toEqual(
-      expect.arrayContaining(['guardian', 'admin', 'unlinked_purged']),
+      expect.arrayContaining([
+        'guardian',
+        'admin',
+        'unlinked_purged',
+        'age_majority',
+      ]),
     );
-    // Flip this expectation when the 3b migration widens the CHECK.
-    expect(allowed).not.toContain('age_majority');
+    expect(allowed).toHaveLength(4);
   });
 
   it('the scanner sees the known writers (sanity: guardian disable, cron freeze)', () => {
@@ -82,7 +89,7 @@ describe('supervised_logins.disabled_reason writes stay inside the DB CHECK', ()
     );
   });
 
-  it('every disabled_reason literal written by the code is allowed by the CHECK (no age_majority write before the migration)', () => {
+  it('every disabled_reason literal written by the code is allowed by the CHECK', () => {
     const allowed = new Set(allowedByCheck());
     const offenders = writtenReasons().filter((w) => !allowed.has(w.value));
     expect(offenders).toEqual([]);

@@ -2669,6 +2669,11 @@ model users {
   supervised_login                     supervised_logins?                    @relation("supervised_login_user")
   supervised_logins_enabled            supervised_logins[]                   @relation("supervised_login_enabler")
   supervised_logins_disabled           supervised_logins[]                   @relation("supervised_login_disabler")
+  linked_devices_as_dependent          linked_devices[]                      @relation("linked_device_dependent")
+  linked_devices_paired                linked_devices[]                      @relation("linked_device_pairer")
+  linked_devices_revoked               linked_devices[]                      @relation("linked_device_revoker")
+  pairing_tokens_as_dependent          device_pairing_tokens[]               @relation("pairing_token_dependent")
+  pairing_tokens_created               device_pairing_tokens[]               @relation("pairing_token_creator")
   support_reports                      support_reports[]
   enrollment_rankings                  EnrollmentRanking[]
   // materiales relations
@@ -6647,6 +6652,8 @@ model guardianships {
   invitees          guardianships[]     @relation("guardianship_invites")
   consent_evidences guardianship_consent_evidences[]
   supervised_logins supervised_logins[]                 @relation("supervised_login_guardianship")
+  linked_devices    linked_devices[]                    @relation("linked_device_guardianship")
+  pairing_tokens    device_pairing_tokens[]             @relation("pairing_token_guardianship")
 
   @@index([dependent_user_id], map: "idx_guardianships_dependent")
 }
@@ -6715,4 +6722,63 @@ model supervised_logins {
   enabled_by              users?         @relation("supervised_login_enabler", fields: [enabled_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "supervised_logins_enabled_by_user_id_fkey")
   disabled_by             users?         @relation("supervised_login_disabler", fields: [disabled_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "supervised_logins_disabled_by_user_id_fkey")
   enabled_by_guardianship guardianships? @relation("supervised_login_guardianship", fields: [enabled_by_guardianship_id], references: [guardianship_id], onDelete: NoAction, onUpdate: NoAction, map: "supervised_logins_enabled_by_guardianship_id_fkey")
+}
+
+/**
+ * Family profiles (Phase 3b). A paired phone of an under-13 dependent. Created by
+ * `POST /auth/device/pair`. Indexes that Prisma cannot express live ONLY in
+ * migration 20261021120000_family_linked_devices: uq_linked_devices_session
+ * (unique on session_id), idx_linked_devices_dependent_active and
+ * idx_linked_devices_guardianship_active (partial, revoked_at IS NULL).
+ * `session_id` is a PLAIN column on purpose (no relation, no FK to sessions): the
+ * sessions rows are hard-deleted by logout, password change and every revoke path
+ * (ADR-4). `fcm_token_id` is plain too: the token row can vanish without
+ * touching the device history.
+ */
+model linked_devices {
+  linked_device_id    String    @id(map: "linked_devices_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dependent_user_id   String    @db.Uuid
+  guardianship_id     String    @db.Uuid
+  paired_by_user_id   String    @db.Uuid
+  session_id          String
+  label               String    @db.VarChar(60)
+  platform            String    @db.VarChar(16)
+  app_version         String?   @db.VarChar(32)
+  fcm_token_id        String?   @db.Uuid
+  paired_at           DateTime  @default(now()) @db.Timestamptz(6)
+  absolute_expires_at DateTime  @db.Timestamptz(6)
+  last_seen_at        DateTime? @db.Timestamptz(6)
+  revoked_at          DateTime? @db.Timestamptz(6)
+  revoked_by_user_id  String?   @db.Uuid
+  revoked_reason      String?   @db.VarChar(32)
+
+  dependent     users                   @relation("linked_device_dependent", fields: [dependent_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "linked_devices_dependent_user_id_fkey")
+  guardianship  guardianships           @relation("linked_device_guardianship", fields: [guardianship_id], references: [guardianship_id], onDelete: NoAction, onUpdate: NoAction, map: "linked_devices_guardianship_id_fkey")
+  paired_by     users                   @relation("linked_device_pairer", fields: [paired_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "linked_devices_paired_by_user_id_fkey")
+  revoked_by    users?                  @relation("linked_device_revoker", fields: [revoked_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "linked_devices_revoked_by_user_id_fkey")
+  pairing_token device_pairing_tokens[] @relation("pairing_token_device")
+}
+
+/**
+ * Family profiles (Phase 3b). The single-use QR token a verified guardian issues
+ * to pair a child's phone. Only the HMAC of the token is stored (`token_hash`).
+ * SQL-only index: idx_device_pairing_tokens_open (partial, unconsumed and
+ * unrevoked) in migration 20261021120000_family_linked_devices.
+ */
+model device_pairing_tokens {
+  pairing_token_id   String    @id(map: "device_pairing_tokens_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token_hash         String    @unique(map: "device_pairing_tokens_token_hash_key") @db.Char(64)
+  dependent_user_id  String    @db.Uuid
+  guardianship_id    String    @db.Uuid
+  created_by_user_id String    @db.Uuid
+  expires_at         DateTime  @db.Timestamptz(6)
+  consumed_at        DateTime? @db.Timestamptz(6)
+  consumed_device_id String?   @db.Uuid
+  revoked_at         DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+
+  dependent    users           @relation("pairing_token_dependent", fields: [dependent_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "device_pairing_tokens_dependent_user_id_fkey")
+  guardianship guardianships   @relation("pairing_token_guardianship", fields: [guardianship_id], references: [guardianship_id], onDelete: NoAction, onUpdate: NoAction, map: "device_pairing_tokens_guardianship_id_fkey")
+  creator      users           @relation("pairing_token_creator", fields: [created_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "device_pairing_tokens_created_by_user_id_fkey")
+  device       linked_devices? @relation("pairing_token_device", fields: [consumed_device_id], references: [linked_device_id], onDelete: NoAction, onUpdate: NoAction, map: "device_pairing_tokens_consumed_device_id_fkey")
 }

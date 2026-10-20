@@ -222,7 +222,7 @@ export class GuardianshipLifecycleService {
       await this.deviceRevoker.revokeAllForDependent(
         tx,
         dependentId,
-        'dependent_no_guardian',
+        'guardianship_revoked',
       );
       if (holdsAccount) {
         // Custody keeps the membership valid but is not a guardian.
@@ -268,7 +268,7 @@ export class GuardianshipLifecycleService {
       await this.deviceRevoker.revokeAllForDependent(
         tx,
         dependentId,
-        'dependent_no_guardian',
+        'guardianship_revoked',
       );
       await this.restartGuardianlessClock(tx, dependentId, now);
       return {

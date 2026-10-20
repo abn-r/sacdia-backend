@@ -17,15 +17,23 @@ import type { Prisma } from '@prisma/client';
  */
 export const LINKED_DEVICE_REVOKER = Symbol('LINKED_DEVICE_REVOKER');
 
-/** Why a device was revoked (3b stores it as `revoked_reason`). */
+/**
+ * Why a device was revoked: the vocabulary of `linked_devices.revoked_reason`
+ * (a DB CHECK, mirrored by the migration guard spec). "The last guardian left"
+ * and a custody transfer are `guardianship_revoked`: the pairing guardianship
+ * is what went away.
+ */
 export type LinkedDeviceRevokeReason =
-  | 'teen_login_enabled'
+  | 'guardian'
   | 'guardianship_revoked'
   | 'guardian_account_closed'
-  | 'dependent_no_guardian'
-  | 'dependent_frozen'
+  | 'teen_login_enabled'
   | 'majority'
-  | 'admin';
+  | 'dependent_frozen'
+  | 'device_logout'
+  | 'session_revoked'
+  | 'admin'
+  | 'expired';
 
 export interface LinkedDeviceRevoker {
   /** Revokes EVERY active device of the dependent. Returns how many. */

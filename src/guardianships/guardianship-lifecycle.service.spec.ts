@@ -570,7 +570,7 @@ describe('GuardianshipLifecycleService: teens and linked devices (phase 3a)', ()
       expect(deviceRevoker.revokeAllForDependent).toHaveBeenCalledWith(
         tx,
         DEP,
-        'dependent_no_guardian',
+        'guardianship_revoked',
       );
     });
 
@@ -692,7 +692,7 @@ describe('GuardianshipLifecycleService: teens and linked devices (phase 3a)', ()
       expect(deviceRevoker.revokeAllForDependent).toHaveBeenCalledWith(
         tx,
         DEP,
-        'dependent_no_guardian',
+        'guardianship_revoked',
       );
     });
 
