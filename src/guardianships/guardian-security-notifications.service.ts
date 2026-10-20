@@ -238,18 +238,21 @@ export class GuardianSecurityNotificationsService implements SupervisedLoginEven
     options: { excludeUserId?: string; detail?: string },
   ): Promise<void> {
     try {
+      const target = await this.recipientsOf(
+        dependentId,
+        options.excludeUserId,
+      );
+      if (!target) return;
+
+      // Claim the 15 minute window only when a notice actually goes out: a login
+      // with no verified guardian yet must not silence the first notice after
+      // the verification.
       if (
         event === 'teen_new_session' &&
         !(await this.claimNewSessionWindow(dependentId))
       ) {
         return;
       }
-
-      const target = await this.recipientsOf(
-        dependentId,
-        options.excludeUserId,
-      );
-      if (!target) return;
 
       const text = noticeText(event, target.firstName, options.detail);
       await Promise.allSettled(

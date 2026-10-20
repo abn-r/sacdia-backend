@@ -205,6 +205,28 @@ describe('new session dedupe', () => {
     expect(NEW_SESSION_DEDUPE_MS).toBe(900_000);
   });
 
+  it('a login with NO recipient does not consume the window (the first notice after verification still goes out)', async () => {
+    // Regression (QA BUG-2): the window used to be claimed before resolving the
+    // recipients, so a login while the guardian was still pending silenced the
+    // first notice once the guardian got verified.
+    const { service, notifications, prisma, cache } = setup({ guardians: [] });
+
+    await service.onTeenSessionStarted({ userId: TEEN });
+    expect(notifications.sendToUser).not.toHaveBeenCalled();
+    expect(cache.set).not.toHaveBeenCalled();
+
+    // The guardian is verified now; the teen logs in again inside 15 minutes.
+    prisma.users.findUnique.mockResolvedValue({
+      name: 'Ana María',
+      birthday: yearsAgo(15),
+      country_id: null,
+      guardianships_as_dependent: [{ guardian_user_id: G1 }],
+    });
+    await service.onTeenSessionStarted({ userId: TEEN });
+    expect(notifications.sendToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendToUser.mock.calls[0][0].userId).toBe(G1);
+  });
+
   it('other events are never deduplicated', async () => {
     const { service, notifications } = setup();
     await service.onTeenPasswordChanged({ userId: TEEN });
