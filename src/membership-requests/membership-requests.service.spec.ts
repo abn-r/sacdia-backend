@@ -16,6 +16,7 @@ import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-e
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ConsentGateService } from './consent-gate.service';
+import { LINKED_DEVICE_REVOKER } from '../guardianships/linked-device-revoker.port';
 
 describe('MembershipRequestsService', () => {
   let service: MembershipRequestsService;
@@ -53,6 +54,11 @@ describe('MembershipRequestsService', () => {
     guardianships: {
       findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
+    },
+    // Expiry of a custodial minor's request freezes the profile (P3-A18).
+    dependent_profiles: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     // Per-dependent advisory lock taken by the consent gate.
     $executeRaw: jest.fn().mockResolvedValue(1),
@@ -105,6 +111,11 @@ describe('MembershipRequestsService', () => {
     bump: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockDeviceRevoker = {
+    revokeAllForDependent: jest.fn().mockResolvedValue(0),
+    revokeByGuardianship: jest.fn().mockResolvedValue(0),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     mockRoleEligibility.assertAssignment.mockReset().mockResolvedValue({
@@ -140,6 +151,7 @@ describe('MembershipRequestsService', () => {
         ConsentGateService,
         { provide: AuditLogsService, useValue: mockAuditLogs },
         { provide: ActingForCache, useValue: mockActingForCache },
+        { provide: LINKED_DEVICE_REVOKER, useValue: mockDeviceRevoker },
       ],
     }).compile();
 
@@ -299,6 +311,27 @@ describe('MembershipRequestsService', () => {
         expect(
           transactionMock.club_role_assignments.updateMany,
         ).not.toHaveBeenCalled();
+      });
+
+      it('the CREATOR of a director-created minor cannot approve while the custody consent is pending: 409, nothing activated (FP3-62)', async () => {
+        const creatorId = '30b0b873-b5fb-4aee-a4b7-4962f38f8c7a';
+        transactionMock.users.findUnique.mockResolvedValue(
+          gateDependentUser(userId),
+        );
+        // The custody row exists but is still pending: no verified row.
+        transactionMock.guardianships.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, creatorId),
+        ).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).not.toHaveBeenCalled();
+        expect(mockAuditLogs.recordEvent).not.toHaveBeenCalled();
       });
 
       it('approves the same teen once a verified row exists', async () => {
@@ -925,6 +958,283 @@ describe('MembershipRequestsService', () => {
           select: { dependent_user_id: true, verified_at: true },
         });
       });
+    });
+  });
+
+  /**
+   * P3-A18 (ruling 6): a director-created minor whose request expired has no
+   * membership, no family and no reason to stay: freeze it on the Phase 2
+   * schedule (purge_after = frozen_at + 90 days) so the purge cron removes it.
+   */
+  describe('expireStaleRequests: custodial minors (P3-A18)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const daysAgo = (days: number) => new Date(Date.now() - days * DAY);
+    const MINOR = '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99';
+    const OTHER_MINOR = '1e6a1cf0-3c56-48c3-8de0-5e3518b4ab00';
+    const ADULT = '7c1b5b44-0f3e-4f4a-9a77-4a9c1b1f0c11';
+
+    type Holder = { dependent_user_id: string; is_custodian: boolean };
+
+    /**
+     * One cron run: `expired` are the pending requests past their window,
+     * `profiles` the dependent profiles among them, `holders` the live
+     * guardianship rows and `liveAssignments` the users that still have a
+     * pending/active membership AFTER the expiry write.
+     */
+    const arrange = (opts: {
+      candidates: Array<{
+        assignment_id: string;
+        user_id: string;
+        created_at: Date;
+      }>;
+      profiles?: string[];
+      holders?: Holder[];
+      liveAssignments?: string[];
+    }) => {
+      transactionMock.club_role_assignments.findMany.mockImplementation(
+        ({ where }: any) =>
+          where.created_at
+            ? Promise.resolve(opts.candidates)
+            : Promise.resolve(
+                (opts.liveAssignments ?? []).map((user_id) => ({ user_id })),
+              ),
+      );
+      transactionMock.users.findMany.mockResolvedValue(
+        gateDependentRows(opts.profiles ?? []),
+      );
+      transactionMock.dependent_profiles.findMany.mockImplementation(
+        ({ where }: any) =>
+          Promise.resolve(
+            (opts.profiles ?? [])
+              .filter((id) => where.user_id.in.includes(id))
+              .map((user_id) => ({ user_id })),
+          ),
+      );
+      transactionMock.guardianships.findMany.mockImplementation(
+        ({ where }: any) =>
+          where.consent_status === 'verified'
+            ? Promise.resolve([])
+            : Promise.resolve(
+                (opts.holders ?? []).filter((row) =>
+                  where.dependent_user_id.in.includes(row.dependent_user_id),
+                ),
+              ),
+      );
+      transactionMock.club_role_assignments.updateManyAndReturn.mockImplementation(
+        ({ where }: any) =>
+          Promise.resolve(
+            opts.candidates
+              .filter((c) => where.assignment_id.in.includes(c.assignment_id))
+              .map((c) => ({ user_id: c.user_id })),
+          ),
+      );
+    };
+
+    const custody = (id: string): Holder => ({
+      dependent_user_id: id,
+      is_custodian: true,
+    });
+    const guardian = (id: string): Holder => ({
+      dependent_user_id: id,
+      is_custodian: false,
+    });
+    const expired31 = (id: string, user: string) => ({
+      assignment_id: id,
+      user_id: user,
+      created_at: daysAgo(31),
+    });
+
+    it('freezes the minor on the Phase 2 schedule, revokes devices and bumps the epoch after the commit', async () => {
+      arrange({
+        candidates: [expired31('a1', MINOR)],
+        profiles: [MINOR],
+        holders: [custody(MINOR)],
+      });
+      const before = Date.now();
+
+      await expect(service.expireStaleRequests()).resolves.toBe(1);
+
+      expect(
+        transactionMock.dependent_profiles.updateMany,
+      ).toHaveBeenCalledTimes(1);
+      const call = transactionMock.dependent_profiles.updateMany.mock
+        .calls[0][0] as {
+        where: Record<string, unknown>;
+        data: { frozen_at: Date; purge_after: Date };
+      };
+      expect(call.where).toEqual({
+        user_id: MINOR,
+        frozen_at: null,
+        purged_at: null,
+      });
+      expect(call.data.frozen_at.getTime()).toBeGreaterThanOrEqual(before);
+      // purge_after = frozen_at + 90 days, exactly (the frozen CHECK ties them).
+      expect(
+        call.data.purge_after.getTime() - call.data.frozen_at.getTime(),
+      ).toBe(90 * DAY);
+      expect(mockDeviceRevoker.revokeAllForDependent).toHaveBeenCalledWith(
+        transactionMock,
+        MINOR,
+        'dependent_frozen',
+      );
+      expect(mockActingForCache.bump).toHaveBeenCalledWith(MINOR);
+      // The bump is AFTER the transaction (it cannot be undone).
+      expect(
+        mockActingForCache.bump.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(
+        mockDeviceRevoker.revokeAllForDependent.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('takes the dependent locks BEFORE the bulk write (approve locks then writes: the opposite order would deadlock)', async () => {
+      arrange({
+        candidates: [expired31('a1', MINOR), expired31('a2', OTHER_MINOR)],
+        profiles: [OTHER_MINOR, MINOR],
+        holders: [custody(MINOR), custody(OTHER_MINOR)],
+      });
+
+      await service.expireStaleRequests();
+
+      const locks = transactionMock.$executeRaw.mock.invocationCallOrder;
+      const write =
+        transactionMock.club_role_assignments.updateManyAndReturn.mock
+          .invocationCallOrder[0];
+      expect(locks).toHaveLength(2);
+      expect(Math.max(...locks)).toBeLessThan(write);
+      // Ascending id order, whatever the cron read order was.
+      const lockedIds = transactionMock.$executeRaw.mock.calls.map(
+        (callArgs: unknown[]) => JSON.stringify(callArgs),
+      );
+      expect(lockedIds[0]).toContain(MINOR);
+      expect(lockedIds[1]).toContain(OTHER_MINOR);
+    });
+
+    it('leaves a minor with a (non-custodian) guardian untouched', async () => {
+      arrange({
+        candidates: [expired31('a1', MINOR)],
+        profiles: [MINOR],
+        holders: [guardian(MINOR)],
+      });
+
+      await expect(service.expireStaleRequests()).resolves.toBe(1);
+
+      expect(
+        transactionMock.dependent_profiles.updateMany,
+      ).not.toHaveBeenCalled();
+      expect(mockDeviceRevoker.revokeAllForDependent).not.toHaveBeenCalled();
+      expect(mockActingForCache.bump).not.toHaveBeenCalled();
+    });
+
+    it('a custody row ALONGSIDE a guardian (claim in flight) is not custodial-only: untouched', async () => {
+      arrange({
+        candidates: [expired31('a1', MINOR)],
+        profiles: [MINOR],
+        holders: [custody(MINOR), guardian(MINOR)],
+      });
+
+      await service.expireStaleRequests();
+
+      expect(
+        transactionMock.dependent_profiles.updateMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('a profile with NO guardianship row at all is not frozen here (nothing proves it is custodial)', async () => {
+      arrange({
+        candidates: [expired31('a1', MINOR)],
+        profiles: [MINOR],
+        holders: [],
+      });
+
+      await service.expireStaleRequests();
+
+      expect(
+        transactionMock.dependent_profiles.updateMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('a minor that still has another live membership request or membership is not frozen', async () => {
+      arrange({
+        candidates: [expired31('a1', MINOR)],
+        profiles: [MINOR],
+        holders: [custody(MINOR)],
+        liveAssignments: [MINOR],
+      });
+
+      await service.expireStaleRequests();
+
+      expect(
+        transactionMock.dependent_profiles.updateMany,
+      ).not.toHaveBeenCalled();
+      expect(mockActingForCache.bump).not.toHaveBeenCalled();
+    });
+
+    it('an adult request that expires is unchanged: no freeze, no locks, no extra bump', async () => {
+      arrange({
+        candidates: [
+          { assignment_id: 'adult', user_id: ADULT, created_at: daysAgo(9) },
+        ],
+      });
+
+      await expect(service.expireStaleRequests()).resolves.toBe(1);
+
+      expect(
+        transactionMock.dependent_profiles.updateMany,
+      ).not.toHaveBeenCalled();
+      expect(transactionMock.$executeRaw).not.toHaveBeenCalled();
+      expect(mockDeviceRevoker.revokeAllForDependent).not.toHaveBeenCalled();
+      expect(mockActingForCache.bump).not.toHaveBeenCalled();
+    });
+
+    it('a still-valid request (pending consent is kept 30 days) freezes nothing', async () => {
+      arrange({
+        candidates: [
+          { assignment_id: 'young', user_id: MINOR, created_at: daysAgo(9) },
+        ],
+        profiles: [MINOR],
+        holders: [custody(MINOR)],
+      });
+
+      await expect(service.expireStaleRequests()).resolves.toBe(0);
+
+      expect(
+        transactionMock.dependent_profiles.updateMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('only selects profiles that are not already frozen or purged', async () => {
+      arrange({
+        candidates: [expired31('a1', MINOR)],
+        profiles: [MINOR],
+        holders: [custody(MINOR)],
+      });
+
+      await service.expireStaleRequests();
+
+      expect(transactionMock.dependent_profiles.findMany).toHaveBeenCalledWith({
+        where: { user_id: { in: [MINOR] }, frozen_at: null, purged_at: null },
+        select: { user_id: true },
+      });
+    });
+
+    it('a failing freeze rolls the whole run back: no epoch bump, no cache invalidation', async () => {
+      arrange({
+        candidates: [expired31('a1', MINOR)],
+        profiles: [MINOR],
+        holders: [custody(MINOR)],
+      });
+      transactionMock.dependent_profiles.updateMany.mockRejectedValueOnce(
+        new Error('freeze failed'),
+      );
+
+      await expect(service.expireStaleRequests()).rejects.toThrow(
+        'freeze failed',
+      );
+
+      expect(mockActingForCache.bump).not.toHaveBeenCalled();
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
     });
   });
 
