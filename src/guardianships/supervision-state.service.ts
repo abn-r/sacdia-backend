@@ -7,6 +7,9 @@ import {
 } from './guardianships.constants';
 
 export interface SupervisionGuardianView {
+  /** Lets the teen revoke a pending link they initiated (ruling R4). */
+  guardianship_id: string;
+  consent_status: 'pending' | 'verified';
   display_name: string;
   relationship_type_name: string | null;
 }
@@ -49,6 +52,8 @@ export class SupervisionStateService {
         where: { dependent_user_id: userId, ...ACTIVE_USER_GUARDIAN },
         orderBy: [{ is_primary: 'desc' }, { created_at: 'asc' }],
         select: {
+          guardianship_id: true,
+          consent_status: true,
           guardian: {
             select: { name: true, paternal_last_name: true },
           },
@@ -58,6 +63,8 @@ export class SupervisionStateService {
     ]);
 
     const guardians = guardianships.map((row) => ({
+      guardianship_id: row.guardianship_id,
+      consent_status: row.consent_status as 'pending' | 'verified',
       display_name: displayName(row.guardian),
       relationship_type_name: row.relationship_type?.name ?? null,
     }));
