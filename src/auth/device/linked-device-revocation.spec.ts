@@ -25,7 +25,7 @@ describe('LinkedDeviceRevocation', () => {
       updateMany: jest.Mock;
       count: jest.Mock;
     };
-    session: { deleteMany: jest.Mock };
+    session: { deleteMany: jest.Mock; findMany: jest.Mock };
     user_fcm_tokens: { updateMany: jest.Mock };
     audit_logs: { create: jest.Mock };
   };
@@ -41,7 +41,10 @@ describe('LinkedDeviceRevocation', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn().mockResolvedValue(1),
       },
-      session: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      session: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       user_fcm_tokens: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
@@ -229,6 +232,65 @@ describe('LinkedDeviceRevocation', () => {
       );
 
       expect(cache.bump).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('healOrphansInTx', () => {
+    it('revokes (session_revoked) only the ACTIVE devices whose session row is gone', async () => {
+      tx.linked_devices.findMany
+        .mockResolvedValueOnce([
+          { linked_device_id: 'd1', session_id: 'sid-d1' },
+          { linked_device_id: 'd2', session_id: 'sid-d2' },
+        ])
+        .mockResolvedValueOnce([row('d1')]);
+      tx.session.findMany.mockResolvedValue([{ id: 'sid-d2' }]);
+
+      const healed = await service.healOrphansInTx(tx as never, CHILD);
+
+      expect(tx.linked_devices.findMany.mock.calls[0][0].where).toEqual({
+        dependent_user_id: CHILD,
+        revoked_at: null,
+      });
+      expect(tx.session.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ['sid-d1', 'sid-d2'] } },
+        select: { id: true },
+      });
+      expect(tx.linked_devices.findMany.mock.calls[1][0].where).toEqual({
+        linked_device_id: { in: ['d1'] },
+        revoked_at: null,
+      });
+      expect(tx.linked_devices.updateMany).toHaveBeenCalledTimes(1);
+      expect(tx.linked_devices.updateMany).toHaveBeenCalledWith({
+        where: { linked_device_id: 'd1', revoked_at: null },
+        data: {
+          revoked_at: expect.any(Date),
+          revoked_by_user_id: null,
+          revoked_reason: 'session_revoked',
+        },
+      });
+      expect(healed.map((device) => device.linkedDeviceId)).toEqual(['d1']);
+      expect(tx.audit_logs.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing when every active device still has its session', async () => {
+      tx.linked_devices.findMany.mockResolvedValueOnce([
+        { linked_device_id: 'd1', session_id: 'sid-d1' },
+      ]);
+      tx.session.findMany.mockResolvedValue([{ id: 'sid-d1' }]);
+
+      await expect(
+        service.healOrphansInTx(tx as never, CHILD),
+      ).resolves.toEqual([]);
+      expect(tx.linked_devices.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('is a single read when the child has no active device', async () => {
+      tx.linked_devices.findMany.mockResolvedValueOnce([]);
+
+      await expect(
+        service.healOrphansInTx(tx as never, CHILD),
+      ).resolves.toEqual([]);
+      expect(tx.session.findMany).not.toHaveBeenCalled();
     });
   });
 

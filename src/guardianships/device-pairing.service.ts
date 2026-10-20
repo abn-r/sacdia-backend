@@ -8,6 +8,10 @@ import {
 } from '../audit-logs/audit-request-context';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import {
+  LinkedDeviceRevocation,
+  type RevokedDevice,
+} from '../auth/device/linked-device-revocation';
+import {
   BetterAuthService,
   DEVICE_SESSION_DURATION_MS,
   type SessionRequestContext,
@@ -146,6 +150,7 @@ export class DevicePairingService {
     private readonly actingForCache: ActingForCache,
     private readonly failures: DevicePairingFailureCounter,
     private readonly security: GuardianSecurityNotificationsService,
+    private readonly revocation: LinkedDeviceRevocation,
   ) {}
 
   private hashKey(): Buffer {
@@ -176,7 +181,7 @@ export class DevicePairingService {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + DEVICE_PAIRING_TOKEN_TTL_MS);
 
-    await this.prisma.$transaction(async (tx) => {
+    const healed = await this.prisma.$transaction(async (tx) => {
       await lockDependent(tx, dependentId);
       const guardianship = await this.powers.assertVerifiedGuardian(
         guardianId,
@@ -191,7 +196,7 @@ export class DevicePairingService {
         );
       }
       if (refusal) throw notEligible(refusal);
-      await this.assertUnderDeviceCap(tx, dependentId);
+      const healedDevices = await this.assertUnderDeviceCap(tx, dependentId);
 
       // A new token kills the earlier open ones of this child.
       await tx.device_pairing_tokens.updateMany({
@@ -212,7 +217,10 @@ export class DevicePairingService {
           created_at: now,
         },
       });
+      return healedDevices;
     });
+    // Orphan devices healed by the cap check: orphan any cached decision.
+    await this.revocation.bumpAfterCommit(healed);
 
     return {
       pairing_token: token,
@@ -470,16 +478,24 @@ export class DevicePairingService {
     return null;
   }
 
+  /**
+   * Device cap under the dependent lock. Active rows whose session is gone (a
+   * logout that failed halfway) are revoked first as `session_revoked`, so a
+   * dead phone never occupies one of the 2 slots. Returns the healed devices so
+   * the caller can bump the epoch after its commit.
+   */
   private async assertUnderDeviceCap(
     tx: Prisma.TransactionClient,
     dependentId: string,
-  ): Promise<void> {
+  ): Promise<RevokedDevice[]> {
+    const healed = await this.revocation.healOrphansInTx(tx, dependentId);
     const active = await tx.linked_devices.count({
       where: { dependent_user_id: dependentId, revoked_at: null },
     });
     if (active >= MAX_LINKED_DEVICES_PER_DEPENDENT) {
       throw limitReached();
     }
+    return healed;
   }
 
   // ---------------------------------------------------------------------------

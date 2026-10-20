@@ -755,15 +755,19 @@ export class AuthService {
     if (refreshToken) {
       path = 'session';
       revocationAttempted = true;
-      // A device logging out ("Desvincular") unlinks itself: remember the device
-      // BEFORE the session row disappears, revoke it afterwards (best effort).
+      // A device logging out ("Desvincular") unlinks itself. The device is
+      // revoked FIRST: that one transaction marks the row revoked AND deletes
+      // the session, so there is no window with a deleted session and a device
+      // still active. The plain sign-out that follows is then a no-op. If the
+      // revoke fails (best effort) the sign-out still runs and the orphan row is
+      // healed when the child's device cap is next checked.
       const loggedOutDevice = await this.findDeviceForLogout(refreshToken);
       try {
-        await this.betterAuthService.signOut(refreshToken);
-        revocationSucceeded = true;
         if (loggedOutDevice) {
           await this.revokeLoggedOutDevice(loggedOutDevice, userAgent);
         }
+        await this.betterAuthService.signOut(refreshToken);
+        revocationSucceeded = true;
       } catch (error) {
         reason = error instanceof Error ? error.message : String(error);
         this.logger.warn(

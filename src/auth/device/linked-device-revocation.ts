@@ -132,6 +132,42 @@ export class LinkedDeviceRevocation {
     return revoked;
   }
 
+  /**
+   * Self-heal: revokes (`session_revoked`) the ACTIVE devices of the child whose
+   * session row no longer exists, inside the caller's transaction. A device
+   * without a session can never act again, so it must not hold one of the
+   * child's slots. This is the safety net for a path that deleted the session
+   * but failed to record the revoke (a logout whose second step failed, a
+   * session purge). Returns the devices it revoked; the caller bumps the epoch
+   * after its commit.
+   */
+  async healOrphansInTx(
+    tx: Prisma.TransactionClient,
+    dependentUserId: string,
+  ): Promise<RevokedDevice[]> {
+    const active = await tx.linked_devices.findMany({
+      where: { dependent_user_id: dependentUserId, revoked_at: null },
+      select: { linked_device_id: true, session_id: true },
+    });
+    if (active.length === 0) return [];
+
+    const alive = await tx.session.findMany({
+      where: { id: { in: active.map((device) => device.session_id) } },
+      select: { id: true },
+    });
+    const aliveIds = new Set(alive.map((session) => session.id));
+    const orphanIds = active
+      .filter((device) => !aliveIds.has(device.session_id))
+      .map((device) => device.linked_device_id);
+    if (orphanIds.length === 0) return [];
+
+    return this.revokeInTx(
+      tx,
+      { linked_device_id: { in: orphanIds } },
+      { by: null, reason: 'session_revoked' },
+    );
+  }
+
   /** Own transaction + epoch bump: for callers that have no transaction of their own. */
   async revokeStandalone(
     where: Prisma.linked_devicesWhereInput,

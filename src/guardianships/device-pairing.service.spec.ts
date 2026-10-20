@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { LinkedDeviceRevocation } from '../auth/device/linked-device-revocation';
 import { ErrorCode } from '../common/errors/error-codes';
 import { DEVICE_PAIRING_MAX_FAILURES } from './device-pairing-failure-counter';
 import {
@@ -65,6 +66,7 @@ describe('DevicePairingService', () => {
   let cache: { bump: jest.Mock };
   let failures: { current: jest.Mock; increment: jest.Mock };
   let security: { onDevicePaired: jest.Mock };
+  let revocation: { healOrphansInTx: jest.Mock; bumpAfterCommit: jest.Mock };
   let service: DevicePairingService;
 
   beforeEach(() => {
@@ -122,6 +124,10 @@ describe('DevicePairingService', () => {
       increment: jest.fn().mockResolvedValue(1),
     };
     security = { onDevicePaired: jest.fn().mockResolvedValue(undefined) };
+    revocation = {
+      healOrphansInTx: jest.fn().mockResolvedValue([]),
+      bumpAfterCommit: jest.fn().mockResolvedValue(undefined),
+    };
     service = new DevicePairingService(
       prisma as never,
       config as never,
@@ -132,6 +138,7 @@ describe('DevicePairingService', () => {
       cache as never,
       failures as never,
       security as never,
+      revocation as never,
     );
   });
 
@@ -321,6 +328,168 @@ describe('DevicePairingService', () => {
     it('one device left in the cap is fine', async () => {
       tx.linked_devices.count.mockResolvedValue(1);
       await expect(service.issue(G1, CHILD)).resolves.toBeDefined();
+    });
+
+    describe('orphan devices (an active row whose session no longer exists) never hold a slot', () => {
+      it('heals the orphans BEFORE counting, inside the same transaction', async () => {
+        await service.issue(G1, CHILD);
+
+        expect(revocation.healOrphansInTx).toHaveBeenCalledWith(tx, CHILD);
+        expect(
+          revocation.healOrphansInTx.mock.invocationCallOrder[0],
+        ).toBeLessThan(tx.linked_devices.count.mock.invocationCallOrder[0]);
+      });
+
+      it('bumps the epoch of the healed devices after the commit', async () => {
+        const healed = [{ dependentUserId: CHILD }];
+        revocation.healOrphansInTx.mockResolvedValue(healed);
+
+        await service.issue(G1, CHILD);
+
+        expect(revocation.bumpAfterCommit).toHaveBeenCalledWith(healed);
+      });
+
+      it('does not heal-and-keep when the cap still blocks: nothing is bumped', async () => {
+        revocation.healOrphansInTx.mockResolvedValue([
+          { dependentUserId: CHILD },
+        ]);
+        tx.linked_devices.count.mockResolvedValue(2);
+
+        await expect(service.issue(G1, CHILD)).rejects.toMatchObject({
+          code: ErrorCode.DEVICE_LIMIT_REACHED,
+        });
+        expect(revocation.bumpAfterCommit).not.toHaveBeenCalled();
+      });
+
+      describe('with the real revocation over a fake database', () => {
+        function withRealRevocation(
+          devices: Array<{ linked_device_id: string; session_id: string }>,
+          liveSessions: string[],
+        ) {
+          const state = devices.map((device) => ({
+            ...device,
+            revoked_at: null as Date | null,
+            revoked_reason: null as string | null,
+          }));
+          const live = new Set(liveSessions);
+          const isActive = (d: { revoked_at: Date | null }) =>
+            d.revoked_at === null;
+          Object.assign(tx.linked_devices, {
+            findMany: jest.fn((args: any) => {
+              const ids: string[] | undefined = args.where.linked_device_id?.in;
+              return Promise.resolve(
+                state
+                  .filter(isActive)
+                  .filter((d) => !ids || ids.includes(d.linked_device_id))
+                  .map((d) => ({
+                    ...d,
+                    dependent_user_id: CHILD,
+                    guardianship_id: GS,
+                    paired_by_user_id: G1,
+                    label: 'Tablet',
+                    platform: 'android',
+                    fcm_token_id: null,
+                  })),
+              );
+            }),
+            updateMany: jest.fn((args: any) => {
+              const target = state.find(
+                (d) =>
+                  d.linked_device_id === args.where.linked_device_id &&
+                  isActive(d),
+              );
+              if (!target) return Promise.resolve({ count: 0 });
+              target.revoked_at = args.data.revoked_at;
+              target.revoked_reason = args.data.revoked_reason;
+              return Promise.resolve({ count: 1 });
+            }),
+            count: jest.fn(() =>
+              Promise.resolve(state.filter(isActive).length),
+            ),
+          });
+          tx.session = {
+            findMany: jest.fn((args: any) =>
+              Promise.resolve(
+                (args.where.id.in as string[])
+                  .filter((id) => live.has(id))
+                  .map((id) => ({ id })),
+              ),
+            ),
+            deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+          };
+          tx.user_fcm_tokens = {
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          };
+          const real = new LinkedDeviceRevocation(
+            prisma as never,
+            cache as never,
+          );
+          const realService = new DevicePairingService(
+            prisma as never,
+            config as never,
+            flags as never,
+            powers as never,
+            policy as never,
+            betterAuth as never,
+            cache as never,
+            failures as never,
+            security as never,
+            real,
+          );
+          return { realService, state };
+        }
+
+        it('2 active rows but one session gone: the pairing is allowed and the orphan is revoked as session_revoked', async () => {
+          const { realService, state } = withRealRevocation(
+            [
+              { linked_device_id: 'd1', session_id: 'sid-1' },
+              { linked_device_id: 'd2', session_id: 'sid-2' },
+            ],
+            ['sid-2'],
+          );
+
+          await expect(realService.issue(G1, CHILD)).resolves.toBeDefined();
+
+          expect(state.find((d) => d.linked_device_id === 'd1')).toMatchObject({
+            revoked_reason: 'session_revoked',
+          });
+          expect(state.find((d) => d.linked_device_id === 'd2')).toMatchObject({
+            revoked_at: null,
+          });
+          expect(tx.audit_logs.create).toHaveBeenCalledTimes(1);
+          expect(cache.bump).toHaveBeenCalledWith(CHILD);
+        });
+
+        it('2 active rows with live sessions still hit the cap (409)', async () => {
+          const { realService, state } = withRealRevocation(
+            [
+              { linked_device_id: 'd1', session_id: 'sid-1' },
+              { linked_device_id: 'd2', session_id: 'sid-2' },
+            ],
+            ['sid-1', 'sid-2'],
+          );
+
+          await expect(realService.issue(G1, CHILD)).rejects.toMatchObject({
+            code: ErrorCode.DEVICE_LIMIT_REACHED,
+          });
+          expect(state.every((d) => d.revoked_at === null)).toBe(true);
+        });
+
+        it('2 orphans: both are healed and a new device fits', async () => {
+          const { realService, state } = withRealRevocation(
+            [
+              { linked_device_id: 'd1', session_id: 'sid-1' },
+              { linked_device_id: 'd2', session_id: 'sid-2' },
+            ],
+            [],
+          );
+
+          await expect(realService.issue(G1, CHILD)).resolves.toBeDefined();
+          expect(
+            state.every((d) => d.revoked_reason === 'session_revoked'),
+          ).toBe(true);
+        });
+      });
     });
   });
 
@@ -580,6 +749,15 @@ describe('DevicePairingService', () => {
       expect(tx.linked_devices.create).not.toHaveBeenCalled();
       // A 409 is not a token failure: it does not count against the IP.
       expect(failures.increment).not.toHaveBeenCalled();
+    });
+
+    it('redeem heals orphan devices under the lock before enforcing the cap', async () => {
+      await service.pair(dto(), context);
+
+      expect(revocation.healOrphansInTx).toHaveBeenCalledWith(tx, CHILD);
+      expect(
+        revocation.healOrphansInTx.mock.invocationCallOrder[0],
+      ).toBeLessThan(tx.linked_devices.create.mock.invocationCallOrder[0]);
     });
 
     it('turning 13 between issue and redeem makes the token invalid', async () => {

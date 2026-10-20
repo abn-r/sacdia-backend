@@ -1209,7 +1209,7 @@ describe('AuthService', () => {
       });
     });
 
-    it('a device logging out ("Desvincular") revokes the device after the session is gone', async () => {
+    it('a device logging out ("Desvincular") revokes the device BEFORE the session is deleted (the revoke deletes the session atomically)', async () => {
       const device = {
         sessionId: 'sid-device',
         linkedDeviceId: 'device-1',
@@ -1230,9 +1230,32 @@ describe('AuthService', () => {
 
       const result = await service.logout({ refreshToken: 'device-session' });
 
-      expect(order).toEqual(['signOut', 'revoke']);
+      expect(order).toEqual(['revoke', 'signOut']);
       expect(mockLinkedDevices.revokeByLogout).toHaveBeenCalledWith('device-1');
       expect(result.revocationSucceeded).toBe(true);
+    });
+
+    it('when the device revoke fails the session is STILL signed out (the cap self-heals the orphan row later)', async () => {
+      mockBetterAuthService.findLinkedDeviceOfSession.mockResolvedValue({
+        sessionId: 's',
+        linkedDeviceId: 'device-1',
+        dependentUserId: 'child-1',
+        revokedAt: null,
+        absoluteExpiresAt: new Date(Date.now() + 86_400_000),
+      });
+      mockLinkedDevices.revokeByLogout.mockRejectedValue(new Error('boom'));
+      mockBetterAuthService.signOut.mockResolvedValue(undefined);
+
+      const result = await service.logout({ refreshToken: 'device-session' });
+
+      expect(mockBetterAuthService.signOut).toHaveBeenCalledWith(
+        'device-session',
+      );
+      expect(result).toMatchObject({
+        success: true,
+        revocationAttempted: true,
+        revocationSucceeded: true,
+      });
     });
 
     it('an already revoked device is not revoked again on logout', async () => {
