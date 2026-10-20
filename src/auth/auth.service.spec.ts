@@ -2194,7 +2194,9 @@ describe('AuthService', () => {
           club_context: {
             active_assignment_id: 'assign-1',
             active: { assignment_id: 'assign-1', club_name: 'Club Aguila' },
-            available: [{ assignment_id: 'assign-1', club_name: 'Club Aguila' }],
+            available: [
+              { assignment_id: 'assign-1', club_name: 'Club Aguila' },
+            ],
           },
         },
       });

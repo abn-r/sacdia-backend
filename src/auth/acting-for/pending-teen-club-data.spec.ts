@@ -97,19 +97,22 @@ describe('pending teen / unknown age: no club data from QR or context switch', (
     expect(principalSeesClubData({ kind: 'age_unknown_user' })).toBe(false);
   });
 
-  describe.each(BLOCKED)('$label (with an active pre-deploy assignment)', (principal) => {
-    it.each(CREDENTIAL_ROUTES)('%s is 403 PRINCIPAL_SCOPE_DENIED', (key) => {
-      const thrown = attempt(find(key), principal);
-      expect(thrown).toBeInstanceOf(AppException);
-      expect(thrown!.code).toBe(ErrorCode.PRINCIPAL_SCOPE_DENIED);
-    });
+  describe.each(BLOCKED)(
+    '$label (with an active pre-deploy assignment)',
+    (principal) => {
+      it.each(CREDENTIAL_ROUTES)('%s is 403 PRINCIPAL_SCOPE_DENIED', (key) => {
+        const thrown = attempt(find(key), principal);
+        expect(thrown).toBeInstanceOf(AppException);
+        expect(thrown!.code).toBe(ErrorCode.PRINCIPAL_SCOPE_DENIED);
+      });
 
-    it.each(CONTEXT_ROUTES)('%s is 403 PRINCIPAL_SCOPE_DENIED', (key) => {
-      const thrown = attempt(find(key), principal);
-      expect(thrown).toBeInstanceOf(AppException);
-      expect(thrown!.code).toBe(ErrorCode.PRINCIPAL_SCOPE_DENIED);
-    });
-  });
+      it.each(CONTEXT_ROUTES)('%s is 403 PRINCIPAL_SCOPE_DENIED', (key) => {
+        const thrown = attempt(find(key), principal);
+        expect(thrown).toBeInstanceOf(AppException);
+        expect(thrown!.code).toBe(ErrorCode.PRINCIPAL_SCOPE_DENIED);
+      });
+    },
+  );
 
   it('a verified, active teen keeps the full credential and the context switch', () => {
     for (const key of [...CREDENTIAL_ROUTES, ...CONTEXT_ROUTES]) {
@@ -125,7 +128,10 @@ describe('pending teen / unknown age: no club data from QR or context switch', (
 
   it('a guardian acting (pending or verified) and a device keep the credential, as before Phase 3', () => {
     for (const key of CREDENTIAL_ROUTES) {
-      for (const scopes of [GUARDIAN_PENDING_SCOPES, GUARDIAN_VERIFIED_SCOPES]) {
+      for (const scopes of [
+        GUARDIAN_PENDING_SCOPES,
+        GUARDIAN_VERIFIED_SCOPES,
+      ]) {
         expect(
           attempt(find(key), { kind: 'guardian_acting', scopes }),
         ).toBeNull();

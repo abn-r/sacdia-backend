@@ -788,16 +788,13 @@ describe('GuardianshipLifecycleService: teens and linked devices (phase 3a)', ()
           rows.find(
             (r: any) =>
               r.guardianship_id === where.guardianship_id &&
-              r.invited_by_guardianship_id ===
-                where.invited_by_guardianship_id,
+              r.invited_by_guardianship_id === where.invited_by_guardianship_id,
           ) ?? null,
         ),
       );
 
       expect(
-        await errorOf(
-          service.revokePendingLinkByDependent(DEP, 'gs-second'),
-        ),
+        await errorOf(service.revokePendingLinkByDependent(DEP, 'gs-second')),
       ).toMatchObject({ code: ErrorCode.GUARDIANSHIP_NOT_FOUND });
       expect(tx.guardianships.update).not.toHaveBeenCalled();
       expect(cache.bump).not.toHaveBeenCalled();

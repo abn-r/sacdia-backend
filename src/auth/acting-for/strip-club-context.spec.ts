@@ -8,7 +8,11 @@ const clubGrant = {
   operational: true,
   ecclesiastical_year_id: 7,
   club: { club_id: 10, club_name: 'Club Aguila' },
-  section: { club_section_id: 20, club_type_id: 2, club_type_name: 'Pathfinder' },
+  section: {
+    club_section_id: 20,
+    club_type_id: 2,
+    club_type_name: 'Pathfinder',
+  },
   scope: {},
   status: 'active',
 };
