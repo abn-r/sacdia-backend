@@ -26,6 +26,7 @@ import {
   SkipPermissions,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 import { CamporeeScoringService } from './camporee-scoring.service';
 import {
   AddCamporeeJudgeDto,
@@ -341,6 +342,10 @@ export class CamporeeScoringController {
   }
 
   @Get('camporee-judges/me/assignments')
+  // The member app home asks "am I a judge?" for everyone. Own assignments only
+  // (filtered by the token user); a teen is not expected to be a judge, so it
+  // answers []. The judging routes (rubrics, scores) stay denied to teens.
+  @ActingScope('member:read')
   @SkipPermissions()
   @ApiOperation({ summary: 'List current user camporee judge assignments' })
   async getMyJudgeAssignments(@Request() req: any) {

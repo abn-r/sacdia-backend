@@ -172,10 +172,11 @@ const TEEN_DENIED: Record<string, string> = {
     'staff view of the class progress of the whole section',
   'GET /clubs/:clubId/sections/:sectionId/classes/:classId/members-progress':
     'staff view: progress of every member of a class',
+  // NOT the roster of members: the annual enrollments of the section (one per
+  // ecclesiastical year). `enrollments/current` is the member app home and is
+  // tagged member:read (it was wrongly denied here in the first Phase 3 pass).
   'GET /clubs/:clubId/sections/:sectionId/enrollments':
-    'staff roster of the section enrollments',
-  'GET /clubs/:clubId/sections/:sectionId/enrollments/current':
-    'staff roster of the section enrollments',
+    'history of the annual enrollments of the section; the app never reads it, only enrollments/current',
   'GET /validation/pending': 'review queue of the validators (staff)',
   'GET /member-rankings': 'ranking board of the whole club (staff view)',
   'GET /member-rankings/:enrollmentId/breakdown':
@@ -191,7 +192,9 @@ const TEEN_DENIED: Record<string, string> = {
     'master honors belong to adult leaders',
   'GET /users/:userId/master-honors/roadmap':
     'master honors belong to adult leaders',
-  // ---- Camporees: members do not hold camporees:read; judges and staff only
+  // ---- Camporees: members do not hold camporees:read; judges and staff only.
+  // (GET /camporee-judges/me/assignments is NOT here: it is the own "am I a
+  // judge?" check of the member app home, tagged member:read.)
   'GET /camporee-events/:eventId/rubrics': 'judging tool (judges and staff)',
   'GET /camporee-events/:eventId/scoring-targets':
     'judging tool (judges and staff)',
@@ -199,7 +202,6 @@ const TEEN_DENIED: Record<string, string> = {
     'judging tool (judges and staff)',
   'POST /camporee-events/:eventId/sections/:clubSectionId/scores':
     'judging tool (judges and staff)',
-  'GET /camporee-judges/me/assignments': 'judging tool (judges and staff)',
   'GET /camporees/:camporeeId/clubs': 'camporee administration (staff)',
   'GET /camporees/:camporeeId/members': 'camporee administration (staff)',
   'GET /camporees/:camporeeId/members/:memberId/payments':
@@ -402,6 +404,67 @@ const TEEN_APP_FLOW: Array<{ key: string; pending: boolean }> = [
   { key: 'GET /requests/transfers', pending: false },
 ];
 
+/**
+ * GET routes the member app home (dashboard) and its bootstrap request for
+ * EVERY member, kept in sync with the app (sacdia-app/lib). Each MUST be
+ * reachable by an active teen: either it carries a teen scope, or it is
+ * @Public (OptionalJwtAuthGuard downgrades the teen to anonymous, so it never
+ * answers 403). A route in here can never be listed in TEEN_DENIED.
+ *
+ * Why this exists: the walk above only checks that every member-reachable route
+ * is CLASSIFIED, so a wrong human decision (denying a route the home needs, with
+ * a plausible "staff only" reason) passes it. Simulator QA found two such routes
+ * (enrollments/current and camporee-judges/me/assignments). This list is the
+ * second key: the screens the teen lands on must be proven reachable.
+ *
+ * To extend it: when the home (or any screen opened by every member right after
+ * login) starts calling a new GET, add it here with its source. To audit drift,
+ * list the GET calls of the home providers in the app, e.g.
+ * `rg "_dio\.get" lib/features/{dashboard,enrollment,club,activities,notifications,camporees}`
+ * and compare.
+ */
+const MEMBER_HOME_FLOW: Array<{ key: string; source: string }> = [
+  { key: 'GET /auth/me', source: 'app bootstrap (authNotifierProvider)' },
+  { key: 'GET /dashboard/summary', source: 'dashboardNotifierProvider' },
+  {
+    key: 'GET /notifications/unread-count',
+    source: 'unreadNotificationsCountProvider (home bell)',
+  },
+  { key: 'GET /clubs/:clubId', source: 'clubContextProvider' },
+  {
+    key: 'GET /clubs/:clubId/sections/:sectionId',
+    source: 'currentClubSectionProvider',
+  },
+  {
+    key: 'GET /clubs/:clubId/sections/:sectionId/enrollments/current',
+    source: 'currentEnrollmentProvider (EnrollmentStatusCard)',
+  },
+  {
+    key: 'GET /clubs/:clubId/activities',
+    source: 'clubActivitiesProvider (UpcomingActivitiesCard)',
+  },
+  {
+    key: 'GET /camporee-judges/me/assignments',
+    source: 'camporeeJudgeAssignmentsProvider (QuickAccessGrid judge tile)',
+  },
+  { key: 'GET /users/:userId/classes', source: 'userClassesProvider' },
+  {
+    key: 'GET /users/:userId/classes/:classId/progress',
+    source: 'classWithProgressProvider (CurrentClassCard)',
+  },
+  {
+    key: 'GET /classes/:classId',
+    source: 'classWithProgressProvider (public)',
+  },
+  {
+    key: 'GET /classes/:classId/modules',
+    source: 'classWithProgressProvider (public)',
+  },
+  { key: 'GET /users/:userId/honors', source: 'userHonorsProvider' },
+  { key: 'GET /users/:userId', source: 'profileNotifierProvider' },
+  { key: 'GET /users/me/supervision', source: 'teen supervision notice' },
+];
+
 const principalOf = (
   scopes: readonly ActingForScope[],
 ): { kind: 'supervised_user'; scopes: readonly ActingForScope[] } => ({
@@ -542,6 +605,62 @@ describe('teen route walk', () => {
         expect(allowedFor(route!, TEEN_PENDING_SCOPES)).toBe(pending);
       },
     );
+  });
+
+  describe('the member app home (every GET it fires must work for an active teen)', () => {
+    it.each(MEMBER_HOME_FLOW)(
+      '$key is reachable by an active teen ($source)',
+      ({ key }) => {
+        const route = routes.find((r) => r.key === key);
+        expect({ key, exists: route !== undefined }).toEqual({
+          key,
+          exists: true,
+        });
+        const isPublic = readMeta<boolean>(IS_PUBLIC_KEY, route!) === true;
+        expect({
+          key,
+          reachable: isPublic || allowedFor(route!, TEEN_SCOPES),
+        }).toEqual({ key, reachable: true });
+      },
+    );
+
+    it('no home route is listed as denied for teens or sits in a never-scope family', () => {
+      for (const { key } of MEMBER_HOME_FLOW) {
+        expect({ key, denied: TEEN_DENIED[key] !== undefined }).toEqual({
+          key,
+          denied: false,
+        });
+        expect({
+          key,
+          neverScope: NEVER_SCOPE_FAMILIES.some((p) => p.test(key)),
+        }).toEqual({ key, neverScope: false });
+      }
+    });
+
+    it('the home routes that are club data stay closed to a pending teen (no club data before the guardian is verified)', () => {
+      for (const key of [
+        'GET /clubs/:clubId/sections/:sectionId/enrollments/current',
+        'GET /camporee-judges/me/assignments',
+      ]) {
+        const route = routes.find((r) => r.key === key)!;
+        expect({ key, scope: route.scope }).toEqual({
+          key,
+          scope: 'member:read',
+        });
+        expect({
+          key,
+          allowed: allowedFor(route, TEEN_PENDING_SCOPES),
+        }).toEqual({ key, allowed: false });
+      }
+    });
+
+    it('the staff list of enrollments stays closed to every teen', () => {
+      const route = routes.find(
+        (r) => r.key === 'GET /clubs/:clubId/sections/:sectionId/enrollments',
+      )!;
+      expect(allowedFor(route, TEEN_SCOPES)).toBe(false);
+      expect(allowedFor(route, TEEN_PENDING_SCOPES)).toBe(false);
+    });
   });
 
   describe('self-check (the walk really detects a new untagged route)', () => {

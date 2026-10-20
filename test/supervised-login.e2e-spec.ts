@@ -491,6 +491,10 @@ describe('Supervised login E2E', () => {
         findMany: jest.fn().mockResolvedValue([]),
       }),
       units: createModelMock({ findMany: jest.fn().mockResolvedValue([]) }),
+      // The member app home asks "am I a judge?" for everyone: no assignments.
+      camporee_event_judge_assignments: createModelMock({
+        findMany: jest.fn().mockResolvedValue([]),
+      }),
       roles: createModelMock({
         findFirst: jest
           .fn()
@@ -511,7 +515,7 @@ describe('Supervised login E2E', () => {
         profile: { user_id: userId },
         post_register_complete: true,
         authorization: buildAuthorizationSnapshot({
-          globalPermissions: ['units:read'],
+          globalPermissions: ['units:read', 'club_instances:read'],
         }),
         legacy: {
           roles: [],
@@ -625,6 +629,23 @@ describe('Supervised login E2E', () => {
       expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');
     });
 
+    it('pending: the member home reads (section enrollment, judge check) are denied with PRINCIPAL_SCOPE_DENIED', async () => {
+      for (const path of [
+        '/api/v1/clubs/7/sections/3/enrollments/current',
+        '/api/v1/camporee-judges/me/assignments',
+      ]) {
+        const response = await request(app.getHttpServer())
+          .get(path)
+          .set(bearer(TEEN_ID));
+
+        expect({ path, status: response.status }).toEqual({
+          path,
+          status: 403,
+        });
+        expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');
+      }
+    });
+
     it('pending: step 3 of the post-registration is reachable', async () => {
       const response = await request(app.getHttpServer())
         .get(`/api/v1/users/${TEEN_ID}/post-registration/status`)
@@ -728,6 +749,29 @@ describe('Supervised login E2E', () => {
         .set(bearer(TEEN_ID));
 
       expect(response.status).toBe(200);
+    });
+
+    it('verified: the member home reads (own section enrollment, judge check) answer 200, not 403 (QA: home 403 storm)', async () => {
+      const enrollment = await request(app.getHttpServer())
+        .get('/api/v1/clubs/7/sections/3/enrollments/current')
+        .set(bearer(TEEN_ID));
+      expect(enrollment.status).toBe(200);
+      expect(enrollment.body.status).toBe('success');
+
+      const judge = await request(app.getHttpServer())
+        .get('/api/v1/camporee-judges/me/assignments')
+        .set(bearer(TEEN_ID));
+      expect(judge.status).toBe(200);
+      expect(judge.body.data).toEqual([]);
+    });
+
+    it('verified: the staff list of section enrollments stays denied', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/clubs/7/sections/3/enrollments')
+        .set(bearer(TEEN_ID));
+
+      expect(response.status).toBe(403);
+      expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');
     });
 
     it('verified: the teen still cannot issue another guardian code (pending-only scope)', async () => {

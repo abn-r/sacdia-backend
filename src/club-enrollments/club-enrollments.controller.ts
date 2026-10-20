@@ -26,6 +26,7 @@ import {
   CurrentUser,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('club-enrollments')
 @Controller('clubs/:clubId/sections/:sectionId/enrollments')
@@ -98,6 +99,10 @@ export class ClubEnrollmentsController {
   }
 
   @Get('current')
+  // The member app home reads the own section's current enrollment. A teen holds
+  // the same club_instances:read an adult member does; the list above stays
+  // unscoped (nothing in the app uses it).
+  @ActingScope('member:read')
   @RequirePermissions('club_instances:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({

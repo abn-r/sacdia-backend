@@ -134,6 +134,9 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   // ---- member:read (teen only)
   'GET /clubs/:clubId': 'member:read',
   'GET /clubs/:clubId/sections/:sectionId': 'member:read',
+  // The own section's current annual enrollment (member app home). The list
+  // (GET .../enrollments) stays unscoped.
+  'GET /clubs/:clubId/sections/:sectionId/enrollments/current': 'member:read',
   'GET /clubs/:clubId/leadership': 'member:read',
   'GET /activities/:activityId/rsvp': 'member:read',
   'GET /activities/:activityId/attendance': 'member:read',
@@ -144,6 +147,9 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'GET /clubs/:clubId/sections/:sectionId/member-of-month/history':
     'member:read',
   'GET /member-rankings/me': 'member:read',
+  // "Am I a camporee judge?" (member app home, asked for everyone). Own
+  // assignments only; the judging routes stay unscoped.
+  'GET /camporee-judges/me/assignments': 'member:read',
   'GET /achievements/me': 'member:read',
   'GET /achievements/categories': 'member:read',
   'GET /achievements': 'member:read',
@@ -318,9 +324,11 @@ const NEVER_SCOPE: Array<{
     pattern: /^(POST|PUT|PATCH|DELETE) \/clubs(\/|$)/,
   },
   {
+    // `enrollments$` is the staff list only: `enrollments/current` (the own
+    // section's enrollment, read by the member app home) is tagged member:read.
     label: 'club staff reads (overview, history, finances, reports, rosters)',
     pattern:
-      /^GET \/clubs\/:clubId\/(overview|history|finances|annual-reports|quarterly-reports|investiture-authorizers|sections\/:sectionId\/(members|enrollments|classes|class-counselor-assignments|director-designation))/,
+      /^GET \/clubs\/:clubId\/(overview|history|finances|annual-reports|quarterly-reports|investiture-authorizers|sections\/:sectionId\/(members|enrollments$|classes|class-counselor-assignments|director-designation))/,
   },
 ];
 
