@@ -572,20 +572,26 @@ describe('BetterAuthService', () => {
             accounts: mockAccountFindFirst.mock.calls.length,
           });
           const { svc } = buildService();
-          const compare = jest.spyOn(bcrypt, 'compare');
+          // Only the lookups matter here: no real cost-12 hashing (CPU-bound,
+          // it times out under a loaded full run). The dummy compare itself is
+          // covered by the tests around this one.
+          const compare = jest
+            .spyOn(bcrypt, 'compare')
+            .mockResolvedValue(false);
 
           mockUsersFindUnique.mockResolvedValue(mockDbUser);
           mockSupervisedLoginsFindFirst.mockResolvedValue({ user: handleUser });
-          mockAccountFindFirst.mockResolvedValue(
-            await realAccount('CorrectPassword!'),
-          );
+          mockAccountFindFirst.mockResolvedValue({
+            ...mockDbAccount,
+            userId: handleUser.user_id,
+            password: '$2b$12$not-a-real-hash-only-a-non-empty-value',
+          });
           await expect(
             svc.signInWithIdentifier(known, 'WrongPassword1!'),
           ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
           const wrongPassword = lookups();
 
           jest.clearAllMocks();
-          compare.mockClear();
           mockUsersFindUnique.mockResolvedValue(null);
           mockSupervisedLoginsFindFirst.mockResolvedValue(null);
           mockAccountFindFirst.mockResolvedValue(null);
