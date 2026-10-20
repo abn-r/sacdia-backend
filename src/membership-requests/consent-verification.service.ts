@@ -33,7 +33,10 @@ export interface VerifiedGuardianship {
 
 export interface VerifyConsentResult {
   guardianship: VerifiedGuardianship;
-  /** The approved request when `approve` was asked and succeeded, else null. */
+  /**
+   * The approved request when `approve` was asked and succeeded, else null.
+   * Always null when the assignment was already active (verify-only).
+   */
   assignment: unknown;
   /**
    * Set when `approve` was asked and approving failed AFTER the consent was
@@ -78,6 +81,11 @@ interface VerifyTransactionResult {
   newlyVerified: boolean;
   /** Set when the request was already approved by an earlier identical call. */
   alreadyApproved: unknown;
+  /**
+   * The assignment was ALREADY active (a teen who joined before Phase 3): the
+   * consent is verified and there is nothing to approve.
+   */
+  verifyOnly?: boolean;
 }
 
 /**
@@ -85,7 +93,10 @@ interface VerifyTransactionResult {
  * (FP-73). One transaction, serialized per dependent with the same advisory lock
  * as revoke/leave/upload:
  *
- *  - the request must be a pending one of the section in the path;
+ *  - the request must be a pending one of the section in the path, OR an
+ *    already ACTIVE one whose consent is still pending (a minor who joined
+ *    before the age-based gate existed): that case only verifies, it approves
+ *    nothing (`assignment: null`);
  *  - the consent lives on the dependent's ACTIVE PRIMARY row (guardian or club
  *    custody); with no such row nothing is written (no orphan verified row);
  *  - a current signed form must exist (409 GUARDIANSHIP_EVIDENCE_REQUIRED);
@@ -143,7 +154,11 @@ export class ConsentVerificationService {
       assignment: dto.approve === true ? outcome.alreadyApproved : null,
       approve_error: null,
     };
-    if (dto.approve === true && outcome.alreadyApproved === null) {
+    if (
+      dto.approve === true &&
+      outcome.alreadyApproved === null &&
+      !outcome.verifyOnly
+    ) {
       try {
         result.assignment = await this.membershipRequests.approve(
           clubSectionId,
@@ -212,20 +227,25 @@ export class ConsentVerificationService {
       throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
     }
 
-    if (assignment.status !== 'pending') {
-      // A repeated call after the first one already approved the request is a
-      // no-op success; any other processed state is the usual 409.
-      if (assignment.status === 'active' && row.consent_status === 'verified') {
-        return {
-          dependentUserId: dependentId,
-          row: this.toVerified(row),
-          newlyVerified: false,
-          alreadyApproved: await tx.club_role_assignments.findUnique({
-            where: { assignment_id: assignmentId },
-          }),
-        };
-      }
+    // An ACTIVE assignment is accepted too: a minor who joined before the
+    // consent gate covered their age keeps the membership and only needs the
+    // consent verified (verify-only, nothing to approve).
+    const verifyOnly = assignment.status === 'active';
+    if (assignment.status !== 'pending' && !verifyOnly) {
       throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+    }
+    if (verifyOnly && row.consent_status === 'verified') {
+      // A repeated call after the first one already approved the request is a
+      // no-op success.
+      return {
+        dependentUserId: dependentId,
+        row: this.toVerified(row),
+        newlyVerified: false,
+        alreadyApproved: await tx.club_role_assignments.findUnique({
+          where: { assignment_id: assignmentId },
+        }),
+        verifyOnly: true,
+      };
     }
 
     if (row.consent_status === 'verified') {
@@ -277,6 +297,10 @@ export class ConsentVerificationService {
       now,
     );
 
+    if (!row.is_custodian) {
+      await this.syncSupervisedLogin(tx, dependentId);
+    }
+
     await this.recordAudit(tx, {
       guardianshipId: row.guardianship_id,
       dependentId,
@@ -300,7 +324,41 @@ export class ConsentVerificationService {
       },
       newlyVerified: true,
       alreadyApproved: null,
+      ...(verifyOnly ? { verifyOnly: true } : {}),
     };
+  }
+
+  /**
+   * A real guardian's consent was just verified for a minor who HOLDS an
+   * account (a teen): make sure the `supervised_logins` row exists (method
+   * 'email', so the guardian can see, disable or reset it) and stop the
+   * guardian-less clock. Idempotent. Club custody never reaches this: custody
+   * is not a guardian, so a custody-only teen keeps running the clock.
+   */
+  private async syncSupervisedLogin(
+    tx: Prisma.TransactionClient,
+    dependentId: string,
+  ): Promise<void> {
+    const holdsAccount =
+      (await tx.account.count({ where: { userId: dependentId } })) > 0;
+    if (!holdsAccount) return;
+
+    await tx.supervised_logins.createMany({
+      data: [
+        {
+          user_id: dependentId,
+          method: 'email',
+          origin: 'self_registered',
+          password_set_by: 'self',
+          pending_since: null,
+        },
+      ],
+      skipDuplicates: true,
+    });
+    await tx.supervised_logins.updateMany({
+      where: { user_id: dependentId, pending_since: { not: null } },
+      data: { pending_since: null, pending_reminder_level: 0 },
+    });
   }
 
   /**

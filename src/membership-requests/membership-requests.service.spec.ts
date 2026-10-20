@@ -1,3 +1,9 @@
+import {
+  gateAdultUser,
+  gateDependentRows,
+  gateDependentUser,
+  gateTeenUser,
+} from './activation-gate.testing';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MembershipRequestsService } from './membership-requests.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -37,9 +43,10 @@ describe('MembershipRequestsService', () => {
     users_pr: {
       update: jest.fn().mockResolvedValue({}),
     },
-    // Adults are the default: no dependent_profiles row, so the consent gate is a no-op.
-    dependent_profiles: {
-      findUnique: jest.fn().mockResolvedValue(null),
+    // Adults are the default: the consent gate is a no-op for them. Minors
+    // (dependent profile or under the age of majority) are fed per test.
+    users: {
+      findUnique: jest.fn().mockResolvedValue(gateAdultUser()),
       findMany: jest.fn().mockResolvedValue([]),
     },
     guardianships: {
@@ -63,7 +70,7 @@ describe('MembershipRequestsService', () => {
       findUnique: jest.fn(),
     },
     // Read by the consent block of listPending and by the new-request copy.
-    dependent_profiles: {
+    users: {
       findMany: jest.fn(),
     },
     guardianships: {
@@ -99,9 +106,7 @@ describe('MembershipRequestsService', () => {
       allowed: true,
     });
     // Adults by default: no dependent anywhere.
-    mockPrismaService.dependent_profiles.findMany
-      .mockReset()
-      .mockResolvedValue([]);
+    mockPrismaService.users.findMany.mockReset().mockResolvedValue([]);
     mockPrismaService.guardianships.findMany.mockReset().mockResolvedValue([]);
     transactionMock = createTransactionMock();
     mockPrismaService.$transaction.mockImplementation(
@@ -252,11 +257,9 @@ describe('MembershipRequestsService', () => {
       );
     });
     describe('consent gate (FP-39)', () => {
-      const dependentProfile = { user_id: userId };
-
       it('blocks a dependent with pending consent with 409 and activates nothing', async () => {
-        transactionMock.dependent_profiles.findUnique.mockResolvedValue(
-          dependentProfile,
+        transactionMock.users.findUnique.mockResolvedValue(
+          gateDependentUser(userId),
         );
         transactionMock.guardianships.findFirst.mockResolvedValue(null);
 
@@ -274,9 +277,60 @@ describe('MembershipRequestsService', () => {
         expect(mockAuditLogs.recordEvent).not.toHaveBeenCalled();
       });
 
+      it('blocks a self-registered 16-year-old (no dependent profile) with 409 and activates nothing (FP3-01)', async () => {
+        transactionMock.users.findUnique.mockResolvedValue(
+          gateTeenUser(userId, 16),
+        );
+        transactionMock.guardianships.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, actorId),
+        ).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('approves the same teen once a verified row exists', async () => {
+        transactionMock.users.findUnique.mockResolvedValue(
+          gateTeenUser(userId, 16),
+        );
+        transactionMock.guardianships.findFirst.mockResolvedValue({
+          guardianship_id: 'g-1',
+        });
+
+        await service.approve(10, pendingAssignment.assignment_id, actorId);
+
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).toHaveBeenCalledTimes(1);
+      });
+
+      it('blocks a user without a birthday (fail closed) until an adult birthday is set', async () => {
+        transactionMock.users.findUnique.mockResolvedValue({
+          ...gateAdultUser(),
+          birthday: null,
+        });
+        transactionMock.guardianships.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, actorId),
+        ).rejects.toMatchObject({ code: ErrorCode.MR_CONSENT_NOT_VERIFIED });
+
+        transactionMock.users.findUnique.mockResolvedValue(gateAdultUser());
+        await service.approve(10, pendingAssignment.assignment_id, actorId);
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).toHaveBeenCalledTimes(1);
+      });
+
       it('only counts a real verified row: revoked and test rows are excluded by the query', async () => {
-        transactionMock.dependent_profiles.findUnique.mockResolvedValue(
-          dependentProfile,
+        transactionMock.users.findUnique.mockResolvedValue(
+          gateDependentUser(userId),
         );
         transactionMock.guardianships.findFirst.mockResolvedValue(null);
 
@@ -295,8 +349,8 @@ describe('MembershipRequestsService', () => {
       });
 
       it('approves a dependent once consent is verified', async () => {
-        transactionMock.dependent_profiles.findUnique.mockResolvedValue(
-          dependentProfile,
+        transactionMock.users.findUnique.mockResolvedValue(
+          gateDependentUser(userId),
         );
         transactionMock.guardianships.findFirst.mockResolvedValue({
           guardianship_id: 'g-1',
@@ -356,8 +410,8 @@ describe('MembershipRequestsService', () => {
       });
 
       it('checks consent inside the approving transaction, before activating', async () => {
-        transactionMock.dependent_profiles.findUnique.mockResolvedValue(
-          dependentProfile,
+        transactionMock.users.findUnique.mockResolvedValue(
+          gateDependentUser(userId),
         );
         transactionMock.guardianships.findFirst.mockResolvedValue({
           guardianship_id: 'g-1',
@@ -557,8 +611,8 @@ describe('MembershipRequestsService', () => {
       transactionMock.club_role_assignments.findMany.mockResolvedValue(
         opts.candidates,
       );
-      transactionMock.dependent_profiles.findMany.mockResolvedValue(
-        (opts.dependents ?? []).map((user_id) => ({ user_id })),
+      transactionMock.users.findMany.mockResolvedValue(
+        gateDependentRows(opts.dependents ?? []),
       );
       transactionMock.guardianships.findMany.mockResolvedValue(
         opts.verified ?? [],
@@ -881,9 +935,9 @@ describe('MembershipRequestsService', () => {
     });
 
     it('uses the "Menor · consentimiento pendiente" copy for a dependent whose consent is pending', async () => {
-      mockPrismaService.dependent_profiles.findMany.mockResolvedValue([
-        { user_id: userId },
-      ]);
+      mockPrismaService.users.findMany.mockResolvedValue(
+        gateDependentRows([userId]),
+      );
       mockPrismaService.guardianships.findMany.mockResolvedValue([]);
 
       await service.notifyNewRequestCreated({
@@ -899,9 +953,9 @@ describe('MembershipRequestsService', () => {
     });
 
     it('keeps the normal copy for a dependent whose consent is already verified', async () => {
-      mockPrismaService.dependent_profiles.findMany.mockResolvedValue([
-        { user_id: userId },
-      ]);
+      mockPrismaService.users.findMany.mockResolvedValue(
+        gateDependentRows([userId]),
+      );
       mockPrismaService.guardianships.findMany.mockResolvedValue([
         { dependent_user_id: userId, verified_at: new Date() },
       ]);
@@ -918,9 +972,7 @@ describe('MembershipRequestsService', () => {
     });
 
     it('still notifies with the normal copy when the consent lookup fails', async () => {
-      mockPrismaService.dependent_profiles.findMany.mockRejectedValue(
-        new Error('db down'),
-      );
+      mockPrismaService.users.findMany.mockRejectedValue(new Error('db down'));
 
       await service.notifyNewRequestCreated({
         userId,
@@ -959,10 +1011,9 @@ describe('MembershipRequestsService', () => {
         request(dependentB, null),
         request(adults[2], 'a3@x.org'),
       ]);
-      mockPrismaService.dependent_profiles.findMany.mockResolvedValue([
-        { user_id: dependentA },
-        { user_id: dependentB },
-      ]);
+      mockPrismaService.users.findMany.mockResolvedValue(
+        gateDependentRows([dependentA, dependentB]),
+      );
       mockPrismaService.guardianships.findMany.mockResolvedValue([
         {
           guardianship_id: 'g-a',
@@ -1020,9 +1071,7 @@ describe('MembershipRequestsService', () => {
       });
       // Constant: the reads are batched for the whole page (consent blocks +
       // verification dates), never one per request.
-      expect(
-        mockPrismaService.dependent_profiles.findMany,
-      ).toHaveBeenCalledTimes(2);
+      expect(mockPrismaService.users.findMany).toHaveBeenCalledTimes(2);
       expect(mockPrismaService.guardianships.findMany).toHaveBeenCalledTimes(2);
     });
 
@@ -1045,8 +1094,8 @@ describe('MembershipRequestsService', () => {
             created_at: created,
           },
         ]);
-        mockPrismaService.dependent_profiles.findMany.mockResolvedValue(
-          opts.dependent ? [{ user_id: userId }] : [],
+        mockPrismaService.users.findMany.mockResolvedValue(
+          opts.dependent ? gateDependentRows([userId]) : [],
         );
         mockPrismaService.guardianships.findMany.mockImplementation(
           async (args: any) =>

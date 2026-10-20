@@ -5,10 +5,42 @@ describe('ConsentGateService', () => {
   const gate = new ConsentGateService();
   const userId = '20a9a762-a4fa-49dd-93a6-3851e27f8b69';
 
+  const ADULT_BIRTHDAY = new Date('1990-01-01T00:00:00.000Z');
+  const yearsAgo = (years: number): Date => {
+    const d = new Date();
+    d.setUTCFullYear(d.getUTCFullYear() - years);
+    d.setUTCDate(d.getUTCDate() - 3);
+    return d;
+  };
+  /** A users row as the gate reads it. */
+  const userRow = (
+    id: string,
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> => ({
+    user_id: id,
+    birthday: ADULT_BIRTHDAY,
+    country_id: null,
+    dependent_profile: null,
+    ...overrides,
+  });
+  const dependentRow = (id: string) =>
+    userRow(id, {
+      birthday: yearsAgo(9),
+      dependent_profile: { user_id: id },
+    });
+  const teenRow = (id: string, years = 16) =>
+    userRow(id, { birthday: yearsAgo(years) });
+
   const makeDb = () => ({
-    dependent_profiles: {
+    users: {
       findUnique: jest.fn(),
-      findMany: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    countries: {
+      findUnique: jest.fn().mockResolvedValue({
+        age_of_majority: 18,
+        age_reference_timezone: 'America/Mexico_City',
+      }),
     },
     guardianships: {
       findFirst: jest.fn(),
@@ -20,9 +52,9 @@ describe('ConsentGateService', () => {
   const asDb = (db: Db) => db as never;
 
   describe('assertApprovable', () => {
-    it('lets a non-dependent through without reading guardianships', async () => {
+    it('lets an adult through without reading guardianships', async () => {
       const db = makeDb();
-      db.dependent_profiles.findUnique.mockResolvedValue(null);
+      db.users.findUnique.mockResolvedValue(userRow(userId));
 
       await expect(
         gate.assertApprovable(asDb(db), userId),
@@ -34,7 +66,7 @@ describe('ConsentGateService', () => {
     it('takes the per-dependent advisory lock BEFORE reading the consent (S2: serialized with verify/revoke)', async () => {
       const db = makeDb();
       const order: string[] = [];
-      db.dependent_profiles.findUnique.mockResolvedValue({ user_id: userId });
+      db.users.findUnique.mockResolvedValue(dependentRow(userId));
       db.$executeRaw.mockImplementation((sql: TemplateStringsArray, key) => {
         order.push(`lock:${sql.join('?')}:${String(key)}`);
         return Promise.resolve(1);
@@ -54,7 +86,7 @@ describe('ConsentGateService', () => {
 
     it('lets a dependent with a verified, non-test row through (custodian rows count too)', async () => {
       const db = makeDb();
-      db.dependent_profiles.findUnique.mockResolvedValue({ user_id: userId });
+      db.users.findUnique.mockResolvedValue(dependentRow(userId));
       db.guardianships.findFirst.mockResolvedValue({ guardianship_id: 'g1' });
 
       await expect(
@@ -73,7 +105,7 @@ describe('ConsentGateService', () => {
 
     it('blocks a dependent without a verified row (pending, revoked or test-only) with 409', async () => {
       const db = makeDb();
-      db.dependent_profiles.findUnique.mockResolvedValue({ user_id: userId });
+      db.users.findUnique.mockResolvedValue(dependentRow(userId));
       db.guardianships.findFirst.mockResolvedValue(null);
 
       await expect(
@@ -82,6 +114,20 @@ describe('ConsentGateService', () => {
         code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
         status: 409,
       });
+    });
+
+    it('blocks a self-registered 16-year-old (no dependent profile) without verified consent', async () => {
+      const db = makeDb();
+      db.users.findUnique.mockResolvedValue(teenRow(userId));
+      db.guardianships.findFirst.mockResolvedValue(null);
+
+      await expect(
+        gate.assertApprovable(asDb(db), userId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+        status: 409,
+      });
+      expect(db.$executeRaw).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -92,12 +138,12 @@ describe('ConsentGateService', () => {
       await expect(gate.loadDependentConsent(asDb(db), [])).resolves.toEqual(
         new Map(),
       );
-      expect(db.dependent_profiles.findMany).not.toHaveBeenCalled();
+      expect(db.users.findMany).not.toHaveBeenCalled();
     });
 
-    it('omits non-dependents and skips the guardianship query when there are none', async () => {
+    it('omits adults and skips the guardianship query when there are none', async () => {
       const db = makeDb();
-      db.dependent_profiles.findMany.mockResolvedValue([]);
+      db.users.findMany.mockResolvedValue([userRow(userId)]);
 
       const states = await gate.loadDependentConsent(asDb(db), [userId]);
 
@@ -107,9 +153,10 @@ describe('ConsentGateService', () => {
 
     it('reports null while pending and the latest verified_at once verified', async () => {
       const db = makeDb();
-      db.dependent_profiles.findMany.mockResolvedValue([
-        { user_id: 'dep-pending' },
-        { user_id: 'dep-verified' },
+      db.users.findMany.mockResolvedValue([
+        dependentRow('dep-pending'),
+        dependentRow('dep-verified'),
+        userRow(userId),
       ]);
       db.guardianships.findMany.mockResolvedValue([
         {
@@ -134,6 +181,33 @@ describe('ConsentGateService', () => {
       });
       expect(states.has(userId)).toBe(false);
     });
+
+    it('includes a self-registered teen (no profile) as pending, and a teen with a verified custody row as verified', async () => {
+      const db = makeDb();
+      db.users.findMany.mockResolvedValue([
+        teenRow('teen-open'),
+        teenRow('teen-ok', 15),
+        userRow('adult'),
+      ]);
+      db.guardianships.findMany.mockResolvedValue([
+        {
+          dependent_user_id: 'teen-ok',
+          verified_at: new Date('2026-10-12T00:00:00Z'),
+        },
+      ]);
+
+      const states = await gate.loadDependentConsent(asDb(db), [
+        'teen-open',
+        'teen-ok',
+        'adult',
+      ]);
+
+      expect(states.get('teen-open')).toEqual({ verifiedAt: null });
+      expect(states.get('teen-ok')).toEqual({
+        verifiedAt: new Date('2026-10-12T00:00:00Z'),
+      });
+      expect(states.has('adult')).toBe(false);
+    });
   });
   describe('loadConsentBlocks', () => {
     const dependentA = 'aaaaaaaa-0000-4000-8000-00000000000a';
@@ -154,9 +228,9 @@ describe('ConsentGateService', () => {
       ...overrides,
     });
 
-    it('answers with null for adults and reads nothing more when nobody is a dependent', async () => {
+    it('answers with null for adults and reads nothing more when nobody is a minor', async () => {
       const db = makeDb();
-      db.dependent_profiles.findMany.mockResolvedValue([]);
+      db.users.findMany.mockResolvedValue([userRow(adult)]);
 
       const blocks = await gate.loadConsentBlocks(asDb(db), [adult]);
 
@@ -168,15 +242,16 @@ describe('ConsentGateService', () => {
       const db = makeDb();
 
       expect((await gate.loadConsentBlocks(asDb(db), [])).size).toBe(0);
-      expect(db.dependent_profiles.findMany).not.toHaveBeenCalled();
+      expect(db.users.findMany).not.toHaveBeenCalled();
       expect(db.guardianships.findMany).not.toHaveBeenCalled();
     });
 
     it('builds the block of every dependent from TWO queries, however many requests', async () => {
       const db = makeDb();
-      db.dependent_profiles.findMany.mockResolvedValue([
-        { user_id: dependentA },
-        { user_id: dependentB },
+      db.users.findMany.mockResolvedValue([
+        userRow(adult),
+        dependentRow(dependentA),
+        dependentRow(dependentB),
       ]);
       db.guardianships.findMany.mockResolvedValue([
         row({ consent_evidences: [{ evidence_id: 'e-1' }] }),
@@ -195,12 +270,13 @@ describe('ConsentGateService', () => {
         dependentB,
       ]);
 
-      expect(db.dependent_profiles.findMany).toHaveBeenCalledTimes(1);
+      expect(db.users.findMany).toHaveBeenCalledTimes(1);
       expect(db.guardianships.findMany).toHaveBeenCalledTimes(1);
       expect(blocks.has(adult)).toBe(false);
       expect(blocks.get(dependentA)).toEqual({
         required: true,
         dependent: true,
+        guardian_linked: true,
         guardianship_id: 'g-1',
         status: 'pending',
         evidence_uploaded: true,
@@ -221,9 +297,7 @@ describe('ConsentGateService', () => {
 
     it('ignores seeded test data and revoked rows in the query', async () => {
       const db = makeDb();
-      db.dependent_profiles.findMany.mockResolvedValue([
-        { user_id: dependentA },
-      ]);
+      db.users.findMany.mockResolvedValue([dependentRow(dependentA)]);
       db.guardianships.findMany.mockResolvedValue([]);
 
       await gate.loadConsentBlocks(asDb(db), [dependentA]);
@@ -237,9 +311,7 @@ describe('ConsentGateService', () => {
 
     it('a dependent with no real guardianship row is pending with no row to verify', async () => {
       const db = makeDb();
-      db.dependent_profiles.findMany.mockResolvedValue([
-        { user_id: dependentA },
-      ]);
+      db.users.findMany.mockResolvedValue([dependentRow(dependentA)]);
       db.guardianships.findMany.mockResolvedValue([]);
 
       const blocks = await gate.loadConsentBlocks(asDb(db), [dependentA]);
@@ -247,6 +319,7 @@ describe('ConsentGateService', () => {
       expect(blocks.get(dependentA)).toEqual({
         required: true,
         dependent: true,
+        guardian_linked: false,
         guardianship_id: null,
         status: 'pending',
         evidence_uploaded: false,
@@ -256,9 +329,7 @@ describe('ConsentGateService', () => {
 
     it('lists the primary first and names club custody and external holders', async () => {
       const db = makeDb();
-      db.dependent_profiles.findMany.mockResolvedValue([
-        { user_id: dependentA },
-      ]);
+      db.users.findMany.mockResolvedValue([dependentRow(dependentA)]);
       db.guardianships.findMany.mockResolvedValue([
         row({
           guardianship_id: 'g-secondary',
@@ -305,6 +376,62 @@ describe('ConsentGateService', () => {
           is_primary: false,
         },
       ]);
+    });
+
+    it('a self-registered teen with no profile gets the "nobody linked" block and no guardianship query', async () => {
+      const db = makeDb();
+      db.users.findMany.mockResolvedValue([teenRow(adult, 15)]);
+
+      const blocks = await gate.loadConsentBlocks(asDb(db), [adult]);
+
+      expect(blocks.get(adult)).toEqual({
+        required: true,
+        dependent: false,
+        guardian_linked: false,
+        guardianship_id: null,
+        status: 'pending',
+        evidence_uploaded: false,
+        guardians: [],
+      });
+      expect(db.guardianships.findMany).not.toHaveBeenCalled();
+    });
+
+    it('a user without a birthday is a minor for the list too (fail closed)', async () => {
+      const db = makeDb();
+      db.users.findMany.mockResolvedValue([userRow(adult, { birthday: null })]);
+
+      const blocks = await gate.loadConsentBlocks(asDb(db), [adult]);
+
+      expect(blocks.get(adult)).toMatchObject({
+        required: true,
+        dependent: false,
+        guardian_linked: false,
+      });
+    });
+
+    it('guardian_linked is false when the only row is club custody, true with a user guardian', async () => {
+      const db = makeDb();
+      db.users.findMany.mockResolvedValue([
+        dependentRow(dependentA),
+        dependentRow(dependentB),
+      ]);
+      db.guardianships.findMany.mockResolvedValue([
+        row({
+          guardianship_id: 'g-custody',
+          is_custodian: true,
+          guardian: null,
+          custodian_club: { name: 'Club Central' },
+        }),
+        row({ guardianship_id: 'g-parent', dependent_user_id: dependentB }),
+      ]);
+
+      const blocks = await gate.loadConsentBlocks(asDb(db), [
+        dependentA,
+        dependentB,
+      ]);
+
+      expect(blocks.get(dependentA)?.guardian_linked).toBe(false);
+      expect(blocks.get(dependentB)?.guardian_linked).toBe(true);
     });
   });
 });

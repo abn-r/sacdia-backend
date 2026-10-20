@@ -217,6 +217,13 @@ class FakeDb {
             : [];
         },
       },
+      // The dependent holds no account here (a guardian-managed child).
+      account: {
+        count: async () => {
+          await tick();
+          return 0;
+        },
+      },
       dependent_profiles: {
         findUnique: async () => {
           await tick();

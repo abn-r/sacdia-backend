@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { displayName } from '../guardianships/guardianship-queries';
-import { assertAssignmentActivationAllowed } from './assignment-activation-gate';
+import {
+  assertAssignmentActivationAllowed,
+  findMinorsForActivation,
+} from './assignment-activation-gate';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -23,12 +26,19 @@ export interface ConsentBlockGuardian {
 }
 
 /**
- * The `consent` block of a pending membership request that belongs to a
- * dependent (FP-72). Adults get `null` instead.
+ * The `consent` block of a pending membership request that belongs to a minor
+ * (FP-72; Phase 3a extends it to every user under the age of majority). Adults
+ * get `null` instead.
  */
 export interface ConsentBlock {
   required: true;
-  dependent: true;
+  /**
+   * true for a user with a dependent profile; false for a self-registered teen
+   * who has none yet (nobody linked, so there is nothing to verify).
+   */
+  dependent: boolean;
+  /** A non-custodian guardian (pending or verified) is linked. */
+  guardian_linked: boolean;
   /** The row verify-consent acts on (active primary); null when there is none. */
   guardianship_id: string | null;
   status: 'pending' | 'verified';
@@ -37,10 +47,12 @@ export interface ConsentBlock {
 }
 
 /**
- * Parental-consent rules of the membership workflow (family-profiles, FP-39/40).
+ * Parental-consent rules of the membership workflow (family-profiles, FP-39/40;
+ * Phase 3a FP3-01).
  *
- * Only DEPENDENTS (users with a `dependent_profiles` row) are gated. Everybody
- * else, including self-registered teenagers, is unaffected.
+ * Every MINOR is gated: a user with a `dependent_profiles` row, anyone under
+ * the age of majority of their country, and anyone without a birthday (fail
+ * closed). Adults are unaffected.
  *
  * Rows with `is_test_data` never count as consent (FP-03), and a revoked row is
  * never `verified` (DB check `guardianships_revoked_ck`).
@@ -62,8 +74,8 @@ export class ConsentGateService {
   }
 
   /**
-   * Consent state of every dependent among `userIds` in two queries. Users that
-   * are not dependents are absent from the result.
+   * Consent state of every minor among `userIds` (dependent profile or under
+   * the age of majority) in a few queries. Adults are absent from the result.
    */
   async loadDependentConsent(
     db: Db,
@@ -72,19 +84,16 @@ export class ConsentGateService {
     const states = new Map<string, DependentConsentState>();
     if (userIds.length === 0) return states;
 
-    const profiles = await db.dependent_profiles.findMany({
-      where: { user_id: { in: userIds } },
-      select: { user_id: true },
-    });
-    if (profiles.length === 0) return states;
+    const minors = await findMinorsForActivation(db, userIds);
+    if (minors.size === 0) return states;
 
-    for (const { user_id } of profiles) {
-      states.set(user_id, { verifiedAt: null });
+    for (const userId of minors.keys()) {
+      states.set(userId, { verifiedAt: null });
     }
 
     const verifiedRows = await db.guardianships.findMany({
       where: {
-        dependent_user_id: { in: profiles.map((p) => p.user_id) },
+        dependent_user_id: { in: [...minors.keys()] },
         consent_status: 'verified',
         is_test_data: false,
       },
@@ -101,9 +110,9 @@ export class ConsentGateService {
     return states;
   }
   /**
-   * The `consent` block of every dependent among `userIds` in TWO queries,
-   * however many requests are listed (no N+1). Users that are not dependents
-   * are absent from the result. `status` follows the approve gate: verified
+   * The `consent` block of every minor among `userIds` in a fixed number of
+   * queries, however many requests are listed (no N+1). Adults are absent from
+   * the result. `status` follows the approve gate: verified
    * only when a real (non-test, non-revoked) row is verified.
    */
   async loadConsentBlocks(
@@ -113,15 +122,32 @@ export class ConsentGateService {
     const blocks = new Map<string, ConsentBlock>();
     if (userIds.length === 0) return blocks;
 
-    const profiles = await db.dependent_profiles.findMany({
-      where: { user_id: { in: userIds } },
-      select: { user_id: true },
-    });
-    if (profiles.length === 0) return blocks;
+    const minors = await findMinorsForActivation(db, userIds);
+    if (minors.size === 0) return blocks;
+
+    // Only users with a dependent profile can have guardianship rows to show.
+    const withProfile = [...minors.entries()]
+      .filter(([, minor]) => minor.hasDependentProfile)
+      .map(([userId]) => userId);
+
+    // A self-registered teen nobody has linked yet: nothing to verify.
+    for (const [userId, minor] of minors) {
+      if (minor.hasDependentProfile) continue;
+      blocks.set(userId, {
+        required: true,
+        dependent: false,
+        guardian_linked: false,
+        guardianship_id: null,
+        status: 'pending',
+        evidence_uploaded: false,
+        guardians: [],
+      });
+    }
+    if (withProfile.length === 0) return blocks;
 
     const rows = await db.guardianships.findMany({
       where: {
-        dependent_user_id: { in: profiles.map((profile) => profile.user_id) },
+        dependent_user_id: { in: withProfile },
         is_test_data: false,
         consent_status: { not: 'revoked' },
       },
@@ -144,7 +170,7 @@ export class ConsentGateService {
       },
     });
 
-    for (const { user_id } of profiles) {
+    for (const user_id of withProfile) {
       const own = rows
         .filter((row) => row.dependent_user_id === user_id)
         // Primary first, then oldest first (rows come ordered by created_at).
@@ -153,6 +179,7 @@ export class ConsentGateService {
       blocks.set(user_id, {
         required: true,
         dependent: true,
+        guardian_linked: own.some((row) => !row.is_custodian),
         guardianship_id: primary?.guardianship_id ?? null,
         status: own.some((row) => row.consent_status === 'verified')
           ? 'verified'

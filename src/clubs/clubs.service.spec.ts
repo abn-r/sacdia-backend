@@ -1,3 +1,8 @@
+import {
+  gateAdultUser,
+  gateDependentUser,
+  gateTeenUser,
+} from '../membership-requests/activation-gate.testing';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClubsService } from './clubs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -83,8 +88,9 @@ describe('ClubsService', () => {
       count: jest.fn(),
       findMany: jest.fn(),
     },
-    // Consent gate (family-profiles): adults by default (no dependent row).
-    dependent_profiles: {
+    // Consent gate (family-profiles): the gate reads the users row; an unset
+    // mock reads as "no such user" and is not gated (adult by default).
+    users: {
       findUnique: jest.fn(),
     },
     guardianships: {
@@ -1401,7 +1407,7 @@ describe('ClubsService', () => {
     function mockInitialAssignmentTransaction(existingDirectorCount = 0) {
       const tx = {
         // Adult successor: the consent gate is a no-op.
-        dependent_profiles: { findUnique: jest.fn().mockResolvedValue(null) },
+        users: { findUnique: jest.fn().mockResolvedValue(gateAdultUser()) },
         club_role_assignments: {
           count: jest.fn().mockResolvedValue(existingDirectorCount),
           create: jest.fn().mockResolvedValue({
@@ -1543,7 +1549,7 @@ describe('ClubsService', () => {
     function mockSuccessionTransaction(overrideCurrentYearId = 2026) {
       const tx = {
         // Adult successor: the consent gate is a no-op.
-        dependent_profiles: { findUnique: jest.fn().mockResolvedValue(null) },
+        users: { findUnique: jest.fn().mockResolvedValue(gateAdultUser()) },
         club_role_assignments: {
           findUnique: jest.fn().mockResolvedValue({
             assignment_id: currentAssignmentId,
@@ -2572,15 +2578,17 @@ describe('ClubsService', () => {
     const gateModels = (
       consent: 'adult' | 'unverified' | 'verified',
     ): {
-      dependent_profiles: { findUnique: jest.Mock };
+      users: { findUnique: jest.Mock };
       guardianships: { findFirst: jest.Mock };
       $executeRaw: jest.Mock;
     } => ({
-      dependent_profiles: {
+      users: {
         findUnique: jest
           .fn()
           .mockResolvedValue(
-            consent === 'adult' ? null : { user_id: dependentId },
+            consent === 'adult'
+              ? gateAdultUser(dependentId)
+              : gateDependentUser(dependentId),
           ),
       },
       guardianships: {
@@ -2597,8 +2605,8 @@ describe('ClubsService', () => {
       consent: 'adult' | 'unverified' | 'verified',
     ) => {
       const models = gateModels(consent);
-      mockPrismaService.dependent_profiles.findUnique.mockImplementation(
-        models.dependent_profiles.findUnique,
+      mockPrismaService.users.findUnique.mockImplementation(
+        models.users.findUnique,
       );
       mockPrismaService.guardianships.findFirst.mockImplementation(
         models.guardianships.findFirst,
@@ -2611,7 +2619,7 @@ describe('ClubsService', () => {
     };
 
     afterEach(() => {
-      mockPrismaService.dependent_profiles.findUnique.mockReset();
+      mockPrismaService.users.findUnique.mockReset();
       mockPrismaService.guardianships.findFirst.mockReset();
       mockPrismaService.$executeRaw.mockReset();
     });
@@ -2652,6 +2660,21 @@ describe('ClubsService', () => {
         ).not.toHaveBeenCalled();
         expect(
           mockAuthorizationContextVersionService.bump,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('rejects an unverified self-registered 16-year-old (no dependent profile) with 409 and writes nothing (FP3-02)', async () => {
+        useGateOnRootClient('unverified');
+        mockPrismaService.users.findUnique.mockResolvedValue(
+          gateTeenUser(dependentId, 16),
+        );
+
+        await expect(service.assignRole(dto)).rejects.toMatchObject({
+          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          status: 409,
+        });
+        expect(
+          mockPrismaService.club_role_assignments.create,
         ).not.toHaveBeenCalled();
       });
 
@@ -2779,9 +2802,7 @@ describe('ClubsService', () => {
 
         await service.updateRoleAssignment('request-1', { status: 'ended' });
 
-        expect(
-          mockPrismaService.dependent_profiles.findUnique,
-        ).not.toHaveBeenCalled();
+        expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
         expect(
           mockPrismaService.club_role_assignments.update,
         ).toHaveBeenCalled();
