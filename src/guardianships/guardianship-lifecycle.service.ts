@@ -445,9 +445,11 @@ export class GuardianshipLifecycleService {
 
   /**
    * POST /users/me/guardian-links/:guardianshipId/revoke (a supervised teen).
-   * The teen removes a link that is still PENDING: a stranger who found the
+   * The teen removes a link that is still PENDING and that the teen itself
+   * initiated (`invited_by_guardianship_id` null): a stranger who found the
    * code, or a wrong person. Never a VERIFIED guardian (the director's check
-   * stands) and never a link of another teen: both are a plain 404. The
+   * stands), never a pending second guardian invited by a guardian (ruling R4
+   * / P3-A27) and never a link of another teen: all are a plain 404. The
    * guardian-less clock restarts through the shared detach logic.
    */
   async revokePendingLinkByDependent(
@@ -470,6 +472,9 @@ export class GuardianshipLifecycleService {
           is_custodian: false,
           guardian_user_id: { not: null },
           consent_status: 'pending',
+          // Only a link the teen started (its own code). A pending second
+          // guardian was invited by a guardian: the teen cannot remove it.
+          invited_by_guardianship_id: null,
         },
         select: DETACHABLE_SELECT,
       });

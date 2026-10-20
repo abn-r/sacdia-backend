@@ -755,6 +755,7 @@ describe('GuardianshipLifecycleService: teens and linked devices (phase 3a)', ()
         is_custodian: false,
         guardian_user_id: { not: null },
         consent_status: 'pending',
+        invited_by_guardianship_id: null,
       });
       expect(tx.guardianships.update).toHaveBeenCalledWith({
         where: { guardianship_id: 'gs-pending' },
@@ -770,6 +771,40 @@ describe('GuardianshipLifecycleService: teens and linked devices (phase 3a)', ()
       });
       expect(tx.supervised_logins.upsert).toHaveBeenCalledTimes(1);
       expect(cache.bump).toHaveBeenCalledWith(DEP);
+    });
+
+    it('a pending second_guardian row (invited by a guardian) cannot be revoked by the teen (R4 / P3-A27)', async () => {
+      const { service, tx, cache } = setup();
+      // The DB applies the where clause: emulate it over two pending rows.
+      const rows = [
+        { ...PENDING, invited_by_guardianship_id: null },
+        {
+          ...row({ guardianship_id: 'gs-second', guardian_user_id: G1 }),
+          invited_by_guardianship_id: 'gs-parent',
+        },
+      ];
+      tx.guardianships.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          rows.find(
+            (r: any) =>
+              r.guardianship_id === where.guardianship_id &&
+              r.invited_by_guardianship_id ===
+                where.invited_by_guardianship_id,
+          ) ?? null,
+        ),
+      );
+
+      expect(
+        await errorOf(
+          service.revokePendingLinkByDependent(DEP, 'gs-second'),
+        ),
+      ).toMatchObject({ code: ErrorCode.GUARDIANSHIP_NOT_FOUND });
+      expect(tx.guardianships.update).not.toHaveBeenCalled();
+      expect(cache.bump).not.toHaveBeenCalled();
+
+      // The row the teen initiated itself still goes.
+      await service.revokePendingLinkByDependent(DEP, 'gs-pending');
+      expect(tx.guardianships.update).toHaveBeenCalledTimes(1);
     });
 
     it('locks the teen BEFORE reading the link', async () => {
