@@ -249,6 +249,7 @@ export class GuardianSummaryService {
         status: 'active',
         ecclesiastical_year_id: year.year_id,
         club_section_id: { not: null },
+        club_sections: { active: true },
       },
       select: { club_section_id: true },
     });
