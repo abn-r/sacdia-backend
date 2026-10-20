@@ -52,6 +52,9 @@ const TEEN_ID = '00000000-0000-4000-8000-0000000000b1';
 const CHILD_ID = '00000000-0000-4000-8000-0000000000b2';
 const ADULT_ID = '00000000-0000-4000-8000-0000000000a1';
 const REGISTERED_ID = '00000000-0000-4000-8000-0000000000b3';
+const SOCIAL_TEEN_ID = '00000000-0000-4000-8000-0000000000c1';
+const SOCIAL_ADULT_ID = '00000000-0000-4000-8000-0000000000c2';
+const LEGACY_ID = '00000000-0000-4000-8000-0000000000c3';
 const RELATIONSHIP_ID = '00000000-0000-4000-8000-0000000000e1';
 const HANDLE = 'rayo-veloz-482913';
 
@@ -78,6 +81,9 @@ interface PersonState {
   hasAccount: boolean;
   login: LoginState | null;
   sessionAlive: boolean;
+  /** users_pr.complete (default false: the post-registration is open). */
+  prComplete?: boolean;
+  user_image?: string | null;
 }
 
 describe('Supervised login E2E', () => {
@@ -145,6 +151,28 @@ describe('Supervised login E2E', () => {
       },
     ];
     delete people[REGISTERED_ID];
+    // Google/Apple sign-ups: the users row has NO birthday until step 2.
+    people[SOCIAL_TEEN_ID] = {
+      birthday: null,
+      hasAccount: true,
+      login: null,
+      sessionAlive: true,
+      user_image: 'https://lh3.googleusercontent.com/a/photo',
+    };
+    people[SOCIAL_ADULT_ID] = {
+      birthday: null,
+      hasAccount: true,
+      login: null,
+      sessionAlive: true,
+    };
+    // A legacy account: no birthday, post-registration finished long ago.
+    people[LEGACY_ID] = {
+      birthday: null,
+      hasAccount: true,
+      login: null,
+      sessionAlive: true,
+      prComplete: true,
+    };
     issuedCode = null;
     storedCode = null;
   };
@@ -169,10 +197,12 @@ describe('Supervised login E2E', () => {
       name: 'Test',
       paternal_last_name: 'User',
       maternal_last_name: null,
-      user_image: null,
+      user_image: person.user_image ?? null,
       active: true,
       birthday: person.birthday,
       country_id: person.country_id ?? null,
+      union_id: null,
+      local_field_id: null,
       account: person.hasAccount ? [{ id: `acc-${userId}` }] : [],
       supervised_login: person.login,
       dependent_profile:
@@ -182,7 +212,7 @@ describe('Supervised login E2E', () => {
       guardianships_as_dependent: verified.map((link) => ({
         guardianship_id: link.guardianship_id,
       })),
-      users_pr: { complete: false },
+      users_pr: { complete: person.prComplete ?? false },
       users_roles: [],
     };
   };
@@ -389,6 +419,26 @@ describe('Supervised login E2E', () => {
           : ({ ...args.create } as LoginState);
         return person.login;
       }),
+      // The self_registered row a birthday change creates (skipDuplicates).
+      createMany: jest.fn(async (args: any) => {
+        let count = 0;
+        for (const row of args.data as any[]) {
+          const person = people[row.user_id as string];
+          if (person && !person.login) {
+            person.login = {
+              method: row.method,
+              login_handle: null,
+              origin: row.origin,
+              enabled_at: null,
+              disabled_at: null,
+              disabled_reason: null,
+              password_set_by: row.password_set_by,
+            };
+            count += 1;
+          }
+        }
+        return { count };
+      }),
     });
 
     const session = createModelMock({
@@ -402,6 +452,7 @@ describe('Supervised login E2E', () => {
         if (person) person.sessionAlive = false;
         return { count: 1 };
       }),
+      findMany: jest.fn().mockResolvedValue([]),
     });
 
     const prismaDouble = createPrismaDouble({
@@ -752,6 +803,191 @@ describe('Supervised login E2E', () => {
 
       expect(response.status).toBe(403);
       expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // D. Google/Apple sign-up: no birthday until post-registration step 2
+  // ---------------------------------------------------------------------------
+
+  describe('D. a social sign-up with no birthday (unknown age)', () => {
+    beforeAll(async () => {
+      resetWorld();
+      await actingCache.bump(SOCIAL_TEEN_ID);
+      await actingCache.bump(SOCIAL_ADULT_ID);
+      await actingCache.bump(LEGACY_ID);
+    });
+
+    it('GET /auth/me: age_unknown_user in profile_incomplete mode, anonymous analytics', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set(bearer(SOCIAL_TEEN_ID));
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.mode).toBe('profile_incomplete');
+      expect(response.body.data.principal).toMatchObject({
+        kind: 'age_unknown_user',
+        supervision: null,
+      });
+      expect(response.body.data.principal.scopes).toEqual(
+        expect.arrayContaining(['registration:write', 'account:manage']),
+      );
+      expect(response.body.data.analytics_anonymous).toBe(true);
+      expect(response.body.data.family).toBeNull();
+    });
+
+    it('a member route is 403 PRINCIPAL_SCOPE_DENIED (no adult powers while the age is unknown)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/clubs/7/units')
+        .set(bearer(SOCIAL_TEEN_ID));
+
+      expect(response.status).toBe(403);
+      expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');
+      expect(JSON.stringify(response.body)).toContain('age_unknown_user');
+    });
+
+    it('an adult-only route (guardian tools) is 403 PRINCIPAL_SCOPE_DENIED', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/guardianships/me/dependents')
+        .set(bearer(SOCIAL_TEEN_ID));
+
+      expect(response.status).toBe(403);
+      expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');
+    });
+
+    it('cannot act for anyone (403 ACTING_FOR_FORBIDDEN)', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/users/${SOCIAL_TEEN_ID}/post-registration/status`)
+        .set(acting(SOCIAL_TEEN_ID, CHILD_ID));
+
+      expect(response.status).toBe(403);
+      expect(errorCode(response.body)).toBe('ACTING_FOR_FORBIDDEN');
+    });
+
+    it('post-registration status and step 1 are reachable (200)', async () => {
+      const status = await request(app.getHttpServer())
+        .get(`/api/v1/users/${SOCIAL_TEEN_ID}/post-registration/status`)
+        .set(bearer(SOCIAL_TEEN_ID));
+      expect(status.status).toBe(200);
+
+      const step1 = await request(app.getHttpServer())
+        .post(
+          `/api/v1/users/${SOCIAL_TEEN_ID}/post-registration/step-1/complete`,
+        )
+        .set(bearer(SOCIAL_TEEN_ID));
+      expect(step1.status).toBe(200);
+    });
+
+    it('step 2 is reachable: without a birthday it is the validation 400, never a scope 403', async () => {
+      const response = await request(app.getHttpServer())
+        .post(
+          `/api/v1/users/${SOCIAL_TEEN_ID}/post-registration/step-2/complete`,
+        )
+        .set(bearer(SOCIAL_TEEN_ID));
+
+      expect(response.status).toBe(400);
+      expect(errorCode(response.body)).toBe(
+        'POST_REG_PERSONAL_INFO_INCOMPLETE',
+      );
+    });
+
+    it('the own sessions are reachable (account:manage)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/auth/sessions')
+        .set(bearer(SOCIAL_TEEN_ID));
+
+      expect(response.status).toBe(200);
+    });
+
+    it('a 15-year-old birthday saved in step 2 (PATCH /users/:id) makes it teen_pending right away', async () => {
+      const birthday = new Date();
+      birthday.setUTCFullYear(birthday.getUTCFullYear() - 15);
+      birthday.setUTCDate(birthday.getUTCDate() - 20);
+
+      const patch = await request(app.getHttpServer())
+        .patch(`/api/v1/users/${SOCIAL_TEEN_ID}`)
+        .set(bearer(SOCIAL_TEEN_ID))
+        .send({ birthday: birthday.toISOString().slice(0, 10) });
+      expect(patch.status).toBe(200);
+      expect(people[SOCIAL_TEEN_ID].login).toMatchObject({
+        origin: 'self_registered',
+      });
+
+      const me = await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set(bearer(SOCIAL_TEEN_ID));
+      expect(me.status).toBe(200);
+      expect(me.body.data.mode).toBe('teen_pending');
+      expect(me.body.data.principal).toMatchObject({
+        kind: 'supervised_user',
+      });
+
+      // Still no club data: the pending-teen powers apply now.
+      const club = await request(app.getHttpServer())
+        .get('/api/v1/clubs/7/units')
+        .set(bearer(SOCIAL_TEEN_ID));
+      expect(club.status).toBe(403);
+      expect(errorCode(club.body)).toBe('PRINCIPAL_SCOPE_DENIED');
+    });
+
+    it('an adult birthday saved in step 2 makes it a full adult right away (post-registration still open)', async () => {
+      const before = await request(app.getHttpServer())
+        .get('/api/v1/guardianships/me/dependents')
+        .set(bearer(SOCIAL_ADULT_ID));
+      expect(before.status).toBe(403);
+
+      const patch = await request(app.getHttpServer())
+        .patch(`/api/v1/users/${SOCIAL_ADULT_ID}`)
+        .set(bearer(SOCIAL_ADULT_ID))
+        .send({ birthday: '1990-04-12' });
+      expect(patch.status).toBe(200);
+      expect(people[SOCIAL_ADULT_ID].prComplete ?? false).toBe(false);
+
+      const me = await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set(bearer(SOCIAL_ADULT_ID));
+      expect(me.body.data.mode).toBe('adult');
+      expect(me.body.data.principal).toMatchObject({
+        kind: 'user',
+        scopes: null,
+      });
+
+      const after = await request(app.getHttpServer())
+        .get('/api/v1/guardianships/me/dependents')
+        .set(bearer(SOCIAL_ADULT_ID));
+      expect(after.status).toBe(200);
+    });
+
+    it('closing the post-registration lifts the restriction once the epoch moves (state flipped like the step-3 commit)', async () => {
+      people[SOCIAL_ADULT_ID].birthday = null;
+      await actingCache.bump(SOCIAL_ADULT_ID);
+      const restricted = await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set(bearer(SOCIAL_ADULT_ID));
+      expect(restricted.body.data.mode).toBe('profile_incomplete');
+
+      // Step 3 itself refuses a NULL birthday (unit-tested) and bumps the
+      // epoch after the commit; here only its result is applied.
+      people[SOCIAL_ADULT_ID].prComplete = true;
+      await actingCache.bump(SOCIAL_ADULT_ID);
+      const me = await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set(bearer(SOCIAL_ADULT_ID));
+      expect(me.body.data.mode).toBe('adult');
+    });
+
+    it('a legacy account with no birthday and a finished post-registration keeps the adult powers', async () => {
+      const me = await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set(bearer(LEGACY_ID));
+      expect(me.status).toBe(200);
+      expect(me.body.data.mode).toBe('adult');
+      expect(me.body.data.analytics_anonymous).toBe(true);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/guardianships/me/dependents')
+        .set(bearer(LEGACY_ID));
+      expect(response.status).toBe(200);
     });
   });
 
