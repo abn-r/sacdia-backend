@@ -8,7 +8,8 @@
  *
  * Every kind other than `user` is default-deny: it only reaches routes that
  * declare an `@ActingScope(scope)` the principal holds.
- *  - `user`: adults, unknown age (NULL birthday) and anonymous.
+ *  - `user`: adults, admin-created / legacy accounts with no birthday, and
+ *    anonymous.
  *  - `guardian_acting`: Phase 2, a verified-or-pending guardian acting for a dependent.
  *  - `supervised_user` (Phase 3a): an account holder under the age of majority,
  *    resolved SERVER-SIDE (never from a token claim).
