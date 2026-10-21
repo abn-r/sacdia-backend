@@ -11,7 +11,10 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { PURGED_DEVICE_LABEL } from './guardianships.constants';
+import {
+  PURGED_DEVICE_LABEL,
+  PURGED_GUARDIAN_NAME,
+} from './guardianships.constants';
 import {
   LINKED_DEVICE_REVOKER,
   type LinkedDeviceRevoker,
@@ -33,25 +36,29 @@ export interface PurgeSummary {
  * profile is anonymized AND its personal data is hard-deleted).
  *
  * Per dependent:
- *   1. R2 objects first: consent evidence files, the profile picture and the
- *      class / honor evidence files (class section evidence, honor requirement
- *      evidence and the honor certificate / document / images). If R2 fails the
- *      dependent is left untouched (nothing deleted in the DB, `purged_at` NOT
- *      set) so the next run retries it, and the run is reported as failed.
+ *   1. The R2 object keys are collected (consent evidence files, the profile
+ *      picture and the class / honor evidence files: class section evidence,
+ *      honor requirement evidence and the honor certificate / document /
+ *      images) but NOT deleted yet.
  *   2. One transaction: anonymize the users row (email stays NULL,
  *      active=false), delete health data (allergies, diseases, medicines),
  *      emergency contacts, the consent evidence rows, the class / honor
  *      evidence rows and the notification inbox rows, blank the honor file
- *      columns, null the external holder's name / phone on the guardianship
- *      rows, null IP/user agent on the legal acceptances, set
+ *      columns, null the external holder's phone on the guardianship rows and
+ *      overwrite the external holder's name with a placeholder (the
+ *      `guardianships_holder_ck` CHECK needs a name), null IP/user agent on the legal acceptances, set
  *      `dependent_profiles.purged_at`. The device pairing tokens are deleted and the
  *      linked device rows are scrubbed (label overwritten, app version and push
- *      token pointer cleared); the revoked rows stay as the audit.
+ *      token pointer cleared); the revoked rows stay as the audit. If the
+ *      transaction fails nothing changed and the next run retries it (the
+ *      run is reported as failed).
+ *   3. After the commit, the R2 objects are deleted, best-effort: a failure is
+ *      logged (bucket + keys) and does not undo the purge.
  *
  * The users row is NOT hard-deleted (foreign keys from class progress, audit
  * and the guardianship rows kept for legal history). The guardianship rows
  * stay as evidence of who held the child, minus the external holder's contact
- * data; the class / honor progress rows stay, minus every file attached to them.
+ * data (name replaced by a placeholder); the class / honor progress rows stay, minus every file attached to them.
  */
 @Injectable()
 export class DependentProfilesPurgeCronService {
@@ -149,11 +156,10 @@ export class DependentProfilesPurgeCronService {
   }
 
   private async purgeOne(dependentId: string, now: Date): Promise<void> {
-    // R2 first: if it fails nothing else changed and the next run retries.
+    // The object keys live in rows the transaction deletes or blanks, so they
+    // are read now but deleted only AFTER the commit: a rolled-back purge must
+    // not leave data pointing at objects that are already gone.
     const targets = await this.collectStorageTargets(dependentId);
-    for (const [bucket, keys] of targets) {
-      await this.fileStorage.deleteMany(bucket, [...keys]);
-    }
 
     // A teen with an own login (3a) also loses every credential. Read before
     // the transaction nulls the email: the email is what the verification
@@ -215,9 +221,23 @@ export class DependentProfilesPurgeCronService {
       });
       // Who held the child stays on record; the external holder's contact data
       // does not.
+      // `guardianships_holder_ck` requires a non-custodian row without a
+      // guardian user to keep an `external_name`, so an external holder's name
+      // is overwritten with a placeholder (not nulled); the phone always goes.
       await tx.guardianships.updateMany({
-        where: { dependent_user_id: dependentId },
+        where: {
+          dependent_user_id: dependentId,
+          OR: [{ is_custodian: true }, { guardian_user_id: { not: null } }],
+        },
         data: { external_name: null, external_phone: null },
+      });
+      await tx.guardianships.updateMany({
+        where: {
+          dependent_user_id: dependentId,
+          is_custodian: false,
+          guardian_user_id: null,
+        },
+        data: { external_name: PURGED_GUARDIAN_NAME, external_phone: null },
       });
       await tx.legal_acceptances.updateMany({
         where: { user_id: dependentId },
@@ -257,7 +277,35 @@ export class DependentProfilesPurgeCronService {
       });
     });
 
+    await this.deleteStorageObjects(dependentId, targets);
     await this.actingForCache.bump(dependentId);
+  }
+
+  /**
+   * Best-effort R2 cleanup, run once the purge is committed. A failure here
+   * cannot undo the purge (the keys are gone from the DB and `purged_at` is
+   * set, so no later run retries it): it is logged with the bucket and keys so
+   * the orphans can be removed by hand. Every bucket is attempted.
+   */
+  private async deleteStorageObjects(
+    dependentId: string,
+    targets: Map<StorageBucketAlias, Set<string>>,
+  ): Promise<void> {
+    for (const [bucket, keys] of targets) {
+      try {
+        await this.fileStorage.deleteMany(bucket, [...keys]);
+      } catch (error) {
+        this.logger.error(
+          JSON.stringify({
+            event: 'dependent_purge_storage_cleanup_failed',
+            dependent: dependentId,
+            bucket,
+            keys: [...keys],
+            reason: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+    }
   }
 
   /**

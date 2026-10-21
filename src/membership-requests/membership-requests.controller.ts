@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   Post,
   Param,
   Body,
@@ -163,6 +164,7 @@ export class MembershipRequestsController {
   }
 
   @Post(':assignmentId/approve')
+  @HttpCode(HttpStatus.OK)
   @RequirePermissions('club_members:approve')
   @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({
@@ -199,6 +201,7 @@ export class MembershipRequestsController {
   }
 
   @Post(':assignmentId/reject')
+  @HttpCode(HttpStatus.OK)
   @RequirePermissions('club_members:approve')
   @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({

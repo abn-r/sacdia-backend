@@ -3,7 +3,10 @@ import {
   DEPENDENT_PROFILES_PURGE_JOB,
   DependentProfilesPurgeCronService,
 } from './dependent-profiles-purge-cron.service';
-import { PURGED_DEVICE_LABEL } from './guardianships.constants';
+import {
+  PURGED_DEVICE_LABEL,
+  PURGED_GUARDIAN_NAME,
+} from './guardianships.constants';
 
 const D1 = 'dddddddd-0000-4000-8000-000000000001';
 const D2 = 'dddddddd-0000-4000-8000-000000000002';
@@ -133,14 +136,11 @@ describe('DependentProfilesPurgeCronService scheduling and locking', () => {
   });
 
   it('reports the run as failed when a dependent could not be purged', async () => {
-    const { service, prisma, fileStorage, cronLogger } = setup();
+    const { service, prisma, cronLogger } = setup();
     prisma.dependent_profiles.findMany
       .mockResolvedValueOnce([{ user_id: D1 }])
       .mockResolvedValue([]);
-    prisma.guardianship_consent_evidences.findMany.mockResolvedValue([
-      { file_key: 'k1' },
-    ]);
-    fileStorage.deleteMany.mockRejectedValue(new Error('R2 down'));
+    prisma.$transaction.mockRejectedValue(new Error('check violation'));
 
     await service.handlePurge();
 
@@ -195,11 +195,8 @@ describe('DependentProfilesPurgeCronService selection', () => {
   });
 
   it('does not loop forever on a dependent that keeps failing', async () => {
-    const { service, prisma, fileStorage } = setup();
-    prisma.guardianship_consent_evidences.findMany.mockResolvedValue([
-      { file_key: 'k' },
-    ]);
-    fileStorage.deleteMany.mockRejectedValue(new Error('R2 down'));
+    const { service, prisma } = setup();
+    prisma.$transaction.mockRejectedValue(new Error('check violation'));
     const full = Array.from({ length: 100 }, (_, i) => ({ user_id: `u-${i}` }));
     prisma.dependent_profiles.findMany
       .mockResolvedValueOnce(full)
@@ -264,7 +261,7 @@ describe('DependentProfilesPurgeCronService purge action (ruling A9)', () => {
     expect(cache.bump).toHaveBeenCalledWith(D1);
   });
 
-  it('deletes the evidence objects and the profile picture from R2 BEFORE touching the database', async () => {
+  it('deletes the evidence objects and the profile picture from R2 only AFTER the transaction committed', async () => {
     const { service, prisma, fileStorage } = setup();
     prisma.dependent_profiles.findMany
       .mockResolvedValueOnce([{ user_id: D1 }])
@@ -289,7 +286,7 @@ describe('DependentProfilesPurgeCronService purge action (ruling A9)', () => {
       ['profiles/ana.jpg'],
     );
     for (const call of fileStorage.deleteMany.mock.invocationCallOrder) {
-      expect(call).toBeLessThan(
+      expect(call).toBeGreaterThan(
         prisma.$transaction.mock.invocationCallOrder[0],
       );
     }
@@ -304,8 +301,30 @@ describe('DependentProfilesPurgeCronService purge action (ruling A9)', () => {
     expect(fileStorage.deleteMany).not.toHaveBeenCalled();
   });
 
-  it('an R2 failure leaves the dependent untouched: no DB writes, purged_at NOT set, retried next run', async () => {
+  it('a rolled-back transaction never deletes the files: data stays, so do the objects (retried next run)', async () => {
+    const { service, prisma, fileStorage, cache } = setup();
+    prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+    prisma.guardianship_consent_evidences.findMany.mockResolvedValue([
+      { file_key: 'k1' },
+    ]);
+    prisma.$transaction.mockRejectedValueOnce(
+      new Error('guardianships_holder_ck'),
+    );
+
+    const summary = await service.purgeDue();
+
+    expect(summary).toEqual({ purged: 0, failed: 1 });
+    expect(fileStorage.deleteMany).not.toHaveBeenCalled();
+    expect(cache.bump).not.toHaveBeenCalled();
+  });
+
+  it('an R2 failure AFTER the commit is logged and does not undo or fail the purge', async () => {
     const { service, prisma, tx, fileStorage, cache } = setup();
+    const errorLog = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
     prisma.dependent_profiles.findMany
       .mockResolvedValueOnce([{ user_id: D1 }, { user_id: D2 }])
       .mockResolvedValue([]);
@@ -316,15 +335,15 @@ describe('DependentProfilesPurgeCronService purge action (ruling A9)', () => {
 
     const summary = await service.purgeDue();
 
-    expect(summary).toEqual({ purged: 1, failed: 1 });
-    // D1 failed: nothing written for it; only D2 reached the transaction.
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(tx.dependent_profiles.update).toHaveBeenCalledTimes(1);
-    expect(tx.dependent_profiles.update).toHaveBeenCalledWith({
-      where: { user_id: D2 },
-      data: { purged_at: expect.any(Date) },
-    });
-    expect(cache.bump).toHaveBeenCalledTimes(1);
+    expect(summary).toEqual({ purged: 2, failed: 0 });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(tx.dependent_profiles.update).toHaveBeenCalledTimes(2);
+    expect(cache.bump).toHaveBeenCalledTimes(2);
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining('dependent_purge_storage_cleanup_failed'),
+    );
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('k1'));
+    errorLog.mockRestore();
   });
 
   it('a database failure also leaves purged_at unset and is counted', async () => {
@@ -457,20 +476,25 @@ describe('DependentProfilesPurgeCronService evidence, inbox and holder data (rul
     );
   });
 
-  it('an R2 failure on class evidence leaves the whole dependent untouched', async () => {
-    const { service, prisma, tx, fileStorage, cache } = setup();
+  it('a failed R2 delete of class evidence does not stop the other buckets from being tried', async () => {
+    const { service, prisma, fileStorage, cache } = setup();
+    const errorLog = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
     dueOnce(prisma);
     prisma.evidence_files.findMany.mockResolvedValue([
       { file_url: 'k/a.jpg', section_progress_id: 1 },
     ]);
-    fileStorage.deleteMany.mockRejectedValue(new Error('R2 down'));
+    prisma.guardianship_consent_evidences.findMany.mockResolvedValue([
+      { file_key: 'consent/1.pdf' },
+    ]);
+    fileStorage.deleteMany.mockRejectedValueOnce(new Error('R2 down'));
 
-    expect(await service.purgeDue()).toEqual({ purged: 0, failed: 1 });
+    expect(await service.purgeDue()).toEqual({ purged: 1, failed: 0 });
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(tx.evidence_files.deleteMany).not.toHaveBeenCalled();
-    expect(tx.notification_deliveries.deleteMany).not.toHaveBeenCalled();
-    expect(cache.bump).not.toHaveBeenCalled();
+    expect(fileStorage.deleteMany).toHaveBeenCalledTimes(2);
+    expect(cache.bump).toHaveBeenCalledWith(D1);
+    errorLog.mockRestore();
   });
 
   it('in ONE transaction deletes the evidence rows and inbox rows and blanks holder contact data and honor files', async () => {
@@ -498,12 +522,114 @@ describe('DependentProfilesPurgeCronService evidence, inbox and holder data (rul
     expect(tx.notification_deliveries.deleteMany).toHaveBeenCalledWith({
       where: { user_id: D1 },
     });
-    expect(tx.guardianships.updateMany).toHaveBeenCalledWith({
-      where: { dependent_user_id: D1 },
-      data: { external_name: null, external_phone: null },
-    });
     // The guardianship rows themselves are kept as legal history.
     expect(tx.guardianships).not.toHaveProperty('deleteMany');
+  });
+
+  describe('external holder vs guardianships_holder_ck', () => {
+    /** Mirror of the DB CHECK, so the written shape is judged by the real rule. */
+    const holderCk = (row: {
+      is_custodian: boolean;
+      guardian_user_id: string | null;
+      custodian_club_id: number | null;
+      external_name: string | null;
+    }) =>
+      (row.is_custodian &&
+        row.guardian_user_id === null &&
+        row.custodian_club_id !== null) ||
+      (!row.is_custodian &&
+        row.custodian_club_id === null &&
+        (row.guardian_user_id !== null || row.external_name !== null));
+
+    /** Applies the updateMany calls to in-memory rows the way Postgres would. */
+    function applyTo(
+      rows: Array<{
+        is_custodian: boolean;
+        guardian_user_id: string | null;
+        custodian_club_id: number | null;
+        external_name: string | null;
+        external_phone: string | null;
+      }>,
+      calls: any[][],
+    ) {
+      const matches = (row: any, where: any): boolean =>
+        Object.entries(where).every(([key, cond]: [string, any]) => {
+          if (key === 'dependent_user_id') return true;
+          if (key === 'OR') return cond.some((c: any) => matches(row, c));
+          if (cond !== null && typeof cond === 'object' && 'not' in cond) {
+            return row[key] !== cond.not;
+          }
+          return row[key] === cond;
+        });
+      for (const [args] of calls) {
+        for (const row of rows) {
+          if (matches(row, args.where)) Object.assign(row, args.data);
+        }
+      }
+      return rows;
+    }
+
+    const external = () => ({
+      is_custodian: false,
+      guardian_user_id: null,
+      custodian_club_id: null,
+      external_name: 'Maria Perez',
+      external_phone: '+52 555 0100',
+    });
+    const linkedGuardian = () => ({
+      is_custodian: false,
+      guardian_user_id: 'g-1',
+      custodian_club_id: null,
+      external_name: null,
+      external_phone: null,
+    });
+    const custodian = () => ({
+      is_custodian: true,
+      guardian_user_id: null,
+      custodian_club_id: 7,
+      external_name: null,
+      external_phone: null,
+    });
+
+    it('an external holder keeps a non-personal placeholder name and loses the phone, satisfying the CHECK', async () => {
+      const { service, prisma, tx } = setup();
+      dueOnce(prisma);
+
+      await service.purgeDue();
+
+      const rows = applyTo(
+        [external(), linkedGuardian(), custodian()],
+        tx.guardianships.updateMany.mock.calls,
+      );
+      expect(rows[0]).toMatchObject({
+        external_name: PURGED_GUARDIAN_NAME,
+        external_phone: null,
+      });
+      expect(rows[0].external_name).not.toBe('Maria Perez');
+      // Rows that never carried external data are untouched in shape.
+      expect(rows[1]).toMatchObject({
+        external_name: null,
+        external_phone: null,
+      });
+      expect(rows[2]).toMatchObject({
+        external_name: null,
+        external_phone: null,
+      });
+      for (const row of rows) expect(holderCk(row)).toBe(true);
+    });
+
+    it('never nulls external_name on a non-custodian row without a guardian user (the old write violated the CHECK)', async () => {
+      const { service, prisma, tx } = setup();
+      dueOnce(prisma);
+
+      await service.purgeDue();
+
+      const rows = applyTo(
+        [external()],
+        tx.guardianships.updateMany.mock.calls,
+      );
+      expect(holderCk(rows[0])).toBe(true);
+    });
   });
 });
 

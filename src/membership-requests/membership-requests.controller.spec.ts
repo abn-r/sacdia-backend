@@ -187,6 +187,18 @@ describe('MembershipRequestsController (consent)', () => {
     },
   );
 
+  it.each([
+    ['approve', 200],
+    ['reject', 200],
+    ['verifyConsent', 200],
+  ] as const)(
+    '%s answers %i, the status its Swagger contract documents',
+    (name, status) => {
+      const handler = MembershipRequestsController.prototype[name];
+      expect(Reflect.getMetadata('__httpCode__', handler)).toBe(status);
+    },
+  );
+
   it('limits uploads to 20 per hour on every throttler tier', () => {
     const handler =
       MembershipRequestsController.prototype.uploadConsentEvidence;
