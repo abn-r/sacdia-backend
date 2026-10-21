@@ -802,6 +802,136 @@ describe('GuardianEvidenceService', () => {
     });
   });
 
+  describe('director, verify-only reviewer (consent:verify without club_members:approve)', () => {
+    /**
+     * asDirector() answers every guardianships.findFirst with the consent row;
+     * the verify-only check re-reads that row with its consent_status.
+     */
+    const consentRow = (consent_status: string) => ({
+      guardianship_id: CONSENT_ROW,
+      is_custodian: false,
+      dependent_user_id: DEPENDENT,
+      consent_status,
+    });
+
+    it('GET: a pending consent with a current form is readable (same set as the filtered list)', async () => {
+      const { service, prisma, asDirector } = setup();
+      asDirector();
+      prisma.guardianships.findFirst.mockResolvedValue(consentRow('pending'));
+      prisma.guardianship_consent_evidences.findFirst.mockResolvedValue(
+        currentEvidence(),
+      );
+
+      const result = await service.getForDirector(
+        DIRECTOR,
+        SECTION,
+        ASSIGNMENT,
+        { verifyOnly: true },
+      );
+
+      expect(result.url).toBe('https://signed/x');
+    });
+
+    it.each([
+      ['an approved request', { status: 'active' }],
+      ['a rejected request', { status: 'rejected' }],
+    ])(
+      'GET: %s is 404 MR_NOT_FOUND (not in the filtered list)',
+      async (_l, over) => {
+        const { service, prisma, audit, asDirector } = setup();
+        asDirector({
+          assignment_id: ASSIGNMENT,
+          club_section_id: SECTION,
+          user_id: DEPENDENT,
+          status: 'pending',
+          active: true,
+          ...over,
+        });
+        prisma.guardianships.findFirst.mockResolvedValue(consentRow('pending'));
+        prisma.guardianship_consent_evidences.findFirst.mockResolvedValue(
+          currentEvidence(),
+        );
+
+        const error = await rejection(
+          service.getForDirector(DIRECTOR, SECTION, ASSIGNMENT, {
+            verifyOnly: true,
+          }),
+        );
+
+        expect(codeOf(error)).toBe(ErrorCode.MR_NOT_FOUND);
+        expect(audit.recordEventOrThrow).not.toHaveBeenCalled();
+      },
+    );
+
+    it('GET: an already verified consent is 404 MR_NOT_FOUND, no URL and no audited read', async () => {
+      const { service, prisma, storage, audit, asDirector } = setup();
+      asDirector();
+      prisma.guardianships.findFirst.mockResolvedValue(consentRow('verified'));
+      prisma.guardianship_consent_evidences.findFirst.mockResolvedValue(
+        currentEvidence(),
+      );
+
+      const error = await rejection(
+        service.getForDirector(DIRECTOR, SECTION, ASSIGNMENT, {
+          verifyOnly: true,
+        }),
+      );
+
+      expect(codeOf(error)).toBe(ErrorCode.MR_NOT_FOUND);
+      expect(storage.getSignedDownloadUrl).not.toHaveBeenCalled();
+      expect(audit.recordEventOrThrow).not.toHaveBeenCalled();
+    });
+
+    it('GET: a pending consent with NO form is 404 MR_NOT_FOUND (does not reveal GUARDIANSHIP_EVIDENCE_NOT_FOUND)', async () => {
+      const { service, prisma, asDirector } = setup();
+      asDirector();
+      prisma.guardianships.findFirst.mockResolvedValue(consentRow('pending'));
+      prisma.guardianship_consent_evidences.findFirst.mockResolvedValue(null);
+
+      const error = await rejection(
+        service.getForDirector(DIRECTOR, SECTION, ASSIGNMENT, {
+          verifyOnly: true,
+        }),
+      );
+
+      expect(codeOf(error)).toBe(ErrorCode.MR_NOT_FOUND);
+    });
+
+    it('GET: a non-dependent request is 404 MR_NOT_FOUND, never GUARDIANSHIP_NOT_FOUND', async () => {
+      const { service, prisma, asDirector } = setup();
+      asDirector();
+      prisma.dependent_profiles.findUnique.mockResolvedValue(null);
+
+      const error = await rejection(
+        service.getForDirector(DIRECTOR, SECTION, ASSIGNMENT, {
+          verifyOnly: true,
+        }),
+      );
+
+      expect(codeOf(error)).toBe(ErrorCode.MR_NOT_FOUND);
+    });
+
+    it('GET without the option keeps reading approved requests and the full director behavior', async () => {
+      const { service, prisma, asDirector } = setup();
+      asDirector({
+        assignment_id: ASSIGNMENT,
+        club_section_id: SECTION,
+        user_id: DEPENDENT,
+        status: 'active',
+        active: true,
+      });
+      prisma.guardianship_consent_evidences.findFirst.mockResolvedValue(
+        currentEvidence(),
+      );
+
+      await expect(
+        service.getForDirector(DIRECTOR, SECTION, ASSIGNMENT, {
+          verifyOnly: false,
+        }),
+      ).resolves.toMatchObject({ url: 'https://signed/x' });
+    });
+  });
+
   describe('admin', () => {
     it('reads the form of a guardianship that belongs to the user as the dependent', async () => {
       const { service, prisma, audit } = setup();

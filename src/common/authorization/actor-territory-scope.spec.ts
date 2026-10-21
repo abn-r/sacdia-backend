@@ -172,6 +172,22 @@ describe('resolveActorTerritoryScope', () => {
     expect(resolveActorTerritoryScope(undefined)).toEqual({ level: 'open' });
   });
 
+  // Coordinator authority is per club_section (coordinator_assignments), not a
+  // union / local field: PermissionsGuard resolves it only on routes that opt
+  // in with `coordinatorSections`. Teaching this resolver a coordinator
+  // territory would widen canManageClub (club management, finances, director
+  // designation) for every coordinator.
+  it.each(['coordinator', 'zone-coordinator', 'general-coordinator'])(
+    'keeps %s open even with a full home territory',
+    (role) => {
+      expect(
+        resolveActorTerritoryScope(
+          snapshot({ role, localFieldId: 7, unionId: 3, divisionId: 1 }),
+        ),
+      ).toEqual({ level: 'open' });
+    },
+  );
+
   it('returns unconfigured when a territorial role has no required id', () => {
     expect(
       resolveActorTerritoryScope(snapshot({ role: 'director-union' })),
@@ -187,9 +203,7 @@ describe('clubsWhereForActor / localFieldsWhereForActor', () => {
     expect(clubsWhereForActor({ level: 'union', unionId: 2 })).toEqual({
       local_fields: { union_id: 2 },
     });
-    expect(
-      clubsWhereForActor({ level: 'division', divisionId: 1 }),
-    ).toEqual({
+    expect(clubsWhereForActor({ level: 'division', divisionId: 1 })).toEqual({
       local_fields: { unions: { division_id: 1 } },
     });
     expect(

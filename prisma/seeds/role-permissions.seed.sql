@@ -2261,9 +2261,8 @@ ON CONFLICT (role_id, permission_id) DO UPDATE SET
 -- Must live here: role blocks DELETE+INSERT wipe grants if they are not re-asserted after every
 -- seed run. Same rows as migration 20261022130000_seed_family_permissions; admin, assistant-admin and
 -- super-admin get both through their wildcard blocks above.
--- GLOBAL coordinator / zone-coordinator / general-coordinator are deliberately NOT here: the
--- PermissionsGuard cannot resolve their territory for club_assignment resources
--- (src/auth/permissions-consent-verify.spec.ts).
+-- GLOBAL coordinator / zone-coordinator / general-coordinator get consent:verify in their own
+-- block below (migration 20261023120000_grant_consent_verify_to_coordinators).
 INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
 SELECT gen_random_uuid(), r.role_id, p.permission_id
 FROM roles r
@@ -2286,6 +2285,25 @@ WHERE r.role_name IN ('director', 'deputy-director', 'secretary', 'secretary-tre
   AND p.permission_name = 'consent:verify'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- END family permissions (phase 3c)
+
+-- BEGIN coordinator consent:verify
+-- ============================
+-- consent:verify for GLOBAL coordinator roles (verify a minor's consent inside their assigned sections)
+-- ============================
+-- Same rows as migration 20261023120000_grant_consent_verify_to_coordinators. Must stay after the
+-- coordinator role blocks: their DELETE+INSERT would wipe it. The guard scopes it to the sections
+-- covered by coordinator_assignments, only on routes that opt in with `coordinatorSections`.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('coordinator', 'zone-coordinator', 'general-coordinator')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'consent:verify'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+-- END coordinator consent:verify
 
 COMMIT;
 

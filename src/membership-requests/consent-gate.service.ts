@@ -64,7 +64,11 @@ export interface ConsentBlock {
    *    there is nothing to verify (no form uploaded yet, already verified, no
    *    primary row, or a self-registered teen nobody has linked);
    *  - it says nothing about permissions (`consent:verify` /
-   *    `club_members:approve`): the list already needs the latter.
+   *    `club_members:approve`): the list already needs one of them, and both
+   *    allow verify-consent on the same section. A viewer with only
+   *    `consent:verify` gets a list filtered to the rows that have something to
+   *    verify (see MembershipRequestsService.listPending `verifyOnly`);
+   *    barred viewers keep those rows.
    * The block is a hint for the UI; `verify-consent` stays the authority (403).
    */
   viewer_can_verify: boolean;

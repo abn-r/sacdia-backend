@@ -1540,6 +1540,161 @@ describe('MembershipRequestsService', () => {
       expect(item.users.email).toBeNull();
     });
 
+    describe('verify-only viewers (consent:verify without club_members:approve)', () => {
+      const adult = 'a-adult';
+      const withForm = 'aaaaaaaa-0000-4000-8000-0000000000f1';
+      const verified = 'aaaaaaaa-0000-4000-8000-0000000000f2';
+      const noForm = 'aaaaaaaa-0000-4000-8000-0000000000f3';
+      const barred = 'aaaaaaaa-0000-4000-8000-0000000000f4';
+      const teen = 'aaaaaaaa-0000-4000-8000-0000000000f5';
+      const guardianLinked = 'aaaaaaaa-0000-4000-8000-0000000000f6';
+
+      const row = (
+        dependent_user_id: string,
+        over: Record<string, unknown> = {},
+      ) => ({
+        guardianship_id: `g-${dependent_user_id}`,
+        dependent_user_id,
+        is_primary: true,
+        is_custodian: false,
+        consent_status: 'pending',
+        external_name: null,
+        relationship_type: null,
+        guardian: { name: 'María', paternal_last_name: 'Pérez' },
+        custodian_club: null,
+        consent_evidences: [
+          { evidence_id: `e-${dependent_user_id}`, uploaded_by_user_id: 'u' },
+        ],
+        dependent: { dependent_profile: { created_by_user_id: null } },
+        ...over,
+      });
+
+      beforeEach(() => {
+        // Oldest first, as the query orders them: adult, then each kind of minor.
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          request(adult, 'a@x.org'),
+          request(verified, null),
+          request(noForm, null),
+          request(withForm, null),
+          request(teen, 'teen@x.org'),
+          request(barred, null),
+          request(guardianLinked, null),
+        ]);
+        mockPrismaService.users.findMany.mockResolvedValue([
+          ...gateDependentRows([
+            withForm,
+            verified,
+            noForm,
+            barred,
+            guardianLinked,
+          ]),
+          gateTeenUser(teen),
+        ]);
+        mockPrismaService.guardianships.findMany.mockImplementation(
+          async ({ where }: any) => {
+            if (where.is_test_data === false) {
+              return [
+                row(withForm),
+                row(verified, {
+                  consent_status: 'verified',
+                  consent_evidences: [
+                    { evidence_id: 'e-v', uploaded_by_user_id: 'u' },
+                  ],
+                }),
+                row(noForm, { consent_evidences: [] }),
+                // custody row whose current form the viewer uploaded: barred
+                row(barred, {
+                  is_custodian: true,
+                  consent_evidences: [
+                    { evidence_id: 'e-b', uploaded_by_user_id: VIEWER },
+                  ],
+                }),
+                row(guardianLinked),
+              ];
+            }
+            // viewer's own guardianships: a live guardian of guardianLinked
+            return where.guardian_user_id === VIEWER
+              ? [{ dependent_user_id: guardianLinked }]
+              : [];
+          },
+        );
+      });
+
+      it('without the option the director sees every request (unchanged)', async () => {
+        const result = await service.listPending(10, VIEWER);
+        expect(result.map((item) => item.user_id)).toEqual([
+          adult,
+          verified,
+          noForm,
+          withForm,
+          teen,
+          barred,
+          guardianLinked,
+        ]);
+        const explicit = await service.listPending(10, VIEWER, {
+          verifyOnly: false,
+        });
+        expect(explicit).toHaveLength(7);
+      });
+
+      it('verifyOnly keeps only minors with a pending consent and a current form: adults, verified, no-form and unlinked teens are hidden', async () => {
+        const result = await service.listPending(10, VIEWER, {
+          verifyOnly: true,
+        });
+
+        expect(result.map((item) => item.user_id)).toEqual([
+          withForm,
+          barred,
+          guardianLinked,
+        ]);
+      });
+
+      it('a verify-only viewer who is barred still sees the row, with the block that explains why', async () => {
+        const result = await service.listPending(10, VIEWER, {
+          verifyOnly: true,
+        });
+
+        const byUser = new Map(result.map((item) => [item.user_id, item]));
+        expect(byUser.get(withForm)!.consent).toMatchObject({
+          viewer_can_verify: true,
+          viewer_verify_block: null,
+        });
+        expect(byUser.get(barred)!.consent).toMatchObject({
+          viewer_can_verify: false,
+          viewer_verify_block: 'self_custodian',
+        });
+        expect(byUser.get(guardianLinked)!.consent).toMatchObject({
+          viewer_can_verify: false,
+          viewer_verify_block: 'self_guardian',
+        });
+      });
+
+      it('the filtered rows keep their full shape (effective_expires_at, consent block)', async () => {
+        const [item] = await service.listPending(10, VIEWER, {
+          verifyOnly: true,
+        });
+
+        expect(item.consent).toMatchObject({
+          required: true,
+          dependent: true,
+          evidence_uploaded: true,
+          status: 'pending',
+        });
+        expect(typeof item.effective_expires_at).toBe('string');
+      });
+
+      it('an all-adult section is an empty list for a verify-only viewer', async () => {
+        mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+          request('a1', 'a1@x.org'),
+        ]);
+        mockPrismaService.users.findMany.mockResolvedValue([]);
+
+        await expect(
+          service.listPending(10, VIEWER, { verifyOnly: true }),
+        ).resolves.toEqual([]);
+      });
+    });
+
     it('does not read guardianships when nobody in the page is a dependent', async () => {
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
         request('a1', 'a1@x.org'),

@@ -47,9 +47,42 @@ type CurrentUserPayload = {
 /** What PermissionsGuard leaves on the request after a successful check. */
 type AuthorizedRequest = {
   authorization?: { effective?: { permissions?: string[] } };
+  /** true when the guard let the caller in ONLY as a coordinator of the section. */
+  coordinatorSectionGrant?: boolean;
 };
 
 const APPROVE_PERMISSION = 'club_members:approve';
+
+/**
+ * A "verify-only" reviewer reaches the consent routes with `consent:verify` but
+ * without `club_members:approve` FOR THAT SECTION: a club role with only that
+ * permission, or a coordinator. Two ways to be one:
+ *  - club_members:approve is not among the effective permissions;
+ *  - the guard let the caller in only through the coordinator path: whatever
+ *    approve they hold comes from another place (e.g. their active club role in
+ *    ANOTHER club), not from this section.
+ * Fails closed: no resolved authorization on the request means verify-only.
+ */
+function isVerifyOnlyReviewer(request: AuthorizedRequest): boolean {
+  return (
+    request.coordinatorSectionGrant === true ||
+    !(request.authorization?.effective?.permissions ?? []).includes(
+      APPROVE_PERMISSION,
+    )
+  );
+}
+
+/**
+ * Reviewing a minor's consent (list, read the signed form, verify):
+ * club_members:approve OR consent:verify. Approving the membership stays
+ * club_members:approve only. `coordinatorSections` lets a GLOBAL coordinator
+ * whose role carries one of these reach the sections their
+ * coordinator_assignments cover.
+ */
+const CONSENT_REVIEW_PERMISSIONS = {
+  permissions: [APPROVE_PERMISSION, 'consent:verify'],
+  mode: 'any' as const,
+};
 
 @ApiTags('membership-requests')
 @Controller('club-sections/:clubSectionId/membership-requests')
@@ -63,18 +96,22 @@ export class MembershipRequestsController {
   ) {}
 
   @Get()
-  @RequirePermissions('club_members:approve')
-  @AuthorizationResource({ type: 'club_section', idParam: 'clubSectionId' })
+  @RequirePermissions(CONSENT_REVIEW_PERMISSIONS)
+  @AuthorizationResource({
+    type: 'club_section',
+    idParam: 'clubSectionId',
+    coordinatorSections: true,
+  })
   @ApiOperation({
     summary: 'Listar solicitudes pendientes de membresía',
     description:
-      'Lista las solicitudes de membresía pendientes para una sección de club',
+      'Lista las solicitudes de membresía pendientes para una sección de club. Un revisor solo-verificación (consent:verify sin club_members:approve en la sección, p. ej. un coordinador) ve únicamente los menores con consentimiento pendiente y ficha vigente subida.',
   })
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiResponse({
     status: 200,
     description:
-      'Lista de solicitudes pendientes. Cada item incluye `expires_at` (timeout base almacenado, sin cambios) y `effective_expires_at` (ISO): el vencimiento real que aplica el cron. `consent.viewer_can_verify` (boolean) dice si QUIEN CONSULTA puede verificar el consentimiento ahora (true solo con ficha vigente subida, consentimiento pendiente y sin impedimento de cuatro ojos); `consent.viewer_verify_block` es `self_guardian` (es tutor vigente del menor), `self_custodian` (custodia del club y creó al menor, subió la ficha vigente o cedió al menor) o null (puede verificar, o no hay nada que verificar). Nunca se exponen ids de usuario. Adulto: created_at + timeout base; menor con consentimiento pendiente: created_at + max(base, 30) dias; menor con consentimiento verificado: max(created_at, verified_at) + timeout base.',
+      'Lista de solicitudes pendientes. Cada item incluye `expires_at` (timeout base almacenado, sin cambios) y `effective_expires_at` (ISO): el vencimiento real que aplica el cron. `consent.viewer_can_verify` (boolean) dice si QUIEN CONSULTA puede verificar el consentimiento ahora (true solo con ficha vigente subida, consentimiento pendiente y sin impedimento de cuatro ojos); `consent.viewer_verify_block` es `self_guardian` (es tutor vigente del menor), `self_custodian` (custodia del club y creó al menor, subió la ficha vigente o cedió al menor) o null (puede verificar, o no hay nada que verificar). Nunca se exponen ids de usuario. VISTA FILTRADA: quien consulta con consent:verify pero SIN club_members:approve en esa sección (un coordinador, o un rol de club con solo ese permiso) recibe únicamente las solicitudes con trabajo para él: menores con consentimiento pendiente de verificar Y ficha vigente subida; se omiten adultos, consentimientos ya verificados, menores sin ficha y adolescentes sin tutor vinculado. Si está impedido por cuatro ojos (self_guardian / self_custodian) la fila SÍ aparece, con el bloque que explica por qué. Con club_members:approve se listan todas, sin cambios. La lista no es paginada: el arreglo es el conjunto filtrado. Adulto: created_at + timeout base; menor con consentimiento pendiente: created_at + max(base, 30) dias; menor con consentimiento verificado: max(created_at, verified_at) + timeout base.',
     schema: {
       example: {
         status: 'success',
@@ -110,15 +147,17 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 403,
     description:
-      'Forbidden — requires club_members:approve permission for this club',
+      'Forbidden — requires club_members:approve or consent:verify for this section (a coordinator: on a section their coordinator_assignments cover)',
   })
   async listPending(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() request: AuthorizedRequest,
   ) {
     const data = await this.membershipRequestsService.listPending(
       clubSectionId,
       currentUser.sub,
+      { verifyOnly: isVerifyOnlyReviewer(request) },
     );
     return { status: 'success', data };
   }
@@ -191,6 +230,14 @@ export class MembershipRequestsController {
     );
     return { status: 'success', data };
   }
+  /**
+   * Approvers only (ruling W5, 2026-10-20): a verify-only reviewer (a
+   * coordinator, or a club role with consent:verify alone) does not upload
+   * forms. The guard denies them before anything is read (403
+   * GUARD_PERMISSION_DENIED without club_members:approve; 403
+   * GUARD_CLUB_SCOPE_REQUIRED when their approve belongs to another club), the
+   * same denial approve/reject give them: nothing about the request leaks.
+   */
   @Post(':assignmentId/consent-evidence')
   @RequirePermissions('club_members:approve')
   @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
@@ -206,13 +253,18 @@ export class MembershipRequestsController {
   @ApiOperation({
     summary: 'Subir la ficha de consentimiento firmada de un menor',
     description:
-      'Foto o PDF (JPEG, PNG, WebP, PDF; hasta 10 MB, campo multipart `file`). HEIC se rechaza: la app lo convierte a JPEG. Mientras el consentimiento está pendiente reemplaza la ficha vigente sin borrar la anterior; ya verificado responde 409. No verifica el consentimiento: usa verify-consent.',
+      'Foto o PDF (JPEG, PNG, WebP, PDF; hasta 10 MB, campo multipart `file`). HEIC se rechaza: la app lo convierte a JPEG. Mientras el consentimiento está pendiente reemplaza la ficha vigente sin borrar la anterior; ya verificado responde 409. Solo quien aprueba (club_members:approve en la sección): un revisor solo-verificación (consent:verify sin club_members:approve, p. ej. un coordinador) no sube fichas y recibe 403. No verifica el consentimiento: usa verify-consent.',
   })
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({
     status: 201,
     description: '{ evidence_id, content_type, size_bytes, uploaded_at }',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'GUARD_PERMISSION_DENIED sin club_members:approve (incluye a los revisores solo-verificación y a los coordinadores) o GUARD_CLUB_SCOPE_REQUIRED fuera de la sección',
   })
   @ApiResponse({
     status: 404,
@@ -244,10 +296,16 @@ export class MembershipRequestsController {
   }
 
   @Get(':assignmentId/consent-evidence')
-  @RequirePermissions('club_members:approve')
-  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
+  @RequirePermissions(CONSENT_REVIEW_PERMISSIONS)
+  @AuthorizationResource({
+    type: 'club_assignment',
+    idParam: 'assignmentId',
+    coordinatorSections: true,
+  })
   @ApiOperation({
     summary: 'URL firmada (15 min) de la ficha de consentimiento vigente',
+    description:
+      'Un revisor solo-verificación (consent:verify sin club_members:approve en la sección, p. ej. un coordinador) solo puede leer la ficha de las solicitudes que aparecen en su lista filtrada (menor con consentimiento pendiente y ficha vigente); cualquier otro caso es 404 MR_NOT_FOUND, igual que una solicitud inexistente.',
   })
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiParam({ name: 'assignmentId', type: String })
@@ -257,9 +315,14 @@ export class MembershipRequestsController {
       '{ url, expires_in, content_type, uploaded_at, uploaded_by_display_name }',
   })
   @ApiResponse({
+    status: 403,
+    description:
+      'Sin club_members:approve ni consent:verify en la sección (un coordinador: solo en secciones cubiertas por sus coordinator_assignments)',
+  })
+  @ApiResponse({
     status: 404,
     description:
-      'MR_NOT_FOUND, GUARDIANSHIP_NOT_FOUND o GUARDIANSHIP_EVIDENCE_NOT_FOUND',
+      'MR_NOT_FOUND, GUARDIANSHIP_NOT_FOUND o GUARDIANSHIP_EVIDENCE_NOT_FOUND (un revisor solo-verificación recibe siempre MR_NOT_FOUND fuera de su lista filtrada)',
   })
   @ApiResponse({
     status: 503,
@@ -269,21 +332,24 @@ export class MembershipRequestsController {
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() request: AuthorizedRequest,
   ) {
     const data = await this.evidence.getForDirector(
       currentUser.sub,
       clubSectionId,
       assignmentId,
+      { verifyOnly: isVerifyOnlyReviewer(request) },
     );
     return { status: 'success', data };
   }
   @Post(':assignmentId/verify-consent')
   @HttpCode(200)
-  @RequirePermissions({
-    permissions: [APPROVE_PERMISSION, 'consent:verify'],
-    mode: 'any',
+  @RequirePermissions(CONSENT_REVIEW_PERMISSIONS)
+  @AuthorizationResource({
+    type: 'club_assignment',
+    idParam: 'assignmentId',
+    coordinatorSections: true,
   })
-  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({
     summary: 'Verificar el consentimiento del tutor de un menor',
     description:
@@ -304,11 +370,13 @@ export class MembershipRequestsController {
   })
   @ApiResponse({
     status: 404,
-    description: 'MR_NOT_FOUND o GUARDIANSHIP_NOT_FOUND',
+    description:
+      'MR_NOT_FOUND o GUARDIANSHIP_NOT_FOUND. Un revisor solo-verificación (consent:verify sin club_members:approve en la sección, p. ej. un coordinador) recibe siempre MR_NOT_FOUND fuera de su lista filtrada: adulto, sin tutor primario, sin ficha vigente, consentimiento ya verificado o solicitud que no está pendiente',
   })
   @ApiResponse({
     status: 409,
-    description: 'GUARDIANSHIP_EVIDENCE_REQUIRED o MR_ALREADY_PENDING',
+    description:
+      'GUARDIANSHIP_EVIDENCE_REQUIRED o MR_ALREADY_PENDING (a un revisor solo-verificación le responde 404 MR_NOT_FOUND)',
   })
   async verifyConsent(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
@@ -321,12 +389,7 @@ export class MembershipRequestsController {
     // club's leadership, e.g. a coordinator). Approving the membership stays
     // with club_members:approve. Checked BEFORE anything is read or written, and
     // fails closed when the guard left no resolved authorization on the request.
-    if (
-      dto.approve === true &&
-      !(request.authorization?.effective?.permissions ?? []).includes(
-        APPROVE_PERMISSION,
-      )
-    ) {
+    if (dto.approve === true && isVerifyOnlyReviewer(request)) {
       throw new AppForbiddenException(ErrorCode.MR_APPROVE_PERMISSION_REQUIRED);
     }
     const data = await this.consentVerification.verify(
@@ -334,6 +397,7 @@ export class MembershipRequestsController {
       assignmentId,
       currentUser.sub,
       dto,
+      { verifyOnly: isVerifyOnlyReviewer(request) },
     );
     return { status: 'success', data };
   }

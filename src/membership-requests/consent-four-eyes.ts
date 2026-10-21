@@ -67,6 +67,34 @@ export interface ConsentVerifierVerdict {
 }
 
 /**
+ * Is there a consent for a reviewer to verify right now (whoever the reviewer
+ * is): an active primary row that is still `pending` AND a current signed form.
+ * The "something to verify" half of {@link evaluateConsentVerifier}; adults,
+ * verified or revoked consents and minors without a form yet have none.
+ */
+export function consentHasVerifyWork(input: {
+  hasPrimary: boolean;
+  consentStatus: 'pending' | 'verified' | 'revoked' | string;
+  evidenceUploaded: boolean;
+}): boolean {
+  return (
+    input.hasPrimary &&
+    input.consentStatus === 'pending' &&
+    input.evidenceUploaded
+  );
+}
+
+/**
+ * {@link consentHasVerifyWork} read back from a verdict: when there is work the
+ * viewer either can verify or is barred (a block), so a verdict with neither
+ * means "nothing to verify". Barred viewers COUNT: the work exists, they see it
+ * with the block that says why they cannot act on it.
+ */
+export function verdictHasVerifyWork(verdict: ConsentVerifierVerdict): boolean {
+  return verdict.viewer_can_verify || verdict.viewer_verify_block !== null;
+}
+
+/**
  * The verdict for the consent block: may THIS viewer verify the consent right
  * now. When there is nothing to verify (no active primary row, already
  * verified, no current signed form) it is `false` with no block: verify-consent
@@ -81,11 +109,7 @@ export function evaluateConsentVerifier(input: {
   custody: boolean;
   custodyBarredUserIds: readonly string[];
 }): ConsentVerifierVerdict {
-  if (
-    !input.hasPrimary ||
-    input.consentStatus !== 'pending' ||
-    !input.evidenceUploaded
-  ) {
+  if (!consentHasVerifyWork(input)) {
     return { viewer_can_verify: false, viewer_verify_block: null };
   }
   const block = findVerifierBlock(input);

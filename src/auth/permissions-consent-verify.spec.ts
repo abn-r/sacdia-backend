@@ -10,33 +10,23 @@ import { MembershipRequestsController } from '../membership-requests/membership-
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
- * T3c-B11. Design section 13 assumed that a GLOBAL coordinator holding
- * `consent:verify` resolves `club_assignment` resources INSIDE their territory
- * and is denied outside it, so coordinators could be the independent verifier of
- * a director-created minor.
+ * T3c-B11 + coordinator-consent-verify. Design section 13 assumed that a GLOBAL
+ * coordinator holding `consent:verify` resolves `club_assignment` resources
+ * INSIDE their territory and is denied outside it, so coordinators can be the
+ * independent verifier of a director-created minor.
  *
- * VALIDATION RESULT: THE ASSUMPTION FAILS for `coordinator`, `zone-coordinator`
- * and `general-coordinator`.
+ * Originally that failed: `validateInstanceScope` only accepted
+ * `canManageClub` (role-first union / local-field / division territory, which
+ * coordinators do not have) or the caller's active club section.
  *
- * Why: `validateInstanceScope` (PermissionsGuard) lets a request through only if
- * `AuthorizationContextService.canManageClub` is true or the caller's ACTIVE
- * club assignment is that very section. `canManageClub` resolves territory with
- * `resolveActorTerritoryScope`, which only knows super-admin, the division,
- * union and local-field director/assistant roles and admin/assistant-admin. A
- * coordinator is none of them, so their scope is `open`, which
- * `actorCanAccessHierarchyScope` treats as "no territory": denied everywhere,
- * even inside the territory the coordinator was assigned to. A home
- * local_field_id on the user never upgrades the role (see
- * actor-territory-scope.ts).
- *
- * FALLBACK APPLIED (the user must be told): `consent:verify` is seeded only for
- * the CLUB roles director, deputy-director, secretary and secretary-treasurer
- * (plus admin, assistant-admin and super-admin through their wildcard blocks).
- * The coordinator rows were removed from migration
- * 20261022130000_seed_family_permissions and from both seed files. `assistant-lf`
- * resolves territory correctly but already verifies through `club_members:approve`
- * (the seed grants it), so it needs no extra row. Making coordinators verify
- * needs a separate change: teach resolveActorTerritoryScope their territory.
+ * Now: a route opts in with `@AuthorizationResource({ ..., coordinatorSections:
+ * true })` and, there only, a coordinator passes when a coordinator ROLE carries
+ * the required permission AND the canonical coordinator scope
+ * (coordinator_assignments GENERAL / ZONE / SECTION -> club_section_ids) covers
+ * the resource's section. `canManageClub` and `resolveActorTerritoryScope` are
+ * NOT broadened: they gate club management, finances, director designation...
+ * and a coordinator's authority is per SECTION (a ZONE assignment covers one
+ * club type), never per club.
  */
 
 const SECTION_ID = 22;
@@ -128,7 +118,106 @@ function clubRoleProfile(
   };
 }
 
-function setup(profile: unknown, clubTerritory: Territory = HOME_TERRITORY) {
+/**
+ * A GLOBAL `coordinator` role holding consent:verify AND an ACTIVE club
+ * assignment (a CLUB role, with its own permissions) in clubId / sectionId.
+ */
+function coordinatorWithClubRoleProfile(
+  clubRoleName: string,
+  clubPermissions: string[],
+  clubId: number,
+  sectionId: number,
+) {
+  const base = clubRoleProfile(
+    clubRoleName,
+    clubPermissions,
+    clubId,
+    sectionId,
+  );
+  const coordinatorPermissions = ['consent:verify'];
+  return {
+    authorization: {
+      ...base.authorization,
+      grants: {
+        ...base.authorization.grants,
+        global_roles: [
+          {
+            role_name: 'coordinator',
+            permissions: coordinatorPermissions,
+            scope: globalScope(HOME_TERRITORY),
+          },
+        ],
+      },
+      effective: {
+        ...base.authorization.effective,
+        permissions: [
+          ...new Set([...coordinatorPermissions, ...clubPermissions]),
+        ],
+      },
+    },
+  };
+}
+
+type CoordinatorAssignment = {
+  local_field_id: number;
+  assignment_type: 'GENERAL' | 'ZONE' | 'SECTION';
+  zone_id: number | null;
+  club_type_id: number | null;
+  club_section_id: number | null;
+};
+
+const sectionAssignment = (clubSectionId: number): CoordinatorAssignment => ({
+  local_field_id: HOME_TERRITORY.local_field,
+  assignment_type: 'SECTION',
+  zone_id: null,
+  club_type_id: null,
+  club_section_id: clubSectionId,
+});
+
+const generalAssignment = (): CoordinatorAssignment => ({
+  local_field_id: HOME_TERRITORY.local_field,
+  assignment_type: 'GENERAL',
+  zone_id: null,
+  club_type_id: null,
+  club_section_id: null,
+});
+
+type CoordinatorData = {
+  assignments?: CoordinatorAssignment[];
+  /** Local field of the section's club (a GENERAL assignment matches on it). */
+  sectionLocalFieldId?: number;
+};
+
+type CoveringClause = Partial<CoordinatorAssignment> & Record<string, unknown>;
+
+/**
+ * coordinator_assignments.findFirst as the targeted scope query asks it: the
+ * active window is NOT evaluated (the rows here are all active) and the ZONE
+ * relation filter is not either (no ZONE row in this spec); a row matches a
+ * covering clause when every scalar column of the clause is equal.
+ */
+const coveringAssignment =
+  (assignments: CoordinatorAssignment[]) =>
+  async (args: {
+    where: { AND: [unknown, { OR: CoveringClause[] }] };
+  }): Promise<{ assignment_id: string } | null> => {
+    const clauses = args.where.AND[1].OR;
+    const hit = assignments.find((row) =>
+      clauses.some((clause) =>
+        Object.entries(clause).every(
+          ([key, value]) =>
+            key in row && row[key as keyof CoordinatorAssignment] === value,
+        ),
+      ),
+    );
+    return hit ? { assignment_id: 'coordinator-assignment-1' } : null;
+  };
+
+function setup(
+  profile: unknown,
+  clubTerritory: Territory = HOME_TERRITORY,
+  coordinator: CoordinatorData = {},
+) {
   const hierarchy = {
     resolveCurrent: jest.fn().mockResolvedValue({
       division_id: clubTerritory.division,
@@ -150,6 +239,30 @@ function setup(profile: unknown, clubTerritory: Territory = HOME_TERRITORY) {
           club_type_id: 2,
         },
       }),
+    },
+    coordinator_assignments: {
+      findFirst: jest.fn(coveringAssignment(coordinator.assignments ?? [])),
+    },
+    club_sections: {
+      findUnique: jest.fn().mockResolvedValue({
+        club_section_id: SECTION_ID,
+        main_club_id: MAIN_CLUB_ID,
+        club_type_id: 2,
+      }),
+      findFirst: jest.fn().mockResolvedValue({
+        club_type_id: 2,
+        clubs: {
+          active: true,
+          local_field_id:
+            coordinator.sectionLocalFieldId ?? HOME_TERRITORY.local_field,
+          districlub_type_id: 7,
+        },
+      }),
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(1),
+    },
+    coordination_zone_districts: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
   };
   // The REAL authorization context: only the profile loader is replaced. The
@@ -175,24 +288,35 @@ function setup(profile: unknown, clubTerritory: Territory = HOME_TERRITORY) {
   return { guard, prisma, hierarchy };
 }
 
-/** The context of the REAL verify-consent handler: its real PERMISSIONS_KEY and resource. */
-function verifyConsentContext(): ExecutionContext {
-  const request = {
-    user: { sub: USER_ID },
-    params: { clubSectionId: String(SECTION_ID), assignmentId: ASSIGNMENT_ID },
-    query: {},
-    body: {},
-  };
+type Handler = keyof MembershipRequestsController;
+
+/** The context of a REAL controller handler: its real PERMISSIONS_KEY and resource. */
+function handlerContext(
+  handler: Handler = 'verifyConsent',
+  request: Record<string, unknown> = newRequest(),
+): ExecutionContext {
   return {
-    getHandler: () => MembershipRequestsController.prototype.verifyConsent,
+    getHandler: () => MembershipRequestsController.prototype[handler],
     getClass: () => MembershipRequestsController,
     switchToHttp: () => ({ getRequest: () => request }),
   } as unknown as ExecutionContext;
 }
 
-const decide = async (guard: PermissionsGuard) => {
+function newRequest(): Record<string, unknown> {
+  return {
+    user: { sub: USER_ID },
+    params: { clubSectionId: String(SECTION_ID), assignmentId: ASSIGNMENT_ID },
+    query: {},
+    body: {},
+  };
+}
+
+const decide = async (
+  guard: PermissionsGuard,
+  handler: Handler = 'verifyConsent',
+) => {
   try {
-    return { allowed: await guard.canActivate(verifyConsentContext()) };
+    return { allowed: await guard.canActivate(handlerContext(handler)) };
   } catch (error) {
     return { allowed: false, code: (error as { code?: string }).code };
   }
@@ -201,39 +325,138 @@ const decide = async (guard: PermissionsGuard) => {
 describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () => {
   afterEach(() => jest.restoreAllMocks());
 
-  describe('GLOBAL coordinators: the design assumption FAILS (documented fallback)', () => {
-    it.each(['coordinator', 'zone-coordinator', 'general-coordinator'])(
-      '%s holding consent:verify is DENIED even inside their own territory',
+  describe('GLOBAL coordinators resolve their ASSIGNED sections (coordinator_assignments)', () => {
+    const COORDINATOR_ROLES = [
+      'coordinator',
+      'zone-coordinator',
+      'general-coordinator',
+    ];
+
+    it.each(COORDINATOR_ROLES)(
+      '%s holding consent:verify PASSES on a section covered by a SECTION assignment',
+      async (role) => {
+        const { guard, prisma } = setup(
+          globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+          { assignments: [sectionAssignment(SECTION_ID)] },
+        );
+
+        expect(await decide(guard)).toEqual({ allowed: true });
+        expect(prisma.coordinator_assignments.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ user_id: USER_ID }),
+          }),
+        );
+      },
+    );
+
+    it.each(COORDINATOR_ROLES)(
+      '%s PASSES through a GENERAL assignment whose local field contains the section',
       async (role) => {
         const { guard } = setup(
           globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
           HOME_TERRITORY,
+          {
+            assignments: [generalAssignment()],
+          },
         );
 
-        const result = await decide(guard);
-
-        // If this ever flips to allowed, resolveActorTerritoryScope learned the
-        // coordinator territory: restore the coordinator rows in the seed
-        // migration and in both seed files.
-        expect(result).toEqual({
-          allowed: false,
-          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
-        });
+        expect(await decide(guard)).toEqual({ allowed: true });
       },
     );
 
-    it.each(['coordinator', 'zone-coordinator', 'general-coordinator'])(
-      '%s is denied outside their territory too (so it is the role, not the territory, that fails)',
+    it.each(COORDINATOR_ROLES)(
+      '%s is DENIED on a section outside their assignments, even in their home territory',
       async (role) => {
         const { guard } = setup(
           globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
-          OTHER_TERRITORY,
+          HOME_TERRITORY,
+          {
+            assignments: [sectionAssignment(99), generalAssignment()],
+            // The section's club is in ANOTHER local field: the GENERAL
+            // assignment does not reach it.
+            sectionLocalFieldId: OTHER_TERRITORY.local_field,
+          },
         );
 
         expect(await decide(guard)).toEqual({
           allowed: false,
           code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
         });
+      },
+    );
+
+    it.each(COORDINATOR_ROLES)(
+      '%s without any active assignment is DENIED (the role alone is not a territory)',
+      async (role) => {
+        const { guard } = setup(
+          globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+        );
+
+        expect(await decide(guard)).toEqual({
+          allowed: false,
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      },
+    );
+
+    it('the coordinator ROLE must carry the permission: a direct consent:verify grant does not open the assigned sections', async () => {
+      const profile = globalRoleProfile(
+        'coordinator',
+        ['clubs:read'],
+        HOME_TERRITORY,
+      );
+      profile.authorization.grants.direct_permissions = [
+        'consent:verify',
+      ] as never;
+      const { guard, prisma } = setup(profile, HOME_TERRITORY, {
+        assignments: [sectionAssignment(SECTION_ID)],
+      });
+
+      expect(await decide(guard)).toEqual({
+        allowed: false,
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+      expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('routes that did NOT opt in stay closed: a coordinator holding club_members:approve cannot approve inside an assigned section', async () => {
+      const { guard, prisma } = setup(
+        globalRoleProfile(
+          'general-coordinator',
+          ['club_members:approve', 'consent:verify'],
+          HOME_TERRITORY,
+        ),
+        HOME_TERRITORY,
+        { assignments: [sectionAssignment(SECTION_ID)] },
+      );
+
+      for (const handler of ['approve', 'reject'] as const) {
+        expect(await decide(guard, handler)).toEqual({
+          allowed: false,
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      }
+      expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
+    });
+
+    it.each(COORDINATOR_ROLES)(
+      '%s still does not manage the club (canManageClub is NOT broadened)',
+      async (role) => {
+        const { guard } = setup(
+          globalRoleProfile(role, ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+        );
+        const authorizationContext = (
+          guard as unknown as {
+            authorizationContext: AuthorizationContextService;
+          }
+        ).authorizationContext;
+
+        expect(
+          await authorizationContext.canManageClub(USER_ID, MAIN_CLUB_ID),
+        ).toBe(false);
       },
     );
   });
@@ -325,22 +548,445 @@ describe('PermissionsGuard on verify-consent with consent:verify (T3c-B11)', () 
     });
   });
 
-  describe('the seed carries the fallback', () => {
-    const seedMigration = readFileSync(
-      join(
-        __dirname,
-        '../../prisma/migrations/20261022130000_seed_family_permissions/migration.sql',
-      ),
-      'utf8',
-    )
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('--'))
-      .join('\n');
+  describe('verify-only reviewers reach the list and the consent form, never approve', () => {
+    // Uploading the form is NOT a review route: approvers only (ruling W5).
+    const REVIEW_ROUTES = [
+      'listPending',
+      'getConsentEvidence',
+      'verifyConsent',
+    ] as const;
+
+    const reviewers = () => [
+      {
+        label: 'CLUB secretary (own section)',
+        ...setup(
+          clubRoleProfile(
+            'secretary',
+            ['consent:verify'],
+            MAIN_CLUB_ID,
+            SECTION_ID,
+          ),
+        ),
+      },
+      {
+        label: 'GLOBAL coordinator (assigned section)',
+        ...setup(
+          globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+          { assignments: [sectionAssignment(SECTION_ID)] },
+        ),
+      },
+    ];
+
+    it.each(REVIEW_ROUTES)(
+      '%s lets every verify-only reviewer in',
+      async (route) => {
+        for (const { label, guard } of reviewers()) {
+          expect({ label, ...(await decide(guard, route)) }).toEqual({
+            label,
+            allowed: true,
+          });
+        }
+      },
+    );
+
+    it.each(['approve', 'reject', 'uploadConsentEvidence'] as const)(
+      '%s denies every verify-only reviewer before any scope check (W5: uploading the form is for approvers)',
+      async (route) => {
+        for (const { label, guard } of reviewers()) {
+          expect({ label, ...(await decide(guard, route)) }).toEqual({
+            label,
+            allowed: false,
+            code: ErrorCode.GUARD_PERMISSION_DENIED,
+          });
+        }
+      },
+    );
+
+    it.each(['listPending', 'getConsentEvidence'] as const)(
+      '%s denies a coordinator outside their assigned sections',
+      async (route) => {
+        const { guard } = setup(
+          globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+          { assignments: [sectionAssignment(99)] },
+        );
+
+        expect(await decide(guard, route)).toEqual({
+          allowed: false,
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      },
+    );
+
+    it('verify-consent with approve:true is 403 MR_APPROVE_PERMISSION_REQUIRED for a coordinator the guard let in', async () => {
+      const { guard } = setup(
+        globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+        HOME_TERRITORY,
+        { assignments: [sectionAssignment(SECTION_ID)] },
+      );
+      const request = newRequest();
+      expect(
+        await guard.canActivate(handlerContext('verifyConsent', request)),
+      ).toBe(true);
+      const verification = { verify: jest.fn() };
+      const controller = new MembershipRequestsController(
+        {} as never,
+        {} as never,
+        verification as never,
+      );
+
+      const error = await controller
+        .verifyConsent(
+          SECTION_ID,
+          ASSIGNMENT_ID,
+          { confirm_paper_form_reviewed: true, approve: true },
+          { sub: USER_ID },
+          request as never,
+        )
+        .then(
+          () => undefined,
+          (e: { code?: string }) => e,
+        );
+
+      expect(error?.code).toBe(ErrorCode.MR_APPROVE_PERMISSION_REQUIRED);
+      expect(verification.verify).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the guard marks requests it let in ONLY through the coordinator path (the list is filtered for them)', () => {
+    const run = async (
+      guard: PermissionsGuard,
+      handler: Handler,
+      request: Record<string, unknown>,
+    ) => {
+      try {
+        return await guard.canActivate(handlerContext(handler, request));
+      } catch {
+        return false;
+      }
+    };
+
+    it.each(['listPending', 'getConsentEvidence'] as const)(
+      '%s: a coordinator inside their assignment gets coordinatorSectionGrant = true',
+      async (handler) => {
+        const { guard } = setup(
+          globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+          HOME_TERRITORY,
+          { assignments: [sectionAssignment(SECTION_ID)] },
+        );
+        const request = newRequest();
+
+        expect(await run(guard, handler, request)).toBe(true);
+        expect(request.coordinatorSectionGrant).toBe(true);
+      },
+    );
+
+    it('a club role reaching its own section is NOT marked', async () => {
+      const { guard } = setup(
+        clubRoleProfile(
+          'secretary',
+          ['consent:verify'],
+          MAIN_CLUB_ID,
+          SECTION_ID,
+        ),
+      );
+      const request = newRequest();
+
+      expect(await run(guard, 'listPending', request)).toBe(true);
+      expect(request.coordinatorSectionGrant).toBeUndefined();
+    });
+
+    it('a territory manager (canManageClub) is NOT marked', async () => {
+      const { guard } = setup(
+        globalRoleProfile(
+          'admin',
+          ['club_members:approve', 'consent:verify'],
+          HOME_TERRITORY,
+        ),
+      );
+      const request = newRequest();
+
+      expect(await run(guard, 'listPending', request)).toBe(true);
+      expect(request.coordinatorSectionGrant).toBeUndefined();
+    });
+
+    it('a denied coordinator is not marked', async () => {
+      const { guard } = setup(
+        globalRoleProfile('coordinator', ['consent:verify'], HOME_TERRITORY),
+        HOME_TERRITORY,
+        { assignments: [sectionAssignment(99)] },
+      );
+      const request = newRequest();
+
+      expect(await run(guard, 'listPending', request)).toBe(false);
+      expect(request.coordinatorSectionGrant).toBeUndefined();
+    });
+  });
+
+  describe('C1: for a coordinator the ASSIGNMENT is the authority, never their active club context', () => {
+    // Uploading the form is NOT a review route: approvers only (ruling W5).
+    const REVIEW_ROUTES = [
+      'listPending',
+      'getConsentEvidence',
+      'verifyConsent',
+    ] as const;
+
+    const run = async (
+      guard: PermissionsGuard,
+      handler: Handler,
+      request: Record<string, unknown>,
+    ) => {
+      try {
+        return {
+          allowed: await guard.canActivate(handlerContext(handler, request)),
+        };
+      } catch (error) {
+        return { allowed: false, code: (error as { code?: string }).code };
+      }
+    };
+
+    const controllerWithSpies = () => {
+      const service = { listPending: jest.fn().mockResolvedValue([]) };
+      const verification = {
+        verify: jest.fn().mockResolvedValue({ approve_error: null }),
+      };
+      const controller = new MembershipRequestsController(
+        service as never,
+        {} as never,
+        verification as never,
+      );
+      return { controller, service, verification };
+    };
+
+    const approveCall = (
+      controller: MembershipRequestsController,
+      request: Record<string, unknown>,
+    ) =>
+      controller
+        .verifyConsent(
+          SECTION_ID,
+          ASSIGNMENT_ID,
+          { confirm_paper_form_reviewed: true, approve: true },
+          { sub: USER_ID },
+          request as never,
+        )
+        .then(
+          () => undefined,
+          (e: { code?: string }) => e,
+        );
+
+    it.each(REVIEW_ROUTES)(
+      '%s: a coordinator with NO assignment who is a plain member of the section is 403 GUARD_CLUB_SCOPE_REQUIRED',
+      async (route) => {
+        const { guard } = setup(
+          coordinatorWithClubRoleProfile(
+            'member',
+            [],
+            MAIN_CLUB_ID,
+            SECTION_ID,
+          ),
+        );
+        const request = newRequest();
+
+        expect(await run(guard, route, request)).toEqual({
+          allowed: false,
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+        expect(request.coordinatorSectionGrant).toBeUndefined();
+      },
+    );
+
+    it.each(REVIEW_ROUTES)(
+      '%s: the same member-coordinator WITH a covering assignment passes through the coordinator path (marked)',
+      async (route) => {
+        const { guard } = setup(
+          coordinatorWithClubRoleProfile(
+            'member',
+            [],
+            MAIN_CLUB_ID,
+            SECTION_ID,
+          ),
+          HOME_TERRITORY,
+          { assignments: [sectionAssignment(SECTION_ID)] },
+        );
+        const request = newRequest();
+
+        expect(await run(guard, route, request)).toEqual({ allowed: true });
+        expect(request.coordinatorSectionGrant).toBe(true);
+      },
+    );
+
+    it('the member-coordinator with a covering assignment is verify-only: filtered list, approve:true is 403 MR_APPROVE_PERMISSION_REQUIRED', async () => {
+      const { guard } = setup(
+        coordinatorWithClubRoleProfile('member', [], MAIN_CLUB_ID, SECTION_ID),
+        HOME_TERRITORY,
+        { assignments: [sectionAssignment(SECTION_ID)] },
+      );
+      const { controller, service, verification } = controllerWithSpies();
+
+      const listRequest = newRequest();
+      expect(await run(guard, 'listPending', listRequest)).toEqual({
+        allowed: true,
+      });
+      await controller.listPending(SECTION_ID, { sub: USER_ID }, listRequest);
+      expect(service.listPending).toHaveBeenCalledWith(SECTION_ID, USER_ID, {
+        verifyOnly: true,
+      });
+
+      const verifyRequest = newRequest();
+      expect(await run(guard, 'verifyConsent', verifyRequest)).toEqual({
+        allowed: true,
+      });
+      expect((await approveCall(controller, verifyRequest))?.code).toBe(
+        ErrorCode.MR_APPROVE_PERMISSION_REQUIRED,
+      );
+      expect(verification.verify).not.toHaveBeenCalled();
+    });
+
+    it('a coordinator who is the DIRECTOR of the section keeps full director powers (club role alone satisfies it, never marked)', async () => {
+      const { guard, prisma } = setup(
+        coordinatorWithClubRoleProfile(
+          'director',
+          ['club_members:approve', 'consent:verify'],
+          MAIN_CLUB_ID,
+          SECTION_ID,
+        ),
+      );
+      const { controller, service, verification } = controllerWithSpies();
+
+      for (const route of [
+        ...REVIEW_ROUTES,
+        'uploadConsentEvidence',
+        'approve',
+        'reject',
+      ] as const) {
+        const request = newRequest();
+        expect({ route, ...(await run(guard, route, request)) }).toEqual({
+          route,
+          allowed: true,
+        });
+        expect(request.coordinatorSectionGrant).toBeUndefined();
+      }
+      expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
+
+      const listRequest = newRequest();
+      await run(guard, 'listPending', listRequest);
+      await controller.listPending(SECTION_ID, { sub: USER_ID }, listRequest);
+      expect(service.listPending).toHaveBeenCalledWith(SECTION_ID, USER_ID, {
+        verifyOnly: false,
+      });
+
+      const verifyRequest = newRequest();
+      await run(guard, 'verifyConsent', verifyRequest);
+      expect(await approveCall(controller, verifyRequest)).toBeUndefined();
+      expect(verification.verify).toHaveBeenCalledTimes(1);
+    });
+
+    it('a coordinator who is a verify-only SECRETARY of the section passes by the club role (not marked, verify-only by permissions)', async () => {
+      const { guard, prisma } = setup(
+        coordinatorWithClubRoleProfile(
+          'secretary',
+          ['consent:verify'],
+          MAIN_CLUB_ID,
+          SECTION_ID,
+        ),
+      );
+      const request = newRequest();
+
+      expect(await run(guard, 'listPending', request)).toEqual({
+        allowed: true,
+      });
+      expect(request.coordinatorSectionGrant).toBeUndefined();
+      expect(prisma.coordinator_assignments.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('a territory from ANOTHER global role does not let the coordinator role permission through without an assignment', async () => {
+      const profile = globalRoleProfile(
+        'assistant-lf',
+        ['clubs:read'],
+        HOME_TERRITORY,
+      );
+      profile.authorization.grants.global_roles.push({
+        role_name: 'coordinator',
+        permissions: ['consent:verify'],
+        scope: globalScope(HOME_TERRITORY),
+      });
+      profile.authorization.effective.permissions = [
+        'clubs:read',
+        'consent:verify',
+      ];
+      const { guard } = setup(profile);
+      const request = newRequest();
+
+      expect(await run(guard, 'listPending', request)).toEqual({
+        allowed: false,
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+    });
+
+    it('S4: approve from ANOTHER club active role + a covering assignment: the guard marks it and the controller keeps it verify-only', async () => {
+      const { guard } = setup(
+        coordinatorWithClubRoleProfile(
+          'director',
+          ['club_members:approve', 'consent:verify'],
+          OTHER_MAIN_CLUB_ID,
+          30,
+        ),
+        HOME_TERRITORY,
+        { assignments: [sectionAssignment(SECTION_ID)] },
+      );
+      const { controller, service, verification } = controllerWithSpies();
+
+      const listRequest = newRequest();
+      expect(await run(guard, 'listPending', listRequest)).toEqual({
+        allowed: true,
+      });
+      expect(listRequest.coordinatorSectionGrant).toBe(true);
+      await controller.listPending(SECTION_ID, { sub: USER_ID }, listRequest);
+      expect(service.listPending).toHaveBeenCalledWith(SECTION_ID, USER_ID, {
+        verifyOnly: true,
+      });
+
+      const verifyRequest = newRequest();
+      expect(await run(guard, 'verifyConsent', verifyRequest)).toEqual({
+        allowed: true,
+      });
+      expect((await approveCall(controller, verifyRequest))?.code).toBe(
+        ErrorCode.MR_APPROVE_PERMISSION_REQUIRED,
+      );
+      expect(verification.verify).not.toHaveBeenCalled();
+      for (const route of ['approve', 'uploadConsentEvidence'] as const) {
+        expect({ route, ...(await run(guard, route, newRequest())) }).toEqual({
+          route,
+          allowed: false,
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      }
+    });
+  });
+
+  describe('the seed grants coordinators consent:verify', () => {
+    const readSql = (migration: string): string =>
+      readFileSync(
+        join(__dirname, `../../prisma/migrations/${migration}/migration.sql`),
+        'utf8',
+      )
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n');
 
     it.each(['coordinator', 'zone-coordinator', 'general-coordinator'])(
-      'the migration does not grant consent:verify to %s',
+      'the B11 seed (20261022130000) still does not name %s; 20261023120000 grants it consent:verify',
       (role) => {
-        expect(seedMigration).not.toContain(`'${role}'`);
+        expect(readSql('20261022130000_seed_family_permissions')).not.toContain(
+          `'${role}'`,
+        );
+        const grant = readSql(
+          '20261023120000_grant_consent_verify_to_coordinators',
+        );
+        expect(grant).toContain(`'${role}'`);
+        expect(grant).toContain("p.permission_name = 'consent:verify'");
       },
     );
   });

@@ -44,6 +44,7 @@ describe('CoordinationService', () => {
       club_section_id: 99,
       clubs: { local_field_id: 10 },
     });
+    prisma.club_sections.findMany.mockResolvedValue([{ club_section_id: 99 }]);
     prisma.club_role_assignments.findFirst.mockResolvedValue({
       club_section_id: 99,
     });
@@ -156,17 +157,19 @@ describe('CoordinationService', () => {
 
   it('does not create a second GENERAL when one already exists', async () => {
     stubManageAccess();
-    prisma.coordinator_assignments.findFirst.mockImplementation((args: {
-      where?: { assignment_type?: string; user_id?: string };
-    }) => {
-      if (args.where?.assignment_type === coordinator_assignment_type.GENERAL) {
-        return Promise.resolve({
-          assignment_id: 'existing-general',
-          user_id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-        });
-      }
-      return Promise.resolve(null);
-    });
+    prisma.coordinator_assignments.findFirst.mockImplementation(
+      (args: { where?: { assignment_type?: string; user_id?: string } }) => {
+        if (
+          args.where?.assignment_type === coordinator_assignment_type.GENERAL
+        ) {
+          return Promise.resolve({
+            assignment_id: 'existing-general',
+            user_id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
     prisma.users.findMany.mockResolvedValue([
       {
         user_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
