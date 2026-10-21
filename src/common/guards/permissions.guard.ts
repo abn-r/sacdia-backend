@@ -34,6 +34,7 @@ import {
 } from './sensitive-user-subresource-policy';
 import {
   COORDINATOR_GLOBAL_ROLE_NAMES,
+  coordinatorRolePermissions,
   coordinatorScopeIncludesSection,
 } from '../authorization/coordinator-section-scope';
 
@@ -722,12 +723,8 @@ export class PermissionsGuard implements CanActivate {
     requirement: PermissionRequirement,
     clubSectionId: number,
   ): Promise<boolean> {
-    const coordinatorPermissions = new Set(
-      resolved.authorization.grants.global_roles
-        .filter((grant) =>
-          COORDINATOR_GLOBAL_ROLE_NAMES.has(grant.role_name.toLowerCase()),
-        )
-        .flatMap((grant) => grant.permissions),
+    const coordinatorPermissions = coordinatorRolePermissions(
+      resolved.authorization.grants.global_roles,
     );
     const satisfied =
       requirement.mode === 'any'

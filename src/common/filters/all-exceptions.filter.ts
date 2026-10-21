@@ -44,6 +44,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+
+    // The timeout middleware (or a client abort) may already have answered. A
+    // late result/error then reaches us with a closed response: writing again
+    // throws ERR_HTTP_HEADERS_SENT. Nothing left to send, just note it.
+    if (response.headersSent) {
+      this.logger.debug(
+        `Response already sent for ${request.method} ${request.url}; dropping late error: ${
+          exception instanceof Error ? exception.message : 'Unknown error'
+        }`,
+      );
+      return;
+    }
+
     const isProduction = process.env.NODE_ENV === 'production';
 
     const errorMessage =

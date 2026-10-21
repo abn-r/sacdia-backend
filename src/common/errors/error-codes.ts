@@ -820,6 +820,7 @@ export enum ErrorCode {
 
   // ── Cron Alerts ────────────────────────────────────────────────────────────
   CRON_ALERT_NOT_FOUND = 'CRON_ALERT_NOT_FOUND',
+  CRON_JOB_NOT_FOUND = 'CRON_JOB_NOT_FOUND',
 
   // ── Notifications ──────────────────────────────────────────────────────────
   NOTIF_SEND_FORBIDDEN = 'NOTIF_SEND_FORBIDDEN',

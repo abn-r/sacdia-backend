@@ -230,7 +230,7 @@ export class FcmTokensService {
    * Limpiar tokens viejos (no usados en 90 días).
    * Se ejecuta automáticamente todos los domingos a las 3 AM.
    */
-  @Cron('0 3 * * 0', { name: 'fcm-tokens-cleanup' })
+  @Cron('0 3 * * 0', { name: 'fcm-tokens-stale-cleanup' })
   async cleanupOldTokens(): Promise<void> {
     this.logger.log(
       'FCM token cleanup cron triggered — removing tokens unused for 90+ days...',

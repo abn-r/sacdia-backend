@@ -1300,11 +1300,22 @@ describe('Director-created minor E2E', () => {
         guardianship_id: custodyId,
         consent_status: 'verified',
         verified_by_user_id: COORDINATOR,
+        verification_method: 'coordinator_paper_form',
+      });
+      expect(guardianships.find({ guardianship_id: custodyId })).toMatchObject({
+        verification_method: 'coordinator_paper_form',
       });
       expect(response.body.data.assignment).toBeNull();
       expect(
         audits.rows.find((row) => row.action === 'consent_verified'),
-      ).toMatchObject({ actor_user_id: COORDINATOR, target_user_id: minorId });
+      ).toMatchObject({
+        actor_user_id: COORDINATOR,
+        target_user_id: minorId,
+        summary: 'Consentimiento del tutor verificado por el coordinador',
+        changes: expect.objectContaining({
+          verification_method: 'coordinator_paper_form',
+        }),
+      });
       expect(assignments.find({ assignment_id: assignmentId })!.status).toBe(
         'pending',
       );
@@ -1514,6 +1525,40 @@ describe('Director-created minor E2E', () => {
             revoked_at: null,
           }),
         ]);
+      });
+    });
+
+    describe('the coordinator consent queue (GET /coordination/me/consent-pending)', () => {
+      // No @ActingScope on the route: every restricted principal is denied by
+      // default, before any coordinator check runs.
+      const queuePath = api('/coordination/me/consent-pending');
+
+      it('a guardian ACTING for the child is 403 ACTING_FOR_SCOPE_DENIED', async () => {
+        const response = await request(app.getHttpServer())
+          .get(queuePath)
+          .set({ ...bearer(GUARDIAN), 'X-Acting-For': CHILD });
+
+        expect(response.status).toBe(403);
+        expect(errorCode(response.body)).toBe('ACTING_FOR_SCOPE_DENIED');
+      });
+
+      it('a supervised teen and a linked device are 403 PRINCIPAL_SCOPE_DENIED', async () => {
+        const teenToken = jwtService.sign({
+          sub: TEEN,
+          email: `${TEEN}@test.local`,
+          ...accessJwtClaims(),
+        });
+        const teen = await request(app.getHttpServer())
+          .get(queuePath)
+          .set({ Authorization: `Bearer ${teenToken}` });
+        const device = await request(app.getHttpServer())
+          .get(queuePath)
+          .set(asDevice());
+
+        for (const response of [teen, device]) {
+          expect(response.status).toBe(403);
+          expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');
+        }
       });
     });
 

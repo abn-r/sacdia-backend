@@ -10,6 +10,7 @@ import { AdminReferenceController } from './admin-reference.controller';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminPhaseECatalogsController } from './admin-phase-e-catalogs.controller';
 import { AdminCronAlertsController } from './admin-cron-alerts.controller';
+import { AdminCronJobsController } from './cron-jobs/admin-cron-jobs.controller';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminFamilyAccessService } from './admin-family-access.service';
 import { AdminCamporeeEventTypesService } from './admin-camporee-event-types.service';
@@ -19,6 +20,8 @@ import { AdminReferenceService } from './admin-reference.service';
 import { AdminUsersService } from './admin-users.service';
 import { AdminPhaseECatalogsService } from './admin-phase-e-catalogs.service';
 import { AdminCronAlertsService } from './admin-cron-alerts.service';
+import { AdminCronJobsService } from './cron-jobs/admin-cron-jobs.service';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { MasterHonorsQueueModule } from '../honors/master-honors-queue.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CoordinationModule } from '../coordination/coordination.module';
@@ -43,6 +46,8 @@ import { LinkedDeviceModule } from '../auth/device/linked-device.module';
     GuardianshipsModule,
     // LinkedDeviceRevocation: an admin session revoke unlinks the device too.
     LinkedDeviceModule,
+    // AuditLogsService: the admin.cron_job.run row of a manual cron run.
+    AuditLogsModule,
   ],
   controllers: [
     AdminAuthController,
@@ -53,6 +58,7 @@ import { LinkedDeviceModule } from '../auth/device/linked-device.module';
     AdminUsersController,
     AdminPhaseECatalogsController,
     AdminCronAlertsController,
+    AdminCronJobsController,
   ],
   providers: [
     AdminAuthService,
@@ -64,6 +70,9 @@ import { LinkedDeviceModule } from '../auth/device/linked-device.module';
     AdminFamilyAccessService,
     AdminPhaseECatalogsService,
     AdminCronAlertsService,
+    // Resolves the @Cron providers lazily (ModuleRef, strict:false): no module
+    // imports needed for the allowlisted jobs.
+    AdminCronJobsService,
   ],
 })
 export class AdminModule {}

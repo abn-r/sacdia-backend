@@ -1,5 +1,6 @@
 import { coordinator_assignment_type } from '@prisma/client';
 import {
+  coordinatorRolePermissions,
   coordinatorScopeIncludesSection,
   resolveCoordinatorAssignmentSectionIds,
   type CoordinatorScopePrisma,
@@ -377,5 +378,32 @@ describe('resolveCoordinatorAssignmentSectionIds', () => {
       }),
     ).toEqual([]);
     expect(prisma.coordination_zone_districts.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('coordinatorRolePermissions (what the coordinator ROLES carry)', () => {
+  it('collects only the permissions of coordinator / zone-coordinator / general-coordinator roles, case-insensitive', () => {
+    const permissions = coordinatorRolePermissions([
+      { role_name: 'Coordinator', permissions: ['consent:verify'] },
+      { role_name: 'zone-coordinator', permissions: ['clubs:read'] },
+      { role_name: 'general-coordinator', permissions: ['reports:read'] },
+      { role_name: 'admin', permissions: ['users:read_detail'] },
+      { role_name: 'user', permissions: ['self:read'] },
+    ]);
+
+    expect([...permissions].sort()).toEqual([
+      'clubs:read',
+      'consent:verify',
+      'reports:read',
+    ]);
+  });
+
+  it('is empty without a coordinator role, even when another role carries the permission', () => {
+    expect(
+      coordinatorRolePermissions([
+        { role_name: 'super-admin', permissions: ['consent:verify'] },
+      ]).size,
+    ).toBe(0);
+    expect(coordinatorRolePermissions([]).size).toBe(0);
   });
 });

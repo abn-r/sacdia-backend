@@ -17,6 +17,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiQuery,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
@@ -33,7 +34,13 @@ import {
 } from '../common/guards';
 import { CoordinationService } from './coordination.service';
 import {
+  CoordinatorConsentQueueService,
+  type GlobalRoleGrant,
+} from './coordinator-consent-queue.service';
+import {
   BackfillCoordinatorAssignmentsDto,
+  CONSENT_QUEUE_DEFAULT_LIMIT,
+  CoordinatorConsentPendingQueryDto,
   CreateCoordinationZoneDto,
   CreateCoordinatorAssignmentDto,
   UpdateCoordinationZoneDto,
@@ -41,6 +48,11 @@ import {
 } from './dto';
 
 type AuthenticatedRequest = Request & { user: { sub: string } };
+
+/** What PermissionsGuard leaves on the request after a successful check. */
+type AuthorizedRequest = AuthenticatedRequest & {
+  authorization?: { grants?: { global_roles?: GlobalRoleGrant[] } };
+};
 
 @ApiTags('admin-coordination')
 @ApiBearerAuth()
@@ -215,7 +227,10 @@ export class AdminCoordinationController {
 @UseGuards(JwtAuthGuard)
 @Controller('coordination')
 export class CoordinationController {
-  constructor(private readonly coordinationService: CoordinationService) {}
+  constructor(
+    private readonly coordinationService: CoordinationService,
+    private readonly consentQueue: CoordinatorConsentQueueService,
+  ) {}
 
   @Get('me/scope')
   // Self-scoped read: only resolves the caller's own assignments (req.user.sub),
@@ -227,6 +242,112 @@ export class CoordinationController {
   async getMyCoordinatorScope(@Req() req: AuthenticatedRequest) {
     const data = await this.coordinationService.resolveCoordinatorScope(
       req.user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('me/consent-pending')
+  // consent:verify as a GLOBAL permission (resource `global`: club roles do not
+  // count). The queue then demands that a coordinator ROLE carries it and that
+  // active assignments cover at least one section. No @ActingScope: guardians
+  // acting, supervised teens and linked devices are denied by default.
+  @RequirePermissions('consent:verify')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary:
+      'Fichas de consentimiento por verificar en todas las secciones del coordinador',
+    description:
+      'Cola de verificación de un coordinador: en TODAS las secciones que cubren sus coordinator_assignments activas (misma expansión que GET /coordination/me/scope, solo territorio activo), las solicitudes que la lista por sección muestra a un revisor solo-verificación: menores con consentimiento pendiente de verificar Y ficha vigente subida. Se omiten adultos, consentimientos verificados y menores sin ficha. Cada item es el item de GET /club-sections/:id/membership-requests (mismo bloque `consent`, incluidos viewer_can_verify / viewer_verify_block) más club_name, club_type_name, district_name y consent_form_uploaded_at. Orden: ficha vigente más antigua primero (la que más espera), luego solicitud más antigua. Paginación por limit/offset; total y by_section cuentan la cola completa. Ambos cuentan SOLICITUDES pendientes, no menores distintos: un menor con solicitudes pendientes en dos secciones cubiertas cuenta dos veces (y aparece dos veces en items), y una sola verificación de su consentimiento limpia ambas.',
+  })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Página de la cola de verificación.',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          items: [
+            {
+              assignment_id: '3f0c8a52-6a58-4b1e-9d2a-0e5b7c1d9a11',
+              user_id: '8d1f0b34-2c6e-4f0a-bb7e-5a3c9e2d4f10',
+              club_section_id: 10,
+              status: 'pending',
+              created_at: '2026-10-01T12:00:00.000Z',
+              expires_at: '2026-10-09T12:00:00.000Z',
+              effective_expires_at: '2026-10-31T12:00:00.000Z',
+              consent_form_uploaded_at: '2026-10-03T09:30:00.000Z',
+              club_name: 'Club Orion',
+              club_type_name: 'Conquistadores',
+              district_name: 'Distrito Norte',
+              users: {
+                user_id: '8d1f0b34-2c6e-4f0a-bb7e-5a3c9e2d4f10',
+                name: 'Mateo',
+                email: null,
+                paternal_last_name: 'Pérez',
+                maternal_last_name: 'López',
+                user_image: null,
+              },
+              roles: {
+                role_id: 'c4d2e8f1-5a6b-4c7d-9e0f-1a2b3c4d5e6f',
+                role_name: 'member',
+              },
+              consent: {
+                required: true,
+                dependent: true,
+                guardian_linked: false,
+                guardianship_id: 'b2f6c9a0-1d3e-4a7b-8c5d-6e9f0a1b2c3d',
+                status: 'pending',
+                evidence_uploaded: true,
+                guardians: [
+                  {
+                    display_name: 'Club Orion',
+                    relationship_type_name: null,
+                    is_primary: true,
+                  },
+                ],
+                viewer_can_verify: true,
+                viewer_verify_block: null,
+              },
+            },
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+          by_section: [
+            {
+              club_section_id: 10,
+              club_name: 'Club Orion',
+              club_type_name: 'Conquistadores',
+              district_name: 'Distrito Norte',
+              pending_consent_count: 1,
+            },
+          ],
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'limit (1..100) u offset (>= 0) inválidos',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'GUARD_PERMISSION_DENIED: consent:verify no proviene de un rol coordinador (coordinator, zone-coordinator, general-coordinator); los demás revisores usan la lista por sección. GUARD_CLUB_SCOPE_REQUIRED: el coordinador no tiene asignaciones activas que cubran alguna sección activa. ACTING_FOR_SCOPE_DENIED / PRINCIPAL_SCOPE_DENIED: tutor actuando, adolescente supervisado o dispositivo vinculado.',
+  })
+  async listMyPendingConsents(
+    @Req() req: AuthorizedRequest,
+    @Query() query: CoordinatorConsentPendingQueryDto,
+  ) {
+    const data = await this.consentQueue.listForCoordinator(
+      req.user.sub,
+      req.authorization?.grants?.global_roles,
+      {
+        limit: query.limit ?? CONSENT_QUEUE_DEFAULT_LIMIT,
+        offset: query.offset ?? 0,
+      },
     );
     return { status: 'success', data };
   }

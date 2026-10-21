@@ -62,7 +62,19 @@ export interface VerifyConsentOptions {
    * an unknown request, like the consent-evidence routes.
    */
   verifyOnly?: boolean;
+  /**
+   * The verifier reached the section through the coordinator path (the guard's
+   * `coordinatorSectionGrant`), not through a club role. Records the
+   * verification as `coordinator_paper_form` instead of `director_paper_form`.
+   */
+  viaCoordinator?: boolean;
 }
+
+/** `guardianships.verification_method` for a paper form verified by a club role. */
+export const VERIFICATION_METHOD_DIRECTOR_PAPER_FORM = 'director_paper_form';
+/** `guardianships.verification_method` for a paper form verified by a coordinator. */
+export const VERIFICATION_METHOD_COORDINATOR_PAPER_FORM =
+  'coordinator_paper_form';
 
 const VERIFY_ROW_SELECT = {
   guardianship_id: true,
@@ -159,6 +171,9 @@ export class ConsentVerificationService {
         assignmentId,
         verifierId,
         options.verifyOnly === true,
+        options.viaCoordinator === true
+          ? VERIFICATION_METHOD_COORDINATOR_PAPER_FORM
+          : VERIFICATION_METHOD_DIRECTOR_PAPER_FORM,
       ),
     );
 
@@ -208,6 +223,7 @@ export class ConsentVerificationService {
     assignmentId: string,
     verifierId: string,
     verifyOnlyReviewer: boolean,
+    verificationMethod: string,
   ): Promise<VerifyTransactionResult> {
     // The request decides WHICH dependent to lock; its state is re-read below.
     const probe = await findSectionAssignment(tx, clubSectionId, assignmentId);
@@ -320,7 +336,7 @@ export class ConsentVerificationService {
         consent_status: 'verified',
         verified_by_user_id: verifierId,
         verified_at: now,
-        verification_method: 'director_paper_form',
+        verification_method: verificationMethod,
         modified_at: now,
       },
     });
@@ -349,6 +365,7 @@ export class ConsentVerificationService {
       assignmentId,
       custody: row.is_custodian,
       promoted,
+      verificationMethod,
       at: now,
     });
 
@@ -359,7 +376,7 @@ export class ConsentVerificationService {
         consent_status: 'verified',
         verified_at: now.toISOString(),
         verified_by_user_id: verifierId,
-        verification_method: 'director_paper_form',
+        verification_method: verificationMethod,
       },
       newlyVerified: true,
       alreadyApproved: null,
@@ -523,6 +540,7 @@ export class ConsentVerificationService {
       assignmentId: string;
       custody: boolean;
       promoted: string[];
+      verificationMethod: string;
       at: Date;
     },
   ): Promise<void> {
@@ -536,9 +554,13 @@ export class ConsentVerificationService {
         actor_user_id: input.verifierId,
         actor_kind: 'user',
         target_user_id: input.dependentId,
-        summary: 'Consentimiento del tutor verificado por el director',
+        summary:
+          input.verificationMethod ===
+          VERIFICATION_METHOD_COORDINATOR_PAPER_FORM
+            ? 'Consentimiento del tutor verificado por el coordinador'
+            : 'Consentimiento del tutor verificado por el director',
         changes: {
-          verification_method: 'director_paper_form',
+          verification_method: input.verificationMethod,
           evidence_id: input.evidenceId,
           club_section_id: input.clubSectionId,
           assignment_id: input.assignmentId,

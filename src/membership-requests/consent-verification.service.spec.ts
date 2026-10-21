@@ -270,6 +270,66 @@ describe('ConsentVerificationService.verify', () => {
       });
     });
 
+    it('a verifier through the coordinator path records coordinator_paper_form in the update, the returned row and the audit', async () => {
+      const s = setup();
+
+      const result = await s.service.verify(
+        SECTION,
+        ASSIGNMENT,
+        DIRECTOR,
+        dto({ approve: false }),
+        { verifyOnly: true, viaCoordinator: true },
+      );
+
+      expect(
+        s.tx.guardianships.updateMany.mock.calls[0][0].data.verification_method,
+      ).toBe('coordinator_paper_form');
+      expect(result.guardianship.verification_method).toBe(
+        'coordinator_paper_form',
+      );
+      expect(s.tx.audit_logs.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          summary: 'Consentimiento del tutor verificado por el coordinador',
+          changes: expect.objectContaining({
+            verification_method: 'coordinator_paper_form',
+          }),
+        }),
+      });
+    });
+
+    it('a club-role verifier (viaCoordinator false or absent) keeps director_paper_form and the director summary', async () => {
+      for (const options of [
+        { verifyOnly: true, viaCoordinator: false },
+        { verifyOnly: true },
+      ]) {
+        const s = setup();
+
+        const result = await s.service.verify(
+          SECTION,
+          ASSIGNMENT,
+          DIRECTOR,
+          dto({ approve: false }),
+          options,
+        );
+
+        expect(
+          s.tx.guardianships.updateMany.mock.calls[0][0].data
+            .verification_method,
+        ).toBe('director_paper_form');
+        expect(result.guardianship.verification_method).toBe(
+          'director_paper_form',
+        );
+        expect(s.tx.audit_logs.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            summary: 'Consentimiento del tutor verificado por el director',
+            changes: expect.objectContaining({
+              verification_method: 'director_paper_form',
+            }),
+          }),
+        });
+      }
+    });
+
     it('approve=false verifies only: no approval, assignment null', async () => {
       const s = setup();
 
