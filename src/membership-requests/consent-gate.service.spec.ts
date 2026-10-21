@@ -724,6 +724,25 @@ describe('ConsentGateService', () => {
       ]);
     });
 
+    it('takes the FIRST primary row of a dependent (oldest, as the block does), ignoring later ones', async () => {
+      const db = makeDb();
+      db.users.findMany.mockResolvedValue([
+        dependentRow(waiting),
+        dependentRow(older),
+      ]);
+      db.guardianships.findMany.mockResolvedValue([
+        // oldest first: the first row of each dependent is the one that counts
+        primary(waiting, { consent_status: 'verified' }),
+        primary(older, { consent_evidences: [{ uploaded_at: OLDER_UPLOAD }] }),
+        primary(waiting),
+        primary(older, { consent_status: 'verified' }),
+      ]);
+
+      const since = await gate.loadVerifyWorkSince(asDb(db), [waiting, older]);
+
+      expect([...since.entries()]).toEqual([[older, OLDER_UPLOAD]]);
+    });
+
     it('reads the live, real PRIMARY rows only, with the current form (one query for every user, oldest row first)', async () => {
       const db = makeDb();
       db.users.findMany.mockResolvedValue([

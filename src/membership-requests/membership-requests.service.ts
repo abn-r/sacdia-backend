@@ -127,9 +127,14 @@ export class MembershipRequestsService {
    * waiting), then by request creation, then id. `total` and `by_section` count
    * the whole queue; `items` is the `limit`/`offset` page.
    *
+   * NOTE: `total` and `by_section[].pending_consent_count` count pending
+   * REQUESTS, not distinct minors. A minor with pending requests in two covered
+   * sections appears (and counts) twice, while a single verification of that
+   * minor's consent clears both.
+   *
    * Bounded reads, whatever the number of sections: ONE lightweight read of the
    * pending requests of every section (ids only), the verify-work lookup for
-   * those users (two queries), then the page alone is read in full and goes
+   * those users (bounded, see loadVerifyWorkSince), then the page alone is read in full and goes
    * through the per-section presenter.
    */
   async listVerifyWorkAcrossSections(

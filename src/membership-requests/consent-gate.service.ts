@@ -289,7 +289,9 @@ export class ConsentGateService {
    *
    * Lighter than the block (no guardians, names or four-eyes facts) so a
    * coordinator queue can rank every candidate and read only the page in full.
-   * Two queries however many users (users + guardianships); none for no users.
+   * Bounded however many users: the minors lookup (findMinorsForActivation:
+   * one users read plus one age-policy read per distinct country) and ONE
+   * guardianships read; none for no users.
    */
   async loadVerifyWorkSince(
     db: Db,
@@ -323,9 +325,17 @@ export class ConsentGateService {
       },
     });
 
+    // Rows come oldest first: the first primary per dependent is the block's
+    // primary. Indexed once so the loop below is O(users + primaries).
+    const primaryOf = new Map<string, (typeof primaries)[number]>();
+    for (const row of primaries) {
+      if (!primaryOf.has(row.dependent_user_id)) {
+        primaryOf.set(row.dependent_user_id, row);
+      }
+    }
+
     for (const userId of withProfile) {
-      // Rows come oldest first: the first primary is the block's primary.
-      const primary = primaries.find((row) => row.dependent_user_id === userId);
+      const primary = primaryOf.get(userId);
       const form = primary?.consent_evidences[0];
       if (
         consentHasVerifyWork({
