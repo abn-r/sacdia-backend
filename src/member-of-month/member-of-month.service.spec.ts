@@ -345,6 +345,114 @@ describe('MemberOfMonthService runEvaluation re-run', () => {
   });
 });
 
+describe('MemberOfMonthService runEvaluation achievement events', () => {
+  const tx = {
+    member_of_month: {
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+  };
+  const mockPrisma = {
+    $queryRaw: jest.fn(),
+    $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
+    member_of_month: { deleteMany: jest.fn() },
+  };
+  // Mirrors the durable-event contract of AchievementsService.emitEvent:
+  // one event_log row (and one queue job) per idempotency key.
+  const eventLog = new Map<string, number>();
+  const mockAchievements = {
+    emitEvent: jest.fn(async (dto: { idempotencyKey?: string }) => {
+      const key = dto.idempotencyKey ?? `anon-${eventLog.size}`;
+      if (!eventLog.has(key)) eventLog.set(key, eventLog.size + 1);
+      return { eventLogId: eventLog.get(key), queued: true };
+    }),
+  };
+
+  const build = () => {
+    const service = new MemberOfMonthService(
+      mockPrisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      mockAchievements as any,
+      {} as any,
+    );
+    (service as any).sendMemberOfMonthNotifications = jest
+      .fn()
+      .mockResolvedValue(undefined);
+    return service;
+  };
+
+  const keysEmitted = () =>
+    mockAchievements.emitEvent.mock.calls.map((c) => c[0].idempotencyKey);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    eventLog.clear();
+  });
+
+  it('emits one keyed event per winner on the first run', async () => {
+    mockPrisma.$queryRaw.mockResolvedValue([
+      { user_id: 'u1', total_points: 10 },
+      { user_id: 'u2', total_points: 10 },
+    ]);
+
+    await build().runEvaluation(5, 3, 2026);
+
+    expect(keysEmitted()).toEqual([
+      'member-of-month:5:2026-3:u1',
+      'member-of-month:5:2026-3:u2',
+    ]);
+    expect(eventLog.size).toBe(2);
+  });
+
+  it('a re-run with the same winners creates no new event log rows', async () => {
+    mockPrisma.$queryRaw.mockResolvedValue([
+      { user_id: 'u1', total_points: 10 },
+      { user_id: 'u2', total_points: 10 },
+    ]);
+    const service = build();
+
+    await service.runEvaluation(5, 3, 2026);
+    await service.runEvaluation(5, 3, 2026);
+
+    expect(mockAchievements.emitEvent).toHaveBeenCalledTimes(4);
+    expect(new Set(keysEmitted()).size).toBe(2);
+    expect(eventLog.size).toBe(2);
+  });
+
+  it('a re-run with a changed winner only adds an event for the new one', async () => {
+    const service = build();
+    mockPrisma.$queryRaw.mockResolvedValueOnce([
+      { user_id: 'u1', total_points: 10 },
+    ]);
+    await service.runEvaluation(5, 3, 2026);
+
+    mockPrisma.$queryRaw.mockResolvedValueOnce([
+      { user_id: 'u2', total_points: 12 },
+    ]);
+    await service.runEvaluation(5, 3, 2026);
+
+    expect([...eventLog.keys()]).toEqual([
+      'member-of-month:5:2026-3:u1',
+      'member-of-month:5:2026-3:u2',
+    ]);
+  });
+
+  it('the same user winning another month gets a new event', async () => {
+    mockPrisma.$queryRaw.mockResolvedValue([
+      { user_id: 'u1', total_points: 10 },
+    ]);
+    const service = build();
+
+    await service.runEvaluation(5, 3, 2026);
+    await service.runEvaluation(5, 4, 2026);
+
+    expect(eventLog.size).toBe(2);
+  });
+});
+
 describe('MemberOfMonthService notifications skip already-notified winners', () => {
   const mockPrisma = {
     club_sections: {

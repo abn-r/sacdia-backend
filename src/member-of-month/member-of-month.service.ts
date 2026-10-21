@@ -450,12 +450,18 @@ export class MemberOfMonthService {
       return notifiedBefore;
     });
 
-    // 5. Emit achievement event for each winner — fire-and-forget, never blocks
+    // 5. Emit achievement event for each winner — fire-and-forget, never blocks.
+    // The event is keyed by section + month + user: threshold/collection handlers
+    // count every achievement_event_log row, so without a key a re-run (manual
+    // run, second tick) would add one more row per winner and inflate
+    // "N times member of the month" progress. With the key, the event log row
+    // and the queue job are created once and a re-run is a no-op.
     for (const winner of winners) {
       try {
         await this.achievementsService.emitEvent({
           userId: winner.user_id,
           eventType: ACHIEVEMENT_EVENTS.MEMBER_OF_MONTH,
+          idempotencyKey: `member-of-month:${sectionId}:${year}-${month}:${winner.user_id}`,
           payload: {
             section_id: sectionId,
             month,
