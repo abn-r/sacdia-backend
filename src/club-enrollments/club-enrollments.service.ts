@@ -312,12 +312,26 @@ export class ClubEnrollmentsService {
   // UPDATE
   // ========================================
 
-  async update(enrollmentId: string, dto: UpdateClubEnrollmentDto) {
+  /**
+   * `sectionId` is the section in the route path. The guard already proved it
+   * belongs to the club the actor was authorized against, so the enrollment
+   * must belong to that same section: otherwise an enrollment of another
+   * section/club could be edited by id. Mismatch answers 404, same as a
+   * missing enrollment, so existence is not leaked.
+   */
+  async update(
+    enrollmentId: string,
+    dto: UpdateClubEnrollmentDto,
+    sectionId?: number,
+  ) {
     const enrollment = await this.prisma.club_enrollments.findUnique({
       where: { club_enrollment_id: enrollmentId },
     });
 
-    if (!enrollment) {
+    if (
+      !enrollment ||
+      (sectionId !== undefined && enrollment.club_section_id !== sectionId)
+    ) {
       throw new AppNotFoundException(ErrorCode.CE_ENROLLMENT_NOT_FOUND);
     }
 

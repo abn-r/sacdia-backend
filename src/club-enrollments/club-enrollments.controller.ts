@@ -39,7 +39,11 @@ export class ClubEnrollmentsController {
 
   @Post()
   @RequirePermissions('club_instances:create')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @AuthorizationResource({
+    type: 'club_section',
+    clubIdParam: 'clubId',
+    idParam: 'sectionId',
+  })
   @ApiOperation({
     summary: 'Crear inscripción anual',
     description:
@@ -70,7 +74,11 @@ export class ClubEnrollmentsController {
 
   @Get()
   @RequirePermissions('club_instances:read')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @AuthorizationResource({
+    type: 'club_section',
+    clubIdParam: 'clubId',
+    idParam: 'sectionId',
+  })
   @ApiOperation({
     summary: 'Listar inscripciones de la sección',
     description:
@@ -104,7 +112,11 @@ export class ClubEnrollmentsController {
   // unscoped (nothing in the app uses it).
   @ActingScope('member:read')
   @RequirePermissions('club_instances:read')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @AuthorizationResource({
+    type: 'club_section',
+    clubIdParam: 'clubId',
+    idParam: 'sectionId',
+  })
   @ApiOperation({
     summary: 'Obtener inscripción vigente',
     description:
@@ -131,7 +143,11 @@ export class ClubEnrollmentsController {
 
   @Patch(':enrollmentId')
   @RequirePermissions('club_instances:update')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @AuthorizationResource({
+    type: 'club_section',
+    clubIdParam: 'clubId',
+    idParam: 'sectionId',
+  })
   @ApiOperation({
     summary: 'Actualizar inscripción',
     description: 'Actualiza dirección y/o días de reunión de la inscripción',
@@ -146,11 +162,16 @@ export class ClubEnrollmentsController {
     description:
       'Forbidden — requires club_instances:update permission for this club',
   })
-  @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Inscripción no encontrada, o la sección no pertenece al club / la inscripción no pertenece a la sección',
+  })
   async update(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
     @Body() dto: UpdateClubEnrollmentDto,
   ) {
-    return this.clubEnrollmentsService.update(enrollmentId, dto);
+    return this.clubEnrollmentsService.update(enrollmentId, dto, sectionId);
   }
 }
