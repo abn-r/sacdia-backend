@@ -55,12 +55,25 @@ describe('migration 20261024120000_allow_coordinator_paper_form', () => {
       ),
       'utf8',
     );
-    const originalList =
+    const match =
       /guardianships_verification_method_ck CHECK \([^()]*IN \(([^)]*)\)/.exec(
         original,
-      )?.[1] ?? '';
-    for (const value of originalList.split(',').map((v) => v.trim())) {
-      expect(statements[1]).toContain(value);
+      );
+    // Fail loudly if the original CHECK is not found: an empty list would make
+    // the superset assertion below pass vacuously.
+    expect(match).not.toBeNull();
+    const originalValues = (match?.[1] ?? '')
+      .split(',')
+      .map((v) => v.trim().replace(/^'|'$/g, ''))
+      .sort();
+    expect(originalValues).toEqual([
+      'director_paper_form',
+      'guardian_invite',
+      'legacy_import',
+      'test_placeholder',
+    ]);
+    for (const value of originalValues) {
+      expect(statements[1]).toContain(`'${value}'`);
     }
   });
 
