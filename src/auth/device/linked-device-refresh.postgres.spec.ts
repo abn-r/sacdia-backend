@@ -36,10 +36,10 @@ const enabled =
 const pgDescribe = enabled ? describe : describe.skip;
 
 if (enabled && databaseUrl) {
-  const host = new URL(databaseUrl).hostname.replace(/^\[|\]$/g, '');
-  if (!['127.0.0.1', 'localhost', '::1'].includes(host)) {
-    throw new Error('LINKED_DEVICE_REFRESH_TEST_DATABASE_MUST_BE_LOOPBACK');
-  }
+  assertLoopbackDatabaseUrl(
+    databaseUrl,
+    'LINKED_DEVICE_REFRESH_TEST_DATABASE_MUST_BE_LOOPBACK',
+  );
 }
 
 const MIGRATIONS = join(__dirname, '..', '..', '..', 'prisma', 'migrations');
