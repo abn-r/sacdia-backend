@@ -357,6 +357,8 @@ export class MemberOfMonthService {
   /**
    * Core evaluation algorithm. Can be called by the cron job or the manual endpoint.
    * Idempotent: deletes existing rows for the section/month/year before inserting new ones.
+   * A re-run (manual run, retry) keeps `notified` for winners who were already
+   * congratulated for that month and only notifies the new ones.
    */
   async runEvaluation(
     sectionId: number,
@@ -420,8 +422,16 @@ export class MemberOfMonthService {
     const maxPoints = Math.max(...scores.map((s) => Number(s.total_points)));
     const winners = scores.filter((s) => Number(s.total_points) === maxPoints);
 
-    // 4. Delete + Insert in a transaction (idempotency)
-    await this.prisma.$transaction(async (tx) => {
+    // 4. Delete + Insert in a transaction (idempotency). Winners already
+    // notified for this month keep notified=true, so a re-run does not
+    // congratulate them (and their directors) a second time.
+    const alreadyNotified = await this.prisma.$transaction(async (tx) => {
+      const previous = await tx.member_of_month.findMany({
+        where: { club_section_id: sectionId, month, year, notified: true },
+        select: { user_id: true },
+      });
+      const notifiedBefore = new Set(previous.map((row) => row.user_id));
+
       await tx.member_of_month.deleteMany({
         where: { club_section_id: sectionId, month, year },
       });
@@ -433,9 +443,11 @@ export class MemberOfMonthService {
           month,
           year,
           total_points: Number(w.total_points),
-          notified: false,
+          notified: notifiedBefore.has(w.user_id),
         })),
       });
+
+      return notifiedBefore;
     });
 
     // 5. Emit achievement event for each winner — fire-and-forget, never blocks
@@ -458,14 +470,21 @@ export class MemberOfMonthService {
       }
     }
 
-    // 6. Send notifications (non-blocking)
-    this.sendMemberOfMonthNotifications(sectionId, winners, month, year).catch(
-      (err) => {
+    // 6. Send notifications (non-blocking). Nothing to say when every winner
+    // was already notified for this month (same result on a re-run).
+    if (winners.some((w) => !alreadyNotified.has(w.user_id))) {
+      this.sendMemberOfMonthNotifications(
+        sectionId,
+        winners,
+        month,
+        year,
+        alreadyNotified,
+      ).catch((err) => {
         this.logger.warn(
           `Failed to send member-of-month notifications: ${err.message}`,
         );
-      },
-    );
+      });
+    }
 
     return { winners, section_id: sectionId, month, year };
   }
@@ -479,6 +498,7 @@ export class MemberOfMonthService {
     winners: MemberResult[],
     month: number,
     year: number,
+    alreadyNotified: ReadonlySet<string> = new Set(),
   ) {
     // Fetch section + club info for notification messages
     const section = await this.prisma.club_sections.findUnique({
@@ -505,6 +525,7 @@ export class MemberOfMonthService {
 
     for (const winner of winners) {
       if (!reachableWinners.has(winner.user_id)) continue;
+      if (alreadyNotified.has(winner.user_id)) continue;
       try {
         // Notify the elected member
         await this.notificationsService.notifySafe(

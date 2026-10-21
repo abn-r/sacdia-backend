@@ -252,3 +252,143 @@ describe('MemberOfMonthService notifications (club data recipients)', () => {
     expect(notified).not.toContain(PENDING_TEEN);
   });
 });
+
+describe('MemberOfMonthService runEvaluation re-run', () => {
+  const sendSpy = jest.fn();
+  const tx = {
+    member_of_month: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+  };
+  const mockPrisma = {
+    $queryRaw: jest.fn(),
+    $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
+    member_of_month: { deleteMany: jest.fn() },
+  };
+  const mockAchievements = {
+    emitEvent: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const build = () => {
+    const service = new MemberOfMonthService(
+      mockPrisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      mockAchievements as any,
+      {} as any,
+    );
+    (service as any).sendMemberOfMonthNotifications = sendSpy;
+    return service;
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sendSpy.mockResolvedValue(undefined);
+    mockPrisma.$queryRaw.mockResolvedValue([
+      { user_id: 'u1', total_points: 10 },
+      { user_id: 'u2', total_points: 10 },
+    ]);
+  });
+
+  it('notifies every winner the first time', async () => {
+    tx.member_of_month.findMany.mockResolvedValue([]);
+
+    await build().runEvaluation(5, 3, 2026);
+
+    expect(tx.member_of_month.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ user_id: 'u1', notified: false }),
+        expect.objectContaining({ user_id: 'u2', notified: false }),
+      ],
+    });
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(sendSpy.mock.calls[0][4]).toEqual(new Set());
+  });
+
+  it('keeps notified=true and sends nothing when a re-run elects the same winners', async () => {
+    tx.member_of_month.findMany.mockResolvedValue([
+      { user_id: 'u1' },
+      { user_id: 'u2' },
+    ]);
+
+    await build().runEvaluation(5, 3, 2026);
+
+    expect(tx.member_of_month.findMany).toHaveBeenCalledWith({
+      where: { club_section_id: 5, month: 3, year: 2026, notified: true },
+      select: { user_id: true },
+    });
+    expect(tx.member_of_month.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ user_id: 'u1', notified: true }),
+        expect.objectContaining({ user_id: 'u2', notified: true }),
+      ],
+    });
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it('only notifies the winner who was not already notified', async () => {
+    tx.member_of_month.findMany.mockResolvedValue([{ user_id: 'u1' }]);
+
+    await build().runEvaluation(5, 3, 2026);
+
+    expect(tx.member_of_month.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ user_id: 'u1', notified: true }),
+        expect.objectContaining({ user_id: 'u2', notified: false }),
+      ],
+    });
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(sendSpy.mock.calls[0][4]).toEqual(new Set(['u1']));
+  });
+});
+
+describe('MemberOfMonthService notifications skip already-notified winners', () => {
+  const mockPrisma = {
+    club_sections: {
+      findUnique: jest.fn().mockResolvedValue({
+        clubs: { club_id: 3, name: 'Club Sur' },
+        club_types: { name: 'Conquistadores' },
+      }),
+    },
+    club_role_assignments: { findMany: jest.fn().mockResolvedValue([]) },
+    users: { findMany: jest.fn().mockResolvedValue([]) },
+    member_of_month: { updateMany: jest.fn().mockResolvedValue({}) },
+  };
+  const mockNotifications = {
+    notifySafe: jest.fn().mockResolvedValue(undefined),
+  };
+  const mockClubDataRecipients = {
+    filterClubDataRecipients: jest.fn((ids: string[]) => Promise.resolve(ids)),
+  };
+
+  it('does not congratulate (nor re-mark) a winner already notified', async () => {
+    jest.clearAllMocks();
+    const service = new MemberOfMonthService(
+      mockPrisma as any,
+      mockNotifications as any,
+      mockClubDataRecipients as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    await (service as any).sendMemberOfMonthNotifications(
+      5,
+      [
+        { user_id: 'old', total_points: 10 },
+        { user_id: 'new', total_points: 10 },
+      ],
+      3,
+      2026,
+      new Set(['old']),
+    );
+
+    const notified = mockNotifications.notifySafe.mock.calls.map((c) => c[0]);
+    expect(notified).toContain('new');
+    expect(notified).not.toContain('old');
+    expect(mockPrisma.member_of_month.updateMany).toHaveBeenCalledTimes(1);
+  });
+});
