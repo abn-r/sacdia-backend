@@ -14,8 +14,15 @@ import {
   planLocalFieldTimezoneBackfill,
 } from '../../scripts/backfill-local-field-timezones';
 import { loadCanonicalGeographicIanaTimezoneCatalog } from './timezone/canonical-geographic-iana-timezone';
+import { assertLoopbackDatabaseUrl } from './testing/loopback-database-url';
 
 const databaseUrl = process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
+if (process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl) {
+  assertLoopbackDatabaseUrl(
+    databaseUrl,
+    'BACKFILL_LOCAL_FIELD_TIMEZONES_APPLY_TEST_DATABASE_MUST_BE_LOOPBACK',
+  );
+}
 const dbIt =
   process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl
     ? it
