@@ -4,6 +4,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import { manualTriggerPayload } from '../common/services/cron-run-context';
 import { MonthlyReportsService } from './monthly-reports.service';
 import {
   BACKGROUND_JOBS_QUEUE,
@@ -57,6 +58,7 @@ export class MonthlyReportsCronService {
       if (this.queue) {
         const jobData: MonthlyReportsAutoGeneratePayload = {
           triggeredAt: new Date().toISOString(),
+          ...manualTriggerPayload(),
         };
         await this.queue.add(
           BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE,

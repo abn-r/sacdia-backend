@@ -651,6 +651,25 @@ describe('teen route walk', () => {
     });
   });
 
+  describe('admin cron jobs (run on demand)', () => {
+    const KEYS = ['GET /admin/cron-jobs', 'POST /admin/cron-jobs/:jobName/run'];
+
+    it.each(KEYS)(
+      '%s exists, carries NO acting scope and is out of reach of every non-user kind',
+      (key) => {
+        const route = routes.find((r) => r.key === key);
+        expect({ key, exists: route !== undefined }).toEqual({
+          key,
+          exists: true,
+        });
+        expect(route!.scope).toBeUndefined();
+        expect(memberReach(route!)).toBeNull();
+        expect(allowedFor(route!, TEEN_SCOPES)).toBe(false);
+        expect(allowedFor(route!, TEEN_PENDING_SCOPES)).toBe(false);
+      },
+    );
+  });
+
   describe('the app teen flows', () => {
     it.each(TEEN_APP_FLOW)(
       '$key is allowed for a verified teen (pending: $pending)',

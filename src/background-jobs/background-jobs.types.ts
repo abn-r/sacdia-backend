@@ -6,6 +6,8 @@
  * tooling, analytics, and processor registration stay cohesive.
  */
 
+import type { ManualTriggerPayload } from '../common/services/cron-run-context';
+
 export const BACKGROUND_JOBS_QUEUE = 'background-jobs';
 
 /**
@@ -28,7 +30,7 @@ export type BackgroundJobName =
 // Per-job payload interfaces
 // ---------------------------------------------------------------------------
 
-export interface MonthlyReportsAutoGeneratePayload {
+export interface MonthlyReportsAutoGeneratePayload extends ManualTriggerPayload {
   triggeredAt: string; // ISO 8601
 }
 
@@ -39,13 +41,13 @@ export interface MonthlyReportPdfPayload {
   triggeredAt: string; // ISO 8601
 }
 
-export interface FinancePeriodCloseMonthPayload {
+export interface FinancePeriodCloseMonthPayload extends ManualTriggerPayload {
   triggeredAt: string; // ISO 8601
   year: number;
   month: number;
 }
 
-export interface RankingsRecalculatePayload {
+export interface RankingsRecalculatePayload extends ManualTriggerPayload {
   triggeredAt: string; // ISO 8601
   yearId?: number;
   mode?: 'full' | 'delta';

@@ -7,6 +7,7 @@ import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import { manualTriggerPayload } from '../common/services/cron-run-context';
 import {
   BACKGROUND_JOBS_QUEUE,
   BackgroundJobName,
@@ -211,6 +212,7 @@ export class FinancePeriodService {
         triggeredAt: new Date().toISOString(),
         year,
         month,
+        ...manualTriggerPayload(),
       };
       await this.financePeriodQueue.add(
         BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH,

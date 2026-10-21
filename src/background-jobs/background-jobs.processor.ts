@@ -9,6 +9,7 @@ import { FinancePeriodService } from '../finances/finance-period.service';
 import { RankingsService } from '../annual-folders/rankings.service';
 import { DataExportService } from '../data-export/data-export.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import { runWithManualTriggerFromPayload } from '../common/services/cron-run-context';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
@@ -76,10 +77,14 @@ export class BackgroundJobsProcessor
       case BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE: {
         const data =
           job.data as BackgroundJobPayloadMap[typeof BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE];
-        return this.cronLogger.track(
-          MAP_JOB_TO_CRON_KEY[BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE]!,
-          () => this.monthlyReportsService.runAutoGeneration(),
-          { bull_job_id: job.id, triggered_at: data.triggeredAt },
+        return runWithManualTriggerFromPayload(data, () =>
+          this.cronLogger.track(
+            MAP_JOB_TO_CRON_KEY[
+              BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE
+            ]!,
+            () => this.monthlyReportsService.runAutoGeneration(),
+            { bull_job_id: job.id, triggered_at: data.triggeredAt },
+          ),
         );
       }
 
@@ -116,35 +121,38 @@ export class BackgroundJobsProcessor
       case BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH: {
         const data =
           job.data as BackgroundJobPayloadMap[typeof BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH];
-        return this.financePeriodService.runMonthlyClosing(
-          data.year,
-          data.month,
+        return runWithManualTriggerFromPayload(data, () =>
+          this.financePeriodService.runMonthlyClosing(data.year, data.month),
         );
       }
 
       case BackgroundJobName.RANKINGS_RECALCULATE: {
         const data =
           job.data as BackgroundJobPayloadMap[typeof BackgroundJobName.RANKINGS_RECALCULATE];
-        return this.cronLogger.track(
-          MAP_JOB_TO_CRON_KEY[BackgroundJobName.RANKINGS_RECALCULATE]!,
-          async () => {
-            if (data.includeMemberRankings) {
-              await this.rankingsService.recalculateAll(
+        return runWithManualTriggerFromPayload(data, () =>
+          this.cronLogger.track(
+            MAP_JOB_TO_CRON_KEY[BackgroundJobName.RANKINGS_RECALCULATE]!,
+            async () => {
+              if (data.includeMemberRankings) {
+                await this.rankingsService.recalculateAll(
+                  data.yearId,
+                  data.mode ?? 'full',
+                );
+                this.logger.log(
+                  `Club + member rankings recalculated for year=${data.yearId ?? 'active'} mode=${data.mode ?? 'full'}`,
+                );
+                return { itemsProcessed: 0, includeMemberRankings: true };
+              }
+              const result = await this.rankingsService.recalculateRankings(
                 data.yearId,
-                data.mode ?? 'full',
               );
               this.logger.log(
-                `Club + member rankings recalculated for year=${data.yearId ?? 'active'} mode=${data.mode ?? 'full'}`,
+                `Rankings recalculated: ${result.updated} records`,
               );
-              return { itemsProcessed: 0, includeMemberRankings: true };
-            }
-            const result = await this.rankingsService.recalculateRankings(
-              data.yearId,
-            );
-            this.logger.log(`Rankings recalculated: ${result.updated} records`);
-            return { itemsProcessed: result.updated };
-          },
-          { bull_job_id: job.id, triggered_at: data.triggeredAt },
+              return { itemsProcessed: result.updated };
+            },
+            { bull_job_id: job.id, triggered_at: data.triggeredAt },
+          ),
         );
       }
 
