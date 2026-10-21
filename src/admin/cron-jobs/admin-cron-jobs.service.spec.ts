@@ -292,6 +292,35 @@ describe('AdminCronJobsService', () => {
         enqueued: true,
       });
     });
+
+    it('reports failed (not enqueued) when the enqueue itself fails', async () => {
+      queue.add.mockRejectedValue(new Error('redis connection lost'));
+
+      const result = await service.run(
+        'monthly-reports-auto-generate',
+        'admin-1',
+      );
+
+      expect(result).toEqual({
+        job_name: 'monthly-reports-auto-generate',
+        run_id: null,
+        status: 'failed',
+        items_processed: null,
+        duration_ms: expect.any(Number),
+        error_message: 'redis connection lost',
+        enqueued: false,
+      });
+      expect(auditLogs.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ result: 'failed' }),
+      );
+    });
+
+    it('keeps swallowing the enqueue failure on a scheduled tick (the next tick retries)', async () => {
+      queue.add.mockRejectedValue(new Error('redis connection lost'));
+      const cron = testingModule.get(MonthlyReportsCronService);
+
+      await expect(cron.handleAutoGenerate()).resolves.toBeUndefined();
+    });
   });
 
   describe('run: audit', () => {
