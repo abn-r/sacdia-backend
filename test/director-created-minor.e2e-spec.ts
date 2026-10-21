@@ -1300,11 +1300,22 @@ describe('Director-created minor E2E', () => {
         guardianship_id: custodyId,
         consent_status: 'verified',
         verified_by_user_id: COORDINATOR,
+        verification_method: 'coordinator_paper_form',
+      });
+      expect(guardianships.find({ guardianship_id: custodyId })).toMatchObject({
+        verification_method: 'coordinator_paper_form',
       });
       expect(response.body.data.assignment).toBeNull();
       expect(
         audits.rows.find((row) => row.action === 'consent_verified'),
-      ).toMatchObject({ actor_user_id: COORDINATOR, target_user_id: minorId });
+      ).toMatchObject({
+        actor_user_id: COORDINATOR,
+        target_user_id: minorId,
+        summary: 'Consentimiento del tutor verificado por el coordinador',
+        changes: expect.objectContaining({
+          verification_method: 'coordinator_paper_form',
+        }),
+      });
       expect(assignments.find({ assignment_id: assignmentId })!.status).toBe(
         'pending',
       );

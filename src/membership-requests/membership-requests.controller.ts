@@ -363,7 +363,7 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 200,
     description:
-      '{ guardianship: { guardianship_id, consent_status, verified_at, verified_by_user_id, verification_method }, assignment: {...}|null, approve_error: string|null }',
+      '{ guardianship: { guardianship_id, consent_status, verified_at, verified_by_user_id, verification_method: director_paper_form | coordinator_paper_form | guardian_invite }, assignment: {...}|null, approve_error: string|null }',
   })
   @ApiResponse({ status: 400, description: 'MR_CONSENT_CONFIRMATION_REQUIRED' })
   @ApiResponse({
@@ -400,7 +400,10 @@ export class MembershipRequestsController {
       assignmentId,
       currentUser.sub,
       dto,
-      { verifyOnly: isVerifyOnlyReviewer(request) },
+      {
+        verifyOnly: isVerifyOnlyReviewer(request),
+        viaCoordinator: request.coordinatorSectionGrant === true,
+      },
     );
     return { status: 'success', data };
   }
