@@ -2,6 +2,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getQueueToken } from '@nestjs/bullmq';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { CronRunLock } from '../../common/services/cron-run-lock.service';
 import { CronRunLogger } from '../../common/services/cron-run-logger.service';
 import { DistributedLockService } from '../../common/services/distributed-lock.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -59,6 +60,7 @@ describe('AdminCronJobsService', () => {
         AdminCronJobsService,
         DistributedLockService,
         CronRunLogger,
+        CronRunLock,
         MembershipRequestsCronService,
         MonthlyReportsCronService,
         { provide: CACHE_MANAGER, useValue: cache },
@@ -253,7 +255,7 @@ describe('AdminCronJobsService', () => {
         data: expect.objectContaining({
           status: 'skipped',
           metadata: {
-            reason: 'manual_run_in_progress',
+            reason: 'run_lock_held',
             trigger: 'manual',
             triggered_by: 'admin-2',
           },

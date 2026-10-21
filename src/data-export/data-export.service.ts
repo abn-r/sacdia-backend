@@ -35,10 +35,18 @@ import type {
   DataExportStatus,
 } from './dto/data-export-response.dto';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import { CronRunLock } from '../common/services/cron-run-lock.service';
 
 const PRESIGNED_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 const EXPORT_COOLDOWN_HOURS = 24;
 const CLEANUP_BATCH_SIZE = 100;
+
+/**
+ * Run-lock TTL of the daily cleanup (dead-process safety net only; released in
+ * `finally`). It deletes R2 objects in batches of 100, so the worst case is a
+ * backlog of expired exports: 30 minutes is far above that, far below 24 h.
+ */
+const CLEANUP_RUN_LOCK_TTL_MS = 30 * 60 * 1000;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
@@ -61,6 +69,7 @@ export class DataExportService {
     private readonly dataExportsQueue: Queue | undefined,
     private readonly cronLogger: CronRunLogger,
     private readonly emailService: EmailService,
+    private readonly runLock: CronRunLock,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -698,6 +707,14 @@ export class DataExportService {
 
   @Cron('0 4 * * *', { timeZone: 'UTC' })
   async cleanupExpiredExports(): Promise<void> {
+    await this.runLock.runExclusive(
+      'data-export-cleanup',
+      CLEANUP_RUN_LOCK_TTL_MS,
+      () => this.runExportsCleanup(),
+    );
+  }
+
+  private async runExportsCleanup(): Promise<void> {
     this.logger.log('DataExport cleanup cron started');
 
     await this.cronLogger.track('data-export-cleanup', async () => {

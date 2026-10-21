@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
+import { CronRunLock } from '../common/services/cron-run-lock.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 
@@ -13,6 +14,16 @@ function buildTxMock(inner: Record<string, unknown>) {
     .fn()
     .mockImplementation((fn: (tx: typeof inner) => unknown) => fn(inner));
 }
+
+// Pass-through run lock: the lock itself is covered in cron-run-lock.service.spec.
+const mockRunLock = {
+  runExclusive: jest.fn(
+    async (_job: string, _ttl: number, fn: () => unknown) => ({
+      ran: true,
+      value: await fn(),
+    }),
+  ),
+};
 
 describe('FcmTokensService', () => {
   let service: FcmTokensService;
@@ -51,6 +62,7 @@ describe('FcmTokensService', () => {
       providers: [
         FcmTokensService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: CronRunLock, useValue: mockRunLock },
       ],
     }).compile();
 

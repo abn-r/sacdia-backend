@@ -4,10 +4,18 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import type { CronAlertCondition } from '../email/templates/cron-alert';
+import { CronRunLock } from './cron-run-lock.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Run-lock TTL (dead-process safety net only; released in `finally`). A check
+ * is a few queries plus the alert e-mails; it is kept under the 15 minute
+ * schedule so a crashed process never costs more than the next tick.
+ */
+const RUN_LOCK_TTL_MS = 10 * 60 * 1000;
 
 /** Minimum consecutive failures before an alert fires. */
 const CONSECUTIVE_FAILURES_THRESHOLD = 3;
@@ -82,12 +90,25 @@ export class CronAlertService {
     private readonly emailService: EmailService,
     @Optional()
     private readonly notificationsService: NotificationsService | null,
+    private readonly runLock: CronRunLock,
   ) {}
 
   // ── Scheduled check ────────────────────────────────────────────────────────
 
   @Cron('5,20,35,50 * * * *', { name: 'cron-alert-check' })
   async checkAndAlertFailures(): Promise<void> {
+    // Detection and the cron_alerts_log insert are not atomic: two overlapping
+    // checks would both see "not alerted yet" and e-mail the super-admins twice.
+    // The job writes no cron_run_log row, so a skipped tick is only logged.
+    await this.runLock.runExclusive(
+      'cron-alert-check',
+      RUN_LOCK_TTL_MS,
+      () => this.runCheck(),
+      { logsRuns: false },
+    );
+  }
+
+  private async runCheck(): Promise<void> {
     this.logger.debug('CronAlertService: running failure check');
 
     try {
