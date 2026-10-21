@@ -11,7 +11,17 @@ export interface CronRecentRun {
   duration_ms: number | null;
   items_processed: number | null;
   error_message: string | null;
+  /** 'manual' when a super-admin ran it on demand, otherwise 'scheduled'. */
+  trigger: 'manual' | 'scheduled';
+  /** user_id of the super-admin of a manual run; null for scheduled runs. */
+  triggered_by: string | null;
 }
+
+/** Row as the recent-runs query returns it (trigger still raw metadata). */
+type CronRecentRunRow = Omit<CronRecentRun, 'trigger' | 'triggered_by'> & {
+  trigger?: string | null;
+  triggered_by?: string | null;
+};
 
 export interface CronJobStats {
   job_name: string;
@@ -51,10 +61,12 @@ export class CronRunsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getSummary(): Promise<CronRunsSummaryDto> {
-    const recent = await this.prisma.$queryRaw<CronRecentRun[]>`
+    const recentRows = await this.prisma.$queryRaw<CronRecentRunRow[]>`
       SELECT DISTINCT ON (job_name)
         job_name, run_id, started_at, ended_at, status,
-        duration_ms, items_processed, error_message
+        duration_ms, items_processed, error_message,
+        metadata->>'trigger' AS trigger,
+        metadata->>'triggered_by' AS triggered_by
       FROM cron_run_log
       ORDER BY job_name, started_at DESC
     `;
@@ -71,6 +83,17 @@ export class CronRunsService {
       FROM cron_run_log
       GROUP BY job_name
     `;
+
+    const recent = recentRows.map(
+      ({ trigger, triggered_by, ...run }): CronRecentRun => {
+        const manual = trigger === 'manual';
+        return {
+          ...run,
+          trigger: manual ? 'manual' : 'scheduled',
+          triggered_by: manual ? (triggered_by ?? null) : null,
+        };
+      },
+    );
 
     return { recent, stats };
   }
