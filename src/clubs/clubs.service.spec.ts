@@ -5,6 +5,7 @@ import {
 } from '../membership-requests/activation-gate.testing';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClubsService } from './clubs.service';
+import { ClubsController } from './clubs.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -705,6 +706,203 @@ describe('ClubsService', () => {
       ).resolves.toMatchObject({ fee: 15 });
       expect(mockPrismaService.club_sections.findUnique).not.toHaveBeenCalled();
     });
+  });
+
+  describe('assertSectionBelongsToClub', () => {
+    it('resolves when the section belongs to the club', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 10,
+      });
+
+      await expect(
+        service.assertSectionBelongsToClub(10, 7),
+      ).resolves.toBeUndefined();
+      expect(mockPrismaService.club_sections.findUnique).toHaveBeenCalledWith({
+        where: { club_section_id: 7 },
+        select: { main_club_id: true },
+      });
+    });
+
+    it('does not filter by active: an inactive section of the club resolves', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 10,
+        active: false,
+      });
+
+      await expect(
+        service.assertSectionBelongsToClub(10, 7),
+      ).resolves.toBeUndefined();
+    });
+
+    it('answers CLUB_SECTION_NOT_FOUND for a section of another club', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+
+      await expect(
+        service.assertSectionBelongsToClub(10, 7),
+      ).rejects.toMatchObject({ code: ErrorCode.CLUB_SECTION_NOT_FOUND });
+    });
+
+    it('answers the same CLUB_SECTION_NOT_FOUND for a missing section', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.assertSectionBelongsToClub(10, 7),
+      ).rejects.toMatchObject({ code: ErrorCode.CLUB_SECTION_NOT_FOUND });
+    });
+  });
+
+  describe('section/club binding on the /clubs/:clubId/sections/:sectionId routes', () => {
+    const actor = '00000000-0000-0000-0000-0000000000a1';
+    let controller: ClubsController;
+
+    const assignDto = {
+      user_id: 'user-1',
+      role_id: 'role-1',
+      ecclesiastical_year_id: 2026,
+    };
+    const initialDirectorDto = {
+      user_id: 'user-1',
+      ecclesiastical_year_id: 2026,
+    };
+    const successionDto = {
+      current_assignment_id: 'a-1',
+      successor_user_id: 'user-2',
+      ecclesiastical_year_id: 2026,
+    };
+
+    const routes: Array<{
+      name: string;
+      serviceMethod:
+        | 'getMembers'
+        | 'assignRole'
+        | 'assignInitialSectionDirector'
+        | 'succeedSectionDirector';
+      call: (clubId: number, sectionId: number) => Promise<unknown>;
+    }> = [
+      {
+        name: 'GET members',
+        serviceMethod: 'getMembers',
+        call: (c, s) => controller.getMembers(c, s),
+      },
+      {
+        name: 'POST roles',
+        serviceMethod: 'assignRole',
+        call: (c, s) => controller.assignRole(c, s, assignDto as never),
+      },
+      {
+        name: 'POST director-assignment',
+        serviceMethod: 'assignInitialSectionDirector',
+        call: (c, s) =>
+          controller.assignInitialDirector(
+            c,
+            s,
+            { sub: actor },
+            initialDirectorDto as never,
+          ),
+      },
+      {
+        name: 'POST director-succession',
+        serviceMethod: 'succeedSectionDirector',
+        call: (c, s) =>
+          controller.succeedDirector(
+            c,
+            s,
+            { sub: actor },
+            successionDto as never,
+          ),
+      },
+    ];
+
+    beforeEach(() => {
+      controller = new ClubsController(service, {} as never);
+    });
+
+    it.each(routes)(
+      '$name: a section of ANOTHER club is 404 and nothing is read or written',
+      async ({ call }) => {
+        // Section 7 belongs to club 99; the path says club 10.
+        mockPrismaService.club_sections.findUnique.mockResolvedValue({
+          main_club_id: 99,
+        });
+
+        await expect(call(10, 7)).rejects.toMatchObject({
+          code: ErrorCode.CLUB_SECTION_NOT_FOUND,
+        });
+
+        // The ownership lookup is the only data access that happened.
+        expect(
+          mockPrismaService.club_sections.findUnique,
+        ).toHaveBeenCalledTimes(1);
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+        expect(mockPrismaService.roles.findFirst).not.toHaveBeenCalled();
+        expect(mockPrismaService.roles.findUnique).not.toHaveBeenCalled();
+        expect(mockPrismaService.roles.findMany).not.toHaveBeenCalled();
+        for (const fn of Object.values(
+          mockPrismaService.club_role_assignments,
+        )) {
+          expect(fn).not.toHaveBeenCalled();
+        }
+        expect(
+          mockEcclesiasticalYearService.getCurrentYear,
+        ).not.toHaveBeenCalled();
+        expect(
+          mockAuthorizationContextService.hasAnyGlobalRole,
+        ).not.toHaveBeenCalled();
+        expect(mockRoleEligibility.assertAssignment).not.toHaveBeenCalled();
+        expect(mockRoleEligibility.evaluateMany).not.toHaveBeenCalled();
+        expect(
+          mockAuthorizationContextVersionService.bump,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(routes)(
+      '$name: a non-existent section is the same 404 and nothing is read or written',
+      async ({ call }) => {
+        mockPrismaService.club_sections.findUnique.mockResolvedValue(null);
+
+        await expect(call(10, 9999)).rejects.toMatchObject({
+          code: ErrorCode.CLUB_SECTION_NOT_FOUND,
+        });
+
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+        expect(mockPrismaService.roles.findFirst).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.club_role_assignments.findMany,
+        ).not.toHaveBeenCalled();
+        expect(
+          mockPrismaService.club_role_assignments.create,
+        ).not.toHaveBeenCalled();
+        expect(
+          mockAuthorizationContextService.hasAnyGlobalRole,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(routes)(
+      '$name: a section of the path club still reaches the service unchanged',
+      async ({ call, serviceMethod }) => {
+        mockPrismaService.club_sections.findUnique.mockResolvedValue({
+          main_club_id: 10,
+        });
+        const delegate = jest
+          .spyOn(service, serviceMethod)
+          .mockResolvedValue('delegated' as never);
+
+        await expect(call(10, 7)).resolves.toBe('delegated');
+
+        expect(delegate).toHaveBeenCalledTimes(1);
+        // The section id handed to the service is the one in the path.
+        const args = delegate.mock.calls[0] as unknown[];
+        if (serviceMethod === 'assignRole') {
+          expect(args[0]).toMatchObject({ club_section_id: 7 });
+        } else {
+          expect(args[0]).toBe(7);
+        }
+      },
+    );
   });
 
   describe('getAssignableRoles', () => {

@@ -218,4 +218,38 @@ describe('ClubEnrollmentsService', () => {
       code: ErrorCode.CE_ENROLLMENT_NOT_FOUND,
     });
   });
+
+  describe('update scoped to the section in the route path', () => {
+    it('updates an enrollment that belongs to the section in the path', async () => {
+      mockPrisma.club_enrollments.findUnique.mockResolvedValue({
+        club_enrollment_id: 'enrollment-1',
+        club_section_id: 10,
+        status: 'active',
+      });
+      mockPrisma.club_enrollments.update.mockResolvedValue({
+        club_enrollment_id: 'enrollment-1',
+      });
+
+      await service.update('enrollment-1', { address: 'Calle 1' }, 10);
+
+      expect(mockPrisma.club_enrollments.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { club_enrollment_id: 'enrollment-1' },
+        }),
+      );
+    });
+
+    it('answers not found, and writes nothing, for an enrollment of another section', async () => {
+      mockPrisma.club_enrollments.findUnique.mockResolvedValue({
+        club_enrollment_id: 'enrollment-1',
+        club_section_id: 99,
+        status: 'active',
+      });
+
+      await expect(
+        service.update('enrollment-1', { address: 'Calle 1' }, 10),
+      ).rejects.toMatchObject({ code: ErrorCode.CE_ENROLLMENT_NOT_FOUND });
+      expect(mockPrisma.club_enrollments.update).not.toHaveBeenCalled();
+    });
+  });
 });

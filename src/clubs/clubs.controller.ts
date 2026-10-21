@@ -374,7 +374,11 @@ export class ClubsController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de miembros' })
-  async getMembers(@Param('sectionId', ParseIntPipe) sectionId: number) {
+  async getMembers(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+  ) {
+    await this.clubsService.assertSectionBelongsToClub(clubId, sectionId);
     return this.clubsService.getMembers(sectionId);
   }
 
@@ -418,9 +422,11 @@ export class ClubsController {
       'MR_CONSENT_NOT_VERIFIED: el usuario es un menor sin consentimiento del tutor verificado',
   })
   async assignRole(
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Body() dto: AssignRoleDto,
   ) {
+    await this.clubsService.assertSectionBelongsToClub(clubId, sectionId);
     if (dto.club_section_id && dto.club_section_id !== sectionId) {
       throw new AppBadRequestException(
         ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID,
@@ -450,10 +456,12 @@ export class ClubsController {
     description: 'La sección ya tiene director activo',
   })
   async assignInitialDirector(
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @CurrentUser() user: { sub: string },
     @Body() dto: DirectorInitialAssignmentDto,
   ) {
+    await this.clubsService.assertSectionBelongsToClub(clubId, sectionId);
     return this.clubsService.assignInitialSectionDirector(
       sectionId,
       user.sub,
@@ -474,10 +482,12 @@ export class ClubsController {
   @ApiResponse({ status: 201, description: 'Sucesión aplicada' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   async succeedDirector(
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @CurrentUser() user: { sub: string },
     @Body() dto: DirectorSuccessionDto,
   ) {
+    await this.clubsService.assertSectionBelongsToClub(clubId, sectionId);
     return this.clubsService.succeedSectionDirector(sectionId, user.sub, dto);
   }
 
