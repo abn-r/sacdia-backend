@@ -49,7 +49,48 @@ export class AdminCronJobsController {
     description:
       'Allowlist of every @Cron job with its cron expression (5 fields) and time zone. `runnable` is false when the owning provider is not running in this app.',
   })
-  @ApiOkResponse({ description: 'Allowlisted jobs' })
+  @ApiOkResponse({
+    description: 'Allowlisted jobs',
+    schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', example: 'success' },
+        data: {
+          type: 'object',
+          properties: {
+            jobs: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: [
+                  'job_name',
+                  'schedule',
+                  'time_zone',
+                  'runnable',
+                  'description',
+                ],
+                properties: {
+                  job_name: { type: 'string' },
+                  schedule: {
+                    type: 'string',
+                    description: 'Standard 5-field cron expression',
+                  },
+                  time_zone: {
+                    type: 'string',
+                    nullable: true,
+                    description:
+                      'IANA time zone of the @Cron; null when the job sets none (server time zone)',
+                  },
+                  runnable: { type: 'boolean' },
+                  description: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 403, description: 'Caller is not a super-admin' })
   list(): { status: 'success'; data: { jobs: CronJobListItem[] } } {
     return { status: 'success', data: { jobs: this.cronJobsService.list() } };

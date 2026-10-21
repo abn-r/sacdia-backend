@@ -1,5 +1,6 @@
 import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
+import { DECORATORS } from '@nestjs/swagger';
 import type { ExecutionContext } from '@nestjs/common';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { GlobalRolesGuard } from '../../common/guards/global-roles.guard';
@@ -32,6 +33,36 @@ describe('AdminCronJobsController', () => {
     service.list.mockReturnValue(jobs);
 
     expect(controller.list()).toEqual({ status: 'success', data: { jobs } });
+  });
+
+  it('documents time_zone as nullable in the Swagger schema of GET', () => {
+    const responses = Reflect.getMetadata(
+      DECORATORS.API_RESPONSE,
+      AdminCronJobsController.prototype.list,
+    ) as {
+      200: {
+        schema: {
+          properties: {
+            data: {
+              properties: {
+                jobs: {
+                  items: {
+                    properties: {
+                      time_zone: { type: string; nullable: boolean };
+                    };
+                  };
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+
+    expect(
+      responses[200].schema.properties.data.properties.jobs.items.properties
+        .time_zone,
+    ).toMatchObject({ type: 'string', nullable: true });
   });
 
   it('POST run executes the job as the caller and wraps the result', async () => {
