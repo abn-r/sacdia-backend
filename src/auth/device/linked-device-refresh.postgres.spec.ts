@@ -11,6 +11,7 @@ import {
   DEVICE_SESSION_DURATION_MS,
 } from '../../better-auth/better-auth.service';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { assertLoopbackDatabaseUrl } from '../../common/testing/loopback-database-url';
 import type { PrismaService } from '../../prisma/prisma.service';
 
 /**

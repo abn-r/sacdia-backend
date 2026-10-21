@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { coordinator_assignment_type, PrismaClient } from '@prisma/client';
 import { Client, Pool } from 'pg';
+import { assertLoopbackDatabaseUrl } from '../testing/loopback-database-url';
 import {
   activeCoordinatorAssignmentWhere,
   coordinatorScopeIncludesSection,
