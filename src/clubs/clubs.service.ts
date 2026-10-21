@@ -432,7 +432,18 @@ export class ClubsService {
   // ROLE ASSIGNMENTS
   // ========================================
 
-  async getAssignableRoles(clubId: number, sectionId: number, userId: string) {
+  /**
+   * The `/clubs/:clubId/sections/:sectionId/...` routes authorize against the
+   * club only, so the section in the path must be proven to belong to that
+   * club before anything is read or written. A missing section and a section
+   * of another club answer the same 404, so existence of other clubs'
+   * sections is not leaked. Inactive sections still resolve: this checks
+   * ownership, not status (same as the other section-scoped routes).
+   */
+  async assertSectionBelongsToClub(
+    clubId: number,
+    sectionId: number,
+  ): Promise<void> {
     const section = await this.prisma.club_sections.findUnique({
       where: { club_section_id: sectionId },
       select: { main_club_id: true },
@@ -440,6 +451,10 @@ export class ClubsService {
     if (!section || section.main_club_id !== clubId) {
       throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
     }
+  }
+
+  async getAssignableRoles(clubId: number, sectionId: number, userId: string) {
+    await this.assertSectionBelongsToClub(clubId, sectionId);
     // Do not let `club_roles:read` holders probe the GM eligibility of
     // arbitrary users: the target must hold an assignment in this section.
     const assignmentCount = await this.prisma.club_role_assignments.count({
