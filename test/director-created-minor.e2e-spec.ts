@@ -1517,6 +1517,40 @@ describe('Director-created minor E2E', () => {
       });
     });
 
+    describe('the coordinator consent queue (GET /coordination/me/consent-pending)', () => {
+      // No @ActingScope on the route: every restricted principal is denied by
+      // default, before any coordinator check runs.
+      const queuePath = api('/coordination/me/consent-pending');
+
+      it('a guardian ACTING for the child is 403 ACTING_FOR_SCOPE_DENIED', async () => {
+        const response = await request(app.getHttpServer())
+          .get(queuePath)
+          .set({ ...bearer(GUARDIAN), 'X-Acting-For': CHILD });
+
+        expect(response.status).toBe(403);
+        expect(errorCode(response.body)).toBe('ACTING_FOR_SCOPE_DENIED');
+      });
+
+      it('a supervised teen and a linked device are 403 PRINCIPAL_SCOPE_DENIED', async () => {
+        const teenToken = jwtService.sign({
+          sub: TEEN,
+          email: `${TEEN}@test.local`,
+          ...accessJwtClaims(),
+        });
+        const teen = await request(app.getHttpServer())
+          .get(queuePath)
+          .set({ Authorization: `Bearer ${teenToken}` });
+        const device = await request(app.getHttpServer())
+          .get(queuePath)
+          .set(asDevice());
+
+        for (const response of [teen, device]) {
+          expect(response.status).toBe(403);
+          expect(errorCode(response.body)).toBe('PRINCIPAL_SCOPE_DENIED');
+        }
+      });
+    });
+
     describe('the supervised login', () => {
       const disablePath = (userId = TEEN) =>
         api(`/admin/users/${userId}/supervised-login/disable`);

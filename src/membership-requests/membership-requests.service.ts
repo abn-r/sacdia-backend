@@ -34,6 +34,26 @@ const MEMBERSHIP_REQUEST_REVIEWER_ROLES = [
   'secretary-treasurer',
 ] as const;
 
+/** What a pending-request list item carries of the requester and the role. */
+const PENDING_REQUEST_INCLUDE = {
+  users: {
+    select: {
+      user_id: true,
+      name: true,
+      email: true,
+      paternal_last_name: true,
+      maternal_last_name: true,
+      user_image: true,
+    },
+  },
+  roles: {
+    select: {
+      role_id: true,
+      role_name: true,
+    },
+  },
+} satisfies Prisma.club_role_assignmentsInclude;
+
 export type PendingMembershipRequestNotificationInput = {
   userId: string;
   clubSectionId: number;
@@ -88,27 +108,132 @@ export class MembershipRequestsService {
         status: 'pending',
         active: true,
       },
-      include: {
-        users: {
-          select: {
-            user_id: true,
-            name: true,
-            email: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-            user_image: true,
-          },
-        },
-        roles: {
-          select: {
-            role_id: true,
-            role_name: true,
-          },
-        },
-      },
+      include: PENDING_REQUEST_INCLUDE,
       orderBy: { created_at: 'asc' },
     });
+    return this.presentPending(requests, viewerId, options);
+  }
 
+  /**
+   * The consent queue of a reviewer who covers SEVERAL sections (a
+   * coordinator): across `clubSectionIds`, exactly the requests the per-section
+   * list shows a verify-only viewer (opción B: a minor whose consent is pending
+   * verification AND has a current signed form; adults, verified consents and
+   * minors without a form are left out; four-eyes barred rows stay, with the
+   * block). Each item is the per-section list item (same presenter, same
+   * `consent` block) plus `consent_form_uploaded_at`.
+   *
+   * Ordered by the upload of the current form, oldest first (the longest
+   * waiting), then by request creation, then id. `total` and `by_section` count
+   * the whole queue; `items` is the `limit`/`offset` page.
+   *
+   * Bounded reads, whatever the number of sections: ONE lightweight read of the
+   * pending requests of every section (ids only), the verify-work lookup for
+   * those users (two queries), then the page alone is read in full and goes
+   * through the per-section presenter.
+   */
+  async listVerifyWorkAcrossSections(
+    clubSectionIds: number[],
+    viewerId: string,
+    page: { limit: number; offset: number },
+  ) {
+    if (clubSectionIds.length === 0) {
+      return { items: [], total: 0, by_section: [] };
+    }
+
+    const candidates = await this.prisma.club_role_assignments.findMany({
+      where: {
+        club_section_id: { in: clubSectionIds },
+        status: 'pending',
+        active: true,
+      },
+      select: {
+        assignment_id: true,
+        user_id: true,
+        club_section_id: true,
+        created_at: true,
+      },
+    });
+    const waitingSince = await this.consentGate.loadVerifyWorkSince(
+      this.prisma,
+      [...new Set(candidates.map((candidate) => candidate.user_id))],
+    );
+
+    const queue = candidates
+      .filter((candidate) => waitingSince.has(candidate.user_id))
+      .map((candidate) => ({
+        ...candidate,
+        formUploadedAt: waitingSince.get(candidate.user_id)!,
+      }))
+      .sort(
+        (a, b) =>
+          a.formUploadedAt.getTime() - b.formUploadedAt.getTime() ||
+          a.created_at.getTime() - b.created_at.getTime() ||
+          a.assignment_id.localeCompare(b.assignment_id),
+      );
+
+    const counts = new Map<number, number>();
+    for (const entry of queue) {
+      if (entry.club_section_id === null) continue;
+      counts.set(
+        entry.club_section_id,
+        (counts.get(entry.club_section_id) ?? 0) + 1,
+      );
+    }
+    const by_section = [...counts.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([club_section_id, pending_consent_count]) => ({
+        club_section_id,
+        pending_consent_count,
+      }));
+
+    const pageEntries = queue.slice(page.offset, page.offset + page.limit);
+    if (pageEntries.length === 0) {
+      return { items: [], total: queue.length, by_section };
+    }
+
+    const rows = await this.prisma.club_role_assignments.findMany({
+      where: {
+        assignment_id: {
+          in: pageEntries.map((entry) => entry.assignment_id),
+        },
+        status: 'pending',
+        active: true,
+      },
+      include: PENDING_REQUEST_INCLUDE,
+    });
+    const byId = new Map(rows.map((row) => [row.assignment_id, row]));
+    const ordered = pageEntries
+      .map((entry) => byId.get(entry.assignment_id))
+      .filter((row): row is (typeof rows)[number] => row !== undefined);
+    const uploadedAt = new Map(
+      pageEntries.map((entry) => [entry.assignment_id, entry.formUploadedAt]),
+    );
+
+    // The per-section path decides what is shown (verifyOnly); a row whose
+    // state changed between the reads simply drops out of this page.
+    const items = (
+      await this.presentPending(ordered, viewerId, { verifyOnly: true })
+    ).map((item) => ({
+      ...item,
+      consent_form_uploaded_at: uploadedAt
+        .get(item.assignment_id)!
+        .toISOString(),
+    }));
+    return { items, total: queue.length, by_section };
+  }
+
+  /**
+   * Turns pending request rows into list items: the `consent` block (batched
+   * for the whole page), `effective_expires_at`, and, for `verifyOnly`, only
+   * the rows with verify work (verdictHasVerifyWork). Shared by the
+   * per-section list and the coordinator queue.
+   */
+  private async presentPending<T extends { user_id: string; created_at: Date }>(
+    requests: T[],
+    viewerId: string,
+    options: { verifyOnly?: boolean },
+  ) {
     const userIds = [...new Set(requests.map((request) => request.user_id))];
     const [consent, consentStates, timeoutDays] = await Promise.all([
       this.consentGate.loadConsentBlocks(this.prisma, userIds, viewerId),

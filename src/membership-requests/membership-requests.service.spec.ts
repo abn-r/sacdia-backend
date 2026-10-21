@@ -1706,4 +1706,241 @@ describe('MembershipRequestsService', () => {
       expect(mockPrismaService.guardianships.findMany).not.toHaveBeenCalled();
     });
   });
+
+  describe('listVerifyWorkAcrossSections (coordinator queue, opción B across sections)', () => {
+    const VIEWER = 'dddddddd-0000-4000-8000-0000000000c0';
+    const first = 'aaaaaaaa-0000-4000-8000-0000000000b1';
+    const second = 'aaaaaaaa-0000-4000-8000-0000000000b2';
+    const third = 'aaaaaaaa-0000-4000-8000-0000000000b3';
+    const verified = 'aaaaaaaa-0000-4000-8000-0000000000b4';
+    const noForm = 'aaaaaaaa-0000-4000-8000-0000000000b5';
+    const adult = 'aaaaaaaa-0000-4000-8000-0000000000b6';
+    const at = (day: number) =>
+      new Date(`2026-10-${String(day).padStart(2, '0')}T10:00:00.000Z`);
+
+    /** The pending requests of the covered sections (lightweight candidate rows). */
+    const candidate = (
+      user_id: string,
+      club_section_id: number,
+      createdDay: number,
+    ) => ({
+      assignment_id: `as-${user_id}`,
+      user_id,
+      club_section_id,
+      created_at: at(createdDay),
+    });
+    const candidates = [
+      candidate(adult, 10, 1),
+      candidate(third, 20, 2),
+      candidate(verified, 10, 3),
+      candidate(first, 10, 9),
+      candidate(noForm, 20, 4),
+      candidate(second, 20, 5),
+    ];
+    /** Upload day of each dependent's current form. */
+    const uploadDay: Record<string, number> = {
+      [first]: 6,
+      [second]: 6,
+      [third]: 8,
+      [verified]: 2,
+    };
+    const blockRow = (dependent_user_id: string) => ({
+      guardianship_id: `g-${dependent_user_id}`,
+      dependent_user_id,
+      is_primary: true,
+      is_custodian: false,
+      consent_status: dependent_user_id === verified ? 'verified' : 'pending',
+      external_name: null,
+      relationship_type: null,
+      guardian: { name: 'María', paternal_last_name: 'Pérez' },
+      custodian_club: null,
+      consent_evidences:
+        uploadDay[dependent_user_id] === undefined
+          ? []
+          : [
+              {
+                evidence_id: `e-${dependent_user_id}`,
+                uploaded_by_user_id: 'uploader',
+                uploaded_at: at(uploadDay[dependent_user_id]),
+              },
+            ],
+      dependent: { dependent_profile: { created_by_user_id: null } },
+    });
+    const fullRequest = (user_id: string) => {
+      const base = candidates.find((row) => row.user_id === user_id)!;
+      return {
+        ...base,
+        role_id: 'role-member',
+        status: 'pending',
+        active: true,
+        users: { user_id, name: 'N', email: null },
+        roles: { role_id: 'role-member', role_name: 'member' },
+      };
+    };
+
+    beforeEach(() => {
+      mockPrismaService.club_role_assignments.findMany.mockImplementation(
+        async ({ where }: any) =>
+          where.assignment_id
+            ? (where.assignment_id.in as string[])
+                // the page query: unordered on purpose (the service orders it)
+                .slice()
+                .reverse()
+                .map((id) => fullRequest(id.replace('as-', '')))
+            : candidates,
+      );
+      mockPrismaService.users.findMany.mockImplementation(
+        async ({ where }: any) =>
+          [
+            ...gateDependentRows([first, second, third, verified, noForm]),
+            gateAdultUser(adult),
+          ].filter((row) => where.user_id.in.includes(row.user_id)),
+      );
+      mockPrismaService.guardianships.findMany.mockImplementation(
+        async ({ where }: any) =>
+          where.is_test_data === false
+            ? [first, second, third, verified, noForm]
+                .filter((id) => where.dependent_user_id.in.includes(id))
+                .map(blockRow)
+            : [],
+      );
+    });
+
+    it('answers an empty queue without a query when no section is covered', async () => {
+      await expect(
+        service.listVerifyWorkAcrossSections([], VIEWER, {
+          limit: 50,
+          offset: 0,
+        }),
+      ).resolves.toEqual({ items: [], total: 0, by_section: [] });
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('reads the pending requests of EVERY covered section in one query (no query per section)', async () => {
+      await service.listVerifyWorkAcrossSections([10, 20, 30], VIEWER, {
+        limit: 50,
+        offset: 0,
+      });
+
+      const [candidateCall] =
+        mockPrismaService.club_role_assignments.findMany.mock.calls[0];
+      expect(candidateCall.where).toEqual({
+        club_section_id: { in: [10, 20, 30] },
+        status: 'pending',
+        active: true,
+      });
+      // candidates + one page read, whatever the number of sections
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps only minors with a pending consent and a current form, the longest-waiting form first (ties: oldest request first)', async () => {
+      const result = await service.listVerifyWorkAcrossSections(
+        [10, 20],
+        VIEWER,
+        {
+          limit: 50,
+          offset: 0,
+        },
+      );
+
+      // second (form day 6, request day 5) before first (form day 6, request
+      // day 9), then third (form day 8). No adult, no verified, no form-less.
+      expect(result.items.map((item) => item.user_id)).toEqual([
+        second,
+        first,
+        third,
+      ]);
+      expect(result.total).toBe(3);
+      expect(result.by_section).toEqual([
+        { club_section_id: 10, pending_consent_count: 1 },
+        { club_section_id: 20, pending_consent_count: 2 },
+      ]);
+    });
+
+    it('every item is the per-section list item (same consent block, verify-only) plus when its form was uploaded', async () => {
+      const result = await service.listVerifyWorkAcrossSections(
+        [10, 20],
+        VIEWER,
+        {
+          limit: 50,
+          offset: 0,
+        },
+      );
+
+      const [item] = result.items;
+      expect(item).toMatchObject({
+        assignment_id: `as-${second}`,
+        club_section_id: 20,
+        consent_form_uploaded_at: at(6).toISOString(),
+        consent: {
+          required: true,
+          dependent: true,
+          status: 'pending',
+          evidence_uploaded: true,
+          viewer_can_verify: true,
+          viewer_verify_block: null,
+        },
+      });
+      expect(typeof item.effective_expires_at).toBe('string');
+    });
+
+    it('pages with limit / offset over the whole queue; total and by_section stay whole', async () => {
+      const firstPage = await service.listVerifyWorkAcrossSections(
+        [10, 20],
+        VIEWER,
+        {
+          limit: 2,
+          offset: 0,
+        },
+      );
+      const secondPage = await service.listVerifyWorkAcrossSections(
+        [10, 20],
+        VIEWER,
+        {
+          limit: 2,
+          offset: 2,
+        },
+      );
+      const beyond = await service.listVerifyWorkAcrossSections(
+        [10, 20],
+        VIEWER,
+        {
+          limit: 2,
+          offset: 10,
+        },
+      );
+
+      expect(firstPage.items.map((item) => item.user_id)).toEqual([
+        second,
+        first,
+      ]);
+      expect(secondPage.items.map((item) => item.user_id)).toEqual([third]);
+      expect([firstPage.total, secondPage.total, beyond.total]).toEqual([
+        3, 3, 3,
+      ]);
+      expect(beyond.items).toEqual([]);
+      expect(beyond.by_section).toEqual(firstPage.by_section);
+    });
+
+    it('only the PAGE is read in full (the page query is bounded by the limit)', async () => {
+      await service.listVerifyWorkAcrossSections([10, 20], VIEWER, {
+        limit: 2,
+        offset: 0,
+      });
+
+      const pageCall =
+        mockPrismaService.club_role_assignments.findMany.mock.calls
+          .map(([args]: any[]) => args)
+          .find((args: any) => args.where.assignment_id);
+      expect(pageCall.where).toEqual({
+        assignment_id: { in: [`as-${second}`, `as-${first}`] },
+        status: 'pending',
+        active: true,
+      });
+    });
+  });
 });

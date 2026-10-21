@@ -650,4 +650,162 @@ describe('ConsentGateService', () => {
       });
     });
   });
+
+  describe('loadVerifyWorkSince (the forms waiting for a reviewer, whoever it is)', () => {
+    const waiting = 'aaaaaaaa-0000-4000-8000-0000000000a1';
+    const older = 'aaaaaaaa-0000-4000-8000-0000000000a2';
+    const verified = 'aaaaaaaa-0000-4000-8000-0000000000a3';
+    const noForm = 'aaaaaaaa-0000-4000-8000-0000000000a4';
+    const noPrimary = 'aaaaaaaa-0000-4000-8000-0000000000a5';
+    const teen = 'aaaaaaaa-0000-4000-8000-0000000000a6';
+    const adult = 'aaaaaaaa-0000-4000-8000-0000000000a7';
+    const UPLOADED = new Date('2026-10-10T09:00:00.000Z');
+    const OLDER_UPLOAD = new Date('2026-10-02T09:00:00.000Z');
+
+    const primary = (
+      dependent_user_id: string,
+      over: Record<string, unknown> = {},
+    ) => ({
+      dependent_user_id,
+      consent_status: 'pending',
+      consent_evidences: [{ uploaded_at: UPLOADED }],
+      ...over,
+    });
+
+    it('does not query at all for no users', async () => {
+      const db = makeDb();
+
+      expect((await gate.loadVerifyWorkSince(asDb(db), [])).size).toBe(0);
+      expect(db.users.findMany).not.toHaveBeenCalled();
+      expect(db.guardianships.findMany).not.toHaveBeenCalled();
+    });
+
+    it('reads no guardianship when nobody has a dependent profile (adults, unlinked teens)', async () => {
+      const db = makeDb();
+      db.users.findMany.mockResolvedValue([userRow(adult), teenRow(teen)]);
+
+      const since = await gate.loadVerifyWorkSince(asDb(db), [adult, teen]);
+
+      expect(since.size).toBe(0);
+      expect(db.guardianships.findMany).not.toHaveBeenCalled();
+    });
+
+    it('keeps only dependents whose primary consent is pending WITH a current form, keyed to the upload time of that form', async () => {
+      const db = makeDb();
+      db.users.findMany.mockResolvedValue([
+        dependentRow(waiting),
+        dependentRow(older),
+        dependentRow(verified),
+        dependentRow(noForm),
+        dependentRow(noPrimary),
+        teenRow(teen),
+        userRow(adult),
+      ]);
+      db.guardianships.findMany.mockResolvedValue([
+        primary(waiting),
+        primary(older, { consent_evidences: [{ uploaded_at: OLDER_UPLOAD }] }),
+        primary(verified, { consent_status: 'verified' }),
+        primary(noForm, { consent_evidences: [] }),
+      ]);
+
+      const since = await gate.loadVerifyWorkSince(asDb(db), [
+        waiting,
+        older,
+        verified,
+        noForm,
+        noPrimary,
+        teen,
+        adult,
+      ]);
+
+      expect([...since.entries()]).toEqual([
+        [waiting, UPLOADED],
+        [older, OLDER_UPLOAD],
+      ]);
+    });
+
+    it('reads the live, real PRIMARY rows only, with the current form (one query for every user, oldest row first)', async () => {
+      const db = makeDb();
+      db.users.findMany.mockResolvedValue([
+        dependentRow(waiting),
+        dependentRow(older),
+      ]);
+      db.guardianships.findMany.mockResolvedValue([]);
+
+      await gate.loadVerifyWorkSince(asDb(db), [waiting, older, adult]);
+
+      expect(db.users.findMany).toHaveBeenCalledTimes(1);
+      expect(db.guardianships.findMany).toHaveBeenCalledTimes(1);
+      const args = db.guardianships.findMany.mock.calls[0][0];
+      expect(args.where).toEqual({
+        dependent_user_id: { in: [waiting, older] },
+        is_primary: true,
+        is_test_data: false,
+        consent_status: { not: 'revoked' },
+      });
+      expect(args.orderBy).toEqual({ created_at: 'asc' });
+      expect(args.select.consent_evidences).toEqual({
+        where: { superseded_at: null, purged_at: null },
+        orderBy: { uploaded_at: 'desc' },
+        select: { uploaded_at: true },
+        take: 1,
+      });
+    });
+
+    it('agrees with the consent block: a user has waiting work exactly when the block says there is something to verify', async () => {
+      const db = makeDb();
+      const users = [
+        dependentRow(waiting),
+        dependentRow(verified),
+        dependentRow(noForm),
+        dependentRow(noPrimary),
+        teenRow(teen),
+        userRow(adult),
+      ];
+      db.users.findMany.mockResolvedValue(users);
+      const full = (id: string, over: Record<string, unknown> = {}) => ({
+        guardianship_id: `g-${id}`,
+        dependent_user_id: id,
+        is_primary: true,
+        is_custodian: false,
+        consent_status: 'pending',
+        external_name: null,
+        relationship_type: null,
+        guardian: { name: 'María', paternal_last_name: 'Pérez' },
+        custodian_club: null,
+        consent_evidences: [
+          {
+            evidence_id: `e-${id}`,
+            uploaded_by_user_id: 'u',
+            uploaded_at: UPLOADED,
+          },
+        ],
+        dependent: { dependent_profile: { created_by_user_id: null } },
+        ...over,
+      });
+      const rows = [
+        full(waiting),
+        full(verified, { consent_status: 'verified' }),
+        full(noForm, { consent_evidences: [] }),
+        full(noPrimary, { is_primary: false }),
+      ];
+      db.guardianships.findMany.mockImplementation(async ({ where }: any) =>
+        where.is_test_data === false
+          ? rows.filter((row) => !where.is_primary || row.is_primary)
+          : [],
+      );
+      const ids = users.map((user) => user.user_id as string);
+
+      const since = await gate.loadVerifyWorkSince(asDb(db), ids);
+      const blocks = await gate.loadConsentBlocks(asDb(db), ids, 'viewer');
+
+      for (const id of ids) {
+        const block = blocks.get(id);
+        const hasWork =
+          block !== undefined &&
+          (block.viewer_can_verify || block.viewer_verify_block !== null);
+        expect([id, since.has(id)]).toEqual([id, hasWork]);
+      }
+    });
+  });
 });
