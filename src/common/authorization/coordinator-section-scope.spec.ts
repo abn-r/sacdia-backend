@@ -149,7 +149,11 @@ describe('coordinatorScopeIncludesSection (one section against the active assign
                   is: {
                     active: true,
                     districts: {
-                      some: { districlub_type_id: DISTRICT_ID, active: true },
+                      some: {
+                        districlub_type_id: DISTRICT_ID,
+                        active: true,
+                        districts: { is: { active: true } },
+                      },
                     },
                   },
                 },
@@ -267,7 +271,7 @@ describe('resolveCoordinatorAssignmentSectionIds', () => {
     });
   });
 
-  it('ZONE expands to the sections of its club type in the active zone districts', async () => {
+  it('ZONE expands to the sections of its club type in the active districts linked to the active zone', async () => {
     const prisma = fakePrisma({
       zoneDistrictIds: [7, 8],
       expandedSectionIds: [SECTION_ID],
@@ -282,7 +286,12 @@ describe('resolveCoordinatorAssignmentSectionIds', () => {
       }),
     ).toEqual([SECTION_ID]);
     expect(prisma.coordination_zone_districts.findMany).toHaveBeenCalledWith({
-      where: { zone_id: 4, active: true, zone: { active: true } },
+      where: {
+        zone_id: 4,
+        active: true,
+        districts: { is: { active: true } },
+        zone: { active: true },
+      },
       select: { districlub_type_id: true },
     });
     expect(prisma.club_sections.findMany).toHaveBeenCalledWith({

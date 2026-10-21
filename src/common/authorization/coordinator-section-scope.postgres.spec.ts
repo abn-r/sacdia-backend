@@ -388,6 +388,14 @@ pgDescribe('coordinator scope filters against real PostgreSQL', () => {
       await expectScope(GENERAL_LF1);
     });
 
+    it('does not depend on districts: GENERAL covers every active club of the local field even in an inactive district', async () => {
+      await assign({ type: GENERAL, localField: LF1 });
+      await admin.query(
+        `UPDATE districts SET active = false WHERE local_field_id = ${LF1}`,
+      );
+      await expectScope(GENERAL_LF1);
+    });
+
     it.each<[string, string, SectionLabel[]]>([
       [
         'a club goes inactive',
@@ -520,8 +528,31 @@ pgDescribe('coordinator scope filters against real PostgreSQL', () => {
         [],
       ],
       [
-        'the district row itself is deactivated (only the zone link counts)',
+        'the district row itself is deactivated (an active link is not enough)',
         `UPDATE districts SET active = false WHERE districlub_type_id = ${D_A}`,
+        [],
+      ],
+      [
+        'the district of an inactive link is deactivated (nothing changes)',
+        `UPDATE districts SET active = false WHERE districlub_type_id = ${D_B}`,
+        ['a1_conq'],
+      ],
+      [
+        'one of two linked districts is deactivated (the other keeps covering)',
+        `UPDATE coordination_zone_districts SET active = true
+           WHERE zone_id = ${Z1} AND districlub_type_id = ${D_B};
+         UPDATE districts SET active = false WHERE districlub_type_id = ${D_A}`,
+        ['b_conq'],
+      ],
+      [
+        'a deactivated district is reactivated',
+        `UPDATE districts SET active = false WHERE districlub_type_id = ${D_A};
+         UPDATE districts SET active = true WHERE districlub_type_id = ${D_A}`,
+        ['a1_conq'],
+      ],
+      [
+        'a district of another zone is deactivated (this zone is unaffected)',
+        `UPDATE districts SET active = false WHERE districlub_type_id = ${D_Z2}`,
         ['a1_conq'],
       ],
     ])('follows the data when %s', async (_name, sql, expected) => {

@@ -5,11 +5,15 @@ import type { PrismaService } from '../../prisma/prisma.service';
  * Canonical coordinator territory (docs/canon/runtime-coordination.md):
  * `coordinator_scope(user_id) -> club_section_ids[]`, the union of
  *  - GENERAL: every active section of active clubs in the local field;
- *  - ZONE:    active sections of `club_type_id` in the zone's active districts,
- *             while the zone itself is active;
+ *  - ZONE:    active sections of `club_type_id` in the zone's districts,
+ *             while the zone itself is active and only through districts that
+ *             are active themselves (`districts.active`) AND actively linked
+ *             to the zone (`coordination_zone_districts.active`);
  *  - SECTION: that one section, while it and its club are active.
  * One rule for every type: only ACTIVE territory grants scope (an inactive
- * zone, club or section contributes nothing).
+ * zone, district, club or section contributes nothing). GENERAL does not look
+ * at districts at all: it is the whole local field (the canon says "todas las
+ * secciones de club del campo local").
  * The role (`coordinator`, `zone-coordinator`, `general-coordinator`) only opens
  * the door; the assignment is the authority. Never derive it from the user's
  * home local field or union.
@@ -55,6 +59,15 @@ export function activeCoordinatorAssignmentWhere(
   };
 }
 
+/**
+ * The ONE rule for a zone-district link to grant coverage: the link is active
+ * AND the district row itself is active. Both the expansion and the targeted
+ * check spell their zone-district filter from this, so they cannot diverge.
+ */
+export function activeZoneDistrictWhere(): Prisma.coordination_zone_districtsWhereInput {
+  return { active: true, districts: { is: { active: true } } };
+}
+
 export async function resolveCoordinatorAssignmentSectionIds(
   prisma: CoordinatorScopePrisma,
   input: CoordinatorAssignmentInput,
@@ -89,7 +102,11 @@ export async function resolveCoordinatorAssignmentSectionIds(
   if (!zoneId || !clubTypeId) return [];
 
   const zoneDistricts = await prisma.coordination_zone_districts.findMany({
-    where: { zone_id: zoneId, active: true, zone: { active: true } },
+    where: {
+      zone_id: zoneId,
+      ...activeZoneDistrictWhere(),
+      zone: { active: true },
+    },
     select: { districlub_type_id: true },
   });
 
@@ -127,7 +144,8 @@ export async function resolveCoordinatorAssignmentSectionIds(
  *  - SECTION: that section;
  *  - GENERAL: the club is in the assignment's local field;
  *  - ZONE:    same, the section has the assignment's club type and the club's
- *             district is an active district of an ACTIVE zone.
+ *             district is active and an active district of an ACTIVE zone
+ *             (activeZoneDistrictWhere).
  * Says nothing about roles or permissions; callers gate on those first.
  * /coordination/me/scope still expands (it lists the sections).
  */
@@ -174,7 +192,7 @@ export async function coordinatorScopeIncludesSection(
           districts: {
             some: {
               districlub_type_id: club.districlub_type_id,
-              active: true,
+              ...activeZoneDistrictWhere(),
             },
           },
         },
