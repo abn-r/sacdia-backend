@@ -5,6 +5,7 @@ import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import { manualTriggerPayload } from '../common/services/cron-run-context';
 import {
   AppConflictException,
   AppNotFoundException,
@@ -154,6 +155,7 @@ export class RankingsService {
     if (this.rankingsQueue) {
       await this.addRankingsRecalculateJob({
         triggeredAt: new Date().toISOString(),
+        ...manualTriggerPayload(),
       });
       this.logger.log(
         'annual-folders-rankings-recalc job enqueued with 5 attempts + exponential backoff',

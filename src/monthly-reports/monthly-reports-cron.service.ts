@@ -4,6 +4,10 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import {
+  getManualCronContext,
+  manualTriggerPayload,
+} from '../common/services/cron-run-context';
 import { MonthlyReportsService } from './monthly-reports.service';
 import {
   BACKGROUND_JOBS_QUEUE,
@@ -57,6 +61,7 @@ export class MonthlyReportsCronService {
       if (this.queue) {
         const jobData: MonthlyReportsAutoGeneratePayload = {
           triggeredAt: new Date().toISOString(),
+          ...manualTriggerPayload(),
         };
         await this.queue.add(
           BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE,
@@ -86,6 +91,12 @@ export class MonthlyReportsCronService {
       this.logger.error(
         `Fatal error in monthly reports auto-generation trigger: ${errorMessage}`,
       );
+      // A scheduled tick only logs (the next tick retries). An on-demand run
+      // has a human waiting for the answer: rethrow so it reports `failed`
+      // instead of a bogus "completed, enqueued".
+      if (getManualCronContext()) {
+        throw error;
+      }
     } finally {
       // Release the lock immediately after enqueuing (not after job completion).
       // The BullMQ worker runs the actual work; the lock only prevents duplicate
