@@ -50,6 +50,16 @@ const mockEmailService = {
   sendDataExportReady: jest.fn(),
 };
 
+// Pass-through run lock: the lock itself is covered in cron-run-lock.service.spec.
+const mockRunLock = {
+  runExclusive: jest.fn(
+    async (_job: string, _ttl: number, fn: () => unknown) => ({
+      ran: true,
+      value: await fn(),
+    }),
+  ),
+};
+
 function makeService(): DataExportService {
   return new DataExportService(
     mockPrisma as any,
@@ -57,6 +67,7 @@ function makeService(): DataExportService {
     mockQueue as any,
     mockCronLogger as any,
     mockEmailService as any,
+    mockRunLock as any,
   );
 }
 

@@ -6,8 +6,16 @@ import {
   AppForbiddenException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { CronRunLock } from '../common/services/cron-run-lock.service';
 
 const MAX_ACTIVE_TOKENS_PER_USER = 5;
+
+/**
+ * Run-lock TTL of the weekly stale-token cleanup (dead-process safety net
+ * only; released in `finally`). A single `deleteMany`: 10 minutes is far above
+ * its runtime and far below the weekly schedule.
+ */
+const STALE_CLEANUP_RUN_LOCK_TTL_MS = 10 * 60 * 1000;
 
 export interface RegisterFcmTokenDto {
   token: string;
@@ -24,7 +32,10 @@ export interface RegisterFcmTokenContext {
 export class FcmTokensService {
   private readonly logger = new Logger(FcmTokensService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly runLock: CronRunLock,
+  ) {}
 
   /**
    * Campos seguros a devolver — nunca incluir el campo `token`
@@ -232,6 +243,16 @@ export class FcmTokensService {
    */
   @Cron('0 3 * * 0', { name: 'fcm-tokens-stale-cleanup' })
   async cleanupOldTokens(): Promise<void> {
+    // This job writes no cron_run_log row, so a skipped tick is only logged.
+    await this.runLock.runExclusive(
+      'fcm-tokens-stale-cleanup',
+      STALE_CLEANUP_RUN_LOCK_TTL_MS,
+      () => this.removeStaleTokens(),
+      { logsRuns: false },
+    );
+  }
+
+  private async removeStaleTokens(): Promise<void> {
     this.logger.log(
       'FCM token cleanup cron triggered — removing tokens unused for 90+ days...',
     );
