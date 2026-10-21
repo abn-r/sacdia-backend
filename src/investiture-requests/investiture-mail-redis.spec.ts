@@ -114,29 +114,24 @@ describe('investiture mail on an isolated Redis', () => {
       html: '<p>Aviso</p>',
       text: 'Aviso',
     });
+    const failures = failureLog(service);
     let worker = new Worker(EMAIL_QUEUE, (job) => processor.process(job), {
       connection,
     });
-    worker.on('failed', (job, error) => {
-      noteExhausted(job, error, service);
-    });
+    failures.listen(worker);
     worker.on('error', () => undefined);
 
     expect(await service.dispatchReminders(monday)).toBe(1);
     const row = dispatches.find((item) => item.role === 'pastor');
     expect(row?.status).toBe('queued');
     const jobId = `investiture-mail-${row?.dispatch_id}`;
-    await waitFor(async () => {
-      const job = await queue.getJob(jobId);
-      const current = dispatches.find(
-        (item) => item.dispatch_id === row?.dispatch_id,
-      );
-      return (
-        (await job?.getState()) === 'failed' &&
-        (job?.attemptsMade ?? 0) >= 1 &&
-        current?.status === 'failed'
-      );
-    });
+    await waitFor(() => failures.settled(1));
+    const job = await queue.getJob(jobId);
+    expect(await job?.getState()).toBe('failed');
+    expect(job?.attemptsMade).toBe(1);
+    expect(
+      dispatches.find((item) => item.dispatch_id === row?.dispatch_id)?.status,
+    ).toBe('failed');
     expect(accepted.size).toBe(0);
     // BCR33-N4: a reminder hand-off is exactly one provider attempt.
     expect(providerCalls).toBe(1);
@@ -199,27 +194,34 @@ describe('investiture mail on an isolated Redis', () => {
       html: '<p>Aviso</p>',
       text: 'Aviso',
     });
+    const failures = failureLog(service);
     const worker = new Worker(queueName, (job) => processor.process(job), {
       connection,
     });
-    worker.on('failed', (job, error) => {
-      noteExhausted(job, error, service);
-    });
+    failures.listen(worker);
     worker.on('error', () => undefined);
 
     expect(await service.dispatchReminders(monday)).toBe(1);
     const row = dispatches.find((item) => item.role === 'pastor');
-    const settled = () =>
+    const status = () =>
       dispatches.find((item) => item.dispatch_id === row?.dispatch_id)?.status;
-    await waitFor(async () => settled() === 'failed');
+    await waitFor(() => failures.settled(1));
+    expect(status()).toBe('failed');
     expect(providerCalls).toBe(1);
 
-    for (let cycle = 0; cycle < 8 && settled() !== 'skipped'; cycle += 1) {
-      await service.deliverPending(monday);
-      await waitFor(async () => ['failed', 'skipped'].includes(settled()));
+    // The row stays 'failed' across re-queues (markFailed only moves queued or
+    // sending rows), so its status cannot tell that a hand-off finished. Wait
+    // for the worker's own 'failed' event of each hand-off: starting the next
+    // run while the job is still in flight would find it busy and do nothing.
+    for (let handoff = 2; handoff <= 5; handoff += 1) {
+      expect(await service.deliverPending(monday)).toBe(1);
+      await waitFor(() => failures.settled(handoff));
+      expect(status()).toBe('failed');
+      expect(providerCalls).toBe(handoff);
     }
 
-    expect(settled()).toBe('skipped');
+    expect(await service.deliverPending(monday)).toBe(0);
+    expect(status()).toBe('skipped');
     expect(providerCalls).toBe(5);
 
     await worker.close();
@@ -279,10 +281,9 @@ describe('investiture mail on an isolated Redis', () => {
       (job) => processor.process(job),
       { connection },
     );
+    const failures = failureLog(service);
     worker.on('error', () => undefined);
-    worker.on('failed', (job, error) => {
-      noteExhausted(job, error, service);
-    });
+    failures.listen(worker);
     expect(await service.dispatchReminders(monday)).toBe(1);
     const row = dispatches.find((item) => item.role === 'pastor');
     const status = () =>
@@ -290,7 +291,8 @@ describe('investiture mail on an isolated Redis', () => {
     // BCR33-N4: a reminder hand-off is one provider attempt. The ack failure
     // ends this hand-off as failed; the next hand-off (deliverPending) resends
     // the stored message with the same idempotency key and acknowledges it.
-    await waitFor(async () => status() === 'failed');
+    await waitFor(() => failures.settled(1));
+    expect(status()).toBe('failed');
     expect(accepted.size).toBe(1);
     expect([...accepted.values()][0]).toBe(1);
     expect(await service.deliverPending(monday)).toBe(1);
@@ -303,11 +305,40 @@ describe('investiture mail on an isolated Redis', () => {
   });
 });
 
-function noteExhausted(
+type FailureGate = {
+  markFailed(dispatchId: string, message: string): Promise<void>;
+};
+
+/**
+ * Mirrors EmailProcessor's exhausted-failure hook and keeps every markFailed
+ * write, so a test can wait until a hand-off has fully settled: the job is
+ * failed in Redis, the worker emitted 'failed' and the row write landed.
+ */
+function failureLog(service: FailureGate) {
+  const writes: Promise<void>[] = [];
+  let events = 0;
+  return {
+    listen(worker: Worker): void {
+      worker.on('failed', (job, error) => {
+        events += 1;
+        writes.push(noteExhausted(job, error, service));
+      });
+    },
+    async settled(handoffs: number): Promise<boolean> {
+      if (events < handoffs) {
+        return false;
+      }
+      await Promise.all(writes);
+      return true;
+    },
+  };
+}
+
+async function noteExhausted(
   job: Job | undefined,
   error: Error,
-  service: { markFailed(dispatchId: string, message: string): Promise<void> },
-): void {
+  service: FailureGate,
+): Promise<void> {
   if (!job) {
     return;
   }
@@ -319,7 +350,7 @@ function noteExhausted(
   if (!dispatchId) {
     return;
   }
-  void service.markFailed(dispatchId, error.message);
+  await service.markFailed(dispatchId, error.message);
 }
 
 function freePort(): Promise<number> {
