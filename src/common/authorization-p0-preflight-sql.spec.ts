@@ -7,12 +7,19 @@ import {
   type AuthorizationP0PreflightReport,
 } from './authorization-p0-preflight';
 import { loadCanonicalGeographicIanaTimezoneCatalog } from './timezone/canonical-geographic-iana-timezone';
+import { assertLoopbackDatabaseUrl } from './testing/loopback-database-url';
 
 const sqlPath = join(
   process.cwd(),
   'prisma/scripts/authorization-p0-preflight.sql',
 );
 const databaseUrl = process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
+if (process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl) {
+  assertLoopbackDatabaseUrl(
+    databaseUrl,
+    'AUTHORIZATION_P0_PREFLIGHT_SQL_TEST_DATABASE_MUST_BE_LOOPBACK',
+  );
+}
 const dbIt =
   process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl
     ? it

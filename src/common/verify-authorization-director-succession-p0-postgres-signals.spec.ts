@@ -4,11 +4,18 @@ import { join } from 'node:path';
 import { Client } from 'pg';
 import { CONSUMER_INVENTORY } from '../../scripts/verify-authorization-director-succession-p0';
 import { createTestConsumerRoots } from './testing/authorization-p0-consumer-roots.fixture';
+import { assertLoopbackDatabaseUrl } from './testing/loopback-database-url';
 
 const root = join(__dirname, '../..');
 const consumerRoots = createTestConsumerRoots(CONSUMER_INVENTORY);
 afterAll(() => consumerRoots.dispose());
 const databaseUrl = process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
+if (process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl) {
+  assertLoopbackDatabaseUrl(
+    databaseUrl,
+    'VERIFY_AUTHORIZATION_P0_POSTGRES_SIGNALS_TEST_DATABASE_MUST_BE_LOOPBACK',
+  );
+}
 const dbIt =
   process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl
     ? it
