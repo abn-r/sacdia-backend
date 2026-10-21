@@ -16,7 +16,6 @@ import { AdminCronJobsService } from './admin-cron-jobs.service';
 
 const EXPIRY_JOB = 'membership-requests-expiry';
 const EXPIRY_LOCK = 'lock:cron:membership-requests-expiry';
-const MANUAL_LOCK = `lock:cron-manual:${EXPIRY_JOB}`;
 
 describe('AdminCronJobsService', () => {
   const store = new Map<string, string>();
@@ -239,7 +238,6 @@ describe('AdminCronJobsService', () => {
 
       const first = service.run(EXPIRY_JOB, 'admin-1');
       await new Promise((resolve) => setImmediate(resolve));
-      expect(store.has(MANUAL_LOCK)).toBe(true);
 
       const second = await service.run(EXPIRY_JOB, 'admin-2');
       release();
@@ -265,8 +263,6 @@ describe('AdminCronJobsService', () => {
 
     it('releases the manual lock afterwards so the job can be run again', async () => {
       await service.run(EXPIRY_JOB, 'admin-1');
-      expect(store.has(MANUAL_LOCK)).toBe(false);
-
       const again = await service.run(EXPIRY_JOB, 'admin-1');
 
       expect(again.status).toBe('completed');

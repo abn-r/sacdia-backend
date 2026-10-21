@@ -22,7 +22,8 @@ import {
 /**
  * Safety net for the manual-run lock: it is always released in `finally`, the
  * TTL only matters if the process dies mid-run. Longer than the slowest job
- * we expect to await in a request.
+ * we expect to await in a request; if a run still outlives it, the owner-checked
+ * release leaves a newer holder's lock alone.
  */
 const MANUAL_RUN_LOCK_TTL_MS = 10 * 60 * 1000;
 
@@ -105,11 +106,13 @@ export class AdminCronJobsService {
     call: () => Promise<unknown>,
   ): Promise<Error | null> {
     const lockKey = `cron-manual:${def.jobName}`;
-    const acquired = await this.lockService.tryAcquire(
+    // Atomic and owner-checked: an inline run can outlive the TTL, and then its
+    // `finally` must not delete the lock a newer run took.
+    const lock = await this.lockService.tryAcquireOwned(
       lockKey,
       MANUAL_RUN_LOCK_TTL_MS,
     );
-    if (!acquired) {
+    if (!lock) {
       await this.cronLogger.trackSkipped(def.jobName, 'manual_run_in_progress');
       return null;
     }
@@ -127,7 +130,7 @@ export class AdminCronJobsService {
       );
       return error instanceof Error ? error : new Error(String(error));
     } finally {
-      await this.lockService.release(lockKey);
+      await this.lockService.releaseOwned(lock);
     }
   }
 
