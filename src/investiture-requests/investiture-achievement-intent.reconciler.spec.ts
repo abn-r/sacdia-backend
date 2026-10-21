@@ -1,3 +1,4 @@
+import { buildCronRunLockHarness } from '../common/services/cron-run-lock.testing';
 import { InvestitureAchievementIntentReconciler } from './investiture-achievement-intent.reconciler';
 
 describe('investiture achievement intent reconciler', () => {
@@ -8,6 +9,7 @@ describe('investiture achievement intent reconciler', () => {
     };
     const reconciler = new InvestitureAchievementIntentReconciler(
       requests as never,
+      buildCronRunLockHarness().runLock,
     );
 
     await reconciler.onModuleInit();

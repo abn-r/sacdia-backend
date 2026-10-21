@@ -9,8 +9,7 @@ import {
   type CronRunStatus,
   type ManualCronContext,
 } from '../../common/services/cron-run-context';
-import { CronRunLogger } from '../../common/services/cron-run-logger.service';
-import { DistributedLockService } from '../../common/services/distributed-lock.service';
+import { CronRunLock } from '../../common/services/cron-run-lock.service';
 import {
   CRON_JOB_DEFINITIONS,
   describeCronJob,
@@ -20,10 +19,10 @@ import {
 } from './cron-job.registry';
 
 /**
- * Safety net for the manual-run lock: it is always released in `finally`, the
- * TTL only matters if the process dies mid-run. Longer than the slowest job
- * we expect to await in a request; if a run still outlives it, the owner-checked
- * release leaves a newer holder's lock alone.
+ * Safety net for the run lock: it is always released in `finally`, the TTL only
+ * matters if the process dies mid-run. Longer than the slowest job we expect to
+ * await in a request; if a run still outlives it, the owner-checked release
+ * leaves a newer holder's lock alone.
  */
 const MANUAL_RUN_LOCK_TTL_MS = 10 * 60 * 1000;
 
@@ -50,8 +49,7 @@ export class AdminCronJobsService {
 
   constructor(
     private readonly moduleRef: ModuleRef,
-    private readonly lockService: DistributedLockService,
-    private readonly cronLogger: CronRunLogger,
+    private readonly runLock: CronRunLock,
     private readonly auditLogs: AuditLogsService,
   ) {}
 
@@ -64,7 +62,9 @@ export class AdminCronJobsService {
 
   /**
    * Runs one allowlisted job NOW through the exact method the `@Cron`
-   * decorator invokes (same distributed lock, same CronRunLogger), awaited.
+   * decorator invokes (same CronRunLogger), awaited, under the job's run lock
+   * (`cron-run:<job>`, the one its scheduled ticks take too: an overlap with
+   * a tick returns `skipped`).
    * The request lasts as long as the job; inline jobs that walk every club can
    * take a while on a large dataset.
    */
@@ -100,38 +100,35 @@ export class AdminCronJobsService {
     return result;
   }
 
-  /** Runs the handler under the manual lock; resolves to its error, if any. */
+  /** Runs the handler under the job's run lock; resolves to its error, if any. */
   private async invoke(
     def: CronJobDefinition,
     call: () => Promise<unknown>,
   ): Promise<Error | null> {
-    const lockKey = `cron-manual:${def.jobName}`;
-    // Atomic and owner-checked: an inline run can outlive the TTL, and then its
-    // `finally` must not delete the lock a newer run took.
-    const lock = await this.lockService.tryAcquireOwned(
-      lockKey,
+    // Atomic and owner-checked (see CronRunLock). When the lock is taken
+    // (a scheduled tick, or another manual run) `runExclusive` records the
+    // `skipped` row the result is built from and the handler is not called.
+    const outcome = await this.runLock.runExclusive(
+      def.jobName,
       MANUAL_RUN_LOCK_TTL_MS,
+      async (): Promise<Error | null> => {
+        try {
+          await call();
+          return null;
+        } catch (error) {
+          // Handlers swallow their own errors after logging them; one that
+          // rethrows (e.g. an unguarded inline run) still ends in a failed
+          // result.
+          this.logger.error(
+            `Manual run of "${def.jobName}" failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          return error instanceof Error ? error : new Error(String(error));
+        }
+      },
     );
-    if (!lock) {
-      await this.cronLogger.trackSkipped(def.jobName, 'manual_run_in_progress');
-      return null;
-    }
-
-    try {
-      await call();
-      return null;
-    } catch (error) {
-      // Handlers swallow their own errors after logging them; one that
-      // rethrows (e.g. an unguarded inline run) still ends in a failed result.
-      this.logger.error(
-        `Manual run of "${def.jobName}" failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return error instanceof Error ? error : new Error(String(error));
-    } finally {
-      await this.lockService.releaseOwned(lock);
-    }
+    return outcome.ran ? outcome.value : null;
   }
 
   private toResult(

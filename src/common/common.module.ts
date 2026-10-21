@@ -13,6 +13,7 @@ import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { DistributedLockService } from './services/distributed-lock.service';
 import { CronRunLogger } from './services/cron-run-logger.service';
+import { CronRunLock } from './services/cron-run-lock.service';
 import { TranslationService } from './services/translation.service';
 import { InstitutionalHierarchyService } from './services/institutional-hierarchy.service';
 import { CronAlertService } from './services/cron-alert.service';
@@ -80,6 +81,7 @@ import { CountryAgePolicyService } from './age/country-age-policy.service';
     // OBSERVABILIDAD - Logging de ejecución de crons
     // ==========================================
     CronRunLogger,
+    CronRunLock,
     ProcessMemoryLoggerService,
     // ==========================================
     // MONITORING - Automated cron job alerting
@@ -127,6 +129,7 @@ import { CountryAgePolicyService } from './age/country-age-policy.service';
     FILE_STORAGE_SERVICE,
     DistributedLockService,
     CronRunLogger,
+    CronRunLock,
     TranslationService,
     ClassAssignmentResolverService,
     CLOCK,

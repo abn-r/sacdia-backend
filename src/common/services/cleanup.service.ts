@@ -2,6 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CronRunLogger } from './cron-run-logger.service';
+import { CronRunLock } from './cron-run-lock.service';
+
+/**
+ * Run-lock TTL (dead-process safety net only; the lock is released in
+ * `finally`). Both cleanups are single `deleteMany`s that finish in seconds, so
+ * 10 minutes is far above the worst case and far below the 6 h / 24 h schedule.
+ */
+const CLEANUP_RUN_LOCK_TTL_MS = 10 * 60 * 1000;
 
 /**
  * CleanupService — Scheduled cleanup of expired database records.
@@ -25,6 +33,7 @@ export class CleanupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cronLogger: CronRunLogger,
+    private readonly runLock: CronRunLock,
   ) {}
 
   /**
@@ -39,24 +48,30 @@ export class CleanupService {
     const now = new Date();
 
     try {
-      await this.cronLogger.track('cleanup-expired-records', async () => {
-        const [deletedSessions, deletedVerifications] = await Promise.all([
-          this.prisma.session.deleteMany({
-            where: { expiresAt: { lt: now } },
-          }),
-          this.prisma.verification.deleteMany({
-            where: { expiresAt: { lt: now } },
-          }),
-        ]);
+      await this.runLock.runExclusive(
+        'cleanup-expired-records',
+        CLEANUP_RUN_LOCK_TTL_MS,
+        () =>
+          this.cronLogger.track('cleanup-expired-records', async () => {
+            const [deletedSessions, deletedVerifications] = await Promise.all([
+              this.prisma.session.deleteMany({
+                where: { expiresAt: { lt: now } },
+              }),
+              this.prisma.verification.deleteMany({
+                where: { expiresAt: { lt: now } },
+              }),
+            ]);
 
-        this.logger.log(
-          `Expired record cleanup completed: removed ${deletedSessions.count} session(s) and ${deletedVerifications.count} verification token(s)`,
-        );
+            this.logger.log(
+              `Expired record cleanup completed: removed ${deletedSessions.count} session(s) and ${deletedVerifications.count} verification token(s)`,
+            );
 
-        return {
-          itemsProcessed: deletedSessions.count + deletedVerifications.count,
-        };
-      });
+            return {
+              itemsProcessed:
+                deletedSessions.count + deletedVerifications.count,
+            };
+          }),
+      );
     } catch (error) {
       this.logger.error(
         `Expired record cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -84,20 +99,25 @@ export class CleanupService {
     );
 
     try {
-      await this.cronLogger.track('fcm-tokens-cleanup', async () => {
-        const { count } = await this.prisma.user_fcm_tokens.deleteMany({
-          where: {
-            active: false,
-            modified_at: { lt: cutoff },
-          },
-        });
+      await this.runLock.runExclusive(
+        'fcm-tokens-cleanup',
+        CLEANUP_RUN_LOCK_TTL_MS,
+        () =>
+          this.cronLogger.track('fcm-tokens-cleanup', async () => {
+            const { count } = await this.prisma.user_fcm_tokens.deleteMany({
+              where: {
+                active: false,
+                modified_at: { lt: cutoff },
+              },
+            });
 
-        this.logger.log(
-          `FCM token cleanup completed: removed ${count} inactive token(s) older than 90 days`,
-        );
+            this.logger.log(
+              `FCM token cleanup completed: removed ${count} inactive token(s) older than 90 days`,
+            );
 
-        return { itemsProcessed: count };
-      });
+            return { itemsProcessed: count };
+          }),
+      );
     } catch (error) {
       this.logger.error(
         `FCM token cleanup failed: ${error instanceof Error ? error.message : String(error)}`,

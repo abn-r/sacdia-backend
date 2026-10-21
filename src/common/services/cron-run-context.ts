@@ -27,6 +27,11 @@ export interface ManualCronContext {
   triggeredBy: string;
   /** Filled by CronRunLogger, one entry per cron_run_log row written. */
   outcomes: CronRunOutcome[];
+  /**
+   * Jobs whose run lock this manual run already holds (set by `CronRunLock`),
+   * so the handler's own `runExclusive` does not try to take it a second time.
+   */
+  heldRunLocks?: Set<string>;
 }
 
 /** Key carried in BullMQ payloads so the worker can mark its own run. */
