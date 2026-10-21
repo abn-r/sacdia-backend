@@ -243,19 +243,25 @@ describe('MembershipRequestsController (consent)', () => {
         ASSIGNMENT,
         'director-1',
         dto,
-        { verifyOnly: false },
+        { verifyOnly: false, viaCoordinator: false },
       );
     });
 
     it.each([
-      ['consent:verify alone', request(['consent:verify'])],
+      ['consent:verify alone', request(['consent:verify']), false],
       [
         'a coordinator (approve from another club role)',
         asRequest(['club_members:approve', 'consent:verify'], true),
+        true,
+      ],
+      [
+        'a coordinator with only consent:verify',
+        asRequest(['consent:verify'], true),
+        true,
       ],
     ])(
-      '%s: the service is told it is a verify-only reviewer (404 outside their list)',
-      async (_label, req) => {
+      '%s: the service is told it is a verify-only reviewer (404 outside their list) and whether it came through the coordinator path',
+      async (_label, req, viaCoordinator) => {
         const dto = { confirm_paper_form_reviewed: true, approve: false };
 
         await controller.verifyConsent(5, ASSIGNMENT, dto, USER, req);
@@ -265,7 +271,7 @@ describe('MembershipRequestsController (consent)', () => {
           ASSIGNMENT,
           'director-1',
           dto,
-          { verifyOnly: true },
+          { verifyOnly: true, viaCoordinator },
         );
       },
     );

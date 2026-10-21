@@ -8,12 +8,28 @@ import {
 } from './assignment-activation-gate';
 import {
   CUSTODY_TRIGGER_REASONS,
+  consentHasVerifyWork,
   custodyBarredUserIds,
   evaluateConsentVerifier,
   type ViewerVerifyBlock,
 } from './consent-four-eyes';
 
 type Db = Prisma.TransactionClient | PrismaService;
+
+/**
+ * The guardianship rows the consent block reads: real (never test data) and not
+ * revoked. Both the block and the verify-work lookup start from these.
+ */
+const LIVE_REAL_GUARDIANSHIP_WHERE = {
+  is_test_data: false,
+  consent_status: { not: 'revoked' },
+} satisfies Prisma.guardianshipsWhereInput;
+
+/** The CURRENT signed form of a row: not superseded, not purged. */
+const CURRENT_FORM_WHERE = {
+  superseded_at: null,
+  purged_at: null,
+} satisfies Prisma.guardianship_consent_evidencesWhereInput;
 
 /**
  * A dependent's consent as the membership workflow sees it. `verifiedAt` is the
@@ -188,8 +204,7 @@ export class ConsentGateService {
     const rows = await db.guardianships.findMany({
       where: {
         dependent_user_id: { in: withProfile },
-        is_test_data: false,
-        consent_status: { not: 'revoked' },
+        ...LIVE_REAL_GUARDIANSHIP_WHERE,
       },
       orderBy: { created_at: 'asc' },
       select: {
@@ -203,7 +218,7 @@ export class ConsentGateService {
         guardian: { select: { name: true, paternal_last_name: true } },
         custodian_club: { select: { name: true } },
         consent_evidences: {
-          where: { superseded_at: null, purged_at: null },
+          where: CURRENT_FORM_WHERE,
           select: { evidence_id: true, uploaded_by_user_id: true },
           take: 1,
         },
@@ -259,6 +274,81 @@ export class ConsentGateService {
       });
     }
     return blocks;
+  }
+
+  /**
+   * The users among `userIds` whose consent is waiting for a reviewer RIGHT
+   * NOW, whoever the reviewer is, mapped to the upload time of the current
+   * signed form (how long it has been waiting). Exactly the users whose
+   * consent block (loadConsentBlocks) has something to verify, i.e.
+   * verdictHasVerifyWork(block): a dependent profile, an active primary row
+   * (the first live real primary, as the block picks it) that is still
+   * `pending`, and a current form; decided by the same
+   * {@link consentHasVerifyWork} predicate. Viewer-independent: a viewer barred
+   * by four-eyes still has the work listed (with the block saying why).
+   *
+   * Lighter than the block (no guardians, names or four-eyes facts) so a
+   * coordinator queue can rank every candidate and read only the page in full.
+   * Bounded however many users: the minors lookup (findMinorsForActivation:
+   * one users read plus one age-policy read per distinct country) and ONE
+   * guardianships read; none for no users.
+   */
+  async loadVerifyWorkSince(
+    db: Db,
+    userIds: string[],
+  ): Promise<Map<string, Date>> {
+    const waiting = new Map<string, Date>();
+    if (userIds.length === 0) return waiting;
+
+    const minors = await findMinorsForActivation(db, userIds);
+    const withProfile = [...minors.entries()]
+      .filter(([, minor]) => minor.hasDependentProfile)
+      .map(([userId]) => userId);
+    if (withProfile.length === 0) return waiting;
+
+    const primaries = await db.guardianships.findMany({
+      where: {
+        dependent_user_id: { in: withProfile },
+        is_primary: true,
+        ...LIVE_REAL_GUARDIANSHIP_WHERE,
+      },
+      orderBy: { created_at: 'asc' },
+      select: {
+        dependent_user_id: true,
+        consent_status: true,
+        consent_evidences: {
+          where: CURRENT_FORM_WHERE,
+          orderBy: { uploaded_at: 'desc' },
+          select: { uploaded_at: true },
+          take: 1,
+        },
+      },
+    });
+
+    // Rows come oldest first: the first primary per dependent is the block's
+    // primary. Indexed once so the loop below is O(users + primaries).
+    const primaryOf = new Map<string, (typeof primaries)[number]>();
+    for (const row of primaries) {
+      if (!primaryOf.has(row.dependent_user_id)) {
+        primaryOf.set(row.dependent_user_id, row);
+      }
+    }
+
+    for (const userId of withProfile) {
+      const primary = primaryOf.get(userId);
+      const form = primary?.consent_evidences[0];
+      if (
+        consentHasVerifyWork({
+          hasPrimary: primary !== undefined,
+          consentStatus: primary?.consent_status ?? 'pending',
+          evidenceUploaded: form !== undefined,
+        }) &&
+        form
+      ) {
+        waiting.set(userId, form.uploaded_at);
+      }
+    }
+    return waiting;
   }
 
   /**

@@ -99,7 +99,7 @@ const baseline = {
   'member-of-month/member-of-month.service.ts':
     'effectiveWhere|T09|2|4a63b7e684b3',
   'membership-requests/membership-requests.service.ts':
-    'workflowWhere|allowlist|9|1946f65ccb36',
+    'workflowWhere|allowlist|11|d7eb2512556b',
   'monthly-reports/monthly-reports.service.ts':
     'effectiveWhere|T09|3|b00f9c8d194d',
   'notifications/notifications.processor.ts':
