@@ -34,6 +34,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+
+    // Already answered (e.g. the 30s timeout middleware sent a 408): a second
+    // write throws ERR_HTTP_HEADERS_SENT. Drop the late error quietly.
+    if (response.headersSent) {
+      this.logger.debug(
+        `Response already sent for ${request.method} ${request.url}; dropping late ${exception.getStatus()}: ${exception.message}`,
+      );
+      return;
+    }
+
     const status = exception.getStatus();
     const exceptionResponse = exception.getResponse();
 
