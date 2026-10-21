@@ -11,6 +11,11 @@ import {
   LOCAL_FIELD_ROLES,
   toTerritoryId,
 } from '../common/authorization/actor-territory-scope';
+import {
+  activeCoordinatorAssignmentWhere,
+  resolveCoordinatorAssignmentSectionIds,
+  startOfUtcDay,
+} from '../common/authorization/coordinator-section-scope';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -513,15 +518,16 @@ export class CoordinationService {
     await this.ensureActorCanManageLocalField(actorUserId, localFieldId);
     await this.assertLocalFieldExists(localFieldId);
 
-    const existingGeneral =
-      await this.prisma.coordinator_assignments.findFirst({
+    const existingGeneral = await this.prisma.coordinator_assignments.findFirst(
+      {
         where: {
           local_field_id: localFieldId,
           assignment_type: coordinator_assignment_type.GENERAL,
           ...this.activeAssignmentWindowWhere(),
         },
         select: { assignment_id: true, user_id: true },
-      });
+      },
+    );
 
     const candidates = await this.prisma.users.findMany({
       where: {
@@ -866,51 +872,13 @@ export class CoordinationService {
     clubTypeId?: number | null,
     clubSectionId?: number | null,
   ): Promise<number[]> {
-    if (assignmentType === coordinator_assignment_type.SECTION) {
-      return clubSectionId ? [clubSectionId] : [];
-    }
-
-    if (assignmentType === coordinator_assignment_type.GENERAL) {
-      const sections = await this.prisma.club_sections.findMany({
-        where: {
-          active: true,
-          clubs: { is: { active: true, local_field_id: localFieldId } },
-        },
-        select: { club_section_id: true },
-      });
-      return sections.map((section) => section.club_section_id);
-    }
-
-    if (!zoneId || !clubTypeId) return [];
-
-    const zoneDistricts =
-      await this.prisma.coordination_zone_districts.findMany({
-        where: { zone_id: zoneId, active: true },
-        select: { districlub_type_id: true },
-      });
-
-    const districtIds = zoneDistricts.map(
-      (membership) => membership.districlub_type_id,
-    );
-
-    if (districtIds.length === 0) return [];
-
-    const sections = await this.prisma.club_sections.findMany({
-      where: {
-        active: true,
-        club_type_id: clubTypeId,
-        clubs: {
-          is: {
-            active: true,
-            local_field_id: localFieldId,
-            districlub_type_id: { in: districtIds },
-          },
-        },
-      },
-      select: { club_section_id: true },
+    return resolveCoordinatorAssignmentSectionIds(this.prisma, {
+      localFieldId,
+      assignmentType,
+      zoneId,
+      clubTypeId,
+      clubSectionId,
     });
-
-    return sections.map((section) => section.club_section_id);
   }
 
   private async findDirectorConflictSectionId(
@@ -996,19 +964,11 @@ export class CoordinationService {
   }
 
   private activeAssignmentWindowWhere(): Prisma.coordinator_assignmentsWhereInput {
-    const today = this.today();
-
-    return {
-      active: true,
-      start_date: { lte: today },
-      OR: [{ end_date: null }, { end_date: { gte: today } }],
-    };
+    return activeCoordinatorAssignmentWhere(this.today());
   }
 
   private today(): Date {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    return today;
+    return startOfUtcDay();
   }
 
   private rethrowPrismaConflict(error: unknown): void {

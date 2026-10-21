@@ -12,6 +12,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ConsentGateService } from './consent-gate.service';
+import { verdictHasVerifyWork } from './consent-four-eyes';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { FROZEN_PURGE_AFTER_DAYS } from '../guardianships/guardianships.constants';
 import { lockDependentsAscending } from '../guardianships/guardianship-queries';
@@ -64,8 +65,23 @@ export class MembershipRequestsService {
    * uploaded, who the guardians are and whether the CALLER (`viewerId`) may
    * verify it (`viewer_can_verify`, four-eyes). The blocks come from batched
    * reads for the whole page. `users.email` is null for dependents.
+   *
+   * `verifyOnly` (a reviewer who reaches the list with `consent:verify` but not
+   * `club_members:approve` for this section: a coordinator, or a club role with
+   * only that permission) narrows the list to the requests that have work for
+   * them: a minor whose consent is pending verification AND has a current signed
+   * form (the rows whose `viewer_can_verify` would be true for an unbarred
+   * viewer, same predicate). Adults, verified consents, minors without a form
+   * and self-registered teens nobody linked are left out. A viewer barred by
+   * four-eyes (self_guardian / self_custodian) still sees the row, with the
+   * block that says why. The list is not paginated, so there are no counts to
+   * adjust: the array IS the filtered set.
    */
-  async listPending(clubSectionId: number, viewerId: string) {
+  async listPending(
+    clubSectionId: number,
+    viewerId: string,
+    options: { verifyOnly?: boolean } = {},
+  ) {
     const requests = await this.prisma.club_role_assignments.findMany({
       where: {
         club_section_id: clubSectionId,
@@ -99,7 +115,13 @@ export class MembershipRequestsService {
       this.consentGate.loadDependentConsent(this.prisma, userIds),
       this.getPendingTimeoutDays(),
     ]);
-    return requests.map((request) => ({
+    const visible = options.verifyOnly
+      ? requests.filter((request) => {
+          const block = consent.get(request.user_id);
+          return block !== undefined && verdictHasVerifyWork(block);
+        })
+      : requests;
+    return visible.map((request) => ({
       ...request,
       consent: consent.get(request.user_id) ?? null,
       // `expires_at` is the stored base timeout; this one applies the real
