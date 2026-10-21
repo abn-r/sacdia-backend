@@ -25,6 +25,27 @@ export const COORDINATOR_GLOBAL_ROLE_NAMES: ReadonlySet<string> = new Set([
   'general-coordinator',
 ]);
 
+/**
+ * The permissions the user's coordinator ROLES carry (direct grants, club
+ * assignments and every other global role left out: they say nothing about
+ * coordinator territory). Shared by PermissionsGuard (coordinatorSections
+ * routes) and the coordinator consent queue.
+ */
+export function coordinatorRolePermissions(
+  globalRoles: ReadonlyArray<{
+    role_name: string;
+    permissions: readonly string[];
+  }>,
+): Set<string> {
+  return new Set(
+    globalRoles
+      .filter((grant) =>
+        COORDINATOR_GLOBAL_ROLE_NAMES.has(grant.role_name.toLowerCase()),
+      )
+      .flatMap((grant) => grant.permissions),
+  );
+}
+
 export type CoordinatorScopePrisma = Pick<
   PrismaService,
   'coordinator_assignments' | 'club_sections' | 'coordination_zone_districts'
