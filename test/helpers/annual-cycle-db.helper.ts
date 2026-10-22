@@ -2,10 +2,9 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from 'pg';
+import { isLoopbackDatabaseUrl } from '../../src/common/testing/loopback-database-url';
 
 export const SACDIA_TEST_DATABASE_URL_ENV = 'SACDIA_TEST_DATABASE_URL';
-
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
 const BACKEND_ROOT = join(__dirname, '../..');
 
@@ -48,8 +47,9 @@ export function assertSafeTestDatabaseUrl(raw: string): URL {
     );
   }
 
-  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (!LOOPBACK_HOSTS.has(host)) {
+  // Also rejects `?host=` / `?hostaddr=` overrides that redirect `pg` away
+  // from the (loopback-looking) URL hostname.
+  if (!isLoopbackDatabaseUrl(raw)) {
     throw new UnsafeTestDatabaseUrlError(
       'SACDIA_TEST_DATABASE_URL_NOT_LOOPBACK',
     );

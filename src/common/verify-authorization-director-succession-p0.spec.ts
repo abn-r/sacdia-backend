@@ -13,12 +13,19 @@ import {
   type CanonicalGeographicIanaTimezoneCatalog,
 } from './timezone/canonical-geographic-iana-timezone';
 import { createTestConsumerRoots } from './testing/authorization-p0-consumer-roots.fixture';
+import { assertLoopbackDatabaseUrl } from './testing/loopback-database-url';
 
 type Json = Record<string, unknown>;
 const root = join(__dirname, '../..');
 const consumerRoots = createTestConsumerRoots(CONSUMER_INVENTORY);
 afterAll(() => consumerRoots.dispose());
 const databaseUrl = process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
+if (process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl) {
+  assertLoopbackDatabaseUrl(
+    databaseUrl,
+    'VERIFY_AUTHORIZATION_DIRECTOR_SUCCESSION_P0_TEST_DATABASE_MUST_BE_LOOPBACK',
+  );
+}
 const dbIt =
   process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl
     ? it

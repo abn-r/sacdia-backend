@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from 'pg';
+import { assertLoopbackDatabaseUrl } from '../common/testing/loopback-database-url';
 
 const readMigration = (name: string) =>
   readFileSync(
@@ -15,6 +16,12 @@ const httpAuditMigration = readMigration(
 );
 
 const databaseUrl = process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
+if (process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl) {
+  assertLoopbackDatabaseUrl(
+    databaseUrl,
+    'AUDIT_HTTP_OPERATIONS_MIGRATION_TEST_DATABASE_MUST_BE_LOOPBACK',
+  );
+}
 const dbIt =
   process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl
     ? it

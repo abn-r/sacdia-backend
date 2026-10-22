@@ -12,6 +12,7 @@ import {
   ClubAssignmentEffectivityPolicy,
   type ClubAssignmentTemporalRecord,
 } from './club-assignment-effectivity.policy';
+import { assertLoopbackDatabaseUrl } from '../testing/loopback-database-url';
 
 const now = new Date('2026-01-01T07:30:00.000Z');
 const zonedTime = new ZonedBusinessTimeService();
@@ -174,6 +175,12 @@ describe('ClubAssignmentEffectivityPolicy', () => {
 });
 
 const databaseUrl = process.env.EFFECTIVITY_POLICY_TEST_DATABASE_URL;
+if (databaseUrl) {
+  assertLoopbackDatabaseUrl(
+    databaseUrl,
+    'EFFECTIVITY_POLICY_TEST_DATABASE_MUST_BE_LOOPBACK',
+  );
+}
 const pgIt = databaseUrl ? it : it.skip;
 pgIt('has SQL parity against PostgreSQL', async () => {
   const client = new Client({ connectionString: databaseUrl });

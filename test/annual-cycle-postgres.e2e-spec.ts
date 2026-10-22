@@ -78,6 +78,17 @@ describe('T8 annual-cycle isolated URL', () => {
     ).toThrow(/SACDIA_TEST_DATABASE_URL_NOT_LOOPBACK/);
   });
 
+  it.each(['host', 'hostaddr'])(
+    'rejects a loopback hostname redirected by the ?%s= parameter',
+    (param) => {
+      expect(() =>
+        assertSafeTestDatabaseUrl(
+          `postgresql://postgres:postgres@localhost:5432/sacdia_annual_cycle_test?${param}=ep-x.neon.tech`,
+        ),
+      ).toThrow(/SACDIA_TEST_DATABASE_URL_NOT_LOOPBACK/);
+    },
+  );
+
   it('rejects a database name without _test suffix', () => {
     expect(() =>
       assertSafeTestDatabaseUrl(

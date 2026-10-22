@@ -7,8 +7,15 @@ import {
   CriticalAuditEvent,
   CriticalAuditWriterService,
 } from './critical-audit-writer.service';
+import { assertLoopbackDatabaseUrl } from '../common/testing/loopback-database-url';
 
 const databaseUrl = process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
+if (process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl) {
+  assertLoopbackDatabaseUrl(
+    databaseUrl,
+    'CRITICAL_AUDIT_WRITER_TEST_DATABASE_MUST_BE_LOOPBACK',
+  );
+}
 const pgIt =
   process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl
     ? it
