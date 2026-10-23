@@ -1126,7 +1126,7 @@ export class CamporeesController {
 
   @Patch('payments/:paymentId')
   @RequirePermissions('attendance:manage')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee_payment', idParam: 'paymentId' })
   @ApiOperation({
     summary: 'Actualizar pago',
     description: 'Actualiza los datos de un pago registrado',
@@ -1210,7 +1210,10 @@ export class CamporeesController {
 
   @Patch('payments/:camporeePaymentId/approve')
   @RequirePermissions('attendance:approve_late')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'camporee_payment',
+    idParam: 'camporeePaymentId',
+  })
   @ApiOperation({ summary: 'Aprobar pago tardío de camporee' })
   @ApiParam({
     name: 'camporeePaymentId',
@@ -1231,7 +1234,10 @@ export class CamporeesController {
 
   @Patch('payments/:camporeePaymentId/reject')
   @RequirePermissions('attendance:approve_late')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'camporee_payment',
+    idParam: 'camporeePaymentId',
+  })
   @ApiOperation({ summary: 'Rechazar pago tardío de camporee' })
   @ApiParam({
     name: 'camporeePaymentId',

@@ -92,7 +92,16 @@ export class ClubEnrollmentValidationController {
 
   @Post(':enrollmentId/approve')
   @RequirePermissions('club_instances:update')
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'club_enrollment_territory',
+        source: 'param',
+        field: 'enrollmentId',
+      },
+    ],
+  })
   @ApiOperation({
     summary: 'Aprobar inscripción anual del club',
     description:
@@ -115,7 +124,16 @@ export class ClubEnrollmentValidationController {
 
   @Post(':enrollmentId/reject')
   @RequirePermissions('club_instances:update')
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'club_enrollment_territory',
+        source: 'param',
+        field: 'enrollmentId',
+      },
+    ],
+  })
   @ApiOperation({
     summary: 'Rechazar inscripción anual del club',
     description:

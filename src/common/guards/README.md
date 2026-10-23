@@ -27,11 +27,13 @@ Viven en `src/common/decorators/`:
 
 ### Tipos de recurso (`@AuthorizationResource`)
 
-`PermissionsGuard` resuelve el alcance según `type`: `global`, `user`, `active_assignment`, `club`, `club_section`, `camporee`, `union_camporee`, `camporee_event`, `camporee_venue`, `activity`, `activity_series`, `finance`, `inventory_instance`, `inventory_item`, `club_assignment`, `class_counselor_assignment`, `investiture_enrollment`, `monthly_report`, `insurance_member`, `insurance_record`. El `switch` es exhaustivo: un tipo nuevo sin manejar falla en compilación y en runtime.
+`PermissionsGuard` resuelve el alcance según `type`: `global`, `user`, `active_assignment`, `club`, `club_section`, `camporee`, `union_camporee`, `camporee_event`, `camporee_venue`, `camporee_payment`, `activity`, `activity_series`, `finance`, `inventory_instance`, `inventory_item`, `club_assignment`, `class_counselor_assignment`, `investiture_enrollment`, `monthly_report`, `insurance_member`, `insurance_record`. El `switch` es exhaustivo: un tipo nuevo sin manejar falla en compilación y en runtime.
 
 Para `user` (y `active_assignment` con `ownerParam`), el propietario del recurso pasa sin evaluar permisos. Para un no propietario, los permisos del rol global base `user` (`BASE_GLOBAL_ROLE_NAME`, lo tiene toda cuenta) NO cuentan: necesita otro rol global, un permiso directo (`users_permissions`) o una de las rutas de miembro de sección del club activo. Por eso el rol base no debe recibir permisos que solo usan rutas propietarias (lo vigila `src/rbac/base-user-role-cross-user-grants.migration.spec.ts`).
 
 `union_camporee` (y `camporee_event` de un camporee de unión) admite al territorio organizador y, como fallback, a actores de campo local (`admin`, `assistant-admin`, `director-lf`, `assistant-lf`) o de club activo solo si su campo local participa en ese camporee (`union_camporee_local_fields` con `active = true`). Un `camporee_venue` con `scope: 'union'` no tiene camporee concreto, así que no aplica el fallback.
+
+`camporee_payment` resuelve el UUID del pago (`idParam`, default `paymentId`) al camporee de su miembro: local → mismo chequeo territorial que `camporee`; de unión → mismo chequeo que `union_camporee`.
 
 ### Binding de tenant (`bind`)
 
@@ -45,8 +47,8 @@ Para `user` (y `active_assignment` con `ownerParam`), el propietario del recurso
 })
 ```
 
-- `kind`: `club`, `club_section` (debe pertenecer al `:clubId` de la ruta si existe; 404 si no), `local_field`, `union`, `camporee`, `union_camporee` (estricto: solo el territorio organizador, sin el fallback de participación de `type: 'union_camporee'`).
-- `source`: `param`, `query` o `body`. Valor ausente o no entero positivo → 403, salvo `optional: true`.
+- `kind`: `club`, `club_section` (debe pertenecer al `:clubId` de la ruta si existe; 404 si no), `local_field`, `union`, `camporee`, `union_camporee` (estricto: solo el territorio organizador, sin el fallback de participación de `type: 'union_camporee'`), `club_enrollment_territory` (recibe UUID de inscripción anual y exige que el territorio del actor cubra el club, sin fallback de asignación de club).
+- `source`: `param`, `query` o `body`. Valor ausente o no entero positivo (o UUID inválido en los kinds de inscripción) → 403, salvo `optional: true`.
 - El bypass de propietario no omite `bind`.
 - `tenant-binding-inventory.spec.ts` falla si una ruta `global`/`user`/`active_assignment` con parámetro de tenant en el path no declara `bind`. Las rutas legacy están congeladas en `tenant-binding-allowlist.ts`; no agregues rutas nuevas ahí.
 
