@@ -67,6 +67,38 @@ export class ValidationSummaryDto {
   declare total_pending: number;
 }
 
+// ─── Evidence Review SLA ──────────────────────────────────────────────────────
+
+export class EvidenceSlaDto {
+  @ApiProperty({
+    description:
+      'Evidence waiting for review (class sections SUBMITTED + honors PENDING_REVIEW), same scope as GET /evidence-review/pending',
+    example: 6,
+  })
+  declare pending: number;
+
+  @ApiProperty({
+    description:
+      'Pending evidence submitted overdue_threshold_days or more days ago',
+    example: 3,
+  })
+  declare overdue: number;
+
+  @ApiProperty({
+    description:
+      'Average age in days (1 decimal) of pending evidence since submitted_at; null when nothing is pending',
+    example: 92.3,
+    nullable: true,
+  })
+  declare avg_days: number | null;
+
+  @ApiProperty({
+    description: 'Whole days after which a pending evidence counts as overdue',
+    example: 7,
+  })
+  declare overdue_threshold_days: number;
+}
+
 // ─── Camporee Summary ─────────────────────────────────────────────────────────
 
 export class CamporeeSummaryDto {
@@ -186,6 +218,12 @@ export class SlaDashboardDto {
     type: ValidationSummaryDto,
   })
   declare validation: ValidationSummaryDto;
+
+  @ApiProperty({
+    description: 'Evidence review queue age (pending, overdue, average days)',
+    type: EvidenceSlaDto,
+  })
+  declare evidence: EvidenceSlaDto;
 
   @ApiProperty({
     description: 'Camporee approval queue summary',

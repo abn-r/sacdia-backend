@@ -10,7 +10,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   SlaDashboardDto,
   InvestiturePipelineItemDto,
+  EvidenceSlaDto,
 } from './dto/sla-dashboard.dto';
+import {
+  EVIDENCE_REVIEW_OVERDUE_DAYS,
+  evidenceOverdueCutoff,
+} from '../evidence-review/evidence-review-sla';
 
 // ─── Simple in-memory cache (60s TTL) ────────────────────────────────────────
 type CacheEntry<T> = {
@@ -156,6 +161,7 @@ export class AnalyticsService {
       throughputResult,
       approvalRateResult,
       overdueCount,
+      evidenceSla,
     ] = await Promise.all([
       // 1. Investiture pipeline by status
       this.prisma.enrollments.groupBy({
@@ -229,6 +235,9 @@ export class AnalyticsService {
 
       // 7. Overdue: enrollments submitted >30 days ago still not field_approved
       this.countOverdue(scopedClubSectionIds),
+
+      // 8. Evidence review queue age (pending / overdue / average days)
+      this.computeEvidenceSla(now, scopedClubSectionIds),
     ]);
 
     // ── Build pipeline array ──────────────────────────────────────────────
@@ -263,6 +272,7 @@ export class AnalyticsService {
         honors_pending: honorsPending,
         total_pending: classSectionsPending + honorsPending,
       },
+      evidence: evidenceSla,
       camporee: {
         clubs_pending: camporeeClubsPending,
         members_pending: camporeesMembersPending,
@@ -602,6 +612,85 @@ export class AnalyticsService {
     } catch (error) {
       this.logger.warn('Approval rate query failed', error);
       return { resolved: 0, approved: 0, rate: 0 };
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // EVIDENCE REVIEW SLA (age of the GET /evidence-review/pending queue)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  private async computeEvidenceSla(
+    now: Date,
+    scopedClubSectionIds?: number[],
+  ): Promise<EvidenceSlaDto> {
+    const empty: EvidenceSlaDto = {
+      pending: 0,
+      overdue: 0,
+      avg_days: null,
+      overdue_threshold_days: EVIDENCE_REVIEW_OVERDUE_DAYS,
+    };
+    if (scopedClubSectionIds?.length === 0) return empty;
+
+    // Same items and scope as EvidenceReviewService.getPending: class sections
+    // SUBMITTED + honors PENDING_REVIEW, active, submitted, owned by a member
+    // with an active assignment in a scoped club section.
+    const scopeFilter = (userIdColumn: Prisma.Sql) =>
+      scopedClubSectionIds
+        ? Prisma.sql`
+            AND EXISTS (
+              SELECT 1
+              FROM club_role_assignments cra
+              WHERE cra.user_id = ${userIdColumn}
+                AND cra.active = true
+                AND cra.status = 'active'
+                AND cra.club_section_id IN (${Prisma.join(scopedClubSectionIds)})
+            )`
+        : Prisma.empty;
+
+    type EvidenceSlaRow = {
+      pending: number | bigint | null;
+      overdue: number | bigint | null;
+      avg_days: string | number | null;
+    };
+
+    try {
+      const rows = await this.prisma.$queryRaw<EvidenceSlaRow[]>`
+        WITH pending AS (
+          SELECT csp.submitted_at
+          FROM class_section_progress csp
+          WHERE csp.status = 'SUBMITTED'
+            AND csp.active = true
+            AND csp.submitted_at IS NOT NULL
+            ${scopeFilter(Prisma.sql`csp.user_id`)}
+          UNION ALL
+          SELECT uh.submitted_at
+          FROM users_honors uh
+          WHERE uh.validation_status = 'PENDING_REVIEW'
+            AND uh.active = true
+            AND uh.submitted_at IS NOT NULL
+            ${scopeFilter(Prisma.sql`uh.user_id`)}
+        )
+        SELECT
+          COUNT(*)::int AS pending,
+          COUNT(*) FILTER (WHERE submitted_at <= ${evidenceOverdueCutoff(now)})::int AS overdue,
+          AVG(EXTRACT(EPOCH FROM (${now}::timestamptz - submitted_at)) / 86400.0) AS avg_days
+        FROM pending
+      `;
+
+      const row = rows[0];
+      const avg = row?.avg_days != null ? Number(row.avg_days) : null;
+      return {
+        pending: Number(row?.pending ?? 0),
+        overdue: Number(row?.overdue ?? 0),
+        avg_days:
+          avg != null && Number.isFinite(avg)
+            ? Math.round(Math.max(avg, 0) * 10) / 10
+            : null,
+        overdue_threshold_days: EVIDENCE_REVIEW_OVERDUE_DAYS,
+      };
+    } catch (error) {
+      this.logger.warn('Evidence SLA query failed, returning zeros', error);
+      return empty;
     }
   }
 
