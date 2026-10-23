@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  NOT_TERMINAL_ENROLLMENT_SQL,
+  NOT_TERMINAL_ENROLLMENT_WHERE,
+} from '../classes/class-progress-mutable';
+import {
   Prisma,
   evidence_validation_enum,
   honor_validation_status_enum,
@@ -181,6 +185,7 @@ export class AnalyticsService {
           status: evidence_validation_enum.SUBMITTED,
           active: true,
           submitted_at: { not: null },
+          ...NOT_TERMINAL_ENROLLMENT_WHERE,
           ...pendingReviewUserFilter,
         },
       }),
@@ -661,6 +666,7 @@ export class AnalyticsService {
           WHERE csp.status = 'SUBMITTED'
             AND csp.active = true
             AND csp.submitted_at IS NOT NULL
+            ${Prisma.raw(NOT_TERMINAL_ENROLLMENT_SQL)}
             ${scopeFilter(Prisma.sql`csp.user_id`)}
           UNION ALL
           SELECT uh.submitted_at

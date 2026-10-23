@@ -10,7 +10,11 @@ import {
   honor_validation_status_enum,
 } from '@prisma/client';
 import { ErrorCode } from '../common/errors/error-codes';
-import { assertEnrollmentNotTerminalInTransaction } from '../classes/class-progress-mutable';
+import {
+  assertEnrollmentNotTerminalInTransaction,
+  NOT_TERMINAL_ENROLLMENT_SQL,
+  NOT_TERMINAL_ENROLLMENT_WHERE,
+} from '../classes/class-progress-mutable';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApproveEvidenceDto } from './dto/approve-evidence.dto';
 import { RejectEvidenceDto } from './dto/reject-evidence.dto';
@@ -560,6 +564,7 @@ export class EvidenceReviewService {
       status: CLASS_STATUS_SUBMITTED,
       active: true,
       submitted_at: { not: null },
+      ...NOT_TERMINAL_ENROLLMENT_WHERE,
       ...this.buildUserSectionScopeWhere(scopedClubSectionIds),
     };
   }
@@ -605,6 +610,7 @@ export class EvidenceReviewService {
         WHERE csp.status = '${CLASS_STATUS_SUBMITTED}'
           AND csp.active = true
           AND csp.submitted_at IS NOT NULL
+          ${NOT_TERMINAL_ENROLLMENT_SQL}
           ${classScopeFilter}
         UNION ALL
         SELECT

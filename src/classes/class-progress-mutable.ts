@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import { investiture_status_enum, Prisma } from '@prisma/client';
 import { AppConflictException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
@@ -27,7 +27,39 @@ export function assertClassProgressMutable(enrollment: {
  * `locked_for_validation` y los estados del flujo anterior se comportan como
  * en 113d8ba.
  */
-const TERMINAL_INVESTITURE_STATUSES = new Set(['INVESTIDO', 'EXPIRED']);
+export const TERMINAL_INVESTITURE_STATUS_VALUES = [
+  investiture_status_enum.INVESTIDO,
+  investiture_status_enum.EXPIRED,
+] as const;
+
+const TERMINAL_INVESTITURE_STATUSES = new Set<string>(
+  TERMINAL_INVESTITURE_STATUS_VALUES,
+);
+
+/**
+ * Excludes class progress whose enrollment is INVESTIDO/EXPIRED. Review
+ * actions on that progress always fail with CLASS_PROGRESS_LOCKED, so the
+ * review queue and its KPIs must not list or count it. Progress without an
+ * enrollment stays in.
+ */
+export const NOT_TERMINAL_ENROLLMENT_WHERE: Prisma.class_section_progressWhereInput =
+  {
+    NOT: {
+      enrollments: {
+        is: {
+          investiture_status: { in: [...TERMINAL_INVESTITURE_STATUS_VALUES] },
+        },
+      },
+    },
+  };
+
+/** Raw SQL twin of NOT_TERMINAL_ENROLLMENT_WHERE for a `csp` alias. */
+export const NOT_TERMINAL_ENROLLMENT_SQL = `
+  AND NOT EXISTS (
+    SELECT 1 FROM enrollments e
+    WHERE e.enrollment_id = csp.enrollment_id
+      AND e.investiture_status IN ('INVESTIDO', 'EXPIRED')
+  )`;
 
 export function assertClassProgressNotTerminal(enrollment: {
   investitureStatus: string;
