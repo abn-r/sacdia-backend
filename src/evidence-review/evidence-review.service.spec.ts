@@ -162,6 +162,86 @@ describe('EvidenceReviewService', () => {
     });
   });
 
+  it('signs each member profile photo once and hides it for deleted accounts', async () => {
+    const row = (id: number, users: Record<string, unknown>) => ({
+      section_progress_id: id,
+      status: 'SUBMITTED',
+      user_id: users.user_id,
+      class_id: 5,
+      module_id: 12,
+      section_id: 99,
+      submitted_at: new Date('2026-06-01T10:00:00.000Z'),
+      validated_at: null,
+      rejection_reason: null,
+      users,
+      classes: { name: 'Compañero', description: null },
+      evidence_files: [],
+    });
+    mockPrisma.class_section_progress.count.mockResolvedValue(4);
+    mockPrisma.class_section_progress.findMany.mockResolvedValue([
+      row(1, {
+        user_id: 'user-1',
+        name: 'Ana',
+        paternal_last_name: 'Pérez',
+        active: true,
+        email: 'ana@example.com',
+        user_image: 'profiles/user-1/photo.jpg',
+      }),
+      row(2, {
+        user_id: 'user-1',
+        name: 'Ana',
+        paternal_last_name: 'Pérez',
+        active: true,
+        email: 'ana@example.com',
+        user_image: 'profiles/user-1/photo.jpg',
+      }),
+      row(3, {
+        user_id: 'user-2',
+        name: 'Beto',
+        paternal_last_name: 'Ruiz',
+        active: true,
+        email: 'beto@example.com',
+        user_image: null,
+      }),
+      row(4, {
+        user_id: 'user-3',
+        name: 'Cuenta',
+        paternal_last_name: 'eliminada',
+        active: false,
+        email: 'deleted-3f2a9c@sacdia.deleted',
+        user_image: 'profiles/user-3/photo.jpg',
+      }),
+    ]);
+    mockPrisma.class_sections.findMany.mockResolvedValue([]);
+    mockPrisma.class_modules.findMany.mockResolvedValue([]);
+
+    const result = await service.getPending('admin-user', 'class', 1, 10);
+
+    expect(mockPrisma.class_section_progress.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          users: {
+            select: expect.objectContaining({ user_image: true }),
+          },
+        }),
+      }),
+    );
+    expect(result.data.map((item) => item.member_photo_url)).toEqual([
+      'signed://user-1/photo.jpg',
+      'signed://user-1/photo.jpg',
+      null,
+      null,
+    ]);
+    expect(result.data[3].member_is_deleted).toBe(true);
+    const profileCalls = mockFileStorage.getSignedDownloadUrl.mock.calls.filter(
+      ([bucket]) => bucket === StorageBucketAlias.USER_PROFILES,
+    );
+    // Signed once per distinct member; never for a deleted account.
+    expect(profileCalls.map(([, key]) => key)).toEqual([
+      'profiles/user-1/photo.jpg',
+    ]);
+  });
+
   it('adds the member club section (not the class section) to pending items', async () => {
     mockCoordinationService.resolveCoordinatorLikeSectionScope.mockResolvedValue(
       [12],
@@ -755,7 +835,10 @@ describe('EvidenceReviewService', () => {
         display_name: 'Luis Gómez',
       });
       expect(detail.completed_at).toEqual(new Date('2026-05-30T00:00:00.000Z'));
-      expect(JSON.stringify(detail)).not.toMatch(/email|photo_url/);
+      // No email anywhere, and the instructor never exposes a photo. The
+      // member's own photo (member_photo_url) is intentional.
+      expect(JSON.stringify(detail)).not.toMatch(/email/);
+      expect(JSON.stringify(detail.instructor)).not.toMatch(/photo|image/);
       const include =
         mockPrisma.users_honors.findFirst.mock.calls[0][0].include;
       expect(include.instructor.select).not.toHaveProperty('user_image');
