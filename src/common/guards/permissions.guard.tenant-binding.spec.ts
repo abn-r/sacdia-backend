@@ -8,6 +8,8 @@ import { ErrorCode } from '../errors/error-codes';
 import { AuthorizationResource, RequirePermissions } from '../decorators';
 import { FinancesController } from '../../finances/finances.controller';
 import { CamporeesController } from '../../camporees/camporees.controller';
+import { CamporeeEventsController } from '../../camporee-events/camporee-events.controller';
+import { CamporeeVenuesController } from '../../camporee-venues/camporee-venues.controller';
 
 /**
  * Regression tests for tenant binding (audit run-1, §2). Dummy tenants:
@@ -38,9 +40,27 @@ describe('PermissionsGuard tenant binding', () => {
     resolveCurrent: jest.fn(),
   };
 
+  // Local field 50 participates in union camporee 100; local field 51 was
+  // removed (inactive row); nobody from union 1 participates in camporee 900.
+  const UNION_CAMPOREE_LOCAL_FIELDS = [
+    { union_camporee_lf_id: 100, local_field_id: 50, active: true },
+    { union_camporee_lf_id: 100, local_field_id: 51, active: false },
+  ];
+  const CAMPOREE_EVENTS: Record<
+    number,
+    { local_camporee_id: null; union_camporee_id: number }
+  > = {
+    200: { local_camporee_id: null, union_camporee_id: 100 },
+    300: { local_camporee_id: null, union_camporee_id: 900 },
+  };
+
   const mockPrisma = {
     club_sections: { findUnique: jest.fn() },
     union_camporees: { findUnique: jest.fn() },
+    union_camporee_local_fields: { findFirst: jest.fn() },
+    camporee_events: { findUnique: jest.fn() },
+    camporee_venues: { findUnique: jest.fn() },
+    unions: { findUnique: jest.fn() },
   };
 
   const guard = new PermissionsGuard(
@@ -152,6 +172,28 @@ describe('PermissionsGuard tenant binding', () => {
         return row ? { ...row, unions: { country_id: 1 } } : null;
       },
     );
+    mockPrisma.union_camporee_local_fields.findFirst.mockImplementation(
+      async ({
+        where,
+      }: {
+        where: {
+          union_camporee_lf_id: number;
+          local_field_id: number;
+          active: boolean;
+        };
+      }) =>
+        UNION_CAMPOREE_LOCAL_FIELDS.find(
+          (row) =>
+            row.union_camporee_lf_id === where.union_camporee_lf_id &&
+            row.local_field_id === where.local_field_id &&
+            row.active === where.active,
+        ) ?? null,
+    );
+    mockPrisma.camporee_events.findUnique.mockImplementation(
+      async ({ where }: { where: { camporee_event_id: number } }) =>
+        CAMPOREE_EVENTS[where.camporee_event_id] ?? null,
+    );
+    mockPrisma.unions.findUnique.mockResolvedValue({ country_id: 1 });
   });
 
   describe('POST /clubs/:clubId/finances (body club_section_id)', () => {
@@ -281,6 +323,148 @@ describe('PermissionsGuard tenant binding', () => {
       await expect(runPatch('100')).rejects.toMatchObject({
         code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
       });
+    });
+  });
+
+  describe('union camporee participation fallback (type union_camporee)', () => {
+    /** Club director whose active assignment sits in `localFieldId`. */
+    const clubDirectorInLocalField = (
+      permissions: string[],
+      localFieldId: number,
+    ) => {
+      const actor = clubDirector(permissions);
+      actor.authorization.grants.club_assignments[0].scope = {
+        local_field: { id: localFieldId },
+        union: { id: 1 },
+      };
+      return actor;
+    };
+
+    const runGetMembers = (camporeeId: string) =>
+      guard.canActivate(
+        createContext(CamporeesController, 'getUnionMembers', {
+          user: { sub: 'participant' },
+          params: { camporeeId },
+        }),
+      );
+    const runRegister = (camporeeId: string) =>
+      guard.canActivate(
+        createContext(CamporeesController, 'registerMemberToUnion', {
+          user: { sub: 'participant' },
+          params: { camporeeId },
+          body: {},
+        }),
+      );
+    const runGetEvent = (eventId: string) =>
+      guard.canActivate(
+        createContext(CamporeeEventsController, 'getEvent', {
+          user: { sub: 'participant' },
+          params: { eventId },
+        }),
+      );
+
+    it('admits a local-field director whose field participates', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        territorialActor('director-lf', ['attendance:read'], {
+          local_field: { id: 50 },
+        }),
+      );
+
+      await expect(runGetMembers('100')).resolves.toBe(true);
+    });
+
+    it('rejects a local-field director for a camporee the field does not join', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        territorialActor('director-lf', ['attendance:read'], {
+          local_field: { id: 50 },
+        }),
+      );
+
+      await expect(runGetMembers('900')).rejects.toMatchObject({
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+    });
+
+    it('rejects a local field whose participation is inactive', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        territorialActor('assistant-lf', ['attendance:read'], {
+          local_field: { id: 51 },
+        }),
+      );
+
+      await expect(runGetMembers('100')).rejects.toMatchObject({
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+    });
+
+    it('admits a club director of a participating field to register members', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        clubDirectorInLocalField(['attendance:manage'], 50),
+      );
+
+      await expect(runRegister('100')).resolves.toBe(true);
+    });
+
+    it('rejects a club director whose field does not participate', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        clubDirectorInLocalField(['attendance:manage'], 52),
+      );
+
+      await expect(runRegister('100')).rejects.toMatchObject({
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+      await expect(runRegister('900')).rejects.toMatchObject({
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+    });
+
+    it('applies the same rule to events of a union camporee', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        territorialActor('director-lf', ['camporee_events:read'], {
+          local_field: { id: 50 },
+        }),
+      );
+
+      await expect(runGetEvent('200')).resolves.toBe(true);
+      await expect(runGetEvent('300')).rejects.toMatchObject({
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+    });
+
+    it('does not admit local-field actors to union venues (no concrete camporee)', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        territorialActor('director-lf', ['camporee_events:update'], {
+          local_field: { id: 50 },
+        }),
+      );
+      mockPrisma.camporee_venues.findUnique.mockResolvedValue({
+        scope: 'union',
+        union_id: 1,
+        local_field_id: null,
+      });
+
+      await expect(
+        guard.canActivate(
+          createContext(CamporeeVenuesController, 'updateVenue', {
+            user: { sub: 'participant' },
+            params: { venueId: '5' },
+            body: {},
+          }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+    });
+
+    it('keeps admitting the organizing union without a participation row', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        territorialActor('director-union', ['attendance:read'], {
+          union: { id: 2 },
+        }),
+      );
+
+      await expect(runGetMembers('900')).resolves.toBe(true);
+      expect(
+        mockPrisma.union_camporee_local_fields.findFirst,
+      ).not.toHaveBeenCalled();
     });
   });
 
