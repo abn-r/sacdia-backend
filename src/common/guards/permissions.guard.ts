@@ -317,6 +317,16 @@ export class PermissionsGuard implements CanActivate {
           return this.validateUnionCamporeeScope(resolved, venueScope.scope);
         }
       }
+      case 'camporee_payment': {
+        const paymentScope = await this.resolveCamporeePaymentScope(
+          request,
+          resource,
+        );
+        if (paymentScope.type === 'local') {
+          return this.validateTerritoryScope(resolved, paymentScope.scope);
+        }
+        return this.validateUnionCamporeeScope(resolved, paymentScope.scope);
+      }
       case 'activity': {
         const activityScopeResult = await this.resolveActivityScope(
           request,
@@ -701,6 +711,14 @@ export class PermissionsGuard implements CanActivate {
         throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
       }
 
+      if (binding.kind === 'club_enrollment_territory') {
+        await this.assertClubEnrollmentTerritoryAccess(
+          userId,
+          this.parseEntityUuid(rawValue),
+        );
+        continue;
+      }
+
       const tenantId = this.parseTenantId(rawValue);
 
       switch (binding.kind) {
@@ -792,6 +810,34 @@ export class PermissionsGuard implements CanActivate {
     await this.assertClubAccess(userId, resolved, mainClubId);
   }
 
+  /**
+   * Resolves a club enrollment UUID to its club and requires the actor's
+   * territory to cover it (Campo Local review). An active club assignment
+   * does not qualify: a club cannot approve its own enrollment.
+   */
+  private async assertClubEnrollmentTerritoryAccess(
+    userId: string,
+    enrollmentId: string,
+  ): Promise<void> {
+    const enrollment = await this.prisma.club_enrollments.findUnique({
+      where: { club_enrollment_id: enrollmentId },
+      select: { club_section: { select: { main_club_id: true } } },
+    });
+
+    if (!enrollment) {
+      throw new AppNotFoundException(ErrorCode.CE_ENROLLMENT_NOT_FOUND);
+    }
+
+    const mainClubId = this.requireMainClubId(
+      enrollment.club_section?.main_club_id,
+      'Club enrollment section without main club',
+    );
+
+    if (!(await this.authorizationContext.canManageClub(userId, mainClubId))) {
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+    }
+  }
+
   private async loadHierarchyScope(input: {
     localFieldId?: number;
     unionId?: number;
@@ -869,6 +915,15 @@ export class PermissionsGuard implements CanActivate {
       if (Number.isSafeInteger(parsed)) {
         return parsed;
       }
+    }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+  }
+
+  /** Entity UUIDs are checked before they reach a `@db.Uuid` lookup. */
+  private parseEntityUuid(value: unknown): string {
+    if (typeof value === 'string' && isUUID(value, 'all')) {
+      return value;
     }
 
     throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
@@ -1494,6 +1549,55 @@ export class PermissionsGuard implements CanActivate {
     }
 
     // Unknown / missing scope on the row or in the body → reject.
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+  }
+
+  /**
+   * Resolves a camporee payment UUID to the camporee of the member it was
+   * registered for: local camporee → territory scope, union camporee → union
+   * camporee scope (same validators as the camporee routes themselves).
+   */
+  private async resolveCamporeePaymentScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<
+    | { type: 'local'; scope: ResolvedTerritoryScope }
+    | { type: 'union'; scope: ResolvedUnionCamporeeScope }
+  > {
+    const paymentId = this.parseEntityUuid(
+      this.getRequestValue(request, 'param', resource.idParam ?? 'paymentId'),
+    );
+
+    const payment = await this.prisma.camporee_payments.findUnique({
+      where: { camporee_payment_id: paymentId },
+      select: {
+        camporee_member: {
+          select: { camporee_id: true, union_camporee_id: true },
+        },
+      },
+    });
+
+    if (!payment) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_PAYMENT_NOT_FOUND);
+    }
+
+    const { camporee_id: localCamporeeId, union_camporee_id: unionCamporeeId } =
+      payment.camporee_member;
+
+    if (typeof localCamporeeId === 'number') {
+      return {
+        type: 'local',
+        scope: await this.loadCamporeeScope(localCamporeeId),
+      };
+    }
+
+    if (typeof unionCamporeeId === 'number') {
+      return {
+        type: 'union',
+        scope: await this.loadUnionCamporeeScope(unionCamporeeId),
+      };
+    }
+
     throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 

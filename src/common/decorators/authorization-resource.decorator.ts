@@ -11,6 +11,7 @@ export type AuthorizationResourceType =
   | 'union_camporee'
   | 'camporee_event'
   | 'camporee_venue'
+  | 'camporee_payment'
   | 'activity'
   | 'activity_series'
   | 'finance'
@@ -32,13 +33,18 @@ export type AuthorizationTenantBindingKind =
   | 'local_field'
   | 'union'
   | 'camporee'
-  | 'union_camporee';
+  | 'union_camporee'
+  | 'club_enrollment_territory';
 
 /**
  * Binds a tenant identifier carried by the request (param, query or body) to
  * the actor's assignment / territory scope. Enforced by `PermissionsGuard`
  * after the resource-type check, for every resource type. A missing value is
  * rejected unless `optional` is set.
+ *
+ * `club_enrollment_territory` takes a club enrollment UUID instead of a
+ * numeric id, resolves it to its club and requires the actor's territory to
+ * cover that club (an active club assignment does not qualify).
  */
 export type AuthorizationTenantBinding = {
   kind: AuthorizationTenantBindingKind;
