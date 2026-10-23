@@ -340,6 +340,8 @@ export class PermissionsGuard implements CanActivate {
           userId,
           resolved,
           await this.resolveMonthlyReportScope(request, resource),
+          this.coordinatorSectionsCheck(resolved, requirement, resource),
+          request,
         );
       case 'insurance_member':
         return this.validateAnyInstanceScope(

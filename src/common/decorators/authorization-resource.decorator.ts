@@ -34,13 +34,13 @@ export type AuthorizationResourceMetadata = {
   instanceTypeSource?: AuthorizationResourceValueSource;
   instanceTypeField?: string;
   /**
-   * Opt-in, per route; honored for `club_section` and `club_assignment`
-   * resources only. A GLOBAL coordinator / zone-coordinator /
+   * Opt-in, per route; honored for `club_section`, `club_assignment` and
+   * `monthly_report` resources only. A GLOBAL coordinator / zone-coordinator /
    * general-coordinator passes the section scope check when a coordinator
    * ROLE carries the route's required permission(s) and the canonical
    * coordinator scope (coordinator_assignments) covers the resolved section.
-   * Never set it on routes that manage the club (approve, finances...):
-   * coordinators review, they do not run clubs.
+   * Never set it on routes that manage the club (approve, finances, report
+   * drafting/submission...): coordinators review, they do not run clubs.
    */
   coordinatorSections?: boolean;
 };

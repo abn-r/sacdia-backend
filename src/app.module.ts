@@ -47,6 +47,7 @@ import { AnnualFoldersModule } from './annual-folders/annual-folders.module';
 import { MonthlyReportsModule } from './monthly-reports/monthly-reports.module';
 import { QuarterlyReportsModule } from './quarterly-reports/quarterly-reports.module';
 import { AnnualReportsModule } from './annual-reports/annual-reports.module';
+import { ReportsModule } from './reports/reports.module';
 import { RequestsModule } from './requests/requests.module';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { YearEndModule } from './year-end/year-end.module';
@@ -252,6 +253,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     MonthlyReportsModule,
     QuarterlyReportsModule,
     AnnualReportsModule,
+    ReportsModule,
     RequestsModule,
     SystemConfigModule,
     YearEndModule,

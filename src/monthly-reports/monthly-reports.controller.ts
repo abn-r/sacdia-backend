@@ -88,7 +88,7 @@ export class MonthlyReportsController {
   // ========================================
 
   @Post(':enrollmentId')
-  @RequirePermissions('reports:read')
+  @RequirePermissions('reports:submit')
   @AuthorizationResource({ type: 'monthly_report', idParam: 'enrollmentId' })
   @ApiOperation({
     summary: 'Obtener o crear borrador de informe mensual',
@@ -124,7 +124,7 @@ export class MonthlyReportsController {
   // ========================================
 
   @Patch(':reportId/manual-data')
-  @RequirePermissions('reports:read')
+  @RequirePermissions('reports:submit')
   @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Actualizar datos manuales del informe',
@@ -160,7 +160,7 @@ export class MonthlyReportsController {
 
   @Post(':reportId/generate')
   @HttpCode(HttpStatus.ACCEPTED)
-  @RequirePermissions('reports:read')
+  @RequirePermissions('reports:submit')
   @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Generar informe (congelar datos)',
@@ -203,7 +203,7 @@ export class MonthlyReportsController {
 
   @Post(':reportId/submit')
   @HttpCode(HttpStatus.OK)
-  @RequirePermissions('reports:read')
+  @RequirePermissions('reports:submit')
   @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Enviar informe al campo',
@@ -239,7 +239,11 @@ export class MonthlyReportsController {
 
   @Get('enrollment/:enrollmentId')
   @RequirePermissions('reports:read')
-  @AuthorizationResource({ type: 'monthly_report', idParam: 'enrollmentId' })
+  @AuthorizationResource({
+    type: 'monthly_report',
+    idParam: 'enrollmentId',
+    coordinatorSections: true,
+  })
   @ApiOperation({
     summary: 'Listar informes de una matrícula',
     description:
@@ -275,7 +279,11 @@ export class MonthlyReportsController {
 
   @Get(':reportId/pdf')
   @RequirePermissions('reports:download')
-  @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
+  @AuthorizationResource({
+    type: 'monthly_report',
+    idParam: 'reportId',
+    coordinatorSections: true,
+  })
   @ApiOperation({
     summary: 'Descargar informe mensual en PDF',
     description:
@@ -410,7 +418,11 @@ export class MonthlyReportsController {
 
   @Get(':reportId')
   @RequirePermissions('reports:read')
-  @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
+  @AuthorizationResource({
+    type: 'monthly_report',
+    idParam: 'reportId',
+    coordinatorSections: true,
+  })
   @ApiOperation({
     summary: 'Obtener informe mensual',
     description:

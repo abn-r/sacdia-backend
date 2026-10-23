@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AppBadRequestException,
@@ -11,6 +12,7 @@ import { CoordinationService } from '../coordination/coordination.service';
 import {
   buildReportClubWhere,
   resolveReportVisibilityScopeForActor,
+  type ReportVisibilityFilters,
 } from '../reports/report-visibility-scope';
 
 // ============================================================
@@ -456,18 +458,11 @@ export class AnnualReportsService {
       limit?: number;
     },
   ) {
-    const resolved =
-      await this.authorizationContext.resolveUserAuthorization(userId);
-    const reportScope = await resolveReportVisibilityScopeForActor(
-      resolved,
-      {
-        divisionId: filters.divisionId,
-        unionId: filters.unionId,
-        localFieldId: filters.localFieldId,
-      },
-      () => this.coordinationService.getEffectiveCoordinatorSectionIds(userId),
-    );
-    const clubWhere = buildReportClubWhere(reportScope);
+    const clubWhere = await this.actorReportClubWhere(userId, {
+      divisionId: filters.divisionId,
+      unionId: filters.unionId,
+      localFieldId: filters.localFieldId,
+    });
 
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? 25, 100);
@@ -502,6 +497,68 @@ export class AnnualReportsService {
     ]);
 
     return { total, page, limit, items };
+  }
+
+  // ========================================
+  // ACTOR VISIBILITY (admin routes)
+  // ========================================
+
+  /**
+   * Same visibility as the admin list: territory for territorial roles, the
+   * coordinator's assigned sections (coordinator_assignments) for coordinators,
+   * the active club section otherwise. A club is visible to a coordinator when
+   * one of its sections is in their scope.
+   */
+  private async actorReportClubWhere(
+    userId: string,
+    filters: ReportVisibilityFilters = {},
+  ): Promise<Prisma.clubsWhereInput> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    const reportScope = await resolveReportVisibilityScopeForActor(
+      resolved,
+      filters,
+      () => this.coordinationService.getEffectiveCoordinatorSectionIds(userId),
+    );
+    return buildReportClubWhere(reportScope);
+  }
+
+  /**
+   * Every admin route that takes a report id calls this first. A report that
+   * does not exist and one outside the actor's visibility both answer 404, so
+   * ids outside the scope cannot be probed.
+   */
+  async assertReportVisibleToActor(
+    userId: string,
+    reportId: number,
+  ): Promise<void> {
+    const clubWhere = await this.actorReportClubWhere(userId);
+    const report = await this.prisma.annual_reports.findFirst({
+      where: {
+        annual_report_id: reportId,
+        ...(Object.keys(clubWhere).length > 0 && { club: clubWhere }),
+      },
+      select: { annual_report_id: true },
+    });
+
+    if (!report) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_REPORT_NOT_FOUND);
+    }
+  }
+
+  /** Club routes: the report must belong to the club in the path (404 otherwise). */
+  async assertReportBelongsToClub(
+    clubId: number,
+    reportId: number,
+  ): Promise<void> {
+    const report = await this.prisma.annual_reports.findFirst({
+      where: { annual_report_id: reportId, club_id: clubId },
+      select: { annual_report_id: true },
+    });
+
+    if (!report) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_REPORT_NOT_FOUND);
+    }
   }
 
   // ========================================

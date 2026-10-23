@@ -100,11 +100,16 @@ export class QuarterlyReportsController {
 
   @Get('admin/quarterly-reports/:id')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Obtener informe trimestral por ID (admin)' })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe trimestral' })
   @ApiResponse({ status: 404, description: 'No encontrado' })
-  async getAdmin(@Param('id', ParseIntPipe) id: number) {
+  async getAdmin(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    await this.quarterlyReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const data = await this.quarterlyReportsService.getReport(id);
     return { status: 'success', data };
   }
@@ -115,6 +120,7 @@ export class QuarterlyReportsController {
 
   @Patch('admin/quarterly-reports/:id')
   @RequirePermissions('reports:update')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Actualizar datos manuales del informe trimestral (admin)',
   })
@@ -123,7 +129,12 @@ export class QuarterlyReportsController {
   async updateManualData(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateQuarterlyManualDataDto,
+    @Req() req: any,
   ) {
+    await this.quarterlyReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const data = await this.quarterlyReportsService.updateManualData(id, dto);
     return { status: 'success', data };
   }
@@ -134,12 +145,17 @@ export class QuarterlyReportsController {
 
   @Post('admin/quarterly-reports/:id/regenerate')
   @RequirePermissions('reports:update')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Regenerar datos calculados del informe trimestral (admin)',
   })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe regenerado' })
-  async regenerate(@Param('id', ParseIntPipe) id: number) {
+  async regenerate(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    await this.quarterlyReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const data = await this.quarterlyReportsService.regenerate(id);
     return { status: 'success', data };
   }
@@ -150,10 +166,15 @@ export class QuarterlyReportsController {
 
   @Post('admin/quarterly-reports/:id/finalize')
   @RequirePermissions('reports:update')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Finalizar informe trimestral (admin)' })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe finalizado' })
   async finalize(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    await this.quarterlyReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const data = await this.quarterlyReportsService.finalize(id, req.user.sub);
     return { status: 'success', data };
   }
@@ -164,6 +185,7 @@ export class QuarterlyReportsController {
 
   @Get('admin/quarterly-reports/:id/pdf')
   @RequirePermissions('reports:download')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary:
       'Descargar PDF del informe trimestral (admin). Nombre: informe-trimestral-{club}-{tipo}-{trimestre}-{año}.pdf',
@@ -173,8 +195,13 @@ export class QuarterlyReportsController {
   @ApiResponse({ status: 200, description: 'PDF del informe trimestral' })
   async downloadPdfAdmin(
     @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
     @Res() res: Response,
   ) {
+    await this.quarterlyReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const buffer = await this.quarterlyReportsPdfService.generatePdf(id);
     const filename =
       await this.quarterlyReportsPdfService.resolveDownloadFilename(id);
@@ -192,6 +219,7 @@ export class QuarterlyReportsController {
 
   @Get('clubs/:clubId/quarterly-reports')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Listar informes trimestrales de un club (usuario)',
   })
@@ -215,12 +243,17 @@ export class QuarterlyReportsController {
 
   @Get('clubs/:clubId/quarterly-reports/:id')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Obtener informe trimestral por ID (usuario)' })
   @ApiParam({ name: 'clubId', type: 'integer' })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe trimestral' })
   @ApiResponse({ status: 404, description: 'No encontrado' })
-  async getForClub(@Param('id', ParseIntPipe) id: number) {
+  async getForClub(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.quarterlyReportsService.assertReportBelongsToClub(clubId, id);
     const data = await this.quarterlyReportsService.getReport(id);
     return { status: 'success', data };
   }
@@ -231,6 +264,7 @@ export class QuarterlyReportsController {
 
   @Get('clubs/:clubId/quarterly-reports/:id/pdf')
   @RequirePermissions('reports:download')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary:
       'Descargar PDF del informe trimestral (usuario). Nombre: informe-trimestral-{club}-{tipo}-{trimestre}-{año}.pdf',
@@ -240,9 +274,11 @@ export class QuarterlyReportsController {
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF del informe trimestral' })
   async downloadPdfUser(
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('id', ParseIntPipe) id: number,
     @Res() res: Response,
   ) {
+    await this.quarterlyReportsService.assertReportBelongsToClub(clubId, id);
     const buffer = await this.quarterlyReportsPdfService.generatePdf(id);
     const filename =
       await this.quarterlyReportsPdfService.resolveDownloadFilename(id);
