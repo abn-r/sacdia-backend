@@ -388,6 +388,41 @@ describe('EvidenceReviewService', () => {
     });
   });
 
+  it('leaves INVESTIDO/EXPIRED enrollments out of the class queue and its count', async () => {
+    mockPrisma.class_section_progress.count.mockResolvedValue(0);
+    mockPrisma.class_section_progress.findMany.mockResolvedValue([]);
+
+    await service.getPending('admin-user', 'class', 1, 20);
+
+    const terminalFilter = {
+      NOT: {
+        enrollments: {
+          is: { investiture_status: { in: ['INVESTIDO', 'EXPIRED'] } },
+        },
+      },
+    };
+    expect(mockPrisma.class_section_progress.count).toHaveBeenCalledWith({
+      where: expect.objectContaining(terminalFilter),
+    });
+    expect(mockPrisma.class_section_progress.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining(terminalFilter),
+      }),
+    );
+  });
+
+  it('leaves INVESTIDO/EXPIRED enrollments out of the combined raw queue', async () => {
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+    mockPrisma.class_section_progress.count.mockResolvedValue(0);
+    mockPrisma.users_honors.count.mockResolvedValue(0);
+
+    await service.getPending('admin-user', undefined, 1, 20);
+
+    const sql = mockPrisma.$queryRawUnsafe.mock.calls[0][0] as string;
+    expect(sql).toContain('FROM enrollments e');
+    expect(sql).toContain("e.investiture_status IN ('INVESTIDO', 'EXPIRED')");
+  });
+
   it('hydrates omitted-type pending using raw identifier paging and no full scans', async () => {
     mockPrisma.$queryRawUnsafe.mockResolvedValue([
       {

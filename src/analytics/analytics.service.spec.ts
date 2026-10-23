@@ -1,4 +1,5 @@
 import { AnalyticsService } from './analytics.service';
+import { NOT_TERMINAL_ENROLLMENT_WHERE } from '../classes/class-progress-mutable';
 
 describe('AnalyticsService.getSlaDashboard — validation counts', () => {
   function build() {
@@ -51,6 +52,7 @@ describe('AnalyticsService.getSlaDashboard — validation counts', () => {
         status: 'SUBMITTED',
         active: true,
         submitted_at: { not: null },
+        ...NOT_TERMINAL_ENROLLMENT_WHERE,
         ...scope,
       },
     });
@@ -74,6 +76,7 @@ describe('AnalyticsService.getSlaDashboard — validation counts', () => {
         status: 'SUBMITTED',
         active: true,
         submitted_at: { not: null },
+        ...NOT_TERMINAL_ENROLLMENT_WHERE,
       },
     });
   });
@@ -174,6 +177,18 @@ describe('AnalyticsService.getSlaDashboard — evidence SLA', () => {
         30,
       ]),
     );
+  });
+
+  it('leaves out class progress of an INVESTIDO/EXPIRED enrollment', async () => {
+    const { service, prisma } = build([
+      { pending: 0, overdue: 0, avg_days: null },
+    ]);
+
+    await service.getSlaDashboard(undefined);
+
+    const { text } = sqlOf(prisma.$queryRaw.mock.calls[0]);
+    expect(text).toContain('FROM enrollments e');
+    expect(text).toContain("e.investiture_status IN ('INVESTIDO', 'EXPIRED')");
   });
 
   it('does not scope the evidence query for a global (admin) view', async () => {
