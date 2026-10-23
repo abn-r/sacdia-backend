@@ -588,7 +588,8 @@ ON CONFLICT (permission_name) DO UPDATE SET
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('reports:read', 'View and preview monthly reports', true),
-  ('reports:download', 'Download generated reports', true)
+  ('reports:download', 'Download generated reports', true),
+  ('reports:submit', 'Draft, edit, generate and submit monthly reports', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,

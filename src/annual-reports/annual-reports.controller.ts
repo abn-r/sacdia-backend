@@ -103,6 +103,7 @@ export class AnnualReportsController {
 
   @Get('admin/annual-reports/:id')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Obtener informe anual por ID (admin)' })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe anual' })
@@ -112,7 +113,11 @@ export class AnnualReportsController {
     description: 'Insufficient permissions — requires reports:read',
   })
   @ApiResponse({ status: 404, description: 'No encontrado' })
-  async getAdmin(@Param('id', ParseIntPipe) id: number) {
+  async getAdmin(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    await this.annualReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const data = await this.annualReportsService.getReport(id);
     return { status: 'success', data };
   }
@@ -123,6 +128,7 @@ export class AnnualReportsController {
 
   @Patch('admin/annual-reports/:id')
   @RequirePermissions('reports:update')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Actualizar datos manuales del informe anual (admin)',
   })
@@ -137,7 +143,12 @@ export class AnnualReportsController {
   async updateManualData(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateAnnualManualDataDto,
+    @Req() req: any,
   ) {
+    await this.annualReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const data = await this.annualReportsService.updateManualData(id, dto);
     return { status: 'success', data };
   }
@@ -148,6 +159,7 @@ export class AnnualReportsController {
 
   @Post('admin/annual-reports/:id/regenerate')
   @RequirePermissions('reports:update')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Regenerar datos calculados del informe anual (admin)',
   })
@@ -159,7 +171,11 @@ export class AnnualReportsController {
     description: 'Insufficient permissions — requires reports:update',
   })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
-  async regenerate(@Param('id', ParseIntPipe) id: number) {
+  async regenerate(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    await this.annualReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const data = await this.annualReportsService.regenerate(id);
     return { status: 'success', data };
   }
@@ -170,6 +186,7 @@ export class AnnualReportsController {
 
   @Post('admin/annual-reports/:id/finalize')
   @RequirePermissions('reports:update')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Finalizar informe anual (admin)' })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe finalizado' })
@@ -180,6 +197,10 @@ export class AnnualReportsController {
   })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async finalize(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    await this.annualReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const data = await this.annualReportsService.finalize(id, req.user.sub);
     return { status: 'success', data };
   }
@@ -190,6 +211,7 @@ export class AnnualReportsController {
 
   @Get('admin/annual-reports/:id/pdf')
   @RequirePermissions('reports:download')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary:
       'Descargar PDF del informe anual (admin). Nombre: informe-anual-{club}-{tipo}-{año}.pdf',
@@ -205,8 +227,13 @@ export class AnnualReportsController {
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async downloadPdfAdmin(
     @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
     @Res() res: Response,
   ) {
+    await this.annualReportsService.assertReportVisibleToActor(
+      req.user.sub,
+      id,
+    );
     const buffer = await this.annualReportsPdfService.generatePdf(id);
     const filename =
       await this.annualReportsPdfService.resolveDownloadFilename(id);
@@ -224,6 +251,7 @@ export class AnnualReportsController {
 
   @Get('clubs/:clubId/annual-reports')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Listar informes anuales de un club (usuario)' })
   @ApiParam({ name: 'clubId', type: 'integer' })
   @ApiResponse({
@@ -246,6 +274,7 @@ export class AnnualReportsController {
 
   @Get('clubs/:clubId/annual-reports/:id')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Obtener informe anual por ID (usuario)' })
   @ApiParam({ name: 'clubId', type: 'integer' })
   @ApiParam({ name: 'id', type: 'integer' })
@@ -256,7 +285,11 @@ export class AnnualReportsController {
     description: 'Insufficient permissions — requires reports:read',
   })
   @ApiResponse({ status: 404, description: 'No encontrado' })
-  async getForClub(@Param('id', ParseIntPipe) id: number) {
+  async getForClub(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.annualReportsService.assertReportBelongsToClub(clubId, id);
     const data = await this.annualReportsService.getReport(id);
     return { status: 'success', data };
   }
@@ -267,6 +300,7 @@ export class AnnualReportsController {
 
   @Get('clubs/:clubId/annual-reports/:id/pdf')
   @RequirePermissions('reports:download')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary:
       'Descargar PDF del informe anual (usuario). Nombre: informe-anual-{club}-{tipo}-{año}.pdf',
@@ -282,9 +316,11 @@ export class AnnualReportsController {
   })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async downloadPdfUser(
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('id', ParseIntPipe) id: number,
     @Res() res: Response,
   ) {
+    await this.annualReportsService.assertReportBelongsToClub(clubId, id);
     const buffer = await this.annualReportsPdfService.generatePdf(id);
     const filename =
       await this.annualReportsPdfService.resolveDownloadFilename(id);

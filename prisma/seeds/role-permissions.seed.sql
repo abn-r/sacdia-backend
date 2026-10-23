@@ -499,6 +499,8 @@ WHERE r.role_name = 'secretary'
     -- Reports (view/preview and download monthly reports)
     'reports:read',
     'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
     -- Club instances (register and manage yearly club instances)
     'club_instances:create',
     'club_instances:read',
@@ -637,6 +639,8 @@ WHERE r.role_name = 'treasurer'
     -- Reports (view/preview and download financial reports)
     'reports:read',
     'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
     -- Insurance management (register and update for section members/staff)
     'insurance:create',
     'insurance:update',
@@ -762,6 +766,8 @@ WHERE r.role_name = 'secretary-treasurer'
     -- Reports
     'reports:read',
     'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
     -- Club instances
     'club_instances:create',
     'club_instances:read',
@@ -906,6 +912,8 @@ WHERE r.role_name = 'deputy-director'
     'inventory:read',
     'reports:read',
     'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
     'club_instances:read',
     'camporees:read',
     -- Camporees management (Sprint D)
@@ -1041,6 +1049,8 @@ WHERE r.role_name = 'director'
     -- Reports
     'reports:read',
     'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
     -- Club instances
     'club_instances:create',
     'club_instances:read',
@@ -1116,7 +1126,9 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- Can view club info, members, classes, and approve/reject class progress
 -- and investiture candidates. Read-heavy with limited write (classes:update,
 -- user_honors:update).
--- Total: 17
+-- Reports: reports:read + reports:download only (migration
+-- 20261025120000_coordinator_reports_read); never reports:submit.
+-- Total: 19
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1170,7 +1182,12 @@ WHERE r.role_name = 'coordinator'
 
     -- Validation (own domain — Sprint E)
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- Reports (read + download only; scope = coordinator_assignments).
+    -- Never reports:submit: coordinators review, they do not draft or send.
+    'reports:read',
+    'reports:download'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1243,7 +1260,12 @@ WHERE r.role_name = 'zone-coordinator'
 
     -- Validation (own domain — Sprint E)
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- Reports (read + download only; scope = coordinator_assignments).
+    -- Never reports:submit: coordinators review, they do not draft or send.
+    'reports:read',
+    'reports:download'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1313,7 +1335,12 @@ WHERE r.role_name = 'general-coordinator'
 
     -- Validation (own domain — Sprint E)
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- Reports (read + download only; scope = coordinator_assignments).
+    -- Never reports:submit: coordinators review, they do not draft or send.
+    'reports:read',
+    'reports:download'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1411,6 +1438,8 @@ WHERE r.role_name = 'assistant-lf'
     'insurance:update',
     'reports:read',
     'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
     'club_instances:create',
     'club_instances:read',
     'club_instances:update',
@@ -1552,6 +1581,8 @@ WHERE r.role_name = 'pastor'
     -- Reports (read + download)
     'reports:read',
     'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
 
     -- Catalogs (read only)
     'catalogs:read',
