@@ -73,6 +73,8 @@ export type EvidenceItem = {
   member_name: string;
   member_is_deleted: boolean;
   member_id: string;
+  /** Signed profile photo URL; null when the member has none or was deleted. */
+  member_photo_url: string | null;
   entity_name: string;
   /**
    * Class curriculum section (class evidence) or honor name (honor evidence).
@@ -241,6 +243,7 @@ const USER_NAME_SELECT = {
   paternal_last_name: true,
   active: true,
   email: true,
+  user_image: true,
 } as const;
 
 @Injectable()
@@ -403,6 +406,10 @@ export class EvidenceReviewService {
         ),
       ]);
 
+    const photosByUser = await this.resolveMemberPhotoUrls(
+      records.map((r) => r.users),
+    );
+
     return records.map((r) => {
       const section = sectionsById.get(r.section_id);
       const module = modulesById.get(r.module_id);
@@ -414,6 +421,7 @@ export class EvidenceReviewService {
         member_name: buildMemberName(r.users),
         member_is_deleted: isDeletedAccountSnapshot(r.users),
         member_id: r.user_id,
+        member_photo_url: photosByUser.get(r.user_id) ?? null,
         entity_name: r.classes?.name ?? `Clase #${r.class_id}`,
         section_name: section?.name ?? `Sección #${r.section_id}`,
         entity_description: section?.description ?? null,
@@ -483,6 +491,10 @@ export class EvidenceReviewService {
       scopedClubSectionIds,
     );
 
+    const photosByUser = await this.resolveMemberPhotoUrls(
+      records.map((r) => r.users),
+    );
+
     return records.map((r) => {
       const fileCount = countHonorEvidenceFiles(r);
 
@@ -493,6 +505,7 @@ export class EvidenceReviewService {
         member_name: buildMemberName(r.users),
         member_is_deleted: isDeletedAccountSnapshot(r.users),
         member_id: r.user_id,
+        member_photo_url: photosByUser.get(r.user_id) ?? null,
         entity_name: r.honors?.name ?? `Especialidad #${r.honor_id}`,
         section_name: r.honors?.name ?? `Especialidad #${r.honor_id}`,
         entity_description: r.honors?.description ?? null,
@@ -748,6 +761,7 @@ export class EvidenceReviewService {
       member_name: buildMemberName(record.users),
       member_is_deleted: isDeletedAccountSnapshot(record.users),
       member_id: record.user_id,
+      member_photo_url: await this.resolveMemberPhotoUrl(record.users),
       entity_name: record.classes?.name ?? `Clase #${record.class_id}`,
       section_name: section?.name ?? `Sección #${record.section_id}`,
       entity_description: section?.description ?? null,
@@ -825,6 +839,7 @@ export class EvidenceReviewService {
       member_name: buildMemberName(record.users),
       member_is_deleted: isDeletedAccountSnapshot(record.users),
       member_id: record.user_id,
+      member_photo_url: await this.resolveMemberPhotoUrl(record.users),
       entity_name: record.honors?.name ?? `Especialidad #${record.honor_id}`,
       section_name: record.honors?.name ?? `Especialidad #${record.honor_id}`,
       entity_description: record.honors?.description ?? null,
@@ -1150,6 +1165,54 @@ export class EvidenceReviewService {
     if (/\.webp(\?|$|\s)/i.test(value)) return 'image/webp';
     if (/\.pdf(\?|$|\s)/i.test(value)) return 'application/pdf';
     return 'application/octet-stream';
+  }
+
+  /**
+   * Signed URL of a member's profile photo (private USER_PROFILES bucket).
+   * Deleted accounts and members without a photo resolve to null.
+   */
+  private async resolveMemberPhotoUrl(
+    user: {
+      user_id: string;
+      user_image: string | null;
+      active?: boolean | null;
+      email?: string | null;
+      name?: string | null;
+      paternal_last_name?: string | null;
+    } | null,
+  ): Promise<string | null> {
+    if (!user?.user_image || isDeletedAccountSnapshot(user)) return null;
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        user.user_image,
+        { expiresInSeconds: EvidenceReviewService.SIGNED_FILE_URL_TTL_SECONDS },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to presign profile photo for userId=${user.user_id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return user.user_image;
+    }
+  }
+
+  /** One signed photo URL per distinct member (the queue repeats members). */
+  private async resolveMemberPhotoUrls(
+    users: Array<Parameters<EvidenceReviewService['resolveMemberPhotoUrl']>[0]>,
+  ): Promise<Map<string, string | null>> {
+    const unique = new Map<string, (typeof users)[number]>();
+    for (const user of users) {
+      if (user) unique.set(user.user_id, user);
+    }
+    const entries = await Promise.all(
+      [...unique.entries()].map(
+        async ([userId, user]) =>
+          [userId, await this.resolveMemberPhotoUrl(user)] as const,
+      ),
+    );
+    return new Map(entries);
   }
 
   private async resolveEvidenceFileUrl(
