@@ -589,7 +589,9 @@ ON CONFLICT (permission_name) DO UPDATE SET
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('reports:read', 'View and preview monthly reports', true),
   ('reports:download', 'Download generated reports', true),
-  ('reports:submit', 'Draft, edit, generate and submit monthly reports', true)
+  ('reports:submit', 'Draft, edit, generate and submit monthly reports', true),
+  ('reports:update', 'Edit, regenerate and finalize quarterly and annual club reports', true),
+  ('reports:write', 'Re-render the stored PDF of a generated or submitted monthly report', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,

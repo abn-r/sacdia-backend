@@ -444,6 +444,88 @@ describe('Monthly reports: club roles keep drafting and submitting with reports:
   });
 });
 
+describe('Monthly reports: regenerate needs reports:write (migration 20261026120000)', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const WRITE_PERMISSIONS = [
+    'reports:read',
+    'reports:download',
+    'reports:submit',
+    'reports:write',
+  ];
+
+  it.each([
+    'secretary',
+    'treasurer',
+    'secretary-treasurer',
+    'deputy-director',
+    'director',
+  ])('a %s with reports:write PASSES in their own section', async (role) => {
+    const { guard } = setup(clubRoleProfile(role, WRITE_PERMISSIONS));
+
+    expect(await decide(guard, 'regenerate')).toEqual({ allowed: true });
+  });
+
+  it('reports:submit alone does not open regenerate', async () => {
+    const { guard } = setup(
+      clubRoleProfile('director', [
+        'reports:read',
+        'reports:download',
+        'reports:submit',
+      ]),
+    );
+
+    expect(await decide(guard, 'regenerate')).toEqual({
+      allowed: false,
+      code: ErrorCode.GUARD_PERMISSION_DENIED,
+    });
+  });
+
+  it('a director with reports:write is DENIED in another section', async () => {
+    const { guard } = setup(clubRoleProfile('director', WRITE_PERMISSIONS, 23));
+
+    expect(await decide(guard, 'regenerate')).toEqual({
+      allowed: false,
+      code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+    });
+  });
+
+  it.each(['admin', 'super-admin', 'director-lf', 'assistant-lf'])(
+    'GLOBAL %s with reports:write PASSES on a club of its territory',
+    async (role) => {
+      const { guard } = setup(coordinatorProfile(role, WRITE_PERMISSIONS));
+
+      expect(await decide(guard, 'regenerate')).toEqual({ allowed: true });
+    },
+  );
+
+  it('GLOBAL director-lf with reports:write is DENIED outside its local field', async () => {
+    const { guard } = setup(
+      coordinatorProfile('director-lf', WRITE_PERMISSIONS),
+      {
+        sectionLocalFieldId: OTHER_LOCAL_FIELD,
+        clubLocalFieldId: OTHER_LOCAL_FIELD,
+      },
+    );
+
+    expect(await decide(guard, 'regenerate')).toMatchObject({ allowed: false });
+  });
+
+  it.each(COORDINATOR_ROLES)(
+    '%s is 403 on regenerate even inside an assigned section',
+    async (role) => {
+      const { guard } = setup(coordinatorProfile(role), {
+        assignments: [sectionAssignment(SECTION_ID)],
+      });
+
+      expect(await decide(guard, 'regenerate')).toEqual({
+        allowed: false,
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+    },
+  );
+});
+
 describe('Monthly reports controller metadata', () => {
   const metadata = (handler: Handler) => ({
     permissions: Reflect.getMetadata(

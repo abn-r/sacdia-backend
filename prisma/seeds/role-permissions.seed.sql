@@ -501,6 +501,8 @@ WHERE r.role_name = 'secretary'
     'reports:download',
     -- Draft, edit, generate and submit monthly reports (split from reports:read)
     'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
     -- Club instances (register and manage yearly club instances)
     'club_instances:create',
     'club_instances:read',
@@ -641,6 +643,8 @@ WHERE r.role_name = 'treasurer'
     'reports:download',
     -- Draft, edit, generate and submit monthly reports (split from reports:read)
     'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
     -- Insurance management (register and update for section members/staff)
     'insurance:create',
     'insurance:update',
@@ -768,6 +772,8 @@ WHERE r.role_name = 'secretary-treasurer'
     'reports:download',
     -- Draft, edit, generate and submit monthly reports (split from reports:read)
     'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
     -- Club instances
     'club_instances:create',
     'club_instances:read',
@@ -914,6 +920,8 @@ WHERE r.role_name = 'deputy-director'
     'reports:download',
     -- Draft, edit, generate and submit monthly reports (split from reports:read)
     'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
     'club_instances:read',
     'camporees:read',
     -- Camporees management (Sprint D)
@@ -1051,6 +1059,8 @@ WHERE r.role_name = 'director'
     'reports:download',
     -- Draft, edit, generate and submit monthly reports (split from reports:read)
     'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
     -- Club instances
     'club_instances:create',
     'club_instances:read',
@@ -1440,6 +1450,8 @@ WHERE r.role_name = 'assistant-lf'
     'reports:download',
     -- Draft, edit, generate and submit monthly reports (split from reports:read)
     'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
     'club_instances:create',
     'club_instances:read',
     'club_instances:update',
@@ -1583,6 +1595,8 @@ WHERE r.role_name = 'pastor'
     'reports:download',
     -- Draft, edit, generate and submit monthly reports (split from reports:read)
     'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
 
     -- Catalogs (read only)
     'catalogs:read',
@@ -1908,6 +1922,29 @@ WHERE r.role_name IN (
     'materiales:manage-inventory',
     'materiales:configure'
   )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- reports:update — quarterly / annual report review (territorial)
+-- ============================
+-- PATCH admin/{quarterly,annual}-reports/:id, POST :id/regenerate and
+-- POST :id/finalize. Territorial roles act inside their report visibility
+-- (local field / union / division); admin, assistant-admin and super-admin
+-- pick it up through their wildcard grants above. Never coordinators, pastor
+-- or CLUB roles. Migration 20261026120000_reports_update_permission.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'assistant-lf', 'director-lf',
+    'assistant-union', 'director-union',
+    'assistant-dia', 'director-dia'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'reports:update'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ============================
