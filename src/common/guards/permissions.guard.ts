@@ -185,7 +185,14 @@ export class PermissionsGuard implements CanActivate {
         [context.getHandler(), context.getClass()],
       );
 
-    if (this.canBypassForResourceOwner(request, userId, resource)) {
+    const isOwnerBypass = this.canBypassForResourceOwner(
+      request,
+      userId,
+      resource,
+    );
+    const hasTenantBindings = (resource.bind?.length ?? 0) > 0;
+
+    if (isOwnerBypass && !hasTenantBindings) {
       return true;
     }
 
@@ -193,6 +200,13 @@ export class PermissionsGuard implements CanActivate {
       await this.authorizationContext.resolveUserAuthorization(userId);
     request.authorization = resolved.authorization;
     request.authorizationProfile = resolved;
+
+    // Owners skip the permission check, but tenant identifiers they send are
+    // still bound to their own scope.
+    if (isOwnerBypass) {
+      await this.enforceTenantBindings(userId, request, resolved, resource);
+      return true;
+    }
 
     const hasRequiredPermissions = this.hasRequiredPermissions(
       resolved,
@@ -222,6 +236,35 @@ export class PermissionsGuard implements CanActivate {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
 
+    if (
+      !(await this.validateResourceScope(
+        userId,
+        request,
+        resolved,
+        requirement,
+        resource,
+      ))
+    ) {
+      return false;
+    }
+
+    await this.enforceTenantBindings(userId, request, resolved, resource);
+    return true;
+  }
+
+  /**
+   * Resolves the resource named by the route metadata and checks it against
+   * the actor's scope. `global`, `user` and `active_assignment` carry no
+   * resource of their own: any tenant identifier those routes accept must be
+   * declared through `bind` (see enforceTenantBindings).
+   */
+  private async validateResourceScope(
+    userId: string,
+    request: any,
+    resolved: ResolvedAuthorizationProfile,
+    requirement: PermissionRequirement,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<boolean> {
     switch (resource.type) {
       case 'global':
       case 'user':
@@ -613,8 +656,17 @@ export class PermissionsGuard implements CanActivate {
       'Club ID not found in request',
     );
 
+    await this.assertClubAccess(userId, resolved, clubId);
+    return true;
+  }
+
+  private async assertClubAccess(
+    userId: string,
+    resolved: ResolvedAuthorizationProfile,
+    clubId: number,
+  ): Promise<void> {
     if (await this.authorizationContext.canManageClub(userId, clubId)) {
-      return true;
+      return;
     }
 
     const activeClubScope = resolved.authorization.effective.scope.club;
@@ -622,8 +674,199 @@ export class PermissionsGuard implements CanActivate {
     if (!activeClubScope || activeClubScope.club.club_id !== clubId) {
       throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
+  }
 
-    return true;
+  private async enforceTenantBindings(
+    userId: string,
+    request: any,
+    resolved: ResolvedAuthorizationProfile,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<void> {
+    for (const binding of resource.bind ?? []) {
+      const rawValue = this.getRequestValue(
+        request,
+        binding.source,
+        binding.field,
+      );
+
+      if (rawValue === undefined || rawValue === null || rawValue === '') {
+        if (binding.optional) {
+          continue;
+        }
+        throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+      }
+
+      const tenantId = this.parseTenantId(rawValue);
+
+      switch (binding.kind) {
+        case 'club':
+          await this.assertClubAccess(userId, resolved, tenantId);
+          break;
+        case 'club_section':
+          await this.assertClubSectionAccess(
+            userId,
+            request,
+            resolved,
+            resource,
+            tenantId,
+          );
+          break;
+        case 'local_field':
+          this.assertHierarchyAccess(
+            resolved,
+            await this.loadHierarchyScope({ localFieldId: tenantId }),
+          );
+          break;
+        case 'union':
+          this.assertHierarchyAccess(
+            resolved,
+            await this.loadHierarchyScope({ unionId: tenantId }),
+          );
+          break;
+        case 'camporee':
+          this.validateTerritoryScope(
+            resolved,
+            await this.loadCamporeeScope(tenantId),
+          );
+          break;
+        case 'union_camporee':
+          this.assertUnionCamporeeOwnerScope(
+            resolved,
+            await this.loadUnionCamporeeScope(tenantId),
+          );
+          break;
+        default: {
+          const _exhaustive: never = binding.kind;
+          void _exhaustive;
+          throw new AppInternalServerErrorException(
+            ErrorCode.GUARD_RBAC_MISCONFIGURATION,
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * A bound section must belong to the route's club (when the route carries
+   * one) and the actor must be able to act on that club.
+   */
+  private async assertClubSectionAccess(
+    userId: string,
+    request: any,
+    resolved: ResolvedAuthorizationProfile,
+    resource: AuthorizationResourceMetadata,
+    sectionId: number,
+  ): Promise<void> {
+    const routeClubIdValue = this.getRequestValue(
+      request,
+      'param',
+      resource.clubIdParam ?? 'clubId',
+    );
+    const routeClubId =
+      routeClubIdValue === undefined || routeClubIdValue === null
+        ? null
+        : this.parseTenantId(routeClubIdValue);
+
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { club_section_id: true, main_club_id: true },
+    });
+
+    if (
+      !section ||
+      (routeClubId !== null && section.main_club_id !== routeClubId)
+    ) {
+      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
+    }
+
+    const mainClubId = this.requireMainClubId(
+      section.main_club_id,
+      'Club section without main club',
+    );
+
+    await this.assertClubAccess(userId, resolved, mainClubId);
+  }
+
+  private async loadHierarchyScope(input: {
+    localFieldId?: number;
+    unionId?: number;
+  }): Promise<{
+    division_id: number | null;
+    union_id: number | null;
+    local_field_id: number | null;
+  }> {
+    try {
+      const hierarchy = await this.hierarchy.resolveCurrent(input);
+      return {
+        division_id: hierarchy.division_id ?? null,
+        union_id: hierarchy.union_id ?? null,
+        local_field_id: hierarchy.local_field_id ?? null,
+      };
+    } catch {
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+    }
+  }
+
+  private assertHierarchyAccess(
+    resolved: ResolvedAuthorizationProfile,
+    scope: {
+      division_id: number | null;
+      union_id: number | null;
+      local_field_id: number | null;
+    },
+  ): void {
+    if (
+      !this.authorizationContext.canAccessHierarchyScope(
+        resolved,
+        scope,
+        'current-write',
+      )
+    ) {
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+    }
+  }
+
+  /**
+   * Owner-level check for a union camporee: only actors whose territory
+   * covers the organizing union (or the legacy country fallback). Unlike
+   * validateUnionCamporeeScope, participating local-field and club actors are
+   * not admitted.
+   */
+  private assertUnionCamporeeOwnerScope(
+    resolved: ResolvedAuthorizationProfile,
+    resourceScope: ResolvedUnionCamporeeScope,
+  ): void {
+    if (
+      this.authorizationContext.canAccessHierarchyScope(
+        resolved,
+        this.toHierarchyScope(resourceScope),
+        'current-write',
+      ) ||
+      this.canUseLegacyCountryFallback(resolved, resourceScope)
+    ) {
+      return;
+    }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+  }
+
+  /**
+   * Tenant ids must be a positive integer or its plain decimal string form.
+   * Arrays, objects and partially numeric strings ("20abc") are rejected.
+   */
+  private parseTenantId(value: unknown): number {
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+      return value;
+    }
+
+    if (typeof value === 'string' && /^[1-9]\d{0,15}$/.test(value)) {
+      const parsed = Number(value);
+      if (Number.isSafeInteger(parsed)) {
+        return parsed;
+      }
+    }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 
   /**
@@ -999,6 +1242,12 @@ export class PermissionsGuard implements CanActivate {
       'Camporee ID not found in request',
     );
 
+    return this.loadCamporeeScope(camporeeId);
+  }
+
+  private async loadCamporeeScope(
+    camporeeId: number,
+  ): Promise<ResolvedTerritoryScope> {
     const camporee = await this.prisma.local_camporees.findUnique({
       where: { local_camporee_id: camporeeId },
       select: {
@@ -1255,6 +1504,12 @@ export class PermissionsGuard implements CanActivate {
       'Union camporee ID not found in request',
     );
 
+    return this.loadUnionCamporeeScope(camporeeId);
+  }
+
+  private async loadUnionCamporeeScope(
+    camporeeId: number,
+  ): Promise<ResolvedUnionCamporeeScope> {
     const camporee = await this.prisma.union_camporees.findUnique({
       where: { union_camporee_id: camporeeId },
       select: {

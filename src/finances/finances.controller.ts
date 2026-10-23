@@ -156,8 +156,7 @@ export class FinancesController {
   ) {
     const userSectionId: number | null =
       (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
-        | number
-        | undefined) ?? null;
+        number | undefined) ?? null;
 
     return this.financesService.getAllTransactions(clubId, dto, userSectionId);
   }
@@ -200,8 +199,7 @@ export class FinancesController {
 
     const userSectionId: number | null =
       (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
-        | number
-        | undefined) ?? null;
+        number | undefined) ?? null;
 
     return this.financesService.findByClub(
       clubId,
@@ -236,22 +234,20 @@ export class FinancesController {
   ) {
     const userSectionId: number | null =
       (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
-        | number
-        | undefined) ?? null;
+        number | undefined) ?? null;
 
     return this.financesService.getSummary(clubId, year, month, userSectionId);
   }
 
   @Post('clubs/:clubId/finances')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles(
-    'director',
-    'deputy-director',
-    'treasurer',
-    'secretary-treasurer',
-  )
+  @ClubRoles('director', 'deputy-director', 'treasurer', 'secretary-treasurer')
   @RequirePermissions('finances:create')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @AuthorizationResource({
+    type: 'club',
+    clubIdParam: 'clubId',
+    bind: [{ kind: 'club_section', source: 'body', field: 'club_section_id' }],
+  })
   @ApiOperation({
     summary: 'Crear movimiento financiero',
     description: 'Crea un nuevo ingreso o egreso (requiere rol de tesorería)',
