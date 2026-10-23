@@ -27,7 +27,7 @@ const baseline = {
     'historicalWhere|allowlist|1|d56c9a4907fd',
   'admin/admin-reference.service.ts': 'effectiveWhere|T09|1|f9e0a7b798f8',
   'admin/admin-users.service.ts': 'effectiveWhere|T09|4|d435f7ee3328',
-  'analytics/analytics.service.ts': 'effectiveWhere|T09|8|d2f63b529d82',
+  'analytics/analytics.service.ts': 'effectiveWhere|T09|9|01ab8142bda8',
   'analytics/operations-dashboard.repository.ts':
     'effectiveWhere|T09|5|b1e4bbcd3060',
   'annual-folders/annual-folders.service.ts':

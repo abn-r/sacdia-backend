@@ -167,6 +167,72 @@ export type HistoryEntry = {
   created_at: Date;
 };
 
+// ─── Honor evidence files ─────────────────────────────────────────────────────
+//
+// A honor's files come from several stores that can hold the same object:
+// `document`, `certificate`, the legacy `images` JSON (still the upload target),
+// `evidence_files` (rows copied from `images` by the 20260327100000 migration and
+// by certificate bulk imports) and per-requirement `requirement_evidence`.
+// The list count and the detail file list must use the same set, deduped by the
+// stored reference: signed URLs differ per bucket, so they cannot be the key.
+
+/** Dedupe key of a stored file reference (URL or key), query/fragment ignored. */
+function evidenceSourceKey(url: string): string {
+  return url.trim().split(/[?#]/)[0];
+}
+
+/** URL of one legacy `users_honors.images` element (string or `{ url }`). */
+function legacyHonorImageUrl(image: unknown): string {
+  if (typeof image === 'string') return image;
+  if (image && typeof image === 'object') {
+    const url = (image as { url?: unknown }).url;
+    return typeof url === 'string' ? url : '';
+  }
+  return '';
+}
+
+/** Stored reference each built EvidenceFile came from (see dedupeFiles). */
+const fileSourceKeys = new WeakMap<EvidenceFile, string>();
+
+type HonorFileSources = {
+  honor_id: number;
+  document?: unknown;
+  certificate?: string | null;
+  images?: unknown;
+  evidence_files: Array<{ file_url: string }>;
+  user_honor_requirement_progress: Array<{
+    honor_requirements: { honor_id: number } | null;
+    requirement_evidence: Array<{ url: string }>;
+  }>;
+};
+
+/**
+ * Number of distinct files the honor detail returns in `files` (completed
+ * format + certificate + images + evidence_files + requirement evidence of
+ * the honor's active requirements), without presigning anything.
+ */
+export function countHonorEvidenceFiles(record: HonorFileSources): number {
+  const refs: string[] = [];
+  if (typeof record.document === 'string' && record.document.length > 0) {
+    refs.push(record.document);
+  }
+  if (record.certificate) refs.push(record.certificate);
+  if (Array.isArray(record.images)) {
+    for (const image of record.images as unknown[]) {
+      const url = legacyHonorImageUrl(image);
+      if (url.length > 0) refs.push(url);
+    }
+  }
+  for (const file of record.evidence_files) refs.push(file.file_url);
+  for (const progress of record.user_honor_requirement_progress) {
+    if (progress.honor_requirements?.honor_id !== record.honor_id) continue;
+    for (const evidence of progress.requirement_evidence) {
+      refs.push(evidence.url);
+    }
+  }
+  return new Set(refs.map(evidenceSourceKey)).size;
+}
+
 // ─── User select shape reused across queries ──────────────────────────────────
 
 const USER_NAME_SELECT = {
@@ -390,10 +456,20 @@ export class EvidenceReviewService {
         honors: {
           select: { honor_id: true, name: true, description: true },
         },
-        // Prefer normalized evidence_files; fall back to JSON images count below.
+        // Same sources as the detail, so file_count matches its `files`.
         evidence_files: {
           where: { active: true },
-          select: { evidence_file_id: true },
+          select: { file_url: true },
+        },
+        user_honor_requirement_progress: {
+          where: { active: true, honor_requirements: { active: true } },
+          select: {
+            honor_requirements: { select: { honor_id: true } },
+            requirement_evidence: {
+              where: { active: true },
+              select: { url: true },
+            },
+          },
         },
       },
       orderBy: { submitted_at: 'asc' },
@@ -408,14 +484,7 @@ export class EvidenceReviewService {
     );
 
     return records.map((r) => {
-      // Use evidence_files count when available (post-migration); fall back to
-      // the legacy JSON array count for records not yet migrated.
-      const fileCount =
-        r.evidence_files.length > 0
-          ? r.evidence_files.length
-          : Array.isArray(r.images)
-            ? (r.images as unknown[]).length
-            : 0;
+      const fileCount = countHonorEvidenceFiles(r);
 
       return {
         id: r.user_honor_id,
@@ -870,7 +939,9 @@ export class EvidenceReviewService {
     );
     const completedFormatFile = await this.buildCompletedFormatFile(record);
     const legacyFiles = await this.buildLegacyHonorFiles(record);
-    const generalFiles = this.dedupeFiles([...normalizedFiles, ...legacyFiles]);
+    // Legacy entries first: an `evidence_files` row that duplicates an image
+    // was copied from `images`, whose bucket (USERS_HONORS) signs it correctly.
+    const generalFiles = this.dedupeFiles([...legacyFiles, ...normalizedFiles]);
     const requirementFiles = this.dedupeFiles(
       requirementsPacket.flatMap((requirement) => requirement.evidences),
     );
@@ -949,10 +1020,7 @@ export class EvidenceReviewService {
       : [];
     const imageFiles = await Promise.all(
       images.map(async (image, index) => {
-        const url =
-          typeof image === 'string'
-            ? image
-            : ((image as { url?: string }).url ?? '');
+        const url = legacyHonorImageUrl(image);
         if (url.length === 0) return null;
         const signedImageUrl = await this.resolveEvidenceFileUrl(
           -1000 - index,
@@ -983,17 +1051,20 @@ export class EvidenceReviewService {
     file_type: string;
     uploaded_at: Date;
   }): Promise<EvidenceFile> {
-    return {
-      evidence_file_id: file.evidence_file_id,
-      file_url: await this.resolveEvidenceFileUrl(
-        file.evidence_file_id,
-        StorageBucketAlias.EVIDENCE_FILES,
-        file.file_url,
-      ),
-      file_name: file.file_name,
-      file_type: file.file_type,
-      uploaded_at: file.uploaded_at,
-    };
+    return this.withSourceKey(
+      {
+        evidence_file_id: file.evidence_file_id,
+        file_url: await this.resolveEvidenceFileUrl(
+          file.evidence_file_id,
+          StorageBucketAlias.EVIDENCE_FILES,
+          file.file_url,
+        ),
+        file_name: file.file_name,
+        file_type: file.file_type,
+        uploaded_at: file.uploaded_at,
+      },
+      file.file_url,
+    );
   }
 
   private async mapRequirementEvidenceFile(
@@ -1020,13 +1091,20 @@ export class EvidenceReviewService {
             evidence.url,
           );
 
-    return {
-      evidence_file_id: -100000 - evidence.evidence_id,
-      file_url: fileUrl,
-      file_name: fileName,
-      file_type: this.inferFileType(fileName, evidence.url, evidence.mime_type),
-      uploaded_at: evidence.created_at,
-    };
+    return this.withSourceKey(
+      {
+        evidence_file_id: -100000 - evidence.evidence_id,
+        file_url: fileUrl,
+        file_name: fileName,
+        file_type: this.inferFileType(
+          fileName,
+          evidence.url,
+          evidence.mime_type,
+        ),
+        uploaded_at: evidence.created_at,
+      },
+      evidence.url,
+    );
   }
 
   private buildSyntheticFile(
@@ -1037,13 +1115,21 @@ export class EvidenceReviewService {
     originalUrl = url,
   ): EvidenceFile {
     const fileName = this.fileNameFromUrl(originalUrl) ?? fallbackName;
-    return {
-      evidence_file_id: evidenceFileId,
-      file_url: url,
-      file_name: fileName,
-      file_type: this.inferFileType(fileName, url),
-      uploaded_at: uploadedAt,
-    };
+    return this.withSourceKey(
+      {
+        evidence_file_id: evidenceFileId,
+        file_url: url,
+        file_name: fileName,
+        file_type: this.inferFileType(fileName, url),
+        uploaded_at: uploadedAt,
+      },
+      originalUrl,
+    );
+  }
+
+  private withSourceKey(file: EvidenceFile, storedRef: string): EvidenceFile {
+    fileSourceKeys.set(file, evidenceSourceKey(storedRef));
+    return file;
   }
 
   private fileNameFromUrl(url: string): string | null {
@@ -1089,8 +1175,9 @@ export class EvidenceReviewService {
     const seen = new Set<string>();
     const deduped: EvidenceFile[] = [];
     for (const file of files) {
-      if (seen.has(file.file_url)) continue;
-      seen.add(file.file_url);
+      const key = fileSourceKeys.get(file) ?? file.file_url;
+      if (seen.has(key)) continue;
+      seen.add(key);
       deduped.push(file);
     }
     return deduped;

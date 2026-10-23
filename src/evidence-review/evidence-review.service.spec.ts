@@ -270,11 +270,8 @@ describe('EvidenceReviewService', () => {
           description: 'Descripción de la especialidad',
         },
         validator: null,
-        evidence_files: [
-          {
-            evidence_file_id: 301,
-          },
-        ],
+        evidence_files: [{ file_url: 'https://cdn.example/honor-301.jpg' }],
+        user_honor_requirement_progress: [],
       },
     ]);
 
@@ -365,7 +362,8 @@ describe('EvidenceReviewService', () => {
         },
         honors: { honor_id: 77, name: 'Honor mixto' },
         validator: null,
-        evidence_files: [{ evidence_file_id: 901 }],
+        evidence_files: [{ file_url: 'https://cdn.example/honor-901.jpg' }],
+        user_honor_requirement_progress: [],
       },
     ]);
 
@@ -414,7 +412,7 @@ describe('EvidenceReviewService', () => {
     expect(mockPrisma.users_honors.count).not.toHaveBeenCalled();
   });
 
-  it('keeps honor pending file_count fallback to images when normalized files are empty', async () => {
+  it('counts legacy images in honor pending file_count when evidence_files is empty', async () => {
     mockPrisma.users_honors.count.mockResolvedValue(1);
     mockPrisma.users_honors.findMany.mockResolvedValue([
       {
@@ -437,12 +435,144 @@ describe('EvidenceReviewService', () => {
         honors: { honor_id: 44, name: 'Honor legado' },
         validator: null,
         evidence_files: [],
+        user_honor_requirement_progress: [],
       },
     ]);
 
     const result = await service.getPending('admin-user', 'honor', 1, 20);
 
     expect(result.data[0].file_count).toBe(3);
+  });
+
+  it('reports the same honor file_count in the pending list and the detail', async () => {
+    // Bucket-aware signer: the same stored URL signed for two buckets yields
+    // two different URLs, as R2 does.
+    mockFileStorage.getSignedDownloadUrl.mockImplementation(
+      (bucket: StorageBucketAlias, value: string) =>
+        Promise.resolve(`signed://${bucket}/${value.split('/').pop()}`),
+    );
+    const base = 'https://priv.r2.dev/users-honors';
+    const images = [1, 2, 3, 4].map((n) => `${base}/img${n}.jpg`);
+    const uploadedAt = new Date('2026-06-01T10:05:00.000Z');
+    const record = {
+      user_honor_id: 55,
+      user_id: 'user-55',
+      honor_id: 70,
+      validation_status: 'PENDING_REVIEW',
+      completion_mode: 'EXTERNAL',
+      submitted_at: new Date('2026-06-01T10:00:00.000Z'),
+      validated_at: null,
+      rejection_reason: null,
+      certificate: 'https://priv.r2.dev/users-honors-cert/cert.pdf',
+      document: `${base}/formato.pdf`,
+      images,
+      created_at: uploadedAt,
+      users: { user_id: 'user-55', name: 'Abner', paternal_last_name: 'Reyes' },
+      honors: { honor_id: 70, name: 'Ayuda alimenticia' },
+      validator: null,
+      // Rows copied from `images` by the migration, plus one extra file.
+      evidence_files: [
+        ...images.map((file_url, index) => ({
+          evidence_file_id: 500 + index,
+          file_url,
+          file_name: `img${index + 1}.jpg`,
+          file_type: 'image/jpeg',
+          uploaded_at: uploadedAt,
+        })),
+        {
+          evidence_file_id: 600,
+          file_url: 'https://priv.r2.dev/evidence-files/extra.pdf',
+          file_name: 'extra.pdf',
+          file_type: 'application/pdf',
+          uploaded_at: uploadedAt,
+        },
+      ],
+    };
+    const requirementEvidence = [
+      {
+        evidence_id: 1,
+        evidence_type: 'IMAGE',
+        url: 'https://priv.r2.dev/evidence-files/req-1.jpg',
+        filename: 'req-1.jpg',
+        mime_type: 'image/jpeg',
+        created_at: uploadedAt,
+      },
+      {
+        evidence_id: 2,
+        evidence_type: 'LINK',
+        url: 'https://youtu.be/receta',
+        filename: null,
+        mime_type: null,
+        created_at: uploadedAt,
+      },
+    ];
+
+    mockPrisma.users_honors.findMany.mockResolvedValue([
+      {
+        ...record,
+        user_honor_requirement_progress: [
+          {
+            honor_requirements: { honor_id: 70 },
+            requirement_evidence: requirementEvidence,
+          },
+          // Progress pointing at another honor's requirement: the detail
+          // never lists it, so the count must ignore it too.
+          {
+            honor_requirements: { honor_id: 999 },
+            requirement_evidence: [
+              { url: 'https://priv.r2.dev/evidence-files/other.jpg' },
+            ],
+          },
+        ],
+      },
+    ]);
+    mockPrisma.users_honors.findFirst.mockResolvedValue(record);
+    mockPrisma.honor_requirements.findMany.mockResolvedValue([
+      {
+        requirement_id: 1,
+        requirement_number: '1',
+        display_label: '1',
+        requirement_text: 'Preparar una receta',
+        requires_evidence: true,
+        parent_id: null,
+      },
+    ]);
+    mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([
+      {
+        requirement_id: 1,
+        completed: true,
+        text_response: null,
+        completed_at: uploadedAt,
+        requirement_evidence: requirementEvidence,
+      },
+    ]);
+
+    const list = await service.getPending('admin-user', 'honor', 1, 20);
+    const detail = await service.getDetail('admin-user', 'honor', 55);
+
+    // formato + certificado + 4 imágenes + extra.pdf + 2 de requisito.
+    expect(detail.files).toHaveLength(9);
+    expect(detail.file_count).toBe(9);
+    expect(list.data[0].file_count).toBe(detail.file_count);
+    expect(mockPrisma.users_honors.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          user_honor_requirement_progress: expect.objectContaining({
+            where: { active: true, honor_requirements: { active: true } },
+          }),
+        }),
+      }),
+    );
+    // Migrated copies collapse onto the legacy image, signed in its own bucket.
+    const imageUrls = detail.files
+      .map((file) => file.file_url)
+      .filter((url) => url.includes('/img'));
+    expect(imageUrls).toEqual([
+      `signed://${StorageBucketAlias.USERS_HONORS}/img1.jpg`,
+      `signed://${StorageBucketAlias.USERS_HONORS}/img2.jpg`,
+      `signed://${StorageBucketAlias.USERS_HONORS}/img3.jpg`,
+      `signed://${StorageBucketAlias.USERS_HONORS}/img4.jpg`,
+    ]);
   });
 
   it('preserves empty coordinator scope fast path for pending lookup', async () => {
