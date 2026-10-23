@@ -177,7 +177,13 @@ export class CamporeesController {
 
   @Patch('union/:camporeeId')
   @RequirePermissions('camporees:update')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [
+      { kind: 'union_camporee', source: 'param', field: 'camporeeId' },
+      { kind: 'union', source: 'body', field: 'union_id', optional: true },
+    ],
+  })
   @ApiOperation({ summary: 'Actualizar camporee de unión' })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiResponse({ status: 200, description: 'Camporee de unión actualizado' })
@@ -195,7 +201,10 @@ export class CamporeesController {
 
   @Delete('union/:camporeeId')
   @RequirePermissions('camporees:delete')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [{ kind: 'union_camporee', source: 'param', field: 'camporeeId' }],
+  })
   @ApiOperation({ summary: 'Desactivar camporee de unión' })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiResponse({
