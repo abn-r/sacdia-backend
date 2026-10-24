@@ -1,5 +1,8 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // Loads included relations with one LATERAL JOIN query instead of one round
+  // trip per include level (the default strategy becomes "join").
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {

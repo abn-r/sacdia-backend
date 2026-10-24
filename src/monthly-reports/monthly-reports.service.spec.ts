@@ -140,6 +140,24 @@ describe('MonthlyReportsService admin list authorization', () => {
     });
   });
 
+  it('orders the admin list deterministically within the same month', async () => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({ roles: ['director-union'], unionId: 20 }),
+    );
+
+    await service.listForAdmin('director-union-user', {});
+
+    expect(mockPrisma.monthly_reports.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [
+          { year: 'desc' },
+          { month: 'desc' },
+          { monthly_report_id: 'asc' },
+        ],
+      }),
+    );
+  });
+
   it('scopes active club-assignment report readers to their own section', async () => {
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
       resolvedAuth({

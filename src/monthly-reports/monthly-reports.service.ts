@@ -729,7 +729,13 @@ export class MonthlyReportsService {
         where,
         skip,
         take: limit,
-        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        // The id breaks ties between reports of the same month so pages are
+        // stable (without it the order of equal rows depends on the plan).
+        orderBy: [
+          { year: 'desc' },
+          { month: 'desc' },
+          { monthly_report_id: 'asc' },
+        ],
         include: {
           club_enrollment: {
             include: {
