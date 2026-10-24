@@ -6,6 +6,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
@@ -176,34 +177,18 @@ export class FinancesService {
      */
     userSectionId?: number | null,
   ): Promise<PaginatedResult<any>> {
-    // Obtener las secciones del club
-    const club = await this.prisma.clubs.findUnique({
-      where: { club_id: clubId },
-      select: {
-        club_sections: { select: { club_section_id: true } },
-      },
-    });
-
-    if (!club) {
-      throw new AppNotFoundException(ErrorCode.FINANCE_CLUB_NOT_FOUND);
-    }
-
     // Build section filter.
     // - Admin bypass (userSectionId === null): show all sections of the club,
     //   optionally narrowed by clubTypeId filter — preserves original broad behaviour.
+    //   Filtered through the section relation so the club's section ids need
+    //   no separate round trip first.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter: FinanceSectionFilter;
+    const sectionFilter: Prisma.financesWhereInput =
+      userSectionId == null
+        ? { club_sections: { main_club_id: clubId } }
+        : { club_section_id: userSectionId };
 
-    if (userSectionId == null) {
-      const sectionIds = club.club_sections.map((s) => s.club_section_id);
-      sectionFilter = {
-        club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
-      };
-    } else {
-      sectionFilter = { club_section_id: userSectionId };
-    }
-
-    const where = {
+    const where: Prisma.financesWhereInput = {
       active: true,
       ...sectionFilter,
       ...(filters?.year && { year: filters.year }),
@@ -212,7 +197,13 @@ export class FinancesService {
       ...(filters?.categoryId && { finance_category_id: filters.categoryId }),
     };
 
-    const [data, total] = await Promise.all([
+    // The club existence check runs alongside the page queries; on a 404
+    // their rows are discarded.
+    const [club, data, total] = await Promise.all([
+      this.prisma.clubs.findUnique({
+        where: { club_id: clubId },
+        select: { club_id: true },
+      }),
       this.prisma.finances.findMany({
         where,
         include: {
@@ -228,6 +219,11 @@ export class FinancesService {
       }),
       this.prisma.finances.count({ where }),
     ]);
+
+    if (!club) {
+      throw new AppNotFoundException(ErrorCode.FINANCE_CLUB_NOT_FOUND);
+    }
+
     const evidencesByFinanceId = await this.getEvidenceMap(
       data.map((record) => record.finance_id),
     );

@@ -7,10 +7,12 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
+  CLASSES_CACHE_NAMESPACE,
   HONORS_CACHE_NAMESPACE,
 } from '../catalogs/catalog-cache.service';
 import {
@@ -49,6 +51,7 @@ export class AdminReferenceService {
     private readonly prisma: PrismaService,
     private readonly catalogCache: CatalogCacheService,
     private readonly translationService: TranslationService,
+    private readonly ecclesiasticalYears: EcclesiasticalYearService,
   ) {}
 
   private normalizeName(value: string): string {
@@ -817,6 +820,7 @@ export class AdminReferenceService {
     this.logMutation('create', 'club_types', clubType.club_type_id, actorId);
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
     await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
 
     return clubType;
   }
@@ -861,6 +865,7 @@ export class AdminReferenceService {
     this.logMutation('update', 'club_types', clubTypeId, actorId);
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
     await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
 
     return clubType;
   }
@@ -889,6 +894,7 @@ export class AdminReferenceService {
     this.logMutation('delete', 'club_types', clubTypeId, actorId);
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
     await this.catalogCache.bumpEpoch(HONORS_CACHE_NAMESPACE);
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
 
     return clubType;
   }
@@ -1110,6 +1116,9 @@ export class AdminReferenceService {
       CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
       CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
     ]);
+    // The public classes list filters by the active year's availability window.
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
+    this.ecclesiasticalYears.invalidateCurrentYearCache();
 
     return year;
   }
@@ -1167,6 +1176,9 @@ export class AdminReferenceService {
       CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
       CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
     ]);
+    // The public classes list filters by the active year's availability window.
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
+    this.ecclesiasticalYears.invalidateCurrentYearCache();
 
     return year;
   }
@@ -1205,6 +1217,9 @@ export class AdminReferenceService {
       CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
       CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
     ]);
+    // The public classes list filters by the active year's availability window.
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
+    this.ecclesiasticalYears.invalidateCurrentYearCache();
 
     return year;
   }

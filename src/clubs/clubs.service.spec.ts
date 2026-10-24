@@ -132,6 +132,7 @@ describe('ClubsService', () => {
   const mockRoleEligibility = {
     assertAssignment: jest.fn(),
     evaluateMany: jest.fn(),
+    evaluateUsersMatching: jest.fn(),
     listAssignableRoles: jest.fn(),
   };
 
@@ -300,13 +301,27 @@ describe('ClubsService', () => {
   });
 
   describe('findOne', () => {
-    it('should return club by id', async () => {
+    it('should return club by id with its sections loaded in parallel', async () => {
       const mockClub = { club_id: 1, name: 'Club Central' };
+      const sections = [
+        {
+          club_section_id: 3,
+          main_club_id: 1,
+          club_types: { club_type_id: 2, name: 'Conquistadores' },
+        },
+      ];
       mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
+      mockPrismaService.club_sections.findMany.mockResolvedValue(sections);
 
       const result = await service.findOne(1);
 
-      expect(result).toEqual(mockClub);
+      expect(result).toEqual({ ...mockClub, club_sections: sections });
+      expect(mockPrismaService.club_sections.findMany).toHaveBeenCalledWith({
+        where: { main_club_id: 1 },
+        include: {
+          club_types: { select: { club_type_id: true, name: true } },
+        },
+      });
     });
 
     it('should throw NotFoundException when club not found', async () => {
@@ -712,14 +727,15 @@ describe('ClubsService', () => {
     it('resolves when the section belongs to the club', async () => {
       mockPrismaService.club_sections.findUnique.mockResolvedValue({
         main_club_id: 10,
+        club_type_id: 2,
       });
 
-      await expect(
-        service.assertSectionBelongsToClub(10, 7),
-      ).resolves.toBeUndefined();
+      await expect(service.assertSectionBelongsToClub(10, 7)).resolves.toEqual({
+        club_type_id: 2,
+      });
       expect(mockPrismaService.club_sections.findUnique).toHaveBeenCalledWith({
         where: { club_section_id: 7 },
-        select: { main_club_id: true },
+        select: { main_club_id: true, club_type_id: true },
       });
     });
 
@@ -729,9 +745,9 @@ describe('ClubsService', () => {
         active: false,
       });
 
-      await expect(
-        service.assertSectionBelongsToClub(10, 7),
-      ).resolves.toBeUndefined();
+      await expect(service.assertSectionBelongsToClub(10, 7)).resolves.toEqual({
+        club_type_id: null,
+      });
     });
 
     it('answers CLUB_SECTION_NOT_FOUND for a section of another club', async () => {
@@ -999,19 +1015,6 @@ describe('ClubsService', () => {
             paternal_last_name: 'Ramírez',
             maternal_last_name: null,
             user_image: null,
-            enrollments: [
-              {
-                enrollment_id: 55,
-                class_id: 6,
-                ecclesiastical_year_id: 2026,
-                investiture_status: 'IN_PROGRESS',
-                classes: {
-                  class_id: 6,
-                  name: 'Guía',
-                  club_type_id: 2,
-                },
-              },
-            ],
           },
           roles: {
             role_id: 'role-member',
@@ -1020,50 +1023,77 @@ describe('ClubsService', () => {
           },
         },
       ]);
-      mockRoleEligibility.evaluateMany.mockResolvedValue(
+      mockRoleEligibility.evaluateUsersMatching.mockResolvedValue(
         new Map([
           ['user-1', { eligible: true, basis: 'APPROVED', enrollmentId: 99 }],
         ]),
       );
-      mockPrismaService.enrollments.findMany.mockResolvedValue([
-        {
-          user_id: 'user-1',
-          enrollment_id: 99,
-          class_id: 12,
-          investiture_status: 'APPROVED',
-          active: false,
-          classes: { class_id: 12, name: 'Guía Mayor' },
-        },
-      ]);
+      mockPrismaService.enrollments.findMany.mockImplementation(
+        (args: { where: { enrollment_id?: unknown } }) =>
+          Promise.resolve(
+            args.where.enrollment_id
+              ? [
+                  {
+                    user_id: 'user-1',
+                    enrollment_id: 99,
+                    class_id: 12,
+                    investiture_status: 'APPROVED',
+                    active: false,
+                    classes: { class_id: 12, name: 'Guía Mayor' },
+                  },
+                ]
+              : [
+                  // Newest first: only the first row per user is current.
+                  {
+                    user_id: 'user-1',
+                    enrollment_id: 55,
+                    class_id: 6,
+                    ecclesiastical_year_id: 2026,
+                    investiture_status: 'IN_PROGRESS',
+                    classes: { class_id: 6, name: 'Guía', club_type_id: 2 },
+                  },
+                  {
+                    user_id: 'user-1',
+                    enrollment_id: 40,
+                    class_id: 5,
+                    ecclesiastical_year_id: 2026,
+                    investiture_status: 'IN_PROGRESS',
+                    classes: { class_id: 5, name: 'Viajero', club_type_id: 2 },
+                  },
+                ],
+          ),
+      );
 
       const result = await service.getMembers(7);
 
+      const sectionMembershipWhere = {
+        club_section_id: 7,
+        active: true,
+        status: 'active',
+        ecclesiastical_year_id: 2026,
+      };
       expect(
         mockPrismaService.club_role_assignments.findMany,
       ).toHaveBeenCalledWith(
+        expect.objectContaining({ where: sectionMembershipWhere }),
+      );
+      expect(mockPrismaService.enrollments.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            club_section_id: 7,
-            active: true,
-            status: 'active',
+            users: {
+              club_role_assignments: { some: sectionMembershipWhere },
+            },
             ecclesiastical_year_id: 2026,
+            active: true,
+            record_kind: 'OPERATIONAL',
+            classes: { club_type_id: 2 },
           },
-          include: expect.objectContaining({
-            users: expect.objectContaining({
-              select: expect.objectContaining({
-                enrollments: expect.objectContaining({
-                  where: expect.objectContaining({
-                    ecclesiastical_year_id: 2026,
-                    active: true,
-                    record_kind: 'OPERATIONAL',
-                    classes: { club_type_id: 2 },
-                  }),
-                }),
-              }),
-            }),
-          }),
+          orderBy: { enrollment_date: 'desc' },
         }),
       );
+      expect(mockRoleEligibility.evaluateUsersMatching).toHaveBeenCalledWith({
+        club_role_assignments: { some: sectionMembershipWhere },
+      });
       expect(result[0]).toMatchObject({
         current_class: {
           class_id: 6,
@@ -1095,8 +1125,30 @@ describe('ClubsService', () => {
         },
       });
       expect(result[0].users).not.toHaveProperty('enrollments');
-      expect(mockRoleEligibility.evaluateMany).toHaveBeenCalledTimes(1);
-      expect(mockRoleEligibility.evaluateMany).toHaveBeenCalledWith(['user-1']);
+      expect(mockRoleEligibility.evaluateUsersMatching).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('reuses the section type already read by the ownership check', async () => {
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
+      });
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+      mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+      mockRoleEligibility.evaluateUsersMatching.mockResolvedValue(new Map());
+
+      await service.getMembers(7, { club_type_id: 2 });
+
+      expect(mockPrismaService.club_sections.findUnique).not.toHaveBeenCalled();
+      expect(mockPrismaService.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ classes: { club_type_id: 2 } }),
+        }),
+      );
     });
 
     it('marks members without Guía Mayor eligibility as not eligible', async () => {
@@ -1116,15 +1168,12 @@ describe('ClubsService', () => {
           club_section_id: 7,
           active: true,
           start_date: new Date('2026-01-01'),
-          users: { user_id: 'user-2', name: 'Ana', enrollments: [] },
+          users: { user_id: 'user-2', name: 'Ana' },
           roles: { role_id: 'r', role_name: 'member', role_category: 'CLUB' },
         },
       ]);
-      mockRoleEligibility.evaluateMany.mockResolvedValue(
-        new Map([
-          ['user-2', { eligible: false, basis: null, enrollmentId: null }],
-        ]),
-      );
+      mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+      mockRoleEligibility.evaluateUsersMatching.mockResolvedValue(new Map());
 
       const result = await service.getMembers(7);
 
@@ -1133,6 +1182,7 @@ describe('ClubsService', () => {
         guide_major_basis: null,
         class_counselor_eligible: false,
         guide_major_class: null,
+        current_class: null,
       });
     });
   });

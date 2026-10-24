@@ -41,6 +41,11 @@ import {
 } from './class-requirement-eligibility.service';
 import pLimit from 'p-limit';
 import { GuardianNotificationsService } from '../guardianships/guardian-notifications.service';
+import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+  CLASSES_CACHE_NAMESPACE,
+} from '../catalogs/catalog-cache.service';
 
 // Concurrency cap for the evidence URL presign fan-out in getUserProgress.
 // Worst case: 10 sections × 20 evidence files = 200 concurrent HMAC presigns
@@ -71,6 +76,7 @@ export class ClassesService {
     private readonly requirementEligibility: ClassRequirementEligibilityService,
     private readonly classEnrollmentPolicy: ClassEnrollmentPolicyService,
     private readonly guardianNotifications: GuardianNotificationsService,
+    private readonly catalogCache: CatalogCacheService,
   ) {}
 
   private async lockPendingInvestitureProgress(
@@ -344,6 +350,25 @@ export class ClassesService {
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
     const locale = this.translationService.getCurrentLocale();
+    const epoch = await this.catalogCache.getEpoch(CLASSES_CACHE_NAMESPACE);
+    const key = CATALOG_CACHE_KEYS.CLASSES_LIST({
+      epoch,
+      locale,
+      day: new Date().toISOString().slice(0, 10),
+      clubTypeId,
+      skip: pagination?.skip ?? 0,
+      take: pagination?.take ?? 50,
+    });
+    return this.catalogCache.getOrSet(key, () =>
+      this.loadClassesPage(locale, clubTypeId, pagination),
+    );
+  }
+
+  private async loadClassesPage(
+    locale: string,
+    clubTypeId?: number,
+    pagination?: PaginationDto,
+  ): Promise<PaginatedResult<any>> {
     const activeYear = await this.findCurrentEcclesiasticalYear();
     const where: Prisma.classesWhereInput = {
       active: true,
@@ -895,6 +920,8 @@ export class ClassesService {
             description: true,
             asset_code: true,
             advanced_enabled: true,
+            // Eligibility input only; stripped from the response below.
+            club_type_id: true,
             club_types: { select: { name: true } },
           },
         },
@@ -907,26 +934,39 @@ export class ClassesService {
       return [];
     }
 
-    const operationalIds = enrollments
-      .filter(
-        (enrollment) => enrollment.record_kind !== 'HISTORICAL_CERTIFICATE',
-      )
-      .map((enrollment) => enrollment.enrollment_id);
+    const operationalEnrollments = enrollments.filter(
+      (enrollment) => enrollment.record_kind !== 'HISTORICAL_CERTIFICATE',
+    );
     const historicalIds = enrollments
       .filter(
         (enrollment) => enrollment.record_kind === 'HISTORICAL_CERTIFICATE',
       )
       .map((enrollment) => enrollment.enrollment_id);
     const [eligibilityEntries, proofs, archivedSections] = await Promise.all([
+      // The rows above already carry the eligibility input, so each one is
+      // computed from its record instead of being re-read by id first.
       Promise.all(
-        operationalIds.map(
+        operationalEnrollments.map(
           async (
-            enrollmentId,
+            enrollment,
           ): Promise<[number, ClassRequirementEligibilityResult | null]> => [
-            enrollmentId,
-            await this.requirementEligibility.calculateForEnrollment(
-              enrollmentId,
-            ),
+            enrollment.enrollment_id,
+            await this.requirementEligibility.calculateForEnrollmentRecord({
+              enrollment_id: enrollment.enrollment_id,
+              user_id: enrollment.user_id,
+              class_id: enrollment.class_id,
+              ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
+              cross_type_enrollment: enrollment.cross_type_enrollment,
+              classes: {
+                class_id: enrollment.classes.class_id,
+                club_type_id: enrollment.classes.club_type_id,
+                advanced_enabled: enrollment.classes.advanced_enabled,
+              },
+              ecclesiastical_year: {
+                year_id: enrollment.ecclesiastical_year_id,
+                start_date: enrollment.ecclesiastical_year.start_date,
+              },
+            }),
           ],
         ),
       ),
@@ -1024,8 +1064,11 @@ export class ClassesService {
           };
         });
 
+      const { club_type_id: _clubTypeId, ...classFields } = enrollment.classes;
+
       return {
         ...enrollment,
+        classes: classFields,
         course_open: !historical,
         certificate_proof:
           proofByEnrollment.get(enrollment.enrollment_id) ?? null,

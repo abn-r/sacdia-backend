@@ -214,9 +214,38 @@ export class HonorsService {
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
     const locale = this.translationService.getCurrentLocale();
-    const where = this.buildHonorCatalogWhere(filters);
     const skip = pagination?.skip ?? 0;
     const take = pagination?.take ?? 50;
+
+    // Search pages stay uncached (unbounded key space); plain catalog pages
+    // share the honors epoch with the grouped view and categories.
+    if (filters?.search) {
+      return this.loadHonorsPage(locale, skip, take, filters, pagination);
+    }
+
+    const epoch = await this.catalogCache.getEpoch(HONORS_CACHE_NAMESPACE);
+    const key = CATALOG_CACHE_KEYS.HONORS_LIST({
+      epoch,
+      locale,
+      categoryId: filters?.categoryId,
+      clubTypeId: filters?.clubTypeId,
+      skillLevel: filters?.skillLevel,
+      skip,
+      take,
+    });
+    return this.catalogCache.getOrSet(key, () =>
+      this.loadHonorsPage(locale, skip, take, filters, pagination),
+    );
+  }
+
+  private async loadHonorsPage(
+    locale: string,
+    skip: number,
+    take: number,
+    filters?: HonorFiltersDto,
+    pagination?: PaginationDto,
+  ): Promise<PaginatedResult<any>> {
+    const where = this.buildHonorCatalogWhere(filters);
 
     const { data, total } = filters?.search
       ? await this.findAllBySearch(where, filters.search, locale, skip, take)

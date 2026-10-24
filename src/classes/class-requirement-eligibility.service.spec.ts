@@ -106,6 +106,90 @@ describe('ClassRequirementEligibilityService', () => {
     });
   });
 
+  describe('requirement context from the active club assignment', () => {
+    const assignmentIn = (assignmentId: string, localFieldId: number) => ({
+      assignment_id: assignmentId,
+      club_sections: {
+        club_type_id: 2,
+        clubs: {
+          local_field_id: localFieldId,
+          local_fields: {
+            local_field_id: localFieldId,
+            union_id: 20,
+            unions: { union_id: 20, division_id: 1 },
+          },
+        },
+      },
+    });
+    const extraOwnedBy = (localFieldId: number) => [
+      {
+        section_id: 201,
+        requirement_track: 'EXTRA',
+        required_for_investiture: true,
+        owner_division_id: null,
+        owner_union_id: null,
+        owner_local_field_id: localFieldId,
+      },
+    ];
+
+    beforeEach(() => {
+      (
+        mockPrisma.class_section_progress.findMany as jest.Mock
+      ).mockResolvedValue([]);
+      // Newest first: the older assignment B is the explicit active one.
+      (
+        mockPrisma.club_role_assignments.findMany as jest.Mock
+      ).mockResolvedValue([assignmentIn('a', 30), assignmentIn('b', 40)]);
+    });
+
+    it('uses only the explicit active assignment, read with the candidates in one query', async () => {
+      (mockPrisma.users_pr.findUnique as jest.Mock).mockResolvedValue({
+        active_club_assignment_id: 'b',
+      });
+      (mockPrisma.class_sections.findMany as jest.Mock).mockResolvedValue(
+        extraOwnedBy(40),
+      );
+
+      const result = await service.calculateForEnrollment(10);
+
+      expect(result?.applicable_section_ids).toEqual([201]);
+      expect(mockPrisma.club_role_assignments.findMany).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(
+        (mockPrisma.club_role_assignments.findMany as jest.Mock).mock
+          .calls[0][0].where,
+      ).not.toHaveProperty('assignment_id');
+    });
+
+    it('ignores the other assignments when the explicit one matches', async () => {
+      (mockPrisma.users_pr.findUnique as jest.Mock).mockResolvedValue({
+        active_club_assignment_id: 'b',
+      });
+      (mockPrisma.class_sections.findMany as jest.Mock).mockResolvedValue(
+        extraOwnedBy(30),
+      );
+
+      const result = await service.calculateForEnrollment(10);
+
+      expect(result?.applicable_section_ids).toEqual([]);
+    });
+
+    it('falls back to every candidate when the explicit assignment is not one of them', async () => {
+      (mockPrisma.users_pr.findUnique as jest.Mock).mockResolvedValue({
+        active_club_assignment_id: 'stale',
+      });
+      (mockPrisma.class_sections.findMany as jest.Mock).mockResolvedValue([
+        ...extraOwnedBy(30),
+        { ...extraOwnedBy(40)[0], section_id: 202 },
+      ]);
+
+      const result = await service.calculateForEnrollment(10);
+
+      expect(result?.applicable_section_ids).toEqual([201, 202]);
+    });
+  });
+
   it('never counts a REJECTED section as completed regardless of score', async () => {
     (mockPrisma.class_sections.findMany as jest.Mock).mockResolvedValue([
       {

@@ -62,68 +62,76 @@ export class DashboardService {
     options: DashboardSummaryOptions = {},
   ): Promise<DashboardSummaryDto> {
     const includeClubData = options.includeClubData ?? true;
-    // One Prisma round-trip for identity + active context + honors + class.
+    // Identity + active context + honors + class in one Prisma call, with the
+    // club assignments in a second call alongside it. Prisma issues one round
+    // trip per include level, so nesting assignments → sections → clubs under
+    // the user made the read four sequential round trips; split, it is three.
     // Club pick is in-memory from users_pr.active_club_assignment_id (same
     // canon as AuthorizationContextService / PATCH /auth/me/context).
-    const user = await this.prisma.users.findUnique({
-      where: { user_id: userId },
-      select: {
-        name: true,
-        paternal_last_name: true,
-        maternal_last_name: true,
-        user_image: true,
-        users_pr: { select: { active_club_assignment_id: true } },
-        users_honors: {
-          where: { active: true },
-          select: { validate: true },
-        },
-        // Current class canon (shared with the app's Clases tab, which reads
-        // GET /users/:userId/classes): the most recent ACTIVE operational
-        // enrollment by enrollment_date. Inactive rows were superseded when
-        // the class was re-selected and are never "current".
-        enrollments: {
-          where: { active: true, record_kind: 'OPERATIONAL' },
-          orderBy: [{ enrollment_date: 'desc' }, { enrollment_id: 'desc' }],
-          take: 1,
-          select: {
-            enrollment_id: true,
-            user_id: true,
-            class_id: true,
-            ecclesiastical_year_id: true,
-            investiture_status: true,
-            classes: {
-              select: {
-                class_id: true,
-                name: true,
-                club_type_id: true,
-                advanced_enabled: true,
+    // Without club data the assignments are never read at all.
+    const [user, clubAssignments] = await Promise.all([
+      this.prisma.users.findUnique({
+        where: { user_id: userId },
+        select: {
+          name: true,
+          paternal_last_name: true,
+          maternal_last_name: true,
+          user_image: true,
+          users_pr: { select: { active_club_assignment_id: true } },
+          users_honors: {
+            where: { active: true },
+            select: { validate: true },
+          },
+          // Current class canon (shared with the app's Clases tab, which reads
+          // GET /users/:userId/classes): the most recent ACTIVE operational
+          // enrollment by enrollment_date. Inactive rows were superseded when
+          // the class was re-selected and are never "current".
+          enrollments: {
+            where: { active: true, record_kind: 'OPERATIONAL' },
+            orderBy: [{ enrollment_date: 'desc' }, { enrollment_id: 'desc' }],
+            take: 1,
+            select: {
+              enrollment_id: true,
+              user_id: true,
+              class_id: true,
+              ecclesiastical_year_id: true,
+              investiture_status: true,
+              classes: {
+                select: {
+                  class_id: true,
+                  name: true,
+                  club_type_id: true,
+                  advanced_enabled: true,
+                },
               },
-            },
-            ecclesiastical_year: {
-              select: {
-                year_id: true,
-                start_date: true,
+              ecclesiastical_year: {
+                select: {
+                  year_id: true,
+                  start_date: true,
+                },
               },
             },
           },
         },
-        club_role_assignments: {
-          where: { active: true, status: 'active' },
-          orderBy: { start_date: 'desc' },
-          select: {
-            assignment_id: true,
-            club_sections: {
-              select: {
-                club_section_id: true,
-                club_types: { select: { name: true } },
-                clubs: { select: { name: true } },
+      }),
+      includeClubData
+        ? this.prisma.club_role_assignments.findMany({
+            where: { user_id: userId, active: true, status: 'active' },
+            orderBy: { start_date: 'desc' },
+            select: {
+              assignment_id: true,
+              club_sections: {
+                select: {
+                  club_section_id: true,
+                  club_types: { select: { name: true } },
+                  clubs: { select: { name: true } },
+                },
               },
+              roles: { select: { role_name: true } },
             },
-            roles: { select: { role_name: true } },
-          },
-        },
-      },
-    });
+          })
+        : Promise.resolve([]),
+    ]);
 
     const enrollment = user?.enrollments[0] ?? null;
     const honors = user?.users_honors ?? [];
@@ -134,7 +142,7 @@ export class DashboardService {
       ? this.pickActiveClubAssignment(
           userId,
           user?.users_pr?.active_club_assignment_id,
-          user?.club_role_assignments ?? [],
+          clubAssignments,
         )
       : null;
 
@@ -225,7 +233,6 @@ export class DashboardService {
         activity_date: true,
         activity_time: true,
         activity_place: true,
-        activity_types: { select: { name: true } },
       },
     });
 

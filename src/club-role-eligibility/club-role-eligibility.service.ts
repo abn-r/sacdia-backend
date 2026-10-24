@@ -100,9 +100,34 @@ export class ClubRoleEligibilityService {
     for (const id of uniqueIds) result.set(id, NOT_ELIGIBLE);
     if (uniqueIds.length === 0) return result;
 
+    return this.collectEligibility({ user_id: { in: uniqueIds } }, result, db);
+  }
+
+  /**
+   * Same as `evaluateMany`, but selects the users with a relation filter
+   * instead of a known id list, so callers can run it in parallel with the
+   * query that would otherwise produce the ids. Only eligible users are in
+   * the map; a missing user means not eligible.
+   */
+  async evaluateUsersMatching(
+    usersWhere: Prisma.usersWhereInput,
+    db: EligibilityClient = this.prisma,
+  ): Promise<Map<string, GuideMajorEligibility>> {
+    return this.collectEligibility(
+      { users: usersWhere },
+      new Map<string, GuideMajorEligibility>(),
+      db,
+    );
+  }
+
+  private async collectEligibility(
+    userFilter: Prisma.enrollmentsWhereInput,
+    result: Map<string, GuideMajorEligibility>,
+    db: EligibilityClient,
+  ): Promise<Map<string, GuideMajorEligibility>> {
     const enrollments = await db.enrollments.findMany({
       where: {
-        user_id: { in: uniqueIds },
+        ...userFilter,
         classes: { asset_code: GUIDE_MAJOR_ASSET_CODE },
         OR: [
           {

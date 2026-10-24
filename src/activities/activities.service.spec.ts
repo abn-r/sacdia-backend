@@ -312,6 +312,41 @@ describe('ActivitiesService', () => {
         code: ErrorCode.ACTIVITY_CLUB_NOT_FOUND,
       });
     });
+
+    it('resolves the member audience in parallel with the club lookup', async () => {
+      let releaseClub: (club: unknown) => void = () => undefined;
+      mockPrismaService.clubs.findUnique.mockReturnValue(
+        new Promise((resolve) => {
+          releaseClub = resolve;
+        }),
+      );
+      const viewerSpy = jest
+        .spyOn(service as any, 'resolveActivityViewer')
+        .mockResolvedValue({ isBoard: true, classId: null });
+      mockPrismaService.activities.findMany.mockResolvedValue([]);
+      mockPrismaService.activities.count.mockResolvedValue(0);
+
+      const pending = service.findByClub(1, undefined, undefined, 1, 'user-1');
+      // The viewer is already being resolved while the club row is pending.
+      expect(viewerSpy).toHaveBeenCalledWith('user-1', 1);
+
+      releaseClub({
+        club_id: 1,
+        club_sections: [{ club_section_id: 1, club_type_id: 1 }],
+      });
+      await expect(pending).resolves.toMatchObject({ data: [] });
+    });
+
+    it('answers 404 for a missing club even when the viewer lookup fails', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue(null);
+      jest
+        .spyOn(service as any, 'resolveActivityViewer')
+        .mockRejectedValue(new Error('viewer lookup failed'));
+
+      await expect(
+        service.findByClub(999, undefined, undefined, 1, 'user-1'),
+      ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_CLUB_NOT_FOUND });
+    });
   });
 
   describe('findOne', () => {

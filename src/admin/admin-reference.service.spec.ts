@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AdminReferenceService } from './admin-reference.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
@@ -172,6 +173,7 @@ describe('AdminReferenceService', () => {
   let cacheMock: ReturnType<typeof makeCacheMock>;
   let translationMock: ReturnType<typeof makeTranslationMock>;
   let txMock: Record<string, any>;
+  const yearsMock = { invalidateCurrentYearCache: jest.fn() };
 
   beforeEach(async () => {
     prismaMock = makePrismaMock();
@@ -215,6 +217,7 @@ describe('AdminReferenceService', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: CatalogCacheService, useValue: cacheMock },
         { provide: TranslationService, useValue: translationMock },
+        { provide: EcclesiasticalYearService, useValue: yearsMock },
       ],
     }).compile();
 
@@ -1038,6 +1041,8 @@ describe('AdminReferenceService', () => {
           active: false,
         },
       });
+      expect(yearsMock.invalidateCurrentYearCache).toHaveBeenCalled();
+      expect(cacheMock.bumpEpoch).toHaveBeenCalledWith('classes');
     });
 
     it('rejects an overlapping range before insert or activation', async () => {

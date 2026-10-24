@@ -125,6 +125,14 @@ function isE2ePermissionsPassthrough(): boolean {
   );
 }
 
+/** Request slot where a successful PermissionsGuard pass is memoized. */
+const PERMISSIONS_GRANTED = Symbol('permissionsGuardGranted');
+
+interface PermissionsGrantMemo {
+  handler: unknown;
+  userId: string | undefined;
+}
+
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -135,6 +143,33 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Controllers re-declare `@UseGuards(JwtAuthGuard, PermissionsGuard)` on
+    // top of the global APP_GUARD, so the same check runs twice per request.
+    // Reuse the first grant for the same handler and principal instead of
+    // resolving the authorization context and club scope again.
+    const request = context.switchToHttp().getRequest();
+    const handler = context.getHandler();
+    const granted = request?.[PERMISSIONS_GRANTED] as
+      PermissionsGrantMemo | undefined;
+    if (
+      granted &&
+      granted.handler === handler &&
+      granted.userId === request.user?.sub
+    ) {
+      return true;
+    }
+
+    const allowed = await this.evaluate(context);
+    if (allowed && request) {
+      request[PERMISSIONS_GRANTED] = {
+        handler,
+        userId: request.user?.sub,
+      } satisfies PermissionsGrantMemo;
+    }
+    return allowed;
+  }
+
+  private async evaluate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -680,15 +715,20 @@ export class PermissionsGuard implements CanActivate {
     resolved: ResolvedAuthorizationProfile,
     clubId: number,
   ): Promise<void> {
-    if (await this.authorizationContext.canManageClub(userId, clubId)) {
+    // Checked first because it needs no DB: a member of the club passes
+    // without the territorial hierarchy lookup inside canManageClub.
+    const activeClubScope = resolved.authorization.effective.scope.club;
+    if (activeClubScope && activeClubScope.club.club_id === clubId) {
       return;
     }
 
-    const activeClubScope = resolved.authorization.effective.scope.club;
-
-    if (!activeClubScope || activeClubScope.club.club_id !== clubId) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+    if (
+      await this.authorizationContext.canManageClub(userId, clubId, resolved)
+    ) {
+      return;
     }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 
   private async enforceTenantBindings(
@@ -983,6 +1023,7 @@ export class PermissionsGuard implements CanActivate {
         await this.authorizationContext.canManageClub(
           userId,
           resourceScope.mainClubId,
+          resolved,
         )
       ) {
         return true;
@@ -1056,6 +1097,7 @@ export class PermissionsGuard implements CanActivate {
         await this.authorizationContext.canManageClub(
           userId,
           resourceScope.mainClubId,
+          resolved,
         )
       ) {
         return true;
@@ -1093,6 +1135,7 @@ export class PermissionsGuard implements CanActivate {
       await this.authorizationContext.canManageClub(
         userId,
         resourceScope.mainClubId,
+        resolved,
       )
     ) {
       return true;

@@ -12,7 +12,7 @@ describe('DashboardService', () => {
     enrollments: { findFirst: jest.fn() },
     users_honors: { findMany: jest.fn() },
     users_pr: { findUnique: jest.fn() },
-    club_role_assignments: { findFirst: jest.fn() },
+    club_role_assignments: { findFirst: jest.fn(), findMany: jest.fn() },
     class_section_progress: { count: jest.fn() },
     class_sections: { count: jest.fn() },
     activities: { findMany: jest.fn() },
@@ -89,8 +89,36 @@ describe('DashboardService', () => {
     expect(service).toBeDefined();
   });
 
+  /**
+   * The service reads the user row and the active club assignments with two
+   * parallel calls; fixtures keep the assignments on the row for readability.
+   */
+  function mockUserRow(row: {
+    club_role_assignments?: unknown[];
+    [key: string]: unknown;
+  }) {
+    mockPrismaService.users.findUnique.mockResolvedValue(row);
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue(
+      row.club_role_assignments ?? [],
+    );
+  }
+
   function expectSingleUserRoundTrip() {
     expect(mockPrismaService.users.findUnique).toHaveBeenCalledTimes(1);
+    expect(
+      mockPrismaService.users.findUnique.mock.calls[0][0].select,
+    ).not.toHaveProperty('club_role_assignments');
+    expect(
+      mockPrismaService.club_role_assignments.findMany,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      mockPrismaService.club_role_assignments.findMany,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { user_id: expect.any(String), active: true, status: 'active' },
+        orderBy: { start_date: 'desc' },
+      }),
+    );
     expect(mockPrismaService.users_pr.findUnique).not.toHaveBeenCalled();
     expect(mockPrismaService.users_honors.findMany).not.toHaveBeenCalled();
     expect(mockPrismaService.enrollments.findFirst).not.toHaveBeenCalled();
@@ -109,7 +137,7 @@ describe('DashboardService', () => {
     it('returns complete dashboard summary using the stored active_club_assignment_id', async () => {
       const userId = 'user-uuid-001';
 
-      mockPrismaService.users.findUnique.mockResolvedValue({
+      mockUserRow({
         name: 'Juan',
         paternal_last_name: 'Pérez',
         maternal_last_name: 'García',
@@ -197,7 +225,7 @@ describe('DashboardService', () => {
       const userId = 'user-uuid-001b';
       const staleAssignmentId = 'assign-stale-001';
 
-      mockPrismaService.users.findUnique.mockResolvedValue({
+      mockUserRow({
         name: 'Juan',
         paternal_last_name: 'Pérez',
         maternal_last_name: null,
@@ -236,7 +264,7 @@ describe('DashboardService', () => {
       const userId = 'user-uuid-002';
       const activeAssignmentId = 'assign-uuid-005';
 
-      mockPrismaService.users.findUnique.mockResolvedValue({
+      mockUserRow({
         name: 'María',
         paternal_last_name: 'López',
         maternal_last_name: null,
@@ -281,7 +309,7 @@ describe('DashboardService', () => {
     it('returns null club fields and empty upcoming activities when no assignment exists', async () => {
       const userId = 'user-uuid-003';
 
-      mockPrismaService.users.findUnique.mockResolvedValue({
+      mockUserRow({
         name: 'Carlos',
         paternal_last_name: null,
         maternal_last_name: null,
@@ -330,7 +358,7 @@ describe('DashboardService', () => {
     it('uses fallback when users_pr has no active_club_assignment_id', async () => {
       const userId = 'user-uuid-003b';
 
-      mockPrismaService.users.findUnique.mockResolvedValue({
+      mockUserRow({
         name: 'Carlos',
         paternal_last_name: null,
         maternal_last_name: null,
@@ -368,7 +396,7 @@ describe('DashboardService', () => {
     it('returns 0 progress when totalSections is 0 (avoids division by zero)', async () => {
       const userId = 'user-uuid-004';
 
-      mockPrismaService.users.findUnique.mockResolvedValue({
+      mockUserRow({
         name: 'Ana',
         paternal_last_name: 'Torres',
         maternal_last_name: null,
@@ -414,7 +442,7 @@ describe('DashboardService', () => {
     it('returns 0 progress when the only progress record has score < 70', async () => {
       const userId = 'user-uuid-005';
 
-      mockPrismaService.users.findUnique.mockResolvedValue({
+      mockUserRow({
         name: 'Pedro',
         paternal_last_name: 'Ruiz',
         maternal_last_name: null,
@@ -465,7 +493,7 @@ describe('DashboardService', () => {
     it('returns investiture_status of the current active operational enrollment', async () => {
       const userId = 'user-uuid-006';
 
-      mockPrismaService.users.findUnique.mockResolvedValue({
+      mockUserRow({
         name: 'Carlos',
         paternal_last_name: 'Mendoza',
         maternal_last_name: null,
@@ -516,7 +544,7 @@ describe('DashboardService', () => {
     });
 
     it('returns null investiture_status when there is no current class', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
+      mockUserRow({
         name: 'Sin',
         paternal_last_name: 'Clase',
         maternal_last_name: null,
@@ -553,7 +581,7 @@ describe('DashboardService', () => {
     });
 
     it('nulls every club field and lists no activities, even with an active assignment', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue(pendingTeenRow());
+      mockUserRow(pendingTeenRow());
       mockPrismaService.activities.findMany.mockResolvedValue([
         {
           activity_id: 1,
@@ -575,14 +603,17 @@ describe('DashboardService', () => {
         user_role: null,
         upcoming_activities: [],
       });
-      // The activities of the club section are not even queried.
+      // Neither the club assignments nor the section's activities are queried.
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).not.toHaveBeenCalled();
       expect(mockPrismaService.activities.findMany).not.toHaveBeenCalled();
       expect(JSON.stringify(result)).not.toContain('Club Central');
       expect(JSON.stringify(result)).not.toContain('Conquistadores');
     });
 
     it('keeps the own progress (class and honors): personal data, not club data', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue(pendingTeenRow());
+      mockUserRow(pendingTeenRow());
       mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValue(
         { overall_progress: 40 },
       );
@@ -602,7 +633,7 @@ describe('DashboardService', () => {
     });
 
     it('keeps the response shape (every key present) so the app home parses it', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue(pendingTeenRow());
+      mockUserRow(pendingTeenRow());
       const withClub = await service.getSummary('teen-1');
       const withoutClub = await service.getSummary('teen-1', {
         includeClubData: false,

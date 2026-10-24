@@ -220,6 +220,21 @@ describe('AdminPhaseECatalogsService', () => {
   });
 
   describe('classes legacy duration and availability', () => {
+    it('bumps the classes cache epoch after soft-deleting a class', async () => {
+      prismaMock.classes.findUnique.mockResolvedValue({ class_id: 7 });
+      prismaMock.classes.update.mockResolvedValue({
+        class_id: 7,
+        active: false,
+      });
+      const catalogCache = (service as any).catalogCache as {
+        bumpEpoch: jest.Mock;
+      };
+
+      await service.deleteClass(7, ACTOR_ID);
+
+      expect(catalogCache.bumpEpoch).toHaveBeenCalledWith('classes');
+    });
+
     it('persists availability and duration fields when creating a class', async () => {
       prismaMock.classes.findFirst.mockResolvedValue(null);
       txMock.classes.create.mockResolvedValue({ class_id: 7, name: 'Amigo' });

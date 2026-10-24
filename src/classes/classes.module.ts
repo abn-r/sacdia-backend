@@ -21,6 +21,7 @@ import { AchievementsModule } from '../achievements/achievements.module';
 import { CoordinationModule } from '../coordination/coordination.module';
 import { ClubRoleEligibilityModule } from '../club-role-eligibility/club-role-eligibility.module';
 import { GuardianshipsModule } from '../guardianships/guardianships.module';
+import { CatalogsModule } from '../catalogs/catalogs.module';
 
 @Module({
   imports: [
@@ -29,6 +30,8 @@ import { GuardianshipsModule } from '../guardianships/guardianships.module';
     CoordinationModule,
     ClubRoleEligibilityModule,
     GuardianshipsModule,
+    // CatalogsModule exports CatalogCacheService (public classes list cache).
+    CatalogsModule,
   ],
   controllers: [
     ClassesController,

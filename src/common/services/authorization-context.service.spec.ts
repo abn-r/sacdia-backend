@@ -331,6 +331,35 @@ describe('AuthorizationContextService', () => {
     ]);
   });
 
+  describe('canManageClub with an already-resolved profile', () => {
+    it('skips re-resolving the authorization context', async () => {
+      const resolveSpy = jest.spyOn(service, 'resolveUserAuthorization');
+      const resolved = {
+        authorization: {},
+      } as unknown as Parameters<typeof service.canManageClub>[2];
+      const accessSpy = jest
+        .spyOn(service, 'canAccessHierarchyScope')
+        .mockReturnValue(true);
+
+      await expect(service.canManageClub('user-1', 10, resolved)).resolves.toBe(
+        true,
+      );
+
+      expect(resolveSpy).not.toHaveBeenCalled();
+      expect(
+        mockEcclesiasticalYearService.getCurrentYear,
+      ).not.toHaveBeenCalled();
+      expect(mockHierarchyService.resolveCurrent).toHaveBeenCalledWith({
+        clubId: 10,
+      });
+      expect(accessSpy).toHaveBeenCalledWith(
+        resolved,
+        expect.objectContaining({ local_field_id: 3 }),
+        'current-write',
+      );
+    });
+  });
+
   describe('isSuperAdmin', () => {
     const buildUserWithRole = (roleName: string) => ({
       user_id: 'user-sa',
