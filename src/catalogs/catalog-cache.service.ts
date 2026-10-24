@@ -88,6 +88,27 @@ export const CATALOG_CACHE_KEYS = {
     skillLevel?: number;
   }) =>
     `cache:catalogs:honors:grouped:e${params.epoch}:${params.locale}:cat:${params.categoryId ?? 'all'}:type:${params.clubTypeId ?? 'all'}:skill:${params.skillLevel ?? 'all'}`,
+  HONORS_LIST: (params: {
+    epoch: number;
+    locale: string;
+    categoryId?: number;
+    clubTypeId?: number;
+    skillLevel?: number;
+    skip: number;
+    take: number;
+  }) =>
+    `cache:catalogs:honors:list:e${params.epoch}:${params.locale}:cat:${params.categoryId ?? 'all'}:type:${params.clubTypeId ?? 'all'}:skill:${params.skillLevel ?? 'all'}:skip:${params.skip}:take:${params.take}`,
+  // `day` (UTC, YYYY-MM-DD) stands in for the active ecclesiastical year, which
+  // is resolved by date: a hit needs no DB round trip and a new day re-resolves it.
+  CLASSES_LIST: (params: {
+    epoch: number;
+    locale: string;
+    day: string;
+    clubTypeId?: number;
+    skip: number;
+    take: number;
+  }) =>
+    `cache:catalogs:classes:list:e${params.epoch}:${params.locale}:day:${params.day}:type:${params.clubTypeId ?? 'all'}:skip:${params.skip}:take:${params.take}`,
 } as const;
 
 /** Namespace used by honors catalog keys + epoch invalidation. */
@@ -96,9 +117,16 @@ export const HONORS_CACHE_NAMESPACE = 'honors';
 /** Namespace used by finance category keys + epoch invalidation. */
 export const FINANCE_CACHE_NAMESPACE = 'finance_categories';
 
+/**
+ * Namespace used by the public classes list + epoch invalidation. Bumped on
+ * class, class module, club type and ecclesiastical year mutations.
+ */
+export const CLASSES_CACHE_NAMESPACE = 'classes';
+
 const EPOCH_NAMESPACES = [
   HONORS_CACHE_NAMESPACE,
   FINANCE_CACHE_NAMESPACE,
+  CLASSES_CACHE_NAMESPACE,
 ] as const;
 
 /**

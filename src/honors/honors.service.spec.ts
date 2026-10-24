@@ -191,6 +191,35 @@ describe('HonorsService', () => {
       );
     });
 
+    it('reads catalog pages through the honors epoch cache key', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+      mockPrismaService.honors.count.mockResolvedValue(0);
+      const catalogCache = (service as any).catalogCache as {
+        getOrSet: jest.Mock;
+      };
+
+      await service.findAll(
+        { categoryId: 2, clubTypeId: 3 },
+        Object.assign(new PaginationDto(), { page: 2, limit: 10 }),
+      );
+
+      expect(catalogCache.getOrSet).toHaveBeenCalledWith(
+        'cache:catalogs:honors:list:e0:es:cat:2:type:3:skill:all:skip:10:take:10',
+        expect.any(Function),
+      );
+    });
+
+    it('bypasses the cache for search queries', async () => {
+      mockPrismaService.$queryRaw.mockResolvedValue([]);
+      const catalogCache = (service as any).catalogCache as {
+        getOrSet: jest.Mock;
+      };
+
+      await service.findAll({ search: 'nudos' });
+
+      expect(catalogCache.getOrSet).not.toHaveBeenCalled();
+    });
+
     describe('search (accent-insensitive, by tokens)', () => {
       const honorRow = (id: number, name: string) => ({
         honor_id: id,

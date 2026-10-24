@@ -8,6 +8,7 @@ import { TranslationService } from '../common/services/translation.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { EVIDENCE_URL_LIMITER } from './classes.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import { ClassProgressAccessService } from './class-progress-access.service';
 import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
 import { ClassEnrollmentPolicyService } from './class-enrollment-policy.service';
@@ -233,6 +234,15 @@ describe('ClassesService', () => {
           provide: GuardianNotificationsService,
           useValue: mockGuardianNotifications,
         },
+        {
+          provide: CatalogCacheService,
+          useValue: {
+            getEpoch: jest.fn().mockResolvedValue(0),
+            getOrSet: jest.fn((_key: string, loader: () => Promise<unknown>) =>
+              loader(),
+            ),
+          },
+        },
       ],
     }).compile();
 
@@ -261,6 +271,26 @@ describe('ClassesService', () => {
             end_date: { gte: expect.any(Date) },
           },
         }),
+      );
+    });
+
+    it('reads the classes list through the classes epoch cache key for the current UTC day', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      mockPrismaService.classes.findMany.mockResolvedValue([]);
+      mockPrismaService.classes.count.mockResolvedValue(0);
+      const catalogCache = (service as any).catalogCache as {
+        getOrSet: jest.Mock;
+      };
+      const day = new Date().toISOString().slice(0, 10);
+
+      await service.findAll(2, new PaginationDto());
+
+      expect(catalogCache.getOrSet).toHaveBeenCalledWith(
+        `cache:catalogs:classes:list:e0:es:day:${day}:type:2:skip:0:take:20`,
+        expect.any(Function),
       );
     });
 

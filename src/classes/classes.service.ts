@@ -41,6 +41,11 @@ import {
 } from './class-requirement-eligibility.service';
 import pLimit from 'p-limit';
 import { GuardianNotificationsService } from '../guardianships/guardian-notifications.service';
+import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+  CLASSES_CACHE_NAMESPACE,
+} from '../catalogs/catalog-cache.service';
 
 // Concurrency cap for the evidence URL presign fan-out in getUserProgress.
 // Worst case: 10 sections × 20 evidence files = 200 concurrent HMAC presigns
@@ -71,6 +76,7 @@ export class ClassesService {
     private readonly requirementEligibility: ClassRequirementEligibilityService,
     private readonly classEnrollmentPolicy: ClassEnrollmentPolicyService,
     private readonly guardianNotifications: GuardianNotificationsService,
+    private readonly catalogCache: CatalogCacheService,
   ) {}
 
   private async lockPendingInvestitureProgress(
@@ -344,6 +350,25 @@ export class ClassesService {
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
     const locale = this.translationService.getCurrentLocale();
+    const epoch = await this.catalogCache.getEpoch(CLASSES_CACHE_NAMESPACE);
+    const key = CATALOG_CACHE_KEYS.CLASSES_LIST({
+      epoch,
+      locale,
+      day: new Date().toISOString().slice(0, 10),
+      clubTypeId,
+      skip: pagination?.skip ?? 0,
+      take: pagination?.take ?? 50,
+    });
+    return this.catalogCache.getOrSet(key, () =>
+      this.loadClassesPage(locale, clubTypeId, pagination),
+    );
+  }
+
+  private async loadClassesPage(
+    locale: string,
+    clubTypeId?: number,
+    pagination?: PaginationDto,
+  ): Promise<PaginatedResult<any>> {
     const activeYear = await this.findCurrentEcclesiasticalYear();
     const where: Prisma.classesWhereInput = {
       active: true,

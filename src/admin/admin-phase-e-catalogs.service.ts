@@ -27,6 +27,7 @@ import { TranslationService } from '../common/services/translation.service';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
+  CLASSES_CACHE_NAMESPACE,
   FINANCE_CACHE_NAMESPACE,
   HONORS_CACHE_NAMESPACE,
 } from '../catalogs/catalog-cache.service';
@@ -182,6 +183,8 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('create', 'classes', record.class_id, actorId);
+
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
     return record;
   }
 
@@ -257,6 +260,8 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('update', 'classes', id, actorId);
+
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
     return record;
   }
 
@@ -269,6 +274,8 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('delete', 'classes', id, actorId);
+
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
     return record;
   }
 
@@ -612,6 +619,8 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('create', 'class_modules', record.module_id, actorId);
+
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
     return record;
   }
 
@@ -666,6 +675,8 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('update', 'class_modules', id, actorId);
+
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
     return record;
   }
 
@@ -678,6 +689,8 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('delete', 'class_modules', id, actorId);
+
+    await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
     return record;
   }
 

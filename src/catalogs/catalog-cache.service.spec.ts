@@ -245,7 +245,8 @@ describe('CatalogCacheService', () => {
         'cache:catalogs:districts:lf:456',
       ]);
       expect(cacheManager.del).not.toHaveBeenCalled();
-      expect(service.getMetrics().invalidations).toBe(4);
+      // 2 deleted keys + 1 epoch bump per namespace (honors, finance, classes).
+      expect(service.getMetrics().invalidations).toBe(5);
     });
 
     it('deletes all known static catalog keys', async () => {
