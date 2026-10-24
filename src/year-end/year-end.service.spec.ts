@@ -73,13 +73,17 @@ describe('YearEndService', () => {
         hierarchy_context_id: 'ctx-year-end-1',
       }),
     };
+    const ecclesiasticalYears = { invalidateCurrentYearCache: jest.fn() };
     const service = new YearEndService(
       prisma as never,
       monthlyReportsService as never,
+      ecclesiasticalYears as never,
       hierarchy as never,
     );
 
     await service.closeYear(2026);
+
+    expect(ecclesiasticalYears.invalidateCurrentYearCache).toHaveBeenCalled();
 
     expect(hierarchy.snapshotForClub).toHaveBeenCalledWith(
       10,
@@ -128,6 +132,7 @@ describe('YearEndService', () => {
     const service = new YearEndService(
       prisma as never,
       { generate: jest.fn() } as never,
+      { invalidateCurrentYearCache: jest.fn() } as never,
     );
 
     const first = await service.closeYear(2026);

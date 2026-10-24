@@ -7,6 +7,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { MonthlyReportsService } from '../monthly-reports/monthly-reports.service';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { lockInvestitureAuthorizationYear } from '../investiture-requests/investiture-request-lock';
 import { closePendingInvestitureAuthorizations } from '../investiture-requests/investiture-year-close';
 
@@ -41,6 +42,7 @@ export class YearEndService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly monthlyReportsService: MonthlyReportsService,
+    private readonly ecclesiasticalYears: EcclesiasticalYearService,
     @Optional()
     private readonly hierarchy?: InstitutionalHierarchyService,
   ) {}
@@ -239,6 +241,9 @@ export class YearEndService {
         investiturePendingClosed,
       };
     });
+
+    // The year row changed (active=false): drop the memoized current year.
+    this.ecclesiasticalYears.invalidateCurrentYearCache();
 
     const summary: YearClosureSummary = {
       yearId,

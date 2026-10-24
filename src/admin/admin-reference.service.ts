@@ -7,6 +7,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   CatalogCacheService,
@@ -50,6 +51,7 @@ export class AdminReferenceService {
     private readonly prisma: PrismaService,
     private readonly catalogCache: CatalogCacheService,
     private readonly translationService: TranslationService,
+    private readonly ecclesiasticalYears: EcclesiasticalYearService,
   ) {}
 
   private normalizeName(value: string): string {
@@ -1116,6 +1118,7 @@ export class AdminReferenceService {
     ]);
     // The public classes list filters by the active year's availability window.
     await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
+    this.ecclesiasticalYears.invalidateCurrentYearCache();
 
     return year;
   }
@@ -1175,6 +1178,7 @@ export class AdminReferenceService {
     ]);
     // The public classes list filters by the active year's availability window.
     await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
+    this.ecclesiasticalYears.invalidateCurrentYearCache();
 
     return year;
   }
@@ -1215,6 +1219,7 @@ export class AdminReferenceService {
     ]);
     // The public classes list filters by the active year's availability window.
     await this.catalogCache.bumpEpoch(CLASSES_CACHE_NAMESPACE);
+    this.ecclesiasticalYears.invalidateCurrentYearCache();
 
     return year;
   }
