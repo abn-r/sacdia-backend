@@ -144,6 +144,33 @@ describe('ClubRoleEligibilityService', () => {
     });
   });
 
+  describe('evaluateUsersMatching', () => {
+    it('selects users through the relation filter with the same GM-01 rules', async () => {
+      findMany.mockResolvedValue([
+        row(investiture_status_enum.IN_PROGRESS, 7, otherUserId),
+        row(investiture_status_enum.INVESTIDO, 8, otherUserId),
+      ]);
+      const usersWhere = {
+        club_role_assignments: { some: { club_section_id: 3 } },
+      };
+
+      const result = await service.evaluateUsersMatching(usersWhere);
+
+      expect(findMany).toHaveBeenCalledTimes(1);
+      const where = findMany.mock.calls[0][0].where;
+      expect(where.users).toEqual(usersWhere);
+      expect(where).not.toHaveProperty('user_id');
+      expect(where.classes).toEqual({ asset_code: 'GM-01' });
+      // Only eligible users are present; the best basis wins.
+      expect(result.has(userId)).toBe(false);
+      expect(result.get(otherUserId)).toEqual({
+        eligible: true,
+        basis: 'INVESTED',
+        enrollmentId: 8,
+      });
+    });
+  });
+
   describe('assignment matrix', () => {
     const eligible = () =>
       findMany.mockResolvedValue([row(investiture_status_enum.INVESTIDO)]);

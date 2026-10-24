@@ -145,25 +145,30 @@ export class ClubsService {
   }
 
   async findOne(clubId: number) {
-    const club = await this.prisma.clubs.findUnique({
-      where: { club_id: clubId },
-      include: {
-        churches: true,
-        districts: true,
-        local_fields: true,
-        club_sections: {
-          include: {
-            club_types: { select: { club_type_id: true, name: true } },
-          },
+    // Sections load beside the club instead of nested under it: Prisma runs
+    // one round trip per include level, so nesting cost a third wave.
+    const [club, clubSections] = await Promise.all([
+      this.prisma.clubs.findUnique({
+        where: { club_id: clubId },
+        include: {
+          churches: true,
+          districts: true,
+          local_fields: true,
         },
-      },
-    });
+      }),
+      this.prisma.club_sections.findMany({
+        where: { main_club_id: clubId },
+        include: {
+          club_types: { select: { club_type_id: true, name: true } },
+        },
+      }),
+    ]);
 
     if (!club) {
       throw new AppNotFoundException(ErrorCode.CLUB_NOT_FOUND);
     }
 
-    return club;
+    return { ...club, club_sections: clubSections };
   }
 
   async create(dto: CreateClubDto, authorization?: AuthorizationSnapshot) {
@@ -443,14 +448,16 @@ export class ClubsService {
   async assertSectionBelongsToClub(
     clubId: number,
     sectionId: number,
-  ): Promise<void> {
+  ): Promise<{ club_type_id: number | null }> {
     const section = await this.prisma.club_sections.findUnique({
       where: { club_section_id: sectionId },
-      select: { main_club_id: true },
+      select: { main_club_id: true, club_type_id: true },
     });
     if (!section || section.main_club_id !== clubId) {
       throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
     }
+    // Returned so callers that also need the section type skip a re-read.
+    return { club_type_id: section.club_type_id ?? null };
   }
 
   async getAssignableRoles(clubId: number, sectionId: number, userId: string) {
@@ -473,12 +480,60 @@ export class ClubsService {
     });
   }
 
-  async getMembers(sectionId: number) {
+  /**
+   * Guía Mayor eligibility plus the qualifying GM enrollment's class for the
+   * users matching `usersWhere`, as one chain that callers can run in
+   * parallel with their own queries.
+   */
+  private async loadGuideMajorForUsers(usersWhere: Prisma.usersWhereInput) {
+    const eligibilityByUserId =
+      await this.roleEligibility.evaluateUsersMatching(usersWhere);
+    const enrollmentIds = [...eligibilityByUserId.values()]
+      .map((eligibility) => eligibility.enrollmentId)
+      .filter((id): id is number => id !== null);
+    const enrollments =
+      enrollmentIds.length > 0
+        ? await this.prisma.enrollments.findMany({
+            where: { enrollment_id: { in: enrollmentIds } },
+            select: {
+              user_id: true,
+              enrollment_id: true,
+              class_id: true,
+              investiture_status: true,
+              active: true,
+              classes: { select: { class_id: true, name: true } },
+            },
+          })
+        : [];
+    const classByUserId = new Map(
+      enrollments.map((enrollment) => [
+        enrollment.user_id,
+        {
+          enrollment_id: enrollment.enrollment_id,
+          class_id: enrollment.class_id,
+          name: enrollment.classes?.name ?? 'Guía Mayor',
+          investiture_status: enrollment.investiture_status,
+          active: enrollment.active,
+        },
+      ]),
+    );
+    return { eligibilityByUserId, classByUserId };
+  }
+
+  /**
+   * @param knownSection - The section's type when the caller already read it
+   *   (e.g. from `assertSectionBelongsToClub`), to skip a second lookup.
+   */
+  async getMembers(
+    sectionId: number,
+    knownSection?: { club_type_id: number | null },
+  ) {
     const [section, currentYear] = await Promise.all([
-      this.prisma.club_sections.findUnique({
-        where: { club_section_id: sectionId },
-        select: { club_type_id: true },
-      }),
+      knownSection ??
+        this.prisma.club_sections.findUnique({
+          where: { club_section_id: sectionId },
+          select: { club_type_id: true },
+        }),
       this.ecclesiasticalYear.getCurrentYear().catch((err: unknown) => {
         if (
           err instanceof AppNotFoundException &&
@@ -495,11 +550,47 @@ export class ClubsService {
     }
 
     const activeYear = { year_id: currentYear.year_id };
+    const sectionMembershipWhere = {
+      club_section_id: sectionId,
+      active: true,
+      status: 'active',
+      ecclesiastical_year_id: activeYear.year_id,
+    };
+    // Users holding a current assignment in this section. The current class
+    // and the Guía Mayor eligibility are loaded through this relation filter
+    // so they run in parallel with the members query instead of after it:
+    // nesting them under `users` cost one sequential round trip per level.
+    const sectionMemberUsersWhere = {
+      club_role_assignments: { some: sectionMembershipWhere },
+    };
 
-    const currentEnrollmentSelect = section?.club_type_id
-      ? {
-          enrollments: {
+    const [members, currentEnrollments, guideMajor] = await Promise.all([
+      this.prisma.club_role_assignments.findMany({
+        where: sectionMembershipWhere,
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+              user_image: true,
+            },
+          },
+          roles: {
+            select: {
+              role_id: true,
+              role_name: true,
+              role_category: true,
+            },
+          },
+        },
+        orderBy: { start_date: 'desc' },
+      }),
+      section?.club_type_id
+        ? this.prisma.enrollments.findMany({
             where: {
+              users: sectionMemberUsersWhere,
               ecclesiastical_year_id: activeYear.year_id,
               active: true,
               record_kind: 'OPERATIONAL' as const,
@@ -508,8 +599,8 @@ export class ClubsService {
               },
             },
             orderBy: { enrollment_date: 'desc' as const },
-            take: 1,
             select: {
+              user_id: true,
               enrollment_id: true,
               class_id: true,
               ecclesiastical_year_id: true,
@@ -522,99 +613,31 @@ export class ClubsService {
                 },
               },
             },
-          },
-        }
-      : {};
-
-    const members = await this.prisma.club_role_assignments.findMany({
-      where: {
-        club_section_id: sectionId,
-        active: true,
-        status: 'active',
-        ecclesiastical_year_id: activeYear.year_id,
-      },
-      include: {
-        users: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-            user_image: true,
-            ...currentEnrollmentSelect,
-          },
-        },
-        roles: {
-          select: {
-            role_id: true,
-            role_name: true,
-            role_category: true,
-          },
-        },
-      },
-      orderBy: { start_date: 'desc' },
-    });
-
-    const memberUserIds = [
-      ...new Set(
-        members
-          .map((member) => member.user_id)
-          .filter((userId): userId is string => Boolean(userId)),
-      ),
-    ];
-
-    const guideMajorEligibilityByUserId =
-      await this.roleEligibility.evaluateMany(memberUserIds);
-    const guideMajorEnrollmentIds = [...guideMajorEligibilityByUserId.values()]
-      .map((eligibility) => eligibility.enrollmentId)
-      .filter((id): id is number => id !== null);
-    const guideMajorEnrollments =
-      guideMajorEnrollmentIds.length > 0
-        ? await this.prisma.enrollments.findMany({
-            where: { enrollment_id: { in: guideMajorEnrollmentIds } },
-            select: {
-              user_id: true,
-              enrollment_id: true,
-              class_id: true,
-              investiture_status: true,
-              active: true,
-              classes: { select: { class_id: true, name: true } },
-            },
           })
-        : [];
-    const guideMajorClassByUserId = new Map(
-      guideMajorEnrollments.map((enrollment) => [
-        enrollment.user_id,
-        {
-          enrollment_id: enrollment.enrollment_id,
-          class_id: enrollment.class_id,
-          name: enrollment.classes?.name ?? 'Guía Mayor',
-          investiture_status: enrollment.investiture_status,
-          active: enrollment.active,
-        },
-      ]),
-    );
+        : Promise.resolve([]),
+      this.loadGuideMajorForUsers(sectionMemberUsersWhere),
+    ]);
+
+    // Newest enrollment per user (rows arrive newest first).
+    const currentEnrollmentByUserId = new Map<
+      string,
+      (typeof currentEnrollments)[number]
+    >();
+    for (const enrollment of currentEnrollments) {
+      if (!currentEnrollmentByUserId.has(enrollment.user_id)) {
+        currentEnrollmentByUserId.set(enrollment.user_id, enrollment);
+      }
+    }
+    const {
+      eligibilityByUserId: guideMajorEligibilityByUserId,
+      classByUserId: guideMajorClassByUserId,
+    } = guideMajor;
 
     return Promise.all(
       members.map(async (member) => {
-        type MemberEnrollmentProjection = {
-          enrollment_id: number;
-          class_id: number;
-          ecclesiastical_year_id: number;
-          investiture_status: string;
-          classes: {
-            class_id: number;
-            name: string;
-            club_type_id: number;
-          } | null;
-        };
-
-        const user = member.users as unknown as
-          | (Omit<NonNullable<typeof member.users>, 'enrollments'> & {
-              enrollments?: MemberEnrollmentProjection[];
-            })
-          | null;
-        const currentEnrollment = user?.enrollments?.[0] ?? null;
+        const user = member.users;
+        const currentEnrollment =
+          currentEnrollmentByUserId.get(member.user_id) ?? null;
         const currentClass = currentEnrollment?.classes
           ? {
               id: currentEnrollment.classes.class_id,
@@ -635,7 +658,6 @@ export class ClubsService {
           ? (guideMajorClassByUserId.get(member.user_id) ?? null)
           : null;
         const userFields = { ...(user ?? {}) };
-        delete (userFields as { enrollments?: unknown }).enrollments;
         const resolvedUserImage =
           typeof userFields.user_image === 'string'
             ? await this.resolvePrivateProfileUrl(userFields.user_image)

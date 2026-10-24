@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  CURRENT_YEAR_CACHE_TTL_MS,
   EcclesiasticalYearService,
   ecclesiasticalYearName,
 } from './ecclesiastical-year.service';
@@ -157,6 +158,85 @@ describe('EcclesiasticalYearService', () => {
 
     await expect(service.getCurrentYear()).rejects.toMatchObject({
       code: ErrorCode.ECCLESIASTICAL_YEAR_AMBIGUOUS,
+    });
+  });
+
+  describe('current year memo', () => {
+    const year = {
+      year_id: 5,
+      start_date: new Date('2026-01-01T00:00:00.000Z'),
+      end_date: new Date('2026-12-31T00:00:00.000Z'),
+      active: true,
+      modified_at: null,
+    };
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('reuses the resolved year for the same business date', async () => {
+      zonedTime.businessDate.mockReturnValue('2026-04-15');
+      prisma.ecclesiastical_years.findMany.mockResolvedValue([year]);
+
+      const [a, b] = await Promise.all([
+        service.getCurrentYear(),
+        service.getCurrentYear(),
+      ]);
+      const c = await service.getCurrentYear();
+
+      expect(a).toBe(year);
+      expect(b).toBe(year);
+      expect(c).toBe(year);
+      expect(prisma.ecclesiastical_years.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-queries when the business date changes', async () => {
+      prisma.ecclesiastical_years.findMany.mockResolvedValue([year]);
+      zonedTime.businessDate.mockReturnValueOnce('2026-04-15');
+      await service.getCurrentYear();
+      zonedTime.businessDate.mockReturnValueOnce('2026-04-16');
+      await service.getCurrentYear();
+
+      expect(prisma.ecclesiastical_years.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-queries after the TTL expires', async () => {
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+      zonedTime.businessDate.mockReturnValue('2026-04-15');
+      prisma.ecclesiastical_years.findMany.mockResolvedValue([year]);
+
+      await service.getCurrentYear();
+      nowSpy.mockReturnValue(1_000_000 + CURRENT_YEAR_CACHE_TTL_MS - 1);
+      await service.getCurrentYear();
+      expect(prisma.ecclesiastical_years.findMany).toHaveBeenCalledTimes(1);
+
+      nowSpy.mockReturnValue(1_000_000 + CURRENT_YEAR_CACHE_TTL_MS);
+      await service.getCurrentYear();
+      expect(prisma.ecclesiastical_years.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not memoize failures', async () => {
+      zonedTime.businessDate.mockReturnValue('2026-04-15');
+      prisma.ecclesiastical_years.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([year]);
+
+      await expect(service.getCurrentYear()).rejects.toMatchObject({
+        code: ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND,
+      });
+      await expect(service.getCurrentYear()).resolves.toBe(year);
+      expect(prisma.ecclesiastical_years.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-queries after invalidateCurrentYearCache()', async () => {
+      zonedTime.businessDate.mockReturnValue('2026-04-15');
+      prisma.ecclesiastical_years.findMany.mockResolvedValue([year]);
+
+      await service.getCurrentYear();
+      service.invalidateCurrentYearCache();
+      await service.getCurrentYear();
+
+      expect(prisma.ecclesiastical_years.findMany).toHaveBeenCalledTimes(2);
     });
   });
 });

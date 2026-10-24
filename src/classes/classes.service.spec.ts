@@ -88,6 +88,7 @@ describe('ClassesService', () => {
   };
   const mockRequirementEligibilityService = {
     calculateForEnrollment: jest.fn(),
+    calculateForEnrollmentRecord: jest.fn(),
   };
   const mockClassEnrollmentPolicyService = {
     assertOperationalYearWrite: jest.fn(),
@@ -104,6 +105,9 @@ describe('ClassesService', () => {
       undefined,
     );
     mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+      null,
+    );
+    mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValue(
       null,
     );
     mockClassEnrollmentPolicyService.assertOperationalYearWrite.mockResolvedValue(
@@ -359,6 +363,7 @@ describe('ClassesService', () => {
             description: null,
             asset_code: 'CQ-06',
             advanced_enabled: false,
+            club_type_id: 2,
             club_types: { name: 'Conquistadores' },
           },
           ecclesiastical_year: {
@@ -367,7 +372,7 @@ describe('ClassesService', () => {
           },
         },
       ]);
-      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValueOnce(
+      mockRequirementEligibilityService.calculateForEnrollmentRecord.mockResolvedValueOnce(
         {
           overall_progress: 100,
           basic_progress: { total: 2, completed: 2, percentage: 100 },
@@ -380,9 +385,26 @@ describe('ClassesService', () => {
 
       const result = await service.getUserEnrollments('user-1');
 
+      // Computed from the loaded row: no per-enrollment re-read by id.
       expect(
         mockRequirementEligibilityService.calculateForEnrollment,
-      ).toHaveBeenCalledWith(501);
+      ).not.toHaveBeenCalled();
+      expect(
+        mockRequirementEligibilityService.calculateForEnrollmentRecord,
+      ).toHaveBeenCalledWith({
+        enrollment_id: 501,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        cross_type_enrollment: false,
+        classes: { class_id: 7, club_type_id: 2, advanced_enabled: false },
+        ecclesiastical_year: {
+          year_id: 2026,
+          start_date: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      });
+      // The eligibility-only field does not leak into the response.
+      expect(result[0].classes).not.toHaveProperty('club_type_id');
       expect(result[0]).toMatchObject({
         enrollment_id: 501,
         overall_progress: 100,
@@ -453,7 +475,7 @@ describe('ClassesService', () => {
       const result = await service.getUserEnrollments('user-1');
 
       expect(
-        mockRequirementEligibilityService.calculateForEnrollment,
+        mockRequirementEligibilityService.calculateForEnrollmentRecord,
       ).not.toHaveBeenCalled();
       expect(result[0]).toMatchObject({
         enrollment_id: 80,

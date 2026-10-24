@@ -378,8 +378,11 @@ export class ClubsController {
     @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
   ) {
-    await this.clubsService.assertSectionBelongsToClub(clubId, sectionId);
-    return this.clubsService.getMembers(sectionId);
+    const section = await this.clubsService.assertSectionBelongsToClub(
+      clubId,
+      sectionId,
+    );
+    return this.clubsService.getMembers(sectionId, section);
   }
 
   @Get(':clubId/sections/:sectionId/members/:userId/assignable-roles')

@@ -17,6 +17,9 @@ import type { CanonicalGeographicIanaTimezone } from '../timezone/canonical-geog
 export const ECCLESIASTICAL_YEAR_TIMEZONE =
   'America/Mexico_City' as CanonicalGeographicIanaTimezone;
 
+/** How long a resolved current year is reused in-process. */
+export const CURRENT_YEAR_CACHE_TTL_MS = 30_000;
+
 export type EcclesiasticalYear = {
   year_id: number;
   start_date: Date;
@@ -61,9 +64,22 @@ export function ecclesiasticalCalendarRevision(
  *
  * Registered in CommonModule (@Global) so every feature module can inject it
  * without importing CommonModule explicitly.
+ *
+ * The resolved year is memoized in-process per business date for
+ * `CURRENT_YEAR_CACHE_TTL_MS`. Authorization resolves it on every guarded
+ * request (it feeds the auth-context calendar revision), so without the memo
+ * each request paid one DB round trip per guard pass just for this lookup.
+ * Year rows change only through rare admin writes, which call
+ * `invalidateCurrentYearCache()`; other instances converge within the TTL.
  */
 @Injectable()
 export class EcclesiasticalYearService {
+  private currentYearCache: {
+    businessDate: string;
+    expiresAt: number;
+    value: Promise<EcclesiasticalYear>;
+  } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly zonedBusinessTime: ZonedBusinessTimeService,
@@ -85,6 +101,41 @@ export class EcclesiasticalYearService {
       ECCLESIASTICAL_YEAR_TIMEZONE,
     );
 
+    const now = Date.now();
+    const cached = this.currentYearCache;
+    if (
+      cached &&
+      cached.businessDate === businessDate &&
+      cached.expiresAt > now
+    ) {
+      return cached.value;
+    }
+
+    // Single-flight: concurrent callers for the same date share one query.
+    const value = this.findYearCovering(businessDate);
+    const entry = {
+      businessDate,
+      expiresAt: now + CURRENT_YEAR_CACHE_TTL_MS,
+      value,
+    };
+    this.currentYearCache = entry;
+    // Failures (no year / ambiguous / DB error) are never memoized.
+    value.catch(() => {
+      if (this.currentYearCache === entry) {
+        this.currentYearCache = null;
+      }
+    });
+    return value;
+  }
+
+  /** Drops the memoized current year (call after `ecclesiastical_years` writes). */
+  invalidateCurrentYearCache(): void {
+    this.currentYearCache = null;
+  }
+
+  private async findYearCovering(
+    businessDate: string,
+  ): Promise<EcclesiasticalYear> {
     const dateParam = new Date(businessDate);
 
     const years = await this.prisma.ecclesiastical_years.findMany({

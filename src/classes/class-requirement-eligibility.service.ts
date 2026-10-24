@@ -575,16 +575,21 @@ export class ClassRequirementEligibilityService {
       localFieldIds: new Set<number>(),
     });
 
-    const userPr = await this.prisma.users_pr.findUnique({
-      where: { user_id: enrollment.user_id },
-      select: { active_club_assignment_id: true },
-    });
+    // The explicit active assignment is picked from the same candidate list
+    // instead of a second query, so both reads run in one parallel wave.
+    const [userPr, assignments] = await Promise.all([
+      this.prisma.users_pr.findUnique({
+        where: { user_id: enrollment.user_id },
+        select: { active_club_assignment_id: true },
+      }),
+      this.findContextAssignments(enrollment),
+    ]);
 
     const explicitAssignmentId = userPr?.active_club_assignment_id;
     if (explicitAssignmentId) {
-      const explicitAssignment = await this.findContextAssignments(enrollment, {
-        assignment_id: explicitAssignmentId,
-      });
+      const explicitAssignment = assignments.filter(
+        (assignment) => assignment.assignment_id === explicitAssignmentId,
+      );
       if (explicitAssignment.length > 0) {
         return this.buildRequirementContext(
           this.preferCrossTypeHome(enrollment, explicitAssignment),
@@ -592,7 +597,6 @@ export class ClassRequirementEligibilityService {
       }
     }
 
-    const assignments = await this.findContextAssignments(enrollment);
     if (assignments.length === 0) return emptyContext();
 
     return this.buildRequirementContext(
@@ -600,13 +604,9 @@ export class ClassRequirementEligibilityService {
     );
   }
 
-  private async findContextAssignments(
-    enrollment: EnrollmentForEligibility,
-    extraWhere: Record<string, unknown> = {},
-  ) {
+  private async findContextAssignments(enrollment: EnrollmentForEligibility) {
     return this.prisma.club_role_assignments.findMany({
       where: {
-        ...extraWhere,
         user_id: enrollment.user_id,
         ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
         active: true,
@@ -620,6 +620,7 @@ export class ClassRequirementEligibilityService {
       },
       orderBy: { start_date: 'desc' },
       select: {
+        assignment_id: true,
         club_sections: {
           select: {
             club_type_id: true,

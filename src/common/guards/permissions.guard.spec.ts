@@ -563,6 +563,137 @@ describe('PermissionsGuard', () => {
     ).resolves.toBe(true);
   });
 
+  describe('club scope round trips', () => {
+    const clubResourceMetadata = () =>
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY) {
+          return { permissions: ['clubs:update'], mode: 'all' };
+        }
+        if (key === AUTHORIZATION_RESOURCE_KEY) {
+          return { type: 'club', clubIdParam: 'clubId' };
+        }
+        return undefined;
+      });
+
+    it('lets a member of the club through without the territorial lookup', async () => {
+      clubResourceMetadata();
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ activeClubPermissions: ['clubs:update'], clubId: 10 }),
+      );
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'club-user-1' },
+            params: { clubId: '10' },
+          }),
+        ),
+      ).resolves.toBe(true);
+      expect(mockAuthorizationContext.canManageClub).not.toHaveBeenCalled();
+    });
+
+    it('checks territorial management with the already-resolved profile for another club', async () => {
+      clubResourceMetadata();
+      const resolved = createResolved({
+        activeClubPermissions: ['clubs:update'],
+        clubId: 99,
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        resolved,
+      );
+      mockAuthorizationContext.canManageClub.mockResolvedValue(true);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'field-admin-1' },
+            params: { clubId: '10' },
+          }),
+        ),
+      ).resolves.toBe(true);
+      expect(mockAuthorizationContext.canManageClub).toHaveBeenCalledWith(
+        'field-admin-1',
+        10,
+        resolved,
+      );
+    });
+
+    it('reuses a grant when the controller guard re-runs on the same request', async () => {
+      clubResourceMetadata();
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ activeClubPermissions: ['clubs:update'], clubId: 10 }),
+      );
+      const handler = () => undefined;
+      const request = {
+        user: { sub: 'club-user-1' },
+        params: { clubId: '10' },
+      };
+      const context = {
+        getHandler: () => handler,
+        getClass: jest.fn(),
+        switchToHttp: () => ({ getRequest: () => request }),
+      } as unknown as ExecutionContext;
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+
+      expect(
+        mockAuthorizationContext.resolveUserAuthorization,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not reuse a grant for a different principal or handler', async () => {
+      clubResourceMetadata();
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ activeClubPermissions: ['clubs:update'], clubId: 10 }),
+      );
+      const request: Record<string, unknown> = {
+        user: { sub: 'club-user-1' },
+        params: { clubId: '10' },
+      };
+      const contextFor = (handler: () => void) =>
+        ({
+          getHandler: () => handler,
+          getClass: jest.fn(),
+          switchToHttp: () => ({ getRequest: () => request }),
+        }) as unknown as ExecutionContext;
+      const handler = () => undefined;
+
+      await guard.canActivate(contextFor(handler));
+      await guard.canActivate(contextFor(() => undefined));
+      request.user = { sub: 'club-user-2' };
+      await guard.canActivate(contextFor(handler));
+
+      expect(
+        mockAuthorizationContext.resolveUserAuthorization,
+      ).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not memoize a denial', async () => {
+      clubResourceMetadata();
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ activeClubPermissions: ['clubs:update'], clubId: 99 }),
+      );
+      const handler = () => undefined;
+      const request = {
+        user: { sub: 'club-user-1' },
+        params: { clubId: '10' },
+      };
+      const context = {
+        getHandler: () => handler,
+        getClass: jest.fn(),
+        switchToHttp: () => ({ getRequest: () => request }),
+      } as unknown as ExecutionContext;
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+      });
+    });
+  });
+
   it('rejects a club resource when the active assignment belongs to another club', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {

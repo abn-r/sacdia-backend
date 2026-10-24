@@ -697,8 +697,17 @@ export class AuthorizationContextService {
     return this.hasAnyGlobalRole(userId, ['super-admin']);
   }
 
-  async canManageClub(userId: string, clubId: number): Promise<boolean> {
-    const resolved = await this.resolveUserAuthorization(userId);
+  /**
+   * @param resolvedProfile - The caller's already-resolved profile, when the
+   *   caller has it (e.g. PermissionsGuard), to skip resolving it again.
+   */
+  async canManageClub(
+    userId: string,
+    clubId: number,
+    resolvedProfile?: ResolvedAuthorizationProfile,
+  ): Promise<boolean> {
+    const resolved =
+      resolvedProfile ?? (await this.resolveUserAuthorization(userId));
     let clubScope: HierarchyContext;
     try {
       clubScope = await this.hierarchy.resolveCurrent({ clubId });

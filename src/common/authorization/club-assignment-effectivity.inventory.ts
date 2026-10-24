@@ -50,12 +50,12 @@ const baseline = {
   'classes/class-progress-scope.service.ts':
     'effectiveWhere|T08|3|4213f4a7f3ae',
   'classes/class-requirement-eligibility.service.ts':
-    'effectiveWhere|T08|2|c91bbc988489',
+    'effectiveWhere|T08|2|a3be28c9e1b2',
   'club-enrollments/club-enrollments.service.ts':
     'effectiveWhere|T08|1|1f2269db063f',
   'certifications/eligibility/eligibility-rule-handlers.ts':
     'effectiveWhere|T08|2|9841f0b29dc2',
-  'clubs/clubs.service.ts': 'effectiveWhere|T08|9|59a919b6fc32',
+  'clubs/clubs.service.ts': 'effectiveWhere|T08|10|5406fd2f027c',
   'clubs/director-designation.service.ts':
     'workflowWhere|allowlist|2|b32d443733e9',
   'common/authorization/actor-section-scope.ts':
@@ -67,7 +67,7 @@ const baseline = {
   'coordination/actor-section-scope.service.ts':
     'effectiveWhere|T09|1|fcb522b8aa1c',
   'coordination/coordination.service.ts': 'effectiveWhere|T08|1|9a134e551821',
-  'dashboard/dashboard.service.ts': 'effectiveWhere|T08|1|1667aa7452cd',
+  'dashboard/dashboard.service.ts': 'effectiveWhere|T08|1|51b3665e8f7d',
   'evidence-review/evidence-review.service.ts':
     'effectiveWhere|T09|3|bd0ef8dee119',
   'field-payment-orders/fulfillment/camporee-fulfillment.service.ts':

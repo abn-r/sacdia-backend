@@ -129,6 +129,17 @@ export class ActivitiesService {
     viewerUserId?: string | null,
     view?: ActivityViewOptions,
   ): Promise<PaginatedResult<any>> {
+    // The member audience filter does not depend on the club row, so it
+    // resolves in parallel with the club lookup instead of after it.
+    const audienceFilterPromise =
+      userSectionId != null && viewerUserId
+        ? this.resolveActivityViewer(viewerUserId, userSectionId).then(
+            (viewer) => this.audienceWhere(viewer),
+          )
+        : null;
+    // Awaited below; a club 404 must not leave its rejection unhandled.
+    audienceFilterPromise?.catch(() => undefined);
+
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: {
@@ -189,12 +200,8 @@ export class ActivitiesService {
       }),
     };
 
-    if (userSectionId != null && viewerUserId) {
-      const viewer = await this.resolveActivityViewer(
-        viewerUserId,
-        userSectionId,
-      );
-      const audienceFilter = await this.audienceWhere(viewer);
+    if (audienceFilterPromise) {
+      const audienceFilter = await audienceFilterPromise;
       if (audienceFilter) {
         where.AND = [audienceFilter];
       }
@@ -1144,13 +1151,15 @@ export class ActivitiesService {
   }
 
   private async resolveActivityViewer(userId: string, sectionId: number) {
-    const yearId = await this.currentEcclesiasticalYearId();
+    const [yearId, section] = await Promise.all([
+      this.currentEcclesiasticalYearId(),
+      this.prisma.club_sections.findUnique({
+        where: { club_section_id: sectionId },
+        select: { club_type_id: true },
+      }),
+    ]);
     if (!yearId) return { isBoard: false, classId: null as number | null };
 
-    const section = await this.prisma.club_sections.findUnique({
-      where: { club_section_id: sectionId },
-      select: { club_type_id: true },
-    });
     const [board, enrollment] = await Promise.all([
       this.prisma.club_role_assignments.findFirst({
         where: {

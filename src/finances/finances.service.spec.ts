@@ -148,6 +148,31 @@ describe('FinancesService', () => {
         mockFinances.map((finance) => ({ ...finance, evidences: [] })),
       );
       expect(result.meta.total).toBe(1);
+      // Admin path filters through the section relation: no section pre-fetch.
+      expect(mockPrismaService.clubs.findUnique).toHaveBeenCalledWith({
+        where: { club_id: 1 },
+        select: { club_id: true },
+      });
+      expect(mockPrismaService.finances.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            club_sections: { main_club_id: 1 },
+          }),
+        }),
+      );
+    });
+
+    it('scopes a member to their own section', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.finances.findMany.mockResolvedValue([]);
+      mockPrismaService.finances.count.mockResolvedValue(0);
+
+      await service.findByClub(1, undefined, undefined, 7);
+
+      const where = mockPrismaService.finances.findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({ active: true, club_section_id: 7 });
+      expect(where).not.toHaveProperty('club_sections');
     });
 
     it('should throw NotFoundException when club not found', async () => {
