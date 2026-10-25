@@ -176,7 +176,7 @@ describe('infrastructure environment validation', () => {
   it('applies bounded positive defaults for PostgreSQL pool settings', () => {
     expect(
       envValidationSchema.extract('PRISMA_POOL_MAX').validate(undefined),
-    ).toMatchObject({ value: 20 });
+    ).toMatchObject({ value: 60 });
     expect(
       envValidationSchema
         .extract('PRISMA_POOL_IDLE_TIMEOUT_MS')

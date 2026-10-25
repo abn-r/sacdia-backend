@@ -124,7 +124,9 @@ Ver `docs/BENCHMARKING.md` para perfiles, escenarios y lectura de capacidad esta
 
 - `DATABASE_APPLICATION_NAME` (default: `sacdia-backend`) — etiqueta visible en
   `pg_stat_activity` y dashboards del proveedor.
-- `PRISMA_POOL_MAX` (default: `20`) — conexiones máximas **por réplica**.
+- `PRISMA_POOL_MAX` (default: `60`) — conexiones máximas **por réplica**. Con
+  20, cada consulta esperando ~55ms el viaje a Neon limitaba una instancia a
+  ~20-40 req/s; con 60 sostiene 75 req/s (p99 ~1.6s) en la prueba de carga local.
 - `PRISMA_POOL_IDLE_TIMEOUT_MS` (default: `300000`) — cierre de clientes inactivos
   (5 min; valores menores fuerzan handshake TLS ~500ms contra Neon en cada request
   tras una pausa).
@@ -140,7 +142,9 @@ Ver `docs/BENCHMARKING.md` para perfiles, escenarios y lectura de capacidad esta
 El presupuesto máximo de conexiones es `PRISMA_POOL_MAX × réplicas máximas`.
 Ese total debe mantenerse por debajo del límite del plan/pooler de Neon; aumentar
 el pool sin revisar ese presupuesto puede agotar la base aunque una sola réplica
-funcione correctamente.
+funcione correctamente. `DATABASE_URL` debe usar el endpoint `-pooler`
+(PgBouncer: hasta 10000 clientes, ~0.9 × `max_connections` conexiones reales):
+con conexión directa, un compute de 0.25 CU solo deja 97 conexiones usables.
 
 ## Migración de URLs a R2
 
