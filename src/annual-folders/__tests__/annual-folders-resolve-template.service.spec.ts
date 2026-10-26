@@ -495,6 +495,30 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
 
     expect(mockTx.annual_folders.create).not.toHaveBeenCalled();
   });
+  // ---------------------------------------------------------------
+  // Folder totals start from the template budget
+  // ---------------------------------------------------------------
+  it('stores the template max points on the new folder', async () => {
+    mockPrismaService.folder_templates.findFirst.mockResolvedValueOnce(
+      mockUnionTemplate,
+    );
+    mockTx.folder_template_sections.findMany.mockResolvedValue([
+      { section_id: 'section-a', max_points: 800 },
+      { section_id: 'section-b', max_points: 500 },
+    ]);
+    mockTx.folder_template_sections.aggregate.mockResolvedValue({
+      _sum: { max_points: 1300 },
+    });
+    mockTx.annual_ranking_configs.findFirst.mockResolvedValue(
+      mockRankingConfig(1300),
+    );
+
+    await service.createFolderForEnrollment(ENROLLMENT_ID);
+
+    const createArg = mockTx.annual_folders.create.mock.calls[0][0];
+    expect(createArg.data.total_max_points).toBe(1300);
+    expect(createArg.data.total_earned_points).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

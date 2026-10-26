@@ -691,6 +691,14 @@ export class AnnualFoldersService {
           club_enrollment_id: enrollmentId,
           folder_template_id: template.folder_template_id,
           status: 'open',
+          // Start from the template budget so the folder shows "0 / N pts"
+          // before any section is evaluated (recalcFolderTotals keeps it in
+          // sync afterwards).
+          total_earned_points: 0,
+          total_max_points: sections.reduce(
+            (sum, section) => sum + section.max_points,
+            0,
+          ),
           ...camporeeLink,
         },
         include: {
