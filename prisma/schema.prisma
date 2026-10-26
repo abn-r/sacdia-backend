@@ -713,6 +713,14 @@ model club_inventory {
   created_at               DateTime?                  @default(now()) @db.Timestamptz(6)
   modified_at              DateTime?                  @default(now()) @db.Timestamptz(6)
   club_section_id          Int?
+  /// bueno | regular | malo (CHECK club_inventory_condition_check)
+  condition                String                     @default("bueno") @db.VarChar(10)
+  serial_number            String?                    @db.VarChar(100)
+  purchase_date            DateTime?                  @db.Date
+  estimated_value          Decimal?                   @db.Decimal(12, 2)
+  location                 String?                    @db.VarChar(150)
+  assigned_to              String?                    @db.VarChar(150)
+  notes                    String?
   club_sections            club_sections?             @relation(fields: [club_section_id], references: [club_section_id], onDelete: SetNull, onUpdate: NoAction)
   inventory_categories     inventory_categories?      @relation(fields: [inventory_category_id], references: [inventory_category_id], onDelete: NoAction, onUpdate: NoAction)
   inventory_evidence_files inventory_evidence_files[]

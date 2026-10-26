@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { ErrorCode } from '../common/errors/error-codes';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -95,8 +96,8 @@ describe('InventoryService', () => {
         {
           provide: CatalogCacheService,
           useValue: {
-            getOrSet: jest.fn(
-              (_key: string, loader: () => Promise<unknown>) => loader(),
+            getOrSet: jest.fn((_key: string, loader: () => Promise<unknown>) =>
+              loader(),
             ),
           },
         },
@@ -672,6 +673,335 @@ describe('InventoryService', () => {
         ]),
         'user-abc',
       );
+    });
+  });
+
+  // ============================================================
+  // extended fields (condition, serial_number, purchase_date, ...)
+  // ============================================================
+
+  describe('extended fields', () => {
+    const extendedRow = {
+      condition: 'regular',
+      serial_number: 'SN-2024-0042',
+      purchase_date: new Date('2025-03-15T00:00:00.000Z'),
+      estimated_value: new Prisma.Decimal('1250.50'),
+      location: 'Bodega del templo',
+      assigned_to: 'Carlos Pérez',
+      notes: 'Revisar costuras',
+    };
+    const itemWithExtended = { ...baseItem, ...extendedRow };
+
+    const expectedExtended = {
+      condition: 'regular',
+      serial_number: 'SN-2024-0042',
+      purchase_date: '2025-03-15',
+      estimated_value: 1250.5,
+      location: 'Bodega del templo',
+      assigned_to: 'Carlos Pérez',
+      notes: 'Revisar costuras',
+    };
+
+    const lastLogged = () =>
+      ((service as any).logInventoryChange as jest.Mock).mock.calls.find(
+        (c) => c[1] === 'UPDATE',
+      )?.[2] as Array<{
+        field: string;
+        oldValue: string | null;
+        newValue: string | null;
+      }>;
+
+    describe('serialization', () => {
+      it('list items include the 7 fields; estimated_value is a number and purchase_date an ISO date', async () => {
+        mockPrismaService.club_inventory.findMany.mockResolvedValue([
+          itemWithExtended,
+        ]);
+        mockPrismaService.inventory_categories.findMany.mockResolvedValue([
+          baseCategory,
+        ]);
+
+        const result = await service.findAllByClub(10);
+
+        expect(result.data[0]).toMatchObject(expectedExtended);
+        expect(typeof result.data[0].estimated_value).toBe('number');
+      });
+
+      it('detail includes the 7 fields', async () => {
+        mockPrismaService.club_inventory.findUnique.mockResolvedValue(
+          itemWithExtended,
+        );
+        mockPrismaService.inventory_categories.findUnique.mockResolvedValue(
+          baseCategory,
+        );
+
+        const result = await service.findOne(100);
+
+        expect(result).toMatchObject(expectedExtended);
+        expect(typeof result.estimated_value).toBe('number');
+        expect(JSON.parse(JSON.stringify(result)).estimated_value).toBe(1250.5);
+      });
+
+      it('returns null for unset nullable fields and bueno as condition fallback', async () => {
+        mockPrismaService.club_inventory.findUnique.mockResolvedValue({
+          ...baseItem,
+          condition: 'bueno',
+          serial_number: null,
+          purchase_date: null,
+          estimated_value: null,
+          location: null,
+          assigned_to: null,
+          notes: null,
+        });
+
+        const result = await service.findOne(100);
+
+        expect(result).toMatchObject({
+          condition: 'bueno',
+          serial_number: null,
+          purchase_date: null,
+          estimated_value: null,
+          location: null,
+          assigned_to: null,
+          notes: null,
+        });
+      });
+    });
+
+    describe('create', () => {
+      const baseDto: CreateItemDto = {
+        name: 'Carpas 4 personas',
+        inventory_category_id: 1,
+        amount: 8,
+        instanceType: 'pathf',
+      };
+
+      beforeEach(() => {
+        mockPrismaService.inventory_categories.findUnique.mockResolvedValue(
+          baseCategory,
+        );
+      });
+
+      it('persists all 7 fields and returns them serialized', async () => {
+        mockPrismaService.club_inventory.create.mockResolvedValue(
+          itemWithExtended,
+        );
+
+        const result = await service.create(
+          10,
+          {
+            ...baseDto,
+            condition: 'regular',
+            serial_number: 'SN-2024-0042',
+            purchase_date: '2025-03-15',
+            estimated_value: 1250.5,
+            location: 'Bodega del templo',
+            assigned_to: 'Carlos Pérez',
+            notes: 'Revisar costuras',
+          },
+          'user-abc',
+        );
+
+        const data =
+          mockPrismaService.club_inventory.create.mock.calls[0][0].data;
+        expect(data).toMatchObject({
+          condition: 'regular',
+          serial_number: 'SN-2024-0042',
+          estimated_value: 1250.5,
+          location: 'Bodega del templo',
+          assigned_to: 'Carlos Pérez',
+          notes: 'Revisar costuras',
+        });
+        expect(data.purchase_date).toEqual(
+          new Date('2025-03-15T00:00:00.000Z'),
+        );
+        expect(result).toMatchObject(expectedExtended);
+      });
+
+      it('does not send condition when omitted so the DB default (bueno) applies', async () => {
+        mockPrismaService.club_inventory.create.mockResolvedValue({
+          ...baseItem,
+          condition: 'bueno',
+        });
+
+        const result = await service.create(10, baseDto, 'user-abc');
+
+        const data =
+          mockPrismaService.club_inventory.create.mock.calls[0][0].data;
+        expect(data).not.toHaveProperty('condition');
+        expect(data).toMatchObject({
+          serial_number: null,
+          purchase_date: null,
+          estimated_value: null,
+          location: null,
+          assigned_to: null,
+          notes: null,
+        });
+        expect(result.condition).toBe('bueno');
+      });
+    });
+
+    describe('update', () => {
+      beforeEach(() => {
+        mockPrismaService.club_inventory.findUnique.mockResolvedValue(
+          itemWithExtended,
+        );
+        mockPrismaService.club_inventory.update.mockImplementation(
+          async ({ data }: { data: Record<string, unknown> }) => ({
+            ...itemWithExtended,
+            ...data,
+          }),
+        );
+        mockPrismaService.inventory_categories.findUnique.mockResolvedValue(
+          baseCategory,
+        );
+      });
+
+      it('updates the fields and records one history entry per changed field', async () => {
+        const result = await service.update(
+          100,
+          {
+            condition: 'malo',
+            serial_number: 'SN-NEW',
+            purchase_date: '2026-01-10',
+            estimated_value: 900,
+            location: 'Casa pastoral',
+            assigned_to: 'Ana López',
+            notes: 'Dañada',
+          },
+          'user-abc',
+        );
+
+        const data =
+          mockPrismaService.club_inventory.update.mock.calls[0][0].data;
+        expect(data).toMatchObject({
+          condition: 'malo',
+          serial_number: 'SN-NEW',
+          estimated_value: 900,
+          location: 'Casa pastoral',
+          assigned_to: 'Ana López',
+          notes: 'Dañada',
+        });
+        expect(data.purchase_date).toEqual(
+          new Date('2026-01-10T00:00:00.000Z'),
+        );
+        expect(lastLogged()).toEqual(
+          expect.arrayContaining([
+            { field: 'condition', oldValue: 'regular', newValue: 'malo' },
+            {
+              field: 'serial_number',
+              oldValue: 'SN-2024-0042',
+              newValue: 'SN-NEW',
+            },
+            {
+              field: 'purchase_date',
+              oldValue: '2025-03-15',
+              newValue: '2026-01-10',
+            },
+            {
+              field: 'estimated_value',
+              oldValue: '1250.5',
+              newValue: '900',
+            },
+            {
+              field: 'location',
+              oldValue: 'Bodega del templo',
+              newValue: 'Casa pastoral',
+            },
+            {
+              field: 'assigned_to',
+              oldValue: 'Carlos Pérez',
+              newValue: 'Ana López',
+            },
+            {
+              field: 'notes',
+              oldValue: 'Revisar costuras',
+              newValue: 'Dañada',
+            },
+          ]),
+        );
+        expect(lastLogged()).toHaveLength(7);
+        expect(result).toMatchObject({
+          condition: 'malo',
+          purchase_date: '2026-01-10',
+          estimated_value: 900,
+        });
+      });
+
+      it('clears nullable fields when null is sent and logs old -> null', async () => {
+        const result = await service.update(
+          100,
+          {
+            serial_number: null,
+            purchase_date: null,
+            estimated_value: null,
+            location: null,
+            assigned_to: null,
+            notes: null,
+          },
+          'user-abc',
+        );
+
+        const data =
+          mockPrismaService.club_inventory.update.mock.calls[0][0].data;
+        expect(data).toMatchObject({
+          serial_number: null,
+          purchase_date: null,
+          estimated_value: null,
+          location: null,
+          assigned_to: null,
+          notes: null,
+        });
+        expect(lastLogged()).toEqual(
+          expect.arrayContaining([
+            {
+              field: 'serial_number',
+              oldValue: 'SN-2024-0042',
+              newValue: null,
+            },
+            {
+              field: 'purchase_date',
+              oldValue: '2025-03-15',
+              newValue: null,
+            },
+            { field: 'estimated_value', oldValue: '1250.5', newValue: null },
+          ]),
+        );
+        expect(lastLogged()).toHaveLength(6);
+        expect(result).toMatchObject({
+          serial_number: null,
+          purchase_date: null,
+          estimated_value: null,
+          condition: 'regular',
+        });
+      });
+
+      it('leaves untouched fields alone and logs nothing when values are unchanged', async () => {
+        await service.update(
+          100,
+          {
+            condition: 'regular',
+            serial_number: 'SN-2024-0042',
+            purchase_date: '2025-03-15',
+            estimated_value: 1250.5,
+          },
+          'user-abc',
+        );
+
+        expect((service as any).logInventoryChange).not.toHaveBeenCalled();
+        const data =
+          mockPrismaService.club_inventory.update.mock.calls[0][0].data;
+        expect(data).not.toHaveProperty('location');
+        expect(data).not.toHaveProperty('assigned_to');
+        expect(data).not.toHaveProperty('notes');
+      });
+
+      it('does not touch extended columns when only base fields are updated', async () => {
+        await service.update(100, { amount: 3 }, 'user-abc');
+
+        const data =
+          mockPrismaService.club_inventory.update.mock.calls[0][0].data;
+        expect(Object.keys(data)).toEqual(['amount']);
+      });
     });
   });
 });

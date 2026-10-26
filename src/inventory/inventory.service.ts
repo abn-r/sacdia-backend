@@ -45,6 +45,51 @@ type InventoryEvidenceResponse = {
   active: boolean;
 };
 
+type InventoryExtendedRow = {
+  condition?: string | null;
+  serial_number?: string | null;
+  purchase_date?: Date | null;
+  estimated_value?: { toNumber(): number } | number | null;
+  location?: string | null;
+  assigned_to?: string | null;
+  notes?: string | null;
+};
+
+/** Extended fields compared/persisted on update, in the order they are logged. */
+const EXTENDED_STRING_FIELDS = [
+  'serial_number',
+  'location',
+  'assigned_to',
+  'notes',
+] as const;
+
+function toIsoDate(value: Date | null | undefined): string | null {
+  return value ? value.toISOString().slice(0, 10) : null;
+}
+
+function toNumberOrNull(
+  value: { toNumber(): number } | number | null | undefined,
+): number | null {
+  if (value === null || value === undefined) return null;
+  return typeof value === 'number' ? value : value.toNumber();
+}
+
+/**
+ * Response shape for the extended item fields. `estimated_value` is a JSON
+ * number (Prisma returns a Decimal) and `purchase_date` is a YYYY-MM-DD string.
+ */
+function serializeExtendedFields(item: InventoryExtendedRow) {
+  return {
+    condition: item.condition ?? 'bueno',
+    serial_number: item.serial_number ?? null,
+    purchase_date: toIsoDate(item.purchase_date),
+    estimated_value: toNumberOrNull(item.estimated_value),
+    location: item.location ?? null,
+    assigned_to: item.assigned_to ?? null,
+    notes: item.notes ?? null,
+  };
+}
+
 @Injectable()
 export class InventoryService {
   private readonly logger = new Logger(InventoryService.name);
@@ -141,6 +186,7 @@ export class InventoryService {
             : null,
           amount: item.amount,
           club_section_id: item.club_section_id,
+          ...serializeExtendedFields(item),
           active: item.active,
           created_at: item.created_at,
           updated_at: item.modified_at,
@@ -215,6 +261,7 @@ export class InventoryService {
       category,
       amount: item.amount,
       club_section_id: item.club_section_id,
+      ...serializeExtendedFields(item),
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
@@ -258,6 +305,13 @@ export class InventoryService {
         inventory_category_id: dto.inventory_category_id,
         amount: dto.amount,
         club_section_id: clubSectionId,
+        ...(dto.condition !== undefined && { condition: dto.condition }),
+        serial_number: dto.serial_number ?? null,
+        purchase_date: this.parsePurchaseDate(dto.purchase_date),
+        estimated_value: dto.estimated_value ?? null,
+        location: dto.location ?? null,
+        assigned_to: dto.assigned_to ?? null,
+        notes: dto.notes ?? null,
         active: true,
       },
     });
@@ -283,6 +337,7 @@ export class InventoryService {
       },
       amount: item.amount,
       club_section_id: item.club_section_id,
+      ...serializeExtendedFields(item),
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
@@ -356,6 +411,52 @@ export class InventoryService {
       });
     }
 
+    // Campos extendidos: undefined = sin cambio, null = limpiar (excepto condition)
+    const extendedData: Record<string, unknown> = {};
+    if (dto.condition !== undefined) {
+      extendedData.condition = dto.condition;
+      if (dto.condition !== existingItem.condition) {
+        changes.push({
+          field: 'condition',
+          oldValue: existingItem.condition ?? null,
+          newValue: dto.condition,
+        });
+      }
+    }
+    for (const field of EXTENDED_STRING_FIELDS) {
+      const next = dto[field];
+      if (next === undefined) continue;
+      extendedData[field] = next;
+      const previous = existingItem[field] ?? null;
+      if (next !== previous) {
+        changes.push({ field, oldValue: previous, newValue: next });
+      }
+    }
+    if (dto.purchase_date !== undefined) {
+      extendedData.purchase_date = this.parsePurchaseDate(dto.purchase_date);
+      const previous = toIsoDate(existingItem.purchase_date);
+      const next = dto.purchase_date ?? null;
+      if (next !== previous) {
+        changes.push({
+          field: 'purchase_date',
+          oldValue: previous,
+          newValue: next,
+        });
+      }
+    }
+    if (dto.estimated_value !== undefined) {
+      extendedData.estimated_value = dto.estimated_value;
+      const previous = toNumberOrNull(existingItem.estimated_value);
+      const next = dto.estimated_value ?? null;
+      if (next !== previous) {
+        changes.push({
+          field: 'estimated_value',
+          oldValue: previous === null ? null : String(previous),
+          newValue: next === null ? null : String(next),
+        });
+      }
+    }
+
     // Actualizar item
     const item = await this.prisma.club_inventory.update({
       where: { club_inventory_id: inventoryId },
@@ -366,6 +467,7 @@ export class InventoryService {
           inventory_category_id: dto.inventory_category_id,
         }),
         ...(dto.amount !== undefined && { amount: dto.amount }),
+        ...extendedData,
       },
     });
 
@@ -400,11 +502,17 @@ export class InventoryService {
       category,
       amount: item.amount,
       club_section_id: item.club_section_id,
+      ...serializeExtendedFields(item),
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
       evidences: await this.getEvidenceForInventory(item.club_inventory_id),
     };
+  }
+
+  /** YYYY-MM-DD -> Date at UTC midnight (Prisma maps it to a DATE column). */
+  private parsePurchaseDate(value: string | null | undefined): Date | null {
+    return value ? new Date(`${value}T00:00:00.000Z`) : null;
   }
 
   async uploadEvidence(
