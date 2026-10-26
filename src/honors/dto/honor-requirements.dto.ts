@@ -118,7 +118,7 @@ export class CreateRequirementDto {
   referenceText?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Es un grupo de selección (elegí N de M)',
+    description: 'Es un grupo de selección (elige N de M)',
   })
   @IsOptional()
   @IsBoolean()

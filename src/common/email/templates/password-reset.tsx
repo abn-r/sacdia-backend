@@ -20,10 +20,10 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
   es: {
     preview: 'Recibiste una solicitud para restablecer tu contraseña SACDIA.',
     title: 'Restablecer contraseña',
-    body: 'Recibimos una solicitud para restablecer la contraseña de tu cuenta SACDIA. Hacé clic en el botón de abajo para elegir una nueva contraseña. Este enlace es válido por 1 hora.',
+    body: 'Recibimos una solicitud para restablecer la contraseña de tu cuenta SACDIA. Haz clic en el botón de abajo para elegir una nueva contraseña. Este enlace es válido por 1 hora.',
     button: 'Restablecer contraseña',
     footer:
-      'Si no solicitaste restablecer tu contraseña, ignorá este correo. Tu contraseña actual no cambiará. Si sospechás de actividad no autorizada, contactá soporte en contacto@sacdia.com.',
+      'Si no solicitaste restablecer tu contraseña, ignora este correo. Tu contraseña actual no cambiará. Si sospechas de actividad no autorizada, contacta soporte en contacto@sacdia.com.',
   },
   en: {
     preview: 'You received a request to reset your SACDIA password.',

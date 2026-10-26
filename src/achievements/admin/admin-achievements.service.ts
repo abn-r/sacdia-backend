@@ -303,7 +303,9 @@ export class AdminAchievementsService {
 
     const ext = MIME_TO_EXT[mimeType];
     const tier = achievement.tier ?? 'BRONZE';
-    const key = `achievements/badges/${achievementId}_${tier.toLowerCase()}.${ext}`;
+    // Relative to the bucket: FileStorage adds R2_KEY_PREFIX_ACHIEVEMENTS_BADGES
+    // (default 'achievements/badges'). Repeating it here doubled the path.
+    const key = `${achievementId}_${tier.toLowerCase()}.${ext}`;
 
     const result = await this.fileStorage.upload(
       StorageBucketAlias.ACHIEVEMENTS_BADGES,

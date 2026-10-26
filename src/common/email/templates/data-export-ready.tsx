@@ -22,12 +22,12 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
   es: {
     preview: 'Tu exportación de datos SACDIA está lista para descargar.',
     title: 'Tu exportación de datos está lista',
-    body: 'Hemos generado tu exportación de datos personales conforme al RGPD. Podés descargarla directamente desde la app SACDIA.',
+    body: 'Hemos generado tu exportación de datos personales conforme al RGPD. Puedes descargarla directamente desde la app SACDIA.',
     button: 'Ver mis datos en la app',
     expires_note: (exp) =>
       `Este enlace expira el ${exp} UTC. Pasada esa fecha, deberás solicitar una nueva exportación desde Configuración → Privacidad → Exportar mis datos.`,
     fallback_note:
-      'Si el botón no funciona, abrí la app SACDIA y navegá a Configuración → Privacidad → Mis exportaciones.',
+      'Si el botón no funciona, abre la app SACDIA y navega a Configuración → Privacidad → Mis exportaciones.',
   },
   en: {
     preview: 'Your SACDIA data export is ready to download.',
