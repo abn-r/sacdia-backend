@@ -86,7 +86,7 @@ export const envValidationSchema = Joi.object({
     .trim()
     .max(63)
     .default('sacdia-backend'),
-  PRISMA_POOL_MAX: Joi.number().integer().min(1).max(100).default(20),
+  PRISMA_POOL_MAX: Joi.number().integer().min(1).max(100).default(60),
   PRISMA_POOL_IDLE_TIMEOUT_MS: Joi.number()
     .integer()
     .positive()

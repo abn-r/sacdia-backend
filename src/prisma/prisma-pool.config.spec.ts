@@ -12,14 +12,14 @@ function createConfig(values: Record<string, unknown>): ConfigService {
 }
 
 describe('buildPrismaPoolConfig', () => {
-  it('uses production-safe defaults while preserving the current pool capacity', () => {
+  it('uses production-safe defaults with a 60-connection pool', () => {
     const config = createConfig({
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/sacdia',
     });
 
     expect(buildPrismaPoolConfig(config)).toEqual({
       connectionString: 'postgresql://user:pass@localhost:5432/sacdia',
-      max: 20,
+      max: 60,
       idleTimeoutMillis: 300_000,
       connectionTimeoutMillis: 15_000,
       keepAlive: true,
