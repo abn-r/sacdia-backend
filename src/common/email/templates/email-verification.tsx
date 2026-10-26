@@ -21,15 +21,15 @@ interface Labels {
 
 const LABELS: Record<SupportedEmailLocale, Labels> = {
   es: {
-    preview: 'Verificá tu dirección de correo para activar tu cuenta SACDIA.',
-    title: 'Verificá tu correo electrónico',
+    preview: 'Verifica tu dirección de correo para activar tu cuenta SACDIA.',
+    title: 'Verifica tu correo electrónico',
     body: (greeting) =>
-      `${greeting}. Para activar tu cuenta SACDIA, hacé clic en el botón de abajo. Este enlace es válido por 24 horas.`,
+      `${greeting}. Para activar tu cuenta SACDIA, haz clic en el botón de abajo. Este enlace es válido por 24 horas.`,
     greeting_with_name: (name) => `Hola, ${name}`,
     greeting_anonymous: 'Hola',
     button: 'Verificar mi correo',
     footer:
-      'Si no creaste una cuenta en SACDIA, ignorá este correo. No se realizará ningún cambio en tu cuenta.',
+      'Si no creaste una cuenta en SACDIA, ignora este correo. No se realizará ningún cambio en tu cuenta.',
   },
   en: {
     preview: 'Verify your email address to activate your SACDIA account.',

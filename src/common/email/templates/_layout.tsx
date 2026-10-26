@@ -21,7 +21,7 @@ const LAYOUT_LABELS: Record<SupportedEmailLocale, LayoutLabels> = {
   es: {
     system_subtitle: 'Sistema de Administración de Clubes JA',
     footer_auto:
-      'Este correo fue enviado automáticamente por SACDIA. Si no realizaste ninguna acción, podés ignorarlo con seguridad.',
+      'Este correo fue enviado automáticamente por SACDIA. Si no realizaste ninguna acción, puedes ignorarlo con seguridad.',
     footer_copyright: (year) =>
       `© ${year} SACDIA — Sistema de Administración de Clubes JA. Todos los derechos reservados.`,
   },

@@ -29,7 +29,7 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
       'Tus tokens de dispositivo fueron desactivados',
     ],
     footer:
-      'Registros históricos anónimos (honores, progreso de clases, actividades) pueden conservarse por un periodo de retención conforme a nuestra política de datos. Para más información, escribinos a contacto@sacdia.com.',
+      'Registros históricos anónimos (honores, progreso de clases, actividades) pueden conservarse por un periodo de retención conforme a nuestra política de datos. Para más información, escríbenos a contacto@sacdia.com.',
   },
   en: {
     preview: 'Your SACDIA account has been successfully deleted.',
