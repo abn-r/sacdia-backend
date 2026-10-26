@@ -8,8 +8,9 @@ import {
   IsPositive,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { InventoryExtendedFieldsDto } from './inventory-extended-fields.dto';
 
-export class UpdateItemDto {
+export class UpdateItemDto extends InventoryExtendedFieldsDto {
   @ApiProperty({
     description: 'Nombre del item',
     example: 'Carpas 4 personas',

@@ -8,8 +8,9 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { InventoryExtendedFieldsDto } from './inventory-extended-fields.dto';
 
-export class CreateItemDto {
+export class CreateItemDto extends InventoryExtendedFieldsDto {
   @ApiProperty({
     description: 'Nombre del item',
     example: 'Carpas 4 personas',
