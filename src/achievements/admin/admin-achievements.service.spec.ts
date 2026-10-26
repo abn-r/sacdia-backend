@@ -488,7 +488,8 @@ describe('AdminAchievementsService', () => {
       expect(result.badge_image_key).toBe('achievements/badges/1_bronze.png');
       expect(mockFileStorageService.upload).toHaveBeenCalledWith(
         StorageBucketAlias.ACHIEVEMENTS_BADGES,
-        'achievements/badges/1_bronze.png',
+        // Relative key: the storage service adds the bucket prefix.
+        '1_bronze.png',
         pngFile.buffer,
         expect.objectContaining({ contentType: 'image/png' }),
       );
