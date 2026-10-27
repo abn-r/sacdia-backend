@@ -805,4 +805,70 @@ describe('RequestsService', () => {
       });
     });
   });
+
+  describe('getTransferRequests', () => {
+    beforeEach(() => {
+      prisma.club_transfer_requests.findMany.mockResolvedValue([]);
+    });
+
+    function lastWhere() {
+      const call = prisma.club_transfer_requests.findMany.mock.calls.at(-1) as
+        [{ where: Record<string, unknown> }] | undefined;
+      return call?.[0].where;
+    }
+
+    it('lists every request for an actor with a global scope', async () => {
+      actorSectionScope.resolve.mockResolvedValue({ all: true });
+
+      await service.getTransferRequests({
+        userId: 'admin-1',
+        status: 'pending',
+      });
+
+      expect(lastWhere()).toEqual({ status: 'pending' });
+    });
+
+    it('lists own requests plus those of sections in the territory scope', async () => {
+      const clubs = { local_field_id: 4 };
+      actorSectionScope.resolve.mockResolvedValue({
+        all: false,
+        sectionIds: [],
+        clubs,
+      });
+
+      await service.getTransferRequests({ userId: 'lf-1' });
+
+      const sectionWhere = { clubs: { is: clubs } };
+      expect(lastWhere()).toEqual({
+        OR: [
+          { user_id: 'lf-1' },
+          { from_section: sectionWhere },
+          { to_section: sectionWhere },
+        ],
+      });
+    });
+
+    it('keeps only own requests when the actor has no section scope', async () => {
+      actorSectionScope.resolve.mockResolvedValue({
+        all: false,
+        sectionIds: [],
+        clubs: null,
+      });
+
+      await service.getTransferRequests({ userId: 'member-1' });
+
+      expect(lastWhere()).toEqual({ user_id: 'member-1' });
+    });
+
+    it('keeps the section filter when a sectionId is in scope', async () => {
+      await service.getTransferRequests({
+        userId: 'director-1',
+        sectionId: 20,
+      });
+
+      expect(lastWhere()).toEqual({
+        OR: [{ from_section_id: 20 }, { to_section_id: 20 }],
+      });
+    });
+  });
 });

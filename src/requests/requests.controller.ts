@@ -78,7 +78,7 @@ export class RequestsController {
   @ApiOperation({
     summary: 'Listar solicitudes de transferencia',
     description:
-      'Sin sectionId lista las solicitudes propias. Con sectionId lista las de esa sección (origen o destino) si está dentro del alcance del actor; si no, 403',
+      'Sin sectionId lista las solicitudes propias y las de secciones (origen o destino) dentro del alcance del actor: secciones donde aprueba, secciones coordinadas o su territorio. Con sectionId lista las de esa sección (origen o destino) si está dentro del alcance del actor; si no, 403',
   })
   @ApiQuery({
     name: 'status',
