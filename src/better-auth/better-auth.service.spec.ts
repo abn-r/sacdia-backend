@@ -1310,10 +1310,40 @@ describe('BetterAuthService', () => {
   describe('resetPasswordForEmail', () => {
     beforeEach(() => {
       process.env.EMAIL_ENABLED = 'true';
+      process.env.ADMIN_PANEL_URL = 'https://admin.example.com/';
     });
 
     afterEach(() => {
       delete process.env.EMAIL_ENABLED;
+      delete process.env.ADMIN_PANEL_URL;
+    });
+
+    it('emails an https link to the admin reset page, not a deep link', async () => {
+      const { svc } = buildService();
+
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockVerificationDeleteMany.mockResolvedValue({ count: 0 });
+      mockVerificationCreate.mockResolvedValue({});
+
+      await svc.resetPasswordForEmail('test@example.com');
+
+      const token = (
+        mockVerificationCreate.mock.calls[0][0] as { data: { value: string } }
+      ).data.value;
+      expect(mockEmailService.sendPasswordReset).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        resetUrl: `https://admin.example.com/reset-password?token=${encodeURIComponent(token)}`,
+      });
+    });
+
+    it('fails with 503 and creates no token when ADMIN_PANEL_URL is missing', async () => {
+      delete process.env.ADMIN_PANEL_URL;
+      const { svc } = buildService();
+
+      await expect(
+        svc.resetPasswordForEmail('test@example.com'),
+      ).rejects.toThrow(ServiceUnavailableException);
+      expect(mockVerificationCreate).not.toHaveBeenCalled();
     });
 
     it('should create a verification token when email exists', async () => {
