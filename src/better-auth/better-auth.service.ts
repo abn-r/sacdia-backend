@@ -237,6 +237,26 @@ function generateToken(): string {
 /** Namespaces reset tokens so they cannot satisfy email-verify lookups. */
 export const PASSWORD_RESET_IDENTIFIER_PREFIX = 'password-reset:';
 
+/**
+ * Base URL of the admin web app that hosts the reset page, or null when
+ * ADMIN_PANEL_URL is missing or not an http(s) URL. Trailing slashes removed.
+ */
+export function passwordResetPageBase(
+  adminPanelUrl: string | undefined,
+): string | null {
+  const raw = adminPanelUrl?.trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return raw.replace(/\/+$/, '');
+}
+
 export function passwordResetIdentifier(email: string): string {
   return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`;
 }
@@ -787,6 +807,19 @@ export class BetterAuthService implements IBetterAuthService {
       );
     }
 
+    // The link opens the admin web page that sets the new password. Without
+    // ADMIN_PANEL_URL the email would carry a dead link, so fail like a
+    // disabled transport instead of creating a token nobody can use.
+    const resetPageBase = passwordResetPageBase(process.env.ADMIN_PANEL_URL);
+    if (!resetPageBase) {
+      this.logger.error(
+        'Password reset link not sent: ADMIN_PANEL_URL is missing or invalid',
+      );
+      throw new ServiceUnavailableException(
+        'Password reset is temporarily unavailable. Please contact support.',
+      );
+    }
+
     const dbUser = await this.prisma.users.findUnique({ where: { email } });
     if (!dbUser) {
       // Silent — do not reveal whether the email exists.
@@ -811,11 +844,11 @@ export class BetterAuthService implements IBetterAuthService {
       },
     });
 
-    // Build deep link — token embedded in URL, never logged separately.
-    // The mobile app handles sacdia://reset-password?token=<token> and calls
-    // POST /api/v1/auth/password/reset with the token in the body.
-    // SECURITY: raw token is NEVER logged.
-    const resetUrl = `sacdia://reset-password?token=${token}`;
+    // https link to the admin page ({ADMIN_PANEL_URL}/reset-password), which
+    // calls POST /api/v1/auth/password/reset with the token in the body. A
+    // custom-scheme deep link had no handler and is stripped by most mail
+    // clients. SECURITY: raw token is NEVER logged.
+    const resetUrl = `${resetPageBase}/reset-password?token=${encodeURIComponent(token)}`;
 
     // Enqueue email — fire-and-forget from caller's perspective.
     // EMAIL_ENABLED gate is enforced at processor level; no need to check here.
