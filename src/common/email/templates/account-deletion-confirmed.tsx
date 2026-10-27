@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { Text, Section } from 'react-email';
 import { Layout } from './_layout';
+import { EMAIL_THEME, EmailHeading, EmailNote, EmailText } from './_ui';
 import type { SupportedEmailLocale } from '../email.queue';
 
 export interface AccountDeletionConfirmedEmailProps {
@@ -90,62 +90,19 @@ export function AccountDeletionConfirmedEmail({
 
   return (
     <Layout preview={L.preview} lang={lang}>
-      <Text
-        style={{
-          fontSize: '20px',
-          fontWeight: '600',
-          color: '#18181b',
-          margin: '0 0 8px',
-        }}
-      >
-        {L.title}
-      </Text>
-      <Text
-        style={{
-          color: '#52525b',
-          fontSize: '15px',
-          lineHeight: '24px',
-          margin: '0 0 24px',
-        }}
-      >
-        {L.body}
-      </Text>
-
-      <Section
-        style={{
-          backgroundColor: '#f4f4f5',
-          padding: '16px',
-          borderRadius: '6px',
-          margin: '0 0 24px',
-        }}
-      >
-        <Text
-          style={{
-            color: '#52525b',
-            fontSize: '14px',
-            lineHeight: '22px',
-            margin: '0',
-          }}
-        >
-          <strong>{L.data_summary_title}</strong>
-          {L.data_summary.map((item, i) => (
-            <React.Fragment key={i}>
-              <br />— {item}
-            </React.Fragment>
-          ))}
-        </Text>
-      </Section>
-
-      <Text
-        style={{
-          color: '#71717a',
-          fontSize: '13px',
-          lineHeight: '20px',
-          margin: '0',
-        }}
-      >
-        {L.footer}
-      </Text>
+      <EmailHeading>{L.title}</EmailHeading>
+      <EmailText last>{L.body}</EmailText>
+      <EmailNote>
+        <strong style={{ color: EMAIL_THEME.foreground }}>
+          {L.data_summary_title}
+        </strong>
+        {L.data_summary.map((item, i) => (
+          <React.Fragment key={i}>
+            <br />— {item}
+          </React.Fragment>
+        ))}
+      </EmailNote>
+      <EmailText>{L.footer}</EmailText>
     </Layout>
   );
 }
