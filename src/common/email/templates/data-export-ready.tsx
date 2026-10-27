@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { Text, Button, Section } from 'react-email';
 import { Layout } from './_layout';
+import { EmailButton, EmailHeading, EmailNote, EmailText } from './_ui';
 import type { SupportedEmailLocale } from '../email.queue';
 
 export interface DataExportReadyEmailProps {
@@ -42,8 +42,8 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
   fr: {
     preview: 'Votre exportation de données SACDIA est prête à télécharger.',
     title: 'Votre exportation de données est prête',
-    body: 'Nous avons généré votre exportation de données personnelles conformément au RGPD. Vous pouvez la télécharger directement depuis l\'application SACDIA.',
-    button: 'Voir mes données dans l\'application',
+    body: "Nous avons généré votre exportation de données personnelles conformément au RGPD. Vous pouvez la télécharger directement depuis l'application SACDIA.",
+    button: "Voir mes données dans l'application",
     expires_note: (exp) =>
       `Ce lien expire le ${exp} UTC. Passé cette date, vous devrez demander une nouvelle exportation depuis Paramètres → Confidentialité → Exporter mes données.`,
     fallback_note:
@@ -84,70 +84,11 @@ export function DataExportReadyEmail({
 
   return (
     <Layout preview={L.preview} lang={lang}>
-      <Text
-        style={{
-          fontSize: '20px',
-          fontWeight: '600',
-          color: '#18181b',
-          margin: '0 0 8px',
-        }}
-      >
-        {L.title}
-      </Text>
-      <Text
-        style={{
-          color: '#52525b',
-          fontSize: '15px',
-          lineHeight: '24px',
-          margin: '0 0 24px',
-        }}
-      >
-        {L.body}
-      </Text>
-
-      <Section style={{ textAlign: 'center' as const, margin: '0 0 24px' }}>
-        <Button
-          href={deepLink}
-          style={{
-            backgroundColor: '#1e40af',
-            borderRadius: '6px',
-            color: '#ffffff',
-            fontSize: '15px',
-            fontWeight: '600',
-            padding: '12px 24px',
-            textDecoration: 'none',
-            display: 'inline-block',
-          }}
-        >
-          {L.button}
-        </Button>
-      </Section>
-
-      <Text
-        style={{
-          color: '#71717a',
-          fontSize: '13px',
-          lineHeight: '20px',
-          margin: '0',
-          backgroundColor: '#f4f4f5',
-          padding: '12px 16px',
-          borderRadius: '6px',
-          borderLeft: '3px solid #a1a1aa',
-        }}
-      >
-        {L.expires_note(expiresFormatted)}
-      </Text>
-
-      <Text
-        style={{
-          color: '#71717a',
-          fontSize: '13px',
-          lineHeight: '20px',
-          margin: '16px 0 0',
-        }}
-      >
-        {L.fallback_note}
-      </Text>
+      <EmailHeading>{L.title}</EmailHeading>
+      <EmailText last>{L.body}</EmailText>
+      <EmailButton href={deepLink}>{L.button}</EmailButton>
+      <EmailNote>{L.expires_note(expiresFormatted)}</EmailNote>
+      <EmailText>{L.fallback_note}</EmailText>
     </Layout>
   );
 }

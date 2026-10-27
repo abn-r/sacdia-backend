@@ -1,45 +1,39 @@
 import * as React from 'react';
-import { Body, Container, Head, Html, Link, Section, Text } from 'react-email';
+import { Layout } from './_layout';
+import { EmailButton, EmailText } from './_ui';
 
 export interface InvestitureNoticeEmailProps {
   paragraphs: string[];
   link: string | null;
 }
 
+/**
+ * Investiture authorization notices (Spanish only, formal "usted"). The
+ * paragraphs come from investiture-communications.rules.ts; `link` opens the
+ * request in the admin panel.
+ */
 export function InvestitureNoticeEmail({
   paragraphs,
   link,
 }: InvestitureNoticeEmailProps) {
-  return React.createElement(
-    Html,
-    null,
-    React.createElement(Head, null),
-    React.createElement(
-      Body,
-      null,
-      React.createElement(
-        Container,
-        null,
-        paragraphs.map((paragraph) =>
-          React.createElement(
-            Section,
-            { key: paragraph },
-            React.createElement(Text, null, paragraph),
-          ),
-        ),
-        link
-          ? React.createElement(
-              Section,
-              null,
-              React.createElement(Link, { href: link }, link),
-            )
-          : null,
-        React.createElement(
-          Text,
-          null,
-          'Este correo fue enviado automáticamente por SACDIA. Si no realizó esta acción, puede ignorarlo.',
-        ),
-      ),
-    ),
+  return (
+    <Layout
+      lang="es"
+      preview={paragraphs[0]}
+      footerNotice="Este correo fue enviado automáticamente por SACDIA. Si no realizó esta acción, puede ignorarlo."
+    >
+      {paragraphs.map((paragraph, index) => (
+        <EmailText
+          key={`${index}-${paragraph}`}
+          last={index === paragraphs.length - 1 && !link}
+        >
+          {paragraph}
+        </EmailText>
+      ))}
+      {/* The paragraphs already list each request URL in plain text. */}
+      {link && <EmailButton href={link}>Abrir en el panel</EmailButton>}
+    </Layout>
   );
 }
+
+export default InvestitureNoticeEmail;
