@@ -47,11 +47,11 @@ type GlobalUserSpec = {
   lastName: string;
   roleName: string;
   /**
-   * - global: no territory (admin roles see everything).
-   * - union: union 20; division roles resolve their division from it.
+   * - union: union 20; admin anchors to it and division roles resolve their
+   *   division from it.
    * - local_field: local field 4 (and union 20).
    */
-  scope: 'global' | 'union' | 'local_field';
+  scope: 'union' | 'local_field';
 };
 
 type ClubUserSpec = {
@@ -91,11 +91,13 @@ const GLOBAL_USERS: GlobalUserSpec[] = [
     scope: 'union',
   },
   {
+    // admin anchors to its union (then local field, then division): only
+    // super-admin is global. Without an anchor the account is "unconfigured".
     email: 'admin-test@sacdia.com',
     name: 'Admin',
     lastName: 'Test',
     roleName: 'admin',
-    scope: 'global',
+    scope: 'union',
   },
   {
     email: 'director-dia@sacdia.com',
@@ -352,8 +354,7 @@ async function main() {
     const roleId = await resolveRoleId(spec.roleName, 'GLOBAL');
 
     const localFieldId = spec.scope === 'local_field' ? LOCAL_FIELD_ID : null;
-    // LF, union and division users belong to UMI; admin roles have no territory.
-    const unionId = spec.scope === 'global' ? null : UNION_ID;
+    const unionId = UNION_ID; // every global user in this seed belongs to UMI
 
     const { user_id } = await upsertUserWithCredentials({
       email: spec.email,
