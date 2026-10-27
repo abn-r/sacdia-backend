@@ -2,21 +2,23 @@ import * as React from 'react';
 import { Button, Img, Link, Section, Text } from 'react-email';
 
 /**
- * Visual tokens of the SACDIA web pages (sacdia-admin globals.css, light
- * theme), so the emails look like the reset password page they link to.
- * Email clients ignore CSS variables, so the values are literal.
+ * Visual tokens of the SACDIA web pages (sacdia-admin `globals.css`, light
+ * theme, `data-theme-preset="default"` / Scout Vibrante), so the emails look
+ * like the reset password page they link to. Email clients ignore CSS
+ * variables, so the values are literal: update them when the admin theme
+ * changes.
  */
 export const EMAIL_THEME = {
-  primary: '#f06151',
+  primary: '#0073ea',
   primaryForeground: '#ffffff',
-  foreground: '#0f172a',
-  muted: '#64748b',
-  subtle: '#f8fafc',
-  border: '#e2e8f0',
+  foreground: '#0a0a0a',
+  muted: '#666666',
+  subtle: '#f5f5f5',
+  border: '#ebebeb',
   destructive: '#dc2626',
   destructiveSoft: '#fef2f2',
   destructiveBorder: '#fecaca',
-  radius: '10px',
+  radius: '8px',
   fontFamily:
     "Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
   monoFamily:
