@@ -346,6 +346,34 @@ describe('transfer reads scope', () => {
     ).toEqual({ user_id: actorId });
   });
 
+  it('adds the territory of a local-field director without a section filter', async () => {
+    const { service, prisma, actorId } = setup('localFieldDirector');
+
+    await service.getTransferRequests({ userId: actorId, status: 'pending' });
+
+    const territory = { clubs: { is: { local_field_id: 7 } } };
+    expect(
+      prisma.club_transfer_requests.findMany.mock.calls[0][0].where,
+    ).toEqual({
+      status: 'pending',
+      OR: [
+        { user_id: actorId },
+        { from_section: territory },
+        { to_section: territory },
+      ],
+    });
+  });
+
+  it('lists every transfer for a super-admin without a section filter', async () => {
+    const { service, prisma, actorId } = setup('superAdmin');
+
+    await service.getTransferRequests({ userId: actorId, status: 'pending' });
+
+    expect(
+      prisma.club_transfer_requests.findMany.mock.calls[0][0].where,
+    ).toEqual({ status: 'pending' });
+  });
+
   it.each<Persona>(['member', 'clubDirector', 'localFieldDirector'])(
     'answers 404 to %s for a transfer outside the scope',
     async (persona) => {

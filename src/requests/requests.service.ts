@@ -461,7 +461,23 @@ export class RequestsService {
         { to_section_id: filters.sectionId },
       ];
     } else {
-      where.user_id = filters.userId;
+      // Own requests plus those whose origin or destination section is in
+      // the actor's scope (same visibility as role assignment requests), so
+      // admin and territorial reviewers see what the dashboard counts.
+      const scope = await this.actorSectionScope.resolve(
+        filters.userId,
+        REQUESTS_READ_SCOPE,
+      );
+      if (isActorSectionScopeEmpty(scope)) {
+        where.user_id = filters.userId;
+      } else if (!scope.all) {
+        const sectionWhere = clubSectionScopeWhere(scope);
+        where.OR = [
+          { user_id: filters.userId },
+          { from_section: sectionWhere },
+          { to_section: sectionWhere },
+        ];
+      }
     }
 
     return this.prisma.club_transfer_requests.findMany({
