@@ -3485,6 +3485,53 @@ describe('AuthService', () => {
   // sendVerificationEmail()
   // ---------------------------------------------------------------------------
   describe('sendVerificationEmail', () => {
+    const originalAdminPanelUrl = process.env.ADMIN_PANEL_URL;
+
+    beforeEach(() => {
+      process.env.ADMIN_PANEL_URL = 'https://admin.sacdia.test/';
+    });
+
+    afterEach(() => {
+      if (originalAdminPanelUrl === undefined) {
+        delete process.env.ADMIN_PANEL_URL;
+      } else {
+        process.env.ADMIN_PANEL_URL = originalAdminPanelUrl;
+      }
+    });
+
+    it('should email an https link to the admin verify-email page', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        email: 'juan.garcia@example.com',
+        email_verified: false,
+      });
+      mockPrismaService.verification.create.mockResolvedValue({});
+
+      await service.sendVerificationEmail('user-123');
+
+      const token: string =
+        mockPrismaService.verification.create.mock.calls[0][0].data.value;
+      expect(mockEmailService.sendEmailVerification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'juan.garcia@example.com',
+          verificationUrl: `https://admin.sacdia.test/verify-email?token=${encodeURIComponent(token)}`,
+        }),
+      );
+    });
+
+    it('should fail with 503 and create no token when ADMIN_PANEL_URL is missing', async () => {
+      delete process.env.ADMIN_PANEL_URL;
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        email: 'juan.garcia@example.com',
+        email_verified: false,
+      });
+
+      await expect(
+        service.sendVerificationEmail('user-123'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(mockPrismaService.verification.create).not.toHaveBeenCalled();
+      expect(mockEmailService.sendEmailVerification).not.toHaveBeenCalled();
+    });
+
     it('should throw BadRequestException when user is not found', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
