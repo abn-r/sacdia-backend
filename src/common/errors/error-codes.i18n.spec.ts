@@ -62,3 +62,32 @@ describe('phase 3c error codes i18n parity', () => {
     expect(missing).toEqual([]);
   });
 });
+
+/**
+ * Admin bulk user upload. Without a message the filter answered the raw key
+ * (`errors.ADMIN_BULK_INVALID_HEADERS`) and the admin toasted it as is.
+ */
+const ADMIN_BULK_CODES: ErrorCode[] = [
+  ErrorCode.ADMIN_BULK_FILE_REQUIRED,
+  ErrorCode.ADMIN_BULK_INVALID_FILE_TYPE,
+  ErrorCode.ADMIN_BULK_EMPTY_FILE,
+  ErrorCode.ADMIN_BULK_INVALID_HEADERS,
+  ErrorCode.ADMIN_BULK_TOO_MANY_ROWS,
+];
+
+describe('admin bulk upload error codes i18n parity', () => {
+  it.each(LOCALES)('every admin bulk code has a message in %s', (locale) => {
+    const catalog = load(locale);
+    const missing = ADMIN_BULK_CODES.filter((code) => !catalog[code]?.trim());
+    expect(missing).toEqual([]);
+  });
+
+  it.each(LOCALES)(
+    'the headers message names the missing and expected columns in %s',
+    (locale) => {
+      const message = load(locale)[ErrorCode.ADMIN_BULK_INVALID_HEADERS];
+      expect(message).toContain('{missing}');
+      expect(message).toContain('{expected}');
+    },
+  );
+});
