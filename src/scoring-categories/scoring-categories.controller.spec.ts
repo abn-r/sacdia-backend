@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ScoringCategoriesController } from './scoring-categories.controller';
 import { ScoringCategoriesService } from './scoring-categories.service';
+import { AUTHORIZATION_RESOURCE_KEY } from '../common/decorators/authorization-resource.decorator';
+import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
 import {
   JwtAuthGuard,
   PermissionsGuard,
@@ -51,6 +53,25 @@ describe('ScoringCategoriesController', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
+
+  it.each([
+    ['findDivisionCategories', 'scoring_categories:read'],
+    ['createDivisionCategory', 'scoring_categories:manage'],
+    ['updateDivisionCategory', 'scoring_categories:manage'],
+    ['deleteDivisionCategory', 'scoring_categories:manage'],
+  ] as const)(
+    'declares a global authorization resource on %s so PermissionsGuard does not 500',
+    (method, permission) => {
+      const handler = ScoringCategoriesController.prototype[method];
+
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual(
+        expect.objectContaining({ permissions: [permission] }),
+      );
+      expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual(
+        expect.objectContaining({ type: 'global' }),
+      );
+    },
+  );
 
   it('passes the authenticated user id to union read scope checks', async () => {
     await controller.findUnionCategories(42, {

@@ -49,6 +49,7 @@ export class ScoringCategoriesController {
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
   @RequirePermissions('scoring_categories:read')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Listar categorías de puntuación a nivel división' })
   @ApiResponse({ status: 200, description: 'Lista de categorías' })
   async findDivisionCategories() {
@@ -59,6 +60,7 @@ export class ScoringCategoriesController {
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
   @RequirePermissions('scoring_categories:manage')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Crear categoría de puntuación a nivel división' })
   @ApiResponse({ status: 201, description: 'Categoría creada' })
   async createDivisionCategory(@Body() dto: CreateScoringCategoryDto) {
@@ -69,6 +71,7 @@ export class ScoringCategoriesController {
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
   @RequirePermissions('scoring_categories:manage')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
     summary: 'Actualizar categoría de puntuación a nivel división',
   })
@@ -90,6 +93,7 @@ export class ScoringCategoriesController {
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
   @RequirePermissions('scoring_categories:manage')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
     summary:
       'Desactivar categoría de puntuación a nivel división (soft delete)',
