@@ -2,7 +2,7 @@ import {
   Injectable,
   Logger,
   OnModuleInit,
-  OnModuleDestroy,
+  OnApplicationShutdown,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
@@ -35,7 +35,7 @@ export interface PrismaPoolMetrics {
 @Injectable()
 export class PrismaService
   extends PrismaClient
-  implements OnModuleInit, OnModuleDestroy
+  implements OnModuleInit, OnApplicationShutdown
 {
   private pool: Pool;
   private readonly poolMax: number;
@@ -89,7 +89,12 @@ export class PrismaService
     }
   }
 
-  async onModuleDestroy() {
+  /**
+   * Last shutdown phase on purpose: queue workers drain their in-flight job in
+   * `beforeApplicationShutdown` (see CertificateOcrProcessor) and still need
+   * the pool. `onModuleDestroy` runs before that phase.
+   */
+  async onApplicationShutdown() {
     try {
       await this.$disconnect();
     } finally {
@@ -116,9 +121,7 @@ export class PrismaService
         `Pool warm-up partial (${ready}/${POOL_WARMUP_CONNECTIONS} connections ready)`,
       );
     } else {
-      this.logger.log(
-        `Pool warm-up complete (${ready} connections ready)`,
-      );
+      this.logger.log(`Pool warm-up complete (${ready} connections ready)`);
     }
   }
 

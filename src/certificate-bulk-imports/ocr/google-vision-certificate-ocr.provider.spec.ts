@@ -458,10 +458,10 @@ describe('GoogleVisionCertificateOcrProvider ADC', () => {
   });
   it('closes only an initialized singleton on shutdown', async () => {
     const f = fixture();
-    await f.ocr.onModuleDestroy();
+    await f.ocr.onApplicationShutdown();
     expect(f.client.close).not.toHaveBeenCalled();
     await f.ocr.extract([file]);
-    await f.ocr.onModuleDestroy();
+    await f.ocr.onApplicationShutdown();
     expect(f.client.close).toHaveBeenCalledTimes(1);
   });
   it('resolves real Nest constructor tokens without attempting ADC at boot', async () => {

@@ -153,6 +153,10 @@ async function bootstrap() {
     bufferLogs: true,
   });
   app.useLogger(app.get(Logger));
+  // Run the shutdown lifecycle on SIGTERM/SIGINT (Render deploys and
+  // restarts): queue workers drain their in-flight job, then the DB pool and
+  // Redis connections close. Without it a deploy behaved like a crash.
+  app.enableShutdownHooks();
 
   // ==========================================
   // TRUST PROXY — Client IP detection behind reverse proxies

@@ -2,7 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  OnModuleDestroy,
+  OnApplicationShutdown,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ImageAnnotatorClient, protos } from '@google-cloud/vision';
@@ -62,7 +62,7 @@ type PageResponse = protos.google.cloud.vision.v1.IAnnotateImageResponse;
 
 @Injectable()
 export class GoogleVisionCertificateOcrProvider
-  implements CertificateOcrProvider, OnModuleDestroy
+  implements CertificateOcrProvider, OnApplicationShutdown
 {
   private readonly parser = new CertificateOcrParser();
   private client?: VisionClient;
@@ -92,7 +92,8 @@ export class GoogleVisionCertificateOcrProvider
     return { ...parsed, rawText: clipStoredOcrText(parsed.rawText) };
   }
 
-  async onModuleDestroy(): Promise<void> {
+  /** After the OCR worker drained its in-flight job (beforeApplicationShutdown). */
+  async onApplicationShutdown(): Promise<void> {
     await this.client?.close();
   }
 

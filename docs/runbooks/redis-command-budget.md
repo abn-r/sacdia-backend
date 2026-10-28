@@ -34,6 +34,11 @@ command. Not measured against the Upstash dashboard.
 | drainDelay 60 s, stalled 300 s | 2 + 0.2 = 2.2 / min | 13.2 | ~570 k |
 | drainDelay 60 s, only `notifications` + `achievements` on | 2.2 / min | 4.4 | ~190 k |
 
+`certificate-import-ocr` checks for stalled jobs every 60 s instead of 300 s
+(`STALLED_INTERVAL_MS_BY_QUEUE` in `src/config/bullmq-workers.config.ts`): 1
+call/min instead of 0.2, about +35 k commands a month (~7% of the 500 k free
+tier) on top of the rows above. Each running instance sends its own call.
+
 The "before" figure is far above what the incident shows (quota gone mid
 month), so the model over-counts in absolute terms (the Render free plan
 sleeps the process when idle, and Upstash may bill blocking calls
@@ -71,9 +76,18 @@ Fixed (not env): OCR `lockDuration` 60 s (was 30 s); email
   the block at 10 s regardless of `drainDelay`.
 - `stalledInterval` 30 s -> 300 s: a job orphaned by a crashed worker is
   recovered after its lock expires plus up to two stalled checks, so up to
-  ~10 min instead of ~1.5 min. Only crash/kill scenarios are affected (a
-  graceful deploy shutdown finishes or releases its jobs). The stalled-check
-  key is shared per queue, so multiple instances do not multiply the checks.
+  ~10 min instead of ~1.5 min. OCR keeps 60 s (recovery in ~1-2 min) because a
+  user waits on that screen.
+- Deploys and restarts: `main.ts` calls `app.enableShutdownHooks()`, so on
+  SIGTERM the OCR worker drains its in-flight job in
+  `beforeApplicationShutdown`, before Prisma and the Vision client close in
+  `onApplicationShutdown`. `render.yaml` sets `maxShutdownDelaySeconds: 90` so
+  Render waits for an OCR call (up to ~40 s) before SIGKILL. Only a crash, an
+  OOM kill or SIGKILL still leaves an orphaned job for the stalled check.
+  Before this, no shutdown hooks ran and a deploy behaved like a crash.
+- The stalled-check key is shared per queue, so multiple instances do not
+  multiply the checks' work, but each instance still sends its own script
+  call (counted above).
 - OCR `lockDuration` 30 -> 60 s: an orphaned OCR job is detected up to 30 s
   later, but a slow event loop is less likely to lose the lock mid-job.
 - Email `maximumRateLimitDelay` 30 s -> 5 min: only while the 90/day limiter is

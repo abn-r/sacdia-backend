@@ -183,4 +183,25 @@ describe('CertificateOcrProcessor', () => {
       ).resolves.toBeUndefined();
     });
   });
+
+  describe('beforeApplicationShutdown', () => {
+    const withWorker = (close: jest.Mock) => {
+      const processor = new CertificateOcrProcessor({} as never);
+      Object.defineProperty(processor, 'worker', { get: () => ({ close }) });
+      return processor;
+    };
+
+    it('drains the worker before the DB and Vision client close', async () => {
+      const close = jest.fn().mockResolvedValue(undefined);
+      await withWorker(close).beforeApplicationShutdown();
+      expect(close).toHaveBeenCalledWith();
+    });
+
+    it('never throws if the worker fails to close', async () => {
+      const close = jest.fn().mockRejectedValue(new Error('redis down'));
+      await expect(
+        withWorker(close).beforeApplicationShutdown(),
+      ).resolves.toBeUndefined();
+    });
+  });
 });

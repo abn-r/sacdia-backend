@@ -25,6 +25,9 @@ services:
     buildCommand: corepack pnpm install --frozen-lockfile && NODE_OPTIONS=--max-old-space-size=4096 corepack pnpm run build && corepack pnpm exec prisma migrate deploy
     startCommand: node --max-old-space-size=320 --max-semi-space-size=2 dist/src/main.js
     healthCheckPath: /api/v1/health
+    # SIGTERM -> SIGKILL window (default 30 s). The OCR worker drains its
+    # in-flight job on shutdown and a Vision call can take ~40 s.
+    maxShutdownDelaySeconds: 90
     envVars:
       - key: NODE_ENV
         value: production
