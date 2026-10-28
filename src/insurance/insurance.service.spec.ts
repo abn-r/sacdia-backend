@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
+import { memberInLocalFieldWhere } from '../common/authorization/actor-territory-scope';
+import { effectiveAssignmentAt } from '../common/testing/effective-assignment.testing';
+import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
@@ -44,6 +47,12 @@ describe('InsuranceService', () => {
     isEnabledForLocalField: jest.fn().mockResolvedValue(false),
   };
 
+  const EFFECTIVE = effectiveAssignmentAt(new Date('2026-10-28T12:00:00.000Z'));
+  const mockMemberScope = {
+    effectiveAssignmentForLocalField: jest.fn(async () => EFFECTIVE),
+    resolveMemberLocalFieldIds: jest.fn(),
+  };
+
   const mockFileStorageService = {
     upload: jest.fn(),
     getSignedDownloadUrl: jest.fn(),
@@ -74,11 +83,13 @@ describe('InsuranceService', () => {
           provide: FieldPaymentOrdersFlagService,
           useValue: mockFieldPaymentOrdersFlag,
         },
+        { provide: MemberTerritoryScopeService, useValue: mockMemberScope },
       ],
     }).compile();
 
     service = module.get(InsuranceService);
     mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValue(false);
+    mockMemberScope.resolveMemberLocalFieldIds.mockResolvedValue([]);
 
     jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
     mockFileStorageService.getSignedDownloadUrl.mockImplementation(
@@ -311,6 +322,7 @@ describe('InsuranceService', () => {
       local_field_id: 7,
       enrollments: [],
     });
+    mockMemberScope.resolveMemberLocalFieldIds.mockResolvedValue([7]);
     mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockResolvedValue(true);
 
     await expect(
@@ -323,6 +335,33 @@ describe('InsuranceService', () => {
     ).rejects.toMatchObject({
       code: ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
     });
+    expect(mockPrismaService.member_insurances.create).not.toHaveBeenCalled();
+  });
+
+  it('blocks legacy creation when ANY resolved LF of the member (own row or effective club role) has payment orders enabled', async () => {
+    mockPrismaService.users.findUnique.mockResolvedValue({
+      user_id: 'member-10',
+      local_field_id: null,
+      enrollments: [],
+    });
+    mockMemberScope.resolveMemberLocalFieldIds.mockResolvedValue([3, 7]);
+    mockFieldPaymentOrdersFlag.isEnabledForLocalField.mockImplementation(
+      async (lf: number) => lf === 7,
+    );
+
+    await expect(
+      service.createInsurance(
+        'member-10',
+        { insurance_type: 'GENERAL_ACTIVITIES' },
+        undefined,
+        'admin-1',
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
+    });
+    expect(
+      mockFieldPaymentOrdersFlag.isEnabledForLocalField,
+    ).toHaveBeenCalledWith(7);
     expect(mockPrismaService.member_insurances.create).not.toHaveBeenCalled();
   });
 
@@ -538,7 +577,7 @@ describe('InsuranceService', () => {
       expect(mockPrismaService.member_insurances.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            users: { local_field_id: 7 },
+            users: memberInLocalFieldWhere(7, EFFECTIVE),
           }),
         }),
       );

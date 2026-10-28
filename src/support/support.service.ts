@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
-import { toTerritoryId } from '../common/authorization/actor-territory-scope';
+import {
+  memberInLocalFieldWhere,
+  toTerritoryId,
+} from '../common/authorization/actor-territory-scope';
+import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import {
@@ -45,6 +49,7 @@ export class SupportService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
+    private readonly memberScope: MemberTerritoryScopeService,
   ) {}
 
   /**
@@ -201,10 +206,7 @@ export class SupportService {
       return {};
     }
 
-    if (
-      roleNames.has('director-lf') ||
-      roleNames.has('assistant-lf')
-    ) {
+    if (roleNames.has('director-lf') || roleNames.has('assistant-lf')) {
       const actorFieldId = toTerritoryId(
         resolved.authorization.effective.scope.global.local_field?.id,
       );
@@ -212,7 +214,12 @@ export class SupportService {
         throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
       }
 
-      return { user: { local_field_id: actorFieldId } };
+      return {
+        user: memberInLocalFieldWhere(
+          actorFieldId,
+          await this.memberScope.effectiveAssignmentForLocalField(actorFieldId),
+        ),
+      };
     }
 
     if (

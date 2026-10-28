@@ -3,6 +3,11 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  isMemberInLocalField,
+  memberInLocalFieldWhere,
+} from '../../common/authorization/actor-territory-scope';
+import { MemberTerritoryScopeService } from '../../common/authorization/member-territory-scope.service';
+import {
   AppBadRequestException,
   AppConflictException,
   AppForbiddenException,
@@ -20,7 +25,6 @@ import {
 } from '../domain/certification-state-machine';
 import type {
   CertificationEnrollmentStatus,
-  CertificationRequirementStatus,
   RequirementProgressSnapshot,
 } from '../domain/certification-definition.types';
 import {
@@ -57,6 +61,7 @@ export class CertificationCloseoutService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly memberScope: MemberTerritoryScopeService,
   ) {}
 
   // ===========================================================================
@@ -204,7 +209,7 @@ export class CertificationCloseoutService {
       }
 
       const nextStatus = transitionEnrollment(
-        enrollment.status as CertificationEnrollmentStatus,
+        enrollment.status,
         'SUBMITTED_FOR_FINAL_REVIEW',
       );
 
@@ -241,15 +246,26 @@ export class CertificationCloseoutService {
       return [];
     }
 
+    const effectiveAssignment = actor.globalAccess
+      ? undefined
+      : await this.memberScope.effectiveAssignmentForLocalField(
+          actor.localFieldId as number,
+        );
+
     const rows = await this.prisma.users_certifications.findMany({
       where: {
         // APPROVED included so Certify action is available after closeout
         // approval without a separate tray (UI Task 4).
         status: { in: ['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED'] },
         active: true,
-        ...(actor.globalAccess
-          ? {}
-          : { users: { local_field_id: actor.localFieldId } }),
+        ...(effectiveAssignment
+          ? {
+              users: memberInLocalFieldWhere(
+                actor.localFieldId as number,
+                effectiveAssignment,
+              ),
+            }
+          : {}),
       },
       include: {
         users: {
@@ -280,8 +296,10 @@ export class CertificationCloseoutService {
         ? {
             closeout_evidence_id:
               row.certification_closeout_evidences[0].closeout_evidence_id,
-            review_status: row.certification_closeout_evidences[0].review_status,
-            upload_status: row.certification_closeout_evidences[0].upload_status,
+            review_status:
+              row.certification_closeout_evidences[0].review_status,
+            upload_status:
+              row.certification_closeout_evidences[0].upload_status,
             original_filename:
               row.certification_closeout_evidences[0].original_filename,
             mime_type: row.certification_closeout_evidences[0].mime_type,
@@ -364,10 +382,7 @@ export class CertificationCloseoutService {
         },
       });
 
-      const nextStatus = transitionEnrollment(
-        enrollment.status as CertificationEnrollmentStatus,
-        'APPROVED',
-      );
+      const nextStatus = transitionEnrollment(enrollment.status, 'APPROVED');
       await tx.users_certifications.update({
         where: { enrollment_id: enrollmentId },
         data: { status: nextStatus, approved_at: new Date() },
@@ -424,7 +439,7 @@ export class CertificationCloseoutService {
       }
 
       const nextStatus = transitionEnrollment(
-        enrollment.status as CertificationEnrollmentStatus,
+        enrollment.status,
         'CHANGES_REQUESTED',
       );
       await tx.users_certifications.update({
@@ -488,10 +503,7 @@ export class CertificationCloseoutService {
         });
       }
 
-      const nextStatus = transitionEnrollment(
-        enrollment.status as CertificationEnrollmentStatus,
-        'CERTIFIED',
-      );
+      const nextStatus = transitionEnrollment(enrollment.status, 'CERTIFIED');
 
       await tx.users_certifications.update({
         where: { enrollment_id: enrollmentId },
@@ -553,18 +565,28 @@ export class CertificationCloseoutService {
       });
     }
 
-    const participantLocalFieldId = enrollment.users?.local_field_id ?? null;
+    // Alcance: fila `users` del participante O rol de club vigente en el
+    // Campo Local del revisor. `user_local_field_id` conserva el valor crudo de
+    // la fila `users` (ningún llamador lo consume para decidir).
     if (
       !actor.globalAccess &&
       (actor.localFieldId == null ||
-        actor.localFieldId !== participantLocalFieldId)
+        !(await isMemberInLocalField(
+          db,
+          enrollment.user_id,
+          actor.localFieldId,
+          await this.memberScope.effectiveAssignmentForLocalField(
+            actor.localFieldId,
+          ),
+          enrollment.users?.local_field_id ?? null,
+        )))
     ) {
       throw new AppForbiddenException(ErrorCode.CERT_REVIEW_SCOPE_FORBIDDEN);
     }
 
     return {
       ...(enrollment as EnrollmentRecord),
-      user_local_field_id: participantLocalFieldId,
+      user_local_field_id: enrollment.users?.local_field_id ?? null,
     };
   }
 
@@ -611,7 +633,10 @@ export class CertificationCloseoutService {
 
   private async loadRequirementSnapshots(
     db: CloseoutDbClient,
-    enrollment: Pick<EnrollmentRecord, 'enrollment_id' | 'certification_version_id'>,
+    enrollment: Pick<
+      EnrollmentRecord,
+      'enrollment_id' | 'certification_version_id'
+    >,
   ): Promise<RequirementProgressSnapshot[]> {
     const sections = await db.certification_sections.findMany({
       where: {
@@ -633,8 +658,7 @@ export class CertificationCloseoutService {
     return sections.map((s) => ({
       requirementId: s.section_id,
       required: s.required,
-      status: (progressBySection.get(s.section_id) ??
-        'DRAFT') as CertificationRequirementStatus,
+      status: progressBySection.get(s.section_id) ?? 'DRAFT',
     }));
   }
 }

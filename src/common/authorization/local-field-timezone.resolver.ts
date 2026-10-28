@@ -41,6 +41,22 @@ export class LocalFieldTimezoneResolver {
     };
   }
 
+  async forLocalField(
+    localFieldId: number,
+  ): Promise<ResolvedLocalFieldTimezone> {
+    const localField = await this.prisma.local_fields.findUnique({
+      where: { local_field_id: localFieldId },
+      select: { local_field_id: true, active: true, timezone: true },
+    });
+    if (!localField)
+      this.unavailable({ ok: false, reason: 'MISSING', diagnostic: 'EMPTY' });
+    return {
+      local_field_id: localField.local_field_id,
+      active: localField.active,
+      timezone: this.assertTimezone(localField.timezone),
+    };
+  }
+
   assertTimezone(value: unknown): CanonicalGeographicIanaTimezone {
     const classification = classifyLocalFieldTimezone(value);
     if (!classification.ok) this.unavailable(classification);

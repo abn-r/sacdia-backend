@@ -21,6 +21,13 @@ type AssignRolePermissionOptions = {
   skipAudit?: boolean;
 };
 
+/** Global roles only a super-admin may assign to or remove from a user. */
+export const SUPER_ADMIN_ONLY_GLOBAL_ROLES: ReadonlySet<string> = new Set([
+  'super-admin',
+  'admin',
+  'assistant-admin',
+]);
+
 @Injectable()
 export class RbacService {
   private readonly logger = new Logger(RbacService.name);
@@ -764,20 +771,31 @@ export class RbacService {
     return { success: true, message: 'Rol removido del usuario' };
   }
 
+  /**
+   * Platform administration roles are granted and revoked by super-admin only:
+   * an admin must not mint other admins (or assistant-admins).
+   */
   private async assertCanMutateProtectedRole(
     roleName: string,
     actorUserId: string,
   ): Promise<void> {
-    if (roleName !== 'super-admin') {
+    if (!SUPER_ADMIN_ONLY_GLOBAL_ROLES.has(roleName)) {
       return;
     }
 
     const actorIsSuperAdmin =
       await this.authorizationContext.isSuperAdmin(actorUserId);
 
-    if (!actorIsSuperAdmin) {
+    if (actorIsSuperAdmin) {
+      return;
+    }
+
+    if (roleName === 'super-admin') {
       throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
     }
+    throw new AppForbiddenException(ErrorCode.RBAC_ROLE_SUPER_ADMIN_ONLY, {
+      role: roleName,
+    });
   }
 
   async bootstrapAdmin(userId: string) {

@@ -54,6 +54,17 @@ const superAdminRole = {
   modified_at: new Date('2025-01-01'),
 };
 
+const coordinatorRole = {
+  ...baseRole,
+  role_id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+  role_name: 'coordinator',
+};
+const assistantAdminRole = {
+  ...baseRole,
+  role_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+  role_name: 'assistant-admin',
+};
+
 const USER_ID = '11111111-1111-1111-1111-111111111111';
 const ACTOR_ADMIN_ID = '22222222-2222-2222-2222-222222222222';
 const ACTOR_SUPER_ADMIN_ID = '33333333-3333-3333-3333-333333333333';
@@ -167,16 +178,20 @@ describe('RbacService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: USER_ID,
       });
-      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+      mockPrismaService.roles.findUnique.mockResolvedValue(coordinatorRole);
       mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
       mockPrismaService.users_roles.create.mockResolvedValue({});
 
       await expect(
-        service.assignRoleToUser(USER_ID, ROLE_ID, ACTOR_ADMIN_ID),
+        service.assignRoleToUser(
+          USER_ID,
+          coordinatorRole.role_id,
+          ACTOR_ADMIN_ID,
+        ),
       ).resolves.toEqual({ success: true, message: 'Rol asignado' });
 
       expect(mockPrismaService.users_roles.create).toHaveBeenCalledWith({
-        data: { user_id: USER_ID, role_id: ROLE_ID },
+        data: { user_id: USER_ID, role_id: coordinatorRole.role_id },
       });
       expect(auditLogs.recordEvent).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -184,9 +199,45 @@ describe('RbacService', () => {
           entity_id: USER_ID,
           action: 'CREATED',
           actor_user_id: ACTOR_ADMIN_ID,
-          changes: { role_id: ROLE_ID, role_name: 'admin' },
+          changes: {
+            role_id: coordinatorRole.role_id,
+            role_name: 'coordinator',
+          },
         }),
       );
+    });
+
+    it.each([
+      ['admin', baseRole],
+      ['assistant-admin', assistantAdminRole],
+    ])('blocks a non-super-admin from assigning %s', async (name, role) => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: USER_ID,
+      });
+      mockPrismaService.roles.findUnique.mockResolvedValue(role);
+
+      await expect(
+        service.assignRoleToUser(USER_ID, role.role_id, ACTOR_ADMIN_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.RBAC_ROLE_SUPER_ADMIN_ONLY,
+      });
+      expect(mockPrismaService.users_roles.create).not.toHaveBeenCalled();
+      expect(name).toBe(role.role_name);
+    });
+
+    it('allows super-admin to assign admin', async () => {
+      const authorizationContext = (service as any).authorizationContext;
+      authorizationContext.isSuperAdmin.mockResolvedValue(true);
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: USER_ID,
+      });
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+      mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
+      mockPrismaService.users_roles.create.mockResolvedValue({});
+
+      await expect(
+        service.assignRoleToUser(USER_ID, ROLE_ID, ACTOR_SUPER_ADMIN_ID),
+      ).resolves.toEqual({ success: true, message: 'Rol asignado' });
     });
 
     it('blocks admin/assistant-admin from assigning super-admin', async () => {
@@ -227,6 +278,20 @@ describe('RbacService', () => {
   });
 
   describe('removeRoleFromUser protected roles', () => {
+    it('blocks a non-super-admin from removing admin', async () => {
+      mockPrismaService.users_roles.findFirst.mockResolvedValue({
+        user_role_id: 'user-role-id',
+        roles: baseRole,
+      });
+
+      await expect(
+        service.removeRoleFromUser(USER_ID, ROLE_ID, ACTOR_ADMIN_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.RBAC_ROLE_SUPER_ADMIN_ONLY,
+      });
+      expect(mockPrismaService.users_roles.update).not.toHaveBeenCalled();
+    });
+
     it('blocks admin/assistant-admin from removing super-admin', async () => {
       mockPrismaService.users_roles.findFirst.mockResolvedValue({
         user_role_id: 'user-role-id',

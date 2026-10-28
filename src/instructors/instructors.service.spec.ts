@@ -1,4 +1,6 @@
 import { ErrorCode } from '../common/errors/error-codes';
+import { memberInLocalFieldWhere } from '../common/authorization/actor-territory-scope';
+import { effectiveAssignmentAt } from '../common/testing/effective-assignment.testing';
 import { StorageBucketAlias } from '../common/services/file-storage.service';
 import {
   adultBirthdayCutoff,
@@ -11,6 +13,17 @@ describe('InstructorsService', () => {
     users: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
   };
   const fileStorage = { getSignedDownloadUrl: jest.fn() };
+  const EFFECTIVE = effectiveAssignmentAt(new Date('2026-10-28T12:00:00.000Z'));
+  const memberScope = {
+    resolveMemberLocalFieldIds: jest.fn(),
+    memberInLocalFieldsWhere: jest.fn(async (ids: number[]) =>
+      ids.length === 1
+        ? memberInLocalFieldWhere(ids[0], EFFECTIVE)
+        : {
+            OR: ids.map((id) => memberInLocalFieldWhere(id, EFFECTIVE)),
+          },
+    ),
+  };
   let service: InstructorsService;
 
   const row = (overrides: Record<string, unknown> = {}) => ({
@@ -27,8 +40,12 @@ describe('InstructorsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new InstructorsService(prisma as never, fileStorage as never);
-    prisma.users.findUnique.mockResolvedValue({ local_field_id: 7 });
+    service = new InstructorsService(
+      prisma as never,
+      fileStorage as never,
+      memberScope as never,
+    );
+    memberScope.resolveMemberLocalFieldIds.mockResolvedValue([7]);
     prisma.users.findMany.mockResolvedValue([row()]);
   });
 
@@ -55,22 +72,27 @@ describe('InstructorsService', () => {
       'returns [] without touching the database for q=%j',
       async (q) => {
         await expect(service.searchCandidates('u-1', q)).resolves.toEqual([]);
-        expect(prisma.users.findUnique).not.toHaveBeenCalled();
+        expect(memberScope.resolveMemberLocalFieldIds).not.toHaveBeenCalled();
         expect(prisma.users.findMany).not.toHaveBeenCalled();
       },
     );
 
-    it('returns [] when the caller has no local field', async () => {
-      prisma.users.findUnique.mockResolvedValue({ local_field_id: null });
+    it('returns [] when the caller has no local field (own row nor effective club role)', async () => {
+      memberScope.resolveMemberLocalFieldIds.mockResolvedValue([]);
 
       await expect(service.searchCandidates('u-1', 'ana')).resolves.toEqual([]);
       expect(prisma.users.findMany).not.toHaveBeenCalled();
     });
 
-    it('returns [] when the caller does not exist', async () => {
-      prisma.users.findUnique.mockResolvedValue(null);
+    it('scopes a caller whose field comes only from an effective club role (resolved by the scope service)', async () => {
+      memberScope.resolveMemberLocalFieldIds.mockResolvedValue([7]);
 
-      await expect(service.searchCandidates('u-1', 'ana')).resolves.toEqual([]);
+      await service.searchCandidates('u-1', 'ana');
+
+      expect(memberScope.memberInLocalFieldsWhere).toHaveBeenCalledWith([7]);
+      expect(prisma.users.findMany.mock.calls[0][0].where.AND[0].AND).toEqual([
+        memberInLocalFieldWhere(7, EFFECTIVE),
+      ]);
     });
 
     it('scopes to the caller local field and the eligibility filter', async () => {
@@ -82,7 +104,7 @@ describe('InstructorsService', () => {
           {
             active: true,
             approval_status: 'approved',
-            local_field_id: 7,
+            AND: [memberInLocalFieldWhere(7, EFFECTIVE)],
             birthday: { lte: expect.any(Date) },
           },
           { user_id: { not: 'u-1' } },
@@ -199,11 +221,11 @@ describe('InstructorsService', () => {
       await expect(service.assertEligible('u-1', 'u-1')).rejects.toMatchObject({
         code: ErrorCode.HONOR_INSTRUCTOR_SELF,
       });
-      expect(prisma.users.findUnique).not.toHaveBeenCalled();
+      expect(memberScope.resolveMemberLocalFieldIds).not.toHaveBeenCalled();
     });
 
     it('is INVALID when the owner has no local field', async () => {
-      prisma.users.findUnique.mockResolvedValue({ local_field_id: null });
+      memberScope.resolveMemberLocalFieldIds.mockResolvedValue([]);
 
       await expect(service.assertEligible('u-1', 'u-2')).rejects.toMatchObject({
         code: ErrorCode.HONOR_INSTRUCTOR_INVALID,
@@ -222,7 +244,7 @@ describe('InstructorsService', () => {
           user_id: 'u-2',
           active: true,
           approval_status: 'approved',
-          local_field_id: 7,
+          AND: [memberInLocalFieldWhere(7, EFFECTIVE)],
           birthday: { lte: expect.any(Date) },
         },
         select: { user_id: true },
@@ -230,18 +252,36 @@ describe('InstructorsService', () => {
     });
 
     it('evaluates the scope against the OWNER, not the caller', async () => {
-      prisma.users.findUnique.mockImplementation(
-        async ({ where }: { where: { user_id: string } }) =>
-          where.user_id === 'owner' ? { local_field_id: 99 } : null,
+      memberScope.resolveMemberLocalFieldIds.mockImplementation(
+        async (userId: string) => (userId === 'owner' ? [99] : []),
       );
       prisma.users.findFirst.mockResolvedValue({ user_id: 'u-2' });
 
       await expect(
         service.assertEligible('owner', 'u-2'),
       ).resolves.toBeUndefined();
-      expect(prisma.users.findFirst.mock.calls[0][0].where.local_field_id).toBe(
-        99,
+      expect(memberScope.resolveMemberLocalFieldIds).toHaveBeenCalledWith(
+        'owner',
       );
+      expect(prisma.users.findFirst.mock.calls[0][0].where.AND).toEqual([
+        memberInLocalFieldWhere(99, EFFECTIVE),
+      ]);
+    });
+
+    it('accepts an instructor of ANY field when the owner has effective roles in several', async () => {
+      memberScope.resolveMemberLocalFieldIds.mockResolvedValue([7, 8]);
+      prisma.users.findFirst.mockResolvedValue({ user_id: 'u-2' });
+
+      await service.assertEligible('u-1', 'u-2');
+
+      expect(prisma.users.findFirst.mock.calls[0][0].where.AND).toEqual([
+        {
+          OR: [
+            memberInLocalFieldWhere(7, EFFECTIVE),
+            memberInLocalFieldWhere(8, EFFECTIVE),
+          ],
+        },
+      ]);
     });
   });
 });

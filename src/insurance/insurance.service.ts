@@ -17,8 +17,10 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { FieldPaymentOrdersFlagService } from '../field-payment-orders/field-payment-orders-flag.service';
 import {
   LOCAL_FIELD_ROLES,
+  memberInLocalFieldWhere,
   toTerritoryId,
 } from '../common/authorization/actor-territory-scope';
+import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
 import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
 
 type InsuranceMutationInput = {
@@ -77,6 +79,7 @@ export class InsuranceService {
     private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
     private readonly fieldPaymentOrdersFlag: FieldPaymentOrdersFlagService,
+    private readonly memberScope: MemberTerritoryScopeService,
   ) {}
 
   private get db(): any {
@@ -314,7 +317,12 @@ export class InsuranceService {
         return {};
       }
 
-      return { users: { local_field_id: localFieldId } };
+      return {
+        users: memberInLocalFieldWhere(
+          localFieldId,
+          await this.memberScope.effectiveAssignmentForLocalField(localFieldId),
+        ),
+      };
     }
 
     if ([...LOCAL_FIELD_ROLES].some((role) => roleNames.has(role))) {
@@ -327,7 +335,12 @@ export class InsuranceService {
       if (localFieldId !== undefined && localFieldId !== actorFieldId) {
         throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
       }
-      return { users: { local_field_id: actorFieldId } };
+      return {
+        users: memberInLocalFieldWhere(
+          actorFieldId,
+          await this.memberScope.effectiveAssignmentForLocalField(actorFieldId),
+        ),
+      };
     }
 
     if (
@@ -377,19 +390,20 @@ export class InsuranceService {
 
     // Con órdenes de pago habilitadas en el LF del miembro, el alta manual
     // legacy queda bloqueada: la cobertura nace del approve de la orden.
-    const memberUser = await this.db.users.findUnique({
-      where: { user_id: memberId },
-      select: { local_field_id: true },
-    });
-    if (
-      typeof memberUser?.local_field_id === 'number' &&
-      (await this.fieldPaymentOrdersFlag.isEnabledForLocalField(
-        memberUser.local_field_id,
-      ))
-    ) {
-      throw new AppConflictException(
-        ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
-      );
+    // El LF del miembro es el de su fila `users`; si es nulo (p. ej. un director
+    // sin campo en su perfil), el de los clubes donde tiene un rol vigente.
+    const memberLocalFieldIds =
+      await this.memberScope.resolveMemberLocalFieldIds(memberId);
+    for (const memberLocalFieldId of memberLocalFieldIds) {
+      if (
+        await this.fieldPaymentOrdersFlag.isEnabledForLocalField(
+          memberLocalFieldId,
+        )
+      ) {
+        throw new AppConflictException(
+          ErrorCode.FIELD_PAYMENT_ORDER_LEGACY_DISABLED,
+        );
+      }
     }
 
     const fileData = await this.uploadEvidenceFile(memberId, file);

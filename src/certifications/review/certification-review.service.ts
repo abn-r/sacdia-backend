@@ -2,6 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  isMemberInLocalField,
+  memberInLocalFieldWhere,
+} from '../../common/authorization/actor-territory-scope';
+import { MemberTerritoryScopeService } from '../../common/authorization/member-territory-scope.service';
+import {
   AppBadRequestException,
   AppConflictException,
   AppForbiddenException,
@@ -128,6 +133,7 @@ export class CertificationReviewService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly memberScope: MemberTerritoryScopeService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -144,13 +150,20 @@ export class CertificationReviewService {
 
     const statuses = query.status ? [query.status] : [...REVIEWABLE_STATUSES];
 
+    const localFieldId = actor.localFieldId as number;
+    const effectiveAssignment = actor.globalAccess
+      ? undefined
+      : await this.memberScope.effectiveAssignmentForLocalField(localFieldId);
+
     const rows = await this.prisma.certification_section_progress.findMany({
       where: {
         status: { in: statuses },
         active: true,
-        ...(actor.globalAccess
-          ? {}
-          : { users: { local_field_id: actor.localFieldId } }),
+        ...(effectiveAssignment
+          ? {
+              users: memberInLocalFieldWhere(localFieldId, effectiveAssignment),
+            }
+          : {}),
       },
       include: TRAY_INCLUDE,
       orderBy: { submitted_at: 'asc' },
@@ -246,7 +259,11 @@ export class CertificationReviewService {
     actor: CertificationReviewActor,
     progressId: number,
     dto: ApproveCertificationRequirementDto,
-  ): Promise<{ progress_id: number; status: string; progress_summary: ProgressSummary }> {
+  ): Promise<{
+    progress_id: number;
+    status: string;
+    progress_summary: ProgressSummary;
+  }> {
     return this.prisma.$transaction(async (tx) => {
       const progress = await this.getProgressInScopeOrThrow(
         actor,
@@ -256,8 +273,7 @@ export class CertificationReviewService {
       );
       this.assertReviewerIsNotParticipant(actor, progress.user_id);
 
-      const currentStatus =
-        progress.status as CertificationRequirementStatus;
+      const currentStatus = progress.status;
       const nextStatus = transitionRequirement(currentStatus, 'APPROVED');
 
       const lockResult = await tx.users_certifications.updateMany({
@@ -327,8 +343,7 @@ export class CertificationReviewService {
       );
       this.assertReviewerIsNotParticipant(actor, progress.user_id);
 
-      const currentStatus =
-        progress.status as CertificationRequirementStatus;
+      const currentStatus = progress.status;
       const nextStatus = transitionRequirement(
         currentStatus,
         'CHANGES_REQUESTED',
@@ -442,33 +457,31 @@ export class CertificationReviewService {
       });
     }
 
-    this.assertInScope(
-      actor,
-      await this.resolveParticipantLocalField(progress, db),
-    );
+    await this.assertInScope(actor, progress.user_id, db);
 
     return progress;
   }
 
-  private async resolveParticipantLocalField(
-    progress: ProgressWithTrayInclude,
-    db: ReviewDbClient,
-  ): Promise<number | null> {
-    const user = await db.users.findUnique({
-      where: { user_id: progress.user_id },
-      select: { local_field_id: true },
-    });
-    return user?.local_field_id ?? null;
-  }
-
-  private assertInScope(
+  /**
+   * El participante pertenece al Campo Local del revisor si su fila `users`
+   * lo dice o si tiene un rol de club vigente en un club de ese Campo Local.
+   */
+  private async assertInScope(
     actor: CertificationReviewActor,
-    participantLocalFieldId: number | null,
-  ): void {
+    participantUserId: string,
+    db: ReviewDbClient,
+  ): Promise<void> {
     if (actor.globalAccess) return;
     if (
       actor.localFieldId != null &&
-      actor.localFieldId === participantLocalFieldId
+      (await isMemberInLocalField(
+        db,
+        participantUserId,
+        actor.localFieldId,
+        await this.memberScope.effectiveAssignmentForLocalField(
+          actor.localFieldId,
+        ),
+      ))
     ) {
       return;
     }
@@ -496,7 +509,7 @@ export class CertificationReviewService {
       module_name: progress.certification_sections.certification_modules.name,
       section_id: progress.certification_sections.section_id,
       section_name: progress.certification_sections.name,
-      status: progress.status as CertificationRequirementStatus,
+      status: progress.status,
       submitted_at: progress.submitted_at,
       participant: {
         user_id: progress.users.user_id,
@@ -534,8 +547,7 @@ export class CertificationReviewService {
     const snapshots: RequirementProgressSnapshot[] = sections.map((s) => ({
       requirementId: s.section_id,
       required: s.required,
-      status: (progressBySection.get(s.section_id) ??
-        'DRAFT') as CertificationRequirementStatus,
+      status: progressBySection.get(s.section_id) ?? 'DRAFT',
     }));
 
     const summary = computeProgressSummary(snapshots);

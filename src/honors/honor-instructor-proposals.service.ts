@@ -8,7 +8,11 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
-  assertReviewerCanAccessLocalField,
+  isMemberInLocalField,
+  memberInLocalFieldWhere,
+} from '../common/authorization/actor-territory-scope';
+import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
+import {
   resolveReviewerAccess,
   type ReviewerAccess,
 } from '../common/reviewer-scope/reviewer-scope';
@@ -76,6 +80,7 @@ export class HonorInstructorProposalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly instructors: InstructorsService,
+    private readonly memberScope: MemberTerritoryScopeService,
   ) {}
 
   // ========================================
@@ -203,11 +208,23 @@ export class HonorInstructorProposalsService {
     const access = await this.reviewerAccess(reviewerId);
     const page = Math.max(query.page ?? 1, 1);
     const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
+    const effectiveAssignment = access.global
+      ? undefined
+      : await this.memberScope.effectiveAssignmentForLocalField(
+          access.localFieldId as number,
+        );
     const where: Prisma.honor_instructor_proposalsWhereInput = {
       status: query.status ?? HonorInstructorProposalQueueStatus.PENDING,
-      ...(access.global
-        ? {}
-        : { user_honor: { users: { local_field_id: access.localFieldId } } }),
+      ...(effectiveAssignment
+        ? {
+            user_honor: {
+              users: memberInLocalFieldWhere(
+                access.localFieldId as number,
+                effectiveAssignment,
+              ),
+            },
+          }
+        : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.honor_instructor_proposals.findMany({
@@ -354,11 +371,20 @@ export class HonorInstructorProposalsService {
         ErrorCode.HONOR_INSTRUCTOR_PROPOSAL_NOT_FOUND,
       );
     }
-    assertReviewerCanAccessLocalField(
-      access,
-      proposal.user_honor.users.local_field_id,
-      () => this.forbidden(),
-    );
+    if (
+      !access.global &&
+      (!access.localFieldId ||
+        !(await isMemberInLocalField(
+          this.prisma,
+          proposal.user_honor.user_id,
+          access.localFieldId,
+          await this.memberScope.effectiveAssignmentForLocalField(
+            access.localFieldId,
+          ),
+        )))
+    ) {
+      throw this.forbidden();
+    }
     if (proposal.status !== 'PENDING') {
       throw new AppConflictException(
         ErrorCode.HONOR_INSTRUCTOR_PROPOSAL_NOT_PENDING,
