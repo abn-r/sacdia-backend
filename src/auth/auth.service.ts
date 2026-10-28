@@ -70,6 +70,7 @@ import { SupervisionStateService } from '../guardianships/supervision-state.serv
 import { LinkedDeviceGate } from './device/linked-device.gate';
 import { LinkedDevicesService } from '../guardianships/linked-devices.service';
 import type { LinkedDeviceSessionInfo } from '../better-auth/better-auth.service';
+import { adminPanelPageBase } from '../better-auth/better-auth.service';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -1425,7 +1426,7 @@ export class AuthService {
    * a verification email via the emails BullMQ queue.
    *
    * SECURITY: The raw token is NEVER logged — it is a credential. The token is
-   * embedded in a deep link passed to EmailService (not logged by EmailService either).
+   * embedded in the https link passed to EmailService (not logged by EmailService either).
    *
    * EMAIL_ENABLED gate: enforced at the EmailProcessor level. This method always
    * enqueues — if EMAIL_ENABLED=false, the processor silently drops the job.
@@ -1441,6 +1442,19 @@ export class AuthService {
       return;
     }
 
+    // The link opens the admin web page that confirms the token. Without
+    // ADMIN_PANEL_URL the email would carry a dead link, so fail before
+    // creating a token nobody can use.
+    const pageBase = adminPanelPageBase(process.env.ADMIN_PANEL_URL);
+    if (!pageBase) {
+      this.logger.error(
+        'Verification email not sent: ADMIN_PANEL_URL is missing or invalid',
+      );
+      throw new ServiceUnavailableException(
+        'Email verification is temporarily unavailable. Please contact support.',
+      );
+    }
+
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
@@ -1453,10 +1467,11 @@ export class AuthService {
       },
     });
 
-    // Build deep link — token is embedded in URL, never logged separately.
-    // The mobile app handles sacdia://verify-email?token=<token> internally
-    // and calls POST /api/v1/auth/verify-email/confirm with the token in the body.
-    const verificationUrl = `sacdia://verify-email?token=${token}`;
+    // https link to the admin page ({ADMIN_PANEL_URL}/verify-email), which
+    // calls POST /api/v1/auth/verify-email/confirm with the token in the body.
+    // A custom-scheme deep link had no handler and is stripped by most mail
+    // clients. SECURITY: the raw token is never logged separately.
+    const verificationUrl = `${pageBase}/verify-email?token=${encodeURIComponent(token)}`;
 
     // Enqueue email — fire-and-forget from the processor's perspective.
     // The caller wraps this entire method in .catch() already.

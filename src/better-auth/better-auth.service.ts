@@ -238,10 +238,11 @@ function generateToken(): string {
 export const PASSWORD_RESET_IDENTIFIER_PREFIX = 'password-reset:';
 
 /**
- * Base URL of the admin web app that hosts the reset page, or null when
- * ADMIN_PANEL_URL is missing or not an http(s) URL. Trailing slashes removed.
+ * Base URL of the admin web app that hosts the public reset-password and
+ * verify-email pages, or null when ADMIN_PANEL_URL is missing or not an
+ * http(s) URL. Trailing slashes removed.
  */
-export function passwordResetPageBase(
+export function adminPanelPageBase(
   adminPanelUrl: string | undefined,
 ): string | null {
   const raw = adminPanelUrl?.trim();
@@ -810,7 +811,7 @@ export class BetterAuthService implements IBetterAuthService {
     // The link opens the admin web page that sets the new password. Without
     // ADMIN_PANEL_URL the email would carry a dead link, so fail like a
     // disabled transport instead of creating a token nobody can use.
-    const resetPageBase = passwordResetPageBase(process.env.ADMIN_PANEL_URL);
+    const resetPageBase = adminPanelPageBase(process.env.ADMIN_PANEL_URL);
     if (!resetPageBase) {
       this.logger.error(
         'Password reset link not sent: ADMIN_PANEL_URL is missing or invalid',
