@@ -29,6 +29,12 @@ const prisma = new PrismaClient({ adapter });
 // ---------- Constants (discovered via discovery script 2026-04-14) ----------
 const PASSWORD = 'Sacdia2026!';
 const BCRYPT_ROUNDS = 12;
+/**
+ * Adult birthday for every test account. Without one, flows that check age
+ * fail closed and treat the account as a minor (for example the consent gate
+ * when a club assignment is activated).
+ */
+const TEST_USER_BIRTHDAY = new Date('1990-05-10T00:00:00.000Z');
 const LOCAL_FIELD_ID = 4;   // ACV - Asociación Centro de Veracruz
 const UNION_ID = 20;         // IOMU - Unión Mexicana Interoceánica
 const CLUB_SECTION_ID = 1;   // Club 1, Guías Mayores (has active annual folder)
@@ -264,6 +270,7 @@ async function upsertUserWithCredentials(opts: {
       access_panel: opts.accessPanel,
       local_field_id: opts.localFieldId,
       union_id: opts.unionId,
+      birthday: TEST_USER_BIRTHDAY,
     },
     update: {
       name: opts.name,
@@ -276,6 +283,13 @@ async function upsertUserWithCredentials(opts: {
       local_field_id: opts.localFieldId,
       union_id: opts.unionId,
     },
+  });
+
+  // Accounts seeded before birthdays existed: fill the gap, never overwrite a
+  // birthday someone set by hand.
+  await prisma.users.updateMany({
+    where: { user_id: user.user_id, birthday: null },
+    data: { birthday: TEST_USER_BIRTHDAY },
   });
 
   // Upsert credential in accounts table (Better Auth)
