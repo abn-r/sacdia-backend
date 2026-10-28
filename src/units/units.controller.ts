@@ -32,6 +32,7 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
+import { UnitWeeklyRecordWriter } from './guards/unit-weekly-record-writer.guard';
 
 @ApiTags('units')
 @Controller()
@@ -165,6 +166,11 @@ export class UnitsController {
 
   // ========================================
   // REGISTROS SEMANALES
+  //
+  // Las escrituras usan @UnitWeeklyRecordWriter(): pasan quienes tienen
+  // `units:update` en el club (como siempre) y, ademas, el capitan, secretario,
+  // consejero o consejero suplente de ESA unidad (activa, del club de la ruta)
+  // aunque solo tengan `units:read`. CRUD de unidades y miembros no cambia.
   // ========================================
 
   @ActingScope('member:read')
@@ -188,7 +194,7 @@ export class UnitsController {
   }
 
   @Post('clubs/:clubId/units/:unitId/weekly-records')
-  @RequirePermissions('units:update')
+  @UnitWeeklyRecordWriter()
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Crear registro semanal' })
   @ApiParam({ name: 'clubId', type: Number })
@@ -217,7 +223,7 @@ export class UnitsController {
   }
 
   @Post('clubs/:clubId/units/:unitId/weekly-records/bulk')
-  @RequirePermissions('units:update')
+  @UnitWeeklyRecordWriter()
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Crear o actualizar registros semanales de forma atómica',
@@ -246,7 +252,7 @@ export class UnitsController {
   }
 
   @Patch('clubs/:clubId/units/:unitId/weekly-records/:recordId')
-  @RequirePermissions('units:update')
+  @UnitWeeklyRecordWriter()
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Actualizar registro semanal' })
   @ApiParam({ name: 'clubId', type: Number })
