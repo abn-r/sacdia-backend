@@ -75,3 +75,59 @@ describe('activity DTO name validation', () => {
     });
   });
 });
+
+async function dateConstraints(
+  cls: new () => object,
+  plain: Record<string, unknown>,
+): Promise<string[]> {
+  const errors = await validate(plainToInstance(cls, plain));
+  const dateError = errors.find((error) => error.property === 'activity_date');
+  return Object.keys(dateError?.constraints ?? {});
+}
+
+describe('activity DTO activity_date validation', () => {
+  describe('CreateActivityDto', () => {
+    it.each([
+      ['missing', {}],
+      ['null', { activity_date: null }],
+      ['empty', { activity_date: '' }],
+    ])('rejects a %s date', async (_label, plain) => {
+      await expect(
+        dateConstraints(CreateActivityDto, plain),
+      ).resolves.not.toEqual([]);
+    });
+
+    it('accepts an ISO date', async () => {
+      await expect(
+        dateConstraints(CreateActivityDto, { activity_date: '2026-11-05' }),
+      ).resolves.toEqual([]);
+    });
+
+    it('applies the same rule to activity series', async () => {
+      await expect(
+        dateConstraints(CreateActivitySeriesDto, {}),
+      ).resolves.not.toEqual([]);
+    });
+  });
+
+  describe('UpdateActivityDto', () => {
+    it('allows omitting the date', async () => {
+      await expect(dateConstraints(UpdateActivityDto, {})).resolves.toEqual([]);
+    });
+
+    it.each([
+      ['null', null],
+      ['empty', ''],
+    ])('rejects clearing the date with %s', async (_label, value) => {
+      await expect(
+        dateConstraints(UpdateActivityDto, { activity_date: value }),
+      ).resolves.not.toEqual([]);
+    });
+
+    it('accepts a new ISO date', async () => {
+      await expect(
+        dateConstraints(UpdateActivityDto, { activity_date: '2026-11-06' }),
+      ).resolves.toEqual([]);
+    });
+  });
+});

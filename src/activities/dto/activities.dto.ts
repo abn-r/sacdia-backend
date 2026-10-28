@@ -105,13 +105,14 @@ export class CreateActivityDto {
   })
   activity_time?: string;
 
-  @ApiPropertyOptional({
-    description: 'Fecha de la actividad (ISO date: YYYY-MM-DD)',
+  @ApiProperty({
+    description:
+      'Fecha de la actividad (ISO date: YYYY-MM-DD). Obligatoria: sin fecha la actividad no aparece en el calendario.',
     example: '2025-06-15',
   })
-  @IsOptional()
+  @IsNotEmpty()
   @IsDateString()
-  activity_date?: string;
+  declare activity_date: string;
 
   @ApiPropertyOptional({
     description:
@@ -245,10 +246,14 @@ export class UpdateActivityDto {
   activity_time?: string;
 
   @ApiPropertyOptional({
-    description: 'Fecha de la actividad (ISO date: YYYY-MM-DD)',
+    description:
+      'Fecha de la actividad (ISO date: YYYY-MM-DD). Se puede cambiar pero no borrar: null o vacío responde 400.',
     example: '2025-06-15',
   })
-  @IsOptional()
+  // Optional only when absent: null or '' would clear the date and hide the
+  // activity from the calendar, so they fail validation.
+  @ValidateIf((o: { activity_date?: unknown }) => o.activity_date !== undefined)
+  @IsNotEmpty()
   @IsDateString()
   activity_date?: string;
 
