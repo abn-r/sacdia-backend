@@ -171,6 +171,9 @@ export class UnitsController {
   // `units:update` en el club (como siempre) y, ademas, el capitan, secretario,
   // consejero o consejero suplente de ESA unidad (activa, del club de la ruta)
   // aunque solo tengan `units:read`. CRUD de unidades y miembros no cambia.
+  // `@ActingScope('member:write')` abre estas escrituras al adolescente
+  // supervisado con tutor verificado que lidera la unidad; un tutor que actua
+  // por un menor y un telefono vinculado siguen sin alcanzarlas.
   // ========================================
 
   @ActingScope('member:read')
@@ -194,6 +197,7 @@ export class UnitsController {
   }
 
   @Post('clubs/:clubId/units/:unitId/weekly-records')
+  @ActingScope('member:write')
   @UnitWeeklyRecordWriter()
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Crear registro semanal' })
@@ -223,6 +227,7 @@ export class UnitsController {
   }
 
   @Post('clubs/:clubId/units/:unitId/weekly-records/bulk')
+  @ActingScope('member:write')
   @UnitWeeklyRecordWriter()
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
@@ -252,6 +257,7 @@ export class UnitsController {
   }
 
   @Patch('clubs/:clubId/units/:unitId/weekly-records/:recordId')
+  @ActingScope('member:write')
   @UnitWeeklyRecordWriter()
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Actualizar registro semanal' })

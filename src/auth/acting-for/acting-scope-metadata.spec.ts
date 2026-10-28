@@ -175,6 +175,11 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'POST /validation/submit': 'member:write',
   'POST /users/:userId/honors/:honorId/instructor-proposal': 'member:write',
   'DELETE /users/:userId/honors/:honorId/instructor-proposal': 'member:write',
+  // Weekly points of a unit the teen leads (captain, secretary, advisor). The
+  // UnitWeeklyRecordWriterGuard still requires leading THAT unit.
+  'POST /clubs/:clubId/units/:unitId/weekly-records': 'member:write',
+  'POST /clubs/:clubId/units/:unitId/weekly-records/bulk': 'member:write',
+  'PATCH /clubs/:clubId/units/:unitId/weekly-records/:recordId': 'member:write',
   // ---- self:password (teen only; credentials are never reachable while acting)
   'POST /auth/update-password': 'self:password',
   'POST /auth/verify-email/send': 'self:password',
@@ -507,9 +512,12 @@ const NEVER_SCOPE: Array<{
   {
     // Staff-only club mutations stay unreachable for every kind. The teen-only
     // member-app reads (member:read / agenda:read) and the two step-3 pickers
-    // are tagged and therefore excluded here.
+    // are tagged and therefore excluded here. The weekly points of a unit are
+    // carved out: a supervised teen who leads the unit writes them
+    // (member:write + UnitWeeklyRecordWriterGuard).
     label: 'club write routes',
-    pattern: /^(POST|PUT|PATCH|DELETE) \/clubs(\/|$)/,
+    pattern:
+      /^(POST|PUT|PATCH|DELETE) \/clubs(?!\/:clubId\/units\/:unitId\/weekly-records(\/|$))(\/|$)/,
   },
   {
     // `enrollments$` is the staff list only: `enrollments/current` (the own
