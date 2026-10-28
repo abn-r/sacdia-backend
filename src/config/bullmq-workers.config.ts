@@ -40,6 +40,17 @@ const LOCK_DURATION_MS_BY_QUEUE: Partial<Record<BullmqWorkerQueue, number>> = {
   'certificate-import-ocr': 60_000,
 };
 
+/**
+ * Queues that check for stalled jobs more often than the 300 s default. OCR:
+ * a job orphaned by a crash or OOM (SIGKILL, no graceful drain) used to take
+ * 5-10 min to recover while the user watched a spinner. 60 s costs about
+ * 35k Redis commands a month (docs/runbooks/redis-command-budget.md).
+ */
+const STALLED_INTERVAL_MS_BY_QUEUE: Partial<Record<BullmqWorkerQueue, number>> =
+  {
+    'certificate-import-ocr': 60_000,
+  };
+
 type Env = Record<string, string | undefined>;
 
 const logger = new Logger('BullmqWorkers');
@@ -118,7 +129,9 @@ export function buildBullmqWorkerOptions(
     lockDuration,
     ...overrides,
     stalledInterval: Math.max(
-      overrides.stalledInterval ?? configuredStalledInterval,
+      overrides.stalledInterval ??
+        STALLED_INTERVAL_MS_BY_QUEUE[queue] ??
+        configuredStalledInterval,
       lockDuration,
     ),
   };

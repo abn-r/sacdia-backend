@@ -89,6 +89,24 @@ describe('buildBullmqWorkerOptions', () => {
     expect(options.stalledInterval).toBe(60_000);
   });
 
+  it('checks the OCR queue for stalled jobs every 60 s, others every 300 s', () => {
+    expect(
+      buildBullmqWorkerOptions('certificate-import-ocr', {}, {})
+        .stalledInterval,
+    ).toBe(60_000);
+    expect(buildBullmqWorkerOptions('emails', {}, {}).stalledInterval).toBe(
+      300_000,
+    );
+    // A processor override still wins over the per-queue value.
+    expect(
+      buildBullmqWorkerOptions(
+        'certificate-import-ocr',
+        { stalledInterval: 120_000 },
+        {},
+      ).stalledInterval,
+    ).toBe(120_000);
+  });
+
   it('gives the OCR queue a longer lock than the BullMQ default', () => {
     expect(
       buildBullmqWorkerOptions('certificate-import-ocr', {}, {}).lockDuration,

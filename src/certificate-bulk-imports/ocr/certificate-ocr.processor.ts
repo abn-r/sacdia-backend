@@ -1,7 +1,12 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { attachBullmqWorkerErrorLogging } from '../../config/bullmq-worker-logging';
 import { buildBullmqWorkerOptions } from '../../config/bullmq-workers.config';
-import { HttpException, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  BeforeApplicationShutdown,
+  HttpException,
+  Logger,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { Job, UnrecoverableError } from 'bullmq';
 import { CertificateBulkImportsService } from '../certificate-bulk-imports.service';
 import {
@@ -15,7 +20,7 @@ import {
 )
 export class CertificateOcrProcessor
   extends WorkerHost
-  implements OnApplicationBootstrap
+  implements OnApplicationBootstrap, BeforeApplicationShutdown
 {
   private readonly logger = new Logger(CertificateOcrProcessor.name);
 
@@ -32,6 +37,25 @@ export class CertificateOcrProcessor
     this.worker.on('failed', (job, err) => {
       void this.recordTerminalFailure(job, err);
     });
+  }
+
+  /**
+   * On SIGTERM (Render deploy or restart) let the in-flight OCR job finish
+   * before Prisma and the Vision client close in `onApplicationShutdown`.
+   * Without it the job stayed `active` with no worker until the stalled check
+   * re-queued it minutes later. `close()` waits for the active job and takes
+   * no new ones; @nestjs/bullmq calling it again later is a no-op.
+   */
+  async beforeApplicationShutdown(): Promise<void> {
+    try {
+      await this.worker.close();
+    } catch (error) {
+      this.logger.warn(
+        `certificate OCR worker did not close cleanly: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /**

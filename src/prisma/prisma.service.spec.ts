@@ -62,7 +62,9 @@ describe('PrismaService', () => {
       .pool;
     const endSpy = jest.spyOn(pool, 'end').mockResolvedValue(undefined);
 
-    await expect(service.onModuleDestroy()).rejects.toThrow(disconnectError);
+    await expect(service.onApplicationShutdown()).rejects.toThrow(
+      disconnectError,
+    );
     expect(endSpy).toHaveBeenCalledTimes(1);
   });
 });
