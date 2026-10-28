@@ -3,6 +3,21 @@ import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ListOrdersQueryDto {
+  /**
+   * Local field to list. The handler reads it to scope the listing (required
+   * for unscoped admins, inside the territory for union/division actors).
+   * Declared here so the global `forbidNonWhitelisted` pipe does not reject it.
+   */
+  @ApiProperty({
+    required: false,
+    description: 'Local field to list (admins and territorial roles)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  local_field_id?: number;
+
   @ApiProperty({
     required: false,
     enum: ['en_revision', 'aprobada', 'pagada', 'entregada', 'cancelada'],
