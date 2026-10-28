@@ -31,7 +31,17 @@ export class ResourceCategoriesService {
     return created;
   }
 
-  async findAll() {
+  /**
+   * Active categories by default (cached: the app and the resource forms read
+   * them). `includeInactive` returns every category, uncached, so the admin
+   * can find a deactivated one and reactivate it.
+   */
+  async findAll(options: { includeInactive?: boolean } = {}) {
+    if (options.includeInactive) {
+      return this.prisma.resource_categories.findMany({
+        orderBy: { name: 'asc' },
+      });
+    }
     return this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.RESOURCE_CATEGORIES,
       () =>
