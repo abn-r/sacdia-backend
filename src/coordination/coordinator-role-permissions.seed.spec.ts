@@ -10,7 +10,11 @@ import { join } from 'node:path';
  */
 
 const PRISMA_DIR = join(__dirname, '../../prisma');
-const LADDER = ['coordinator', 'zone-coordinator', 'general-coordinator'] as const;
+const LADDER = [
+  'coordinator',
+  'zone-coordinator',
+  'general-coordinator',
+] as const;
 type CoordinatorRole = (typeof LADDER)[number];
 
 function stripComments(sql: string): string {
@@ -80,6 +84,8 @@ describe('coordinator role permissions (seed)', () => {
     expect(migration).toMatch(
       /permission_name IN \('resources:read', 'resource_categories:read'\)/,
     );
-    expect(migration).toMatch(/ON CONFLICT \(role_id, permission_id\) DO NOTHING/);
+    expect(migration).toMatch(
+      /ON CONFLICT \(role_id, permission_id\) DO NOTHING/,
+    );
   });
 });
