@@ -320,6 +320,21 @@ async function main() {
     const TEST_USER_ID = 'a0000001-0000-4000-8000-000000000001';
     const testUserEmail = 'testuser.gm@sacdia.test';
 
+    // Give the test user a territory: local-field scoped screens (reviews,
+    // user detail) filter members by it. Real users get it at post-registration.
+    const testUserLocalField = await prisma.local_fields.findFirst({
+        where: { active: true },
+        orderBy: { local_field_id: 'asc' },
+        select: { local_field_id: true, union_id: true, unions: { select: { country_id: true } } },
+    });
+    const testUserTerritory = testUserLocalField
+        ? {
+              local_field_id: testUserLocalField.local_field_id,
+              union_id: testUserLocalField.union_id,
+              country_id: testUserLocalField.unions.country_id,
+          }
+        : {};
+
     await prisma.users.upsert({
         where: { user_id: TEST_USER_ID },
         create: {
@@ -331,9 +346,17 @@ async function main() {
             active: true,
             access_app: true,
             approval_status: 'approved',
+            ...testUserTerritory,
         },
         update: {},
     });
+    // Existing installs: fill the territory only where it is still empty.
+    if (testUserLocalField) {
+        await prisma.users.updateMany({
+            where: { user_id: TEST_USER_ID, local_field_id: null },
+            data: testUserTerritory,
+        });
+    }
 
     await prisma.account.upsert({
         where: { providerId_accountId: { providerId: 'credential', accountId: TEST_USER_ID } },
