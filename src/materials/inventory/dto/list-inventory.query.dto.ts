@@ -3,6 +3,20 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class ListInventoryQueryDto {
+  /**
+   * Local field to list. The handler reads it to scope the listing (required
+   * for unscoped admins, inside the territory for union/division actors).
+   * Declared here so the global `forbidNonWhitelisted` pipe does not reject it.
+   */
+  @ApiPropertyOptional({
+    description: 'Local field to list (admins and territorial roles)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  local_field_id?: number;
+
   @ApiPropertyOptional({ description: 'Filter by category UUID' })
   @IsOptional()
   @IsUUID()
