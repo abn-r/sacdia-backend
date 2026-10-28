@@ -2177,6 +2177,37 @@ describe('AuthService', () => {
         expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
       });
 
+      it('reports email_verified from the DB, and null for a profile without email', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValueOnce(
+          {
+            ...resolvedProfile('user-1'),
+            profile: {
+              ...resolvedProfile('user-1').profile,
+              email: 'ana@example.com',
+            },
+          },
+        );
+        mockPrismaService.users.findUnique.mockResolvedValueOnce({
+          email_verified: false,
+        });
+
+        const unverified = await service.getProfile('user-1');
+        expect(unverified.data.email_verified).toBe(false);
+        expect(mockPrismaService.users.findUnique).toHaveBeenCalledWith({
+          where: { user_id: 'user-1' },
+          select: { email_verified: true },
+        });
+
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValueOnce(
+          resolvedProfile('dependent-1'),
+        );
+        mockPrismaService.users.findUnique.mockResolvedValueOnce({
+          email_verified: false,
+        });
+        const noEmail = await service.getProfile('dependent-1');
+        expect(noEmail.data.email_verified).toBeNull();
+      });
+
       it('returns acting_for null and the family summary for a regular user', async () => {
         mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
           resolvedProfile('guardian-1'),
