@@ -656,7 +656,6 @@ export class DataExportService {
             userId,
             email: user.email,
             exportId,
-            deepLink: `sacdia://data-export/${exportId}`,
             expiresAt,
           })
           .catch((err: Error) => {

@@ -1,10 +1,9 @@
 import * as React from 'react';
 import { Layout } from './_layout';
-import { EmailButton, EmailHeading, EmailNote, EmailText } from './_ui';
+import { EmailHeading, EmailNote, EmailText } from './_ui';
 import type { SupportedEmailLocale } from '../email.queue';
 
 export interface DataExportReadyEmailProps {
-  deepLink: string;
   expiresAt: Date;
   lang?: SupportedEmailLocale;
 }
@@ -13,82 +12,96 @@ interface Labels {
   preview: string;
   title: string;
   body: string;
-  button: string;
+  steps: string;
   expires_note: (expiresFormatted: string) => string;
-  fallback_note: string;
+  /** Footer: replaces the generic "you can ignore this" notice. */
+  not_requested: string;
 }
 
 const LABELS: Record<SupportedEmailLocale, Labels> = {
   es: {
     preview: 'Tu exportación de datos SACDIA está lista para descargar.',
     title: 'Tu exportación de datos está lista',
-    body: 'Hemos generado tu exportación de datos personales conforme al RGPD. Puedes descargarla directamente desde la app SACDIA.',
-    button: 'Ver mis datos en la app',
+    body: 'Generamos el archivo con tus datos personales. Por seguridad, solo se puede descargar desde la app SACDIA con tu sesión iniciada.',
+    steps:
+      'En la app, abre Perfil → Configuración → Cuenta → Descargar mis datos.',
     expires_note: (exp) =>
-      `Este enlace expira el ${exp} UTC. Pasada esa fecha, deberás solicitar una nueva exportación desde Configuración → Privacidad → Exportar mis datos.`,
-    fallback_note:
-      'Si el botón no funciona, abre la app SACDIA y navega a Configuración → Privacidad → Mis exportaciones.',
+      `La descarga estará disponible hasta el ${exp} UTC. Después tendrás que solicitar una nueva exportación desde esa misma pantalla.`,
+    not_requested:
+      'Este correo fue enviado automáticamente por SACDIA. Si no solicitaste esta exportación, cambia tu contraseña y revisa Configuración → Cuenta → Sesiones activas.',
   },
   en: {
     preview: 'Your SACDIA data export is ready to download.',
     title: 'Your data export is ready',
-    body: 'We have generated your personal data export in accordance with GDPR. You can download it directly from the SACDIA app.',
-    button: 'View my data in the app',
+    body: 'We generated the file with your personal data. For your security, it can only be downloaded from the SACDIA app while signed in.',
+    steps: 'In the app, open Profile → Settings → Account → Download my data.',
     expires_note: (exp) =>
-      `This link expires on ${exp} UTC. After that date, you will need to request a new export from Settings → Privacy → Export my data.`,
-    fallback_note:
-      "If the button doesn't work, open the SACDIA app and navigate to Settings → Privacy → My exports.",
+      `The download is available until ${exp} UTC. After that, you will need to request a new export from the same screen.`,
+    not_requested:
+      'This email was sent automatically by SACDIA. If you did not request this export, change your password and review Settings → Account → Active sessions.',
   },
   fr: {
     preview: 'Votre exportation de données SACDIA est prête à télécharger.',
     title: 'Votre exportation de données est prête',
-    body: "Nous avons généré votre exportation de données personnelles conformément au RGPD. Vous pouvez la télécharger directement depuis l'application SACDIA.",
-    button: "Voir mes données dans l'application",
+    body: "Nous avons généré le fichier contenant vos données personnelles. Pour votre sécurité, il ne peut être téléchargé que depuis l'application SACDIA, avec votre session ouverte.",
+    steps:
+      "Dans l'application, ouvrez Profil → Paramètres → Compte → Télécharger mes données.",
     expires_note: (exp) =>
-      `Ce lien expire le ${exp} UTC. Passé cette date, vous devrez demander une nouvelle exportation depuis Paramètres → Confidentialité → Exporter mes données.`,
-    fallback_note:
-      "Si le bouton ne fonctionne pas, ouvrez l'application SACDIA et accédez à Paramètres → Confidentialité → Mes exportations.",
+      `Le téléchargement est disponible jusqu'au ${exp} UTC. Ensuite, vous devrez demander une nouvelle exportation depuis le même écran.`,
+    not_requested:
+      "Cet e-mail a été envoyé automatiquement par SACDIA. Si vous n'avez pas demandé cette exportation, changez votre mot de passe et vérifiez Paramètres → Compte → Sessions actives.",
   },
   'pt-BR': {
     preview: 'Sua exportação de dados SACDIA está pronta para download.',
     title: 'Sua exportação de dados está pronta',
-    body: 'Geramos sua exportação de dados pessoais em conformidade com o RGPD. Você pode baixá-la diretamente do aplicativo SACDIA.',
-    button: 'Ver meus dados no aplicativo',
+    body: 'Geramos o arquivo com seus dados pessoais. Por segurança, ele só pode ser baixado pelo aplicativo SACDIA com sua sessão iniciada.',
+    steps:
+      'No aplicativo, abra Perfil → Configurações → Conta → Baixar meus dados.',
     expires_note: (exp) =>
-      `Este link expira em ${exp} UTC. Após essa data, você precisará solicitar uma nova exportação em Configurações → Privacidade → Exportar meus dados.`,
-    fallback_note:
-      'Se o botão não funcionar, abra o aplicativo SACDIA e navegue até Configurações → Privacidade → Minhas exportações.',
+      `O download fica disponível até ${exp} UTC. Depois disso, você precisará solicitar uma nova exportação na mesma tela.`,
+    not_requested:
+      'Este e-mail foi enviado automaticamente pelo SACDIA. Se você não solicitou esta exportação, altere sua senha e revise Configurações → Conta → Sessões ativas.',
   },
 };
 
+const DATE_LOCALE: Record<SupportedEmailLocale, string> = {
+  es: 'es-MX',
+  en: 'en-US',
+  fr: 'fr-FR',
+  'pt-BR': 'pt-BR',
+};
+
 /**
- * Sent when a GDPR data export is ready to download.
- * Deep link opens the SACDIA mobile app directly to the export screen.
- * Link expires in 48 hours.
+ * Sent when a GDPR data export is ready. No button on purpose: the app has
+ * no handler for a custom-scheme link and mail clients strip it, and a
+ * direct file link would hand all personal data to anyone holding the email.
+ * The email points to the in-app screen, which requires a signed-in session.
+ * The export is available for 48 hours.
  */
 export function DataExportReadyEmail({
-  deepLink,
   expiresAt,
   lang = 'es',
 }: DataExportReadyEmailProps) {
   const L = LABELS[lang] ?? LABELS['es'];
 
-  const expiresFormatted = expiresAt.toLocaleString('es-AR', {
-    timeZone: 'UTC',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const expiresFormatted = expiresAt.toLocaleString(
+    DATE_LOCALE[lang] ?? 'es-MX',
+    {
+      timeZone: 'UTC',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    },
+  );
 
   return (
-    <Layout preview={L.preview} lang={lang}>
+    <Layout preview={L.preview} lang={lang} footerNotice={L.not_requested}>
       <EmailHeading>{L.title}</EmailHeading>
-      <EmailText last>{L.body}</EmailText>
-      <EmailButton href={deepLink}>{L.button}</EmailButton>
+      <EmailText>{L.body}</EmailText>
+      <EmailText last>{L.steps}</EmailText>
       <EmailNote>{L.expires_note(expiresFormatted)}</EmailNote>
-      <EmailText>{L.fallback_note}</EmailText>
     </Layout>
   );
 }
