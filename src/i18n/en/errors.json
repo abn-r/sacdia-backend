@@ -103,7 +103,7 @@
   "CAMPOREE_SCORING_OVERRIDE_REASON_REQUIRED": "An override reason is required when replacing an active score result",
   "CAMPOREE_SCORING_RECEIPT_INCOMPLETE": "The persisted scoring receipt is incomplete",
   "ADMIN_USER_NOT_FOUND": "User not found",
-  "ADMIN_USER_SCOPE_MISSING": "Admin/coordinator role has no scope configured: requires union_id or local_field_id",
+  "ADMIN_USER_SCOPE_MISSING": "Your account has no territory or sections assigned. Ask an administrator to set up your scope.",
   "ADMIN_USER_NO_GLOBAL_PERMISSIONS": "You do not have global permissions to query admin users",
   "ADMIN_USER_MFA_NOT_ENABLED": "User does not have MFA enabled",
   "ADMIN_SESSION_NOT_FOUND": "Session not found for the specified user",
