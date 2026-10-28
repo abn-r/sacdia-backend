@@ -2028,13 +2028,14 @@ WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-union', 'assistan
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ============================
--- resources:read + resource_categories:read for coordinator role (read-only access)
+-- resources:read + resource_categories:read for the coordinator roles (read-only access)
+-- zone/general since migration 20261028120000_coordinator_roles_resources_read.
 -- ============================
 INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
 SELECT gen_random_uuid(), r.role_id, p.permission_id
 FROM roles r
 CROSS JOIN permissions p
-WHERE r.role_name = 'coordinator'
+WHERE r.role_name IN ('coordinator', 'zone-coordinator', 'general-coordinator')
   AND r.role_category = 'GLOBAL'
   AND r.active = true
   AND p.active = true
