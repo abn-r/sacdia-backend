@@ -42,6 +42,9 @@ const HONOR_LABEL_REGEX =
 const CLASS_LABEL_REGEX = /^[ \t•·*-]*(?:clase|investidura)\s*:\s*([^\n]+)/gim;
 const DATE_REGEX =
   /\b(?:(19\d{2}|20\d{2})[-/](\d{1,2})[-/](\d{1,2})|(\d{1,2})[-/](\d{1,2})[-/](19\d{2}|20\d{2}))\b/g;
+/** A trailing date in a candidate value, with the dash or parentheses around it. */
+const INLINE_DATE_REGEX =
+  /\s*[-–—(]*\s*\b(?:(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/](?:19|20)\d{2})\b\s*\)?\s*$/;
 
 /**
  * Confianza de la fecha según de dónde salió (el umbral de la app es 0.8, D5):
@@ -283,6 +286,10 @@ export class CertificateOcrParser {
         value
           .replace(/\bfecha\b\s*:.+$/i, '')
           .replace(/\bcompletad[ao]\b\s*:.+$/i, '')
+          // A date on the same line ("Alfabetización 12/09/2026",
+          // "Amigo (15/10/2021)") is the completion date, already read by
+          // pickDate. Keep it out of the name, with its separators.
+          .replace(INLINE_DATE_REGEX, '')
           .trim(),
       )
       .filter(Boolean);
