@@ -348,7 +348,7 @@ export class ActivitiesService {
         lat: dto.lat,
         long: dto.long,
         activity_time: dto.activity_time || '09:00',
-        activity_date: dto.activity_date ? new Date(dto.activity_date) : null,
+        activity_date: new Date(dto.activity_date),
         activity_end_date: dto.activity_end_date
           ? new Date(dto.activity_end_date)
           : null,
@@ -460,7 +460,7 @@ export class ActivitiesService {
         lat: dto.lat,
         long: dto.long,
         activity_time: dto.activity_time || '09:00',
-        activity_date: dto.activity_date ? new Date(dto.activity_date) : null,
+        activity_date: new Date(dto.activity_date),
         activity_end_date: dto.activity_end_date
           ? new Date(dto.activity_end_date)
           : null,
@@ -640,10 +640,9 @@ export class ActivitiesService {
       // Reset reminder so cron re-evaluates with the new time
       updateData.reminder_sent = false;
     }
-    if (dto.activity_date !== undefined) {
-      updateData.activity_date = dto.activity_date
-        ? new Date(dto.activity_date)
-        : null;
+    // The DTO rejects null/'' so the date can change but never be cleared.
+    if (dto.activity_date) {
+      updateData.activity_date = new Date(dto.activity_date);
       // Reset reminder so cron re-evaluates with the new date
       updateData.reminder_sent = false;
     }
@@ -730,10 +729,9 @@ export class ActivitiesService {
       scalarUpdateData.activity_time = dto.activity_time;
       scalarUpdateData.reminder_sent = false;
     }
-    if (dto.activity_date !== undefined) {
-      scalarUpdateData.activity_date = dto.activity_date
-        ? new Date(dto.activity_date)
-        : null;
+    // The DTO rejects null/'' so the date can change but never be cleared.
+    if (dto.activity_date) {
+      scalarUpdateData.activity_date = new Date(dto.activity_date);
       scalarUpdateData.reminder_sent = false;
     }
     if (dto.activity_end_date !== undefined)
@@ -824,10 +822,9 @@ export class ActivitiesService {
       scalarUpdateData.activity_time = dto.activity_time;
       scalarUpdateData.reminder_sent = false;
     }
-    if (dto.activity_date !== undefined) {
-      scalarUpdateData.activity_date = dto.activity_date
-        ? new Date(dto.activity_date)
-        : null;
+    // The DTO rejects null/'' so the date can change but never be cleared.
+    if (dto.activity_date) {
+      scalarUpdateData.activity_date = new Date(dto.activity_date);
       scalarUpdateData.reminder_sent = false;
     }
     if (dto.activity_end_date !== undefined)
