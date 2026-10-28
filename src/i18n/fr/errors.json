@@ -171,6 +171,7 @@
   "RBAC_ROLE_NAME_RESERVED": "Le nom du rôle est réservé et ne peut pas être créé",
   "RBAC_ROLE_NAME_IMMUTABLE": "Le nom du rôle ne peut pas être modifié après la création",
   "RBAC_ROLE_PROTECTED": "Le rôle super-admin est protégé et ne peut pas être modifié ou désactivé",
+  "RBAC_ROLE_SUPER_ADMIN_ONLY": "Seul un super-admin peut attribuer ou retirer le rôle {role}.",
   "RBAC_ROLE_HAS_ASSIGNMENTS": "Impossible de désactiver le rôle car des utilisateurs lui sont affectés",
   "RBAC_PERMISSIONS_NOT_FOUND": "Une ou plusieurs permissions sont introuvables",
   "RBAC_ROLE_PERMISSION_NOT_FOUND": "Affectation de permission au rôle introuvable",

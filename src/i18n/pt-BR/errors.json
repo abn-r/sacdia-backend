@@ -171,6 +171,7 @@
   "RBAC_ROLE_NAME_RESERVED": "O nome do papel está reservado e não pode ser criado",
   "RBAC_ROLE_NAME_IMMUTABLE": "O nome do papel não pode ser modificado",
   "RBAC_ROLE_PROTECTED": "O papel super-admin está protegido e não pode ser modificado ou desativado",
+  "RBAC_ROLE_SUPER_ADMIN_ONLY": "Somente um super-admin pode atribuir ou remover o papel {role}.",
   "RBAC_ROLE_HAS_ASSIGNMENTS": "Não é possível desativar o papel porque há usuários atribuídos",
   "RBAC_PERMISSIONS_NOT_FOUND": "Uma ou mais permissões não foram encontradas",
   "RBAC_ROLE_PERMISSION_NOT_FOUND": "Atribuição de permissão ao papel não encontrada",
