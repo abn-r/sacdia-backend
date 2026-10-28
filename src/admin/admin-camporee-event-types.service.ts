@@ -10,7 +10,11 @@ import {
   CATALOG_CACHE_KEYS,
 } from '../catalogs/catalog-cache.service';
 import { TranslationService } from '../common/services/translation.service';
+import { deriveUniqueCatalogCode } from '../common/utils/catalog-code';
 import { CreateCamporeeEventTypeDto, UpdateCamporeeEventTypeDto } from './dto';
+
+/** camporee_event_types.code is VARCHAR(40). */
+const CAMPOREE_EVENT_TYPE_CODE_MAX_LENGTH = 40;
 
 @Injectable()
 export class AdminCamporeeEventTypesService {
@@ -59,9 +63,11 @@ export class AdminCamporeeEventTypesService {
     actorId: string,
   ) {
     const name = this.normalizeName(dto.name);
-    const code = dto.code.trim().toLowerCase();
 
     this.translationService.validateTranslations(dto.translations);
+    // The admin catalog form does not send a code: derive one from the name.
+    const explicitCode = dto.code?.trim().toLowerCase();
+    const code = explicitCode || (await this.deriveCode(name));
     await this.ensureUnique(name, code);
 
     const eventType = await this.prisma.$transaction(async (tx) => {
@@ -187,6 +193,29 @@ export class AdminCamporeeEventTypesService {
     }
 
     return entity;
+  }
+
+  /** Codes are stored lowercase (e.g. `general`, `spiritual`). */
+  private async deriveCode(name: string): Promise<string> {
+    const code = await deriveUniqueCatalogCode(
+      name,
+      CAMPOREE_EVENT_TYPE_CODE_MAX_LENGTH,
+      async (candidate) =>
+        Boolean(
+          await this.prisma.camporee_event_types.findFirst({
+            where: { code: { equals: candidate, mode: 'insensitive' } },
+            select: { event_type_id: true },
+          }),
+        ),
+    );
+
+    if (!code) {
+      throw new AppConflictException(
+        ErrorCode.ADMIN_CAMPOREE_EVENT_TYPE_CODE_CONFLICT,
+      );
+    }
+
+    return code.toLowerCase();
   }
 
   private async ensureUnique(name?: string, code?: string, excludeId?: number) {

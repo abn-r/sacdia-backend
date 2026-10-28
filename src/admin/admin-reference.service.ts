@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
+import { deriveUniqueCatalogCode } from '../common/utils/catalog-code';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
@@ -38,6 +39,9 @@ import {
 } from './dto';
 import { TranslationService } from '../common/services/translation.service';
 import { lockInvestitureAuthorizationYear } from '../investiture-requests/investiture-request-lock';
+
+/** activity_types.code is VARCHAR(50). */
+const ACTIVITY_TYPE_CODE_MAX_LENGTH = 50;
 
 type HonorCategoryRecord = Prisma.honors_categoriesGetPayload<{
   include: { _count: { select: { honors: true } } };
@@ -90,9 +94,11 @@ export class AdminReferenceService {
 
   async createActivityType(dto: CreateActivityTypeDto, actorId: string) {
     const name = this.normalizeName(dto.name);
-    const code = dto.code.trim();
 
     this.translationService.validateTranslations(dto.translations);
+    // The admin catalog form does not send a code: derive one from the name.
+    const explicitCode = dto.code?.trim();
+    const code = explicitCode || (await this.deriveActivityTypeCode(name));
     await this.ensureActivityTypeUnique(name, code);
 
     const activityType = await this.prisma.$transaction(async (tx) => {
@@ -224,6 +230,28 @@ export class AdminReferenceService {
     }
 
     return entity;
+  }
+
+  private async deriveActivityTypeCode(name: string): Promise<string> {
+    const code = await deriveUniqueCatalogCode(
+      name,
+      ACTIVITY_TYPE_CODE_MAX_LENGTH,
+      async (candidate) =>
+        Boolean(
+          await this.prisma.activity_types.findFirst({
+            where: { code: { equals: candidate, mode: 'insensitive' } },
+            select: { activity_type_id: true },
+          }),
+        ),
+    );
+
+    if (!code) {
+      throw new AppConflictException(
+        ErrorCode.ADMIN_ACTIVITY_TYPE_CODE_CONFLICT,
+      );
+    }
+
+    return code;
   }
 
   private async ensureActivityTypeUnique(

@@ -859,6 +859,56 @@ describe('AdminReferenceService', () => {
     });
   });
 
+  describe('createActivityType without code', () => {
+    it('derives the code from the name when the form does not send one', async () => {
+      prismaMock.activity_types.findFirst.mockResolvedValue(null);
+      prismaMock.activity_types.create.mockResolvedValue(baseActivityType);
+
+      await service.createActivityType(
+        { name: 'Reunión de Líderes' },
+        ACTOR_ID,
+      );
+
+      expect(prismaMock.activity_types.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          code: 'REUNION_DE_LIDERES',
+          name: 'Reunión de Líderes',
+        }),
+      });
+    });
+
+    it('appends a numeric suffix when the derived code is taken', async () => {
+      const taken = new Set(['REUNION', 'REUNION_2']);
+      prismaMock.activity_types.findFirst.mockImplementation(
+        async ({ where }: any) =>
+          where.code && taken.has(where.code.equals)
+            ? { activity_type_id: 99 }
+            : null,
+      );
+      prismaMock.activity_types.create.mockResolvedValue(baseActivityType);
+
+      await service.createActivityType({ name: 'Reunión' }, ACTOR_ID);
+
+      expect(prismaMock.activity_types.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ code: 'REUNION_3' }),
+      });
+    });
+
+    it('keeps an explicit code untouched', async () => {
+      prismaMock.activity_types.findFirst.mockResolvedValue(null);
+      prismaMock.activity_types.create.mockResolvedValue(baseActivityType);
+
+      await service.createActivityType(
+        { code: ' Culto ', name: 'Culto de Adoración' },
+        ACTOR_ID,
+      );
+
+      expect(prismaMock.activity_types.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ code: 'Culto' }),
+      });
+    });
+  });
+
   // =========================================================
   // RELATIONSHIP TYPES — createRelationshipType (UUID PK)
   // =========================================================
