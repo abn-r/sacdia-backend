@@ -1067,6 +1067,7 @@ export class AuthService {
       supervision,
       analyticsAnonymous,
       device,
+      emailState,
     ] = await Promise.all([
       this.resolvePrivateProfilePicture(resolved.profile.user_image),
       // Outside the authorization cache: acceptance must reflect the DB right away.
@@ -1089,6 +1090,12 @@ export class AuthService {
       isDevice && principal?.linked_device_id
         ? this.loadDeviceInfo(principal.linked_device_id)
         : Promise.resolve(null),
+      // Outside the authorization cache too: the app hides its "verify your
+      // email" prompt right after the person confirms the link.
+      this.prisma.users.findUnique({
+        where: { user_id: userId },
+        select: { email_verified: true },
+      }),
     ]);
 
     return {
@@ -1136,6 +1143,11 @@ export class AuthService {
                 : 'teen_pending',
         family_features: this.familyFlags.getAll(),
         analytics_anonymous: analyticsAnonymous,
+        // false = the account has an email that was never confirmed. Profiles
+        // without email (dependents, paired devices) report null.
+        email_verified: resolved.profile.email
+          ? (emailState?.email_verified ?? false)
+          : null,
       },
     };
   }
