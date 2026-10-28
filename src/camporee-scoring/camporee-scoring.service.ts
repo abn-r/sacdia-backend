@@ -1012,7 +1012,15 @@ export class CamporeeScoringService {
     actorUserId: string,
   ): Promise<CamporeeEventRubricResponseDto[]> {
     const event = await this.resolveEvent(eventId);
-    await this.ensureClubRegistrationClosedForEvent(event);
+
+    // Disabling scoring with no rubric items sets nothing up and is what the
+    // admin sends right after creating/editing a non-scored event. Only
+    // enabling scoring or setting rubric items must wait for club
+    // registration to close.
+    const onlyDisablesScoring = !dto.scoring_enabled && dto.items.length === 0;
+    if (!onlyDisablesScoring) {
+      await this.ensureClubRegistrationClosedForEvent(event);
+    }
 
     if (dto.scoring_enabled && dto.items.length === 0) {
       throw new AppBadRequestException(
