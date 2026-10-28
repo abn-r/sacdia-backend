@@ -49,7 +49,6 @@ describe('EmailService', () => {
         userId: 'user-123',
         email: 'user@example.com',
         exportId: 'export-abc',
-        deepLink: 'sacdia://data-export/export-abc',
         expiresAt,
       });
 
@@ -60,7 +59,6 @@ describe('EmailService', () => {
           to: 'user@example.com',
           userId: 'user-123',
           exportId: 'export-abc',
-          deepLink: 'sacdia://data-export/export-abc',
           expiresAt: expiresAt.toISOString(),
         }),
       );
@@ -71,7 +69,6 @@ describe('EmailService', () => {
         userId: 'u',
         email: 'u@e.com',
         exportId: 'x',
-        deepLink: 'd',
         expiresAt,
       });
 

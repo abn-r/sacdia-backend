@@ -334,7 +334,6 @@ export class EmailProcessor
           lang,
         });
         const element = React.createElement(DataExportReadyEmail, {
-          deepLink: d.deepLink,
           expiresAt: new Date(d.expiresAt),
           lang,
         });

@@ -48,7 +48,6 @@ export interface DataExportReadyJobPayload {
   to: string;
   userId: string;
   exportId: string;
-  deepLink: string;
   expiresAt: string; // ISO string — Date is not serializable over BullMQ
   lang?: SupportedEmailLocale;
 }

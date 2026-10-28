@@ -72,7 +72,7 @@ const locales = ${JSON.stringify(LOCALES)};
 const builders = {
   Layout: (lang) => h(Layout, { preview: 'preview', lang }, h('p', null, 'contenido')),
   DataExportReadyEmail: (lang) => h(DataExportReadyEmail, {
-    deepLink: 'https://example.com/export', expiresAt: new Date('2030-01-01T00:00:00Z'), lang }),
+    expiresAt: new Date('2030-01-01T00:00:00Z'), lang }),
   EmailVerificationEmail: (lang) => h(EmailVerificationEmail, {
     verificationUrl: 'https://example.com/verify', userName: 'Ana', lang }),
   PasswordResetEmail: (lang) => h(PasswordResetEmail, { resetUrl: 'https://example.com/reset', lang }),
@@ -91,7 +91,7 @@ const builders = {
       const el = build(lang);
       const html = await render(el);
       const text = await render(el, { plainText: true });
-      results.push({ name, lang, htmlLength: html.length, textLength: text.length });
+      results.push({ name, lang, htmlLength: html.length, textLength: text.length, appSchemeLink: html.includes('sacdia://') });
     }
   }
   process.stdout.write('RESULTS:' + JSON.stringify(results));
@@ -127,6 +127,7 @@ describe('email templates render with the real @react-email/render', () => {
       lang: string;
       htmlLength: number;
       textLength: number;
+      appSchemeLink: boolean;
     }>;
 
     expect([...new Set(results.map((r) => r.name))]).toEqual(
@@ -137,6 +138,12 @@ describe('email templates render with the real @react-email/render', () => {
       expect({ ...r, ok: r.htmlLength > 0 && r.textLength > 0 }).toMatchObject({
         ok: true,
       });
+      // Mail clients strip custom-scheme links and the app has no handler.
+      expect({
+        name: r.name,
+        lang: r.lang,
+        appSchemeLink: r.appSchemeLink,
+      }).toEqual({ name: r.name, lang: r.lang, appSchemeLink: false });
     }
   });
 });

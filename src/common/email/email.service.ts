@@ -18,7 +18,6 @@ export interface SendDataExportReadyParams {
   userId: string;
   email: string;
   exportId: string;
-  deepLink: string;
   expiresAt: Date;
 }
 
@@ -72,7 +71,7 @@ export class EmailService {
   constructor(private readonly queue: EmailQueueProducer) {}
 
   async sendDataExportReady(params: SendDataExportReadyParams): Promise<void> {
-    const { userId, email, exportId, deepLink, expiresAt } = params;
+    const { userId, email, exportId, expiresAt } = params;
     this.logger.log(
       `Enqueuing data export ready email: exportId=${exportId} to=${maskEmail(email)}`,
     );
@@ -80,7 +79,6 @@ export class EmailService {
       to: email,
       userId,
       exportId,
-      deepLink,
       expiresAt: expiresAt.toISOString(),
     });
   }
