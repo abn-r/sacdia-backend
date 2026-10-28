@@ -3,6 +3,7 @@ import { UnitsController } from './units.controller';
 import { UnitsService } from './units.service';
 import { JwtAuthGuard } from '../common/guards';
 import { PermissionsGuard } from '../common/guards';
+import { UnitWeeklyRecordWriterGuard } from './guards/unit-weekly-record-writer.guard';
 
 describe('UnitsController', () => {
   let controller: UnitsController;
@@ -29,6 +30,8 @@ describe('UnitsController', () => {
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
       .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(UnitWeeklyRecordWriterGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
