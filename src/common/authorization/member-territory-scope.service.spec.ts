@@ -2,7 +2,6 @@ import { TestingClock } from '../clock/testing-clock';
 import { TemporalContextFactory } from '../clock/temporal-context.factory';
 import { ZonedBusinessTimeService } from '../clock/zoned-business-time.service';
 import { ClubAssignmentEffectivityPolicy } from './club-assignment-effectivity.policy';
-import { LocalFieldTimezoneResolver } from './local-field-timezone.resolver';
 import { MemberTerritoryScopeService } from './member-territory-scope.service';
 
 const NOW = new Date('2026-10-28T12:00:00.000Z');
@@ -11,6 +10,7 @@ function build(options: {
   user?: { local_field_id: number | null } | null;
   assignments?: unknown[];
   localFields?: Array<{ local_field_id: number }>;
+  timezone?: string | null;
 }) {
   const zoned = new ZonedBusinessTimeService();
   const prisma = {
@@ -28,7 +28,10 @@ function build(options: {
       findUnique: jest.fn().mockResolvedValue({
         local_field_id: 5,
         active: true,
-        timezone: 'America/Mexico_City',
+        timezone:
+          options.timezone === undefined
+            ? 'America/Mexico_City'
+            : options.timezone,
       }),
       findFirst: jest.fn().mockResolvedValue(options.localFields?.[0] ?? null),
     },
@@ -37,7 +40,6 @@ function build(options: {
     prisma as never,
     new ClubAssignmentEffectivityPolicy(zoned),
     new TemporalContextFactory(new TestingClock(NOW), zoned),
-    new LocalFieldTimezoneResolver(prisma as never),
   );
   return { service, prisma };
 }
@@ -50,6 +52,7 @@ const assignment = (
     end_date: string | null;
     expires_at: Date | null;
     lf: number;
+    timezone: string | null;
   }> = {},
 ) => ({
   active: overrides.active ?? true,
@@ -61,7 +64,10 @@ const assignment = (
     clubs: {
       local_fields: {
         local_field_id: overrides.lf ?? 7,
-        timezone: 'America/Mexico_City',
+        timezone:
+          overrides.timezone === undefined
+            ? 'America/Mexico_City'
+            : overrides.timezone,
       },
     },
   },
@@ -151,5 +157,41 @@ describe('MemberTerritoryScopeService', () => {
     expect(single).toHaveProperty('OR');
     const many = await service.memberInLocalFieldsWhere([5, 8]);
     expect(many.OR).toHaveLength(2);
+  });
+
+  it.each([
+    ['missing', null],
+    ['invalid', 'Not/AZone'],
+  ])(
+    'a field with a %s timezone fails closed: the club path matches nothing, no throw',
+    async (_label, timezone) => {
+      const { service } = build({ timezone });
+
+      await expect(
+        service.effectiveAssignmentForLocalField(5),
+      ).resolves.toEqual({ assignment_id: { in: [] } });
+    },
+  );
+
+  it('an unknown local field fails closed instead of throwing', async () => {
+    const { service, prisma } = build({});
+    prisma.local_fields.findUnique.mockResolvedValue(null);
+
+    await expect(service.effectiveAssignmentForLocalField(99)).resolves.toEqual(
+      { assignment_id: { in: [] } },
+    );
+  });
+
+  it('skips a club role whose field has no valid timezone, keeping the others', async () => {
+    const { service } = build({
+      assignments: [
+        assignment({ lf: 7, timezone: null }),
+        assignment({ lf: 8 }),
+      ],
+    });
+
+    await expect(service.resolveMemberLocalFieldIds('u-1')).resolves.toEqual([
+      8,
+    ]);
   });
 });

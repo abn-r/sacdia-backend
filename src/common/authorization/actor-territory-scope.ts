@@ -342,7 +342,22 @@ export async function isMemberInLocalField(
   userId: string,
   localFieldId: number,
   effectiveAssignment: Prisma.club_role_assignmentsWhereInput,
+  /** `users.local_field_id` when the caller already loaded it. */
+  ownLocalFieldId?: number | null,
 ): Promise<boolean> {
+  // Own user row first: the common case needs no club lookup.
+  const own =
+    ownLocalFieldId !== undefined
+      ? ownLocalFieldId
+      : ((
+          await prisma.users.findUnique({
+            where: { user_id: userId },
+            select: { local_field_id: true },
+          })
+        )?.local_field_id ?? null);
+  if (own === localFieldId) {
+    return true;
+  }
   const count = await prisma.users.count({
     where: {
       AND: [

@@ -579,9 +579,10 @@ describe('member-centric territory scope', () => {
     ).toThrow();
   });
 
-  it('isMemberInLocalField counts users matching the member filter', async () => {
+  it('isMemberInLocalField counts users matching the member filter when the own row does not match', async () => {
     const count = jest.fn().mockResolvedValueOnce(1).mockResolvedValueOnce(0);
-    const prisma = { users: { count } } as never;
+    const findUnique = jest.fn().mockResolvedValue({ local_field_id: null });
+    const prisma = { users: { count, findUnique } } as never;
 
     await expect(
       isMemberInLocalField(prisma, 'u-1', 5, effective),
@@ -594,5 +595,32 @@ describe('member-centric territory scope', () => {
         AND: [{ user_id: 'u-1' }, memberInLocalFieldWhere(5, effective)],
       },
     });
+  });
+
+  it('isMemberInLocalField short-circuits on the own user row, loaded or given', async () => {
+    const count = jest.fn();
+    const findUnique = jest.fn().mockResolvedValue({ local_field_id: 5 });
+    const prisma = { users: { count, findUnique } } as never;
+
+    await expect(
+      isMemberInLocalField(prisma, 'u-1', 5, effective),
+    ).resolves.toBe(true);
+    await expect(
+      isMemberInLocalField(prisma, 'u-1', 5, effective, 5),
+    ).resolves.toBe(true);
+    expect(findUnique).toHaveBeenCalledTimes(1);
+    expect(count).not.toHaveBeenCalled();
+  });
+
+  it('isMemberInLocalField with a given non-matching own field skips the row lookup', async () => {
+    const count = jest.fn().mockResolvedValue(0);
+    const findUnique = jest.fn();
+    const prisma = { users: { count, findUnique } } as never;
+
+    await expect(
+      isMemberInLocalField(prisma, 'u-1', 5, effective, 9),
+    ).resolves.toBe(false);
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(count).toHaveBeenCalledTimes(1);
   });
 });

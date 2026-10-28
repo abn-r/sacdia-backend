@@ -78,6 +78,7 @@ const createTxMock = () => ({
   },
   users: {
     count: jest.fn(),
+    findUnique: jest.fn().mockResolvedValue({ local_field_id: null }),
   },
   users_certifications: {
     updateMany: jest.fn(),
@@ -107,6 +108,7 @@ const mockPrisma = {
   },
   users: {
     count: jest.fn(),
+    findUnique: jest.fn().mockResolvedValue({ local_field_id: null }),
   },
   certification_component_responses: {
     findMany: jest.fn(),

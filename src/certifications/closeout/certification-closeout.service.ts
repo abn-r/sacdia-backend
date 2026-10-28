@@ -578,6 +578,7 @@ export class CertificationCloseoutService {
           await this.memberScope.effectiveAssignmentForLocalField(
             actor.localFieldId,
           ),
+          enrollment.users?.local_field_id ?? null,
         )))
     ) {
       throw new AppForbiddenException(ErrorCode.CERT_REVIEW_SCOPE_FORBIDDEN);
