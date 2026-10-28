@@ -14,11 +14,16 @@ import { Type } from 'class-transformer';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
 
 export class CreateCamporeeEventTypeDto {
-  @ApiProperty({ example: 'spiritual' })
+  @ApiPropertyOptional({
+    example: 'spiritual',
+    description:
+      'Optional. When omitted it is derived from the name (no accents, non-alphanumerics as "_") and made unique with a numeric suffix. Stored lowercase.',
+  })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(40)
-  declare code: string;
+  code?: string;
 
   @ApiProperty({ example: 'Espiritual' })
   @IsString()

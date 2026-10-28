@@ -244,6 +244,50 @@ describe('CamporeeScoringService', () => {
     });
   });
 
+  it('allows disabling scoring with no items while club registration is open', async () => {
+    prisma.local_camporees.findUnique.mockResolvedValue({
+      local_camporee_id: 10,
+      local_field_id: 5,
+      club_registration_closed_at: null,
+    });
+
+    await expect(
+      service.replaceEventRubrics(
+        1,
+        { scoring_enabled: false, items: [] },
+        actorUserId,
+      ),
+    ).resolves.toEqual([]);
+
+    expect(prisma.camporee_events.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ scoring_enabled: false }),
+      }),
+    );
+  });
+
+  it('still rejects setting rubric items while club registration is open', async () => {
+    prisma.local_camporees.findUnique.mockResolvedValue({
+      local_camporee_id: 10,
+      local_field_id: 5,
+      club_registration_closed_at: null,
+    });
+
+    await expect(
+      service.replaceEventRubrics(
+        1,
+        {
+          scoring_enabled: true,
+          items: [{ title: 'A', max_points: 100, display_order: 0 }],
+        },
+        actorUserId,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED,
+    });
+    expect(prisma.camporee_events.update).not.toHaveBeenCalled();
+  });
+
   it('rejects scoring event without rubrics', async () => {
     await expect(
       service.replaceEventRubrics(

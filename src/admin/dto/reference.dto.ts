@@ -244,11 +244,16 @@ export class UpdateMedicineDto {
 }
 
 export class CreateActivityTypeDto {
-  @ApiProperty({ example: 'CULTO' })
+  @ApiPropertyOptional({
+    example: 'CULTO',
+    description:
+      'Optional. When omitted it is derived from the name (uppercase, no accents, non-alphanumerics as "_") and made unique with a numeric suffix.',
+  })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  declare code: string;
+  code?: string;
 
   @ApiProperty({ example: 'Culto de Adoración' })
   @IsString()

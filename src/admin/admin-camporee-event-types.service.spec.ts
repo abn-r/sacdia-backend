@@ -122,6 +122,43 @@ describe('AdminCamporeeEventTypesService', () => {
       );
     });
 
+    it('derives a lowercase code from the name when none is sent', async () => {
+      const create = jest.fn().mockResolvedValue(baseEventType);
+      prisma.camporee_event_types.findFirst.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation(async (fn: any) =>
+        fn({ camporee_event_types: { create } }),
+      );
+
+      await service.createCamporeeEventType(
+        { name: 'Competencia Física' },
+        ACTOR_ID,
+      );
+
+      expect(create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ code: 'competencia_fisica' }),
+      });
+    });
+
+    it('appends a numeric suffix when the derived code already exists', async () => {
+      const create = jest.fn().mockResolvedValue(baseEventType);
+      const taken = new Set(['espiritual', 'espiritual_2']);
+      prisma.camporee_event_types.findFirst.mockImplementation(
+        async ({ where }: any) =>
+          where.code && taken.has(where.code.equals.toLowerCase())
+            ? baseEventType
+            : null,
+      );
+      prisma.$transaction.mockImplementation(async (fn: any) =>
+        fn({ camporee_event_types: { create } }),
+      );
+
+      await service.createCamporeeEventType({ name: 'Espiritual' }, ACTOR_ID);
+
+      expect(create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ code: 'espiritual_3' }),
+      });
+    });
+
     it('throws conflict if code already exists', async () => {
       prisma.camporee_event_types.findFirst.mockImplementation(
         ({ where }: any) => {
