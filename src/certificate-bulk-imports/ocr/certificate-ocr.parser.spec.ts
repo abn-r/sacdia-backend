@@ -390,6 +390,32 @@ describe('CertificateOcrParser', () => {
     });
   });
 
+  describe('date on the same line as the name', () => {
+    it('keeps the date as completedAt and out of the detected name', () => {
+      const { items } = new CertificateOcrParser().parse(
+        'Especialidad: Alfabetización  12/09/2026\n' +
+          'Especialidad: Auxilio de las Catástrofes - 2026-09-12\n' +
+          'Clase: Amigo (15/10/2021)',
+      );
+
+      expect(items.map((i) => [i.type, i.detectedName, i.completedAt])).toEqual(
+        [
+          ['HONOR', 'Alfabetización', '2026-09-12'],
+          ['HONOR', 'Auxilio de las Catástrofes', '2026-09-12'],
+          ['CLASS', 'Amigo', '2021-10-15'],
+        ],
+      );
+    });
+
+    it('does not cut a number that is part of the name', () => {
+      const [item] = new CertificateOcrParser().parse(
+        'Especialidad: Natación 2 12/09/2026',
+      ).items;
+
+      expect(item.detectedName).toBe('Natación 2');
+    });
+  });
+
   describe('date by candidate (#5)', () => {
     const FILE = '11111111-1111-4111-8111-111111111111';
     const syntheticPdf = () =>
