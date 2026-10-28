@@ -937,6 +937,9 @@ export class NotificationsProcessor
 
     // Resolve FCM tokens for section members, excluding the actor.
     // Uses club_role_assignments as the membership source (active: true).
+    // Callers without a user actor send actorId 'system'; comparing that to the
+    // uuid column made Prisma throw and the whole job fail, so only a real user
+    // id is excluded.
     const tokenRows = await this.prisma.user_fcm_tokens.findMany({
       where: {
         active: true,
@@ -947,7 +950,7 @@ export class NotificationsProcessor
               active: true,
             },
           },
-          user_id: { not: actorId },
+          ...(isUuid(actorId) ? { user_id: { not: actorId } } : {}),
         },
       },
       select: { user_id: true, token: true },
