@@ -1121,4 +1121,7 @@ export enum ErrorCode {
   // ── Carga por certificado: borrado de borrador (B11) ──
   CERTIFICATE_IMPORT_BATCH_NOT_DELETABLE = 'CERTIFICATE_IMPORT_BATCH_NOT_DELETABLE',
   CERTIFICATE_IMPORT_OCR_IN_PROGRESS = 'CERTIFICATE_IMPORT_OCR_IN_PROGRESS',
+
+  // ── Validación de DTOs (class-validator, pipe global) ──
+  VALIDATION_FAILED = 'VALIDATION_FAILED',
 }

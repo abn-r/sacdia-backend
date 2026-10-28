@@ -6,7 +6,8 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { Logger as NestLogger, VersioningType } from '@nestjs/common';
-import { I18nValidationPipe, I18nValidationExceptionFilter } from 'nestjs-i18n';
+import { I18nValidationPipe } from 'nestjs-i18n';
+import { createValidationExceptionFilter } from './common/validation/validation-exception-filter';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
@@ -18,10 +19,7 @@ import { timeoutMiddleware } from './common/middleware/timeout.middleware';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { auditContextMiddleware } from './audit-logs/audit-request-context';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
-import {
-  GLOBAL_VALIDATION_PIPE_OPTIONS,
-  shouldExposeI18nValidationDetails,
-} from './config/i18n-validation-details';
+import { GLOBAL_VALIDATION_PIPE_OPTIONS } from './config/i18n-validation-details';
 import {
   jsonBodyLimitForPath,
   urlencodedBodyLimitForPath,
@@ -301,12 +299,9 @@ async function bootstrap() {
   // does NOT require injected services — it reads I18nContext from the CLS store
   // populated by nestjs-i18n middleware. Catches I18nValidationException thrown by
   // I18nValidationPipe and returns translated field-level messages.
-  // Production flattens to string[] so 400s do not echo constraint keys or DTO shape.
-  app.useGlobalFilters(
-    new I18nValidationExceptionFilter({
-      detailedErrors: shouldExposeI18nValidationDetails(),
-    }),
-  );
+  // Body: { code: VALIDATION_FAILED, message: string[], errors: [{ field, message }] }.
+  // Constraint names are only added outside production; rejected values never.
+  app.useGlobalFilters(createValidationExceptionFilter());
 
   // ==========================================
   // SEGURIDAD - Global Filters (Exception Handling)

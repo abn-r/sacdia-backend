@@ -11,6 +11,7 @@ import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { ACHIEVEMENTS_QUEUE } from '../achievements/achievements.constants';
 import { EMAIL_QUEUE } from '../common/email/email.queue';
 import { BACKGROUND_JOBS_QUEUE } from '../background-jobs/background-jobs.types';
+import { sanitizeFailureReason } from '../common/utils/sanitize-failure-reason';
 
 export interface JobCounts {
   name: string;
@@ -86,7 +87,9 @@ export class JobsOverviewService {
           job_id: j.id ?? null,
           queue: name,
           name: j.name,
-          failed_reason: j.failedReason ?? null,
+          // Raw reason (Prisma errors, stack frames, server paths) stays in logs;
+          // the API only exposes a trimmed, path-free message.
+          failed_reason: sanitizeFailureReason(j.failedReason),
           attempts: j.attemptsMade,
           timestamp: j.finishedOn ? new Date(j.finishedOn).toISOString() : null,
         }));
