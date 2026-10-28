@@ -1,6 +1,13 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
+import {
+  memberInDivisionWhere,
+  memberInLocalFieldWhere,
+  memberInUnionWhere,
+} from '../common/authorization/actor-territory-scope';
+import { effectiveAssignmentAt } from '../common/testing/effective-assignment.testing';
+import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
 import { role_category, user_approval_status } from '@prisma/client';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
@@ -55,6 +62,12 @@ describe('AdminUsersService', () => {
     $transaction: jest.fn(),
   };
 
+  const EFFECTIVE = effectiveAssignmentAt(new Date('2026-10-28T12:00:00.000Z'));
+  const mockMemberScope = {
+    effectiveAssignmentForLocalField: jest.fn(async () => EFFECTIVE),
+    effectiveAssignmentForScope: jest.fn(async () => EFFECTIVE),
+  };
+
   const mockFileStorageService = {
     getSignedDownloadUrl: jest.fn((_bucket: unknown, value: string) =>
       Promise.resolve(value),
@@ -98,6 +111,7 @@ describe('AdminUsersService', () => {
           provide: CoordinationService,
           useValue: mockCoordinationService,
         },
+        { provide: MemberTerritoryScopeService, useValue: mockMemberScope },
       ],
     }).compile();
 
@@ -706,7 +720,7 @@ describe('AdminUsersService', () => {
 
       expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { union_id: 7 },
+          where: memberInUnionWhere(7, EFFECTIVE),
         }),
       );
     });
@@ -807,7 +821,7 @@ describe('AdminUsersService', () => {
 
       expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { union_id: 12 },
+          where: memberInUnionWhere(12, EFFECTIVE),
         }),
       );
     });
@@ -838,7 +852,7 @@ describe('AdminUsersService', () => {
 
       expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { unions: { division_id: 3 } },
+          where: memberInDivisionWhere(3, EFFECTIVE),
         }),
       );
     });
@@ -1073,7 +1087,7 @@ describe('AdminUsersService', () => {
       expect(findFirstArgs?.where?.AND).toEqual(
         expect.arrayContaining([
           { user_id: 'user-outside-scope' },
-          { union_id: 4 },
+          memberInUnionWhere(4, EFFECTIVE),
         ]),
       );
     });
@@ -1098,11 +1112,53 @@ describe('AdminUsersService', () => {
         expect(mockPrismaService.users.findFirst).toHaveBeenCalledWith(
           expect.objectContaining({
             where: {
-              AND: [{ user_id: 'user-in-field' }, { local_field_id: 3 }],
+              AND: [
+                { user_id: 'user-in-field' },
+                memberInLocalFieldWhere(3, EFFECTIVE),
+              ],
             },
             select: { user_id: true },
           }),
         );
+      });
+
+      it('scopes a director-lf by users.local_field_id OR an EFFECTIVE club role in the field (designated/pending/ended assignments do not count)', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          buildResolvedAuthorization({
+            roles: ['director-lf'],
+            permissions: ['users:read_detail'],
+            localFieldId: 3,
+          }),
+        );
+        mockPrismaService.users.findFirst.mockResolvedValue({
+          user_id: 'director-without-field',
+        });
+
+        await service.assertUserInActorScope(
+          'actor-lf',
+          'director-without-field',
+        );
+
+        expect(
+          mockMemberScope.effectiveAssignmentForLocalField,
+        ).toHaveBeenCalledWith(3);
+        const where = mockPrismaService.users.findFirst.mock.calls[0][0].where;
+        expect(where.AND[1]).toEqual({
+          OR: [
+            { local_field_id: 3 },
+            {
+              club_role_assignments: {
+                some: {
+                  ...EFFECTIVE,
+                  club_sections: { clubs: { local_field_id: 3 } },
+                },
+              },
+            },
+          ],
+        });
+        // The club path is the canonical policy predicate: only 'active', bounded by dates.
+        expect(EFFECTIVE).toMatchObject({ active: true, status: 'active' });
+        expect(JSON.stringify(where)).not.toMatch(/designated|pending|"in"/);
       });
 
       it('throws ADMIN_USER_NOT_FOUND when the target is outside scope', async () => {

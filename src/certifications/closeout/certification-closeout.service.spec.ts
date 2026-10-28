@@ -6,6 +6,9 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { memberInLocalFieldWhere } from '../../common/authorization/actor-territory-scope';
+import { effectiveAssignmentAt } from '../../common/testing/effective-assignment.testing';
+import { MemberTerritoryScopeService } from '../../common/authorization/member-territory-scope.service';
 import type { PresignCertificationCloseoutEvidenceDto } from '../dto/review-certification-closeout.dto';
 import type { ConfirmCertificationCloseoutEvidenceDto } from '../dto/review-certification-closeout.dto';
 import type { RequestCertificationCloseoutChangesDto } from '../dto/review-certification-closeout.dto';
@@ -59,6 +62,9 @@ const globalReviewer: CertificationCloseoutReviewActor = {
 };
 
 const createTxMock = () => ({
+  users: {
+    count: jest.fn().mockResolvedValue(1),
+  },
   users_certifications: {
     findFirst: jest.fn(),
     update: jest.fn(),
@@ -83,11 +89,19 @@ const createTxMock = () => ({
 
 type TxMock = ReturnType<typeof createTxMock>;
 
+const EFFECTIVE = effectiveAssignmentAt(new Date('2026-10-28T12:00:00.000Z'));
+const mockMemberScope = {
+  effectiveAssignmentForLocalField: jest.fn(async () => EFFECTIVE),
+};
+
 const mockPrisma = {
   $transaction: jest.fn(),
   users_certifications: {
     findMany: jest.fn(),
     findFirst: jest.fn(),
+  },
+  users: {
+    count: jest.fn(),
   },
   certification_closeout_evidences: {
     findFirst: jest.fn(),
@@ -116,6 +130,9 @@ describe('CertificationCloseoutService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     txMock = createTxMock();
+    // Por defecto el participante está en el alcance; los tests de fuera de
+    // alcance fijan 0 (el filtro real lo prueba el spec de actor-territory-scope).
+    mockPrisma.users.count.mockResolvedValue(1);
 
     mockPrisma.$transaction.mockImplementation((arg: unknown) => {
       if (typeof arg === 'function') {
@@ -129,6 +146,7 @@ describe('CertificationCloseoutService', () => {
         CertificationCloseoutService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorage },
+        { provide: MemberTerritoryScopeService, useValue: mockMemberScope },
       ],
     }).compile();
 
@@ -230,7 +248,9 @@ describe('CertificationCloseoutService', () => {
         mime_type: 'image/jpeg',
       });
 
-      expect(txMock.certification_closeout_evidences.create).toHaveBeenCalledWith(
+      expect(
+        txMock.certification_closeout_evidences.create,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ mime_type: 'image/jpeg' }),
         }),
@@ -320,9 +340,7 @@ describe('CertificationCloseoutService', () => {
 
     it('TC11 - evidence not found for this enrollment → RECORD_NOT_FOUND', async () => {
       txMock.users_certifications.findFirst.mockResolvedValue(readyEnrollment);
-      txMock.certification_closeout_evidences.findFirst.mockResolvedValue(
-        null,
-      );
+      txMock.certification_closeout_evidences.findFirst.mockResolvedValue(null);
 
       await expect(
         service.confirmCloseoutEvidence(USER_ID, ENROLLMENT_ID, confirmDto),
@@ -343,7 +361,12 @@ describe('CertificationCloseoutService', () => {
       });
     });
 
-    it.each(['CERTIFIED', 'APPROVED', 'SUBMITTED_FOR_FINAL_REVIEW', 'IN_PROGRESS'])(
+    it.each([
+      'CERTIFIED',
+      'APPROVED',
+      'SUBMITTED_FOR_FINAL_REVIEW',
+      'IN_PROGRESS',
+    ])(
       'TC12b - enrollment %s is not in a closeout state → CERT_CLOSEOUT_INCOMPLETE, evidence untouched',
       async (status) => {
         txMock.users_certifications.findFirst.mockResolvedValue({
@@ -470,9 +493,7 @@ describe('CertificationCloseoutService', () => {
     it('TC16 - no closeout evidence uploaded → CERT_CLOSEOUT_INCOMPLETE', async () => {
       txMock.users_certifications.findFirst.mockResolvedValue(readyEnrollment);
       wireAllRequiredApproved(txMock);
-      txMock.certification_closeout_evidences.findFirst.mockResolvedValue(
-        null,
-      );
+      txMock.certification_closeout_evidences.findFirst.mockResolvedValue(null);
 
       await expect(
         service.submitFinal(USER_ID, ENROLLMENT_ID),
@@ -504,7 +525,9 @@ describe('CertificationCloseoutService', () => {
           }),
         }),
       );
-      expect(txMock.certification_closeout_evidences.update).toHaveBeenCalledWith(
+      expect(
+        txMock.certification_closeout_evidences.update,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ review_status: 'SUBMITTED' }),
         }),
@@ -541,7 +564,7 @@ describe('CertificationCloseoutService', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             status: { in: ['SUBMITTED_FOR_FINAL_REVIEW', 'APPROVED'] },
-            users: { local_field_id: LOCAL_FIELD_ID },
+            users: memberInLocalFieldWhere(LOCAL_FIELD_ID, EFFECTIVE),
           }),
         }),
       );
@@ -626,6 +649,7 @@ describe('CertificationCloseoutService', () => {
     };
 
     it('TC34 - reviewer out of scope → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
+      mockPrisma.users.count.mockResolvedValue(0);
       mockPrisma.users_certifications.findFirst.mockResolvedValue({
         ...enrollmentInScope,
         users: { local_field_id: OTHER_LOCAL_FIELD_ID },
@@ -635,6 +659,31 @@ describe('CertificationCloseoutService', () => {
         service.getCloseoutEvidenceDownloadUrl(localReviewer, ENROLLMENT_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REVIEW_SCOPE_FORBIDDEN });
       expect(mockFileStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('TC34b - scope check uses users.local_field_id OR an effective club role in the reviewer field', async () => {
+      mockPrisma.users_certifications.findFirst.mockResolvedValue({
+        ...enrollmentInScope,
+        users: { local_field_id: null },
+      });
+      mockPrisma.certification_closeout_evidences.findFirst.mockResolvedValue(
+        confirmedCloseout,
+      );
+      mockFileStorage.getSignedDownloadUrl.mockResolvedValue('https://x/y');
+
+      await service.getCloseoutEvidenceDownloadUrl(
+        localReviewer,
+        ENROLLMENT_ID,
+      );
+
+      expect(mockPrisma.users.count).toHaveBeenCalledWith({
+        where: {
+          AND: [
+            { user_id: expect.any(String) },
+            memberInLocalFieldWhere(LOCAL_FIELD_ID, EFFECTIVE),
+          ],
+        },
+      });
     });
 
     it('TC35 - no confirmed closeout evidence → not found', async () => {
@@ -692,6 +741,7 @@ describe('CertificationCloseoutService', () => {
     };
 
     it('TC22 - reviewer out of scope → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
+      txMock.users.count.mockResolvedValue(0);
       txMock.users_certifications.findFirst.mockResolvedValue({
         ...submittedEnrollmentWithUser,
         users: { local_field_id: OTHER_LOCAL_FIELD_ID },
@@ -746,7 +796,9 @@ describe('CertificationCloseoutService', () => {
         ENROLLMENT_ID,
       );
 
-      expect(txMock.certification_closeout_evidences.update).toHaveBeenCalledWith(
+      expect(
+        txMock.certification_closeout_evidences.update,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ review_status: 'APPROVED' }),
         }),
@@ -791,7 +843,9 @@ describe('CertificationCloseoutService', () => {
         dto,
       );
 
-      expect(txMock.certification_closeout_evidences.update).toHaveBeenCalledWith(
+      expect(
+        txMock.certification_closeout_evidences.update,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             review_status: 'CHANGES_REQUESTED',
@@ -808,6 +862,7 @@ describe('CertificationCloseoutService', () => {
     });
 
     it('TC27 - reviewer out of scope → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
+      txMock.users.count.mockResolvedValue(0);
       txMock.users_certifications.findFirst.mockResolvedValue({
         ...submittedEnrollmentWithUser,
         users: { local_field_id: OTHER_LOCAL_FIELD_ID },
@@ -892,7 +947,10 @@ describe('CertificationCloseoutService', () => {
         }),
       );
       expect(result).toEqual(
-        expect.objectContaining({ status: 'CERTIFIED', already_certified: false }),
+        expect.objectContaining({
+          status: 'CERTIFIED',
+          already_certified: false,
+        }),
       );
     });
 
@@ -905,13 +963,17 @@ describe('CertificationCloseoutService', () => {
       const result = await service.certify(localReviewer, ENROLLMENT_ID);
 
       expect(result).toEqual(
-        expect.objectContaining({ status: 'CERTIFIED', already_certified: true }),
+        expect.objectContaining({
+          status: 'CERTIFIED',
+          already_certified: true,
+        }),
       );
       expect(txMock.users_certifications.update).not.toHaveBeenCalled();
       expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
     });
 
     it('TC33 - reviewer out of scope cannot certify → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
+      txMock.users.count.mockResolvedValue(0);
       txMock.users_certifications.findFirst.mockResolvedValue({
         ...approvedEnrollmentWithUser,
         users: { local_field_id: OTHER_LOCAL_FIELD_ID },

@@ -9,6 +9,7 @@ import {
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { displayName } from '../investiture-requests/investiture-communications.rules';
+import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   INSTRUCTOR_QUERY_MIN,
@@ -41,16 +42,18 @@ export function adultBirthdayCutoff(now: Date = new Date()): Date {
  * Filtro de elegibilidad compartido por el buscador y `assertEligible`: la
  * misma unidad de código decide quién se ofrece y quién se acepta. Sin rol ni
  * Guía Mayor (D2). `birthday` nulo queda fuera (la comparación no lo cumple), y
- * una cuenta anonimizada también: pierde `active`, `birthday` y `local_field_id`.
+ * una cuenta anonimizada también: pierde `active` y `birthday`.
  */
 export function eligibleInstructorWhere(
-  localFieldId: number,
+  memberOfLocalFields: Prisma.usersWhereInput,
   now: Date = new Date(),
 ): Prisma.usersWhereInput {
   return {
     active: true,
     approval_status: 'approved',
-    local_field_id: localFieldId,
+    // Pertenece al Campo Local por su fila `users` o por un rol de club efectivo
+    // (`MemberTerritoryScopeService.memberInLocalFieldsWhere`).
+    AND: [memberOfLocalFields],
     birthday: { lte: adultBirthdayCutoff(now) },
   };
 }
@@ -63,6 +66,7 @@ export class InstructorsService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly memberScope: MemberTerritoryScopeService,
   ) {}
 
   /**
@@ -80,17 +84,19 @@ export class InstructorsService {
     ) {
       return [];
     }
-    const caller = await this.prisma.users.findUnique({
-      where: { user_id: callerUserId },
-      select: { local_field_id: true },
-    });
-    if (caller?.local_field_id == null) {
+    const callerLocalFieldIds =
+      await this.memberScope.resolveMemberLocalFieldIds(callerUserId);
+    if (callerLocalFieldIds.length === 0) {
       return [];
     }
     const rows = await this.prisma.users.findMany({
       where: {
         AND: [
-          eligibleInstructorWhere(caller.local_field_id),
+          eligibleInstructorWhere(
+            await this.memberScope.memberInLocalFieldsWhere(
+              callerLocalFieldIds,
+            ),
+          ),
           { user_id: { not: callerUserId } },
           ...tokens
             .map(escapeLikeWildcards)
@@ -143,17 +149,17 @@ export class InstructorsService {
     if (ownerUserId === instructorUserId) {
       throw new AppBadRequestException(ErrorCode.HONOR_INSTRUCTOR_SELF);
     }
-    const owner = await this.prisma.users.findUnique({
-      where: { user_id: ownerUserId },
-      select: { local_field_id: true },
-    });
-    if (owner?.local_field_id == null) {
+    const ownerLocalFieldIds =
+      await this.memberScope.resolveMemberLocalFieldIds(ownerUserId);
+    if (ownerLocalFieldIds.length === 0) {
       throw new AppBadRequestException(ErrorCode.HONOR_INSTRUCTOR_INVALID);
     }
     const instructor = await this.prisma.users.findFirst({
       where: {
         user_id: instructorUserId,
-        ...eligibleInstructorWhere(owner.local_field_id),
+        ...eligibleInstructorWhere(
+          await this.memberScope.memberInLocalFieldsWhere(ownerLocalFieldIds),
+        ),
       },
       select: { user_id: true },
     });

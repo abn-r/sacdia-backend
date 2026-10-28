@@ -3,6 +3,8 @@ import {
   AppException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { memberInLocalFieldWhere } from '../common/authorization/actor-territory-scope';
+import { effectiveAssignmentAt } from '../common/testing/effective-assignment.testing';
 import { HonorsService } from './honors.service';
 import { HonorInstructorProposalsService } from './honor-instructor-proposals.service';
 
@@ -71,6 +73,8 @@ function createFakePrisma() {
       },
     } as Record<string, Row>,
     reviewers: {} as Record<string, Row>,
+    // Roles de club por usuario: { active, status, local_field_id del club }.
+    assignments: {} as Record<string, Row[]>,
     seq: 0,
     clock: 0,
   };
@@ -98,12 +102,62 @@ function createFakePrisma() {
       return row[key] === value;
     });
 
+  // Evalúa el predicado canónico de vigencia (política real) sobre filas en memoria.
+  const evalWhere = (row: Row, where: Row): boolean =>
+    Object.entries(where).every(([key, value]) => {
+      if (key === 'AND') {
+        return (value as Row[]).every((w) => evalWhere(row, w));
+      }
+      if (key === 'OR') return (value as Row[]).some((w) => evalWhere(row, w));
+      if (key === 'club_sections') {
+        return row.local_field_id === (value as Row).clubs.local_field_id;
+      }
+      if (value === null) return row[key] == null;
+      if (value instanceof Date || typeof value !== 'object') {
+        return row[key] === value;
+      }
+      return Object.entries(value as Row).every(([op, bound]) => {
+        const actual = row[key];
+        if (actual == null) return false;
+        if (op === 'lte') return actual <= bound;
+        if (op === 'gte') return actual >= bound;
+        if (op === 'gt') return actual > bound;
+        throw new Error(`unsupported operator: ${op}`);
+      });
+    });
+
+  // Evalúa solo la forma de `memberInLocalFieldWhere` sobre el estado en memoria.
+  const userMatches = (userId: string, where: Row): boolean =>
+    Object.entries(where).every(([key, value]) => {
+      if (key === 'AND') {
+        return (value as Row[]).every((w) => userMatches(userId, w));
+      }
+      if (key === 'OR') {
+        return (value as Row[]).some((w) => userMatches(userId, w));
+      }
+      if (key === 'user_id') return userId === value;
+      if (key === 'local_field_id') {
+        return state.users[userId]?.local_field_id === value;
+      }
+      if (key === 'club_role_assignments') {
+        return (state.assignments[userId] ?? []).some((a) =>
+          evalWhere(a, (value as Row).some),
+        );
+      }
+      throw new Error(`unsupported users filter: ${key}`);
+    });
+
   const makeClient = (undo?: Array<() => void>) => {
     const record = (fn: () => void) => undo?.push(fn);
     return {
       users: {
         findUnique: jest.fn(
           async ({ where }: Row) => state.reviewers[where.user_id] ?? null,
+        ),
+        count: jest.fn(
+          async ({ where }: Row) =>
+            Object.keys(state.users).filter((id) => userMatches(id, where))
+              .length,
         ),
       },
       users_honors: {
@@ -216,6 +270,20 @@ describe('HonorInstructorProposalsService (B9, D11)', () => {
     assertEligible: jest.fn(),
     photoUrlsFor: jest.fn(),
   };
+  const NOW = new Date('2026-10-28T12:00:00.000Z');
+  const EFFECTIVE = effectiveAssignmentAt(NOW);
+  const memberScope = {
+    effectiveAssignmentForLocalField: jest.fn(async () => EFFECTIVE),
+  };
+  const assignment = (extra: Row = {}): Row => ({
+    active: true,
+    status: 'active',
+    start_date: new Date('2026-01-01T00:00:00.000Z'),
+    end_date: null,
+    expires_at: null,
+    local_field_id: LOCAL_FIELD,
+    ...extra,
+  });
 
   const pendingProposal = (extra: Row = {}) => {
     const row: Row = {
@@ -282,6 +350,7 @@ describe('HonorInstructorProposalsService (B9, D11)', () => {
     service = new HonorInstructorProposalsService(
       fake.prisma as never,
       instructors as never,
+      memberScope as never,
     );
     reviewer(['director-lf'], LOCAL_FIELD);
   });
@@ -852,6 +921,45 @@ describe('HonorInstructorProposalsService (B9, D11)', () => {
       );
     });
 
+    it('an owner with users.local_field_id NULL but an active club role in the reviewer local field is in scope', async () => {
+      fake.state.users[OWNER].local_field_id = null;
+      fake.state.assignments[OWNER] = [assignment()];
+      reviewer(['director-lf'], LOCAL_FIELD);
+      const seeded = pendingProposal();
+
+      await expect(
+        service.approve(REVIEWER, seeded.proposal_id),
+      ).resolves.toBeDefined();
+    });
+
+    it.each([
+      ['designated', { status: 'designated' }],
+      ['pending', { status: 'pending' }],
+      ['rejected', { status: 'rejected' }],
+      ['inactive', { active: false }],
+      [
+        'ended (end_date in the past)',
+        { end_date: new Date('2026-10-01T00:00:00.000Z') },
+      ],
+      ['expired', { expires_at: new Date('2026-10-28T11:00:00.000Z') }],
+      ['of another field', { local_field_id: 99 }],
+    ])(
+      'an owner whose only club role is %s is out of scope (403, nothing written)',
+      async (_label, overrides) => {
+        fake.state.users[OWNER].local_field_id = null;
+        fake.state.assignments[OWNER] = [assignment(overrides)];
+        reviewer(['director-lf'], LOCAL_FIELD);
+        const seeded = pendingProposal();
+
+        await expectCode(
+          service.approve(REVIEWER, seeded.proposal_id),
+          ErrorCode.HONOR_INSTRUCTOR_PROPOSAL_FORBIDDEN,
+          403,
+        );
+        expect(seeded.status).toBe('PENDING');
+      },
+    );
+
     it('a reviewer without a role or without scope gets 403', async () => {
       const seeded = pendingProposal();
       reviewer(['member'], LOCAL_FIELD);
@@ -882,7 +990,7 @@ describe('HonorInstructorProposalsService (B9, D11)', () => {
       await service.list(REVIEWER, {});
       expect(findMany.mock.calls[0][0].where).toEqual({
         status: 'PENDING',
-        user_honor: { users: { local_field_id: LOCAL_FIELD } },
+        user_honor: { users: memberInLocalFieldWhere(LOCAL_FIELD, EFFECTIVE) },
       });
 
       reviewer(['super-admin'], null);

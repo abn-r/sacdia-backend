@@ -1,13 +1,23 @@
 import { ErrorCode } from '../errors/error-codes';
+import { TestingClock } from '../clock/testing-clock';
+import { TemporalContextFactory } from '../clock/temporal-context.factory';
+import { ZonedBusinessTimeService } from '../clock/zoned-business-time.service';
+import { ClubAssignmentEffectivityPolicy } from './club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from './local-field-timezone.resolver';
 import type { AuthorizationSnapshot } from '../services/authorization-context.service';
 import {
   actorCanAccessHierarchyScope,
   assertCatalogFiltersInCountry,
   assertLocalFieldInActorScope,
   clubsWhereForActor,
+  isMemberInLocalField,
   localFieldsWhereForActor,
+  memberInDivisionWhere,
+  memberInLocalFieldWhere,
+  memberInUnionWhere,
   resolveActorCatalogCountryId,
   resolveActorTerritoryScope,
+  usersWhereForActor,
 } from './actor-territory-scope';
 
 function snapshot(options: {
@@ -491,5 +501,98 @@ describe('assertCatalogFiltersInCountry', () => {
     await expect(
       assertCatalogFiltersInCountry(prisma as never, 52, { divisionId: 2 }),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+  });
+});
+
+describe('member-centric territory scope', () => {
+  // Predicado canónico de vigencia (misma fuente que usan los servicios).
+  const zoned = new ZonedBusinessTimeService();
+  const policy = new ClubAssignmentEffectivityPolicy(zoned);
+  const effective = policy.toPrismaWhere(
+    new TemporalContextFactory(
+      new TestingClock(new Date('2026-10-28T12:00:00.000Z')),
+      zoned,
+    ).forLocalField({
+      local_field_id: 5,
+      timezone: new LocalFieldTimezoneResolver({} as never).assertTimezone(
+        'America/Mexico_City',
+      ),
+    }),
+  );
+  const viaClub = (clubs: object) => ({
+    club_role_assignments: { some: { ...effective, club_sections: { clubs } } },
+  });
+
+  it('the club path carries the canonical effectivity predicate: status "active" only, bounded by start/end/expires', () => {
+    expect(effective.status).toBe('active');
+    expect(effective.active).toBe(true);
+    expect(effective.start_date).toEqual({ lte: expect.any(Date) });
+    const clause = memberInLocalFieldWhere(5, effective).OR?.[1] as {
+      club_role_assignments: { some: Record<string, unknown> };
+    };
+    // designated / pending / rejected / ended / expired never satisfy it.
+    expect(clause.club_role_assignments.some.status).toBe('active');
+    expect(clause.club_role_assignments.some).not.toHaveProperty('status.in');
+    expect(clause.club_role_assignments.some.AND).toEqual(effective.AND);
+  });
+
+  it('memberInLocalFieldWhere = own row OR effective club role in the field', () => {
+    expect(memberInLocalFieldWhere(5, effective)).toEqual({
+      OR: [{ local_field_id: 5 }, viaClub({ local_field_id: 5 })],
+    });
+  });
+
+  it('memberInUnionWhere = own union OR own field in union OR club role in union', () => {
+    expect(memberInUnionWhere(2, effective)).toEqual({
+      OR: [
+        { union_id: 2 },
+        { local_fields: { union_id: 2 } },
+        viaClub({ local_fields: { union_id: 2 } }),
+      ],
+    });
+  });
+
+  it('memberInDivisionWhere = own union OR own field OR club role in division', () => {
+    expect(memberInDivisionWhere(1, effective)).toEqual({
+      OR: [
+        { unions: { division_id: 1 } },
+        { local_fields: { unions: { division_id: 1 } } },
+        viaClub({ local_fields: { unions: { division_id: 1 } } }),
+      ],
+    });
+  });
+
+  it('usersWhereForActor maps every scope level', () => {
+    expect(usersWhereForActor({ level: 'all' }, effective)).toEqual({});
+    expect(usersWhereForActor({ level: 'open' }, effective)).toEqual({});
+    expect(
+      usersWhereForActor({ level: 'local_field', localFieldId: 5 }, effective),
+    ).toEqual(memberInLocalFieldWhere(5, effective));
+    expect(
+      usersWhereForActor({ level: 'union', unionId: 2 }, effective),
+    ).toEqual(memberInUnionWhere(2, effective));
+    expect(
+      usersWhereForActor({ level: 'division', divisionId: 1 }, effective),
+    ).toEqual(memberInDivisionWhere(1, effective));
+    expect(() =>
+      usersWhereForActor({ level: 'unconfigured' }, effective),
+    ).toThrow();
+  });
+
+  it('isMemberInLocalField counts users matching the member filter', async () => {
+    const count = jest.fn().mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const prisma = { users: { count } } as never;
+
+    await expect(
+      isMemberInLocalField(prisma, 'u-1', 5, effective),
+    ).resolves.toBe(true);
+    await expect(
+      isMemberInLocalField(prisma, 'u-1', 5, effective),
+    ).resolves.toBe(false);
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        AND: [{ user_id: 'u-1' }, memberInLocalFieldWhere(5, effective)],
+      },
+    });
   });
 });

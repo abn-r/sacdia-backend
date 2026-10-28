@@ -35,6 +35,12 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { PrismaService } from '../prisma/prisma.service';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { CoordinationService } from '../coordination/coordination.service';
+import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
+import {
+  memberInDivisionWhere,
+  memberInLocalFieldWhere,
+  memberInUnionWhere,
+} from '../common/authorization/actor-territory-scope';
 import {
   AdminListUsersQueryDto,
   CreateAdminUserDto,
@@ -614,6 +620,7 @@ export class AdminUsersService {
     private readonly fileStorage: FileStorageService,
     private readonly betterAuthService: BetterAuthService,
     private readonly coordinationService: CoordinationService,
+    private readonly memberScope: MemberTerritoryScopeService,
   ) {}
 
   async listUsers(
@@ -626,7 +633,7 @@ export class AdminUsersService {
     pagination.page = query.page ?? 1;
     pagination.limit = query.limit ?? 20;
 
-    const where = this.buildListWhere(scope, query);
+    const where = await this.buildListWhere(scope, query);
     const orderBy = this.buildListOrderBy(query);
 
     const [users, total] = await Promise.all([
@@ -664,7 +671,7 @@ export class AdminUsersService {
     );
 
     const filters: Prisma.usersWhereInput[] = [{ user_id: userId }];
-    const scopedFilter = this.buildScopeWhere(scope);
+    const scopedFilter = await this.buildScopeWhere(scope);
     if (Object.keys(scopedFilter).length > 0) {
       filters.push(scopedFilter);
     }
@@ -785,7 +792,7 @@ export class AdminUsersService {
     const scope = await this.resolveScope(actorUserId, resolvedAuthorization);
 
     const filters: Prisma.usersWhereInput[] = [{ user_id: userId }];
-    const scopedFilter = this.buildScopeWhere(scope);
+    const scopedFilter = await this.buildScopeWhere(scope);
     if (Object.keys(scopedFilter).length > 0) {
       filters.push(scopedFilter);
     }
@@ -1617,12 +1624,12 @@ export class AdminUsersService {
     ];
   }
 
-  private buildListWhere(
+  private async buildListWhere(
     scope: ActorScope,
     query: AdminListUsersQueryDto,
-  ): Prisma.usersWhereInput {
+  ): Promise<Prisma.usersWhereInput> {
     const filters: Prisma.usersWhereInput[] = [];
-    const scopedFilter = this.buildScopeWhere(scope);
+    const scopedFilter = await this.buildScopeWhere(scope);
 
     if (Object.keys(scopedFilter).length > 0) {
       filters.push(scopedFilter);
@@ -1685,11 +1692,26 @@ export class AdminUsersService {
 
     if (scope.type !== 'SECTIONS') {
       if (query.unionId) {
-        filters.push({ union_id: query.unionId });
+        filters.push(
+          memberInUnionWhere(
+            query.unionId,
+            await this.memberScope.effectiveAssignmentForScope({
+              level: 'union',
+              unionId: query.unionId,
+            }),
+          ),
+        );
       }
 
       if (query.localFieldId) {
-        filters.push({ local_field_id: query.localFieldId });
+        filters.push(
+          memberInLocalFieldWhere(
+            query.localFieldId,
+            await this.memberScope.effectiveAssignmentForLocalField(
+              query.localFieldId,
+            ),
+          ),
+        );
       }
     }
 
@@ -1704,17 +1726,31 @@ export class AdminUsersService {
     return { AND: filters };
   }
 
-  private buildScopeWhere(scope: ActorScope): Prisma.usersWhereInput {
+  private async buildScopeWhere(
+    scope: ActorScope,
+  ): Promise<Prisma.usersWhereInput> {
     if (scope.type === 'ALL') {
       return {};
     }
 
     if (scope.type === 'DIVISION') {
-      return { unions: { division_id: scope.divisionId! } };
+      return memberInDivisionWhere(
+        scope.divisionId!,
+        await this.memberScope.effectiveAssignmentForScope({
+          level: 'division',
+          divisionId: scope.divisionId!,
+        }),
+      );
     }
 
     if (scope.type === 'UNION') {
-      return { union_id: scope.unionId! };
+      return memberInUnionWhere(
+        scope.unionId!,
+        await this.memberScope.effectiveAssignmentForScope({
+          level: 'union',
+          unionId: scope.unionId!,
+        }),
+      );
     }
 
     if (scope.type === 'SECTIONS') {
@@ -1728,7 +1764,12 @@ export class AdminUsersService {
       };
     }
 
-    return { local_field_id: scope.localFieldId! };
+    return memberInLocalFieldWhere(
+      scope.localFieldId!,
+      await this.memberScope.effectiveAssignmentForLocalField(
+        scope.localFieldId!,
+      ),
+    );
   }
 
   private toScopeMeta(scope: ActorScope): ScopeMeta {

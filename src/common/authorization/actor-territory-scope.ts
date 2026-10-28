@@ -37,10 +37,7 @@ export type ActorTerritoryScope =
     };
 
 export type ActorTerritoryInput =
-  | AuthorizationSnapshot
-  | ResolvedAuthorizationProfile
-  | null
-  | undefined;
+  AuthorizationSnapshot | ResolvedAuthorizationProfile | null | undefined;
 
 type GlobalScopeNodes = NonNullable<
   AuthorizationSnapshot['effective']['scope']['global']
@@ -131,7 +128,11 @@ function withOptionalIds<T extends ActorTerritoryScope>(
   scope: T,
   ids: { divisionId?: number; unionId?: number; localFieldId?: number },
 ): T {
-  if (scope.level === 'all' || scope.level === 'open' || scope.level === 'unconfigured') {
+  if (
+    scope.level === 'all' ||
+    scope.level === 'open' ||
+    scope.level === 'unconfigured'
+  ) {
     return scope;
   }
 
@@ -248,6 +249,111 @@ export function localFieldsWhereForActor(
   }
 }
 
+/**
+ * Un MIEMBRO pertenece a un territorio si su propia fila `users` lo dice O
+ * tiene un rol de club EFECTIVO en un club de ese territorio (decisión de
+ * producto: un director sin `users.local_field_id` sigue siendo del Campo
+ * Local de su club). Para consultas centradas en la persona, no en el club.
+ *
+ * `effectiveAssignment` es el predicado canónico de vigencia
+ * (`ClubAssignmentEffectivityPolicy.toPrismaWhere`, vía
+ * `MemberTerritoryScopeService`): activo, estado `active` y dentro de
+ * start/end/expires. Estos builders nunca definen vigencia por su cuenta.
+ */
+function memberViaClubWhere(
+  effectiveAssignment: Prisma.club_role_assignmentsWhereInput,
+  clubsWhere: Prisma.clubsWhereInput,
+): Prisma.usersWhereInput {
+  return {
+    club_role_assignments: {
+      some: {
+        ...effectiveAssignment,
+        club_sections: { clubs: clubsWhere },
+      },
+    },
+  };
+}
+
+export function memberInLocalFieldWhere(
+  localFieldId: number,
+  effectiveAssignment: Prisma.club_role_assignmentsWhereInput,
+): Prisma.usersWhereInput {
+  return {
+    OR: [
+      { local_field_id: localFieldId },
+      memberViaClubWhere(effectiveAssignment, { local_field_id: localFieldId }),
+    ],
+  };
+}
+
+export function memberInUnionWhere(
+  unionId: number,
+  effectiveAssignment: Prisma.club_role_assignmentsWhereInput,
+): Prisma.usersWhereInput {
+  return {
+    OR: [
+      { union_id: unionId },
+      { local_fields: { union_id: unionId } },
+      memberViaClubWhere(effectiveAssignment, {
+        local_fields: { union_id: unionId },
+      }),
+    ],
+  };
+}
+
+export function memberInDivisionWhere(
+  divisionId: number,
+  effectiveAssignment: Prisma.club_role_assignmentsWhereInput,
+): Prisma.usersWhereInput {
+  return {
+    OR: [
+      { unions: { division_id: divisionId } },
+      { local_fields: { unions: { division_id: divisionId } } },
+      memberViaClubWhere(effectiveAssignment, {
+        local_fields: { unions: { division_id: divisionId } },
+      }),
+    ],
+  };
+}
+
+/** `users` visibles para el actor (miembro-céntrico). Igual que los otros helpers, `unconfigured` falla cerrado. */
+export function usersWhereForActor(
+  scope: ActorTerritoryScope,
+  effectiveAssignment: Prisma.club_role_assignmentsWhereInput,
+): Prisma.usersWhereInput {
+  switch (scope.level) {
+    case 'all':
+    case 'open':
+      return {};
+    case 'unconfigured':
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    case 'local_field':
+      return memberInLocalFieldWhere(scope.localFieldId, effectiveAssignment);
+    case 'union':
+      return memberInUnionWhere(scope.unionId, effectiveAssignment);
+    case 'division':
+      return memberInDivisionWhere(scope.divisionId, effectiveAssignment);
+  }
+}
+
+/** ¿El usuario es miembro del Campo Local (fila propia o rol de club efectivo)? */
+export async function isMemberInLocalField(
+  prisma: Pick<PrismaService, 'users'>,
+  userId: string,
+  localFieldId: number,
+  effectiveAssignment: Prisma.club_role_assignmentsWhereInput,
+): Promise<boolean> {
+  const count = await prisma.users.count({
+    where: {
+      AND: [
+        { user_id: userId },
+        memberInLocalFieldWhere(localFieldId, effectiveAssignment),
+      ],
+    },
+  });
+  return count > 0;
+}
+
 export function actorCanAccessHierarchyScope(
   actor: ActorTerritoryScope,
   resource: {
@@ -273,7 +379,8 @@ export function actorCanAccessHierarchyScope(
 
   if (actor.level === 'union') {
     return (
-      typeof resource.union_id === 'number' && resource.union_id === actor.unionId
+      typeof resource.union_id === 'number' &&
+      resource.union_id === actor.unionId
     );
   }
 
@@ -498,10 +605,7 @@ export async function assertCatalogFiltersInCountry(
     return;
   }
 
-  if (
-    filters.countryId !== undefined &&
-    filters.countryId !== countryId
-  ) {
+  if (filters.countryId !== undefined && filters.countryId !== countryId) {
     throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
 

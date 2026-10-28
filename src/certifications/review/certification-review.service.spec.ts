@@ -6,6 +6,9 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { memberInLocalFieldWhere } from '../../common/authorization/actor-territory-scope';
+import { effectiveAssignmentAt } from '../../common/testing/effective-assignment.testing';
+import { MemberTerritoryScopeService } from '../../common/authorization/member-territory-scope.service';
 import type { ApproveCertificationRequirementDto } from '../dto/review-certification-requirement.dto';
 import type { RequestCertificationRequirementChangesDto } from '../dto/review-certification-requirement.dto';
 
@@ -16,7 +19,6 @@ import type { RequestCertificationRequirementChangesDto } from '../dto/review-ce
 const PARTICIPANT_ID = 'participant-uuid-001';
 const REVIEWER_ID = 'reviewer-uuid-001';
 const LOCAL_FIELD_ID = 10;
-const OTHER_LOCAL_FIELD_ID = 99;
 const ENROLLMENT_ID = 42;
 const VERSION_ID = 7;
 const PROGRESS_ID = 1000;
@@ -75,7 +77,7 @@ const createTxMock = () => ({
     findMany: jest.fn(),
   },
   users: {
-    findUnique: jest.fn(),
+    count: jest.fn(),
   },
   users_certifications: {
     updateMany: jest.fn(),
@@ -92,6 +94,11 @@ const createTxMock = () => ({
 
 type TxMock = ReturnType<typeof createTxMock>;
 
+const EFFECTIVE = effectiveAssignmentAt(new Date('2026-10-28T12:00:00.000Z'));
+const mockMemberScope = {
+  effectiveAssignmentForLocalField: jest.fn(async () => EFFECTIVE),
+};
+
 const mockPrisma = {
   $transaction: jest.fn(),
   certification_section_progress: {
@@ -99,7 +106,7 @@ const mockPrisma = {
     findMany: jest.fn(),
   },
   users: {
-    findUnique: jest.fn(),
+    count: jest.fn(),
   },
   certification_component_responses: {
     findMany: jest.fn(),
@@ -143,6 +150,7 @@ describe('CertificationReviewService', () => {
         CertificationReviewService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorage },
+        { provide: MemberTerritoryScopeService, useValue: mockMemberScope },
       ],
     }).compile();
 
@@ -157,7 +165,9 @@ describe('CertificationReviewService', () => {
     it('TC01 - local reviewer without localFieldId gets an empty tray (no scope, no error)', async () => {
       const result = await service.getTray(noScopeReviewer);
       expect(result).toEqual([]);
-      expect(mockPrisma.certification_section_progress.findMany).not.toHaveBeenCalled();
+      expect(
+        mockPrisma.certification_section_progress.findMany,
+      ).not.toHaveBeenCalled();
     });
 
     it('TC02 - filters by the reviewer institutional scope (local_field_id)', async () => {
@@ -173,7 +183,7 @@ describe('CertificationReviewService', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             status: { in: ['SUBMITTED'] },
-            users: { local_field_id: LOCAL_FIELD_ID },
+            users: memberInLocalFieldWhere(LOCAL_FIELD_ID, EFFECTIVE),
           }),
         }),
       );
@@ -184,8 +194,8 @@ describe('CertificationReviewService', () => {
 
       await service.getTray(globalReviewer);
 
-      const callArg = mockPrisma.certification_section_progress.findMany.mock
-        .calls[0][0];
+      const callArg =
+        mockPrisma.certification_section_progress.findMany.mock.calls[0][0];
       expect(callArg.where.users).toBeUndefined();
     });
 
@@ -232,9 +242,7 @@ describe('CertificationReviewService', () => {
       mockPrisma.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      mockPrisma.users.findUnique.mockResolvedValue({
-        local_field_id: LOCAL_FIELD_ID,
-      });
+      mockPrisma.users.count.mockResolvedValue(1);
       mockPrisma.certification_component_responses.findMany.mockResolvedValue(
         [],
       );
@@ -261,22 +269,42 @@ describe('CertificationReviewService', () => {
       mockPrisma.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      mockPrisma.users.findUnique.mockResolvedValue({
-        local_field_id: OTHER_LOCAL_FIELD_ID,
-      });
+      mockPrisma.users.count.mockResolvedValue(0);
 
       await expect(
         service.getDetail(localReviewer, PROGRESS_ID),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REVIEW_SCOPE_FORBIDDEN });
     });
 
+    it('TC07b - scope = users.local_field_id OR an effective club role in the reviewer field (member with NULL field is in scope)', async () => {
+      wireHappyPath();
+
+      await service.getDetail(localReviewer, PROGRESS_ID);
+
+      expect(mockPrisma.users.count).toHaveBeenCalledWith({
+        where: {
+          AND: [
+            { user_id: PARTICIPANT_ID },
+            memberInLocalFieldWhere(LOCAL_FIELD_ID, EFFECTIVE),
+          ],
+        },
+      });
+      // El camino por club usa el predicado canónico de la política:
+      // solo 'active' dentro de fechas; designated/pending/finalizado no cuentan.
+      expect(
+        mockMemberScope.effectiveAssignmentForLocalField,
+      ).toHaveBeenCalledWith(LOCAL_FIELD_ID);
+      expect(EFFECTIVE).toMatchObject({ active: true, status: 'active' });
+      expect(
+        JSON.stringify(memberInLocalFieldWhere(LOCAL_FIELD_ID, EFFECTIVE)),
+      ).not.toMatch(/designated|"in"/);
+    });
+
     it('TC08 - reviewer with no institutional scope at all → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
       mockPrisma.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      mockPrisma.users.findUnique.mockResolvedValue({
-        local_field_id: LOCAL_FIELD_ID,
-      });
+      mockPrisma.users.count.mockResolvedValue(1);
 
       await expect(
         service.getDetail(noScopeReviewer, PROGRESS_ID),
@@ -285,26 +313,24 @@ describe('CertificationReviewService', () => {
 
     it('TC09 - happy path returns components, evidences and history', async () => {
       wireHappyPath();
-      mockPrisma.certification_component_responses.findMany.mockResolvedValue(
-        [
-          {
-            component_id: 1,
-            text_value: 'x',
-            attestation_confirmed: null,
-            linked_user_honor_id: null,
-            linked_activity_id: null,
-            certification_evidences: [
-              {
-                evidence_id: 5,
-                original_filename: 'a.pdf',
-                mime_type: 'application/pdf',
-                size_bytes: BigInt(100),
-                upload_status: 'CONFIRMED',
-              },
-            ],
-          },
-        ],
-      );
+      mockPrisma.certification_component_responses.findMany.mockResolvedValue([
+        {
+          component_id: 1,
+          text_value: 'x',
+          attestation_confirmed: null,
+          linked_user_honor_id: null,
+          linked_activity_id: null,
+          certification_evidences: [
+            {
+              evidence_id: 5,
+              original_filename: 'a.pdf',
+              mime_type: 'application/pdf',
+              size_bytes: BigInt(100),
+              upload_status: 'CONFIRMED',
+            },
+          ],
+        },
+      ]);
       mockPrisma.certification_sections.findUnique.mockResolvedValue({
         certification_requirement_components: [
           {
@@ -347,9 +373,7 @@ describe('CertificationReviewService', () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      txMock.users.findUnique.mockResolvedValue({
-        local_field_id: LOCAL_FIELD_ID,
-      });
+      txMock.users.count.mockResolvedValue(1);
       txMock.users_certifications.updateMany.mockResolvedValue({ count: 1 });
       txMock.certification_section_progress.update.mockResolvedValue({});
       txMock.certification_review_events.create.mockResolvedValue({});
@@ -368,15 +392,15 @@ describe('CertificationReviewService', () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      txMock.users.findUnique.mockResolvedValue({
-        local_field_id: OTHER_LOCAL_FIELD_ID,
-      });
+      txMock.users.count.mockResolvedValue(0);
 
       await expect(
         service.approve(localReviewer, PROGRESS_ID, approveDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REVIEW_SCOPE_FORBIDDEN });
 
-      expect(txMock.certification_section_progress.update).not.toHaveBeenCalled();
+      expect(
+        txMock.certification_section_progress.update,
+      ).not.toHaveBeenCalled();
     });
 
     it('TC10b - requirement of an inactive (abandoned) enrollment is not approvable → RECORD_NOT_FOUND, no mutation', async () => {
@@ -399,7 +423,9 @@ describe('CertificationReviewService', () => {
         }),
       );
       expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
-      expect(txMock.certification_section_progress.update).not.toHaveBeenCalled();
+      expect(
+        txMock.certification_section_progress.update,
+      ).not.toHaveBeenCalled();
       expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
     });
 
@@ -407,9 +433,7 @@ describe('CertificationReviewService', () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      txMock.users.findUnique.mockResolvedValue({
-        local_field_id: LOCAL_FIELD_ID,
-      });
+      txMock.users.count.mockResolvedValue(1);
 
       const selfReviewer: CertificationReviewActor = {
         userId: PARTICIPANT_ID,
@@ -427,9 +451,7 @@ describe('CertificationReviewService', () => {
         ...baseProgress,
         status: 'DRAFT',
       });
-      txMock.users.findUnique.mockResolvedValue({
-        local_field_id: LOCAL_FIELD_ID,
-      });
+      txMock.users.count.mockResolvedValue(1);
 
       await expect(
         service.approve(localReviewer, PROGRESS_ID, approveDto),
@@ -444,7 +466,9 @@ describe('CertificationReviewService', () => {
         service.approve(localReviewer, PROGRESS_ID, { lock_version: 99 }),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_CONCURRENT_UPDATE });
 
-      expect(txMock.certification_section_progress.update).not.toHaveBeenCalled();
+      expect(
+        txMock.certification_section_progress.update,
+      ).not.toHaveBeenCalled();
       expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
     });
 
@@ -519,9 +543,7 @@ describe('CertificationReviewService', () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      txMock.users.findUnique.mockResolvedValue({
-        local_field_id: LOCAL_FIELD_ID,
-      });
+      txMock.users.count.mockResolvedValue(1);
       txMock.certification_section_progress.update.mockResolvedValue({});
       txMock.certification_review_events.create.mockResolvedValue({});
     };
@@ -542,23 +564,19 @@ describe('CertificationReviewService', () => {
           }),
         }),
       );
-      expect(txMock.certification_section_progress.update).not.toHaveBeenCalled();
+      expect(
+        txMock.certification_section_progress.update,
+      ).not.toHaveBeenCalled();
     });
 
     it('TC17 - reviewer out of scope → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      txMock.users.findUnique.mockResolvedValue({
-        local_field_id: OTHER_LOCAL_FIELD_ID,
-      });
+      txMock.users.count.mockResolvedValue(0);
 
       await expect(
-        service.requestChanges(
-          localReviewer,
-          PROGRESS_ID,
-          requestChangesDto,
-        ),
+        service.requestChanges(localReviewer, PROGRESS_ID, requestChangesDto),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REVIEW_SCOPE_FORBIDDEN });
     });
 
@@ -566,9 +584,7 @@ describe('CertificationReviewService', () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      txMock.users.findUnique.mockResolvedValue({
-        local_field_id: LOCAL_FIELD_ID,
-      });
+      txMock.users.count.mockResolvedValue(1);
 
       const selfReviewer: CertificationReviewActor = {
         userId: PARTICIPANT_ID,
@@ -586,9 +602,7 @@ describe('CertificationReviewService', () => {
         ...baseProgress,
         status: 'APPROVED',
       });
-      txMock.users.findUnique.mockResolvedValue({
-        local_field_id: LOCAL_FIELD_ID,
-      });
+      txMock.users.count.mockResolvedValue(1);
 
       await expect(
         service.requestChanges(localReviewer, PROGRESS_ID, requestChangesDto),
@@ -648,15 +662,11 @@ describe('CertificationReviewService', () => {
       mockPrisma.certification_section_progress.findFirst.mockResolvedValue(
         baseProgress,
       );
-      mockPrisma.users.findUnique.mockResolvedValue({
-        local_field_id: LOCAL_FIELD_ID,
-      });
+      mockPrisma.users.count.mockResolvedValue(1);
     });
 
     it('TC30 - reviewer out of scope → CERT_REVIEW_SCOPE_FORBIDDEN', async () => {
-      mockPrisma.users.findUnique.mockResolvedValue({
-        local_field_id: OTHER_LOCAL_FIELD_ID,
-      });
+      mockPrisma.users.count.mockResolvedValue(0);
 
       await expect(
         service.getEvidenceDownloadUrl(localReviewer, PROGRESS_ID, EVIDENCE_ID),
