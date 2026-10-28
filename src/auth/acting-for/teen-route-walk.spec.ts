@@ -165,17 +165,6 @@ const TEEN_DENIED: Record<string, string> = {
   // ---- Club changes are handled by the guardian
   'POST /requests/transfers':
     'transfers are requested by the guardian, not by the minor',
-  // ---- Unit leaders record the weekly points (units:read + leader guard). A
-  // supervised teen leader stays out for now: club writes are staff-only for
-  // every restricted kind (see the 'club write routes' never-scope denylist in
-  // acting-scope-metadata.spec.ts). Opening them is a product decision: tag the
-  // three routes member:write and carve them out of that denylist.
-  'POST /clubs/:clubId/units/:unitId/weekly-records':
-    'weekly points are written by adult unit leaders; opening it to supervised teen leaders is a pending product decision',
-  'POST /clubs/:clubId/units/:unitId/weekly-records/bulk':
-    'weekly points are written by adult unit leaders; opening it to supervised teen leaders is a pending product decision',
-  'PATCH /clubs/:clubId/units/:unitId/weekly-records/:recordId':
-    'weekly points are written by adult unit leaders; opening it to supervised teen leaders is a pending product decision',
   // ---- Staff dashboards and rosters
   'GET /clubs/:clubId/overview': 'staff dashboard of the club',
   'GET /clubs/:clubId/history': 'staff view of the club history',
