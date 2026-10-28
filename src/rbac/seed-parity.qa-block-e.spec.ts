@@ -115,3 +115,34 @@ describe('test users seed', () => {
     );
   });
 });
+
+describe('union leadership has no unscoped ranking reads', () => {
+  const GLOBAL_READS = [
+    'member_rankings:read_global',
+    'section_rankings:read_global',
+  ];
+
+  it('the seed never grants read_global to union roles', () => {
+    for (const role of ['director-union', 'assistant-union']) {
+      for (const permission of GLOBAL_READS) {
+        expect(grantedAfter(role, permission, 0)).toBe(false);
+      }
+    }
+  });
+
+  it('a migration revokes the rows granted by 20260429000002', () => {
+    const migration = collapse(
+      read(
+        'migrations/20261028130200_revoke_union_global_ranking_reads/migration.sql',
+      ),
+    );
+    expect(migration).toContain('DELETE FROM role_permissions rp');
+    expect(migration).toContain(
+      "r.role_name IN ('director-union', 'assistant-union')",
+    );
+    expect(migration).toContain(
+      "p.permission_name IN ('member_rankings:read_global', 'section_rankings:read_global')",
+    );
+    expect(migration).not.toContain('member_ranking_weights');
+  });
+});
