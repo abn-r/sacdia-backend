@@ -182,6 +182,18 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
     );
   });
 
+  it('does not filter on a non-uuid system actor (it made Prisma throw)', async () => {
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+
+    const job = makeJob(makePayload({ actorId: 'system' }));
+    await processor.process(job as any);
+
+    const where = mockPrismaService.user_fcm_tokens.findMany.mock.calls[0][0]
+      .where as { users: Record<string, unknown> };
+    expect(where.users).not.toHaveProperty('user_id');
+    expect(where.users).toHaveProperty('club_role_assignments');
+  });
+
   // ---------------------------------------------------------------------------
   // T1.6 — unit: empty recipient list short-circuits (no FCM call)
   // ---------------------------------------------------------------------------
