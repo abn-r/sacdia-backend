@@ -103,7 +103,7 @@
   "CAMPOREE_SCORING_OVERRIDE_REASON_REQUIRED": "Se requiere un motivo para reemplazar un resultado activo",
   "CAMPOREE_SCORING_RECEIPT_INCOMPLETE": "El comprobante persistido de puntuación está incompleto",
   "ADMIN_USER_NOT_FOUND": "Usuario no encontrado",
-  "ADMIN_USER_SCOPE_MISSING": "Rol admin/coordinator sin alcance configurado: requerís union_id o local_field_id",
+  "ADMIN_USER_SCOPE_MISSING": "Tu cuenta no tiene un territorio ni secciones asignadas. Pide a un administrador que configure tu alcance.",
   "ADMIN_USER_NO_GLOBAL_PERMISSIONS": "No tienes permisos globales para consultar usuarios administrativos",
   "ADMIN_USER_MFA_NOT_ENABLED": "El usuario no tiene MFA habilitado",
   "ADMIN_SESSION_NOT_FOUND": "Sesión no encontrada para el usuario indicado",

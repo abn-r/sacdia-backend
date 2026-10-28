@@ -46,7 +46,12 @@ type GlobalUserSpec = {
   name: string;
   lastName: string;
   roleName: string;
-  scope: 'local_field' | 'union';
+  /**
+   * - union: union 20; admin anchors to it and division roles resolve their
+   *   division from it.
+   * - local_field: local field 4 (and union 20).
+   */
+  scope: 'union' | 'local_field';
 };
 
 type ClubUserSpec = {
@@ -84,6 +89,59 @@ const GLOBAL_USERS: GlobalUserSpec[] = [
     lastName: 'Union Test',
     roleName: 'assistant-union',
     scope: 'union',
+  },
+  {
+    // admin anchors to its union (then local field, then division): only
+    // super-admin is global. Without an anchor the account is "unconfigured".
+    email: 'admin-test@sacdia.com',
+    name: 'Admin',
+    lastName: 'Test',
+    roleName: 'admin',
+    scope: 'union',
+  },
+  {
+    email: 'director-dia@sacdia.com',
+    name: 'Director',
+    lastName: 'DIA Test',
+    roleName: 'director-dia',
+    scope: 'union',
+  },
+  {
+    email: 'assistant-dia@sacdia.com',
+    name: 'Assistant',
+    lastName: 'DIA Test',
+    roleName: 'assistant-dia',
+    scope: 'union',
+  },
+  // Coordinators and pastor get their sections, zone or district from the
+  // admin panel (Coordinación, Pastores por distrito), not from this seed.
+  {
+    email: 'general-coordinator@sacdia.com',
+    name: 'General',
+    lastName: 'Coordinator Test',
+    roleName: 'general-coordinator',
+    scope: 'local_field',
+  },
+  {
+    email: 'zone-coordinator@sacdia.com',
+    name: 'Zone',
+    lastName: 'Coordinator Test',
+    roleName: 'zone-coordinator',
+    scope: 'local_field',
+  },
+  {
+    email: 'coordinator@sacdia.com',
+    name: 'Coordinator',
+    lastName: 'Test',
+    roleName: 'coordinator',
+    scope: 'local_field',
+  },
+  {
+    email: 'pastor@sacdia.com',
+    name: 'Pastor',
+    lastName: 'Test',
+    roleName: 'pastor',
+    scope: 'local_field',
   },
 ];
 
@@ -296,7 +354,7 @@ async function main() {
     const roleId = await resolveRoleId(spec.roleName, 'GLOBAL');
 
     const localFieldId = spec.scope === 'local_field' ? LOCAL_FIELD_ID : null;
-    const unionId = UNION_ID; // both LF and Union users belong to UMI in this seed
+    const unionId = UNION_ID; // every global user in this seed belongs to UMI
 
     const { user_id } = await upsertUserWithCredentials({
       email: spec.email,
