@@ -2883,3 +2883,34 @@ WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
 ON CONFLICT (role_id, permission_id) DO UPDATE SET
   active = true,
   modified_at = now();
+
+-- ============================
+-- Ranking reads for Local Field leadership
+-- ============================
+-- Canon (docs/canon/runtime-rankings.md §14.7): read_lf is the local field
+-- tier of member and section rankings. Migration
+-- 20260429000002_enrollment_rankings_seeds granted it, but the director-lf /
+-- assistant-lf blocks above DELETE and reinsert their rows, so every seed run
+-- wiped it. Kept after those blocks. Same rows as migration
+-- 20261028130100_restore_lf_ranking_reads.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('member_rankings:read_lf', 'section_rankings:read_lf')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'director-lf'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'member_ranking_weights:read'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
