@@ -97,6 +97,31 @@ describe('assistant-admin role migration', () => {
       expect(migration).toContain(clause);
     }
   });
+
+  it('skips every capability the seed cleanups take away from assistant-admin', () => {
+    // Seed cleanups: `DELETE ... permission_name IN (...) AND NOT (role_name
+    // IN (<allowed roles>))`, run after the role blocks.
+    const reservedBySeed = new Set<string>();
+    for (const statement of SEED.split(';')) {
+      if (!statement.includes('DELETE FROM role_permissions rp')) continue;
+      const [target, allowed] = statement.split('AND NOT');
+      if (allowed === undefined || allowed.includes("'assistant-admin'")) {
+        continue;
+      }
+      for (const match of target.matchAll(/'([a-z_-]+:[a-z_-]+)'/g)) {
+        reservedBySeed.add(match[1]);
+      }
+    }
+
+    const excluded = migration.match(/p\.permission_name NOT IN \(([^)]*)\)/);
+    expect(excluded).not.toBeNull();
+    const excludedByMigration = [
+      ...(excluded?.[1] ?? '').matchAll(/'([a-z_-]+:[a-z_-]+)'/g),
+    ].map((m) => m[1]);
+
+    expect(reservedBySeed.size).toBeGreaterThan(0);
+    expect(excludedByMigration.sort()).toEqual([...reservedBySeed].sort());
+  });
 });
 
 describe('test users seed', () => {
