@@ -7,7 +7,13 @@ import {
   AppBadRequestException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { directivaRoleLabel } from '../common/constants/club-directiva-roles';
 import { loadPdfKit } from '../common/utils/pdfkit-loader';
+import {
+  drawPageFooters,
+  ensureSpace,
+  formatManualValue,
+} from '../common/pdf/report-pdf-helpers';
 import { QuarterlyComputedData } from './quarterly-reports.service';
 import { buildQuarterlyReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
 
@@ -49,15 +55,6 @@ export class QuarterlyReportsPdfService {
             districts: { select: { name: true } },
           },
         },
-        finalized_by_user: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-            email: true,
-          },
-        },
       },
     });
 
@@ -92,6 +89,7 @@ export class QuarterlyReportsPdfService {
     const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
       size: 'LETTER',
+      bufferPages: true,
       margins: {
         top: PAGE_MARGIN,
         bottom: PAGE_MARGIN,
@@ -130,23 +128,21 @@ export class QuarterlyReportsPdfService {
 
     // ── Section 2: Teachings ──
     this.drawSectionTitle(doc, t('section_titles.teachings'));
-    this.drawTeachings(doc, computed, t);
+    this.drawTeachings(doc, computed, manual, t);
 
     // ── Section 3: Activities ──
     this.drawSectionTitle(doc, t('section_titles.activities'));
     this.drawActivities(doc, computed, t);
 
-    doc.addPage();
-
     // ── Section 4: Finances ──
-    this.drawSectionTitle(doc, t('section_titles.finances'));
+    this.drawSectionTitle(doc, t('section_titles.finances'), 70);
     this.drawFinances(doc, computed, intlLocale, t);
 
     // ── Section 5: Missionary ──
     this.drawSectionTitle(doc, t('section_titles.missionary'));
-    this.drawMissionary(doc, computed, manual, t);
+    this.drawMissionary(doc, computed, manual);
 
-    this.drawDirectorInfo(doc, reportData.finalized_by_user, t);
+    this.drawDirectorInfo(doc, computed.directiva, t);
     this.drawFooter(doc, t);
 
     doc.end();
@@ -235,8 +231,16 @@ export class QuarterlyReportsPdfService {
     this.drawHorizontalLine(doc);
   }
 
-  private drawSectionTitle(doc: PDFKit.PDFDocument, title: string) {
-    if (doc.y > 680) doc.addPage();
+  /**
+   * `minContentHeight` is the room the section body needs below the title, so
+   * the title is never stranded at the bottom of a page.
+   */
+  private drawSectionTitle(
+    doc: PDFKit.PDFDocument,
+    title: string,
+    minContentHeight = 60,
+  ) {
+    ensureSpace(doc, 40 + minContentHeight);
 
     doc.moveDown(0.5);
     doc
@@ -276,48 +280,57 @@ export class QuarterlyReportsPdfService {
       t('summary.months_covered'),
       computed.months_in_quarter?.join(', ') ?? 'N/A',
     );
-    this.drawKeyValue(
-      doc,
-      t('summary.total_activities'),
-      String(computed.activities?.total ?? 0),
-    );
-    this.drawKeyValue(
-      doc,
-      t('summary.honors_completed'),
-      String(computed.honors?.completed ?? 0),
-    );
-    this.drawKeyValue(
-      doc,
-      t('summary.honors_started'),
-      String(computed.honors?.started ?? 0),
-    );
 
     if (computed.directiva && computed.directiva.length > 0) {
       doc.moveDown(0.3);
       doc.font('Helvetica-Bold').text('Directiva:', PAGE_MARGIN, doc.y);
       doc.font('Helvetica');
       for (const m of computed.directiva) {
-        doc.text(`  ${m.role}: ${m.name}`, PAGE_MARGIN + 10, doc.y);
+        doc.text(
+          `  ${directivaRoleLabel(m.role)}: ${m.name}`,
+          PAGE_MARGIN + 10,
+          doc.y,
+        );
       }
     }
 
-    if (manual['club_participation_description']) {
-      doc.moveDown(0.3);
-      doc.font('Helvetica-Bold').text('Participación:', PAGE_MARGIN, doc.y);
-      doc
-        .font('Helvetica')
-        .text(
-          String(manual['club_participation_description']),
-          PAGE_MARGIN + 10,
-          doc.y,
-          { width: CONTENT_WIDTH - 10 },
-        );
-    }
+    doc.moveDown(0.3);
+    doc
+      .font('Helvetica-Bold')
+      .text('Reuniones y asistencia:', PAGE_MARGIN, doc.y);
+    doc.font('Helvetica');
+    this.drawKeyValue(
+      doc,
+      'Reuniones de planificación',
+      formatManualValue(manual['planning_meetings']),
+    );
+    this.drawKeyValue(
+      doc,
+      'Reuniones de padres',
+      formatManualValue(manual['parent_meetings']),
+    );
+    this.drawKeyValue(
+      doc,
+      'Asistencia al consejo de jóvenes',
+      formatManualValue(manual['youth_council_attendance']),
+    );
+    this.drawKeyValue(
+      doc,
+      'Asistencia a la junta de iglesia',
+      formatManualValue(manual['church_board_attendance']),
+    );
+
+    this.drawTextBlock(
+      doc,
+      'Participación:',
+      manual['club_participation_description'],
+    );
   }
 
   private drawTeachings(
     doc: PDFKit.PDFDocument,
     computed: QuarterlyComputedData,
+    manual: Record<string, unknown>,
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     doc.fontSize(9).font('Helvetica');
@@ -330,6 +343,11 @@ export class QuarterlyReportsPdfService {
       doc,
       t('summary.honors_completed'),
       String(computed.honors?.completed ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      'Certificados entregados',
+      formatManualValue(manual['certificates_delivered']),
     );
   }
 
@@ -407,7 +425,6 @@ export class QuarterlyReportsPdfService {
     doc: PDFKit.PDFDocument,
     computed: QuarterlyComputedData,
     manual: Record<string, unknown>,
-    t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     doc.fontSize(9).font('Helvetica');
 
@@ -415,40 +432,39 @@ export class QuarterlyReportsPdfService {
       (manual['baptized_this_quarter'] as number | undefined) ??
       computed.missionary?.baptized_this_quarter ??
       0;
+    this.drawKeyValue(
+      doc,
+      'Meta de almas',
+      formatManualValue(manual['soul_target']),
+    );
     this.drawKeyValue(doc, 'Bautizados en el trimestre', String(baptized));
+    this.drawKeyValue(
+      doc,
+      'Campamentos asistidos',
+      formatManualValue(manual['camporees_attended']),
+    );
+    this.drawTextBlock(
+      doc,
+      'Servicio comunitario:',
+      manual['community_service_description'],
+    );
+  }
 
-    const camporees = manual['camporees_attended'] as number | undefined;
-    if (camporees !== undefined) {
-      this.drawKeyValue(doc, 'Campamentos asistidos', String(camporees));
-    }
-
-    if (manual['community_service_description']) {
-      doc.moveDown(0.3);
-      doc
-        .font('Helvetica-Bold')
-        .text('Servicio comunitario:', PAGE_MARGIN, doc.y);
-      doc
-        .font('Helvetica')
-        .text(
-          String(manual['community_service_description']),
-          PAGE_MARGIN + 10,
-          doc.y,
-          { width: CONTENT_WIDTH - 10 },
-        );
-    }
+  /** Names of the directiva members whose role is `director`, in order. */
+  private directorNames(
+    directiva: { role: string; name: string }[] | null | undefined,
+  ): string[] {
+    return (directiva ?? [])
+      .filter((member) => member.role === 'director' && member.name)
+      .map((member) => member.name);
   }
 
   private drawDirectorInfo(
     doc: PDFKit.PDFDocument,
-    finalizer: {
-      user_id: string;
-      name: string | null;
-      paternal_last_name: string | null;
-      maternal_last_name: string | null;
-      email: string | null;
-    } | null,
+    directiva: { role: string; name: string }[] | null | undefined,
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
+    ensureSpace(doc, 90);
     doc.moveDown(1.5);
     this.drawHorizontalLine(doc);
     doc.moveDown(0.5);
@@ -456,22 +472,17 @@ export class QuarterlyReportsPdfService {
     doc
       .fontSize(10)
       .font('Helvetica-Bold')
-      .text(t('secretary.header'), PAGE_MARGIN, doc.y);
+      .text(t('club_director.header'), PAGE_MARGIN, doc.y);
     doc.moveDown(0.3);
     doc.fontSize(9).font('Helvetica');
 
-    if (finalizer) {
-      const fullName = [
-        finalizer.name,
-        finalizer.paternal_last_name,
-        finalizer.maternal_last_name,
-      ]
-        .filter(Boolean)
-        .join(' ');
-      this.drawKeyValue(doc, t('secretary.name'), fullName || 'N/A');
-      this.drawKeyValue(doc, t('secretary.email'), finalizer.email ?? 'N/A');
-    } else {
-      doc.text(t('secretary.fallback'), PAGE_MARGIN, doc.y);
+    const names = this.directorNames(directiva);
+    if (names.length === 0) {
+      doc.text(t('club_director.fallback'), PAGE_MARGIN, doc.y);
+      return;
+    }
+    for (const name of names) {
+      doc.text(name, PAGE_MARGIN, doc.y);
     }
   }
 
@@ -479,21 +490,24 @@ export class QuarterlyReportsPdfService {
     doc: PDFKit.PDFDocument,
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
-    const range = (doc as any).bufferedPageRange?.() ?? { start: 0, count: 1 };
-    for (let i = range.start; i < range.start + range.count; i++) {
-      (doc as any).switchToPage?.(i);
-      doc
-        .fontSize(7)
-        .font('Helvetica')
-        .fillColor('#666666')
-        .text(
-          t('footer', { current: i + 1, total: range.count }),
-          PAGE_MARGIN,
-          740,
-          { width: CONTENT_WIDTH, align: 'center' },
-        );
-    }
-    doc.fillColor('#000000');
+    drawPageFooters(doc, (current, total) => t('footer', { current, total }), {
+      x: PAGE_MARGIN,
+      width: CONTENT_WIDTH,
+    });
+  }
+
+  private drawTextBlock(
+    doc: PDFKit.PDFDocument,
+    label: string,
+    value: unknown,
+  ) {
+    doc.moveDown(0.3);
+    doc.font('Helvetica-Bold').text(label, PAGE_MARGIN, doc.y);
+    doc
+      .font('Helvetica')
+      .text(formatManualValue(value), PAGE_MARGIN + 10, doc.y, {
+        width: CONTENT_WIDTH - 10,
+      });
   }
 
   private drawKeyValue(doc: PDFKit.PDFDocument, label: string, value: string) {

@@ -20,8 +20,7 @@
     "months_reported": "Meses con informes",
     "total_activities": "Total de actividades en el año",
     "honors_completed": "Especialidades completadas en el año",
-    "honors_started": "Especialidades iniciadas en el año",
-    "baptized_total": "Total bautizados en el año"
+    "honors_started": "Especialidades iniciadas en el año"
   },
   "finances": {
     "total_income": "Total ingresos del año",
@@ -38,11 +37,9 @@
     "finalized": "Finalizado",
     "archived": "Archivado"
   },
-  "secretary": {
-    "header": "Información del Director/a",
-    "name": "Nombre",
-    "email": "Email",
-    "fallback": "No hay información disponible."
+  "club_director": {
+    "header": "Director/a del club",
+    "fallback": "Sin director asignado"
   },
   "footer": "Generado por SACDIA | Página {current} de {total}",
   "bool": {

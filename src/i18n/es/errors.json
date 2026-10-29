@@ -980,5 +980,6 @@
   "CAMPOREE_ORDER_AUTHORIZATION_REASON_REQUIRED": "Debes indicar el motivo de la autorización.",
   "CAMPOREE_ORDER_NOT_DELIVERED_TO_SECTION": "El pedido aún no ha sido entregado a la sección del club.",
   "CAMPOREE_ORDER_LINE_NOT_FOUND": "Artículo del pedido no encontrado.",
-  "CAMPOREE_ORDER_DISTRIBUTION_FORBIDDEN": "No tienes permiso para distribuir los artículos de este pedido."
+  "CAMPOREE_ORDER_DISTRIBUTION_FORBIDDEN": "No tienes permiso para distribuir los artículos de este pedido.",
+  "REPORT_PERIOD_IN_FUTURE": "No se puede generar un informe de un periodo que aún no comienza."
 }

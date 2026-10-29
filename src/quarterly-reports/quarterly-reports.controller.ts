@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   Body,
+  HttpCode,
   UseGuards,
   Req,
   Res,
@@ -24,7 +25,10 @@ import type { Response } from 'express';
 import { QuarterlyReportsService } from './quarterly-reports.service';
 import { QuarterlyReportsPdfService } from './quarterly-reports-pdf.service';
 import { monthlyReportContentDisposition } from '../monthly-reports/monthly-report-download-filename';
-import { UpdateQuarterlyManualDataDto } from './dto';
+import {
+  GenerateQuarterlyReportDto,
+  UpdateQuarterlyManualDataDto,
+} from './dto';
 import {
   AuthorizationResource,
   RequirePermissions,
@@ -136,6 +140,42 @@ export class QuarterlyReportsController {
       id,
     );
     const data = await this.quarterlyReportsService.updateManualData(id, dto);
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // ADMIN: Generate on demand
+  // ========================================
+
+  @Post('admin/quarterly-reports/generate')
+  @HttpCode(200)
+  @RequirePermissions('reports:update')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({
+    summary:
+      'Generar el informe trimestral de un club y periodo (admin). Crea el borrador si no existe y recalcula los datos si sigue en borrador; uno finalizado se devuelve sin cambios',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Informe trimestral (misma forma que GET por ID)',
+  })
+  @ApiResponse({ status: 400, description: 'Periodo futuro o datos inválidos' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Club fuera del alcance del usuario o sin reports:update',
+  })
+  @ApiResponse({ status: 404, description: 'Club no encontrado o inactivo' })
+  async generate(@Body() dto: GenerateQuarterlyReportDto, @Req() req: any) {
+    await this.quarterlyReportsService.assertClubVisibleToActor(
+      req.user.sub,
+      dto.club_id,
+    );
+    const data = await this.quarterlyReportsService.generateOnDemand(
+      dto.club_id,
+      dto.year,
+      dto.quarter,
+    );
     return { status: 'success', data };
   }
 

@@ -3,8 +3,10 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AppBadRequestException,
+  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
+import { DEFAULT_AGE_TIMEZONE, calendarDateIn } from '../common/age/age.util';
 import { ErrorCode } from '../common/errors/error-codes';
 import { UpdateAnnualManualDataDto } from './dto';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -14,6 +16,7 @@ import {
   resolveReportVisibilityScopeForActor,
   type ReportVisibilityFilters,
 } from '../reports/report-visibility-scope';
+import { formatYearLabel } from './year-label';
 import {
   CLUB_DIRECTIVA_ROLES,
   directivaRoleOrder,
@@ -78,13 +81,55 @@ export class AnnualReportsService {
 
     if (existing) return existing;
 
-    return this.prisma.annual_reports.create({
-      data: {
-        club_id: clubId,
-        ecclesiastical_year_id: ecclesiasticalYearId,
-        status: 'draft',
-      },
-    });
+    try {
+      return await this.prisma.annual_reports.create({
+        data: {
+          club_id: clubId,
+          ecclesiastical_year_id: ecclesiasticalYearId,
+          status: 'draft',
+        },
+      });
+    } catch (error) {
+      // Two generate requests for the same year: the loser reads the winner's row.
+      if ((error as { code?: string }).code !== 'P2002') throw error;
+      return this.prisma.annual_reports.findUniqueOrThrow({
+        where: {
+          club_id_ecclesiastical_year_id: {
+            club_id: clubId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+          },
+        },
+      });
+    }
+  }
+
+  // ========================================
+  // GENERATE ON DEMAND (admin: create the row if missing, compute if draft)
+  // ========================================
+
+  /**
+   * Creates the annual report for the club/ecclesiastical year when it does
+   * not exist and recomputes its data while it is a draft. A finalized or
+   * archived report is returned untouched (its snapshot is frozen). Returns the
+   * same shape as `getReport`. Callers must have checked club visibility first.
+   */
+  async generateOnDemand(clubId: number, ecclesiasticalYearId: number) {
+    const eccYear =
+      await this.validateEcclesiasticalYearExists(ecclesiasticalYearId);
+
+    // The year must have started (Mexico City civil day); nothing to report before.
+    const today = calendarDateIn(DEFAULT_AGE_TIMEZONE);
+    if (eccYear.start_date.getTime() > today.getTime()) {
+      throw new AppBadRequestException(ErrorCode.REPORT_PERIOD_IN_FUTURE);
+    }
+
+    const report = await this.getOrCreateDraft(clubId, ecclesiasticalYearId);
+
+    if (report.status === 'draft') {
+      await this.regenerate(report.annual_report_id);
+    }
+
+    return this.getReport(report.annual_report_id);
   }
 
   // ========================================
@@ -273,7 +318,9 @@ export class AnnualReportsService {
       }
     }
 
-    // ── Months reported (count monthly_reports with status != draft for this club's enrollments) ──
+    // ── Months reported: distinct months with at least one non-draft monthly
+    // report across the club's enrollments (one enrollment per section), so a
+    // club with several sections still counts each month once. ──
     let monthsReported = 0;
     if (allSectionIds.length > 0) {
       const enrollments = await this.prisma.club_enrollments.findMany({
@@ -286,12 +333,15 @@ export class AnnualReportsService {
       const enrollmentIds = enrollments.map((e) => e.club_enrollment_id);
 
       if (enrollmentIds.length > 0) {
-        monthsReported = await this.prisma.monthly_reports.count({
+        const reports = await this.prisma.monthly_reports.findMany({
           where: {
             club_enrollment_id: { in: enrollmentIds },
             status: { not: 'draft' },
           },
+          select: { month: true, year: true },
         });
+        monthsReported = new Set(reports.map((r) => `${r.year}-${r.month}`))
+          .size;
       }
     }
 
@@ -312,7 +362,10 @@ export class AnnualReportsService {
 
     return {
       ecclesiastical_year_id: ecclesiasticalYearId,
-      year_label: `${startDate.getUTCFullYear()}–${endDate.getUTCFullYear()}`,
+      year_label: formatYearLabel(
+        startDate.getUTCFullYear(),
+        endDate.getUTCFullYear(),
+      ),
       member_count: memberCount,
       months_reported: monthsReported,
       directiva,
@@ -548,6 +601,37 @@ export class AnnualReportsService {
     }
   }
 
+  /**
+   * Admin routes that act on a club (no report id yet) call this first. Uses
+   * the same territorial scope as the list and the by-id routes. A missing or
+   * inactive club answers 404; an existing club outside the actor's scope 403.
+   */
+  async assertClubVisibleToActor(
+    userId: string,
+    clubId: number,
+  ): Promise<void> {
+    const club = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+      select: { club_id: true, active: true },
+    });
+
+    if (!club || !club.active) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_REPORT_CLUB_NOT_FOUND);
+    }
+
+    const clubWhere = await this.actorReportClubWhere(userId);
+    if (Object.keys(clubWhere).length === 0) return;
+
+    const visible = await this.prisma.clubs.findFirst({
+      where: { club_id: clubId, ...clubWhere },
+      select: { club_id: true },
+    });
+
+    if (!visible) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+  }
+
   /** Club routes: the report must belong to the club in the path (404 otherwise). */
   async assertReportBelongsToClub(
     clubId: number,
@@ -595,6 +679,10 @@ export class AnnualReportsService {
 
     if (!report) {
       throw new AppNotFoundException(ErrorCode.ANNUAL_REPORT_NOT_FOUND);
+    }
+    // A finalized report is frozen: recomputing would change what was signed off.
+    if (report.status !== 'draft') {
+      throw new AppBadRequestException(ErrorCode.ANNUAL_REPORT_NOT_DRAFT);
     }
 
     const computed = await this.computeData(

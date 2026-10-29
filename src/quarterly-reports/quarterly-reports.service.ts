@@ -3,8 +3,10 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AppBadRequestException,
+  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
+import { DEFAULT_AGE_TIMEZONE, calendarDateIn } from '../common/age/age.util';
 import { ErrorCode } from '../common/errors/error-codes';
 import { UpdateQuarterlyManualDataDto } from './dto';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -72,9 +74,40 @@ export class QuarterlyReportsService {
 
     if (existing) return existing;
 
-    return this.prisma.quarterly_reports.create({
-      data: { club_id: clubId, year, quarter, status: 'draft' },
-    });
+    try {
+      return await this.prisma.quarterly_reports.create({
+        data: { club_id: clubId, year, quarter, status: 'draft' },
+      });
+    } catch (error) {
+      // Two generate requests for the same period: the loser reads the winner's row.
+      if ((error as { code?: string }).code !== 'P2002') throw error;
+      return this.prisma.quarterly_reports.findUniqueOrThrow({
+        where: { club_id_year_quarter: { club_id: clubId, year, quarter } },
+      });
+    }
+  }
+
+  // ========================================
+  // GENERATE ON DEMAND (admin: create the row if missing, compute if draft)
+  // ========================================
+
+  /**
+   * Creates the quarterly report for the club/period when it does not exist and
+   * recomputes its data while it is a draft. A finalized or archived report is
+   * returned untouched (its snapshot is frozen). Returns the same shape as
+   * `getReport`. Callers must have checked club visibility first.
+   */
+  async generateOnDemand(clubId: number, year: number, quarter: number) {
+    this.validateQuarterYear(quarter, year);
+    this.assertQuarterStarted(year, quarter);
+
+    const report = await this.getOrCreateDraft(clubId, year, quarter);
+
+    if (report.status === 'draft') {
+      await this.regenerate(report.quarterly_report_id);
+    }
+
+    return this.getReport(report.quarterly_report_id);
   }
 
   // ========================================
@@ -489,6 +522,37 @@ export class QuarterlyReportsService {
     }
   }
 
+  /**
+   * Admin routes that act on a club (no report id yet) call this first. Uses
+   * the same territorial scope as the list and the by-id routes. A missing or
+   * inactive club answers 404; an existing club outside the actor's scope 403.
+   */
+  async assertClubVisibleToActor(
+    userId: string,
+    clubId: number,
+  ): Promise<void> {
+    const club = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+      select: { club_id: true, active: true },
+    });
+
+    if (!club || !club.active) {
+      throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_CLUB_NOT_FOUND);
+    }
+
+    const clubWhere = await this.actorReportClubWhere(userId);
+    if (Object.keys(clubWhere).length === 0) return;
+
+    const visible = await this.prisma.clubs.findFirst({
+      where: { club_id: clubId, ...clubWhere },
+      select: { club_id: true },
+    });
+
+    if (!visible) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+  }
+
   /** Club routes: the report must belong to the club in the path (404 otherwise). */
   async assertReportBelongsToClub(
     clubId: number,
@@ -536,6 +600,10 @@ export class QuarterlyReportsService {
 
     if (!report) {
       throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_NOT_FOUND);
+    }
+    // A finalized report is frozen: recomputing would change what was signed off.
+    if (report.status !== 'draft') {
+      throw new AppBadRequestException(ErrorCode.QUARTERLY_REPORT_NOT_DRAFT);
     }
 
     const computed = await this.computeData(
@@ -622,6 +690,15 @@ export class QuarterlyReportsService {
 
   private getMonthsForQuarter(quarter: number): number[] {
     return [quarter * 3 - 2, quarter * 3 - 1, quarter * 3];
+  }
+
+  /** A quarter that starts after today (Mexico City civil day) has no data yet. */
+  private assertQuarterStarted(year: number, quarter: number) {
+    const quarterStart = new Date(Date.UTC(year, (quarter - 1) * 3, 1));
+    const today = calendarDateIn(DEFAULT_AGE_TIMEZONE);
+    if (quarterStart.getTime() > today.getTime()) {
+      throw new AppBadRequestException(ErrorCode.REPORT_PERIOD_IN_FUTURE);
+    }
   }
 
   private validateQuarterYear(quarter: number, year: number) {
