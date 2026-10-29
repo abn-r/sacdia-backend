@@ -317,7 +317,9 @@ export class AnnualReportsService {
       }
     }
 
-    // ── Months reported (count monthly_reports with status != draft for this club's enrollments) ──
+    // ── Months reported: distinct months with at least one non-draft monthly
+    // report across the club's enrollments (one enrollment per section), so a
+    // club with several sections still counts each month once. ──
     let monthsReported = 0;
     if (allSectionIds.length > 0) {
       const enrollments = await this.prisma.club_enrollments.findMany({
@@ -330,12 +332,15 @@ export class AnnualReportsService {
       const enrollmentIds = enrollments.map((e) => e.club_enrollment_id);
 
       if (enrollmentIds.length > 0) {
-        monthsReported = await this.prisma.monthly_reports.count({
+        const reports = await this.prisma.monthly_reports.findMany({
           where: {
             club_enrollment_id: { in: enrollmentIds },
             status: { not: 'draft' },
           },
+          select: { month: true, year: true },
         });
+        monthsReported = new Set(reports.map((r) => `${r.year}-${r.month}`))
+          .size;
       }
     }
 

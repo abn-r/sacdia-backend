@@ -111,6 +111,63 @@ describe('AnnualReportsService computeData year boundaries', () => {
     });
   });
 
+  it('counts each month once even when several sections reported it', async () => {
+    const prisma = buildPrisma([10, 11, 12]);
+    prisma.club_enrollments.findMany.mockResolvedValue([
+      { club_enrollment_id: 'e1' },
+      { club_enrollment_id: 'e2' },
+      { club_enrollment_id: 'e3' },
+    ]);
+    const months = [1, 2, 3, 4, 5, 6];
+    const monthly_reports = {
+      findMany: jest
+        .fn()
+        .mockResolvedValue(
+          ['e1', 'e2', 'e3'].flatMap(() =>
+            months.map((month) => ({ month, year: 2026 })),
+          ),
+        ),
+    };
+    const service = new AnnualReportsService(
+      { ...prisma, monthly_reports } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const data = await service.computeData(1, calendarYear.year_id);
+
+    expect(data.months_reported).toBe(6);
+    expect(monthly_reports.findMany).toHaveBeenCalledWith({
+      where: {
+        club_enrollment_id: { in: ['e1', 'e2', 'e3'] },
+        status: { not: 'draft' },
+      },
+      select: { month: true, year: true },
+    });
+  });
+
+  it('keeps the same month of different calendar years apart', async () => {
+    const prisma = buildPrisma([10]);
+    prisma.club_enrollments.findMany.mockResolvedValue([
+      { club_enrollment_id: 'e1' },
+    ]);
+    const monthly_reports = {
+      findMany: jest.fn().mockResolvedValue([
+        { month: 12, year: 2025 },
+        { month: 12, year: 2026 },
+      ]),
+    };
+    const service = new AnnualReportsService(
+      { ...prisma, monthly_reports } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const data = await service.computeData(1, calendarYear.year_id);
+
+    expect(data.months_reported).toBe(2);
+  });
+
   it('aggregates finances for the twelve months of the calendar year, whatever the server timezone', async () => {
     await withServerTimezone('America/Mexico_City', async () => {
       const prisma = buildPrisma([10]);
