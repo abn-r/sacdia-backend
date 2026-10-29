@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
+import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import {
@@ -79,6 +80,7 @@ describe('AuthService', () => {
     users_pr: {
       findUnique: jest.fn(),
       upsert: jest.fn(),
+      createMany: jest.fn(),
     },
     supervised_logins: {
       updateMany: jest.fn(),
@@ -293,6 +295,7 @@ describe('AuthService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
+        PostRegistrationRowService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: BetterAuthService, useValue: mockBetterAuthService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
@@ -3432,14 +3435,84 @@ describe('AuthService', () => {
   // getCompletionStatus()
   // ---------------------------------------------------------------------------
   describe('getCompletionStatus', () => {
-    it('should throw BadRequestException when post-registration does not exist', async () => {
+    it('should throw BadRequestException when the user does not exist', async () => {
       mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
+      mockPrismaService.users.findUnique.mockResolvedValue(null);
 
       await expect(
         service.getCompletionStatus('user-123'),
       ).rejects.toMatchObject({
         code: ErrorCode.AUTH_POST_REGISTRATION_NOT_STARTED,
       });
+      expect(mockPrismaService.users_pr.createMany).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when the user is deactivated', async () => {
+      mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
+      mockPrismaService.users.findUnique.mockResolvedValue({ active: false });
+
+      await expect(
+        service.getCompletionStatus('user-123'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_POST_REGISTRATION_NOT_STARTED,
+      });
+      expect(mockPrismaService.users_pr.createMany).not.toHaveBeenCalled();
+    });
+
+    it('should lazily create the row and report nothing completed for a user without one', async () => {
+      mockPrismaService.users_pr.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({
+          complete: false,
+          profile_picture_complete: false,
+          personal_info_complete: false,
+          club_selection_complete: false,
+          date_completed: null,
+        });
+      mockPrismaService.users.findUnique.mockResolvedValue({ active: true });
+      mockPrismaService.users_pr.createMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.getCompletionStatus('user-123');
+
+      expect(mockPrismaService.users_pr.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            user_id: 'user-123',
+            complete: false,
+            profile_picture_complete: false,
+            personal_info_complete: false,
+            club_selection_complete: false,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      expect(result).toEqual({
+        status: 'success',
+        data: {
+          complete: false,
+          steps: {
+            profilePicture: false,
+            personalInfo: false,
+            clubSelection: false,
+          },
+          nextStep: 'profilePicture',
+          dateCompleted: null,
+        },
+      });
+    });
+
+    it('should not touch the row of a user that already has one', async () => {
+      mockPrismaService.users_pr.findUnique.mockResolvedValue({
+        complete: true,
+        profile_picture_complete: true,
+        personal_info_complete: true,
+        club_selection_complete: true,
+        date_completed: new Date('2026-02-10'),
+      });
+
+      await service.getCompletionStatus('user-123');
+
+      expect(mockPrismaService.users_pr.createMany).not.toHaveBeenCalled();
     });
 
     it('should set nextStep to profilePicture when first step is pending', async () => {

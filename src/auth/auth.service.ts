@@ -60,6 +60,7 @@ import {
   toDateValue,
 } from '../common/age/age.util';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
+import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 import {
   principalSeesClubData,
   type AuthPrincipal,
@@ -123,6 +124,7 @@ export class AuthService {
     private readonly supervisedResolver: SupervisedPrincipalResolver,
     private readonly linkedDeviceGate: LinkedDeviceGate,
     private readonly linkedDevices: LinkedDevicesService,
+    private readonly postRegistrationRow: PostRegistrationRowService,
     // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
     // every guardian security notice into a silent no-op (FP3-23).
     @Inject(SUPERVISED_LOGIN_EVENTS)
@@ -1293,16 +1295,10 @@ export class AuthService {
   }
 
   async getCompletionStatus(userId: string) {
-    const userPr = await this.prisma.users_pr.findUnique({
-      where: { user_id: userId },
-      select: {
-        complete: true,
-        profile_picture_complete: true,
-        personal_info_complete: true,
-        club_selection_complete: true,
-        date_completed: true,
-      },
-    });
+    // Lazy init: users created outside register (seeds, legacy, admin) have no
+    // row; they start from "nothing completed". NOT_STARTED is now only for a
+    // missing or deactivated user.
+    const userPr = await this.postRegistrationRow.ensure(userId);
 
     if (!userPr) {
       throw new AppBadRequestException(

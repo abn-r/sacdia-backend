@@ -116,6 +116,8 @@ describe('Post-registration step 3 E2E', () => {
         update: jest.fn(),
       },
       users_pr: {
+        // The row already exists: PostRegistrationRowService.ensure reads it.
+        findUnique: jest.fn().mockResolvedValue({ user_id: 'user-1' }),
         update: jest.fn().mockResolvedValue({}),
       },
     };
@@ -176,6 +178,7 @@ describe('Post-registration step 3 E2E', () => {
         update: jest.fn(),
       },
       users_pr: {
+        findUnique: jest.fn().mockResolvedValue({ user_id: 'user-1' }),
         update: jest.fn(),
       },
     };

@@ -22,6 +22,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
+import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 
 export type PostRegistrationActorContext = {
   actorUserId: string;
@@ -61,15 +62,17 @@ export class PostRegistrationService {
     private authorizationContextVersion: AuthorizationContextVersionService,
     private roleEligibility: ClubRoleEligibilityService,
     private actingForCache: ActingForCache,
+    private postRegistrationRow: PostRegistrationRowService,
   ) {}
 
   async getStatus(
     userId: string,
     actor: PostRegistrationActorContext = this.createOwnerContext(userId),
   ) {
-    const userPr = await this.prisma.users_pr.findUnique({
-      where: { user_id: userId },
-    });
+    // Users created outside register (seeds, legacy, admin) have no row yet:
+    // start them from "nothing completed". Only a missing/deactivated user is
+    // "not initiated".
+    const userPr = await this.postRegistrationRow.ensure(userId);
 
     if (!userPr) {
       throw new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
@@ -138,6 +141,7 @@ export class PostRegistrationService {
         throw new AppBadRequestException(ErrorCode.POST_REG_PHOTO_REQUIRED);
       }
 
+      await this.requireRow(userId);
       await this.prisma.users_pr.update({
         where: { user_id: userId },
         data: { profile_picture_complete: true },
@@ -202,6 +206,7 @@ export class PostRegistrationService {
         );
       }
 
+      await this.requireRow(userId);
       await this.prisma.users_pr.update({
         where: { user_id: userId },
         data: { personal_info_complete: true },
@@ -234,6 +239,7 @@ export class PostRegistrationService {
   ) {
     try {
       const completion = await this.prisma.$transaction(async (tx) => {
+        await this.requireRow(userId, tx);
         const now = new Date();
         const currentYear = await this.resolveActiveEcclesiasticalYear(tx, now);
         const memberRoleId = await this.resolveMemberRoleId(tx);
@@ -273,6 +279,9 @@ export class PostRegistrationService {
             ecclesiastical_year_id: currentYear.year_id,
             active: true,
             cross_type_enrollment: false,
+            // Imported certificates are permanent records and must stay
+            // active (enrollments_historical_certificate_shape).
+            record_kind: { not: 'HISTORICAL_CERTIFICATE' },
             NOT: { class_id: resolvedClassId },
           },
           data: {
@@ -399,13 +408,7 @@ export class PostRegistrationService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const userPr = await tx.users_pr.findUnique({
-        where: { user_id: userId },
-        select: { user_id: true },
-      });
-      if (!userPr) {
-        throw new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
-      }
+      await this.requireRow(userId, tx);
 
       const geo: Prisma.usersUncheckedUpdateInput = {};
       if (dto.country_id !== undefined) geo.country_id = dto.country_id;
@@ -448,6 +451,8 @@ export class PostRegistrationService {
     actor: PostRegistrationActorContext = this.createOwnerContext(userId),
   ) {
     try {
+      // cancelPendingForUser resets the users_pr row with a plain update.
+      await this.requireRow(userId);
       await this.membershipRequestsService.cancelPendingForUser(
         userId,
         actor.actorUserId,
@@ -558,6 +563,39 @@ export class PostRegistrationService {
       throw new AppBadRequestException(ErrorCode.POST_REG_CLUB_NOT_FOUND);
     }
 
+    const assignmentSelect = {
+      assignment_id: true,
+      user_id: true,
+      club_section_id: true,
+      active: true,
+      status: true,
+    } satisfies Prisma.club_role_assignmentsSelect;
+
+    // A user who already holds an ACTIVE role in the selected section (e.g. a
+    // director created by a seed or by an admin, who never went through
+    // post-registration) has already joined that club: the existing role
+    // satisfies the club selection. No member request is created and nobody
+    // is notified. Choosing another section of the same club type still
+    // conflicts below.
+    const existingRoleInSelectedSection =
+      await tx.club_role_assignments.findFirst({
+        where: {
+          user_id: params.userId,
+          active: true,
+          status: 'active',
+          [params.clubInstanceField]: params.clubInstanceId,
+        },
+        select: assignmentSelect,
+        orderBy: { start_date: 'desc' },
+      });
+
+    if (existingRoleInSelectedSection) {
+      return {
+        assignment: existingRoleInSelectedSection,
+        shouldNotifyReviewers: false,
+      };
+    }
+
     const currentAssignmentIdentity = {
       role_id: params.roleId,
       ecclesiastical_year_id: params.ecclesiasticalYearId,
@@ -598,14 +636,6 @@ export class PostRegistrationService {
     // --- Create or reactivate assignment with pending status ---
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 8);
-
-    const assignmentSelect = {
-      assignment_id: true,
-      user_id: true,
-      club_section_id: true,
-      active: true,
-      status: true,
-    } satisfies Prisma.club_role_assignmentsSelect;
 
     const where: Prisma.club_role_assignmentsWhereInput = {
       user_id: params.userId,
@@ -808,6 +838,21 @@ export class PostRegistrationService {
     });
     if (other) {
       throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
+    }
+  }
+
+  /**
+   * Lazily creates the `users_pr` row for a user that never got one, so the
+   * `update`s below cannot hit P2025. A missing or deactivated user keeps the
+   * historical POST_REG_NOT_INITIATED.
+   */
+  private async requireRow(
+    userId: string,
+    db?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const row = await this.postRegistrationRow.ensure(userId, db);
+    if (!row) {
+      throw new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
     }
   }
 
