@@ -10,11 +10,11 @@ export class GenerateQuarterlyReportDto {
   @ApiProperty({
     description: 'Año calendario del trimestre',
     example: 2026,
-    minimum: 2000,
+    minimum: 2020,
     maximum: 2100,
   })
   @IsInt()
-  @Min(2000)
+  @Min(2020)
   @Max(2100)
   year!: number;
 

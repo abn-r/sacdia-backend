@@ -67,6 +67,7 @@ describe('QuarterlyReportsService generate on demand', () => {
     clubs: { findUnique: jest.fn(), findFirst: jest.fn() },
     quarterly_reports: {
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -153,6 +154,26 @@ describe('QuarterlyReportsService generate on demand', () => {
         }),
       );
       expect(result).toBe(FULL_REPORT);
+    });
+
+    it('reads the row created by a concurrent request instead of failing', async () => {
+      const service = makeService();
+      jest.spyOn(service, 'computeData').mockResolvedValue(COMPUTED);
+      mockPrisma.quarterly_reports.findUnique.mockImplementation(
+        ({ where }: any) =>
+          Promise.resolve(where.club_id_year_quarter ? null : FULL_REPORT),
+      );
+      mockPrisma.quarterly_reports.create.mockRejectedValue({ code: 'P2002' });
+      mockPrisma.quarterly_reports.findUniqueOrThrow.mockResolvedValue({
+        quarterly_report_id: 5,
+        status: 'draft',
+      });
+      mockPrisma.quarterly_reports.update.mockResolvedValue({});
+
+      await expect(service.generateOnDemand(10, 2026, 2)).resolves.toBe(
+        FULL_REPORT,
+      );
+      expect(mockPrisma.quarterly_reports.findUniqueOrThrow).toHaveBeenCalled();
     });
 
     it('recomputes an existing draft', async () => {

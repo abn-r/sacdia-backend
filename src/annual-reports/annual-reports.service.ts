@@ -80,13 +80,26 @@ export class AnnualReportsService {
 
     if (existing) return existing;
 
-    return this.prisma.annual_reports.create({
-      data: {
-        club_id: clubId,
-        ecclesiastical_year_id: ecclesiasticalYearId,
-        status: 'draft',
-      },
-    });
+    try {
+      return await this.prisma.annual_reports.create({
+        data: {
+          club_id: clubId,
+          ecclesiastical_year_id: ecclesiasticalYearId,
+          status: 'draft',
+        },
+      });
+    } catch (error) {
+      // Two generate requests for the same year: the loser reads the winner's row.
+      if ((error as { code?: string }).code !== 'P2002') throw error;
+      return this.prisma.annual_reports.findUniqueOrThrow({
+        where: {
+          club_id_ecclesiastical_year_id: {
+            club_id: clubId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+          },
+        },
+      });
+    }
   }
 
   // ========================================

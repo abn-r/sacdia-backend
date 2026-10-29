@@ -74,9 +74,17 @@ export class QuarterlyReportsService {
 
     if (existing) return existing;
 
-    return this.prisma.quarterly_reports.create({
-      data: { club_id: clubId, year, quarter, status: 'draft' },
-    });
+    try {
+      return await this.prisma.quarterly_reports.create({
+        data: { club_id: clubId, year, quarter, status: 'draft' },
+      });
+    } catch (error) {
+      // Two generate requests for the same period: the loser reads the winner's row.
+      if ((error as { code?: string }).code !== 'P2002') throw error;
+      return this.prisma.quarterly_reports.findUniqueOrThrow({
+        where: { club_id_year_quarter: { club_id: clubId, year, quarter } },
+      });
+    }
   }
 
   // ========================================
