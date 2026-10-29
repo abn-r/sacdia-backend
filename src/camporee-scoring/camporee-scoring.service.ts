@@ -1866,6 +1866,7 @@ export class CamporeeScoringService {
               ct.name AS section_name,
               SUM(r.total_awarded_points)::numeric(10,2) AS total_awarded_points,
               SUM(r.total_max_points)::numeric(10,2) AS total_max_points,
+              COUNT(DISTINCT r.camporee_event_id)::int AS scored_events_count,
               CASE WHEN SUM(r.total_max_points) = 0 THEN 0
                    ELSE ROUND((SUM(r.total_awarded_points) / SUM(r.total_max_points)) * 100, 2)
               END AS percentage
@@ -1890,6 +1891,7 @@ export class CamporeeScoringService {
               ct.name AS section_name,
               SUM(r.total_awarded_points)::numeric(10,2) AS total_awarded_points,
               SUM(r.total_max_points)::numeric(10,2) AS total_max_points,
+              COUNT(DISTINCT r.camporee_event_id)::int AS scored_events_count,
               CASE WHEN SUM(r.total_max_points) = 0 THEN 0
                    ELSE ROUND((SUM(r.total_awarded_points) / SUM(r.total_max_points)) * 100, 2)
               END AS percentage
@@ -1917,6 +1919,7 @@ export class CamporeeScoringService {
         section_name: row.section_name ?? null,
         total_awarded_points: this.toNumber(row.total_awarded_points),
         total_max_points: this.toNumber(row.total_max_points),
+        scored_events_count: Number(row.scored_events_count ?? 0),
         percentage: this.toNumber(row.percentage),
       })),
     };

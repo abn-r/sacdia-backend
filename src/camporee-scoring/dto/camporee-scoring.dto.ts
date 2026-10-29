@@ -305,6 +305,8 @@ export type CamporeeLeaderboardRowDto = {
   section_name: string | null;
   total_awarded_points: number;
   total_max_points: number;
+  /** Distinct scoring-enabled events this section has an active result on. */
+  scored_events_count: number;
   percentage: number;
 };
 
