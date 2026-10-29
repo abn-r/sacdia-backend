@@ -604,6 +604,9 @@ export enum ErrorCode {
   ANNUAL_REPORT_YEAR_NOT_FOUND = 'ANNUAL_REPORT_YEAR_NOT_FOUND',
   ANNUAL_REPORT_PDF_NOT_READY = 'ANNUAL_REPORT_PDF_NOT_READY',
 
+  // ── Reports (shared by quarterly and annual) ───────────────────────────────
+  REPORT_PERIOD_IN_FUTURE = 'REPORT_PERIOD_IN_FUTURE',
+
   // ── Validation ─────────────────────────────────────────────────────────────
   VALIDATION_ENROLLMENT_NOT_FOUND = 'VALIDATION_ENROLLMENT_NOT_FOUND',
   VALIDATION_ENROLLMENT_NOT_OWNED = 'VALIDATION_ENROLLMENT_NOT_OWNED',
