@@ -2351,6 +2351,168 @@ describe('AuthService', () => {
         });
         expect('device' in result.data.principal).toBe(false);
       });
+
+      describe('pending_club_membership', () => {
+        const pendingRow = {
+          club_section_id: 166,
+          created_at: new Date('2026-10-28T15:04:00.000Z'),
+          club_sections: {
+            clubs: { name: 'Club Panteras' },
+            club_types: { name: 'Aventureros' },
+          },
+        };
+        const activeClub = {
+          ...resolvedChild,
+          legacy: {
+            ...resolvedChild.legacy,
+            club: {
+              club_id: 7,
+              club_name: 'Club Panteras',
+              club_type: 'Aventureros',
+            },
+          },
+        };
+
+        beforeEach(() => {
+          mockPrismaService.club_role_assignments.findFirst.mockReset();
+        });
+
+        it('fills a minimal block from the device own pending request', async () => {
+          mockPrismaService.club_role_assignments.findFirst.mockResolvedValueOnce(
+            pendingRow,
+          );
+
+          const result = await service.getProfile('child-1', devicePrincipal);
+
+          expect(result.data.pending_club_membership).toEqual({
+            club_name: 'Club Panteras',
+            club_type_name: 'Aventureros',
+            club_section_id: 166,
+            requested_at: '2026-10-28T15:04:00.000Z',
+          });
+          expect(result.data.club).toBeNull();
+          expect(
+            mockPrismaService.club_role_assignments.findFirst,
+          ).toHaveBeenCalledWith({
+            where: {
+              user_id: 'child-1',
+              status: 'pending',
+              active: true,
+              club_section_id: { not: null },
+            },
+            orderBy: { created_at: 'desc' },
+            select: expect.any(Object),
+          });
+        });
+
+        it('exposes no reviewer, consent, contact or assignment identifiers', async () => {
+          mockPrismaService.club_role_assignments.findFirst.mockResolvedValueOnce(
+            {
+              ...pendingRow,
+              assignment_id: 'a-1',
+              user_id: 'child-1',
+              rejection_reason: 'x',
+              reviewed_by: 'director-1',
+            },
+          );
+
+          const result = await service.getProfile('child-1', devicePrincipal);
+
+          expect(
+            Object.keys(result.data.pending_club_membership!).sort(),
+          ).toEqual([
+            'club_name',
+            'club_section_id',
+            'club_type_name',
+            'requested_at',
+          ]);
+        });
+
+        it('is null when the device has no pending request', async () => {
+          mockPrismaService.club_role_assignments.findFirst.mockResolvedValueOnce(
+            null,
+          );
+
+          const result = await service.getProfile('child-1', devicePrincipal);
+
+          expect(result.data.pending_club_membership).toBeNull();
+        });
+
+        it('is null, and not even queried, when the device already has an active club', async () => {
+          mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+            activeClub,
+          );
+
+          const result = await service.getProfile('child-1', devicePrincipal);
+
+          expect(result.data.club).toEqual(activeClub.legacy.club);
+          expect(result.data.pending_club_membership).toBeNull();
+          expect(
+            mockPrismaService.club_role_assignments.findFirst,
+          ).not.toHaveBeenCalled();
+        });
+
+        it('is also filled for an active supervised teen', async () => {
+          mockPrismaService.club_role_assignments.findFirst.mockResolvedValueOnce(
+            pendingRow,
+          );
+
+          const result = await service.getProfile('child-1', {
+            acting_for: false,
+            actor_sub: 'child-1',
+            scopes: ['self:read'],
+            kind: 'supervised_user',
+            supervision: 'active',
+          });
+
+          expect(result.data.pending_club_membership).toEqual({
+            club_name: 'Club Panteras',
+            club_type_name: 'Aventureros',
+            club_section_id: 166,
+            requested_at: '2026-10-28T15:04:00.000Z',
+          });
+        });
+
+        it.each([
+          ['an adult user', { kind: 'user' as const, scopes: null }],
+          ['no principal', undefined],
+          [
+            'a teen pending a guardian',
+            {
+              kind: 'supervised_user' as const,
+              supervision: 'pending_guardian' as const,
+              scopes: ['self:read'],
+            },
+          ],
+          [
+            'an unknown-age account',
+            { kind: 'age_unknown_user' as const, scopes: ['self:read'] },
+          ],
+          [
+            'a guardian acting for a dependent',
+            {
+              kind: 'guardian_acting' as const,
+              acting_for: true,
+              actor_sub: 'guardian-1',
+              scopes: ['self:read'],
+            },
+          ],
+        ])('stays null and unqueried for %s', async (_label, principal) => {
+          mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(
+            pendingRow,
+          );
+
+          const result = await service.getProfile(
+            'child-1',
+            principal as Parameters<AuthService['getProfile']>[1],
+          );
+
+          expect(result.data.pending_club_membership).toBeNull();
+          expect(
+            mockPrismaService.club_role_assignments.findFirst,
+          ).not.toHaveBeenCalled();
+        });
+      });
     });
 
     describe('supervised principal, mode and analytics (phase 3a)', () => {
