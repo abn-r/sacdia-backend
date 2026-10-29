@@ -7,6 +7,7 @@ import {
   AppBadRequestException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { directivaRoleLabel } from '../common/constants/club-directiva-roles';
 import { loadPdfKit } from '../common/utils/pdfkit-loader';
 import { drawPageFooters, ensureSpace } from '../common/pdf/report-pdf-helpers';
 import { QuarterlyComputedData } from './quarterly-reports.service';
@@ -305,7 +306,11 @@ export class QuarterlyReportsPdfService {
       doc.font('Helvetica-Bold').text('Directiva:', PAGE_MARGIN, doc.y);
       doc.font('Helvetica');
       for (const m of computed.directiva) {
-        doc.text(`  ${m.role}: ${m.name}`, PAGE_MARGIN + 10, doc.y);
+        doc.text(
+          `  ${directivaRoleLabel(m.role)}: ${m.name}`,
+          PAGE_MARGIN + 10,
+          doc.y,
+        );
       }
     }
 

@@ -1,4 +1,5 @@
 import { QuarterlyReportsPdfService } from './quarterly-reports-pdf.service';
+import { loadPdfKit } from '../common/utils/pdfkit-loader';
 
 const countPages = (pdf: Buffer): number =>
   (pdf.toString('latin1').match(/\/Type \/Page(?!s)/g) ?? []).length;
@@ -20,6 +21,23 @@ function buildService(report: Record<string, unknown>) {
     translationService as any,
   );
   return { service, i18n };
+}
+
+/** Records every string passed to `doc.text` while `run` generates the PDF. */
+async function captureText(run: () => Promise<unknown>): Promise<string[]> {
+  const proto = loadPdfKit().prototype;
+  const original = proto.text;
+  const lines: string[] = [];
+  proto.text = function (this: unknown, text: unknown, ...rest: unknown[]) {
+    if (typeof text === 'string') lines.push(text);
+    return original.call(this, text, ...rest);
+  };
+  try {
+    await run();
+  } finally {
+    proto.text = original;
+  }
+  return lines;
 }
 
 const baseReport = (overrides: Record<string, unknown> = {}) => ({
@@ -74,5 +92,29 @@ describe('QuarterlyReportsPdfService pagination', () => {
       { current: 1, total: 2 },
       { current: 2, total: 2 },
     ]);
+  });
+});
+
+describe('QuarterlyReportsPdfService directiva roles', () => {
+  it('prints Spanish role labels and falls back to the slug for unknown roles', async () => {
+    const report = baseReport();
+    (report.computed_data as any).directiva = [
+      { role: 'director', user_id: '1', name: 'Ana' },
+      { role: 'deputy-director', user_id: '2', name: 'Beto' },
+      { role: 'secretary-treasurer', user_id: '3', name: 'Carla' },
+      { role: 'counselor', user_id: '4', name: 'Dani' },
+    ];
+    const { service } = buildService(report);
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '  Director: Ana',
+        '  Subdirector: Beto',
+        '  Secretario tesorero: Carla',
+        '  counselor: Dani',
+      ]),
+    );
   });
 });

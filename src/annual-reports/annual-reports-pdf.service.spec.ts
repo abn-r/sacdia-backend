@@ -1,4 +1,5 @@
 import { AnnualReportsPdfService } from './annual-reports-pdf.service';
+import { loadPdfKit } from '../common/utils/pdfkit-loader';
 
 describe('AnnualReportsPdfService year label fallback', () => {
   it('labels the PDF by the UTC start year when computed data has no label, whatever the server timezone', async () => {
@@ -55,6 +56,23 @@ describe('AnnualReportsPdfService year label fallback', () => {
 
 const countPages = (pdf: Buffer): number =>
   (pdf.toString('latin1').match(/\/Type \/Page(?!s)/g) ?? []).length;
+
+/** Records every string passed to `doc.text` while `run` generates the PDF. */
+async function captureText(run: () => Promise<unknown>): Promise<string[]> {
+  const proto = loadPdfKit().prototype;
+  const original = proto.text;
+  const lines: string[] = [];
+  proto.text = function (this: unknown, text: unknown, ...rest: unknown[]) {
+    if (typeof text === 'string') lines.push(text);
+    return original.call(this, text, ...rest);
+  };
+  try {
+    await run();
+  } finally {
+    proto.text = original;
+  }
+  return lines;
+}
 
 function buildRealService(computedOverrides: Record<string, unknown> = {}) {
   const report = {
@@ -122,5 +140,27 @@ describe('AnnualReportsPdfService pagination', () => {
       { current: 1, total: 2 },
       { current: 2, total: 2 },
     ]);
+  });
+});
+
+describe('AnnualReportsPdfService directiva roles', () => {
+  it('prints Spanish role labels and falls back to the slug for unknown roles', async () => {
+    const { service } = buildRealService({
+      directiva: [
+        { role: 'treasurer', user_id: '1', name: 'Ana' },
+        { role: 'secretary', user_id: '2', name: 'Beto' },
+        { role: 'counselor', user_id: '3', name: 'Dani' },
+      ],
+    });
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '  Tesorero: Ana',
+        '  Secretario: Beto',
+        '  counselor: Dani',
+      ]),
+    );
   });
 });
