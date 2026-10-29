@@ -215,7 +215,7 @@ describe('monthly report artifact constants', () => {
       '2026/08/22222222-2222-4222-8222-222222222222/' + `${REPORT_ID}.pdf`,
     );
     expect(MONTHLY_REPORT_PDF_TEMPLATE_VERSION).toBe(
-      'monthly-report-v2-three-page',
+      'monthly-report-v3-three-page',
     );
   });
 });

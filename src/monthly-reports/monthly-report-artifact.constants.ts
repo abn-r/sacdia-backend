@@ -1,5 +1,5 @@
 export const MONTHLY_REPORT_PDF_TEMPLATE_VERSION =
-  'monthly-report-v2-three-page';
+  'monthly-report-v3-three-page';
 
 export function buildMonthlyReportPdfKey(input: {
   reportId: string;
