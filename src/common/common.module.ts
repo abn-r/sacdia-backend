@@ -105,6 +105,7 @@ import { PostRegistrationRowService } from './services/post-registration-row.ser
     EcclesiasticalYearService,
     ClubCycleReadinessService,
     CountryAgePolicyService,
+    PostRegistrationRowService,
     // ==========================================
     // EXCEPTION FILTERS — registered via DI so I18nService can be injected.
     // Order: AllExceptionsFilter registered FIRST (lower priority),
