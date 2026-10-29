@@ -659,6 +659,7 @@ export class NotificationsService {
       body: d.notification_log.body,
       type: d.notification_log.type,
       target_type: d.notification_log.target_type,
+      target_id: this.inboxTargetId(d.notification_log, callerUserId),
       source: d.notification_log.source,
     }));
 
@@ -669,6 +670,28 @@ export class NotificationsService {
       limit: safeLimit,
       totalPages: Math.ceil(total / safeLimit),
     };
+  }
+
+  /**
+   * `target_id` as the inbox may show it. Only ids the recipient already
+   * works with: a club section (`club_section`, `section_role`) so the app can
+   * open the right section, and the recipient's OWN user id (`user`; any other
+   * user id is dropped). Everything else (`all`, `global_role` whose id is a
+   * union OR a local field, unknown types) is null.
+   */
+  private inboxTargetId(
+    log: { target_type: string; target_id: string | null },
+    callerUserId: string,
+  ): string | null {
+    switch (log.target_type) {
+      case 'club_section':
+      case 'section_role':
+        return log.target_id ?? null;
+      case 'user':
+        return log.target_id === callerUserId ? log.target_id : null;
+      default:
+        return null;
+    }
   }
 
   async getAuthorizedClubTargets(

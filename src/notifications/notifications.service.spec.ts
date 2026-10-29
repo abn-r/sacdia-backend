@@ -1102,6 +1102,93 @@ describe('NotificationsService', () => {
       expect(result.total).toBe(1);
     });
 
+    describe('regular user inbox target_id', () => {
+      const delivery = (
+        target_type: string,
+        target_id: string | null,
+        log_id = 1,
+      ) => ({
+        delivery_id: `delivery-${log_id}`,
+        log_id,
+        user_id: CALLER_ID,
+        read_at: null,
+        created_at: new Date('2026-10-28T15:04:00.000Z'),
+        notification_log: {
+          log_id,
+          title: 'T',
+          body: 'B',
+          type: 'X',
+          target_type,
+          target_id,
+          source: 'membership_requests:new_request',
+          created_at: new Date(),
+        },
+      });
+
+      const history = async (rows: ReturnType<typeof delivery>[]) => {
+        mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(
+          false,
+        );
+        mockPrismaService.notification_deliveries.findMany.mockResolvedValue(
+          rows,
+        );
+        mockPrismaService.notification_deliveries.count.mockResolvedValue(
+          rows.length,
+        );
+        return service.getNotificationHistory(CALLER_ID, 1, 20);
+      };
+
+      it('exposes the club section id for section_role and club_section, next to the unchanged fields', async () => {
+        const result = await history([
+          delivery('section_role', '166', 1),
+          delivery('club_section', '42', 2),
+        ]);
+
+        expect(result.data[0]).toEqual({
+          delivery_id: 'delivery-1',
+          read_at: null,
+          created_at: new Date('2026-10-28T15:04:00.000Z'),
+          log_id: 1,
+          title: 'T',
+          body: 'B',
+          type: 'X',
+          target_type: 'section_role',
+          target_id: '166',
+          source: 'membership_requests:new_request',
+        });
+        expect(result.data[1]).toMatchObject({
+          target_type: 'club_section',
+          target_id: '42',
+        });
+      });
+
+      it('exposes the recipient own user id, and drops any other user id', async () => {
+        const result = await history([
+          delivery('user', CALLER_ID, 1),
+          delivery('user', '00000000-0000-0000-0000-0000000000ff', 2),
+        ]);
+
+        expect(result.data[0].target_id).toBe(CALLER_ID);
+        expect(result.data[1].target_id).toBeNull();
+      });
+
+      it('nulls target_id for all, global_role, unknown types and missing ids', async () => {
+        const result = await history([
+          delivery('all', null, 1),
+          delivery('global_role', '7', 2),
+          delivery('something_new', '9', 3),
+          delivery('section_role', null, 4),
+        ]);
+
+        expect(result.data.map((item) => item.target_id)).toEqual([
+          null,
+          null,
+          null,
+          null,
+        ]);
+      });
+    });
+
     it('admin user with local-field scope should include system logs delivered to that territory and exclude others', async () => {
       mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
