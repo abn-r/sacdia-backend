@@ -9,7 +9,11 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { directivaRoleLabel } from '../common/constants/club-directiva-roles';
 import { loadPdfKit } from '../common/utils/pdfkit-loader';
-import { drawPageFooters, ensureSpace } from '../common/pdf/report-pdf-helpers';
+import {
+  drawPageFooters,
+  ensureSpace,
+  formatManualValue,
+} from '../common/pdf/report-pdf-helpers';
 import { AnnualComputedData } from './annual-reports.service';
 import { buildAnnualReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
 
@@ -150,7 +154,7 @@ export class AnnualReportsPdfService {
 
     // ── Section 5: Missionary ──
     this.drawSectionTitle(doc, t('section_titles.missionary'));
-    this.drawMissionary(doc, computed, manual, t);
+    this.drawMissionary(doc, computed, manual);
 
     // ── Section 6: Ranking ──
     this.drawSectionTitle(doc, t('section_titles.ranking'));
@@ -294,21 +298,6 @@ export class AnnualReportsPdfService {
       t('summary.months_reported'),
       String(computed.months_reported ?? 0),
     );
-    this.drawKeyValue(
-      doc,
-      t('summary.total_activities'),
-      String(computed.activities?.total ?? 0),
-    );
-    this.drawKeyValue(
-      doc,
-      t('summary.honors_completed'),
-      String(computed.honors?.completed ?? 0),
-    );
-    this.drawKeyValue(
-      doc,
-      t('summary.honors_started'),
-      String(computed.honors?.started ?? 0),
-    );
 
     const baptized =
       (manual['baptized_this_year'] as number | undefined) ??
@@ -329,18 +318,25 @@ export class AnnualReportsPdfService {
       }
     }
 
-    if (manual['annual_achievements_description']) {
-      doc.moveDown(0.3);
-      doc.font('Helvetica-Bold').text('Logros del año:', PAGE_MARGIN, doc.y);
-      doc
-        .font('Helvetica')
-        .text(
-          String(manual['annual_achievements_description']),
-          PAGE_MARGIN + 10,
-          doc.y,
-          { width: CONTENT_WIDTH - 10 },
-        );
-    }
+    doc.moveDown(0.3);
+    doc.font('Helvetica-Bold').text('Reuniones:', PAGE_MARGIN, doc.y);
+    doc.font('Helvetica');
+    this.drawKeyValue(
+      doc,
+      'Reuniones de planificación',
+      formatManualValue(manual['planning_meetings']),
+    );
+    this.drawKeyValue(
+      doc,
+      'Reuniones de padres',
+      formatManualValue(manual['parent_meetings']),
+    );
+
+    this.drawTextBlock(
+      doc,
+      'Logros del año:',
+      manual['annual_achievements_description'],
+    );
   }
 
   private drawTeachings(
@@ -435,7 +431,6 @@ export class AnnualReportsPdfService {
     doc: PDFKit.PDFDocument,
     computed: AnnualComputedData,
     manual: Record<string, unknown>,
-    t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     doc.fontSize(9).font('Helvetica');
 
@@ -443,45 +438,28 @@ export class AnnualReportsPdfService {
       (manual['baptized_this_year'] as number | undefined) ??
       computed.missionary?.baptized_total ??
       0;
-    const totalBaptized = manual['total_baptized'] as number | undefined;
 
     this.drawKeyValue(doc, 'Bautizados en el año', String(baptized));
-    if (totalBaptized !== undefined) {
-      this.drawKeyValue(
-        doc,
-        'Total bautizados acumulado',
-        String(totalBaptized),
-      );
-    }
-
-    const camporees = manual['camporees_attended'] as number | undefined;
-    if (camporees !== undefined) {
-      this.drawKeyValue(doc, 'Campamentos asistidos', String(camporees));
-    }
-
-    const allInvestitures = manual['all_investitures_completed'];
-    if (allInvestitures !== undefined) {
-      this.drawKeyValue(
-        doc,
-        'Todas las investiduras completadas',
-        allInvestitures ? 'Sí' : 'No',
-      );
-    }
-
-    if (manual['community_service_description']) {
-      doc.moveDown(0.3);
-      doc
-        .font('Helvetica-Bold')
-        .text('Servicio comunitario:', PAGE_MARGIN, doc.y);
-      doc
-        .font('Helvetica')
-        .text(
-          String(manual['community_service_description']),
-          PAGE_MARGIN + 10,
-          doc.y,
-          { width: CONTENT_WIDTH - 10 },
-        );
-    }
+    this.drawKeyValue(
+      doc,
+      'Total bautizados acumulado',
+      formatManualValue(manual['total_baptized']),
+    );
+    this.drawKeyValue(
+      doc,
+      'Campamentos asistidos',
+      formatManualValue(manual['camporees_attended']),
+    );
+    this.drawKeyValue(
+      doc,
+      'Todas las investiduras completadas',
+      formatManualValue(manual['all_investitures_completed']),
+    );
+    this.drawTextBlock(
+      doc,
+      'Servicio comunitario:',
+      manual['community_service_description'],
+    );
   }
 
   private drawRanking(
@@ -579,6 +557,20 @@ export class AnnualReportsPdfService {
       x: PAGE_MARGIN,
       width: CONTENT_WIDTH,
     });
+  }
+
+  private drawTextBlock(
+    doc: PDFKit.PDFDocument,
+    label: string,
+    value: unknown,
+  ) {
+    doc.moveDown(0.3);
+    doc.font('Helvetica-Bold').text(label, PAGE_MARGIN, doc.y);
+    doc
+      .font('Helvetica')
+      .text(formatManualValue(value), PAGE_MARGIN + 10, doc.y, {
+        width: CONTENT_WIDTH - 10,
+      });
   }
 
   private drawKeyValue(doc: PDFKit.PDFDocument, label: string, value: string) {

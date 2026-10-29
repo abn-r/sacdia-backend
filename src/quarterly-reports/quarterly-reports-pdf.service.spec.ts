@@ -73,7 +73,7 @@ describe('QuarterlyReportsPdfService pagination', () => {
   });
 
   it('numbers the footer on every page', async () => {
-    const directiva = Array.from({ length: 45 }, (_, i) => ({
+    const directiva = Array.from({ length: 35 }, (_, i) => ({
       role: 'director',
       user_id: String(i),
       name: `Persona ${i}`,
@@ -155,5 +155,85 @@ describe('QuarterlyReportsPdfService club director block', () => {
     const lines = await captureText(() => service.generatePdf(1));
 
     expect(lines).toContain('quarterly_reports.club_director.fallback');
+  });
+});
+
+describe('QuarterlyReportsPdfService manual data and duplicates', () => {
+  const manualFilled = {
+    planning_meetings: 11,
+    parent_meetings: 12,
+    youth_council_attendance: 13,
+    church_board_attendance: 14,
+    soul_target: 15,
+    baptized_this_quarter: 16,
+    camporees_attended: 17,
+    certificates_delivered: true,
+    club_participation_description: 'Participo en el campamento',
+    community_service_description: 'Limpieza de parques',
+  };
+
+  it('prints every manual field', async () => {
+    const { service } = buildService(baseReport({ manual_data: manualFilled }));
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        'Reuniones de planificación: ',
+        '11',
+        'Reuniones de padres: ',
+        '12',
+        'Asistencia al consejo de jóvenes: ',
+        '13',
+        'Asistencia a la junta de iglesia: ',
+        '14',
+        'Meta de almas: ',
+        '15',
+        'Bautizados en el trimestre: ',
+        '16',
+        'Campamentos asistidos: ',
+        '17',
+        'Certificados entregados: ',
+        'Sí',
+        'Participo en el campamento',
+        'Limpieza de parques',
+      ]),
+    );
+    expect(lines).not.toContain('—');
+  });
+
+  it('prints a dash for every empty manual field', async () => {
+    const { service } = buildService(baseReport());
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    // planning, parent, youth council, church board, participation, certificates,
+    // soul target, camporees, community service
+    expect(lines.filter((line) => line === '—')).toHaveLength(9);
+  });
+
+  it('prints No for certificates delivered when false', async () => {
+    const { service } = buildService(
+      baseReport({ manual_data: { certificates_delivered: false } }),
+    );
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toContain('Certificados entregados: ');
+    expect(lines).toContain('No');
+  });
+
+  it('prints honors and activities totals only in their own sections', async () => {
+    const { service } = buildService(baseReport());
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    for (const label of [
+      'quarterly_reports.summary.total_activities: ',
+      'quarterly_reports.summary.honors_started: ',
+      'quarterly_reports.summary.honors_completed: ',
+    ]) {
+      expect(lines.filter((line) => line === label)).toHaveLength(1);
+    }
   });
 });

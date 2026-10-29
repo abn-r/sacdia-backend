@@ -47,3 +47,18 @@ export function drawPageFooters(
   }
   doc.fillColor('#000000');
 }
+
+/** Printed in place of a manual field that has no data, so forms read complete. */
+export const EMPTY_FIELD = '—';
+
+/**
+ * Formats a manual-data value for the printed report: numbers as is, booleans
+ * as Sí/No, text trimmed, and anything empty as an em dash.
+ */
+export function formatManualValue(value: unknown): string {
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+  if (typeof value === 'number')
+    return Number.isFinite(value) ? String(value) : EMPTY_FIELD;
+  if (typeof value === 'string') return value.trim() || EMPTY_FIELD;
+  return EMPTY_FIELD;
+}

@@ -74,7 +74,10 @@ async function captureText(run: () => Promise<unknown>): Promise<string[]> {
   return lines;
 }
 
-function buildRealService(computedOverrides: Record<string, unknown> = {}) {
+function buildRealService(
+  computedOverrides: Record<string, unknown> = {},
+  manualData: Record<string, unknown> = {},
+) {
   const report = {
     annual_report_id: 1,
     computed_data: {
@@ -90,7 +93,7 @@ function buildRealService(computedOverrides: Record<string, unknown> = {}) {
       top_achievers: [],
       ...computedOverrides,
     },
-    manual_data: {},
+    manual_data: manualData,
     club: {
       name: 'Club',
       churches: { name: 'Iglesia' },
@@ -192,5 +195,69 @@ describe('AnnualReportsPdfService club director block', () => {
     const lines = await captureText(() => service.generatePdf(1));
 
     expect(lines).toContain('annual_reports.club_director.fallback');
+  });
+});
+
+describe('AnnualReportsPdfService manual data and duplicates', () => {
+  it('prints every manual field', async () => {
+    const { service } = buildRealService(
+      {},
+      {
+        planning_meetings: 21,
+        parent_meetings: 22,
+        baptized_this_year: 23,
+        total_baptized: 24,
+        camporees_attended: 25,
+        all_investitures_completed: true,
+        annual_achievements_description: 'Medalla distrital',
+        community_service_description: 'Jornadas de limpieza',
+      },
+    );
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        'Reuniones de planificación: ',
+        '21',
+        'Reuniones de padres: ',
+        '22',
+        'Bautizados en el año: ',
+        '23',
+        'Total bautizados acumulado: ',
+        '24',
+        'Campamentos asistidos: ',
+        '25',
+        'Todas las investiduras completadas: ',
+        'Sí',
+        'Medalla distrital',
+        'Jornadas de limpieza',
+      ]),
+    );
+    expect(lines).not.toContain('—');
+  });
+
+  it('prints a dash for every empty manual field', async () => {
+    const { service } = buildRealService();
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    // planning, parent, achievements, total baptized, camporees, investitures,
+    // community service
+    expect(lines.filter((line) => line === '—')).toHaveLength(7);
+  });
+
+  it('prints honors and activities totals only in their own sections', async () => {
+    const { service } = buildRealService();
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    for (const label of [
+      'annual_reports.summary.total_activities: ',
+      'annual_reports.summary.honors_started: ',
+      'annual_reports.summary.honors_completed: ',
+    ]) {
+      expect(lines.filter((line) => line === label)).toHaveLength(1);
+    }
   });
 });
