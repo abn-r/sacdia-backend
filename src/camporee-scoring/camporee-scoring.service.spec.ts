@@ -1658,6 +1658,7 @@ describe('CamporeeScoringService', () => {
         section_name: 'Conquistadores',
         total_awarded_points: '180.00',
         total_max_points: '200.00',
+        scored_events_count: 2,
         percentage: '90.00',
       },
       {
@@ -1677,8 +1678,18 @@ describe('CamporeeScoringService', () => {
     });
 
     expect(result.rows).toEqual([
-      expect.objectContaining({ rank: 1, club_section_id: 7, percentage: 90 }),
-      expect.objectContaining({ rank: 2, club_section_id: 8, percentage: 75 }),
+      expect.objectContaining({
+        rank: 1,
+        club_section_id: 7,
+        percentage: 90,
+        scored_events_count: 2,
+      }),
+      expect.objectContaining({
+        rank: 2,
+        club_section_id: 8,
+        percentage: 75,
+        scored_events_count: 0,
+      }),
     ]);
   });
 
