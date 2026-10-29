@@ -107,16 +107,19 @@ function ensureSpace(
 
 function drawHeader(doc: PDFKit.PDFDocument, spec: OrderDocumentSpec): number {
   const width = contentWidth(doc);
+  const titleW = width * 0.62;
+  doc.font('Helvetica-Bold').fontSize(20);
+  // A long title may wrap: place the subtitle under however many lines it takes.
+  const titleH = doc.heightOfString(spec.title, { width: titleW });
   doc
-    .font('Helvetica-Bold')
-    .fontSize(20)
     .fillColor(ORDER_PDF_COLORS.primary)
-    .text(spec.title, PAGE_X, PAGE_TOP, { width: width * 0.62 });
+    .text(spec.title, PAGE_X, PAGE_TOP, { width: titleW });
+  doc.font('Helvetica').fontSize(10);
+  const subtitleY = PAGE_TOP + titleH + 4;
+  const subtitleH = doc.heightOfString(spec.subtitle, { width: titleW });
   doc
-    .font('Helvetica')
-    .fontSize(10)
     .fillColor(ORDER_PDF_COLORS.muted)
-    .text(spec.subtitle, PAGE_X, PAGE_TOP + 26, { width: width * 0.62 });
+    .text(spec.subtitle, PAGE_X, subtitleY, { width: titleW });
 
   // Status pill on the right, folio below it.
   const tone = TONES[spec.status.tone];
@@ -124,19 +127,17 @@ function drawHeader(doc: PDFKit.PDFDocument, spec: OrderDocumentSpec): number {
   const pillW = doc.widthOfString(spec.status.label) + 20;
   const pillX = PAGE_X + width - pillW;
   doc.roundedRect(pillX, PAGE_TOP, pillW, 20, 10).fill(tone.bg);
-  doc
-    .fillColor(tone.fg)
-    .text(spec.status.label, pillX, PAGE_TOP + 6, {
-      width: pillW,
-      align: 'center',
-    });
+  doc.fillColor(tone.fg).text(spec.status.label, pillX, PAGE_TOP + 6, {
+    width: pillW,
+    align: 'center',
+  });
   doc
     .font('Helvetica-Bold')
     .fontSize(16)
     .fillColor(ORDER_PDF_COLORS.ink)
     .text(spec.folio, PAGE_X, PAGE_TOP + 28, { width, align: 'right' });
 
-  const y = PAGE_TOP + 58;
+  const y = Math.max(PAGE_TOP + 58, subtitleY + subtitleH + 10);
   doc
     .moveTo(PAGE_X, y)
     .lineTo(PAGE_X + width, y)

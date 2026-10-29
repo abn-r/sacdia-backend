@@ -83,7 +83,7 @@ describe('CamporeeOrderPdfService', () => {
     expect(buffer.length).toBeGreaterThan(500);
     expect(buffer.subarray(0, 4).toString('latin1')).toBe('%PDF');
     const text = pdfText(buffer);
-    expect(text).toContain('ORDEN DE PEDIDO DE CAMPOREE');
+    expect(text).toContain('PEDIDO DE CAMPOREE');
     expect(text).toContain('no es comprobante fiscal');
     expect(CAMPOREE_ORDER_PDF_LEGEND).toContain('Orden de pedido de camporee');
   });

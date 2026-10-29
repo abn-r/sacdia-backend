@@ -92,7 +92,7 @@ export class CamporeeOrderPdfService {
     const money = (centavos: number) =>
       formatOrderMoney(centavos, model.currency);
     drawOrderDocument(doc, {
-      title: 'ORDEN DE PEDIDO DE CAMPOREE',
+      title: 'PEDIDO DE CAMPOREE',
       subtitle: model.local_field_name,
       folio: model.folio_reference,
       status: STATUS[model.status] ?? {
