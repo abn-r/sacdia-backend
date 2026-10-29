@@ -198,6 +198,22 @@ describe('AnnualReportsService generate on demand', () => {
     jest.useRealTimers();
   });
 
+  describe('regenerate', () => {
+    it('refuses to recompute a finalized report', async () => {
+      const service = makeService();
+      const computeSpy = jest.spyOn(service, 'computeData');
+      mockPrisma.annual_reports.findUnique.mockResolvedValue({
+        annual_report_id: 5,
+        status: 'finalized',
+      });
+
+      await expect(service.regenerate(5)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'ANNUAL_REPORT_NOT_DRAFT' }),
+      });
+      expect(computeSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('generateOnDemand', () => {
     it('creates the draft when missing and computes its data', async () => {
       const service = makeService();

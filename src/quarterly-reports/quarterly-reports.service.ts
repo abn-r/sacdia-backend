@@ -601,6 +601,10 @@ export class QuarterlyReportsService {
     if (!report) {
       throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_NOT_FOUND);
     }
+    // A finalized report is frozen: recomputing would change what was signed off.
+    if (report.status !== 'draft') {
+      throw new AppBadRequestException(ErrorCode.QUARTERLY_REPORT_NOT_DRAFT);
+    }
 
     const computed = await this.computeData(
       report.club_id,
