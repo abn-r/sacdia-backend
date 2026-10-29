@@ -15,7 +15,7 @@
   },
   "section_titles": {
     "summary": "1. RESUMEN DEL TRIMESTRE",
-    "teachings": "2. ENSENANZAS",
+    "teachings": "2. ENSEÑANZAS",
     "activities": "3. ACTIVIDADES DEL CLUB",
     "finances": "4. FINANZAS",
     "missionary": "5. ACTIVIDAD MISIONERA"
@@ -39,14 +39,14 @@
     "archived": "Archivado"
   },
   "secretary": {
-    "header": "Informacion del Director/a",
+    "header": "Información del Director/a",
     "name": "Nombre",
     "email": "Email",
-    "fallback": "No hay informacion disponible."
+    "fallback": "No hay información disponible."
   },
-  "footer": "Generado por SACDIA | Pagina {current} de {total}",
+  "footer": "Generado por SACDIA | Página {current} de {total}",
   "bool": {
-    "true": "Si",
+    "true": "Sí",
     "false": "No",
     "null": "N/A"
   }

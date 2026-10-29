@@ -1,37 +1,37 @@
 {
   "quarter_labels": {
-    "1": "1o Trimestre",
-    "2": "2o Trimestre",
-    "3": "3o Trimestre",
-    "4": "4o Trimestre"
+    "1": "1º Trimestre",
+    "2": "2º Trimestre",
+    "3": "3º Trimestre",
+    "4": "4º Trimestre"
   },
   "header": {
-    "title": "RELATORIO TRIMESTRAL DO CLUBE",
+    "title": "RELATÓRIO TRIMESTRAL DO CLUBE",
     "club_type": "Clube de {type}",
     "district": "Distrito",
     "church": "Igreja",
     "club": "Clube",
-    "period": "Periodo"
+    "period": "Período"
   },
   "section_titles": {
     "summary": "1. RESUMO DO TRIMESTRE",
     "teachings": "2. ENSINAMENTOS",
     "activities": "3. ATIVIDADES DO CLUBE",
-    "finances": "4. FINANCAS",
-    "missionary": "5. ATIVIDADE MISSIONARIA"
+    "finances": "4. FINANÇAS",
+    "missionary": "5. ATIVIDADE MISSIONÁRIA"
   },
   "summary": {
     "member_count": "Quantidade de membros",
     "months_covered": "Meses cobertos",
     "total_activities": "Total de atividades",
-    "honors_completed": "Especialidades concluidas",
+    "honors_completed": "Especialidades concluídas",
     "honors_started": "Especialidades iniciadas"
   },
   "finances": {
     "total_income": "Total de receitas",
     "total_expenses": "Total de despesas",
     "quarter_balance": "Saldo do trimestre",
-    "transaction_count": "Total de transacoes"
+    "transaction_count": "Total de transações"
   },
   "status": {
     "draft": "Rascunho",
@@ -39,15 +39,15 @@
     "archived": "Arquivado"
   },
   "secretary": {
-    "header": "Informacoes do Diretor/a",
+    "header": "Informações do Diretor/a",
     "name": "Nome",
     "email": "Email",
-    "fallback": "Nenhuma informacao disponivel."
+    "fallback": "Nenhuma informação disponível."
   },
-  "footer": "Gerado por SACDIA | Pagina {current} de {total}",
+  "footer": "Gerado por SACDIA | Página {current} de {total}",
   "bool": {
     "true": "Sim",
-    "false": "Nao",
+    "false": "Não",
     "null": "N/A"
   }
 }

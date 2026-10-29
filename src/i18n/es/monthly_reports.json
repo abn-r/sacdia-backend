@@ -29,8 +29,8 @@
     "month": "Mes"
   },
   "section_titles": {
-    "administration": "1. ADMINISTRACION",
-    "teachings": "2. ENSENANZAS",
+    "administration": "1. ADMINISTRACIÓN",
+    "teachings": "2. ENSEÑANZAS",
     "activities": "3. ACTIVIDADES DEL CLUB",
     "finances": "4. FINANZAS",
     "missionary": "5. ACTIVIDAD MISIONERA",
@@ -40,12 +40,12 @@
     "directiva": "Directiva",
     "no_directiva": "No hay directiva registrada",
     "member_count": "Cantidad de miembros",
-    "meeting_days": "Dias de reunion",
+    "meeting_days": "Días de reunión",
     "not_specified": "No especificado",
     "meetings_header": "Juntas y reuniones",
-    "planning_meetings": "Reuniones de planificacion",
+    "planning_meetings": "Reuniones de planificación",
     "parent_meetings": "Reuniones de padres",
-    "youth_council_attendance": "Asistencia consejo de jovenes",
+    "youth_council_attendance": "Asistencia consejo de jóvenes",
     "church_board_attendance": "Asistencia junta de iglesia"
   },
   "teachings": {
@@ -57,14 +57,14 @@
     "status_column": "Estado",
     "completed": "Completada",
     "in_progress": "En progreso",
-    "more_rows": "...y {count} mas"
+    "more_rows": "…y {count} más"
   },
   "activities": {
     "total": "Total de actividades",
     "date_column": "Fecha",
     "activity_column": "Actividad",
     "type_column": "Tipo",
-    "more_rows": "...y {count} mas"
+    "more_rows": "…y {count} más"
   },
   "finances": {
     "total_income": "Total ingresos",
@@ -76,30 +76,30 @@
   "missionary": {
     "soul_target": "Blanco de almas",
     "unbaptized_members": "Miembros no bautizados",
-    "receiving_bible_studies": "Recibiendo estudios biblicos",
-    "weekly_bible_instruction": "Instruccion biblica semanal",
-    "bible_studies_given": "Se dieron estudios biblicos",
-    "literature_distributed": "Se distribuyo literatura",
+    "receiving_bible_studies": "Recibiendo estudios bíblicos",
+    "weekly_bible_instruction": "Instrucción bíblica semanal",
+    "bible_studies_given": "Se dieron estudios bíblicos",
+    "literature_distributed": "Se distribuyó literatura",
     "baptized_this_month": "Bautizados este mes",
     "baptized_total": "Total bautizados acumulado",
     "certificates_delivered": "Certificados entregados",
     "members_have_booklet": "Miembros tienen libreta",
     "booklet_requirements_signed": "Requisitos de libreta firmados",
-    "club_participation": "Participacion del club"
+    "club_participation": "Participación del club"
   },
   "service": {
     "header": "Servicio comunitario",
-    "fallback": "Sin descripcion de servicio comunitario para este mes."
+    "fallback": "Sin descripción de servicio comunitario para este mes."
   },
   "secretary": {
-    "header": "Informacion del Secretario/a",
+    "header": "Información del Secretario/a",
     "name": "Nombre",
     "email": "Email",
-    "fallback": "No hay informacion del secretario disponible."
+    "fallback": "No hay información del secretario disponible."
   },
-  "footer": "Generado por SACDIA | Pagina {current} de {total}",
+  "footer": "Generado por SACDIA | Página {current} de {total}",
   "bool": {
-    "true": "Si",
+    "true": "Sí",
     "false": "No",
     "null": "N/A"
   }

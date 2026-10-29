@@ -2,7 +2,7 @@
   "month_names": {
     "1": "Janeiro",
     "2": "Fevereiro",
-    "3": "Marco",
+    "3": "Março",
     "4": "Abril",
     "5": "Maio",
     "6": "Junho",
@@ -21,86 +21,86 @@
     "treasurer": "Tesoureiro/a"
   },
   "header": {
-    "title": "RELATORIO MENSAL DO CLUBE",
+    "title": "RELATÓRIO MENSAL DO CLUBE",
     "club_type": "Clube de {type}",
     "district": "Distrito",
     "church": "Igreja",
     "club": "Clube",
-    "month": "Mes"
+    "month": "Mês"
   },
   "section_titles": {
-    "administration": "1. ADMINISTRACAO",
+    "administration": "1. ADMINISTRAÇÃO",
     "teachings": "2. ENSINAMENTOS",
     "activities": "3. ATIVIDADES DO CLUBE",
-    "finances": "4. FINANCAS",
-    "missionary": "5. ATIVIDADE MISSIONARIA",
-    "service": "6. SERVICO"
+    "finances": "4. FINANÇAS",
+    "missionary": "5. ATIVIDADE MISSIONÁRIA",
+    "service": "6. SERVIÇO"
   },
   "administration": {
     "directiva": "Diretoria",
     "no_directiva": "Nenhuma diretoria registrada",
     "member_count": "Quantidade de membros",
-    "meeting_days": "Dias de reuniao",
-    "not_specified": "Nao especificado",
-    "meetings_header": "Reunioes e assembleias",
-    "planning_meetings": "Reunioes de planejamento",
-    "parent_meetings": "Reunioes de pais",
-    "youth_council_attendance": "Presenca no conselho jovem",
-    "church_board_attendance": "Presenca na junta da igreja"
+    "meeting_days": "Dias de reunião",
+    "not_specified": "Não especificado",
+    "meetings_header": "Reuniões e assembleias",
+    "planning_meetings": "Reuniões de planejamento",
+    "parent_meetings": "Reuniões de pais",
+    "youth_council_attendance": "Presença no conselho jovem",
+    "church_board_attendance": "Presença na junta da igreja"
   },
   "teachings": {
-    "honors_started": "Especialidades iniciadas este mes",
-    "honors_completed": "Especialidades concluidas este mes",
+    "honors_started": "Especialidades iniciadas este mês",
+    "honors_completed": "Especialidades concluídas este mês",
     "detail_header": "Detalhe das especialidades",
     "honor_column": "Especialidade",
     "member_column": "Membro",
     "status_column": "Status",
-    "completed": "Concluida",
+    "completed": "Concluída",
     "in_progress": "Em andamento",
-    "more_rows": "...e {count} mais"
+    "more_rows": "…e mais {count}"
   },
   "activities": {
     "total": "Total de atividades",
     "date_column": "Data",
     "activity_column": "Atividade",
     "type_column": "Tipo",
-    "more_rows": "...e {count} mais"
+    "more_rows": "…e mais {count}"
   },
   "finances": {
     "total_income": "Total de receitas",
     "total_expenses": "Total de despesas",
-    "month_balance": "Saldo do mes",
-    "transaction_count": "Total de transacoes",
+    "month_balance": "Saldo do mês",
+    "transaction_count": "Total de transações",
     "club_total_balance": "Saldo total do clube"
   },
   "missionary": {
     "soul_target": "Meta de almas",
-    "unbaptized_members": "Membros nao batizados",
-    "receiving_bible_studies": "Recebendo estudos biblicos",
-    "weekly_bible_instruction": "Instrucao biblica semanal",
-    "bible_studies_given": "Estudos biblicos ministrados",
-    "literature_distributed": "Literatura distribuida",
-    "baptized_this_month": "Batizados este mes",
+    "unbaptized_members": "Membros não batizados",
+    "receiving_bible_studies": "Recebendo estudos bíblicos",
+    "weekly_bible_instruction": "Instrução bíblica semanal",
+    "bible_studies_given": "Estudos bíblicos ministrados",
+    "literature_distributed": "Literatura distribuída",
+    "baptized_this_month": "Batizados este mês",
     "baptized_total": "Total de batizados acumulado",
     "certificates_delivered": "Certificados entregues",
     "members_have_booklet": "Membros com caderneta",
     "booklet_requirements_signed": "Requisitos da caderneta assinados",
-    "club_participation": "Participacao do clube"
+    "club_participation": "Participação do clube"
   },
   "service": {
-    "header": "Servico comunitario",
-    "fallback": "Sem descricao de servico comunitario para este mes."
+    "header": "Serviço comunitário",
+    "fallback": "Sem descrição de serviço comunitário para este mês."
   },
   "secretary": {
-    "header": "Informacoes do Secretario/a",
+    "header": "Informações do Secretário/a",
     "name": "Nome",
     "email": "Email",
-    "fallback": "Nenhuma informacao do secretario disponivel."
+    "fallback": "Nenhuma informação do secretário disponível."
   },
-  "footer": "Gerado por SACDIA | Pagina {current} de {total}",
+  "footer": "Gerado por SACDIA | Página {current} de {total}",
   "bool": {
     "true": "Sim",
-    "false": "Nao",
+    "false": "Não",
     "null": "N/A"
   }
 }
