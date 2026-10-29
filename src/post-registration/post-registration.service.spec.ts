@@ -484,6 +484,7 @@ describe('PostRegistrationService', () => {
 
     it('should reuse existing club assignment and class enrollment on retry', async () => {
       transactionMock.club_role_assignments.findFirst
+        .mockResolvedValueOnce(null) // no active role already held in the selected section
         .mockResolvedValueOnce(null) // existingSameType check → no duplicate in a different club
         .mockResolvedValueOnce({ assignment_id: 'assignment-existing' }); // existingAssignment → retry found
       transactionMock.enrollments.findUnique.mockResolvedValue({
@@ -568,13 +569,15 @@ describe('PostRegistrationService', () => {
     });
 
     it('should reject a new club selection when the user already has another pending request', async () => {
-      transactionMock.club_role_assignments.findFirst.mockResolvedValueOnce({
-        assignment_id: 'pending-other-section',
-        user_id: userId,
-        club_section_id: 99,
-        status: 'pending',
-        active: true,
-      });
+      transactionMock.club_role_assignments.findFirst
+        .mockResolvedValueOnce(null) // no active role already held in the selected section
+        .mockResolvedValueOnce({
+          assignment_id: 'pending-other-section',
+          user_id: userId,
+          club_section_id: 99,
+          status: 'pending',
+          active: true,
+        });
 
       await expect(
         service.completeStep3(userId, dto, ownerActor),
@@ -587,6 +590,48 @@ describe('PostRegistrationService', () => {
       ).not.toHaveBeenCalled();
       expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
       expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts an active role already held in the selected section as the club selection', async () => {
+      transactionMock.club_role_assignments.findFirst.mockResolvedValueOnce({
+        assignment_id: 'director-assignment',
+        user_id: userId,
+        club_section_id: dto.club_section_id,
+        status: 'active',
+        active: true,
+      });
+
+      const result = await service.completeStep3(userId, dto, ownerActor);
+
+      expect(result.status).toBe('success');
+      expect(
+        transactionMock.club_role_assignments.findFirst,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: userId,
+            active: true,
+            status: 'active',
+            club_section_id: dto.club_section_id,
+          }),
+        }),
+      );
+      expect(
+        transactionMock.club_role_assignments.create,
+      ).not.toHaveBeenCalled();
+      expect(
+        transactionMock.club_role_assignments.update,
+      ).not.toHaveBeenCalled();
+      expect(mockRoleEligibility.assertAssignment).not.toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { user_id: userId },
+          data: expect.objectContaining({ complete: true }),
+        }),
+      );
+      expect(
+        mockMembershipRequestsService.notifyNewRequestCreated,
+      ).not.toHaveBeenCalled();
     });
 
     it('should notify section reviewers when a pending membership request is created', async () => {
@@ -824,6 +869,7 @@ describe('PostRegistrationService', () => {
         code: 'P2002',
       });
       transactionMock.club_role_assignments.findFirst
+        .mockResolvedValueOnce(null) // no active role already held in the selected section
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           assignment_id: 'assignment-recovered',
@@ -835,7 +881,7 @@ describe('PostRegistrationService', () => {
       expect(result.status).toBe('success');
       expect(
         transactionMock.club_role_assignments.findFirst,
-      ).toHaveBeenCalledTimes(2);
+      ).toHaveBeenCalledTimes(3);
     });
 
     it('should deactivate other active same-year enrollments when switching classes', async () => {

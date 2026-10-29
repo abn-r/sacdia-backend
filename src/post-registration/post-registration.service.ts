@@ -560,6 +560,39 @@ export class PostRegistrationService {
       throw new AppBadRequestException(ErrorCode.POST_REG_CLUB_NOT_FOUND);
     }
 
+    const assignmentSelect = {
+      assignment_id: true,
+      user_id: true,
+      club_section_id: true,
+      active: true,
+      status: true,
+    } satisfies Prisma.club_role_assignmentsSelect;
+
+    // A user who already holds an ACTIVE role in the selected section (e.g. a
+    // director created by a seed or by an admin, who never went through
+    // post-registration) has already joined that club: the existing role
+    // satisfies the club selection. No member request is created and nobody
+    // is notified. Choosing another section of the same club type still
+    // conflicts below.
+    const existingRoleInSelectedSection =
+      await tx.club_role_assignments.findFirst({
+        where: {
+          user_id: params.userId,
+          active: true,
+          status: 'active',
+          [params.clubInstanceField]: params.clubInstanceId,
+        },
+        select: assignmentSelect,
+        orderBy: { start_date: 'desc' },
+      });
+
+    if (existingRoleInSelectedSection) {
+      return {
+        assignment: existingRoleInSelectedSection,
+        shouldNotifyReviewers: false,
+      };
+    }
+
     const currentAssignmentIdentity = {
       role_id: params.roleId,
       ecclesiastical_year_id: params.ecclesiasticalYearId,
@@ -600,14 +633,6 @@ export class PostRegistrationService {
     // --- Create or reactivate assignment with pending status ---
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 8);
-
-    const assignmentSelect = {
-      assignment_id: true,
-      user_id: true,
-      club_section_id: true,
-      active: true,
-      status: true,
-    } satisfies Prisma.club_role_assignmentsSelect;
 
     const where: Prisma.club_role_assignmentsWhereInput = {
       user_id: params.userId,

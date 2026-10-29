@@ -108,7 +108,7 @@ const baseline = {
     'effectiveWhere|T09|3|3bf28a58f9e2',
   'notifications/notifications.service.ts': 'effectiveWhere|T09|2|12585f37569f',
   'post-registration/post-registration.service.ts':
-    'workflowWhere|allowlist|3|4dfdc41976e6',
+    'workflowWhere|allowlist|4|4744c04f28ac',
   'qr/qr.service.ts': 'effectiveWhere|T08|3|fb413b5f37eb',
   'quarterly-reports/quarterly-reports.service.ts':
     'effectiveWhere|T09|3|1c55ef0ad8fe',
