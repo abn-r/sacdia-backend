@@ -279,6 +279,9 @@ export class PostRegistrationService {
             ecclesiastical_year_id: currentYear.year_id,
             active: true,
             cross_type_enrollment: false,
+            // Imported certificates are permanent records and must stay
+            // active (enrollments_historical_certificate_shape).
+            record_kind: { not: 'HISTORICAL_CERTIFICATE' },
             NOT: { class_id: resolvedClassId },
           },
           data: {

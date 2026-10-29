@@ -518,6 +518,7 @@ describe('PostRegistrationService', () => {
           ecclesiastical_year_id: 2026,
           active: true,
           cross_type_enrollment: false,
+          record_kind: { not: 'HISTORICAL_CERTIFICATE' },
           NOT: { class_id: dto.class_id },
         },
         data: {
@@ -893,6 +894,7 @@ describe('PostRegistrationService', () => {
           ecclesiastical_year_id: 2026,
           active: true,
           cross_type_enrollment: false,
+          record_kind: { not: 'HISTORICAL_CERTIFICATE' },
           NOT: { class_id: dto.class_id },
         },
         data: {
