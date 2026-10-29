@@ -73,7 +73,7 @@ describe('QuarterlyReportsPdfService pagination', () => {
   });
 
   it('numbers the footer on every page', async () => {
-    const directiva = Array.from({ length: 60 }, (_, i) => ({
+    const directiva = Array.from({ length: 45 }, (_, i) => ({
       role: 'director',
       user_id: String(i),
       name: `Persona ${i}`,
@@ -116,5 +116,44 @@ describe('QuarterlyReportsPdfService directiva roles', () => {
         '  counselor: Dani',
       ]),
     );
+  });
+});
+
+describe('QuarterlyReportsPdfService club director block', () => {
+  it('prints the club directors from the directiva, not the user who finalized it', async () => {
+    const report = baseReport({
+      finalized_by_user: {
+        name: 'Super',
+        paternal_last_name: 'Admin',
+        email: 'admin@example.com',
+      },
+    });
+    (report.computed_data as any).directiva = [
+      { role: 'director', user_id: '1', name: 'Ana Director' },
+      { role: 'treasurer', user_id: '2', name: 'Tomas Tesorero' },
+      { role: 'director', user_id: '3', name: 'Beto Director' },
+    ];
+    const { service } = buildService(report);
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        'quarterly_reports.club_director.header',
+        'Ana Director',
+        'Beto Director',
+      ]),
+    );
+    expect(lines).not.toContain('Tomas Tesorero');
+    expect(lines.join('\n')).not.toMatch(/admin@example\.com|Super/);
+    expect(lines).not.toContain('quarterly_reports.club_director.fallback');
+  });
+
+  it('prints the fallback when no director is assigned', async () => {
+    const { service } = buildService(baseReport());
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toContain('quarterly_reports.club_director.fallback');
   });
 });

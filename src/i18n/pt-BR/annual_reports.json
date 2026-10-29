@@ -38,11 +38,9 @@
     "finalized": "Finalizado",
     "archived": "Arquivado"
   },
-  "secretary": {
-    "header": "Informações do Diretor/a",
-    "name": "Nome",
-    "email": "Email",
-    "fallback": "Nenhuma informação disponível."
+  "club_director": {
+    "header": "Diretor/a do clube",
+    "fallback": "Sem diretor atribuído"
   },
   "footer": "Gerado por SACDIA | Página {current} de {total}",
   "bool": {

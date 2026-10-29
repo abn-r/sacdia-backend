@@ -51,15 +51,6 @@ export class QuarterlyReportsPdfService {
             districts: { select: { name: true } },
           },
         },
-        finalized_by_user: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-            email: true,
-          },
-        },
       },
     });
 
@@ -147,7 +138,7 @@ export class QuarterlyReportsPdfService {
     this.drawSectionTitle(doc, t('section_titles.missionary'));
     this.drawMissionary(doc, computed, manual, t);
 
-    this.drawDirectorInfo(doc, reportData.finalized_by_user, t);
+    this.drawDirectorInfo(doc, computed.directiva, t);
     this.drawFooter(doc, t);
 
     doc.end();
@@ -451,15 +442,18 @@ export class QuarterlyReportsPdfService {
     }
   }
 
+  /** Names of the directiva members whose role is `director`, in order. */
+  private directorNames(
+    directiva: { role: string; name: string }[] | null | undefined,
+  ): string[] {
+    return (directiva ?? [])
+      .filter((member) => member.role === 'director' && member.name)
+      .map((member) => member.name);
+  }
+
   private drawDirectorInfo(
     doc: PDFKit.PDFDocument,
-    finalizer: {
-      user_id: string;
-      name: string | null;
-      paternal_last_name: string | null;
-      maternal_last_name: string | null;
-      email: string | null;
-    } | null,
+    directiva: { role: string; name: string }[] | null | undefined,
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     ensureSpace(doc, 90);
@@ -470,22 +464,17 @@ export class QuarterlyReportsPdfService {
     doc
       .fontSize(10)
       .font('Helvetica-Bold')
-      .text(t('secretary.header'), PAGE_MARGIN, doc.y);
+      .text(t('club_director.header'), PAGE_MARGIN, doc.y);
     doc.moveDown(0.3);
     doc.fontSize(9).font('Helvetica');
 
-    if (finalizer) {
-      const fullName = [
-        finalizer.name,
-        finalizer.paternal_last_name,
-        finalizer.maternal_last_name,
-      ]
-        .filter(Boolean)
-        .join(' ');
-      this.drawKeyValue(doc, t('secretary.name'), fullName || 'N/A');
-      this.drawKeyValue(doc, t('secretary.email'), finalizer.email ?? 'N/A');
-    } else {
-      doc.text(t('secretary.fallback'), PAGE_MARGIN, doc.y);
+    const names = this.directorNames(directiva);
+    if (names.length === 0) {
+      doc.text(t('club_director.fallback'), PAGE_MARGIN, doc.y);
+      return;
+    }
+    for (const name of names) {
+      doc.text(name, PAGE_MARGIN, doc.y);
     }
   }
 

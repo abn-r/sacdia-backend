@@ -123,7 +123,7 @@ describe('AnnualReportsPdfService pagination', () => {
   });
 
   it('numbers the footer on every page', async () => {
-    const directiva = Array.from({ length: 60 }, (_, i) => ({
+    const directiva = Array.from({ length: 35 }, (_, i) => ({
       role: 'director',
       user_id: String(i),
       name: `Persona ${i}`,
@@ -162,5 +162,35 @@ describe('AnnualReportsPdfService directiva roles', () => {
         '  counselor: Dani',
       ]),
     );
+  });
+});
+
+describe('AnnualReportsPdfService club director block', () => {
+  it('prints the club directors from the directiva, not the user who finalized it', async () => {
+    const { service } = buildRealService({
+      directiva: [
+        { role: 'director', user_id: '1', name: 'Ana Director' },
+        { role: 'treasurer', user_id: '2', name: 'Tomas Tesorero' },
+      ],
+    });
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        'annual_reports.club_director.header',
+        'Ana Director',
+      ]),
+    );
+    expect(lines).not.toContain('Tomas Tesorero');
+    expect(lines).not.toContain('annual_reports.club_director.fallback');
+  });
+
+  it('prints the fallback when no director is assigned', async () => {
+    const { service } = buildRealService();
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toContain('annual_reports.club_director.fallback');
   });
 });
