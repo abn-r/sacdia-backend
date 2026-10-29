@@ -213,6 +213,7 @@ describe('AnnualRankingsService', () => {
     expect(result.data[0]).toMatchObject({
       rank_position: 1,
       club_enrollment_id: 'enrollment-high',
+      club_section_id: 1012,
       club_id: 12,
       club_name: 'Club Oro',
       current_points: 9000,

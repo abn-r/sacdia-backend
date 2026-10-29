@@ -159,6 +159,7 @@ export class AnnualRankingsService {
         return {
           rank_position: 0,
           club_enrollment_id: row.club_enrollment_id,
+          club_section_id: row.club_enrollment.club_section.club_section_id,
           club_id: club?.club_id ?? 0,
           club_name: club?.name ?? 'Club',
           club_type_id: row.club_type_id,
