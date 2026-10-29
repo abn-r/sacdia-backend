@@ -252,9 +252,13 @@ export class QrService {
 
     const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
-      size: 'A6',
+      // The card layout is drawn at fixed positions for A5 (419.53 x 595.28 pt).
+      // A6 cut the QR and pushed every later block onto its own page.
+      size: 'A5',
       layout: 'portrait',
-      margins: { top: 24, bottom: 24, left: 24, right: 24 },
+      // Bottom margin 0: blocks near the footer are placed absolutely and
+      // must not trigger pdfkit's automatic page break.
+      margins: { top: 24, bottom: 0, left: 24, right: 24 },
       info: {
         Title: `${QR_CARD_TITLE} - ${card.member.full_name}`,
         Author: 'SACDIA',
@@ -916,8 +920,8 @@ export class QrService {
     const palette = QrService.SECTION_PALETTE[seccion];
     const folio = QrService.deriveFolio(card.token);
 
-    // A6 portrait: 419.53 x 595.28 pt. Inner width with 18pt margins on each side.
-    const pageW = 419.53;
+    // A5 portrait (419.53 x 595.28 pt). Inner width with 18pt margins on each side.
+    const pageW = doc.page.width;
     const marginH = 18;
     const contentW = pageW - marginH * 2;
 
@@ -1136,7 +1140,7 @@ export class QrService {
     // Emergency contact is staff-only (validate/scan). Not printed.
 
     // ── 5. Footer ─────────────────────────────────────────────────────────
-    const pageH = 595.28;
+    const pageH = doc.page.height;
     const footerY = pageH - 42;
 
     doc

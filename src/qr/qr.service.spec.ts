@@ -503,6 +503,9 @@ describe('QrService', () => {
 
     expect(Buffer.isBuffer(buffer)).toBe(true);
     expect(buffer.length).toBeGreaterThan(500);
+    // The whole card fits on one page (A6 overflowed onto 14 pages).
+    const pdfText = buffer.toString('latin1');
+    expect(pdfText.match(/\/Type \/Page\b/g)).toHaveLength(1);
     // avatar is null — fetch must never be called
     expect(fetchSpy).not.toHaveBeenCalled();
 
