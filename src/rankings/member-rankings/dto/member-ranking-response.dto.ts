@@ -62,7 +62,14 @@ export class MemberRankingResponseDto {
     return {
       enrollment_id: row.enrollment_id,
       user_id: row.user_id,
-      member_name: row.user?.name ?? '',
+      member_name: [
+        row.user?.name,
+        row.user?.paternal_last_name,
+        row.user?.maternal_last_name,
+      ]
+        .map((part) => (typeof part === 'string' ? part.trim() : ''))
+        .filter(Boolean)
+        .join(' '),
       club_section_id: row.club_section_id ?? null,
       section_name: row.club_section?.club_types?.name ?? null,
       class_score_pct:
