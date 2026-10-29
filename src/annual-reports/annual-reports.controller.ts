@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   Body,
+  HttpCode,
   UseGuards,
   Req,
   Res,
@@ -24,7 +25,7 @@ import type { Response } from 'express';
 import { AnnualReportsService } from './annual-reports.service';
 import { AnnualReportsPdfService } from './annual-reports-pdf.service';
 import { monthlyReportContentDisposition } from '../monthly-reports/monthly-report-download-filename';
-import { UpdateAnnualManualDataDto } from './dto';
+import { GenerateAnnualReportDto, UpdateAnnualManualDataDto } from './dto';
 import {
   AuthorizationResource,
   RequirePermissions,
@@ -150,6 +151,44 @@ export class AnnualReportsController {
       id,
     );
     const data = await this.annualReportsService.updateManualData(id, dto);
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // ADMIN: Generate on demand
+  // ========================================
+
+  @Post('admin/annual-reports/generate')
+  @HttpCode(200)
+  @RequirePermissions('reports:update')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({
+    summary:
+      'Generar el informe anual de un club y año eclesiástico (admin). Crea el borrador si no existe y recalcula los datos si sigue en borrador; uno finalizado se devuelve sin cambios',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Informe anual (misma forma que GET por ID)',
+  })
+  @ApiResponse({ status: 400, description: 'Periodo futuro o datos inválidos' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Club fuera del alcance del usuario o sin reports:update',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Club inactivo/no encontrado o año eclesiástico no encontrado',
+  })
+  async generate(@Body() dto: GenerateAnnualReportDto, @Req() req: any) {
+    await this.annualReportsService.assertClubVisibleToActor(
+      req.user.sub,
+      dto.club_id,
+    );
+    const data = await this.annualReportsService.generateOnDemand(
+      dto.club_id,
+      dto.ecclesiastical_year_id,
+    );
     return { status: 'success', data };
   }
 

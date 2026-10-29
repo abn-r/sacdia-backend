@@ -3,8 +3,10 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AppBadRequestException,
+  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
+import { DEFAULT_AGE_TIMEZONE, calendarDateIn } from '../common/age/age.util';
 import { ErrorCode } from '../common/errors/error-codes';
 import { UpdateAnnualManualDataDto } from './dto';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -85,6 +87,35 @@ export class AnnualReportsService {
         status: 'draft',
       },
     });
+  }
+
+  // ========================================
+  // GENERATE ON DEMAND (admin: create the row if missing, compute if draft)
+  // ========================================
+
+  /**
+   * Creates the annual report for the club/ecclesiastical year when it does
+   * not exist and recomputes its data while it is a draft. A finalized or
+   * archived report is returned untouched (its snapshot is frozen). Returns the
+   * same shape as `getReport`. Callers must have checked club visibility first.
+   */
+  async generateOnDemand(clubId: number, ecclesiasticalYearId: number) {
+    const eccYear =
+      await this.validateEcclesiasticalYearExists(ecclesiasticalYearId);
+
+    // The year must have started (Mexico City civil day); nothing to report before.
+    const today = calendarDateIn(DEFAULT_AGE_TIMEZONE);
+    if (eccYear.start_date.getTime() > today.getTime()) {
+      throw new AppBadRequestException(ErrorCode.REPORT_PERIOD_IN_FUTURE);
+    }
+
+    const report = await this.getOrCreateDraft(clubId, ecclesiasticalYearId);
+
+    if (report.status === 'draft') {
+      await this.regenerate(report.annual_report_id);
+    }
+
+    return this.getReport(report.annual_report_id);
   }
 
   // ========================================
@@ -545,6 +576,37 @@ export class AnnualReportsService {
 
     if (!report) {
       throw new AppNotFoundException(ErrorCode.ANNUAL_REPORT_NOT_FOUND);
+    }
+  }
+
+  /**
+   * Admin routes that act on a club (no report id yet) call this first. Uses
+   * the same territorial scope as the list and the by-id routes. A missing or
+   * inactive club answers 404; an existing club outside the actor's scope 403.
+   */
+  async assertClubVisibleToActor(
+    userId: string,
+    clubId: number,
+  ): Promise<void> {
+    const club = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+      select: { club_id: true, active: true },
+    });
+
+    if (!club || !club.active) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_REPORT_CLUB_NOT_FOUND);
+    }
+
+    const clubWhere = await this.actorReportClubWhere(userId);
+    if (Object.keys(clubWhere).length === 0) return;
+
+    const visible = await this.prisma.clubs.findFirst({
+      where: { club_id: clubId, ...clubWhere },
+      select: { club_id: true },
+    });
+
+    if (!visible) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
   }
 
