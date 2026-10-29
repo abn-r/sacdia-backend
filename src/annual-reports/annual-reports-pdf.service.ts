@@ -302,12 +302,6 @@ export class AnnualReportsPdfService {
       String(computed.months_reported ?? 0),
     );
 
-    const baptized =
-      (manual['baptized_this_year'] as number | undefined) ??
-      computed.missionary?.baptized_total ??
-      0;
-    this.drawKeyValue(doc, t('summary.baptized_total'), String(baptized));
-
     if (computed.directiva && computed.directiva.length > 0) {
       doc.moveDown(0.3);
       doc.font('Helvetica-Bold').text('Directiva:', PAGE_MARGIN, doc.y);
