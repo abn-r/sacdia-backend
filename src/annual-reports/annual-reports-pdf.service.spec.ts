@@ -261,3 +261,20 @@ describe('AnnualReportsPdfService manual data and duplicates', () => {
     }
   });
 });
+
+describe('AnnualReportsPdfService header year label', () => {
+  const headerYear = async (yearLabel: string) => {
+    const { service } = buildRealService({ year_label: yearLabel });
+    const drawHeader = jest.spyOn(service as any, 'drawHeader');
+    await service.generatePdf(1);
+    return drawHeader.mock.calls[0][4];
+  };
+
+  it('shows a single year for reports stored with an equal range', async () => {
+    expect(await headerYear('2026–2026')).toBe('2026');
+  });
+
+  it('keeps a real range', async () => {
+    expect(await headerYear('2025–2026')).toBe('2025–2026');
+  });
+});

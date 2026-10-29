@@ -16,6 +16,7 @@ import {
   resolveReportVisibilityScopeForActor,
   type ReportVisibilityFilters,
 } from '../reports/report-visibility-scope';
+import { formatYearLabel } from './year-label';
 import {
   CLUB_DIRECTIVA_ROLES,
   directivaRoleOrder,
@@ -361,7 +362,10 @@ export class AnnualReportsService {
 
     return {
       ecclesiastical_year_id: ecclesiasticalYearId,
-      year_label: `${startDate.getUTCFullYear()}–${endDate.getUTCFullYear()}`,
+      year_label: formatYearLabel(
+        startDate.getUTCFullYear(),
+        endDate.getUTCFullYear(),
+      ),
       member_count: memberCount,
       months_reported: monthsReported,
       directiva,

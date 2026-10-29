@@ -107,7 +107,7 @@ describe('AnnualReportsService computeData year boundaries', () => {
 
       const data = await service.computeData(1, calendarYear.year_id);
 
-      expect(data.year_label).toBe('2026–2026');
+      expect(data.year_label).toBe('2026');
     });
   });
 

@@ -14,6 +14,7 @@ import {
   ensureSpace,
   formatManualValue,
 } from '../common/pdf/report-pdf-helpers';
+import { collapseYearLabel } from './year-label';
 import { AnnualComputedData } from './annual-reports.service';
 import { buildAnnualReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
 
@@ -38,7 +39,9 @@ function annualYearLabel(report: {
   const computed = report.computed_data;
   if (computed && typeof computed === 'object' && !Array.isArray(computed)) {
     const label = (computed as { year_label?: unknown }).year_label;
-    if (typeof label === 'string' && label.trim()) return label;
+    if (typeof label === 'string' && label.trim()) {
+      return collapseYearLabel(label);
+    }
   }
 
   const start = report.ecclesiastical_year?.start_date;
@@ -102,11 +105,11 @@ export class AnnualReportsPdfService {
     const churchName = (club?.churches?.name as string) ?? 'N/A';
     const districtName = (club?.districts?.name as string) ?? 'N/A';
     const clubName = (club?.name as string) ?? 'N/A';
-    const yearLabel =
-      computed.year_label ??
-      String(
-        reportData.ecclesiastical_year?.start_date?.getUTCFullYear() ?? 'N/A',
-      );
+    const yearLabel = computed.year_label
+      ? collapseYearLabel(computed.year_label)
+      : String(
+          reportData.ecclesiastical_year?.start_date?.getUTCFullYear() ?? 'N/A',
+        );
 
     const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
