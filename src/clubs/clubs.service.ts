@@ -217,6 +217,12 @@ export class ClubsService {
       throw new AppBadRequestException(ErrorCode.CLUB_SECTION_TYPES_REQUIRED);
     }
 
+    await this.assertLocationConsistent({
+      local_field_id: dto.local_field_id,
+      districlub_type_id: dto.districlub_type_id,
+      church_id: dto.church_id,
+    });
+
     const club = await this.prisma.$transaction(async (tx) => {
       const created = await tx.clubs.create({
         data: {
@@ -257,6 +263,36 @@ export class ClubsService {
       );
 
     return club;
+  }
+
+  /**
+   * The district must belong to the local field and the church to the
+   * district. Callers that resolve them by name (bulk import) could otherwise
+   * store a club with a mixed-up location.
+   */
+  private async assertLocationConsistent(location: {
+    local_field_id: number;
+    districlub_type_id: number;
+    church_id: number;
+  }) {
+    const [district, church] = await Promise.all([
+      this.prisma.districts.findUnique({
+        where: { districlub_type_id: location.districlub_type_id },
+        select: { local_field_id: true },
+      }),
+      this.prisma.churches.findUnique({
+        where: { church_id: location.church_id },
+        select: { districlub_type_id: true },
+      }),
+    ]);
+    if (
+      !district ||
+      !church ||
+      district.local_field_id !== location.local_field_id ||
+      church.districlub_type_id !== location.districlub_type_id
+    ) {
+      throw new AppBadRequestException(ErrorCode.CLUB_LOCATION_MISMATCH);
+    }
   }
 
   async update(clubId: number, dto: UpdateClubDto) {

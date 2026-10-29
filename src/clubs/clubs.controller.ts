@@ -148,7 +148,7 @@ export class ClubsController {
   @ApiResponse({
     status: 400,
     description:
-      'CLUB_SECTION_TYPES_REQUIRED si el array queda vacío y el catálogo no tiene Guías Mayores. CLUB_TYPE_NOT_FOUND si el catálogo está vacío o un id no existe. No se inventa un id GM.',
+      'CLUB_SECTION_TYPES_REQUIRED si el array queda vacío y el catálogo no tiene Guías Mayores. CLUB_TYPE_NOT_FOUND si el catálogo está vacío o un id no existe. No se inventa un id GM. CLUB_LOCATION_MISMATCH si el distrito no es del campo local o la iglesia no es del distrito.',
   })
   async create(@Body() dto: CreateClubDto, @Request() req: any) {
     return this.clubsService.create(dto, req.authorization);
