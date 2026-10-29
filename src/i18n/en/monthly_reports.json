@@ -15,9 +15,10 @@
   },
   "role_labels": {
     "director": "Director",
-    "subdirector": "Deputy Director",
-    "secretario": "Secretary",
-    "tesorero": "Treasurer"
+    "deputy-director": "Deputy Director",
+    "secretary": "Secretary",
+    "secretary-treasurer": "Secretary-Treasurer",
+    "treasurer": "Treasurer"
   },
   "header": {
     "title": "MONTHLY CLUB REPORT",

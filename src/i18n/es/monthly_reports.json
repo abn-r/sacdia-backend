@@ -15,9 +15,10 @@
   },
   "role_labels": {
     "director": "Director/a",
-    "subdirector": "Subdirector/a",
-    "secretario": "Secretario/a",
-    "tesorero": "Tesorero/a"
+    "deputy-director": "Subdirector/a",
+    "secretary": "Secretario/a",
+    "secretary-treasurer": "Secretario/a tesorero/a",
+    "treasurer": "Tesorero/a"
   },
   "header": {
     "title": "INFORME MENSUAL DEL CLUB",

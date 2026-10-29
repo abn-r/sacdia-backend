@@ -1315,3 +1315,56 @@ describe('MonthlyReportsService auto-generation catch-up', () => {
     },
   );
 });
+
+describe('MonthlyReportsService directiva', () => {
+  it('queries the real club role names and lists them by hierarchy', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        roles: { role_name: 'treasurer' },
+        users: {
+          user_id: 'u3',
+          name: 'Tesorera',
+          paternal_last_name: 'Uno',
+          maternal_last_name: null,
+        },
+      },
+      {
+        roles: { role_name: 'director' },
+        users: {
+          user_id: 'u1',
+          name: 'Directora',
+          paternal_last_name: 'Dos',
+          maternal_last_name: null,
+        },
+      },
+      {
+        roles: { role_name: 'secretary' },
+        users: {
+          user_id: 'u2',
+          name: 'Secretario',
+          paternal_last_name: 'Tres',
+          maternal_last_name: null,
+        },
+      },
+    ]);
+    const service = new MonthlyReportsService(
+      { club_role_assignments: { findMany } } as any,
+      {} as any,
+    );
+
+    const directiva = await (service as any).getDirectiva(7, 1);
+
+    expect(findMany.mock.calls[0][0].where.roles.role_name.in).toEqual([
+      'director',
+      'deputy-director',
+      'secretary',
+      'secretary-treasurer',
+      'treasurer',
+    ]);
+    expect(directiva.map((member: { role: string }) => member.role)).toEqual([
+      'director',
+      'secretary',
+      'treasurer',
+    ]);
+  });
+});

@@ -31,6 +31,10 @@ import {
   BackgroundJobName,
   MonthlyReportPdfPayload,
 } from '../background-jobs/background-jobs.types';
+import {
+  CLUB_DIRECTIVA_ROLES,
+  directivaRoleOrder,
+} from '../common/constants/club-directiva-roles';
 
 const MONTHLY_REPORT_REMINDER_SOURCE = 'monthly_reports:reminder';
 const AUTO_GENERATION_STATUS_BATCH_SIZE = 500;
@@ -1371,15 +1375,10 @@ export class MonthlyReportsService {
   }
 
   /**
-   * Get directiva members (director, subdirector, secretary, treasurer).
+   * Get directiva members (director, deputy director, secretary, treasurer).
    */
   private async getDirectiva(clubSectionId: number, yearId: number) {
-    const directivaRoles = [
-      'director',
-      'subdirector',
-      'secretario',
-      'tesorero',
-    ];
+    const directivaRoles = [...CLUB_DIRECTIVA_ROLES];
 
     const assignments = await this.prisma.club_role_assignments.findMany({
       where: {
@@ -1405,17 +1404,19 @@ export class MonthlyReportsService {
       },
     });
 
-    return assignments.map((a) => ({
-      role: a.roles.role_name,
-      user_id: a.users.user_id,
-      name: [
-        a.users.name,
-        a.users.paternal_last_name,
-        a.users.maternal_last_name,
-      ]
-        .filter(Boolean)
-        .join(' '),
-    }));
+    return assignments
+      .map((a) => ({
+        role: a.roles.role_name,
+        user_id: a.users.user_id,
+        name: [
+          a.users.name,
+          a.users.paternal_last_name,
+          a.users.maternal_last_name,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      }))
+      .sort((a, b) => directivaRoleOrder(a.role) - directivaRoleOrder(b.role));
   }
 
   /**

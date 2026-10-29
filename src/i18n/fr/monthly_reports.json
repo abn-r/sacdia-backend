@@ -14,10 +14,11 @@
     "12": "Décembre"
   },
   "role_labels": {
-    "director": "Directeur/rice",
-    "subdirector": "Directeur/rice adjoint/e",
-    "secretario": "Secrétaire",
-    "tesorero": "Trésorier/ère"
+    "director": "Directeur/trice",
+    "deputy-director": "Directeur/trice adjoint(e)",
+    "secretary": "Secrétaire",
+    "secretary-treasurer": "Secrétaire-trésorier/ère",
+    "treasurer": "Trésorier/ère"
   },
   "header": {
     "title": "RAPPORT MENSUEL DU CLUB",
