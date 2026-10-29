@@ -35,6 +35,7 @@ import { ClubCycleReadinessService } from './services/club-cycle-readiness.servi
 import { ProcessMemoryLoggerService } from './observability/process-memory-logger.service';
 import { CatalogsModule } from '../catalogs/catalogs.module';
 import { CountryAgePolicyService } from './age/country-age-policy.service';
+import { PostRegistrationRowService } from './services/post-registration-row.service';
 
 @Global()
 @Module({
@@ -144,6 +145,7 @@ import { CountryAgePolicyService } from './age/country-age-policy.service';
     EcclesiasticalYearService,
     ClubCycleReadinessService,
     CountryAgePolicyService,
+    PostRegistrationRowService,
   ],
 })
 export class CommonModule {}

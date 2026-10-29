@@ -10,6 +10,7 @@ import { AuthorizationContextVersionService } from '../common/authorization/auth
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
+import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 
 const GUARDIAN_ID = '9f1d9a40-79f0-4e0c-a8c7-5f0f1c7d9a11';
 
@@ -83,6 +84,7 @@ describe('PostRegistrationService', () => {
     users_pr: {
       findUnique: jest.fn().mockResolvedValue({ user_id: 'u' }),
       update: jest.fn().mockResolvedValue({}),
+      createMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
   });
 
@@ -101,7 +103,12 @@ describe('PostRegistrationService', () => {
   const mockPrismaService = {
     $transaction: jest.fn(),
     users: { findUnique: jest.fn(), update: jest.fn() },
-    users_pr: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+    users_pr: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      create: jest.fn(),
+      createMany: jest.fn(),
+    },
     emergency_contacts: {
       findMany: jest.fn(),
       create: jest.fn(),
@@ -149,6 +156,20 @@ describe('PostRegistrationService', () => {
 
     transactionMock = createTransactionMock();
 
+    // Default: the user already has a users_pr row (the common case).
+    mockPrismaService.users_pr.findUnique.mockReset().mockResolvedValue({
+      user_id: 'target-user-1',
+      complete: false,
+      profile_picture_complete: false,
+      personal_info_complete: false,
+      club_selection_complete: false,
+      date_completed: null,
+    });
+    mockPrismaService.users_pr.createMany.mockReset().mockResolvedValue({
+      count: 1,
+    });
+    mockPrismaService.users.findUnique.mockReset();
+
     mockPrismaService.$transaction.mockImplementation(
       (
         callback: (
@@ -160,6 +181,7 @@ describe('PostRegistrationService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PostRegistrationService,
+        PostRegistrationRowService,
         ClassAssignmentResolverService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: CountryAgePolicyService, useValue: mockCountryAgePolicy },
@@ -1017,6 +1039,216 @@ describe('PostRegistrationService', () => {
       expect(
         mockAuthorizationContextVersionService.bump,
       ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('lazy users_pr initialisation (user without a row)', () => {
+    const userId = '20a9a762-a4fa-49dd-93a6-3851e27f8b69';
+    const freshRow = {
+      user_id: userId,
+      complete: false,
+      profile_picture_complete: false,
+      personal_info_complete: false,
+      club_selection_complete: false,
+      date_completed: null,
+    };
+
+    /** First read: no row; after createMany the row exists. */
+    const givenNoRow = (db = mockPrismaService) => {
+      db.users_pr.findUnique
+        .mockReset()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(freshRow);
+    };
+
+    it('getStatus creates the row and reports nothing completed', async () => {
+      givenNoRow();
+      mockPrismaService.users.findUnique.mockResolvedValue({ active: true });
+
+      const result = await service.getStatus(userId, ownerActor);
+
+      expect(mockPrismaService.users_pr.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            user_id: userId,
+            complete: false,
+            profile_picture_complete: false,
+            personal_info_complete: false,
+            club_selection_complete: false,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      expect(result).toEqual({
+        status: 'success',
+        data: {
+          complete: false,
+          steps: {
+            profilePicture: false,
+            personalInfo: false,
+            clubSelection: false,
+          },
+          nextStep: 'profilePicture',
+          dateCompleted: null,
+        },
+      });
+    });
+
+    it('getStatus keeps POST_REG_NOT_INITIATED for a missing or deactivated user', async () => {
+      mockPrismaService.users_pr.findUnique.mockReset().mockResolvedValue(null);
+      mockPrismaService.users.findUnique.mockResolvedValue({ active: false });
+
+      await expect(service.getStatus(userId, ownerActor)).rejects.toMatchObject(
+        { code: ErrorCode.POST_REG_NOT_INITIATED },
+      );
+
+      mockPrismaService.users.findUnique.mockResolvedValue(null);
+      await expect(service.getStatus(userId, ownerActor)).rejects.toMatchObject(
+        { code: ErrorCode.POST_REG_NOT_INITIATED },
+      );
+      expect(mockPrismaService.users_pr.createMany).not.toHaveBeenCalled();
+    });
+
+    it('getStatus does not touch the row of a user that already has one', async () => {
+      await service.getStatus('target-user-1', ownerActor);
+
+      expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
+      expect(mockPrismaService.users_pr.createMany).not.toHaveBeenCalled();
+    });
+
+    it('step 1 completes for a user without a row', async () => {
+      givenNoRow();
+      // 1st lookup: photo check; 2nd: users.active check inside ensure.
+      mockPrismaService.users.findUnique
+        .mockResolvedValueOnce({ user_image: 'profile.jpg' })
+        .mockResolvedValueOnce({ active: true });
+
+      const result = await service.completeStep1(userId, ownerActor);
+
+      expect(result).toMatchObject({ status: 'success' });
+      expect(mockPrismaService.users_pr.createMany).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.users_pr.update).toHaveBeenCalledWith({
+        where: { user_id: userId },
+        data: { profile_picture_complete: true },
+      });
+    });
+
+    it('step 1 still requires the photo before creating anything', async () => {
+      givenNoRow();
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_image: null,
+      });
+
+      await expect(
+        service.completeStep1(userId, ownerActor),
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_PHOTO_REQUIRED });
+      expect(mockPrismaService.users_pr.createMany).not.toHaveBeenCalled();
+    });
+
+    it('step 2 completes for a user without a row', async () => {
+      givenNoRow();
+      mockPrismaService.users.findUnique
+        .mockResolvedValueOnce({
+          gender: 'M',
+          birthday: new Date('2009-03-15'),
+          baptism: true,
+        })
+        .mockResolvedValueOnce({ active: true });
+      mockPrismaService.emergency_contacts.count.mockResolvedValue(1);
+
+      await service.completeStep2(userId, ownerActor);
+
+      expect(mockPrismaService.users_pr.createMany).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.users_pr.update).toHaveBeenCalledWith({
+        where: { user_id: userId },
+        data: { personal_info_complete: true },
+      });
+    });
+
+    it('step 3 creates the row inside the transaction before the final update', async () => {
+      givenNoRow(transactionMock as never);
+      transactionMock.users.findUnique.mockResolvedValue({
+        active: true,
+        birthday: new Date('2016-01-01'),
+      });
+
+      const result = await service.completeStep3(
+        userId,
+        {
+          country_id: 1,
+          union_id: 2,
+          local_field_id: 3,
+          club_section_id: 10,
+          class_id: 5,
+        },
+        ownerActor,
+      );
+
+      expect(result).toMatchObject({ status: 'success' });
+      expect(transactionMock.users_pr.createMany).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.users_pr.createMany).not.toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).toHaveBeenCalledWith({
+        where: { user_id: userId },
+        data: {
+          club_selection_complete: true,
+          complete: true,
+          date_completed: expect.any(Date),
+        },
+      });
+    });
+
+    it('step 3 for a deactivated user fails before any club write', async () => {
+      transactionMock.users_pr.findUnique.mockResolvedValue(null);
+      transactionMock.users.findUnique.mockResolvedValue({ active: false });
+
+      await expect(
+        service.completeStep3(
+          userId,
+          {
+            country_id: 1,
+            union_id: 2,
+            local_field_id: 3,
+            club_section_id: 10,
+          },
+          ownerActor,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_NOT_INITIATED });
+      expect(
+        transactionMock.club_role_assignments.create,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('guardian-only exit creates the row for a user without one', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        birthday: new Date('1985-05-10'),
+        country_id: 1,
+        account: [{ id: 'acc-1' }],
+      });
+      givenNoRow(transactionMock as never);
+      transactionMock.users.findUnique.mockResolvedValue({ active: true });
+
+      const result = await service.completeGuardianOnly(
+        userId,
+        {},
+        { actorUserId: userId, isOwner: true },
+      );
+
+      expect(result).toMatchObject({ data: { mode: 'guardian_only' } });
+      expect(transactionMock.users_pr.createMany).toHaveBeenCalledTimes(1);
+      expect(transactionMock.users_pr.update).toHaveBeenCalled();
+    });
+
+    it('cancel pending request ensures the row before resetting it', async () => {
+      givenNoRow();
+      mockPrismaService.users.findUnique.mockResolvedValue({ active: true });
+      mockMembershipRequestsService.cancelPendingForUser.mockResolvedValue({});
+
+      await service.cancelPendingMembershipRequest(userId, ownerActor);
+
+      expect(mockPrismaService.users_pr.createMany).toHaveBeenCalledTimes(1);
+      expect(
+        mockMembershipRequestsService.cancelPendingForUser,
+      ).toHaveBeenCalled();
     });
   });
 });
