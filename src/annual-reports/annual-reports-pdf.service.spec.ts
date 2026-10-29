@@ -52,3 +52,75 @@ describe('AnnualReportsPdfService year label fallback', () => {
     }
   });
 });
+
+const countPages = (pdf: Buffer): number =>
+  (pdf.toString('latin1').match(/\/Type \/Page(?!s)/g) ?? []).length;
+
+function buildRealService(computedOverrides: Record<string, unknown> = {}) {
+  const report = {
+    annual_report_id: 1,
+    computed_data: {
+      year_label: '2026',
+      member_count: 10,
+      months_reported: 4,
+      directiva: [] as { role: string; user_id: string; name: string }[],
+      honors: { started: 1, completed: 2 },
+      activities: { total: 3 },
+      finances: { income: 10, expenses: 5, balance: 5, transactions: 2 },
+      missionary: { baptized_total: 0 },
+      ranking_percentile: null,
+      top_achievers: [],
+      ...computedOverrides,
+    },
+    manual_data: {},
+    club: {
+      name: 'Club',
+      churches: { name: 'Iglesia' },
+      districts: { name: 'Distrito' },
+    },
+    ecclesiastical_year: null,
+    finalized_by_user: null,
+  };
+  const prisma = {
+    annual_reports: { findUnique: jest.fn().mockResolvedValue(report) },
+  };
+  const i18n = {
+    translate: jest.fn(
+      (key: string, opts?: { args?: Record<string, unknown> }) => key,
+    ),
+  };
+  const service = new AnnualReportsPdfService(
+    prisma as any,
+    i18n as any,
+    { getCurrentLocale: () => 'es' } as any,
+  );
+  return { service, i18n };
+}
+
+describe('AnnualReportsPdfService pagination', () => {
+  it('keeps a short report on a single page instead of forcing a break before finances', async () => {
+    const { service } = buildRealService();
+
+    expect(countPages(await service.generatePdf(1))).toBe(1);
+  });
+
+  it('numbers the footer on every page', async () => {
+    const directiva = Array.from({ length: 60 }, (_, i) => ({
+      role: 'director',
+      user_id: String(i),
+      name: `Persona ${i}`,
+    }));
+    const { service, i18n } = buildRealService({ directiva });
+
+    const pdf = await service.generatePdf(1);
+
+    expect(countPages(pdf)).toBe(2);
+    const footers = i18n.translate.mock.calls.filter(
+      ([key]) => key === 'annual_reports.footer',
+    );
+    expect(footers.map(([, opts]: any) => opts.args)).toEqual([
+      { current: 1, total: 2 },
+      { current: 2, total: 2 },
+    ]);
+  });
+});

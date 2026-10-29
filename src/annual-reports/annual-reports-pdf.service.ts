@@ -8,6 +8,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { loadPdfKit } from '../common/utils/pdfkit-loader';
+import { drawPageFooters, ensureSpace } from '../common/pdf/report-pdf-helpers';
 import { AnnualComputedData } from './annual-reports.service';
 import { buildAnnualReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
 
@@ -114,6 +115,7 @@ export class AnnualReportsPdfService {
     const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({
       size: 'LETTER',
+      bufferPages: true,
       margins: {
         top: PAGE_MARGIN,
         bottom: PAGE_MARGIN,
@@ -150,10 +152,8 @@ export class AnnualReportsPdfService {
     this.drawSectionTitle(doc, t('section_titles.activities'));
     this.drawActivities(doc, computed, t);
 
-    doc.addPage();
-
     // ── Section 4: Finances ──
-    this.drawSectionTitle(doc, t('section_titles.finances'));
+    this.drawSectionTitle(doc, t('section_titles.finances'), 70);
     this.drawFinances(doc, computed, intlLocale, t);
 
     // ── Section 5: Missionary ──
@@ -253,8 +253,16 @@ export class AnnualReportsPdfService {
     this.drawHorizontalLine(doc);
   }
 
-  private drawSectionTitle(doc: PDFKit.PDFDocument, title: string) {
-    if (doc.y > 680) doc.addPage();
+  /**
+   * `minContentHeight` is the room the section body needs below the title, so
+   * the title is never stranded at the bottom of a page.
+   */
+  private drawSectionTitle(
+    doc: PDFKit.PDFDocument,
+    title: string,
+    minContentHeight = 60,
+  ) {
+    ensureSpace(doc, 40 + minContentHeight);
 
     doc.moveDown(0.5);
     doc
@@ -516,6 +524,10 @@ export class AnnualReportsPdfService {
 
       let rowY = tableY + 12;
       for (const achiever of computed.top_achievers.slice(0, 10)) {
+        if (rowY + 12 > doc.page.height - doc.page.margins.bottom) {
+          doc.addPage();
+          rowY = doc.y;
+        }
         doc.text(achiever.name, colX[0], rowY, { width: colWidths[0] - 5 });
         doc.text(String(achiever.honors_count), colX[1], rowY, {
           width: colWidths[1] - 5,
@@ -538,6 +550,7 @@ export class AnnualReportsPdfService {
     } | null,
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
+    ensureSpace(doc, 90);
     doc.moveDown(1.5);
     this.drawHorizontalLine(doc);
     doc.moveDown(0.5);
@@ -568,21 +581,10 @@ export class AnnualReportsPdfService {
     doc: PDFKit.PDFDocument,
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
-    const range = (doc as any).bufferedPageRange?.() ?? { start: 0, count: 1 };
-    for (let i = range.start; i < range.start + range.count; i++) {
-      (doc as any).switchToPage?.(i);
-      doc
-        .fontSize(7)
-        .font('Helvetica')
-        .fillColor('#666666')
-        .text(
-          t('footer', { current: i + 1, total: range.count }),
-          PAGE_MARGIN,
-          740,
-          { width: CONTENT_WIDTH, align: 'center' },
-        );
-    }
-    doc.fillColor('#000000');
+    drawPageFooters(doc, (current, total) => t('footer', { current, total }), {
+      x: PAGE_MARGIN,
+      width: CONTENT_WIDTH,
+    });
   }
 
   private drawKeyValue(doc: PDFKit.PDFDocument, label: string, value: string) {
