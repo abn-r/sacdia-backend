@@ -8,6 +8,7 @@ describe('FieldPaymentOrderPdfService', () => {
 
   const model: FieldPaymentOrderPdfModel = {
     folio_reference: 'ORD20260007',
+    status: 'APPROVED',
     purpose_label: 'Seguro',
     concept: 'Seguro anual Conquistadores 2026',
     local_field_name: 'Asociación Metropolitana',

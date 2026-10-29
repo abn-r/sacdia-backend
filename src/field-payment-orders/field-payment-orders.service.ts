@@ -67,7 +67,9 @@ export class FieldPaymentOrdersService {
 
   /** Structured lifecycle events for dashboards/log-based counters. */
   private logEvent(event: string, payload: Record<string, unknown>) {
-    this.logger.log(JSON.stringify({ event: `field_payment_order.${event}`, ...payload }));
+    this.logger.log(
+      JSON.stringify({ event: `field_payment_order.${event}`, ...payload }),
+    );
   }
 
   // ── Create ────────────────────────────────────────────────────────────────
@@ -341,27 +343,29 @@ export class FieldPaymentOrdersService {
     const order = await this.expireIfDue(found);
     assertTransition(order.status as FieldPaymentOrderStatus, 'CANCELLED');
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.field_payment_orders.update({
-        where: { field_payment_order_id: orderId },
-        data: {
-          status: 'CANCELLED',
-          cancelled_by_id: actor.userId,
-          cancelled_at: new Date(),
-        },
+    return this.prisma
+      .$transaction(async (tx) => {
+        const updated = await tx.field_payment_orders.update({
+          where: { field_payment_order_id: orderId },
+          data: {
+            status: 'CANCELLED',
+            cancelled_by_id: actor.userId,
+            cancelled_at: new Date(),
+          },
+        });
+        await tx.field_payment_order_lines.updateMany({
+          where: { field_payment_order_id: orderId },
+          data: { active_guard: false },
+        });
+        return updated;
+      })
+      .then((updated) => {
+        this.logEvent('cancelled', {
+          order_id: orderId,
+          local_field_id: updated.local_field_id,
+        });
+        return updated;
       });
-      await tx.field_payment_order_lines.updateMany({
-        where: { field_payment_order_id: orderId },
-        data: { active_guard: false },
-      });
-      return updated;
-    }).then((updated) => {
-      this.logEvent('cancelled', {
-        order_id: orderId,
-        local_field_id: updated.local_field_id,
-      });
-      return updated;
-    });
   }
 
   // ── Review (Campo Local) ─────────────────────────────────────────────────
@@ -429,7 +433,11 @@ export class FieldPaymentOrdersService {
           });
 
           fulfillStarted = true;
-          await port.fulfill(tx, fresh as unknown as OrderForFulfillment, actor);
+          await port.fulfill(
+            tx,
+            fresh as unknown as OrderForFulfillment,
+            actor,
+          );
 
           await tx.field_payment_order_proofs.update({
             where: {
@@ -499,29 +507,31 @@ export class FieldPaymentOrdersService {
     }
 
     const now = new Date();
-    return this.prisma.$transaction(async (tx) => {
-      await tx.field_payment_order_proofs.update({
-        where: {
-          field_payment_order_proof_id: proof.field_payment_order_proof_id,
-        },
-        data: {
-          status: 'REJECTED',
-          reject_reason: reason.trim(),
-          reviewed_by_id: actor.userId,
-          reviewed_at: now,
-        },
+    return this.prisma
+      .$transaction(async (tx) => {
+        await tx.field_payment_order_proofs.update({
+          where: {
+            field_payment_order_proof_id: proof.field_payment_order_proof_id,
+          },
+          data: {
+            status: 'REJECTED',
+            reject_reason: reason.trim(),
+            reviewed_by_id: actor.userId,
+            reviewed_at: now,
+          },
+        });
+        return tx.field_payment_orders.update({
+          where: { field_payment_order_id: orderId },
+          data: { status: 'PROOF_REJECTED' },
+        });
+      })
+      .then((updated) => {
+        this.logEvent('rejected', {
+          order_id: orderId,
+          local_field_id: updated.local_field_id,
+        });
+        return updated;
       });
-      return tx.field_payment_orders.update({
-        where: { field_payment_order_id: orderId },
-        data: { status: 'PROOF_REJECTED' },
-      });
-    }).then((updated) => {
-      this.logEvent('rejected', {
-        order_id: orderId,
-        local_field_id: updated.local_field_id,
-      });
-      return updated;
-    });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -540,7 +550,9 @@ export class FieldPaymentOrdersService {
     return order;
   }
 
-  private buildScopeWhere(actor: OrderActor): Prisma.field_payment_ordersWhereInput {
+  private buildScopeWhere(
+    actor: OrderActor,
+  ): Prisma.field_payment_ordersWhereInput {
     if (actor.globalAccess) {
       return {};
     }
@@ -660,6 +672,7 @@ export class FieldPaymentOrdersService {
 
   private async buildPdfModel(order: {
     field_payment_order_id: string;
+    status: string;
     purpose: string;
     local_field_id: number;
     club_id: number;
@@ -749,11 +762,14 @@ export class FieldPaymentOrdersService {
 
     return {
       folio_reference: order.folio_reference,
+      status: order.status,
       purpose_label: PURPOSE_LABELS[order.purpose as OrderPurpose],
       concept,
-      local_field_name: localField?.name ?? `Campo Local ${order.local_field_id}`,
+      local_field_name:
+        localField?.name ?? `Campo Local ${order.local_field_id}`,
       club_name: club?.name ?? `Club ${order.club_id}`,
-      section_name: section?.club_types?.name ?? `Sección ${order.club_section_id}`,
+      section_name:
+        section?.club_types?.name ?? `Sección ${order.club_section_id}`,
       issued_by_name: nameOf(order.issued_by_id),
       issued_at: order.created_at,
       expires_at: order.expires_at,

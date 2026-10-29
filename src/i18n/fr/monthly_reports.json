@@ -14,10 +14,11 @@
     "12": "Décembre"
   },
   "role_labels": {
-    "director": "Directeur/rice",
-    "subdirector": "Directeur/rice adjoint/e",
-    "secretario": "Secrétaire",
-    "tesorero": "Trésorier/ère"
+    "director": "Directeur/trice",
+    "deputy-director": "Directeur/trice adjoint(e)",
+    "secretary": "Secrétaire",
+    "secretary-treasurer": "Secrétaire-trésorier/ère",
+    "treasurer": "Trésorier/ère"
   },
   "header": {
     "title": "RAPPORT MENSUEL DU CLUB",
@@ -70,7 +71,8 @@
     "total_expenses": "Total des dépenses",
     "month_balance": "Solde du mois",
     "transaction_count": "Total des transactions",
-    "club_total_balance": "Solde total du club"
+    "club_total_balance": "Solde total du club",
+    "movements_header": "Mouvements du mois"
   },
   "missionary": {
     "soul_target": "Objectif d’âmes",
@@ -94,7 +96,9 @@
     "header": "Informations du Secrétaire/Secrétaire",
     "name": "Nom",
     "email": "E-mail",
-    "fallback": "Aucune information sur le secrétaire disponible."
+    "fallback": "Aucune information sur le secrétaire disponible.",
+    "secretary_signature": "Signature du/de la secrétaire",
+    "director_signature": "Signature du directeur/de la directrice"
   },
   "footer": "Généré par SACDIA | Page {current} sur {total}",
   "bool": {

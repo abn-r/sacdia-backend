@@ -47,6 +47,7 @@ describe('pdfkit lazy loading', () => {
     expect(pdfkitLoaded).not.toHaveBeenCalled();
 
     const model: CamporeeOrderPdfModel = {
+      status: 'ISSUED',
       folio_reference: 'PED20260007',
       camporee_name: 'Camporee Conquistadores 2026',
       local_field_name: 'Asociacion Metropolitana',

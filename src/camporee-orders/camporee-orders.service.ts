@@ -37,10 +37,7 @@ import {
   type CamporeeOrderPdfModel,
 } from './pdf.service';
 import { CamporeeOrderProofService } from './proof.service';
-import {
-  assertTransition,
-  type CamporeeOrderStatus,
-} from './state-machine';
+import { assertTransition, type CamporeeOrderStatus } from './state-machine';
 
 export const CAMPOREE_ORDERS_EXPIRY_DAYS_KEY = 'camporee_orders.expiry_days';
 export const DEFAULT_CAMPOREE_ORDER_EXPIRY_DAYS = 15;
@@ -864,17 +861,18 @@ export class CamporeeOrdersService {
 
     return {
       folio_reference: order.folio_reference,
+      status: order.status,
       camporee_name:
         localCamporee?.name ??
         unionCamporee?.name ??
         (order.union_camporee_id
-          ? `Camporee de union ${order.union_camporee_id}`
+          ? `Camporee de unión ${order.union_camporee_id}`
           : `Camporee ${order.local_camporee_id}`),
       local_field_name:
         localField?.name ?? `Campo Local ${order.local_field_id}`,
       club_name: club?.name ?? `Club ${order.club_id}`,
       section_name:
-        section?.club_types?.name ?? `Seccion ${order.club_section_id}`,
+        section?.club_types?.name ?? `Sección ${order.club_section_id}`,
       issued_by_name: issuedByName,
       issued_at: order.created_at,
       expires_at: order.expires_at,

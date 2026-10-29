@@ -5,11 +5,11 @@
     "district": "Distrito",
     "church": "Iglesia",
     "club": "Club",
-    "year": "Ano Eclesiastico"
+    "year": "Año eclesiástico"
   },
   "section_titles": {
     "summary": "1. RESUMEN ANUAL",
-    "teachings": "2. ENSENANZAS",
+    "teachings": "2. ENSEÑANZAS",
     "activities": "3. ACTIVIDADES DEL CLUB",
     "finances": "4. FINANZAS",
     "missionary": "5. ACTIVIDAD MISIONERA",
@@ -18,19 +18,19 @@
   "summary": {
     "member_count": "Cantidad de miembros",
     "months_reported": "Meses con informes",
-    "total_activities": "Total de actividades en el ano",
-    "honors_completed": "Especialidades completadas en el ano",
-    "honors_started": "Especialidades iniciadas en el ano",
-    "baptized_total": "Total bautizados en el ano"
+    "total_activities": "Total de actividades en el año",
+    "honors_completed": "Especialidades completadas en el año",
+    "honors_started": "Especialidades iniciadas en el año",
+    "baptized_total": "Total bautizados en el año"
   },
   "finances": {
-    "total_income": "Total ingresos del ano",
-    "total_expenses": "Total egresos del ano",
+    "total_income": "Total ingresos del año",
+    "total_expenses": "Total egresos del año",
     "annual_balance": "Balance anual",
     "transaction_count": "Total de transacciones"
   },
   "ranking": {
-    "percentile": "Percentil de desempeno",
+    "percentile": "Percentil de desempeño",
     "top_achievers_header": "Miembros destacados"
   },
   "status": {
@@ -39,14 +39,14 @@
     "archived": "Archivado"
   },
   "secretary": {
-    "header": "Informacion del Director/a",
+    "header": "Información del Director/a",
     "name": "Nombre",
     "email": "Email",
-    "fallback": "No hay informacion disponible."
+    "fallback": "No hay información disponible."
   },
-  "footer": "Generado por SACDIA | Pagina {current} de {total}",
+  "footer": "Generado por SACDIA | Página {current} de {total}",
   "bool": {
-    "true": "Si",
+    "true": "Sí",
     "false": "No",
     "null": "N/A"
   }

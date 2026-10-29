@@ -447,10 +447,16 @@ export class MonthlyReportsPdfService {
         PAGE_X + 10,
         y + 34 + index * 32,
         columnWidth - 20,
+        { dashWhenEmpty: false },
       );
     }
     if (leaders.length > 5) {
-      this.drawOverflowNote(doc, PAGE_X + 10, y + 198, leaders.length - 5);
+      this.drawOverflowNote(
+        doc,
+        PAGE_X + 10,
+        y + 198,
+        t('activities.more_rows', { count: leaders.length - 5 }),
+      );
     }
 
     const rightX = PAGE_X + columnWidth + 12;
@@ -529,6 +535,7 @@ export class MonthlyReportsPdfService {
             : t('teachings.in_progress'),
       ]),
       6,
+      (count) => t('teachings.more_rows', { count }),
     );
   }
 
@@ -565,6 +572,7 @@ export class MonthlyReportsPdfService {
         this.blank(activity.type),
       ]),
       8,
+      (count) => t('activities.more_rows', { count }),
     );
   }
 
@@ -599,7 +607,7 @@ export class MonthlyReportsPdfService {
       y + 76,
       CONTENT_WIDTH,
       126,
-      t('finances.transaction_count'),
+      t('finances.movements_header'),
     );
     this.drawFieldLine(
       doc,
@@ -744,14 +752,23 @@ export class MonthlyReportsPdfService {
       y + 26,
       CONTENT_WIDTH / 2 - 10,
     );
-    this.drawFieldLine(doc, '', '', PAGE_X, y + 82, CONTENT_WIDTH / 2 - 10);
     this.drawFieldLine(
       doc,
+      t('secretary.secretary_signature'),
       '',
+      PAGE_X,
+      y + 82,
+      CONTENT_WIDTH / 2 - 10,
+      { dashWhenEmpty: false },
+    );
+    this.drawFieldLine(
+      doc,
+      t('secretary.director_signature'),
       '',
       PAGE_X + CONTENT_WIDTH / 2 + 10,
       y + 82,
       CONTENT_WIDTH / 2 - 10,
+      { dashWhenEmpty: false },
     );
   }
 
@@ -803,7 +820,7 @@ export class MonthlyReportsPdfService {
       .font('Helvetica-Bold')
       .fontSize(12)
       .fillColor(PDF_COLORS.ink)
-      .text(value, x + 8, y + height - 25, {
+      .text(value || '—', x + 8, y + height - 25, {
         width: width - 16,
         height: 18,
         ellipsis: true,
@@ -818,6 +835,7 @@ export class MonthlyReportsPdfService {
     columns: Array<{ label: string; width: number }>,
     rows: string[][],
     maxRows: number,
+    moreRowsText: (count: number) => string,
   ): void {
     const headerHeight = 22;
     const rowHeight = 22;
@@ -873,7 +891,7 @@ export class MonthlyReportsPdfService {
         doc,
         x,
         y + headerHeight + maxRows * rowHeight + 4,
-        rows.length - maxRows,
+        moreRowsText(rows.length - maxRows),
       );
     }
   }
@@ -885,7 +903,12 @@ export class MonthlyReportsPdfService {
     x: number,
     y: number,
     width: number,
+    options: { dashWhenEmpty?: boolean } = {},
   ): void {
+    // A labelled field with no data reads as "—"; signature and directiva
+    // lines stay blank to be filled by hand.
+    const shown =
+      !value && label && options.dashWhenEmpty !== false ? '—' : value;
     doc
       .font('Helvetica')
       .fontSize(7)
@@ -901,7 +924,7 @@ export class MonthlyReportsPdfService {
       .font('Helvetica')
       .fontSize(8)
       .fillColor(PDF_COLORS.ink)
-      .text(value, x, y + 12, { width, height: 10, ellipsis: true });
+      .text(shown, x, y + 12, { width, height: 10, ellipsis: true });
   }
 
   private drawWrappedValue(
@@ -923,13 +946,13 @@ export class MonthlyReportsPdfService {
     doc: PDFKit.PDFDocument,
     x: number,
     y: number,
-    count: number,
+    text: string,
   ): void {
     doc
       .font('Helvetica-Oblique')
       .fontSize(7)
       .fillColor(PDF_COLORS.muted)
-      .text(`+${count}`, x, y, { width: 80 });
+      .text(text, x, y, { width: 200 });
   }
 
   private drawFooters(doc: PDFKit.PDFDocument, t: Translate): void {
@@ -969,7 +992,16 @@ export class MonthlyReportsPdfService {
     const text = this.blank(value);
     if (!text) return '';
     const date = new Date(text);
-    return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(locale);
+    // "2 sept 2026" instead of the ambiguous "2/9/2026". Activity dates are
+    // calendar dates stored at UTC midnight.
+    return Number.isNaN(date.getTime())
+      ? ''
+      : date.toLocaleDateString(locale, {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+          timeZone: 'UTC',
+        });
   }
 
   private boolLabel(value: unknown, t: Translate): string {

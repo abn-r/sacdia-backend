@@ -14,6 +14,10 @@ import {
   resolveReportVisibilityScopeForActor,
   type ReportVisibilityFilters,
 } from '../reports/report-visibility-scope';
+import {
+  CLUB_DIRECTIVA_ROLES,
+  directivaRoleOrder,
+} from '../common/constants/club-directiva-roles';
 
 // ============================================================
 // Shape of the computed_data JSON column
@@ -124,12 +128,7 @@ export class AnnualReportsService {
     // ── Directiva ──
     const directiva: { role: string; user_id: string; name: string }[] = [];
     if (allSectionIds.length > 0) {
-      const directivaRoles = [
-        'director',
-        'subdirector',
-        'secretario',
-        'tesorero',
-      ];
+      const directivaRoles = [...CLUB_DIRECTIVA_ROLES];
       const assignments = await this.prisma.club_role_assignments.findMany({
         where: {
           club_section_id: { in: allSectionIds },
@@ -164,6 +163,9 @@ export class AnnualReportsService {
             .join(' '),
         });
       }
+      directiva.sort(
+        (a, b) => directivaRoleOrder(a.role) - directivaRoleOrder(b.role),
+      );
     }
 
     // ── Honors ──
