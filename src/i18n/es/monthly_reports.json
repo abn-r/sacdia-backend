@@ -71,7 +71,8 @@
     "total_expenses": "Total egresos",
     "month_balance": "Balance del mes",
     "transaction_count": "Total de transacciones",
-    "club_total_balance": "Saldo total del club"
+    "club_total_balance": "Saldo total del club",
+    "movements_header": "Movimientos del mes"
   },
   "missionary": {
     "soul_target": "Blanco de almas",
@@ -95,7 +96,9 @@
     "header": "Información del Secretario/a",
     "name": "Nombre",
     "email": "Email",
-    "fallback": "No hay información del secretario disponible."
+    "fallback": "No hay información del secretario disponible.",
+    "secretary_signature": "Firma del secretario/a",
+    "director_signature": "Firma del director/a"
   },
   "footer": "Generado por SACDIA | Página {current} de {total}",
   "bool": {

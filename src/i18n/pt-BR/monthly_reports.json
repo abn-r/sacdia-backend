@@ -71,7 +71,8 @@
     "total_expenses": "Total de despesas",
     "month_balance": "Saldo do mês",
     "transaction_count": "Total de transações",
-    "club_total_balance": "Saldo total do clube"
+    "club_total_balance": "Saldo total do clube",
+    "movements_header": "Movimentações do mês"
   },
   "missionary": {
     "soul_target": "Meta de almas",
@@ -95,7 +96,9 @@
     "header": "Informações do Secretário/a",
     "name": "Nome",
     "email": "Email",
-    "fallback": "Nenhuma informação do secretário disponível."
+    "fallback": "Nenhuma informação do secretário disponível.",
+    "secretary_signature": "Assinatura do/a secretário/a",
+    "director_signature": "Assinatura do/a diretor/a"
   },
   "footer": "Gerado por SACDIA | Página {current} de {total}",
   "bool": {
