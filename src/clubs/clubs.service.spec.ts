@@ -340,6 +340,53 @@ describe('ClubsService', () => {
       { club_type_id: 99, name: 'Guías Mayores' },
     ];
 
+    beforeEach(() => {
+      // District 1 belongs to local field 1 and church 1 to district 1.
+      mockPrismaService.districts.findUnique.mockResolvedValue({
+        local_field_id: 1,
+      });
+      mockPrismaService.churches.findUnique.mockResolvedValue({
+        districlub_type_id: 1,
+      });
+    });
+
+    it('rejects a district from another local field with CLUB_LOCATION_MISMATCH', async () => {
+      mockPrismaService.club_types.findMany.mockResolvedValue(catalogAvCqGm);
+      mockPrismaService.districts.findUnique.mockResolvedValue({
+        local_field_id: 5,
+      });
+
+      await expect(
+        service.create({
+          name: 'Club Cruzado',
+          local_field_id: 1,
+          districlub_type_id: 1,
+          church_id: 1,
+        } as any),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'CLUB_LOCATION_MISMATCH' }),
+      });
+      expect(mockPrismaService.clubs.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a church from another district with CLUB_LOCATION_MISMATCH', async () => {
+      mockPrismaService.club_types.findMany.mockResolvedValue(catalogAvCqGm);
+      mockPrismaService.churches.findUnique.mockResolvedValue({
+        districlub_type_id: 7,
+      });
+
+      await expect(
+        service.create({
+          name: 'Club Cruzado',
+          local_field_id: 1,
+          districlub_type_id: 1,
+          church_id: 1,
+        } as any),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'CLUB_LOCATION_MISMATCH' }),
+      });
+    });
+
     function mockCreateTransaction(club = { club_id: 1, name: 'Nuevo Club' }) {
       mockPrismaService.clubs.create.mockResolvedValue(club);
       mockPrismaService.club_sections.createMany.mockResolvedValue({
@@ -2251,6 +2298,12 @@ describe('ClubsService', () => {
       mockPrismaService.club_types.findMany.mockResolvedValue([
         { club_type_id: 1 },
       ]);
+      mockPrismaService.districts.findUnique.mockResolvedValue({
+        local_field_id: 1,
+      });
+      mockPrismaService.churches.findUnique.mockResolvedValue({
+        districlub_type_id: 1,
+      });
       mockPrismaService.clubs.create.mockResolvedValue(newClub);
       mockPrismaService.club_sections.createMany.mockResolvedValue({
         count: 1,

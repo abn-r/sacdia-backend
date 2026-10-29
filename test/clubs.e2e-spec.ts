@@ -83,6 +83,13 @@ describe('Clubs E2E Tests', () => {
         { club_type_id: 2, name: 'Conquistadores' },
         { club_type_id: 99, name: 'Guías Mayores' },
       ] as never);
+      // District 1 belongs to local field 1 and church 1 to district 1.
+      jest
+        .spyOn(prisma.districts, 'findUnique')
+        .mockResolvedValue({ local_field_id: 1 } as never);
+      jest
+        .spyOn(prisma.churches, 'findUnique')
+        .mockResolvedValue({ districlub_type_id: 1 } as never);
       const createMany = jest.fn().mockResolvedValue({ count: 3 });
       jest.spyOn(prisma, '$transaction').mockImplementation(async (fn) => {
         const tx = {

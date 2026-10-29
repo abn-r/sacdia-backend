@@ -86,7 +86,13 @@ export class MemberRankingsService {
         take: safeLimit,
         orderBy: { rank_position: 'asc' },
         include: {
-          user: { select: { name: true } },
+          user: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
           club_section: { select: { club_types: { select: { name: true } } } },
           awarded_category: true,
         },
@@ -127,7 +133,13 @@ export class MemberRankingsService {
       }),
       orderBy: { rank_position: 'asc' },
       include: {
-        user: { select: { name: true } },
+        user: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
         club_section: { select: { club_types: { select: { name: true } } } },
         awarded_category: true,
       },
@@ -197,7 +209,13 @@ export class MemberRankingsService {
         ecclesiastical_year_id: yearId,
       }),
       include: {
-        user: { select: { name: true } },
+        user: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
         club_section: {
           select: {
             club_section_id: true,

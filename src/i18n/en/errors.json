@@ -501,6 +501,7 @@
   "CLUB_TYPE_NOT_FOUND": "Club type not found or inactive",
   "CLUB_SECTION_ID_REQUIRED": "Club section ID is required",
   "CLUB_SECTION_TYPES_REQUIRED": "At least one club type must be enabled",
+  "CLUB_LOCATION_MISMATCH": "The district must belong to the local field and the church to the district",
   "CLUB_SECTION_MASTER_GUIDES_REQUIRED": "The Master Guides section cannot be deactivated",
   "CLUB_ROLE_SLOT_LIMIT_REACHED": "Maximum role assignments per section reached",
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Cannot assign this role due to an exclusivity conflict with another role in this section",

@@ -501,6 +501,7 @@
   "CLUB_TYPE_NOT_FOUND": "Tipo de club no encontrado o inactivo",
   "CLUB_SECTION_ID_REQUIRED": "Se requiere el identificador de la sección del club",
   "CLUB_SECTION_TYPES_REQUIRED": "Debe habilitarse al menos un tipo de club",
+  "CLUB_LOCATION_MISMATCH": "El distrito debe pertenecer al campo local y la iglesia, al distrito",
   "CLUB_SECTION_MASTER_GUIDES_REQUIRED": "La sección de Guías Mayores no puede desactivarse",
   "CLUB_ROLE_SLOT_LIMIT_REACHED": "Se alcanzó el máximo de asignaciones permitidas para este rol en la sección",
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "No se puede asignar este rol porque hay un conflicto de exclusividad con otro rol en esta sección",
