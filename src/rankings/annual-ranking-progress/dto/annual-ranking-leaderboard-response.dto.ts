@@ -7,6 +7,8 @@ import type {
 export interface AnnualRankingLeaderboardRowDto {
   rank_position: number;
   club_enrollment_id: string;
+  /** Section of the enrollment; the admin opens its breakdown with it. */
+  club_section_id: number;
   club_id: number;
   club_name: string;
   club_type_id: number;
