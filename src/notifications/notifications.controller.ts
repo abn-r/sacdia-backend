@@ -201,7 +201,33 @@ export class NotificationsController {
   @Get('history')
   @ActingScope('self:read')
   @SkipPermissions()
-  @ApiResponse({ status: 200, description: 'Paginated notification audit log' })
+  @ApiResponse({
+    status: 200,
+    description:
+      "Paginated notification history. Regular users get inbox items { delivery_id, read_at, created_at, log_id, title, body, type, target_type, target_id, source }; `target_id` is the club section id for target_type club_section | section_role (the app uses it to open the right section), the recipient's own user id for target_type user, and null for any other target type.",
+    schema: {
+      example: {
+        data: [
+          {
+            delivery_id: '3f1c0f6e-0a57-4a53-9d0c-6f1f4b0d2a11',
+            read_at: null,
+            created_at: '2026-10-28T15:04:00.000Z',
+            log_id: 412,
+            title: 'Nueva persona esperando aprobación',
+            body: 'Hay una solicitud de membresía lista para revisar en tu sección.',
+            type: 'SECTION_ROLE',
+            target_type: 'section_role',
+            target_id: '166',
+            source: 'membership_requests:new_request',
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      },
+    },
+  })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiOperation({
     summary: 'Get paginated notification history',

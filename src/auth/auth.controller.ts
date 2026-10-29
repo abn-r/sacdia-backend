@@ -492,6 +492,30 @@ export class AuthController {
                 },
               },
             },
+            pending_club_membership: {
+              type: 'object',
+              nullable: true,
+              description:
+                'Solicitud de membresía PENDIENTE propia (la más reciente), solo para un teléfono vinculado (principal.kind linked_device) o un menor supervisado activo que aún no tiene club activo. null en cualquier otro caso. Sin datos del revisor, del consentimiento ni de otras personas.',
+              properties: {
+                club_name: {
+                  type: 'string',
+                  nullable: true,
+                  example: 'Club Panteras',
+                },
+                club_type_name: {
+                  type: 'string',
+                  nullable: true,
+                  example: 'Aventureros',
+                },
+                club_section_id: { type: 'number', example: 166 },
+                requested_at: {
+                  type: 'string',
+                  format: 'date-time',
+                  example: '2026-10-28T15:04:00.000Z',
+                },
+              },
+            },
             mode: {
               type: 'string',
               enum: [

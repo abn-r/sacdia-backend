@@ -40,6 +40,7 @@ const baseline = {
     'workflowWhere|allowlist|6|daf4122904fa',
   'annual-reports/annual-reports.service.ts':
     'effectiveWhere|T09|3|45560f10e5fd',
+  'auth/auth.service.ts': 'workflowWhere|allowlist|1|b009730e67d9',
   'camporee-scoring/camporee-scoring.service.ts':
     'effectiveWhere|T09|1|7e83a87c1703',
   'camporees/camporees.service.ts': 'workflowWhere|allowlist|2|090cfe32db47',

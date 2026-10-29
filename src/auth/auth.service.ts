@@ -1070,6 +1070,7 @@ export class AuthService {
       analyticsAnonymous,
       device,
       emailState,
+      pendingClubMembership,
     ] = await Promise.all([
       this.resolvePrivateProfilePicture(resolved.profile.user_image),
       // Outside the authorization cache: acceptance must reflect the DB right away.
@@ -1098,6 +1099,12 @@ export class AuthService {
         where: { user_id: userId },
         select: { email_verified: true },
       }),
+      // Outside the authorization cache: the device must see "pending" the
+      // moment the child asks, and the answer must not outlive a review. Only
+      // a principal that sees club data and has no active club asks.
+      (isDevice || supervisionStatus === 'active') && !resolved.legacy.club
+        ? this.loadPendingClubMembership(userId)
+        : Promise.resolve(null),
     ]);
 
     return {
@@ -1110,6 +1117,9 @@ export class AuthService {
         post_register_complete: resolved.post_register_complete,
         club: resolved.legacy.club,
         club_context: resolved.legacy.club_context,
+        // The dependent's own pending membership request while there is no
+        // active club; null for every other principal and state.
+        pending_club_membership: pendingClubMembership,
         authorization: resolved.authorization,
         legal,
         acting_for: acting
@@ -1151,6 +1161,46 @@ export class AuthService {
           ? (emailState?.email_verified ?? false)
           : null,
       },
+    };
+  }
+
+  /**
+   * The person's own latest PENDING membership request, reduced to what the
+   * Agenda needs to say "your request is pending": the club, its type, the
+   * section and when it was asked. No reviewer, consent or contact data.
+   * A status read for display: it grants no authority.
+   */
+  private async loadPendingClubMembership(userId: string): Promise<{
+    club_name: string | null;
+    club_type_name: string | null;
+    club_section_id: number;
+    requested_at: string;
+  } | null> {
+    const pending = await this.prisma.club_role_assignments.findFirst({
+      where: {
+        user_id: userId,
+        status: 'pending',
+        active: true,
+        club_section_id: { not: null },
+      },
+      orderBy: { created_at: 'desc' },
+      select: {
+        club_section_id: true,
+        created_at: true,
+        club_sections: {
+          select: {
+            clubs: { select: { name: true } },
+            club_types: { select: { name: true } },
+          },
+        },
+      },
+    });
+    if (!pending || pending.club_section_id == null) return null;
+    return {
+      club_name: pending.club_sections?.clubs?.name ?? null,
+      club_type_name: pending.club_sections?.club_types?.name ?? null,
+      club_section_id: pending.club_section_id,
+      requested_at: pending.created_at.toISOString(),
     };
   }
 
