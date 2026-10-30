@@ -21,6 +21,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import { seedCoordinatorTerritories } from './coordinator-territories';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -119,8 +120,10 @@ const GLOBAL_USERS: GlobalUserSpec[] = [
     roleName: 'assistant-dia',
     scope: 'union',
   },
-  // Coordinators and pastor get their sections, zone or district from the
-  // admin panel (Coordinación, Pastores por distrito), not from this seed.
+  // zone-coordinator and general-coordinator get their territory from this seed
+  // (seedCoordinatorTerritories below). coordinator and pastor get their
+  // sections or district from the admin panel (Coordinación, Pastores por
+  // distrito).
   {
     email: 'general-coordinator@sacdia.com',
     name: 'General',
@@ -364,6 +367,8 @@ async function main() {
   // ========== GLOBAL users (LF + Union roles) ==========
   console.log('--- GLOBAL users (users_roles) ---\n');
 
+  const globalUserIds = new Map<string, string>();
+
   for (const spec of GLOBAL_USERS) {
     const roleId = await resolveRoleId(spec.roleName, 'GLOBAL');
 
@@ -379,6 +384,8 @@ async function main() {
       unionId,
       accessPanel: true, // global admins get panel access
     });
+
+    globalUserIds.set(spec.email, user_id);
 
     // Upsert users_roles (global role assignment)
     await prisma.users_roles.upsert({
@@ -402,6 +409,21 @@ async function main() {
       `  ✓ ${spec.email.padEnd(32)} → ${spec.roleName.padEnd(18)} (scope: ${spec.scope}, LF: ${localFieldId ?? '-'}, Union: ${unionId})`,
     );
   }
+
+  // ========== Coordinator territories (coordinator_assignments) ==========
+  console.log('\n--- Coordinator territories ---\n');
+
+  const territory = await seedCoordinatorTerritories(prisma, {
+    localFieldId: LOCAL_FIELD_ID,
+    zoneCoordinatorId: globalUserIds.get('zone-coordinator@sacdia.com')!,
+    generalCoordinatorId: globalUserIds.get('general-coordinator@sacdia.com')!,
+  });
+  console.log(
+    `  ✓ zone-coordinator@sacdia.com     → ZONE ${territory.zoneId} (districts: ${territory.districtIds.join(', ') || '-'}) [${territory.zone}]`,
+  );
+  console.log(
+    `  ✓ general-coordinator@sacdia.com  → GENERAL local field ${LOCAL_FIELD_ID} [${territory.general}]`,
+  );
 
   // ========== CLUB users (club_role_assignments) ==========
   console.log('\n--- CLUB users (club_role_assignments) ---\n');
