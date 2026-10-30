@@ -163,6 +163,38 @@ describe('admin and union grants of 2026-10-30', () => {
   );
 });
 
+describe('platform admin seed cleanups after the 2026-10-30 grants', () => {
+  const cleanup = collapse(
+    read(
+      'migrations/20261030150000_platform_admin_seed_cleanups/migration.sql',
+    ),
+  );
+  const seed = collapse(read('seeds/role-permissions.seed.sql'));
+
+  it.each([
+    'camporees:register',
+    'camporees:register_active_section',
+    'camporee-orders:create',
+    'camporee-orders:upload-proof',
+    'camporee-orders:distribute',
+    'camporee-supplies:plan',
+  ])('removes %s from the platform admin roles', (permission) => {
+    expect(cleanup).toContain(
+      "r.role_name IN ('super-admin', 'admin', 'assistant-admin')",
+    );
+    expect(cleanup).toContain(`'${permission}'`);
+  });
+
+  it('keeps insurance:configure for admin and super-admin in seed and migration', () => {
+    expect(seed).toContain(
+      "AND p.permission_name = 'insurance:configure' AND NOT ( r.role_name IN ('assistant-lf', 'director-lf', 'admin', 'super-admin')",
+    );
+    expect(cleanup).toMatch(
+      /r\.role_name = 'assistant-admin' .* p\.permission_name = 'insurance:configure'/,
+    );
+  });
+});
+
 describe('assistant-admin role migration', () => {
   const migration = collapse(
     read('migrations/20261028130000_ensure_assistant_admin_role/migration.sql'),

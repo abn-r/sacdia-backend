@@ -2183,16 +2183,17 @@ ON CONFLICT (role_id, permission_id) DO UPDATE SET
   active = true,
   modified_at = now();
 
--- Insurance configuration is intentionally restricted to Local Field
--- leadership. This cleanup runs after all inherited/global role grants so
--- assistant/director union, DIA, admin and club roles cannot receive it.
+-- Insurance configuration belongs to Local Field leadership and, since
+-- 2026-10-30, to the platform admins (admin, super-admin), who configure it
+-- for a local field they name. This cleanup runs after all inherited/global
+-- role grants so union, DIA, assistant-admin and club roles cannot receive it.
 DELETE FROM role_permissions rp
 USING permissions p, roles r
 WHERE rp.permission_id = p.permission_id
   AND rp.role_id = r.role_id
   AND p.permission_name = 'insurance:configure'
   AND NOT (
-    r.role_name IN ('assistant-lf', 'director-lf')
+    r.role_name IN ('assistant-lf', 'director-lf', 'admin', 'super-admin')
     AND r.role_category = 'GLOBAL'
   );
 
