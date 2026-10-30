@@ -61,6 +61,8 @@ const baseline = {
     'workflowWhere|allowlist|2|b32d443733e9',
   'common/authorization/actor-section-scope.ts':
     'effectiveWhere|T09|1|38b239a32e23',
+  'common/authorization/target-user-scope.ts':
+    'effectiveWhere|T08|1|40ea0dbf5bcf',
   'common/authorization/member-territory-scope.service.ts':
     'effectiveWhere|T09|2|977d674fbe2d',
   'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|32d48d679749',
