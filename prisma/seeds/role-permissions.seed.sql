@@ -2914,3 +2914,33 @@ WHERE r.role_name = 'director-lf'
   AND p.active = true
   AND p.permission_name = 'member_ranking_weights:read'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- Ranking reads for Union and Division leadership
+-- ============================
+-- Canon (docs/canon/runtime-rankings.md §14.7): read_union / read_division
+-- scope member and section rankings to the caller's union or division.
+-- read_global stays admin-only. Kept after the role blocks above, which
+-- DELETE and reinsert their rows. Same rows as migration
+-- 20261030120000_union_division_ranking_reads.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-union', 'assistant-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('member_rankings:read_union', 'section_rankings:read_union')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-dia', 'assistant-dia')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('member_rankings:read_division', 'section_rankings:read_division')
+ON CONFLICT (role_id, permission_id) DO NOTHING;

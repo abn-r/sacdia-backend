@@ -71,6 +71,55 @@ describe('local field ranking reads survive the seed', () => {
   });
 });
 
+describe('union and division ranking reads survive the seed', () => {
+  it.each([
+    ['director-union', 'member_rankings:read_union'],
+    ['director-union', 'section_rankings:read_union'],
+    ['assistant-union', 'member_rankings:read_union'],
+    ['assistant-union', 'section_rankings:read_union'],
+    ['director-dia', 'member_rankings:read_division'],
+    ['director-dia', 'section_rankings:read_division'],
+    ['assistant-dia', 'member_rankings:read_division'],
+    ['assistant-dia', 'section_rankings:read_division'],
+  ])('%s keeps %s after its last wipe', (role, permission) => {
+    const wipe = lastRoleWipe(role);
+    expect(wipe).toBeGreaterThan(-1);
+    expect(grantedAfter(role, permission, wipe)).toBe(true);
+  });
+
+  it('the seed declares the four permissions', () => {
+    const permissions = read('seeds/permissions.seed.sql');
+    for (const name of [
+      'member_rankings:read_union',
+      'member_rankings:read_division',
+      'section_rankings:read_union',
+      'section_rankings:read_division',
+    ]) {
+      expect(permissions).toContain(`'${name}'`);
+    }
+  });
+
+  it('the migration grants the same rows', () => {
+    const migration = collapse(
+      read(
+        'migrations/20261030120000_union_division_ranking_reads/migration.sql',
+      ),
+    );
+    expect(migration).toContain(
+      "r.role_name IN ('director-union', 'assistant-union')",
+    );
+    expect(migration).toContain(
+      "p.permission_name IN ('member_rankings:read_union', 'section_rankings:read_union')",
+    );
+    expect(migration).toContain(
+      "r.role_name IN ('director-dia', 'assistant-dia')",
+    );
+    expect(migration).toContain(
+      "p.permission_name IN ('member_rankings:read_division', 'section_rankings:read_division')",
+    );
+  });
+});
+
 describe('assistant-admin role migration', () => {
   const migration = collapse(
     read('migrations/20261028130000_ensure_assistant_admin_role/migration.sql'),

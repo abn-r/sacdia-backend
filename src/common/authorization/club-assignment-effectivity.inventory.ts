@@ -112,7 +112,7 @@ const baseline = {
     'workflowWhere|allowlist|4|4744c04f28ac',
   'qr/qr.service.ts': 'effectiveWhere|T08|3|fb413b5f37eb',
   'quarterly-reports/quarterly-reports.service.ts':
-    'effectiveWhere|T09|3|1c55ef0ad8fe',
+    'effectiveWhere|T09|2|4a4c80f60feb',
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
     'effectiveWhere|T08|1|11a310c43604',
   'rbac/rbac.service.ts': 'effectiveWhere|T08|1|68c2f63166fd',

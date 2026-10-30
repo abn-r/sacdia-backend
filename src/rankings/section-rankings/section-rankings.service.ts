@@ -10,6 +10,18 @@ import { ResolvedAuthorizationProfile } from '../../common/services/authorizatio
 import { SectionRankingResponseDto } from './dto/section-ranking-response.dto';
 import { PaginatedResponse } from '../member-rankings/member-rankings.service';
 import { MemberRankingResponseDto } from '../member-rankings/dto/member-ranking-response.dto';
+import {
+  RANKING_CLUB_TERRITORY_SELECT,
+  type RankingClubTerritory,
+  clubInRankingTerritory,
+  rankingTerritoryClubWhere,
+  resolveRankingTerritory,
+} from '../ranking-territory-scope';
+
+const SECTION_TERRITORY_PERMISSIONS = {
+  division: 'section_rankings:read_division',
+  union: 'section_rankings:read_union',
+};
 
 interface ListParams {
   profile: ResolvedAuthorizationProfile;
@@ -78,7 +90,7 @@ export class SectionRankingsService {
     const section = await this.prisma.club_sections.findUnique({
       where: { club_section_id: sectionId },
       include: {
-        clubs: { select: { club_id: true, local_field_id: true } },
+        clubs: { select: RANKING_CLUB_TERRITORY_SELECT },
       },
     });
 
@@ -99,10 +111,7 @@ export class SectionRankingsService {
     this.validateSectionScope(profile, {
       club_section_id: sectionId,
       club_id: section.clubs.club_id,
-      club: {
-        club_id: section.clubs.club_id,
-        local_field_id: section.clubs.local_field_id,
-      },
+      club: section.clubs,
     });
 
     // 3. Fetch enrollment rankings for this section, ordered by rank_position ASC NULLS LAST
@@ -131,10 +140,12 @@ export class SectionRankingsService {
    * Prisma WHERE clause for the section_rankings table.
    *
    * Permission tiers (highest wins — no read_self for sections):
-   *   section_rankings:read_global  → no restriction
-   *   section_rankings:read_lf      → clubs in caller's local field(s)
-   *   section_rankings:read_club    → caller's club(s) only
-   *   Else                          → throw MEMBER_RANKING_SCOPE_DENIED
+   *   section_rankings:read_global   → no restriction
+   *   section_rankings:read_division → clubs in caller's division
+   *   section_rankings:read_union    → clubs in caller's union
+   *   section_rankings:read_lf       → clubs in caller's local field(s)
+   *   section_rankings:read_club     → caller's club(s) only
+   *   Else                           → throw MEMBER_RANKING_SCOPE_DENIED
    */
   private buildScopeWhere(
     profile: ResolvedAuthorizationProfile,
@@ -151,6 +162,21 @@ export class SectionRankingsService {
     if (perms.includes('section_rankings:read_global')) {
       return {
         ...yearFilter,
+        ...(clubId !== undefined ? { club_id: clubId } : {}),
+      };
+    }
+
+    // Division / union access — restrict to clubs in caller's territory
+    const territory = resolveRankingTerritory(
+      profile,
+      SECTION_TERRITORY_PERMISSIONS,
+    );
+    if (territory) {
+      const clubWhere = rankingTerritoryClubWhere(territory);
+      if (!clubWhere) return { ecclesiastical_year_id: -1 };
+      return {
+        ...yearFilter,
+        club: clubWhere,
         ...(clubId !== undefined ? { club_id: clubId } : {}),
       };
     }
@@ -218,12 +244,21 @@ export class SectionRankingsService {
     section: {
       club_section_id: number;
       club_id: number;
-      club: { club_id: number; local_field_id: number | null } | null;
+      club: RankingClubTerritory;
     },
   ): void {
     const perms = profile.authorization.effective.permissions;
 
     if (perms.includes('section_rankings:read_global')) return;
+
+    const territory = resolveRankingTerritory(
+      profile,
+      SECTION_TERRITORY_PERMISSIONS,
+    );
+    if (territory) {
+      if (clubInRankingTerritory(territory, section.club)) return;
+      throw new AppForbiddenException(ErrorCode.MEMBER_RANKING_SCOPE_DENIED);
+    }
 
     if (perms.includes('section_rankings:read_lf')) {
       const rowLfId = section.club?.local_field_id ?? null;

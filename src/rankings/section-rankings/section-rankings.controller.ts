@@ -50,6 +50,8 @@ export class SectionRankingsController {
     permissions: [
       'section_rankings:read_club',
       'section_rankings:read_lf',
+      'section_rankings:read_union',
+      'section_rankings:read_division',
       'section_rankings:read_global',
     ],
     mode: 'any',
@@ -97,6 +99,8 @@ export class SectionRankingsController {
     permissions: [
       'section_rankings:read_club',
       'section_rankings:read_lf',
+      'section_rankings:read_union',
+      'section_rankings:read_division',
       'section_rankings:read_global',
     ],
     mode: 'any',
