@@ -24,6 +24,7 @@ import {
 } from '../common/decorators';
 import { CamporeeVenuesService } from './camporee-venues.service';
 import {
+  CreateCamporeeScopedVenueDto,
   CreateCamporeeVenueDto,
   ListCamporeeVenuesFilterDto,
   UpdateCamporeeVenueDto,
@@ -123,7 +124,7 @@ export class CamporeeVenuesController {
   async createLocalCamporeeVenue(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Body()
-    dto: Omit<CreateCamporeeVenueDto, 'scope' | 'union_id' | 'local_field_id'>,
+    dto: CreateCamporeeScopedVenueDto,
     @Request() req: any,
   ) {
     const data = await this.service.createVenueForLocalCamporee(
@@ -156,7 +157,7 @@ export class CamporeeVenuesController {
   async createUnionCamporeeVenue(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Body()
-    dto: Omit<CreateCamporeeVenueDto, 'scope' | 'union_id' | 'local_field_id'>,
+    dto: CreateCamporeeScopedVenueDto,
     @Request() req: any,
   ) {
     const data = await this.service.createVenueForUnionCamporee(
