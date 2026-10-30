@@ -26,6 +26,18 @@ import { RankingsService } from '../../annual-folders/rankings.service';
 import { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
 import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
 import { ClassRequirementEligibilityService } from '../../classes/class-requirement-eligibility.service';
+import {
+  RANKING_CLUB_TERRITORY_SELECT,
+  type RankingClubTerritory,
+  clubInRankingTerritory,
+  rankingTerritoryClubWhere,
+  resolveRankingTerritory,
+} from '../ranking-territory-scope';
+
+const MEMBER_TERRITORY_PERMISSIONS = {
+  division: 'member_rankings:read_division',
+  union: 'member_rankings:read_union',
+};
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -222,7 +234,7 @@ export class MemberRankingsService {
             club_types: { select: { name: true } },
           },
         },
-        club: { select: { club_id: true, local_field_id: true } },
+        club: { select: RANKING_CLUB_TERRITORY_SELECT },
         awarded_category: true,
       },
     });
@@ -350,6 +362,8 @@ export class MemberRankingsService {
    *
    * Permission tiers (highest wins):
    *   member_rankings:read_global  → no restriction (all clubs)
+   *   member_rankings:read_division → clubs in caller's division
+   *   member_rankings:read_union   → clubs in caller's union
    *   member_rankings:read_lf      → clubs in caller's local field(s)
    *   member_rankings:read_club    → caller's club(s) only
    *   member_rankings:read_section → caller's section(s) only
@@ -384,6 +398,22 @@ export class MemberRankingsService {
     if (perms.includes('member_rankings:read_global')) {
       return {
         ...yearFilter,
+        ...(clubId !== undefined ? { club_id: clubId } : {}),
+        ...(sectionId !== undefined ? { club_section_id: sectionId } : {}),
+      };
+    }
+
+    // Division / union access — restrict to clubs in caller's territory
+    const territory = resolveRankingTerritory(
+      profile,
+      MEMBER_TERRITORY_PERMISSIONS,
+    );
+    if (territory) {
+      const clubWhere = rankingTerritoryClubWhere(territory);
+      if (!clubWhere) return { ecclesiastical_year_id: -1 };
+      return {
+        ...yearFilter,
+        club: clubWhere,
         ...(clubId !== undefined ? { club_id: clubId } : {}),
         ...(sectionId !== undefined ? { club_section_id: sectionId } : {}),
       };
@@ -482,12 +512,21 @@ export class MemberRankingsService {
       user_id: string;
       club_id: number;
       club_section_id: number | null;
-      club: { club_id: number; local_field_id: number | null } | null;
+      club: RankingClubTerritory;
     },
   ): void {
     const perms = profile.authorization.effective.permissions;
 
     if (perms.includes('member_rankings:read_global')) return;
+
+    const territory = resolveRankingTerritory(
+      profile,
+      MEMBER_TERRITORY_PERMISSIONS,
+    );
+    if (territory) {
+      if (clubInRankingTerritory(territory, row.club)) return;
+      throw new AppForbiddenException(ErrorCode.MEMBER_RANKING_SCOPE_DENIED);
+    }
 
     if (perms.includes('member_rankings:read_lf')) {
       // Verify the row's club local_field_id is in the caller's local field set.

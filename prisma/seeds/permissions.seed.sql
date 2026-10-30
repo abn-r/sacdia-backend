@@ -375,6 +375,8 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('member_rankings:read_section', 'Read section member rankings', true),
   ('member_rankings:read_club',    'Read club member rankings', true),
   ('member_rankings:read_lf',      'Read local field member rankings', true),
+  ('member_rankings:read_union',   'Read union member rankings', true),
+  ('member_rankings:read_division','Read division member rankings', true),
   ('member_rankings:read_global',  'Read all member rankings', true),
   ('member_ranking_weights:read',  'Read member ranking weights', true),
   ('member_ranking_weights:write', 'Write/CRUD member ranking weights', true)
@@ -389,6 +391,8 @@ ON CONFLICT (permission_name) DO UPDATE SET
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('section_rankings:read_club',   'Read club section rankings', true),
   ('section_rankings:read_lf',     'Read local field section rankings', true),
+  ('section_rankings:read_union',  'Read union section rankings', true),
+  ('section_rankings:read_division','Read division section rankings', true),
   ('section_rankings:read_global', 'Read all section rankings', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
