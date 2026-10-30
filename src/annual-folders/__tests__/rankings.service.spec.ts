@@ -1539,6 +1539,10 @@ describe('RankingsService', () => {
       expect(sqlStrings).toContain('NULLS LAST');
       expect(sqlStrings).toContain('enrollment_rankings');
       expect(sqlStrings).toContain('ecclesiastical_year_id');
+      // Members are listed per section, so each section ranks from 1.
+      expect(sqlStrings).toMatch(
+        /PARTITION BY club_id, club_section_id, ecclesiastical_year_id/,
+      );
       // Verify yearId 2026 is passed as a bound parameter (second element of call args)
       expect(callArgs[1]).toBe(2026);
     });

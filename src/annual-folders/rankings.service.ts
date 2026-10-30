@@ -1579,7 +1579,8 @@ export class RankingsService {
    * Assigns DENSE_RANK positions for all enrollment_rankings rows belonging
    * to the given ecclesiastical year.
    *
-   * Partition: (club_id, ecclesiastical_year_id)
+   * Partition: (club_id, club_section_id, ecclesiastical_year_id). Members are
+   * listed per section, so each section ranks its own members from 1.
    * Order: composite_score_pct DESC NULLS LAST
    * Semantics: ties share the same rank; NULLs are ranked last (not excluded).
    */
@@ -1596,7 +1597,7 @@ export class RankingsService {
       FROM (
         SELECT id,
           DENSE_RANK() OVER (
-            PARTITION BY club_id, ecclesiastical_year_id
+            PARTITION BY club_id, club_section_id, ecclesiastical_year_id
             ORDER BY composite_score_pct DESC NULLS LAST
           ) AS rnk
         FROM enrollment_rankings
