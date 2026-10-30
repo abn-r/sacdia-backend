@@ -421,3 +421,63 @@ describe('AnnualRankingsService', () => {
     );
   });
 });
+
+describe('AnnualRankingsService local field access', () => {
+  const localFields = { findUnique: jest.fn() };
+  const service = new AnnualRankingsService(
+    { local_fields: localFields } as any,
+    {} as any,
+    {} as any,
+    {} as any,
+  );
+
+  const profileFor = (role: string, global: Record<string, unknown>) =>
+    ({
+      profile: { user_id: 'u-1', local_field_id: null },
+      authorization: {
+        grants: {
+          global_roles: [{ role_name: role, permissions: ['rankings:read'] }],
+          club_assignments: [],
+        },
+        active_assignment: { assignment_id: null },
+        effective: { permissions: ['rankings:read'], scope: { global } },
+      },
+    }) as any;
+
+  const check = (profile: any, localFieldId: number) =>
+    (service as any).assertCanReadLocalField(profile, localFieldId);
+
+  beforeEach(() => {
+    localFields.findUnique.mockReset();
+    localFields.findUnique.mockResolvedValue({
+      local_field_id: 4,
+      union_id: 20,
+      unions: { division_id: 1 },
+    });
+  });
+
+  it('lets union leadership read a local field of its union', async () => {
+    await expect(
+      check(profileFor('director-union', { union: { id: 20 } }), 4),
+    ).resolves.toBeUndefined();
+  });
+
+  it('lets division leadership read a local field of its division', async () => {
+    await expect(
+      check(profileFor('assistant-dia', { division: { id: 1 } }), 4),
+    ).resolves.toBeUndefined();
+  });
+
+  it('denies a local field of another union', async () => {
+    await expect(
+      check(profileFor('director-union', { union: { id: 21 } }), 4),
+    ).rejects.toMatchObject({ code: 'GUARD_PERMISSION_DENIED' });
+  });
+
+  it('still limits local field leadership to its own field', async () => {
+    await expect(
+      check(profileFor('director-lf', { local_field: { id: 5 } }), 4),
+    ).rejects.toMatchObject({ code: 'GUARD_PERMISSION_DENIED' });
+    expect(localFields.findUnique).not.toHaveBeenCalled();
+  });
+});

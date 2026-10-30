@@ -605,6 +605,89 @@ export async function resolveActorCatalogCountryId(
   throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
 }
 
+/**
+ * Geography a territorial actor may list in GET /catalogs: their country, or
+ * their division for division leadership (a division spans several
+ * countries, so a single country would hide part of it).
+ */
+export type CatalogRecorte = { countryId: number } | { divisionId: number };
+
+/** `undefined` = no recorte. Same fail-closed rules as the country helper. */
+export async function resolveActorCatalogRecorte(
+  prisma: Pick<PrismaService, 'local_fields' | 'unions'>,
+  input: ActorTerritoryInput,
+): Promise<CatalogRecorte | undefined> {
+  const scope = resolveActorTerritoryScope(input);
+  if (scope.level === 'division') {
+    return { divisionId: scope.divisionId };
+  }
+  const countryId = await resolveActorCatalogCountryId(prisma, input);
+  return countryId === undefined ? undefined : { countryId };
+}
+
+/** 403 when a catalog filter points outside the actor recorte. */
+export async function assertCatalogFiltersInRecorte(
+  prisma: Pick<PrismaService, 'unions' | 'local_fields' | 'districts'>,
+  recorte: CatalogRecorte,
+  filters?: Parameters<typeof assertCatalogFiltersInCountry>[2],
+): Promise<void> {
+  if ('countryId' in recorte) {
+    return assertCatalogFiltersInCountry(prisma, recorte.countryId, filters);
+  }
+  if (!filters) {
+    return;
+  }
+
+  const { divisionId } = recorte;
+  const deny = () => {
+    throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+  };
+
+  if (filters.divisionId !== undefined && filters.divisionId !== divisionId) {
+    deny();
+  }
+
+  if (filters.countryId !== undefined) {
+    const unionInDivision = await prisma.unions.findFirst({
+      where: {
+        country_id: filters.countryId,
+        division_id: divisionId,
+        active: true,
+      },
+      select: { union_id: true },
+    });
+    if (!unionInDivision) deny();
+  }
+
+  if (filters.unionId !== undefined) {
+    const union = await prisma.unions.findUnique({
+      where: { union_id: filters.unionId },
+      select: { division_id: true },
+    });
+    if (!union || union.division_id !== divisionId) deny();
+  }
+
+  if (filters.localFieldId !== undefined) {
+    const localField = await prisma.local_fields.findUnique({
+      where: { local_field_id: filters.localFieldId },
+      select: { unions: { select: { division_id: true } } },
+    });
+    if (localField?.unions?.division_id !== divisionId) deny();
+  }
+
+  if (filters.districtId !== undefined) {
+    const district = await prisma.districts.findUnique({
+      where: { districlub_type_id: filters.districtId },
+      select: {
+        local_fields: {
+          select: { unions: { select: { division_id: true } } },
+        },
+      },
+    });
+    if (district?.local_fields?.unions?.division_id !== divisionId) deny();
+  }
+}
+
 export async function assertCatalogFiltersInCountry(
   prisma: Pick<PrismaService, 'unions' | 'local_fields' | 'districts'>,
   countryId: number,

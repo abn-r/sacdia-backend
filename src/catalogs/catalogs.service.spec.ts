@@ -312,6 +312,48 @@ describe('CatalogsService', () => {
     });
   });
 
+  describe('division recorte', () => {
+    const unions = [
+      { union_id: 1, name: 'UMN', country_id: 52, division_id: 1 },
+      { union_id: 2, name: 'SAD union', country_id: 7, division_id: 2 },
+      { union_id: 4, name: 'Guatemala', country_id: 61, division_id: 1 },
+    ];
+
+    it('lists the unions of the division across countries', async () => {
+      mockPrismaService.$queryRaw.mockResolvedValue(unions);
+
+      const result = await service.getUnions({
+        actorRecorte: { divisionId: 1 },
+      });
+
+      expect(result.map((u) => u.union_id)).toEqual([1, 4]);
+    });
+
+    it('narrows the division unions by country', async () => {
+      mockPrismaService.$queryRaw.mockResolvedValue(unions);
+
+      const result = await service.getUnions({
+        actorRecorte: { divisionId: 1 },
+        countryId: 61,
+      });
+
+      expect(result.map((u) => u.union_id)).toEqual([4]);
+    });
+
+    it('lists the local fields of the division', async () => {
+      mockPrismaService.local_fields.findMany.mockResolvedValue([
+        { local_field_id: 9, name: 'Campo Norte', union_id: 1 },
+        { local_field_id: 10, name: 'Campo sur', union_id: 2 },
+        { local_field_id: 11, name: 'Campo GT', union_id: 4 },
+      ]);
+      mockPrismaService.$queryRaw.mockResolvedValue(unions);
+
+      const result = await service.getLocalFields(undefined, { divisionId: 1 });
+
+      expect(result.map((f) => f.local_field_id)).toEqual([9, 11]);
+    });
+  });
+
   describe('getLocalFields', () => {
     it('filters cached fields to unions in the actor country', async () => {
       mockPrismaService.local_fields.findMany.mockResolvedValue([
