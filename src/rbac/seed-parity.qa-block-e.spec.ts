@@ -120,6 +120,49 @@ describe('union and division ranking reads survive the seed', () => {
   });
 });
 
+describe('admin and union grants of 2026-10-30', () => {
+  const migration = collapse(
+    read(
+      'migrations/20261030140000_admin_and_union_permission_grants/migration.sql',
+    ),
+  );
+  const seed = collapse(read('seeds/role-permissions.seed.sql'));
+
+  it('re-applies the super-admin, admin and assistant-admin seed rules', () => {
+    expect(migration).toContain("WHERE r.role_name = 'super-admin'");
+    expect(migration).toMatch(
+      /WHERE r\.role_name = 'admin' .* AND p\.permission_name NOT LIKE '%:delete' AND p\.permission_name <> 'audit:read'/,
+    );
+    expect(migration).toContain(
+      "AND p.permission_name <> 'permissions:assign'",
+    );
+  });
+
+  it('gives admin the deletes a territorial role holds, in seed and migration', () => {
+    for (const sql of [migration, seed]) {
+      expect(sql).toContain("WHERE admin.role_name = 'admin'");
+      expect(sql).toContain("AND p.permission_name LIKE '%:delete' AND EXISTS");
+    }
+  });
+
+  it.each(['director-union', 'assistant-union'])(
+    '%s keeps the camporee_events grants after its last wipe',
+    (role) => {
+      const wipe = lastRoleWipe(role);
+      for (const permission of [
+        'camporee_events:create',
+        'camporee_events:read',
+        'camporee_events:update',
+        'camporee_events:delete',
+        'camporee_event_types:read',
+      ]) {
+        expect(grantedAfter(role, permission, wipe)).toBe(true);
+        expect(migration).toContain(`'${permission}'`);
+      }
+    },
+  );
+});
+
 describe('assistant-admin role migration', () => {
   const migration = collapse(
     read('migrations/20261028130000_ensure_assistant_admin_role/migration.sql'),

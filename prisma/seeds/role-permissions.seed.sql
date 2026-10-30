@@ -2944,3 +2944,56 @@ WHERE r.role_name IN ('director-dia', 'assistant-dia')
   AND p.active = true
   AND p.permission_name IN ('member_rankings:read_division', 'section_rankings:read_division')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- Admin deletes held by territorial roles (decision 2026-10-30)
+-- ============================
+-- admin administers the same data as local field, union and division
+-- leadership, so it gets every :delete permission one of them holds. Kept
+-- at the end so every territorial block has run. Same rows as migration
+-- 20261030140000_admin_and_union_permission_grants.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), admin.role_id, p.permission_id
+FROM roles admin
+CROSS JOIN permissions p
+WHERE admin.role_name = 'admin'
+  AND admin.role_category = 'GLOBAL'
+  AND admin.active = true
+  AND p.active = true
+  AND p.permission_name LIKE '%:delete'
+  AND EXISTS (
+    SELECT 1
+    FROM role_permissions rp
+    JOIN roles territorial ON territorial.role_id = rp.role_id
+    WHERE rp.permission_id = p.permission_id
+      AND territorial.role_category = 'GLOBAL'
+      AND territorial.role_name IN (
+        'director-lf', 'assistant-lf',
+        'director-union', 'assistant-union',
+        'director-dia', 'assistant-dia'
+      )
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- Union camporee configuration (decision 2026-10-30)
+-- ============================
+-- Union leadership configures its union camporees: events, venues, judges,
+-- staff and templates (camporee_events:*), reading the event type catalog.
+-- The union blocks above copy assistant-lf, which does not hold these.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-union', 'assistant-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee_events:create',
+    'camporee_events:read',
+    'camporee_events:update',
+    'camporee_events:delete',
+    'camporee_event_types:read'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
