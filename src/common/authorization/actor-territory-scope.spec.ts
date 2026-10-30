@@ -8,6 +8,7 @@ import type { AuthorizationSnapshot } from '../services/authorization-context.se
 import {
   actorCanAccessHierarchyScope,
   assertCatalogFiltersInCountry,
+  assertCatalogFiltersInRecorte,
   assertLocalFieldInActorScope,
   clubsWhereForActor,
   isMemberInLocalField,
@@ -16,6 +17,7 @@ import {
   memberInLocalFieldWhere,
   memberInUnionWhere,
   resolveActorCatalogCountryId,
+  resolveActorCatalogRecorte,
   resolveActorTerritoryScope,
   usersWhereForActor,
 } from './actor-territory-scope';
@@ -444,6 +446,99 @@ describe('resolveActorCatalogCountryId', () => {
         snapshot({ role: 'director-dia', divisionId: 1 }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+  });
+});
+
+describe('resolveActorCatalogRecorte', () => {
+  const prisma = {
+    local_fields: { findUnique: jest.fn() },
+    unions: { findUnique: jest.fn().mockResolvedValue({ country_id: 52 }) },
+  };
+
+  it('recortes division leadership to its division, not a country', async () => {
+    for (const role of ['director-dia', 'assistant-dia']) {
+      await expect(
+        resolveActorCatalogRecorte(
+          prisma as never,
+          snapshot({ role, divisionId: 1, countryId: 52 }),
+        ),
+      ).resolves.toEqual({ divisionId: 1 });
+    }
+  });
+
+  it('keeps the country recorte for union leadership', async () => {
+    await expect(
+      resolveActorCatalogRecorte(
+        prisma as never,
+        snapshot({ role: 'director-union', unionId: 2 }),
+      ),
+    ).resolves.toEqual({ countryId: 52 });
+  });
+
+  it('does not recorte super-admin and still fails closed without a division', async () => {
+    await expect(
+      resolveActorCatalogRecorte(
+        prisma as never,
+        snapshot({ role: 'super-admin' }),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolveActorCatalogRecorte(
+        prisma as never,
+        snapshot({ role: 'director-dia' }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+  });
+});
+
+describe('assertCatalogFiltersInRecorte for a division', () => {
+  const prisma = {
+    unions: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    local_fields: { findUnique: jest.fn() },
+    districts: { findUnique: jest.fn() },
+  };
+  const recorte = { divisionId: 1 };
+
+  it('accepts filters inside the division', async () => {
+    prisma.unions.findFirst.mockResolvedValue({ union_id: 4 });
+    prisma.unions.findUnique.mockResolvedValue({ division_id: 1 });
+    prisma.local_fields.findUnique.mockResolvedValue({
+      unions: { division_id: 1 },
+    });
+
+    await expect(
+      assertCatalogFiltersInRecorte(prisma as never, recorte, {
+        divisionId: 1,
+        countryId: 61,
+        unionId: 4,
+        localFieldId: 9,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('403s another division, a union outside it, or a local field outside it', async () => {
+    await expect(
+      assertCatalogFiltersInRecorte(prisma as never, recorte, {
+        divisionId: 2,
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+
+    prisma.unions.findUnique.mockResolvedValue({ division_id: 2 });
+    await expect(
+      assertCatalogFiltersInRecorte(prisma as never, recorte, { unionId: 2 }),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+
+    prisma.local_fields.findUnique.mockResolvedValue({
+      unions: { division_id: 2 },
+    });
+    await expect(
+      assertCatalogFiltersInRecorte(prisma as never, recorte, {
+        localFieldId: 10,
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
   });
 });
 

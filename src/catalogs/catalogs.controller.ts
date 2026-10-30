@@ -13,8 +13,9 @@ import { OptionalJwtAuthGuard } from '../common/guards';
 import { CurrentUser, Public } from '../common/decorators';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import {
-  assertCatalogFiltersInCountry,
-  resolveActorCatalogCountryId,
+  assertCatalogFiltersInRecorte,
+  type CatalogRecorte,
+  resolveActorCatalogRecorte,
 } from '../common/authorization/actor-territory-scope';
 
 @ApiTags('catalogs')
@@ -30,9 +31,9 @@ export class CatalogsController {
     private readonly prisma: PrismaService,
   ) {}
 
-  private async actorCatalogCountryId(
-    user?: { sub?: string },
-  ): Promise<number | undefined> {
+  private async actorCatalogRecorte(user?: {
+    sub?: string;
+  }): Promise<CatalogRecorte | undefined> {
     const userId = user?.sub;
     if (!userId || !isUUID(userId, 'all')) {
       return undefined;
@@ -40,7 +41,7 @@ export class CatalogsController {
 
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
-    return resolveActorCatalogCountryId(this.prisma, resolved);
+    return resolveActorCatalogRecorte(this.prisma, resolved);
   }
 
   // ========================================
@@ -89,10 +90,13 @@ export class CatalogsController {
       'Lista países activos. Sin JWT o sin rol territorial: directorio completo. Con rol territorial: solo el país del actor.',
   })
   @ApiResponse({ status: 200, description: 'Lista de países' })
-  @ApiResponse({ status: 403, description: 'Rol territorial sin país resoluble' })
+  @ApiResponse({
+    status: 403,
+    description: 'Rol territorial sin país resoluble',
+  })
   async getCountries(@CurrentUser() user?: { sub: string }) {
-    const actorCountryId = await this.actorCatalogCountryId(user);
-    return this.catalogsService.getCountries(actorCountryId);
+    const actorRecorte = await this.actorCatalogRecorte(user);
+    return this.catalogsService.getCountries(actorRecorte);
   }
 
   // ========================================
@@ -105,10 +109,13 @@ export class CatalogsController {
       'Lista divisiones institucionales activas. Con rol territorial: solo divisiones que tienen uniones en el país del actor.',
   })
   @ApiResponse({ status: 200, description: 'Lista de divisiones' })
-  @ApiResponse({ status: 403, description: 'Rol territorial sin país resoluble' })
+  @ApiResponse({
+    status: 403,
+    description: 'Rol territorial sin país resoluble',
+  })
   async getDivisions(@CurrentUser() user?: { sub: string }) {
-    const actorCountryId = await this.actorCatalogCountryId(user);
-    return this.catalogsService.getDivisions(actorCountryId);
+    const actorRecorte = await this.actorCatalogRecorte(user);
+    return this.catalogsService.getDivisions(actorRecorte);
   }
 
   // ========================================
@@ -144,9 +151,9 @@ export class CatalogsController {
     divisionId?: number,
     @CurrentUser() user?: { sub: string },
   ) {
-    const actorCountryId = await this.actorCatalogCountryId(user);
-    if (actorCountryId !== undefined) {
-      await assertCatalogFiltersInCountry(this.prisma, actorCountryId, {
+    const actorRecorte = await this.actorCatalogRecorte(user);
+    if (actorRecorte !== undefined) {
+      await assertCatalogFiltersInRecorte(this.prisma, actorRecorte, {
         countryId,
         divisionId,
       });
@@ -154,7 +161,7 @@ export class CatalogsController {
     return this.catalogsService.getUnions({
       countryId,
       divisionId,
-      actorCountryId,
+      actorRecorte,
     });
   }
 
@@ -183,13 +190,13 @@ export class CatalogsController {
     unionId?: number,
     @CurrentUser() user?: { sub: string },
   ) {
-    const actorCountryId = await this.actorCatalogCountryId(user);
-    if (actorCountryId !== undefined) {
-      await assertCatalogFiltersInCountry(this.prisma, actorCountryId, {
+    const actorRecorte = await this.actorCatalogRecorte(user);
+    if (actorRecorte !== undefined) {
+      await assertCatalogFiltersInRecorte(this.prisma, actorRecorte, {
         unionId,
       });
     }
-    return this.catalogsService.getLocalFields(unionId, actorCountryId);
+    return this.catalogsService.getLocalFields(unionId, actorRecorte);
   }
 
   // ========================================
@@ -217,13 +224,13 @@ export class CatalogsController {
     localFieldId?: number,
     @CurrentUser() user?: { sub: string },
   ) {
-    const actorCountryId = await this.actorCatalogCountryId(user);
-    if (actorCountryId !== undefined) {
-      await assertCatalogFiltersInCountry(this.prisma, actorCountryId, {
+    const actorRecorte = await this.actorCatalogRecorte(user);
+    if (actorRecorte !== undefined) {
+      await assertCatalogFiltersInRecorte(this.prisma, actorRecorte, {
         localFieldId,
       });
     }
-    return this.catalogsService.getDistricts(localFieldId, actorCountryId);
+    return this.catalogsService.getDistricts(localFieldId, actorRecorte);
   }
 
   // ========================================
@@ -251,13 +258,13 @@ export class CatalogsController {
     districtId?: number,
     @CurrentUser() user?: { sub: string },
   ) {
-    const actorCountryId = await this.actorCatalogCountryId(user);
-    if (actorCountryId !== undefined) {
-      await assertCatalogFiltersInCountry(this.prisma, actorCountryId, {
+    const actorRecorte = await this.actorCatalogRecorte(user);
+    if (actorRecorte !== undefined) {
+      await assertCatalogFiltersInRecorte(this.prisma, actorRecorte, {
         districtId,
       });
     }
-    return this.catalogsService.getChurches(districtId, actorCountryId);
+    return this.catalogsService.getChurches(districtId, actorRecorte);
   }
 
   // ========================================

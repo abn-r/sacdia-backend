@@ -8,11 +8,21 @@ import {
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ecclesiasticalYearName } from '../common/services/ecclesiastical-year.service';
+import type { CatalogRecorte } from '../common/authorization/actor-territory-scope';
+
+/** A bare number is a country id, the shape the country-only callers pass. */
+type CatalogRecorteInput = number | CatalogRecorte | undefined;
+
+function toRecorte(input: CatalogRecorteInput): CatalogRecorte | undefined {
+  if (input === undefined) return undefined;
+  return typeof input === 'number' ? { countryId: input } : input;
+}
 
 type GetUnionsFilters = {
   countryId?: number;
   divisionId?: number;
   actorCountryId?: number;
+  actorRecorte?: CatalogRecorte;
 };
 
 @Injectable()
@@ -72,7 +82,7 @@ export class CatalogsService {
   // ========================================
   // COUNTRIES
   // ========================================
-  async getCountries(actorCountryId?: number) {
+  async getCountries(actorRecorte?: CatalogRecorteInput) {
     const rows = await this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.COUNTRIES,
       () =>
@@ -87,17 +97,24 @@ export class CatalogsService {
         }),
     );
 
-    if (!actorCountryId) {
+    const recorte = toRecorte(actorRecorte);
+    if (!recorte) {
       return rows;
     }
 
-    return rows.filter((row) => row.country_id === actorCountryId);
+    if ('countryId' in recorte) {
+      return rows.filter((row) => row.country_id === recorte.countryId);
+    }
+
+    const unions = await this.loadUnionsInRecorte(recorte);
+    const allowed = new Set(unions.map((union) => union.country_id));
+    return rows.filter((row) => allowed.has(row.country_id));
   }
 
   // ========================================
   // DIVISIONS
   // ========================================
-  async getDivisions(actorCountryId?: number) {
+  async getDivisions(actorRecorte?: CatalogRecorteInput) {
     const rows = await this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.DIVISIONS,
       () =>
@@ -116,11 +133,12 @@ export class CatalogsService {
       `),
     );
 
-    if (!actorCountryId) {
+    const recorte = toRecorte(actorRecorte);
+    if (!recorte) {
       return rows;
     }
 
-    const unions = await this.loadUnionsInCountry(actorCountryId);
+    const unions = await this.loadUnionsInRecorte(recorte);
     const allowed = new Set(unions.map((union) => union.division_id));
     return rows.filter((row) => allowed.has(row.division_id));
   }
@@ -137,12 +155,17 @@ export class CatalogsService {
         ? countryIdOrFilters
         : { countryId: countryIdOrFilters, divisionId };
 
-    if (filters.actorCountryId) {
-      const unions = await this.loadUnionsInCountry(filters.actorCountryId);
-      if (!filters.divisionId) {
-        return unions;
-      }
-      return unions.filter((union) => union.division_id === filters.divisionId);
+    const recorte =
+      filters.actorRecorte ?? toRecorte(filters.actorCountryId || undefined);
+    if (recorte) {
+      const unions = await this.loadUnionsInRecorte(recorte);
+      return unions.filter(
+        (union) =>
+          (!filters.divisionId || union.division_id === filters.divisionId) &&
+          (!filters.countryId ||
+            !('divisionId' in recorte) ||
+            union.country_id === filters.countryId),
+      );
     }
 
     if (filters.countryId && !filters.divisionId) {
@@ -163,9 +186,11 @@ export class CatalogsService {
     );
   }
 
-  private async loadUnionsInCountry(countryId: number) {
+  private async loadUnionsInRecorte(recorte: CatalogRecorte) {
     const unions = await this.loadAllUnions();
-    return unions.filter((union) => union.country_id === countryId);
+    return 'countryId' in recorte
+      ? unions.filter((union) => union.country_id === recorte.countryId)
+      : unions.filter((union) => union.division_id === recorte.divisionId);
   }
 
   private async ensureCountryAliasUnambiguous(
@@ -216,7 +241,7 @@ export class CatalogsService {
   // ========================================
   // LOCAL FIELDS (Campos Locales)
   // ========================================
-  async getLocalFields(unionId?: number, actorCountryId?: number) {
+  async getLocalFields(unionId?: number, actorRecorte?: CatalogRecorteInput) {
     const rows = await this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.LOCAL_FIELDS(unionId),
       () =>
@@ -234,11 +259,12 @@ export class CatalogsService {
         }),
     );
 
-    if (!actorCountryId) {
+    const recorte = toRecorte(actorRecorte);
+    if (!recorte) {
       return rows;
     }
 
-    const unions = await this.loadUnionsInCountry(actorCountryId);
+    const unions = await this.loadUnionsInRecorte(recorte);
     const allowed = new Set(unions.map((union) => union.union_id));
     return rows.filter((row) => allowed.has(row.union_id));
   }
@@ -262,7 +288,10 @@ export class CatalogsService {
     };
   }
 
-  async getDistricts(localFieldId?: number, actorCountryId?: number) {
+  async getDistricts(
+    localFieldId?: number,
+    actorRecorte?: CatalogRecorteInput,
+  ) {
     const rows = await this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.DISTRICTS(localFieldId),
       async () => {
@@ -282,11 +311,11 @@ export class CatalogsService {
       },
     );
 
-    if (!actorCountryId) {
+    if (!actorRecorte) {
       return rows;
     }
 
-    const fields = await this.getLocalFields(undefined, actorCountryId);
+    const fields = await this.getLocalFields(undefined, actorRecorte);
     const allowed = new Set(fields.map((field) => field.local_field_id));
     return rows.filter((row) => allowed.has(row.local_field_id));
   }
@@ -311,7 +340,7 @@ export class CatalogsService {
     };
   }
 
-  async getChurches(districtId?: number, actorCountryId?: number) {
+  async getChurches(districtId?: number, actorRecorte?: CatalogRecorteInput) {
     const rows = await this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.CHURCHES(districtId),
       async () => {
@@ -331,11 +360,11 @@ export class CatalogsService {
       },
     );
 
-    if (!actorCountryId) {
+    if (!actorRecorte) {
       return rows;
     }
 
-    const districts = await this.getDistricts(undefined, actorCountryId);
+    const districts = await this.getDistricts(undefined, actorRecorte);
     const allowed = new Set(districts.map((district) => district.district_id));
     return rows.filter((row) => allowed.has(row.district_id));
   }
