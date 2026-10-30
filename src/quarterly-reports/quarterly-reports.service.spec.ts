@@ -62,6 +62,50 @@ describe('QuarterlyReportsService admin visibility', () => {
   });
 });
 
+describe('QuarterlyReportsService member count', () => {
+  const findAssignments = jest.fn();
+  const mockPrisma = {
+    clubs: { findUnique: jest.fn().mockResolvedValue({ club_id: 10 }) },
+    club_sections: {
+      findMany: jest.fn().mockResolvedValue([{ club_section_id: 7 }]),
+    },
+    ecclesiastical_years: { findFirst: jest.fn().mockResolvedValue(null) },
+    club_role_assignments: { findMany: findAssignments },
+    users_honors: { findMany: jest.fn().mockResolvedValue([]) },
+    activities: { count: jest.fn().mockResolvedValue(0) },
+    finances: { findMany: jest.fn().mockResolvedValue([]) },
+  };
+  const service = new QuarterlyReportsService(
+    mockPrisma as any,
+    {} as any,
+    {} as any,
+  );
+
+  it('counts the distinct people with an assignment overlapping the quarter', async () => {
+    findAssignments.mockResolvedValue([{ user_id: 'a' }, { user_id: 'b' }]);
+
+    const data = await service.computeData(10, 2026, 2);
+
+    expect(data.member_count).toBe(2);
+    const { where, distinct } = findAssignments.mock.calls[0][0];
+    expect(distinct).toEqual(['user_id']);
+    expect(where.club_section_id).toEqual({ in: [7] });
+    // Q2 2026: April 1 to June 30, whatever year is active today.
+    expect(where.start_date).toEqual({ lte: new Date('2026-06-30T00:00:00Z') });
+    expect(where.AND).toContainEqual({
+      OR: [
+        { end_date: null },
+        { end_date: { gte: new Date('2026-04-01T00:00:00Z') } },
+      ],
+    });
+    expect(where.AND).toContainEqual({
+      OR: [{ status: { in: ['active', 'ended'] } }, { status: null }],
+    });
+    expect(where).not.toHaveProperty('active');
+    expect(where).not.toHaveProperty('ecclesiastical_year_id');
+  });
+});
+
 describe('QuarterlyReportsService generate on demand', () => {
   const mockPrisma = {
     clubs: { findUnique: jest.fn(), findFirst: jest.fn() },

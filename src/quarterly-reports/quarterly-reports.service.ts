@@ -155,17 +155,15 @@ export class QuarterlyReportsService {
 
     const yearId = ecclesiasticalYear?.year_id;
 
-    // ── Member count (from active assignments across sections) ──
-    let memberCount = 0;
-    if (allSectionIds.length > 0 && yearId) {
-      memberCount = await this.prisma.club_role_assignments.count({
-        where: {
-          club_section_id: { in: allSectionIds },
-          ecclesiastical_year_id: yearId,
-          active: true,
-        },
-      });
-    }
+    // ── Members of the quarter ──
+    // Distinct people with a club assignment that overlaps the quarter, active
+    // or already ended. Not the assignments active today: a past quarter keeps
+    // the members it had, and someone with two roles counts once.
+    const memberIds =
+      allSectionIds.length > 0
+        ? await this.getQuarterMemberIds(allSectionIds, year, months)
+        : [];
+    const memberCount = memberIds.length;
 
     // ── Directiva ──
     const directiva: { role: string; user_id: string; name: string }[] = [];
@@ -225,30 +223,17 @@ export class QuarterlyReportsService {
     let honorsStarted = 0;
     let honorsCompleted = 0;
 
-    if (allSectionIds.length > 0 && yearId) {
-      const memberIds = await this.prisma.club_role_assignments.findMany({
+    if (memberIds.length > 0) {
+      const honors = await this.prisma.users_honors.findMany({
         where: {
-          club_section_id: { in: allSectionIds },
-          ecclesiastical_year_id: yearId,
+          user_id: { in: memberIds },
           active: true,
+          date: { gte: startDate, lte: endDate },
         },
-        select: { user_id: true },
-        distinct: ['user_id'],
+        select: { validate: true },
       });
-
-      const ids = memberIds.map((m) => m.user_id);
-      if (ids.length > 0) {
-        const honors = await this.prisma.users_honors.findMany({
-          where: {
-            user_id: { in: ids },
-            active: true,
-            date: { gte: startDate, lte: endDate },
-          },
-          select: { validate: true },
-        });
-        honorsStarted = honors.length;
-        honorsCompleted = honors.filter((h) => h.validate).length;
-      }
+      honorsStarted = honors.length;
+      honorsCompleted = honors.filter((h) => h.validate).length;
     }
 
     // ── Activities aggregation ──
@@ -690,6 +675,36 @@ export class QuarterlyReportsService {
 
   private getMonthsForQuarter(quarter: number): number[] {
     return [quarter * 3 - 2, quarter * 3 - 1, quarter * 3];
+  }
+
+  /**
+   * User ids with a club assignment in the sections that overlaps the
+   * quarter: it started on or before the last day and had not ended before
+   * the first day. Ended assignments count (status 'ended'); pending or
+   * rejected requests do not.
+   */
+  private async getQuarterMemberIds(
+    sectionIds: number[],
+    year: number,
+    months: number[],
+  ): Promise<string[]> {
+    // start_date / end_date are DATE columns: compare against UTC midnights.
+    const firstDay = new Date(Date.UTC(year, months[0] - 1, 1));
+    const lastDay = new Date(Date.UTC(year, months[months.length - 1], 0));
+    const rows = await this.prisma.club_role_assignments.findMany({
+      where: {
+        club_section_id: { in: sectionIds },
+        start_date: { lte: lastDay },
+        AND: [
+          // status is nullable; legacy rows without one are active members.
+          { OR: [{ status: { in: ['active', 'ended'] } }, { status: null }] },
+          { OR: [{ end_date: null }, { end_date: { gte: firstDay } }] },
+        ],
+      },
+      select: { user_id: true },
+      distinct: ['user_id'],
+    });
+    return rows.map((r) => r.user_id);
   }
 
   /** A quarter that starts after today (Mexico City civil day) has no data yet. */
