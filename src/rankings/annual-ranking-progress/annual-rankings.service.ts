@@ -3,6 +3,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AppForbiddenException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import type { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
+import {
+  assertLocalFieldInActorScope,
+  resolveActorTerritoryScope,
+} from '../../common/authorization/actor-territory-scope';
 import { AnnualRankingConfigService } from './annual-ranking-config.service';
 import {
   RankingTierCalculatorService,
@@ -61,7 +65,7 @@ export class AnnualRankingsService {
     query: LeaderboardQuery,
     profile?: ResolvedAuthorizationProfile,
   ): Promise<AnnualRankingLeaderboardResponseDto> {
-    this.assertCanReadLocalField(profile, query.localFieldId);
+    await this.assertCanReadLocalField(profile, query.localFieldId);
 
     const [config, tiers, rows, year] = await Promise.all([
       this.configService.getByScope({
@@ -361,10 +365,10 @@ export class AnnualRankingsService {
     return Math.round((value / max) * 10000) / 100;
   }
 
-  private assertCanReadLocalField(
+  private async assertCanReadLocalField(
     profile: ResolvedAuthorizationProfile | undefined,
     localFieldId: number,
-  ): void {
+  ): Promise<void> {
     if (!profile) return;
 
     const permissions = profile.authorization.effective.permissions;
@@ -392,6 +396,13 @@ export class AnnualRankingsService {
     ].filter((id): id is number => id !== null);
 
     if (readableLocalFieldIds.includes(localFieldId)) return;
+
+    // Union and division leadership read every local field of their territory.
+    const territory = resolveActorTerritoryScope(profile);
+    if (territory.level === 'union' || territory.level === 'division') {
+      await assertLocalFieldInActorScope(this.prisma, localFieldId, territory);
+      return;
+    }
 
     throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
