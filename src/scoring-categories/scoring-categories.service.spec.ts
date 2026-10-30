@@ -37,7 +37,23 @@ describe('ScoringCategoriesService', () => {
 
   const mockAuthContext = {
     isSuperAdmin: jest.fn(),
+    resolveUserAuthorization: jest.fn(),
   };
+
+  /** Profile with the given global role and scope (no club assignments). */
+  const territorial = (
+    role: string,
+    global: Record<string, { id: number }>,
+  ) => ({
+    authorization: {
+      grants: {
+        global_roles: [{ role_name: role, permissions: [] }],
+        club_assignments: [],
+      },
+      active_assignment: { assignment_id: null },
+      effective: { permissions: [], scope: { global } },
+    },
+  });
 
   const mockTranslationService = {
     getCurrentLocale: jest.fn().mockReturnValue('es'),
@@ -53,8 +69,8 @@ describe('ScoringCategoriesService', () => {
   };
 
   const mockCatalogCache = {
-    getOrSet: jest.fn(
-      (_key: string, loader: () => Promise<unknown>) => loader(),
+    getOrSet: jest.fn((_key: string, loader: () => Promise<unknown>) =>
+      loader(),
     ),
   };
 
@@ -70,6 +86,10 @@ describe('ScoringCategoriesService', () => {
     jest.clearAllMocks();
     // Default: not a super-admin so existing territory checks run normally.
     mockAuthContext.isSuperAdmin.mockResolvedValue(false);
+    // Default: a club member (no territorial role), so the club path decides.
+    mockAuthContext.resolveUserAuthorization.mockResolvedValue(
+      territorial('user', {}),
+    );
     mockPrisma.$queryRaw.mockResolvedValue([{ division_id: 1 }]);
     mockHierarchy.resolveCurrent.mockImplementation(
       ({
@@ -292,6 +312,48 @@ describe('ScoringCategoriesService', () => {
       });
 
       expect(mockTx.scoring_categories.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('territorial leadership', () => {
+    it('lets union leadership read the categories of its own union', async () => {
+      mockAuthContext.resolveUserAuthorization.mockResolvedValue(
+        territorial('director-union', { union: { id: 20 } }),
+      );
+      mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.findUnionCategories(20, 'user-1'),
+      ).resolves.toBeDefined();
+      expect(mockPrisma.club_role_assignments.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('still denies union leadership another union', async () => {
+      mockAuthContext.resolveUserAuthorization.mockResolvedValue(
+        territorial('director-union', { union: { id: 21 } }),
+      );
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.findUnionCategories(20, 'user-1'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.SCORING_CATEGORY_UNION_FORBIDDEN,
+      });
+    });
+
+    it('lets local field leadership read the categories of its own field', async () => {
+      mockAuthContext.resolveUserAuthorization.mockResolvedValue(
+        territorial('director-lf', { local_field: { id: 4 } }),
+      );
+      mockPrisma.$queryRaw.mockResolvedValue([
+        { union_id: 20, division_id: 1 },
+      ]);
+      mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.findLocalFieldCategories(4, 'user-1'),
+      ).resolves.toBeDefined();
+      expect(mockPrisma.club_role_assignments.findFirst).not.toHaveBeenCalled();
     });
   });
 

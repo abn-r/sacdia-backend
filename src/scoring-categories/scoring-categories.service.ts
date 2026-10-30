@@ -15,6 +15,10 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { TranslationService } from '../common/services/translation.service';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 import {
+  isLocalFieldInActorScope,
+  resolveActorTerritoryScope,
+} from '../common/authorization/actor-territory-scope';
+import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
 } from '../catalogs/catalog-cache.service';
@@ -309,6 +313,20 @@ export class ScoringCategoriesService {
    * belongs to a local field that is under the given union.
    * Super-admins bypass this check (god-mode via AuthorizationContextService).
    */
+  private async actorTerritory(userId: string) {
+    return resolveActorTerritoryScope(
+      await this.authorizationContext.resolveUserAuthorization(userId),
+    );
+  }
+
+  private async unionDivisionId(unionId: number): Promise<number | null> {
+    const union = await this.prisma.unions.findUnique({
+      where: { union_id: unionId },
+      select: { division_id: true },
+    });
+    return union?.division_id ?? null;
+  }
+
   private async assertUserBelongsToUnion(
     userId: string,
     unionId: number,
@@ -317,6 +335,16 @@ export class ScoringCategoriesService {
     // backed by the auth-context Redis cache (5 min TTL), so the extra call
     // is cheap within a single request window.
     if (await this.authorizationContext.isSuperAdmin(userId)) {
+      return;
+    }
+
+    // Union and division leadership own the unions of their territory.
+    const territory = await this.actorTerritory(userId);
+    if (
+      (territory.level === 'union' && territory.unionId === unionId) ||
+      (territory.level === 'division' &&
+        (await this.unionDivisionId(unionId)) === territory.divisionId)
+    ) {
       return;
     }
 
@@ -357,6 +385,18 @@ export class ScoringCategoriesService {
     // backed by the auth-context Redis cache (5 min TTL), so the extra call
     // is cheap within a single request window.
     if (await this.authorizationContext.isSuperAdmin(userId)) {
+      return;
+    }
+
+    // Local field, union and division leadership own the local fields of
+    // their territory.
+    const territory = await this.actorTerritory(userId);
+    if (
+      (territory.level === 'local_field' ||
+        territory.level === 'union' ||
+        territory.level === 'division') &&
+      (await isLocalFieldInActorScope(this.prisma, fieldId, territory))
+    ) {
       return;
     }
 

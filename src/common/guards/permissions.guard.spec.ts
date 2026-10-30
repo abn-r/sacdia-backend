@@ -32,7 +32,7 @@ describe('PermissionsGuard', () => {
     enrollments: { findFirst: jest.fn() },
     monthly_reports: { findUnique: jest.fn() },
     club_enrollments: { findUnique: jest.fn() },
-    users: { findUnique: jest.fn() },
+    users: { findUnique: jest.fn(), count: jest.fn() },
     member_insurances: { findUnique: jest.fn() },
     activities: { findUnique: jest.fn() },
     finances: { findUnique: jest.fn() },
@@ -182,6 +182,8 @@ describe('PermissionsGuard', () => {
     jest.clearAllMocks();
     mockAuthorizationContext.canManageClub.mockResolvedValue(false);
     mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+    // Target users sit inside the actor's territory unless a test says not.
+    mockPrisma.users.count.mockResolvedValue(1);
     mockAuthorizationContext.canAccessHierarchyScope.mockImplementation(
       (resolved, scope) => {
         const globalScope = resolved.authorization.effective.scope.global ?? {};
@@ -247,27 +249,33 @@ describe('PermissionsGuard', () => {
       });
 
       mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
-        createResolved({ globalPermissions: [permission] }),
+        createResolved({
+          globalPermissions: [permission],
+          globalLocalFieldId: 50,
+        }),
       );
 
       await expect(
         guard.canActivate(
           createContext({
             user: { sub: 'admin-1' },
-            params: { userId: 'user-123' },
+            params: { userId: '11111111-1111-4111-8111-111111111123' },
           }),
         ),
       ).resolves.toBe(true);
 
       mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
-        createResolved({ globalPermissions: [legacyFallback] }),
+        createResolved({
+          globalPermissions: [legacyFallback],
+          globalLocalFieldId: 50,
+        }),
       );
 
       await expect(
         guard.canActivate(
           createContext({
             user: { sub: 'admin-1' },
-            params: { userId: 'user-123' },
+            params: { userId: '11111111-1111-4111-8111-111111111123' },
           }),
         ),
       ).resolves.toBe(true);
@@ -280,7 +288,7 @@ describe('PermissionsGuard', () => {
         guard.canActivate(
           createContext({
             user: { sub: 'club-user-1' },
-            params: { userId: 'user-123' },
+            params: { userId: '11111111-1111-4111-8111-111111111123' },
           }),
         ),
       ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
@@ -1014,14 +1022,17 @@ describe('PermissionsGuard', () => {
       return undefined;
     });
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
-      createResolved({ globalPermissions: ['users:update'] }),
+      createResolved({
+        globalPermissions: ['users:update'],
+        globalLocalFieldId: 50,
+      }),
     );
 
     await expect(
       guard.canActivate(
         createContext({
           user: { sub: 'admin-1' },
-          params: { userId: 'user-123' },
+          params: { userId: '11111111-1111-4111-8111-111111111123' },
         }),
       ),
     ).resolves.toBe(true);
@@ -2116,6 +2127,7 @@ describe('PermissionsGuard', () => {
           createResolved({
             globalRoleName: 'admin',
             globalPermissions: [route.permission],
+            globalLocalFieldId: 50,
             extraGlobalRoles: [
               { role_name: 'user', permissions: LEGACY_BASE_ROLE_PERMISSIONS },
             ],
@@ -2134,6 +2146,9 @@ describe('PermissionsGuard', () => {
           createResolved({
             globalRoleName: roleName,
             globalPermissions: ['users:update_profile'],
+            globalLocalFieldId: 50,
+            globalUnionId: 70,
+            globalDivisionId: 1,
           }),
         );
 
@@ -2149,6 +2164,7 @@ describe('PermissionsGuard', () => {
         createResolved({
           globalRoleName: 'assistant-admin',
           globalPermissions: ['users:update_profile'],
+          globalLocalFieldId: 50,
         }),
       );
 
@@ -2182,6 +2198,24 @@ describe('PermissionsGuard', () => {
           globalPermissions: ['users:update_profile'],
         }),
       );
+
+      await expect(guard.canActivate(otherUserContext())).rejects.toMatchObject(
+        { code: ErrorCode.GUARD_PERMISSION_DENIED },
+      );
+    });
+
+    it('denies a territorial role on a user outside its territory', async () => {
+      mockUserRoute(
+        sensitive('GET /users/:userId/allergies', 'health', 'read'),
+      );
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalRoleName: 'director-lf',
+          globalPermissions: ['health:read'],
+          globalLocalFieldId: 4,
+        }),
+      );
+      mockPrisma.users.count.mockResolvedValue(0);
 
       await expect(guard.canActivate(otherUserContext())).rejects.toMatchObject(
         { code: ErrorCode.GUARD_PERMISSION_DENIED },

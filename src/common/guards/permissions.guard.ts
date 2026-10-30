@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  Optional,
+} from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import {
   AppBadRequestException,
@@ -14,6 +19,8 @@ import {
   type ResolvedAuthorizationProfile,
 } from '../services/authorization-context.service';
 import { InstitutionalHierarchyService } from '../services/institutional-hierarchy.service';
+import { MemberTerritoryScopeService } from '../authorization/member-territory-scope.service';
+import { isTargetUserInActorScope } from '../authorization/target-user-scope';
 import {
   AUTHORIZATION_RESOURCE_KEY,
   type AuthorizationResourceMetadata,
@@ -140,6 +147,7 @@ export class PermissionsGuard implements CanActivate {
     private readonly authorizationContext: AuthorizationContextService,
     private readonly prisma: PrismaService,
     private readonly hierarchy: InstitutionalHierarchyService,
+    @Optional() private readonly memberScope?: MemberTerritoryScopeService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -255,8 +263,19 @@ export class PermissionsGuard implements CanActivate {
       sensitiveUserSubresource,
     );
 
+    // A global permission says what the actor may do, not on whom: on a
+    // `user` resource the target must be inside the actor's territory, else
+    // only the section-member paths below can still let the request in.
+    // A direct per-user grant is an explicit admin decision about this actor
+    // and keeps working as before.
+    const grantedByGlobalPermission =
+      hasRequiredPermissions &&
+      (resource.type !== 'user' ||
+        this.directPermissionsSatisfy(resolved, requirement) ||
+        (await this.isTargetUserInScope(request, userId, resolved, resource)));
+
     if (
-      !hasRequiredPermissions &&
+      !grantedByGlobalPermission &&
       !(await this.canReadSectionMemberProfile(
         request,
         userId,
@@ -456,6 +475,43 @@ export class PermissionsGuard implements CanActivate {
         );
       }
     }
+  }
+
+  private directPermissionsSatisfy(
+    resolved: ResolvedAuthorizationProfile,
+    requirement: PermissionRequirement,
+  ): boolean {
+    const direct = new Set(
+      resolved.authorization.grants.direct_permissions ?? [],
+    );
+    return requirement.mode === 'any'
+      ? requirement.permissions.some((permission) => direct.has(permission))
+      : requirement.permissions.every((permission) => direct.has(permission));
+  }
+
+  private async isTargetUserInScope(
+    request: any,
+    actorUserId: string,
+    resolved: ResolvedAuthorizationProfile,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<boolean> {
+    const targetUserId = this.getRequestValue(
+      request,
+      'param',
+      resource.ownerParam ?? 'userId',
+    );
+    if (
+      typeof targetUserId !== 'string' ||
+      !UUID_PARAM_PATTERN.test(targetUserId)
+    ) {
+      return false;
+    }
+    return isTargetUserInActorScope(
+      { prisma: this.prisma, memberScope: this.memberScope },
+      actorUserId,
+      resolved,
+      targetUserId,
+    );
   }
 
   private hasRequiredPermissions(
