@@ -74,6 +74,13 @@ export class InsuranceController {
   ) {}
 
   @Get('insurance/products')
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description:
+      'Campo Local a configurar (admin / super-admin sin Campo Local propio)',
+  })
   @RequirePermissions('insurance:configure')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({
@@ -89,16 +96,25 @@ export class InsuranceController {
       authorizationProfile?: ResolvedAuthorizationProfile;
       user?: CurrentUserPayload;
     },
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
   ) {
     return {
       status: 'success',
       data: await this.configService.listProducts(
-        this.resolveConfigActor(request),
+        this.resolveConfigActor(request, localFieldId),
       ),
     };
   }
 
   @Post('insurance/products')
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description:
+      'Campo Local a configurar (admin / super-admin sin Campo Local propio)',
+  })
   @RequirePermissions('insurance:configure')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({
@@ -112,17 +128,26 @@ export class InsuranceController {
       authorizationProfile?: ResolvedAuthorizationProfile;
       user?: CurrentUserPayload;
     },
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
   ) {
     return {
       status: 'success',
       data: await this.configService.createProduct(
         dto,
-        this.resolveConfigActor(request),
+        this.resolveConfigActor(request, localFieldId),
       ),
     };
   }
 
   @Patch('insurance/products/:productId')
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description:
+      'Campo Local a configurar (admin / super-admin sin Campo Local propio)',
+  })
   @RequirePermissions('insurance:configure')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({
@@ -138,18 +163,27 @@ export class InsuranceController {
       authorizationProfile?: ResolvedAuthorizationProfile;
       user?: CurrentUserPayload;
     },
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
   ) {
     return {
       status: 'success',
       data: await this.configService.updateProduct(
         productId,
         dto,
-        this.resolveConfigActor(request),
+        this.resolveConfigActor(request, localFieldId),
       ),
     };
   }
 
   @Get('insurance/cycles')
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description:
+      'Campo Local a configurar (admin / super-admin sin Campo Local propio)',
+  })
   @RequirePermissions('insurance:configure')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Listar ciclos de seguro del Campo Local activo' })
@@ -160,16 +194,25 @@ export class InsuranceController {
       authorizationProfile?: ResolvedAuthorizationProfile;
       user?: CurrentUserPayload;
     },
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
   ) {
     return {
       status: 'success',
       data: await this.configService.listCycles(
-        this.resolveConfigActor(request),
+        this.resolveConfigActor(request, localFieldId),
       ),
     };
   }
 
   @Post('insurance/cycles')
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description:
+      'Campo Local a configurar (admin / super-admin sin Campo Local propio)',
+  })
   @RequirePermissions('insurance:configure')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Crear ciclo de seguro para el Campo Local activo' })
@@ -181,17 +224,26 @@ export class InsuranceController {
       authorizationProfile?: ResolvedAuthorizationProfile;
       user?: CurrentUserPayload;
     },
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
   ) {
     return {
       status: 'success',
       data: await this.configService.createCycle(
         dto,
-        this.resolveConfigActor(request),
+        this.resolveConfigActor(request, localFieldId),
       ),
     };
   }
 
   @Patch('insurance/cycles/:cycleConfigId')
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description:
+      'Campo Local a configurar (admin / super-admin sin Campo Local propio)',
+  })
   @RequirePermissions('insurance:configure')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({
@@ -207,13 +259,15 @@ export class InsuranceController {
       authorizationProfile?: ResolvedAuthorizationProfile;
       user?: CurrentUserPayload;
     },
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
   ) {
     return {
       status: 'success',
       data: await this.configService.updateCycle(
         cycleConfigId,
         dto,
-        this.resolveConfigActor(request),
+        this.resolveConfigActor(request, localFieldId),
       ),
     };
   }
@@ -273,7 +327,8 @@ export class InsuranceController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — requiere rol admin, coordinator o campo local (alias)',
+    description:
+      'Forbidden — requiere rol admin, coordinator o campo local (alias)',
   })
   async getExpiringInsurances(
     @CurrentUser() user: CurrentUserPayload,
@@ -425,16 +480,22 @@ export class InsuranceController {
     return user?.sub ?? user?.user_id ?? user?.userId;
   }
 
-  private resolveConfigActor(request: {
-    authorizationProfile?: ResolvedAuthorizationProfile;
-    user?: CurrentUserPayload;
-  }) {
+  private resolveConfigActor(
+    request: {
+      authorizationProfile?: ResolvedAuthorizationProfile;
+      user?: CurrentUserPayload;
+    },
+    requestedLocalFieldId?: number,
+  ) {
     const profile = request.authorizationProfile;
     const userId = this.extractCurrentUserId(request.user);
     if (!profile || !userId) {
       throw new AppForbiddenException(ErrorCode.GUARD_USER_NOT_AUTHENTICATED);
     }
 
-    return { userId, ...this.configScope.resolve(profile) };
+    return {
+      userId,
+      ...this.configScope.resolve(profile, requestedLocalFieldId),
+    };
   }
 }
