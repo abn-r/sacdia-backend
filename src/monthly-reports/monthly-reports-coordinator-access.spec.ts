@@ -666,7 +666,6 @@ describe('Seed and migration: coordinators read reports, never submit', () => {
 
   it.each([
     'secretary',
-    'treasurer',
     'secretary-treasurer',
     'deputy-director',
     'director',
@@ -676,5 +675,11 @@ describe('Seed and migration: coordinators read reports, never submit', () => {
     const block = seedBlock(role);
     expect(block).toContain("'reports:read'");
     expect(block).toContain("'reports:submit'");
+  });
+
+  it('the treasurer seed block reads reports but never submits (2026-11-02)', () => {
+    const block = seedBlock('treasurer');
+    expect(block).toContain("'reports:read'");
+    expect(block).not.toContain("'reports:submit'");
   });
 });
