@@ -88,11 +88,13 @@ describe('ClassRequirementEligibilityService', () => {
         owner_local_field_id: null,
       },
     ]);
-    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue([
-      { section_id: 101, status: 'VALIDATED', score: 0 },
-      { section_id: 103, status: 'PENDING', score: 80 },
-      { section_id: 102, status: 'VALIDATED', score: 100 },
-    ]);
+    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue(
+      [
+        { section_id: 101, status: 'VALIDATED', score: 0 },
+        { section_id: 103, status: 'VALIDATED', score: 80 },
+        { section_id: 102, status: 'VALIDATED', score: 100 },
+      ],
+    );
 
     const result = await service.calculateForEnrollment(10);
 
@@ -209,10 +211,12 @@ describe('ClassRequirementEligibilityService', () => {
         owner_local_field_id: null,
       },
     ]);
-    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue([
-      { section_id: 101, status: 'REJECTED', score: 100 },
-      { section_id: 102, status: 'PENDING', score: 80 },
-    ]);
+    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue(
+      [
+        { section_id: 101, status: 'REJECTED', score: 100 },
+        { section_id: 102, status: 'VALIDATED', score: 80 },
+      ],
+    );
 
     const result = await service.calculateForEnrollment(10);
 
@@ -220,7 +224,10 @@ describe('ClassRequirementEligibilityService', () => {
       applicable_section_ids: [101, 102],
       required_investiture_section_ids: [101, 102],
       overall_progress: 50,
-      investiture_eligibility: { eligible: false, missing_required_sections: 1 },
+      investiture_eligibility: {
+        eligible: false,
+        missing_required_sections: 1,
+      },
     });
   });
 
@@ -246,9 +253,9 @@ describe('ClassRequirementEligibilityService', () => {
         owner_local_field_id: null,
       },
     ]);
-    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue([
-      { section_id: 101, status: 'VALIDATED', score: 0 },
-    ]);
+    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue(
+      [{ section_id: 101, status: 'VALIDATED', score: 0 }],
+    );
 
     const result = await service.calculateForEnrollment(10);
 
@@ -270,9 +277,9 @@ describe('ClassRequirementEligibilityService', () => {
         owner_local_field_id: null,
       },
     ]);
-    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue([
-      { section_id: 101, status: 'PENDING', score: 79 },
-    ]);
+    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue(
+      [{ section_id: 101, status: 'PENDING', score: 79 }],
+    );
 
     const belowDefault = await service.calculateForEnrollment(10);
     expect(belowDefault).toMatchObject({
@@ -287,9 +294,9 @@ describe('ClassRequirementEligibilityService', () => {
     ).local_field_class_thresholds = {
       findUnique: jest.fn().mockResolvedValue({ minimum_percent: 90 }),
     };
-    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue([
-      { section_id: 101, status: 'PENDING', score: 85 },
-    ]);
+    (mockPrisma.class_section_progress.findMany as jest.Mock).mockResolvedValue(
+      [{ section_id: 101, status: 'PENDING', score: 85 }],
+    );
 
     const belowConfigured = await service.calculateForEnrollment(10);
     expect(belowConfigured).toMatchObject({

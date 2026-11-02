@@ -59,16 +59,12 @@ export function canEditFieldClassThreshold(params: {
   return fieldEditor && stamp <= `${deadline}T23:59:59`;
 }
 
-export function sectionMeetsThreshold(params: {
-  status: string;
-  score: number | null | undefined;
-  threshold: number;
-}): boolean {
-  if (params.status === 'REJECTED') {
-    return false;
-  }
-  if (params.status === 'VALIDATED') {
-    return true;
-  }
-  return (params.score ?? 0) >= params.threshold;
+/**
+ * A requirement counts as complete only when a reviewer validated it
+ * (decision 2026-11-02). The score is self-reported through the owner's
+ * progress PATCH, so a score at or above the field percentage no longer
+ * completes a requirement on its own.
+ */
+export function sectionCountsAsComplete(params: { status: string }): boolean {
+  return params.status === 'VALIDATED';
 }
