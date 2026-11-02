@@ -1778,7 +1778,7 @@ export class InvestitureAuthorizationRequestService {
       select: ENROLLMENT_ROW_SELECT,
     });
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.INVESTITURE_REQUEST_NOT_FOUND);
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
     }
     return enrollment;
   }

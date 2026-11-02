@@ -253,7 +253,7 @@
   "HONOR_REQUIREMENT_NOT_IN_HONOR": "O requisito não pertence a esta honra",
   "HONOR_EVIDENCE_MAX_REACHED": "O máximo de {max} evidências do tipo {evidence_type} por requisito foi atingido",
   "HONOR_EVIDENCE_NOT_FOUND": "Evidência não encontrada",
-  "INVESTITURE_ENROLLMENT_NOT_FOUND": "Enrollment não encontrado",
+  "INVESTITURE_ENROLLMENT_NOT_FOUND": "Inscrição não encontrada",
   "INVESTITURE_ACCESS_DENIED": "Sem acesso ao histórico deste enrollment",
   "INVESTITURE_DURATION_MIN_NOT_MET": "A duração mínima da classe ainda não foi cumprida",
   "INVESTITURE_DURATION_EXPIRED": "A duração da classe expirou para este enrollment",

@@ -253,7 +253,7 @@
   "HONOR_REQUIREMENT_NOT_IN_HONOR": "L'exigence n'appartient pas à cet honneur",
   "HONOR_EVIDENCE_MAX_REACHED": "Maximum de {max} preuves de type {evidence_type} par exigence atteint",
   "HONOR_EVIDENCE_NOT_FOUND": "Preuve introuvable",
-  "INVESTITURE_ENROLLMENT_NOT_FOUND": "Enrollment introuvable",
+  "INVESTITURE_ENROLLMENT_NOT_FOUND": "Inscription introuvable",
   "INVESTITURE_ACCESS_DENIED": "Accès refusé à l'historique de cet enrollment",
   "INVESTITURE_DURATION_MIN_NOT_MET": "La durée minimale de la classe n'est pas encore atteinte",
   "INVESTITURE_DURATION_EXPIRED": "La durée de la classe a expiré pour cette inscription",

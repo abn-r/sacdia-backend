@@ -1467,6 +1467,14 @@ describe('investiture authorization requests', () => {
     expect(view.people).toHaveLength(1);
   });
 
+  it('answers INVESTITURE_ENROLLMENT_NOT_FOUND for an enrollment that does not exist', async () => {
+    await expect(present([999999])).rejects.toMatchObject({
+      code: ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      status: 404,
+    });
+    expect(world.people).toHaveLength(0);
+  });
+
   it('rejects an empty selection', async () => {
     await expect(present([])).rejects.toMatchObject({
       code: ErrorCode.INVESTITURE_REQUEST_EMPTY,
