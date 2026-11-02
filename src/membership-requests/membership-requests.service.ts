@@ -343,7 +343,7 @@ export class MembershipRequestsService {
       if (assignment.club_section_id !== clubSectionId) {
         throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
       }
-      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PROCESSED);
     }
     // Unreachable (the transaction throws when it wrote without a row), but an
     // explicit check narrows the type on every compiler instead of `!`.
@@ -421,7 +421,7 @@ export class MembershipRequestsService {
       if (assignment.club_section_id !== clubSectionId) {
         throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
       }
-      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PROCESSED);
     }
     // Unreachable (the transaction throws when it wrote without a row), but an
     // explicit check narrows the type on every compiler instead of `!`.
@@ -484,7 +484,7 @@ export class MembershipRequestsService {
       });
 
       if (result.count === 0) {
-        throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+        throw new AppConflictException(ErrorCode.MR_ALREADY_PROCESSED);
       }
 
       await tx.users_pr.update({

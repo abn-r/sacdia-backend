@@ -289,7 +289,7 @@ export class ConsentVerificationService {
     // consent verified (verify-only, nothing to approve).
     const verifyOnly = assignment.status === 'active';
     if (assignment.status !== 'pending' && !verifyOnly) {
-      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PROCESSED);
     }
     if (verifyOnly && row.consent_status === 'verified') {
       // A repeated call after the first one already approved the request is a
@@ -342,7 +342,7 @@ export class ConsentVerificationService {
     });
     if (updated.count === 0) {
       // Someone else verified or revoked it between our read and this write.
-      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PROCESSED);
     }
 
     const promoted = await this.promoteInvitees(
