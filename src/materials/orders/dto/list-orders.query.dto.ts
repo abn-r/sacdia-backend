@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ListOrdersQueryDto {
@@ -23,7 +23,7 @@ export class ListOrdersQueryDto {
     enum: ['en_revision', 'aprobada', 'pagada', 'entregada', 'cancelada'],
   })
   @IsOptional()
-  @IsEnum(['en_revision', 'aprobada', 'pagada', 'entregada', 'cancelada'])
+  @IsIn(['en_revision', 'aprobada', 'pagada', 'entregada', 'cancelada'])
   estado?: 'en_revision' | 'aprobada' | 'pagada' | 'entregada' | 'cancelada';
 
   @ApiProperty({ required: false, description: 'Filter by club section ID' })
