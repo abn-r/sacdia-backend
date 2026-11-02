@@ -77,12 +77,10 @@ export class HonorValidationWorkflowService {
       where: { user_honor_id: userHonorId },
     });
 
-    if (!userHonor) {
+    // A foreign honor answers exactly like a missing one so ids cannot be
+    // enumerated through the 400/404 difference.
+    if (!userHonor || userHonor.user_id !== userId) {
       throw new AppNotFoundException(ErrorCode.VALIDATION_USER_HONOR_NOT_FOUND);
-    }
-
-    if (userHonor.user_id !== userId) {
-      throw new AppBadRequestException(ErrorCode.VALIDATION_HONOR_NOT_OWNED);
     }
 
     if (!userHonor.active) {
@@ -133,7 +131,7 @@ export class HonorValidationWorkflowService {
           entity_type: 'honor',
           entity_id: String(userHonorId),
           user_id: userId,
-          action: 'submitted',
+          action: 'SUBMITTED',
           performed_by: userId,
           comment: 'Honor enviado a revision por el miembro',
         },
@@ -612,12 +610,41 @@ export class HonorValidationWorkflowService {
     };
   }
 
+  /**
+   * Section whose reviewers get notified: the one in the member's active
+   * context when it is still an active assignment, otherwise the most
+   * recently started active assignment (deterministic).
+   */
+  private async resolveNotificationSection(userId: string) {
+    const profile = await this.prisma.users_pr.findUnique({
+      where: { user_id: userId },
+      select: { active_club_assignment_id: true },
+    });
+    const select = { club_section_id: true } as const;
+
+    const explicit = profile?.active_club_assignment_id
+      ? await this.prisma.club_role_assignments.findFirst({
+          where: {
+            assignment_id: profile.active_club_assignment_id,
+            user_id: userId,
+            active: true,
+            status: 'active',
+          },
+          select,
+        })
+      : null;
+    if (explicit) return explicit;
+
+    return this.prisma.club_role_assignments.findFirst({
+      where: { user_id: userId, active: true, status: 'active' },
+      orderBy: [{ start_date: 'desc' }, { assignment_id: 'desc' }],
+      select,
+    });
+  }
+
   private async notifyHonorSubmitted(userHonorId: number, userId: string) {
     try {
-      const memberSection = await this.prisma.club_role_assignments.findFirst({
-        where: { user_id: userId, active: true },
-        select: { club_section_id: true },
-      });
+      const memberSection = await this.resolveNotificationSection(userId);
 
       if (memberSection?.club_section_id) {
         void this.notifications.sendToSectionRole(

@@ -88,7 +88,7 @@ const baseline = {
   'guardianships/guardian-summary.service.ts':
     'effectiveWhere|allowlist|1|3affa23bfc46',
   'honors/honor-validation-workflow.service.ts':
-    'effectiveWhere|T08|1|73e3474e6bd8',
+    'effectiveWhere|T08|2|908850caceca',
   'honors/honors.service.ts': 'effectiveWhere|T08|2|61643760d639',
   'honors/master-honors-evaluator.service.ts':
     'effectiveWhere|T08|2|637369e238ef',

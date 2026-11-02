@@ -22,6 +22,7 @@ describe('HonorValidationWorkflowService', () => {
     evidence_files: { count: jest.fn() },
     validation_logs: { create: jest.fn() },
     club_role_assignments: { findFirst: jest.fn() },
+    users_pr: { findUnique: jest.fn() },
     $transaction: jest.fn(async (callback) => callback(mockPrisma)),
   };
 
@@ -41,6 +42,7 @@ describe('HonorValidationWorkflowService', () => {
     jest.clearAllMocks();
     masterHonorsEvaluator.evaluateUser.mockResolvedValue([]);
     mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrisma.users_pr.findUnique.mockResolvedValue(null);
     service = new HonorValidationWorkflowService(
       mockPrisma as any,
       notifications as any,
@@ -203,6 +205,100 @@ describe('HonorValidationWorkflowService', () => {
       },
       'validation:honor_submitted',
     );
+  });
+
+  it('answers 404 for an honor owned by someone else, same as a missing one', async () => {
+    mockPrisma.users_honors.findUnique.mockResolvedValue(
+      honorRecord({ user_id: 'user-2' }),
+    );
+
+    await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject({
+      code: ErrorCode.VALIDATION_USER_HONOR_NOT_FOUND,
+      status: 404,
+    });
+    expect(mockPrisma.users_honors.update).not.toHaveBeenCalled();
+  });
+
+  it('writes the submission log action in upper case', async () => {
+    mockPrisma.users_honors.findUnique.mockResolvedValue(
+      honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'IN_APP',
+      }),
+    );
+    mockPrisma.honor_requirements.findMany.mockResolvedValue([]);
+    mockPrisma.users_honors.update.mockResolvedValue(
+      honorRecord({ validation_status: 'PENDING_REVIEW', submitted_at: now }),
+    );
+
+    await service.submitForReview(10, 'user-1');
+
+    expect(mockPrisma.validation_logs.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: 'SUBMITTED' }),
+    });
+  });
+
+  it('notifies the section of the active context before any other assignment', async () => {
+    mockPrisma.users_pr.findUnique.mockResolvedValue({
+      active_club_assignment_id: 'assignment-7',
+    });
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValueOnce({
+      club_section_id: 55,
+    });
+    mockPrisma.users_honors.findUnique.mockResolvedValue(
+      honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'IN_APP',
+      }),
+    );
+    mockPrisma.honor_requirements.findMany.mockResolvedValue([]);
+    mockPrisma.users_honors.update.mockResolvedValue(
+      honorRecord({ validation_status: 'PENDING_REVIEW', submitted_at: now }),
+    );
+
+    await service.submitForReview(10, 'user-1');
+
+    expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          assignment_id: 'assignment-7',
+          status: 'active',
+        }),
+      }),
+    );
+    expect(notifications.sendToSectionRole).toHaveBeenCalledWith(
+      55,
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      'validation:honor_submitted',
+    );
+  });
+
+  it('falls back to the most recent active assignment when there is no active context', async () => {
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+      club_section_id: 99,
+    });
+    mockPrisma.users_honors.findUnique.mockResolvedValue(
+      honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'IN_APP',
+      }),
+    );
+    mockPrisma.honor_requirements.findMany.mockResolvedValue([]);
+    mockPrisma.users_honors.update.mockResolvedValue(
+      honorRecord({ validation_status: 'PENDING_REVIEW', submitted_at: now }),
+    );
+
+    await service.submitForReview(10, 'user-1');
+
+    expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledWith({
+      where: { user_id: 'user-1', active: true, status: 'active' },
+      orderBy: [{ start_date: 'desc' }, { assignment_id: 'desc' }],
+      select: { club_section_id: true },
+    });
   });
 
   it('respects in-app choice groups when enough child requirements are completed', async () => {
