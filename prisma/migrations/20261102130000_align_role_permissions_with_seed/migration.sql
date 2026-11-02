@@ -1,0 +1,3850 @@
+-- Align permissions and role grants with the seeds.
+--
+-- Databases that never ran the seeds (staging, production) carry an old seed
+-- run plus migrations that the seeds later reversed, and miss grants the seeds
+-- added later (decision 2026-11-02: the seeds are the reference). Examples:
+--   - club director / deputy-director held camporee_events:create|update|delete
+--     (20260520225303); the seed gives club roles read only;
+--   - counselor, instructor, member and treasurer held evidence_folders:*,
+--     territorial roles and coordinators annual_folders:submit (reversed in
+--     the seed on 2026-06-22);
+--   - local field held materiales:create|upload-receipt (reversed by #404);
+--   - club roles lacked resources:read / resource_categories:read, union and
+--     division lacked materiales:*, the club board lacked clubs:update,
+--     units:create|delete and notifications:club, coordinators lacked
+--     mom:supervise.
+--
+-- The body is prisma/seeds/permissions.seed.sql followed by
+-- prisma/seeds/role-permissions.seed.sql, verbatim, without their own
+-- BEGIN/COMMIT, in one transaction. Running it gives every database the seed
+-- result whatever state it starts from. Permissions created only by
+-- migrations (camporee_event_types:*) keep their rows; their grants follow the
+-- role blocks of the seed.
+--
+-- Idempotent: the seeds are.
+
+BEGIN;
+
+-- ===== prisma/seeds/permissions.seed.sql (verbatim, sha256 2bd9146bfc6b) =====
+
+-- ============================================================================
+-- SACDIA Permissions Seed
+-- ============================================================================
+-- Idempotent: uses INSERT ... ON CONFLICT DO UPDATE (upsert).
+-- Run with: psql "$DATABASE_URL" -f prisma/seeds/permissions.seed.sql
+--
+-- Format: resource:action
+-- Every permission here is referenced by @RequirePermissions() or
+-- @SensitiveUserSubresource() decorators in the NestJS controllers.
+-- ============================================================================
+
+
+-- ============================
+-- Clubs
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('clubs:read', 'Read club information', true),
+  ('clubs:create', 'Create new clubs', true),
+  ('clubs:update', 'Update club information', true),
+  ('clubs:delete', 'Delete clubs', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Club Sections
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('club_sections:read', 'Read club sections', true),
+  ('club_sections:create', 'Create club sections', true),
+  ('club_sections:update', 'Update club sections', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Club Roles
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('club_roles:read', 'Read club role assignments', true),
+  ('club_roles:assign', 'Assign club roles to members', true),
+  ('club_roles:revoke', 'Revoke club roles from members', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Coordination
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('coordination:manage', 'Manage coordination zones and coordinator assignments', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Users
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('users:read', 'Read basic user list', true),
+  ('users:read_detail', 'Read detailed user information', true),
+  ('users:update', 'Update user information', true),
+  ('users:update_profile', 'Update own profile and picture', true),
+  ('users:update_admin', 'Admin user management operations', true),
+  ('users:create', 'Create new users (manual single creation with email invite)', true),
+  ('users:bulk_create', 'Bulk create users from uploaded Excel/CSV file', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Classes
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('classes:read', 'Read class information', true),
+  ('classes:update', 'Update class information and progress', true),
+  ('classes:submit_progress', 'Enroll, progress, submit class evidence', true),
+  ('classes:validate', 'DEPRECATED — superseded by validation:review (2026-04-22)', false)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Activities
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('activities:read', 'Read activities', true),
+  ('activities:create', 'Create new activities', true),
+  ('activities:update', 'Update activities', true),
+  ('activities:delete', 'Delete activities', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Attendance
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('attendance:read', 'Read attendance records', true),
+  ('attendance:manage', 'Manage attendance (mark, update)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- QR / Virtual Credentials
+-- ============================
+-- Deprecated 2026-04-28: `/qr/me*` no longer enforce a domain permission —
+-- self-service routes only require JWT auth (Option A). The permission row is
+-- kept but deactivated so existing role_permissions FK rows remain valid until
+-- the next seed run purges them via role-permissions.seed.sql.
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('qr:issue_self', 'Issue and view the authenticated user QR credential', false),
+  ('qr:validate', 'Validate QR credentials during scanning flows', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Finances
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('finances:read', 'Read financial records', true),
+  ('finances:create', 'Create financial records', true),
+  ('finances:update', 'Update financial records', true),
+  ('finances:delete', 'Delete financial records', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Inventory
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('inventory:read', 'Read inventory items', true),
+  ('inventory:create', 'Create inventory items', true),
+  ('inventory:update', 'Update inventory items', true),
+  ('inventory:delete', 'Delete inventory items', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Notifications
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('notifications:send', 'Send notifications to specific users', true),
+  ('notifications:broadcast', 'Broadcast notifications to all users', true),
+  ('notifications:club', 'Send notifications to club members', true),
+  ('notifications:read_history', 'Read notification history', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Units
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('units:read', 'Read units', true),
+  ('units:create', 'Create new units', true),
+  ('units:update', 'Update units and membership', true),
+  ('units:delete', 'Delete units', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- RBAC (Permissions & Roles management)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('permissions:read', 'Read permissions list', true),
+  ('permissions:assign', 'Assign or revoke permissions to roles/users', true),
+  ('roles:read', 'Read roles list', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Catalogs (Reference data)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('catalogs:read', 'Read catalog reference data', true),
+  ('catalogs:create', 'Create catalog entries', true),
+  ('catalogs:update', 'Update catalog entries', true),
+  ('catalogs:delete', 'Delete catalog entries', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Honor Categories
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('honor_categories:read', 'Read honor categories', true),
+  ('honor_categories:create', 'Create honor categories', true),
+  ('honor_categories:update', 'Update honor categories', true),
+  ('honor_categories:delete', 'Delete honor categories', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Honors (admin CRUD on honor definitions)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('honors:read', 'Read honor definitions (admin)', true),
+  ('honors:create', 'Create honor definitions (admin)', true),
+  ('honors:update', 'Update honor definitions (admin)', true),
+  ('honors:delete', 'Delete honor definitions (admin)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Ecclesiastical Years
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('ecclesiastical_years:read', 'Read ecclesiastical years', true),
+  ('ecclesiastical_years:create', 'Create ecclesiastical years', true),
+  ('ecclesiastical_years:update', 'Update ecclesiastical years', true),
+  ('ecclesiastical_years:delete', 'Delete ecclesiastical years', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Geography: Countries
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('countries:read', 'Read countries', true),
+  ('countries:create', 'Create countries', true),
+  ('countries:update', 'Update countries', true),
+  ('countries:delete', 'Delete countries', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Geography: Unions
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('unions:read', 'Read unions', true),
+  ('unions:create', 'Create unions', true),
+  ('unions:update', 'Update unions', true),
+  ('unions:delete', 'Delete unions', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Geography: Local Fields
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('local_fields:read', 'Read local fields (conferences/missions)', true),
+  ('local_fields:create', 'Create local fields', true),
+  ('local_fields:update', 'Update local fields and districts', true),
+  ('local_fields:delete', 'Delete local fields and districts', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Geography: Churches
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('churches:read', 'Read churches', true),
+  ('churches:create', 'Create churches', true),
+  ('churches:update', 'Update churches', true),
+  ('churches:delete', 'Delete churches', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Insurance
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('insurance:read', 'Read insurance records', true),
+  ('insurance:create', 'Create insurance records', true),
+  ('insurance:update', 'Update insurance records', true),
+  ('insurance:review', 'Confirm, reject, or reverse insurance purchases in the effective Local Field', true),
+  ('insurance:configure', 'Configure insurance products and cycles for a Local Field', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Evidence Folders
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('evidence_folders:read', 'Read evidence folders and files', true),
+  ('evidence_folders:update', 'Upload/delete evidence files', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Annual Folder Templates
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('annual_folder_templates:create', 'Create annual folder templates', true),
+  ('annual_folder_templates:read', 'Read annual folder templates', true),
+  ('annual_folder_templates:update', 'Update annual folder templates', true),
+  ('annual_folder_templates:delete', 'Delete annual folder templates', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Annual Folders Evaluation & Submission
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('annual_folders:evaluate', 'Evaluate annual folder sections (assign points)', true),
+  ('annual_folders:submit', 'Submit entire annual folder for review (club director/secretariat only)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Award Categories
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('award_categories:create', 'Create award categories', true),
+  ('award_categories:read', 'Read award categories', true),
+  ('award_categories:update', 'Update award categories', true),
+  ('award_categories:delete', 'Delete award categories', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Rankings (folder/club level — original)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('rankings:read', 'View club rankings and leaderboards', true),
+  ('rankings:recalculate', 'Trigger rankings recalculate', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Member Rankings (8.4-A — enrollment ranking per member)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('member_rankings:read_self',    'Read own member ranking', true),
+  ('member_rankings:read_section', 'Read section member rankings', true),
+  ('member_rankings:read_club',    'Read club member rankings', true),
+  ('member_rankings:read_lf',      'Read local field member rankings', true),
+  ('member_rankings:read_union',   'Read union member rankings', true),
+  ('member_rankings:read_division','Read division member rankings', true),
+  ('member_rankings:read_global',  'Read all member rankings', true),
+  ('member_ranking_weights:read',  'Read member ranking weights', true),
+  ('member_ranking_weights:write', 'Write/CRUD member ranking weights', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Section Rankings (8.4-A — ranking per club section)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('section_rankings:read_club',   'Read club section rankings', true),
+  ('section_rankings:read_lf',     'Read local field section rankings', true),
+  ('section_rankings:read_union',  'Read union section rankings', true),
+  ('section_rankings:read_division','Read division section rankings', true),
+  ('section_rankings:read_global', 'Read all section rankings', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Investiture
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('investiture:read', 'Read investiture history and pending', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Certifications (catalog browse — broad read grant, original semantics)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('certifications:read', 'Browse certifications catalog', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Certifications (configurable engine — definition authoring and review)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('certifications:configure', 'Create/edit certification definitions, versions, eligibility rules and requirement trees (DRAFT only)', true),
+  ('certifications:publish', 'Publish or retire a certification version', true),
+  ('certifications:review', 'Review submitted certification requirements/closeouts', true),
+  ('certifications:certify', 'Approve final certification review and mark member as certified', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Folders legacy permissions
+-- ============================
+-- Legacy /folders runtime and user-folder progression were retired before
+-- production in favor of the canonical annual-folders flow. Rows remain only
+-- for FK/history compatibility; active=false keeps them out of new grants.
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('folders:read', 'DEPRECATED — legacy folders catalog browse retired in favor of annual-folders', false),
+  ('folders:manage', 'DEPRECATED — legacy folders catalog manage retired in favor of annual-folders', false)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- Corrective migration (Sprint C collision fix)
+UPDATE permissions SET active = false, modified_at = now()
+WHERE permission_name IN ('certifications:manage', 'folders:manage');
+
+-- ============================
+-- User Certifications (own domain, admin-level operations on user progression)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('user_certifications:read',   'Read any user certification progress (admin-level)', true),
+  ('user_certifications:manage', 'Enroll user, update/delete certification progress (admin-level)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- User Folders legacy permissions
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('user_folders:read',   'DEPRECATED — legacy user folder enrollment/progress retired in favor of annual-folders', false),
+  ('user_folders:manage', 'DEPRECATED — legacy user folder enrollment/progress retired in favor of annual-folders', false)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Geography: Districts
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('districts:read', 'Read districts', true),
+  ('districts:create', 'Create districts', true),
+  ('districts:update', 'Update districts', true),
+  ('districts:delete', 'Delete districts', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- User Honors
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('user_honors:read', 'Read user honor records', true),
+  ('user_honors:create', 'Create user honor records', true),
+  ('user_honors:update', 'Update user honor records', true),
+  ('user_honors:delete', 'Delete user honor records', true),
+  ('user_honors:submit', 'Update honor progress and evidence', true),
+  ('user_honors:validate', 'Approve/reject honor submissions', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Achievements
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('achievements:read', 'View achievements catalog and user progress', true),
+  ('achievements:manage', 'Create, update, delete, and manage achievements', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Member of the Month
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('mom:read',      'Read member-of-month winners and history per section', true),
+  ('mom:supervise', 'List member-of-month multi-section (admin/coordinator)', true),
+  ('mom:evaluate',  'Trigger manual member-of-month evaluation (director)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Scoring Categories
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('scoring_categories:read',   'Read scoring categories for divisions, unions, and local fields', true),
+  ('scoring_categories:manage', 'Create/update/delete scoring categories for unions and local fields', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Requests (own domain, migrated from clubs:*/club_roles:*)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('requests:read',   'Read transfer and role assignment requests', true),
+  ('requests:review', 'Review (approve/reject) transfer and role assignment requests', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Dashboard
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('dashboard:read', 'Read dashboard summary', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Sensitive User Subresources (fine-grained)
+-- Generated by @SensitiveUserSubresource(family, mode) decorator.
+-- These also fall back to users:read_detail / users:update in the guard.
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('health:read', 'Read user health information', true),
+  ('health:update', 'Update user health information', true),
+  ('emergency_contacts:read', 'Read user emergency contacts', true),
+  ('emergency_contacts:update', 'Update user emergency contacts', true),
+  ('legal_representative:read', 'Read user legal representative info', true),
+  ('legal_representative:update', 'Update user legal representative info', true),
+  ('post_registration:read', 'Read user post-registration data', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Registration Assistance (global, field-level)
+-- ============================
+-- Used exclusively on POST step-1/2/3 complete endpoints to allow
+-- field-level staff (director_lf, assistant_lf, admin, super-admin) to
+-- complete post-registration on behalf of a third-party user.
+-- Does NOT fall back to users:update — intentionally more restrictive.
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('registration:complete', 'Complete post-registration steps on behalf of another user', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Reports
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('reports:read', 'View and preview monthly reports', true),
+  ('reports:download', 'Download generated reports', true),
+  ('reports:submit', 'Draft, edit, generate and submit monthly reports', true),
+  ('reports:update', 'Edit, regenerate and finalize quarterly and annual club reports', true),
+  ('reports:write', 'Re-render the stored PDF of a generated or submitted monthly report', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Club Instances
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('club_instances:create', 'Register new club instance each year', true),
+  ('club_instances:read', 'View club instance information', true),
+  ('club_instances:update', 'Update club instance information', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Club Members (Membership Approval)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('club_members:approve', 'Aprobar solicitudes de membresía', true),
+  ('club_members:reject', 'Rechazar solicitudes de membresía', true),
+  ('club_members:list_pending', 'Ver solicitudes de membresía pendientes', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Camporees
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('camporees:read', 'View camporees information', true),
+  ('camporees:register', 'Register/enroll club to camporees', true),
+  ('camporees:register_active_section', 'Register the director active club section in a camporee', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- Camporees management (Sprint D)
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('camporees:create', 'Create new camporees', true),
+  ('camporees:update', 'Update camporee information', true),
+  ('camporees:delete', 'Delete/deactivate camporees', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Validation (own domain — Sprint E)
+-- Coexists with classes:* and users:read_detail which remain active for their
+-- respective modules (classes controller, users controller). These new permissions
+-- are used exclusively by the validation controller.
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('validation:submit', 'Submit class/honor progress for review', true),
+  ('validation:review', 'Approve or reject submitted progress', true),
+  ('validation:read',   'Read pending reviews, history, and check eligibility', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Camporee Late Enrollment
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('attendance:approve_late', 'Approve or reject late camporee enrollments', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Resources
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('resources:create', 'Create resources', true),
+  ('resources:read', 'Read resources', true),
+  ('resources:update', 'Update resources', true),
+  ('resources:delete', 'Delete resources', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Resource Categories
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('resource_categories:create', 'Create resource categories', true),
+  ('resource_categories:read', 'Read resource categories', true),
+  ('resource_categories:update', 'Update resource categories', true),
+  ('resource_categories:delete', 'Delete resource categories', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================================================================
+-- LEGACY PERMISSION SOFT-DELETE (Phase 3 — permission-scope-cleanup-phase-3)
+-- ============================================================================
+-- Retire the three legacy strings (`users:update`, `classes:update`,
+-- `user_honors:update`) by flipping `active` to false. The rows remain in
+-- place to preserve audit-log FK integrity (`role_permissions.permission_id`
+-- and `users_permissions.permission_id` use ON DELETE CASCADE — a hard delete
+-- would silently nuke history). All controllers, sensitive-family policies,
+-- and seed grants have been migrated to the new intent-specific equivalents
+-- (`users:update_profile`, `classes:submit_progress` / `classes:validate`,
+-- `user_honors:submit` / `user_honors:validate`).
+-- Idempotent: re-running the UPDATE is a no-op once the rows are inactive.
+UPDATE permissions
+SET active = false, modified_at = now()
+WHERE permission_name IN ('users:update', 'classes:update', 'user_honors:update')
+  AND active = true;
+
+-- ============================
+-- Ranking Weights (8.4-C)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('ranking_weights:read',  'Read ranking weight configurations', true),
+  ('ranking_weights:write', 'Create/update/delete ranking weight overrides', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Materiales (órdenes de insumos)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('materiales:read', 'Ver catálogo y órdenes de materiales', true),
+  ('materiales:create', 'Crear órdenes de materiales', true),
+  ('materiales:approve', 'Revisar líneas y aprobar/cancelar órdenes', true),
+  ('materiales:upload-receipt', 'Subir comprobantes de pago', true),
+  ('materiales:validate-receipt', 'Aprobar/rechazar comprobantes', true),
+  ('materiales:deliver', 'Marcar órdenes como entregadas', true),
+  ('materiales:manage-inventory', 'CRUD de productos e inventario de materiales', true),
+  ('materiales:configure', 'Editar configuración bancaria y de entrega', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Audit (global viewer — super-admin only)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('audit:read', 'Read the global audit log viewer (super-admin only)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Field Payment Orders (órdenes de pago territoriales: seguros + camporees)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('field-payment-orders:read', 'Read field payment orders within own scope', true),
+  ('field-payment-orders:create', 'Issue group field payment orders for own club section', true),
+  ('field-payment-orders:upload-proof', 'Upload payment proof for own field payment orders', true),
+  ('field-payment-orders:cancel', 'Cancel own field payment orders before approval', true),
+  ('field-payment-orders:review', 'Approve or reject field payment order proofs in the effective Local Field', true),
+  ('field-payment-orders:configure', 'Manage Local Field payment instructions (bank/cashier) for payment orders', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Camporee Orders (pedidos de mercancía por camporee; cobra el Campo Local)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('camporee-orders:read', 'Read camporee order catalog, offerings and orders within own scope', true),
+  ('camporee-orders:catalog-manage', 'Create and update the territorial camporee-order product library within own scope', true),
+  ('camporee-orders:offering-configure', 'Configure camporee order settings and offerings for an organized camporee', true),
+  ('camporee-orders:create', 'Issue or cancel camporee merchandise orders for own club section', true),
+  ('camporee-orders:upload-proof', 'Upload payment proof for own camporee merchandise orders', true),
+  ('camporee-orders:review', 'Approve or reject camporee order proofs in the effective Local Field', true),
+  ('camporee-orders:authorize-without-proof', 'Mark a camporee order paid without proof (Local Field caja exception)', true),
+  ('camporee-orders:deliver', 'Mark a camporee order delivered from Local Field to the club section', true),
+  ('camporee-orders:distribute', 'Record delivery of a camporee-order line to the beneficiary member', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Camporee Supplies (insumos diarios por sección y slot; cobra el Campo Local)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('camporee-supplies:read', 'Read camporee supply catalog, plans and reports within own scope', true),
+  ('camporee-supplies:plan', 'Draft, submit and adjust the enrolled section supply plan', true),
+  ('camporee-supplies:configure', 'Configure supply cutoff, delivery slots and products for an organized camporee', true),
+  ('camporee-supplies:review-pay', 'Mark camporee supply payment documents paid or refunded in the effective Local Field', true),
+  ('camporee-supplies:deliver', 'Record partial supply delivery from Local Field to the club section', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Family (Phase 3c: director-created minors and independent consent verification)
+-- ============================
+-- Same rows as migration 20261022130000_seed_family_permissions.
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('dependents:create', 'Register a minor in a club section under club custody', true),
+  ('consent:verify', 'Verify the signed consent form of a minor without approving membership', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+
+-- ============================================================================
+-- Verification
+-- ============================================================================
+SELECT COUNT(*) AS total_permissions FROM permissions WHERE active = true;
+
+-- ===== prisma/seeds/role-permissions.seed.sql (verbatim, sha256 99bc318fd6e3) =====
+
+-- ============================================================================
+-- SACDIA Role-Permissions Seed
+-- ============================================================================
+-- Idempotent: each role block first DELETEs all existing permissions for that
+-- role, then INSERTs the exact set defined here.
+-- This makes the seed the SINGLE source of truth — running it produces exactly
+-- the permissions listed, no more, no less.
+--
+-- Run with: psql "$DATABASE_URL" -f prisma/seeds/role-permissions.seed.sql
+--
+-- Depends on: permissions.seed.sql (permissions must exist first)
+--             seed.ts roles (roles must exist first)
+-- ============================================================================
+
+
+-- ============================================================================
+-- LEGACY PERMISSION CLEANUP
+-- ============================================================================
+-- Phase 3 (permission-scope-cleanup-phase-3): retired broad legacy permissions
+-- (`users:update`, `classes:update`, `user_honors:update`) superseded by
+-- intent-specific ones (`users:update_profile`, `classes:submit_progress`,
+-- `user_honors:submit`/`user_honors:validate`).
+--
+-- Phase 4 (2026-04-22): retired `classes:validate` — superseded by
+-- `validation:review` after the validation domain was canonized. Permission
+-- row marked `active=false` in permissions.seed.sql; this DELETE purges any
+-- surviving grants in role_permissions.
+--
+-- Phase 5 (2026-04-28): retired `qr:issue_self` — `/qr/me*` self-service routes
+-- no longer enforce a domain permission gate (Option A). JWT auth alone is
+-- sufficient since the caller identity is already established by the token.
+-- Permission row marked `active=false` in permissions.seed.sql.
+--
+-- Idempotent: re-runs are no-ops once rows are gone.
+DELETE FROM role_permissions
+USING permissions p
+WHERE role_permissions.permission_id = p.permission_id
+  AND p.permission_name IN (
+    'users:update',
+    'classes:update',
+    'user_honors:update',
+    'classes:validate',
+    'qr:issue_self',
+    'folders:read',
+    'folders:manage',
+    'user_folders:read',
+    'user_folders:manage'
+  );
+
+-- ============================
+-- USER role (GLOBAL)
+-- ============================
+-- Minimum permissions for a registered user NOT yet in a club (or between clubs).
+-- Browse catalogs, see the Classes tab, handle post-registration and view
+-- dashboard.
+--
+-- NEVER grant here a permission whose routes are owner-aware
+-- (`@AuthorizationResource({ type: 'user' })` / `@SensitiveUserSubresource`):
+-- own profile, health, emergency contacts, legal representative,
+-- post-registration status and honors. The owner already reaches them through
+-- the PermissionsGuard owner bypass, so a grant on this role only ever applies
+-- to OTHER users' data (any signed-in account). The guard also ignores this
+-- role for non-owners (BASE_GLOBAL_ROLE_NAME), and migration
+-- 20261016100000_base_user_role_drop_cross_user_grants removed the old grants.
+-- Total: 10 (+ resources:read, resource_categories:read further below)
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'user' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'user'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- Users (GET /admin/users is also gated by @GlobalRoles)
+    'users:read',
+
+    -- Classes (app Classes tab gating; own progress route is not owner-aware)
+    'classes:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Post-registration (club enrollment)
+    'clubs:read',
+    'club_sections:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:read'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- MEMBER role (CLUB)
+-- ============================
+-- Least-privilege permissions for a regular club member.
+-- Members can view their own data, manage their trajectory (honors/classes),
+-- read club info and catalogs, and handle post-registration.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'member' AND role_category = 'CLUB' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'member'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:submit',
+    'user_honors:delete',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+    'club_instances:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities (read only — attendance:manage intentionally withheld:
+    -- members must not be able to mark attendance for other members via
+    -- the QR scanner or the legacy attendance endpoint. Scoped to director+
+    -- roles only.)
+    'activities:read',
+    'attendance:read',
+
+    -- Evidence & progress
+
+    -- Units
+    'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+
+    -- Member of the Month
+    'mom:read',
+
+    -- Post-registration
+    'post_registration:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:read',
+    'validation:submit',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- COUNSELOR role (CLUB)
+-- ============================
+-- Counselor inherits ALL member permissions plus additional ones
+-- for managing their unit members' progress and viewing detailed profiles.
+-- Additional over MEMBER: users:read_detail, classes:update, units:update,
+-- club_roles:read, insurance:read
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'counselor' AND role_category = 'CLUB' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'counselor'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- ===== Inherited from MEMBER (28) =====
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities
+    'activities:read',
+    'attendance:read',
+    'attendance:manage',
+    'qr:validate',
+
+    -- Evidence & progress
+
+    -- Units
+    'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+
+    -- Post-registration
+    'post_registration:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- ===== Additional COUNSELOR permissions (5) =====
+    -- View detailed profile of club members (honors, classes, emergency, health)
+    'users:read_detail',
+    -- Validate/return class progress for members in their classes
+    'classes:submit_progress',
+    -- Assign weekly scores/points for unit meetings
+    'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
+    -- See member list of the club and their roles
+    'club_roles:read',
+    -- View insurance status of members they oversee
+    'insurance:read',
+
+    -- User progression (view other users' progression — admin-level)
+    'user_certifications:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- INSTRUCTOR role (CLUB)
+-- ============================
+-- Instructor teaches honors, classes, and specialized skills.
+-- Minimal permissions: own trajectory, club read, catalogs, personal data,
+-- validation, and own ranking.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'instructor' AND role_category = 'CLUB' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'instructor'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:submit',
+    'user_honors:delete',
+    'user_honors:validate',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+    'club_roles:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities (read + attendance)
+    'activities:read',
+    'attendance:read',
+    'attendance:manage',
+    'qr:validate',
+
+    -- Evidence & progress
+
+    -- User progression (view other users' progression)
+    'user_certifications:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- SECRETARY role (CLUB)
+-- ============================
+-- Secretary inherits ALL counselor permissions (34) plus additional ones
+-- for administrative tasks: club sections, insurance management, activities,
+-- reports, club instances, camporee registration, and club info updates.
+-- Total: 28 (member) + 6 (counselor) + 13 (secretary) + 4 (inventory) = 51
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'secretary' AND role_category = 'CLUB' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'secretary'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- ===== Inherited from MEMBER (28) =====
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities
+    'activities:read',
+    'attendance:read',
+    'attendance:manage',
+    'qr:validate',
+
+    -- Evidence & progress
+    'evidence_folders:read',
+    'evidence_folders:update',
+    'annual_folders:submit',
+
+    -- Units
+    'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+
+    -- Post-registration
+    'post_registration:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- ===== Inherited from COUNSELOR (5) =====
+    -- View detailed profile of club members
+    'users:read_detail',
+    -- Validate/return class progress
+    'classes:submit_progress',
+    -- Assign weekly scores/points for unit meetings
+    'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
+    -- Submit members as investiture candidates
+    -- See member list and roles
+    'club_roles:read',
+    -- View insurance status
+    'insurance:read',
+
+    -- User progression (view other users' progression — admin-level)
+    'user_certifications:read',
+
+    -- ===== Additional SECRETARY permissions (13) =====
+    -- Club info + section management
+    'clubs:update',
+    'club_sections:update',
+    -- Insurance management (create/update records)
+    'insurance:create',
+    'insurance:update',
+    -- Activity management (create/update club activities)
+    'activities:create',
+    'activities:update',
+    -- Reports (view/preview and download monthly reports)
+    'reports:read',
+    'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
+    -- Club instances (register and manage yearly club instances)
+    'club_instances:create',
+    'club_instances:read',
+    'club_instances:update',
+    -- Camporees (view only; enrollment belongs to territorial organizers)
+    'camporees:read',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
+    -- Inventory management (CRUD for club inventory items)
+    'inventory:read',
+    'inventory:create',
+    'inventory:update',
+    'inventory:delete',
+    -- Membership approval
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- TREASURER role (CLUB)
+-- ============================
+-- Treasurer inherits ALL counselor permissions (34) plus additional ones
+-- for financial management: finances CRUD, reports, insurance management,
+-- and camporee payment registration.
+-- Total: 28 (member) + 6 (counselor) + 10 (treasurer) = 44
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'treasurer' AND role_category = 'CLUB' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'treasurer'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- ===== Inherited from MEMBER (28) =====
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities
+    'activities:read',
+    'attendance:read',
+    'attendance:manage',
+    'qr:validate',
+
+    -- Evidence & progress
+
+    -- Units
+    'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+
+    -- Post-registration
+    'post_registration:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- ===== Inherited from COUNSELOR (5) =====
+    -- View detailed profile of club members
+    'users:read_detail',
+    -- Validate/return class progress
+    'classes:submit_progress',
+    -- Assign weekly scores/points for unit meetings
+    'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
+    -- Submit members as investiture candidates
+    -- See member list and roles
+    'club_roles:read',
+    -- View insurance status
+    'insurance:read',
+
+    -- User progression (view other users' progression — admin-level)
+    'user_certifications:read',
+
+    -- ===== Additional TREASURER permissions (10) =====
+    -- Financial records management (section-level)
+    'finances:read',
+    'finances:create',
+    'finances:update',
+    'finances:delete',
+    -- Reports (view/preview and download financial reports)
+    'reports:read',
+    'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
+    -- Insurance management (register and update for section members/staff)
+    'insurance:create',
+    'insurance:update',
+    -- Camporees (view only; enrollment belongs to territorial organizers)
+    'camporees:read',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- SECRETARY-TREASURER role (CLUB)
+-- ============================
+-- Secretary-Treasurer is the UNION of secretary + treasurer permissions.
+-- Has all secretary permissions (50) plus treasurer-only ones (finances CRUD).
+-- Total: 54
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'secretary-treasurer' AND role_category = 'CLUB' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'secretary-treasurer'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- ===== Inherited from MEMBER (28) =====
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities
+    'activities:read',
+    'attendance:read',
+    'attendance:manage',
+    'qr:validate',
+
+    -- Evidence & progress
+    'evidence_folders:read',
+    'evidence_folders:update',
+    'annual_folders:submit',
+
+    -- Units
+    'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+
+    -- Post-registration
+    'post_registration:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- ===== Inherited from COUNSELOR (5) =====
+    'users:read_detail',
+    'classes:submit_progress',
+    'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
+    'club_roles:read',
+    'insurance:read',
+
+    -- ===== From SECRETARY (16) =====
+    -- Club ficha + section management
+    'clubs:update',
+    'club_sections:update',
+    -- Insurance management
+    'insurance:create',
+    'insurance:update',
+    -- Activity management
+    'activities:create',
+    'activities:update',
+    -- Reports
+    'reports:read',
+    'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
+    -- Club instances
+    'club_instances:create',
+    'club_instances:read',
+    'club_instances:update',
+    -- Camporees
+    'camporees:read',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
+    -- Inventory management
+    'inventory:read',
+    'inventory:create',
+    'inventory:update',
+    'inventory:delete',
+
+    -- User progression (view other users' progression — admin-level)
+    'user_certifications:read',
+
+    -- ===== From TREASURER (4 unique) =====
+    -- Financial records management
+    'finances:read',
+    'finances:create',
+    'finances:update',
+    'finances:delete',
+
+    -- ===== Membership approval (3) =====
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- DEPUTY-DIRECTOR role (CLUB)
+-- ============================
+-- Deputy-Director (subdirector/vice-director) inherits ALL counselor permissions (34)
+-- plus read-only access to secretary domains, investiture validation,
+-- activity management, and financial read access.
+-- Total: 34 (counselor) + 9 (additional) = 43
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'deputy-director' AND role_category = 'CLUB' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'deputy-director'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- ===== Inherited from MEMBER (28) =====
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities
+    'activities:read',
+    'attendance:read',
+    'attendance:manage',
+    'qr:validate',
+
+    -- Evidence & progress
+    'evidence_folders:read',
+    'evidence_folders:update',
+
+    -- Units
+    'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+
+    -- Post-registration
+    'post_registration:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- ===== Inherited from COUNSELOR (5) =====
+    'users:read_detail',
+    'classes:submit_progress',
+    'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
+    'club_roles:read',
+    'insurance:read',
+
+    -- User progression (view + manage other users' progression — admin-level)
+    'user_certifications:read',
+    'user_certifications:manage',
+
+    -- ===== Additional DEPUTY-DIRECTOR permissions =====
+    -- Club ficha (PATCH /clubs/:clubId)
+    'clubs:update',
+    -- Read-only access to secretary domains
+    'inventory:read',
+    'reports:read',
+    'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
+    'club_instances:read',
+    'camporees:read',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
+    -- Investiture validation (accept/reject from counselors)
+    -- Activity management
+    'activities:create',
+    'activities:update',
+    -- Financial read access (view only)
+    'finances:read',
+    -- Membership approval
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self',
+    'member_rankings:read_section',
+    'member_rankings:read_club',
+    'section_rankings:read_club'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- DIRECTOR role (CLUB)
+-- ============================
+-- Director is the UNION of secretary-treasurer + deputy-director permissions,
+-- PLUS director-only permissions for activity deletion, role management, and
+-- active-section camporee registration.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'director' AND role_category = 'CLUB' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'director'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- ===== Inherited from MEMBER (28) =====
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities
+    'activities:read',
+    'attendance:read',
+    'attendance:manage',
+    'qr:validate',
+
+    -- Evidence & progress
+    'evidence_folders:read',
+    'evidence_folders:update',
+    'annual_folders:submit',
+
+    -- Units
+    'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+
+    -- Post-registration
+    'post_registration:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- ===== Inherited from COUNSELOR (5) =====
+    'users:read_detail',
+    'classes:submit_progress',
+    'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
+    'club_roles:read',
+    'insurance:read',
+
+    -- ===== From SECRETARY (16) =====
+    -- Club ficha + section management
+    'clubs:update',
+    'club_sections:update',
+    -- Insurance management
+    'insurance:create',
+    'insurance:update',
+    -- Activity management
+    'activities:create',
+    'activities:update',
+    -- Reports
+    'reports:read',
+    'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
+    -- Club instances
+    'club_instances:create',
+    'club_instances:read',
+    'club_instances:update',
+    -- Camporees
+    'camporees:read',
+    'camporees:register_active_section',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
+    'camporees:delete',
+    -- Inventory management
+    'inventory:read',
+    'inventory:create',
+    'inventory:update',
+    'inventory:delete',
+
+    -- ===== From TREASURER (4 unique) =====
+    -- Financial records management
+    'finances:read',
+    'finances:create',
+    'finances:update',
+    'finances:delete',
+
+    -- User progression (view + manage other users' progression — admin-level)
+    'user_certifications:read',
+    'user_certifications:manage',
+
+    -- ===== From DEPUTY-DIRECTOR (1 unique) =====
+    -- Investiture validation (accept/reject from counselors)
+
+    -- ===== Additional DIRECTOR permissions (3 unique) =====
+    -- Delete activities
+    'activities:delete',
+    -- Assign roles to section members
+    'club_roles:assign',
+    -- Remove members from section / revoke roles
+    'club_roles:revoke',
+    -- Membership approval
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending',
+
+    -- Annual folders & rankings (read-only for club directors)
+    'annual_folder_templates:read',
+    'rankings:read',
+    'award_categories:read',
+
+    -- Requests (own domain)
+    'requests:read',
+    'requests:review',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read',
+
+    -- Rankings (own + club-level — 8.4-A)
+    'member_rankings:read_self',
+    'member_rankings:read_section',
+    'member_rankings:read_club',
+    'section_rankings:read_club'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- COORDINATOR role (GLOBAL)
+-- ============================
+-- Global role that oversees assigned club sections.
+-- Can view club info, members, classes, and approve/reject class progress
+-- and investiture candidates. Read-heavy with limited write (classes:update,
+-- user_honors:update).
+-- Reports: reports:read + reports:download only (migration
+-- 20261025120000_coordinator_reports_read); never reports:submit.
+-- Total: 19
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'coordinator' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'coordinator'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+    'club_roles:read',
+
+    -- User profiles
+    'users:read',
+    'users:read_detail',
+
+    -- Classes & progress (read + approve/reject)
+    'classes:read',
+
+    -- Investiture (read + validate + mark invested)
+    'investiture:read',
+
+    -- Evidence & honors (read + validate/reject)
+    'evidence_folders:read',
+    'user_honors:read',
+    'user_honors:validate',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Dashboard & tracking (read only)
+    'dashboard:read',
+    'attendance:read',
+    'activities:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (read only)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:review',
+    'validation:read',
+
+    -- Reports (read + download only; scope = coordinator_assignments).
+    -- Never reports:submit: coordinators review, they do not draft or send.
+    'reports:read',
+    'reports:download'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- ZONE-COORDINATOR role (GLOBAL)
+-- ============================
+-- Global role that oversees coordinators across a zone.
+-- Has ALL coordinator permissions (17) PLUS the ability to view
+-- coordinator profiles (emergency contacts, health, insurance).
+-- Total: 17 (coordinator) + 3 (additional) = 20
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'zone-coordinator' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'zone-coordinator'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- ===== All COORDINATOR permissions (18) =====
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+    'club_roles:read',
+
+    -- User profiles
+    'users:read',
+    'users:read_detail',
+
+    -- Classes & progress (read + approve/reject)
+    'classes:read',
+
+    -- Investiture (read + validate + mark invested)
+    'investiture:read',
+
+    -- Evidence & honors (read + validate/reject)
+    'evidence_folders:read',
+    'user_honors:read',
+    'user_honors:validate',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Dashboard & tracking (read only)
+    'dashboard:read',
+    'attendance:read',
+    'activities:read',
+
+    -- ===== Additional ZONE-COORDINATOR permissions (3) =====
+    -- View coordinator contact info
+    'emergency_contacts:read',
+    -- View coordinator health info
+    'health:read',
+    -- View insurance records
+    'insurance:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (read only)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:review',
+    'validation:read',
+
+    -- Reports (read + download only; scope = coordinator_assignments).
+    -- Never reports:submit: coordinators review, they do not draft or send.
+    'reports:read',
+    'reports:download'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- GENERAL-COORDINATOR role (GLOBAL)
+-- ============================
+-- Global role that oversees zone-coordinators and coordinators across
+-- the entire local field. Has ALL zone-coordinator permissions.
+-- The difference is organizational scope (handled at application level).
+-- Total: 20 (same as zone-coordinator)
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'general-coordinator' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'general-coordinator'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- ===== All ZONE-COORDINATOR permissions (22) =====
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+    'club_roles:read',
+
+    -- User profiles
+    'users:read',
+    'users:read_detail',
+
+    -- Classes & progress (read + approve/reject)
+    'classes:read',
+
+    -- Investiture (read + validate + mark invested)
+    'investiture:read',
+
+    -- Evidence & honors (read + validate/reject)
+    'evidence_folders:read',
+    'user_honors:read',
+    'user_honors:validate',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Dashboard & tracking (read only)
+    'dashboard:read',
+    'attendance:read',
+    'activities:read',
+
+    -- Coordinator welfare (from zone-coordinator)
+    'emergency_contacts:read',
+    'health:read',
+    'insurance:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (read only)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:review',
+    'validation:read',
+
+    -- Reports (read + download only; scope = coordinator_assignments).
+    -- Never reports:submit: coordinators review, they do not draft or send.
+    'reports:read',
+    'reports:download'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- ASSISTANT-LF role (GLOBAL)
+-- ============================
+-- Asistente de campo local. Can see EVERYTHING a director sees (58 permissions)
+-- PLUS additional field-level geographic/organizational read permissions.
+-- Total: 58 (director) + 5 (additional) = 63
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'assistant-lf' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'assistant-lf'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- ===== All DIRECTOR permissions (58) =====
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities
+    'activities:read',
+    'activities:create',
+    'activities:update',
+    'activities:delete',
+    'attendance:read',
+    'attendance:manage',
+    'qr:validate',
+
+    -- Evidence & progress
+    'evidence_folders:read',
+
+    -- Units
+    'units:read',
+    'units:update',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+    'scoring_categories:manage',
+
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
+    'mom:supervise',
+
+    -- Post-registration
+    'post_registration:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture
+    'investiture:read',
+
+    -- Counselor-level
+    'users:read_detail',
+    'club_roles:read',
+    'insurance:read',
+
+    -- Secretary-level
+    'club_sections:update',
+    'insurance:create',
+    'insurance:update',
+    'reports:read',
+    'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
+    'club_instances:create',
+    'club_instances:read',
+    'club_instances:update',
+    'camporees:read',
+    'camporees:register',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
+    'camporees:delete',
+    -- Eventos / rúbricas / clasificación (mismo alcance que camporees:*)
+    'camporee_events:read',
+    'camporee_events:create',
+    'camporee_events:update',
+    'camporee_events:delete',
+    'inventory:read',
+    'inventory:create',
+    'inventory:update',
+    'inventory:delete',
+
+    -- Treasurer-level
+    'finances:read',
+    'finances:create',
+    'finances:update',
+    'finances:delete',
+
+    -- Director-level
+    'classes:submit_progress',
+    'club_roles:assign',
+    'club_roles:revoke',
+
+    -- Membership approval (from director)
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending',
+
+    -- User progression (view + manage other users' progression — admin-level)
+    'user_certifications:read',
+    'user_certifications:manage',
+
+    -- ===== Additional ASSISTANT-LF permissions (5) =====
+    -- Geographic/organizational data (field-level visibility)
+    'countries:read',
+    'unions:read',
+    'local_fields:read',
+    'churches:read',
+    'districts:read',
+
+    -- ===== Annual Folders Scoring (field-level) =====
+    'annual_folder_templates:create',
+    'annual_folder_templates:read',
+    'annual_folder_templates:update',
+    'annual_folder_templates:delete',
+    'annual_folders:evaluate',
+    'award_categories:create',
+    'award_categories:read',
+    'award_categories:update',
+    'award_categories:delete',
+    'rankings:read',
+    'rankings:recalculate',
+
+    -- ===== Registration assistance (field-level) =====
+    -- Allow assistant-lf to complete post-registration steps on behalf of users.
+    -- director-lf, assistant-union, director-union, and higher roles inherit
+    -- this permission via the JOIN-based copy blocks below.
+    'registration:complete',
+
+    -- ===== Requests (own domain) =====
+    -- Inherited by director-lf, assistant-union, director-union, assistant-dia,
+    -- director-dia via the JOIN-based copy blocks below.
+    'requests:read',
+    'requests:review',
+
+    -- ===== Achievements (field-level: full management) =====
+    -- Inherited by director-lf, assistant-union, director-union, assistant-dia,
+    -- director-dia via the JOIN-based copy blocks below.
+    'achievements:read',
+    'achievements:manage',
+
+    -- ===== Validation (own domain — Sprint E) =====
+    -- Inherited by director-lf, assistant-union, director-union, assistant-dia,
+    -- director-dia via the JOIN-based copy blocks below.
+    'validation:submit',
+    'validation:review',
+    'validation:read',
+
+    -- ===== User creation (field-level: manual admin-initiated registration) =====
+    -- Inherited by director-lf, assistant-union, director-union, assistant-dia,
+    -- director-dia via the JOIN-based copy blocks below.
+    -- admin and super-admin pick this up automatically via wildcard grants.
+    'users:create',
+    'users:bulk_create',
+
+    -- ===== Coordination administration =====
+    -- Field-level and higher institutional roles can administer zones and
+    -- coordinator assignments. Coordinators themselves do not manage this panel.
+    'coordination:manage'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- PASTOR role (GLOBAL)
+-- ============================
+-- Global role assigned to a district. Read-only access across all clubs
+-- in the district. Can view members, classes, honors, reports, health,
+-- insurance, and emergency contacts. No write permissions.
+-- Total: 20
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'pastor' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'pastor'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+    'club_roles:read',
+
+    -- User profiles
+    'users:read',
+    'users:read_detail',
+
+    -- Classes & progress (read only)
+    'classes:read',
+
+    -- Honors & evidence (read only)
+    'user_honors:read',
+    'evidence_folders:read',
+
+    -- Reports (read + download)
+    'reports:read',
+    'reports:download',
+    -- Draft, edit, generate and submit monthly reports (split from reports:read)
+    'reports:submit',
+    -- Re-render the stored monthly PDF from its frozen snapshot
+    'reports:write',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+
+    -- Dashboard & tracking (read only)
+    'dashboard:read',
+    'attendance:read',
+    'activities:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- Member welfare (read only)
+    'insurance:read',
+    'emergency_contacts:read',
+    'health:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (read only)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:read'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- DIRECTOR-LF role (GLOBAL)
+-- ============================
+-- Director de campo local. Same permissions as assistant-lf (64).
+-- Scope differences are application-level, not permission-level.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'director-lf' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, rp_src.permission_id
+FROM roles r
+CROSS JOIN (
+  SELECT rp.permission_id
+  FROM role_permissions rp
+  JOIN roles src ON src.role_id = rp.role_id
+  WHERE src.role_name = 'assistant-lf'
+    AND src.role_category = 'GLOBAL'
+    AND rp.active = true
+) rp_src
+WHERE r.role_name = 'director-lf'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- ASSISTANT-UNION role (GLOBAL)
+-- ============================
+-- Asistente de unión. Same permissions as assistant-lf (64).
+-- Scope is broader (all local fields in the union) but permissions are identical.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'assistant-union' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, rp_src.permission_id
+FROM roles r
+CROSS JOIN (
+  SELECT rp.permission_id
+  FROM role_permissions rp
+  JOIN roles src ON src.role_id = rp.role_id
+  WHERE src.role_name = 'assistant-lf'
+    AND src.role_category = 'GLOBAL'
+    AND rp.active = true
+) rp_src
+WHERE r.role_name = 'assistant-union'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- DIRECTOR-UNION role (GLOBAL)
+-- ============================
+-- Director de unión. Same permissions as assistant-union / assistant-lf (64).
+-- Scope differences are application-level.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'director-union' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, rp_src.permission_id
+FROM roles r
+CROSS JOIN (
+  SELECT rp.permission_id
+  FROM role_permissions rp
+  JOIN roles src ON src.role_id = rp.role_id
+  WHERE src.role_name = 'assistant-lf'
+    AND src.role_category = 'GLOBAL'
+    AND rp.active = true
+) rp_src
+WHERE r.role_name = 'director-union'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- ASSISTANT-DIA role (GLOBAL)
+-- ============================
+-- Asistente de división. Same permissions as assistant-lf (64).
+-- Scope covers all unions in the division.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'assistant-dia' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, rp_src.permission_id
+FROM roles r
+CROSS JOIN (
+  SELECT rp.permission_id
+  FROM role_permissions rp
+  JOIN roles src ON src.role_id = rp.role_id
+  WHERE src.role_name = 'assistant-lf'
+    AND src.role_category = 'GLOBAL'
+    AND rp.active = true
+) rp_src
+WHERE r.role_name = 'assistant-dia'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- DIRECTOR-DIA role (GLOBAL)
+-- ============================
+-- Director de división. Same permissions as assistant-dia / assistant-lf (64).
+-- Scope differences are application-level.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'director-dia' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, rp_src.permission_id
+FROM roles r
+CROSS JOIN (
+  SELECT rp.permission_id
+  FROM role_permissions rp
+  JOIN roles src ON src.role_id = rp.role_id
+  WHERE src.role_name = 'assistant-lf'
+    AND src.role_category = 'GLOBAL'
+    AND rp.active = true
+) rp_src
+WHERE r.role_name = 'director-dia'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- ADMIN role (GLOBAL)
+-- ============================
+-- Platform administrator. Has ALL permissions EXCEPT delete permissions
+-- and audit:read (global audit viewer is super-admin only).
+-- Cannot destroy data, but can manage everything else.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'admin' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'admin'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name NOT LIKE '%:delete'
+  AND p.permission_name <> 'audit:read'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- ASSISTANT-ADMIN role (GLOBAL)
+-- ============================
+-- Subset of admin: same operational keys minus destroy, global audit, and
+-- RBAC assignment (permissions:assign is reserved to admin/super-admin
+-- write paths in rbac.controller). finances:read is included because it
+-- is an active non-delete permission.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'assistant-admin' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'assistant-admin'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name NOT LIKE '%:delete'
+  AND p.permission_name <> 'audit:read'
+  AND p.permission_name <> 'permissions:assign'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- SUPER_ADMIN role (GLOBAL)
+-- ============================
+-- Supreme platform administrator. Has ALL permissions, no exceptions.
+-- Total: 107 (all active permissions)
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'super-admin' AND role_category = 'GLOBAL' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'super-admin'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- clubs:update — ficha del club (dirección y secretaría)
+-- ============================
+-- PATCH /clubs/:clubId exige este permiso + ClubRoles. El grant también
+-- vive en los IN lists de secretary / secretary-treasurer / deputy / director.
+-- Este INSERT lo reafirma después de los DELETE+INSERT por rol.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('secretary', 'secretary-treasurer', 'deputy-director', 'director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'clubs:update'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- units:create / units:delete — create is club management; delete is direction
+-- ============================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('secretary', 'secretary-treasurer', 'deputy-director', 'director', 'treasurer')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'units:create'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('deputy-director', 'director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'units:delete'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- materiales:* — club leadership orders + territorial review
+-- ============================
+-- Must live here: role blocks DELETE+INSERT wipe grants from the 20260513
+-- migration if they are not re-asserted after every seed run.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director', 'deputy-director', 'secretary', 'secretary-treasurer')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'materiales:read',
+    'materiales:create',
+    'materiales:upload-receipt'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'assistant-lf', 'director-lf',
+    'assistant-union', 'director-union',
+    'assistant-dia', 'director-dia'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'materiales:read',
+    'materiales:approve',
+    'materiales:validate-receipt',
+    'materiales:deliver',
+    'materiales:manage-inventory',
+    'materiales:configure'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- reports:update — quarterly / annual report review (territorial)
+-- ============================
+-- PATCH admin/{quarterly,annual}-reports/:id, POST :id/regenerate and
+-- POST :id/finalize. Territorial roles act inside their report visibility
+-- (local field / union / division); admin, assistant-admin and super-admin
+-- pick it up through their wildcard grants above. Never coordinators, pastor
+-- or CLUB roles. Migration 20261026120000_reports_update_permission.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'assistant-lf', 'director-lf',
+    'assistant-union', 'director-union',
+    'assistant-dia', 'director-dia'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'reports:update'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- notifications:club — active club section leadership
+-- ============================
+-- Direct/broadcast notification permissions stay global-admin only:
+-- admin and super-admin pick them up automatically via the wildcard grants above.
+-- Club notification send is deliberately scoped to the actor's active club
+-- assignment, and granted only to section leadership roles.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('secretary', 'secretary-treasurer', 'deputy-director', 'director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'notifications:club'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- attendance:approve_late — field/union directors and assistants
+-- ============================
+-- Grant to: director-lf, assistant-lf, director-union, assistant-union (all GLOBAL)
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-union', 'assistant-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'attendance:approve_late'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- resources:read + resource_categories:read — club operational read access
+-- ============================
+-- Replaces the retired legacy `folders:read` gate for shared resources.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE (
+    (r.role_name = 'user' AND r.role_category = 'GLOBAL')
+    OR (r.role_name IN ('member', 'counselor', 'instructor', 'secretary', 'treasurer', 'secretary-treasurer', 'deputy-director', 'director')
+        AND r.role_category = 'CLUB')
+  )
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('resources:read', 'resource_categories:read')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- resources:* — field/union/dia directors and assistants
+-- ============================
+-- admin and super-admin pick these up automatically via their wildcard grants.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-union', 'assistant-union', 'director-dia', 'assistant-dia')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('resources:create', 'resources:read', 'resources:update', 'resources:delete')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- resource_categories:* — same roles for category management
+-- ============================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-union', 'assistant-union', 'director-dia', 'assistant-dia')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('resource_categories:create', 'resource_categories:read', 'resource_categories:update', 'resource_categories:delete')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- resources:read + resource_categories:read for the coordinator roles (read-only access)
+-- zone/general since migration 20261028120000_coordinator_roles_resources_read.
+-- ============================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('coordinator', 'zone-coordinator', 'general-coordinator')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('resources:read', 'resource_categories:read')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- mom:supervise for coordinator roles
+-- Scoped at runtime to coordinator_assignments (club_section_ids), not local_field.
+-- ============================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('coordinator', 'zone-coordinator', 'general-coordinator')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'mom:supervise'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- annual_folders:submit — club direction/secretariat only
+-- ============================
+-- Folder-level submit is granted in the director/secretary role blocks above.
+-- Coordinators and institutional supervisors evaluate/supervise, but they do
+-- not send the club's complete folder on its behalf.
+
+-- ============================
+-- ranking_weights:* — 8.4-C grants
+-- ============================
+-- super-admin and admin pick up both permissions automatically via their
+-- wildcard grants above (super-admin: all active; admin: all active except :delete).
+--
+-- Union-level roles (director-union, assistant-union): read + write.
+-- These roles copy permissions from assistant-lf which uses an explicit list,
+-- so they do NOT pick up new permissions automatically.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-union', 'assistant-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('ranking_weights:read', 'ranking_weights:write')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- camporee_events:* — LF/Unión manage events, rubrics and leaderboard.
+-- assistant-lf lists them explicitly; this restore also covers live DBs whose
+-- director-lf copy ran before those grants existed (DELETE+COPY wipes extras).
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+  'assistant-lf',
+  'director-lf',
+  'assistant-union',
+  'director-union'
+)
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee_events:read',
+    'camporee_events:create',
+    'camporee_events:update',
+    'camporee_events:delete'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- 8.4-C: ranking_weights:read for GLOBAL field/dia leaders
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-dia', 'assistant-dia')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'ranking_weights:read'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- 8.4-C: ranking_weights:read for CLUB-scope club director
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'director'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'ranking_weights:read'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- `camporees:register_active_section` is intentionally narrower than the
+-- platform-admin wildcards above: only a CLUB director may register their
+-- currently active section. Re-seeding also removes any stale or accidental
+-- grant to every other role.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporees:register_active_section'
+  AND NOT (
+    r.role_name = 'director'
+    AND r.role_category = 'CLUB'
+  );
+
+-- `camporees:register` is reserved for territorial Camporee organizers.
+-- This cleanup runs after inheritance and platform-admin wildcard grants so
+-- no CLUB, division, admin, or super-admin role retains the capability.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporees:register'
+  AND NOT (
+    r.role_name IN ('assistant-lf', 'director-lf', 'assistant-union', 'director-union')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (
+  role_permission_id,
+  role_id,
+  permission_id,
+  active
+)
+SELECT
+  gen_random_uuid(),
+  r.role_id,
+  p.permission_id,
+  true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('assistant-lf', 'director-lf', 'assistant-union', 'director-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporees:register'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- Insurance configuration belongs to Local Field leadership and, since
+-- 2026-10-30, to the platform admins (admin, super-admin), who configure it
+-- for a local field they name. This cleanup runs after all inherited/global
+-- role grants so union, DIA, assistant-admin and club roles cannot receive it.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'insurance:configure'
+  AND NOT (
+    r.role_name IN ('assistant-lf', 'director-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (
+  role_permission_id,
+  role_id,
+  permission_id,
+  active
+)
+SELECT
+  gen_random_uuid(),
+  r.role_id,
+  p.permission_id,
+  true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('assistant-lf', 'director-lf')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'insurance:configure'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- Purchase review is a separate capability from configuration. It is granted
+-- only to Local Field leadership and platform administrators; assistant-admin
+-- is intentionally excluded even if broad inherited grants exist.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'insurance:review'
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (
+  role_permission_id,
+  role_id,
+  permission_id,
+  active
+)
+SELECT
+  gen_random_uuid(),
+  r.role_id,
+  p.permission_id,
+  true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'insurance:review'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- Certification configuration/publish are restricted to Local Field
+-- leadership. Admin/super-admin already receive these via their broad
+-- wildcard grants, so this cleanup only needs to scope out other roles that
+-- might have inherited them through global grants.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN ('certifications:configure', 'certifications:publish')
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (
+  role_permission_id,
+  role_id,
+  permission_id,
+  active
+)
+SELECT
+  gen_random_uuid(),
+  r.role_id,
+  p.permission_id,
+  true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('certifications:configure', 'certifications:publish')
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- Certification review/certify follow the same Local Field + platform admin
+-- pattern as insurance:review.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN ('certifications:review', 'certifications:certify')
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (
+  role_permission_id,
+  role_id,
+  permission_id,
+  active
+)
+SELECT
+  gen_random_uuid(),
+  r.role_id,
+  p.permission_id,
+  true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('certifications:review', 'certifications:certify')
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- BEGIN family permissions (phase 3c)
+-- ============================
+-- dependents:create / consent:verify (director-created minors, independent consent verification)
+-- ============================
+-- Must live here: role blocks DELETE+INSERT wipe grants if they are not re-asserted after every
+-- seed run. Same rows as migration 20261022130000_seed_family_permissions; admin, assistant-admin and
+-- super-admin get both through their wildcard blocks above.
+-- GLOBAL coordinator / zone-coordinator / general-coordinator get consent:verify in their own
+-- block below (migration 20261023120000_grant_consent_verify_to_coordinators).
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director', 'deputy-director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'dependents:create'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director', 'deputy-director', 'secretary', 'secretary-treasurer')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'consent:verify'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+-- END family permissions (phase 3c)
+
+-- BEGIN coordinator consent:verify
+-- ============================
+-- consent:verify for GLOBAL coordinator roles (verify a minor's consent inside their assigned sections)
+-- ============================
+-- Same rows as migration 20261023120000_grant_consent_verify_to_coordinators. Must stay after the
+-- coordinator role blocks: their DELETE+INSERT would wipe it. The guard scopes it to the sections
+-- covered by coordinator_assignments, only on routes that opt in with `coordinatorSections`.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('coordinator', 'zone-coordinator', 'general-coordinator')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'consent:verify'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+-- END coordinator consent:verify
+
+
+-- ============================================================================
+-- Verification
+-- ============================================================================
+SELECT
+  r.role_name,
+  r.role_category,
+  COUNT(*) AS permission_count
+FROM role_permissions rp
+JOIN roles r ON rp.role_id = r.role_id
+WHERE rp.active = true
+GROUP BY r.role_name, r.role_category
+ORDER BY permission_count, r.role_name;
+
+-- Ensure Camporee event read access for club operational roles (mobile detail).
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director',
+    'deputy-director',
+    'secretary',
+    'secretary-treasurer',
+    'treasurer',
+    'counselor'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.permission_name = 'camporee_events:read'
+  AND p.active = true
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================================================================
+-- Field Payment Orders (órdenes de pago territoriales)
+-- ============================================================================
+-- read: mirrors insurance:read (club operational roles + territorial readers).
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'counselor', 'secretary', 'treasurer', 'secretary-treasurer',
+    'deputy-director', 'director'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'field-payment-orders:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('assistant-lf', 'director-lf')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'field-payment-orders:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- create / upload-proof / cancel: mirrors insurance:create (club directive
+-- roles that operate money) + LF leadership.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('secretary', 'treasurer', 'secretary-treasurer', 'director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'field-payment-orders:create',
+    'field-payment-orders:upload-proof',
+    'field-payment-orders:cancel'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('assistant-lf', 'director-lf')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'field-payment-orders:create',
+    'field-payment-orders:upload-proof',
+    'field-payment-orders:cancel'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- review: same Local Field + platform admin pattern as insurance:review.
+-- Maker-checker is enforced in the service (proof uploader cannot approve).
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'field-payment-orders:review'
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'field-payment-orders:review'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- configure: Local Field payment instructions (bank/cashier), same grantees
+-- as review (LF leadership + platform admins).
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'field-payment-orders:configure'
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'field-payment-orders:configure'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- ============================================================================
+-- Camporee Orders (pedidos de mercancía por camporee)
+-- ============================================================================
+-- read: club issuers + territorial readers (LF / union / division / admin).
+-- Counselor is intentionally excluded.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director',
+    'deputy-director',
+    'secretary',
+    'secretary-treasurer',
+    'treasurer'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- create / upload-proof: club issuer roles only (not counselor, not LF caja).
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN (
+    'camporee-orders:create',
+    'camporee-orders:upload-proof'
+  )
+  AND NOT (
+    r.role_name IN (
+      'director',
+      'deputy-director',
+      'secretary',
+      'secretary-treasurer',
+      'treasurer'
+    )
+    AND r.role_category = 'CLUB'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director',
+    'deputy-director',
+    'secretary',
+    'secretary-treasurer',
+    'treasurer'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee-orders:create',
+    'camporee-orders:upload-proof'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- distribute: only the club director of the issuing section.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-orders:distribute'
+  AND NOT (
+    r.role_name = 'director'
+    AND r.role_category = 'CLUB'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'director'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:distribute'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- catalog-manage: territorial library owners (LF / union / division / admin).
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-orders:catalog-manage'
+  AND NOT (
+    r.role_name IN (
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'director-dia',
+      'assistant-dia',
+      'admin',
+      'super-admin'
+    )
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:catalog-manage'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- offering-configure: camporee organizers (LF and union) + platform admins.
+-- Division-only roles do not own camporees and must not receive this grant.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-orders:offering-configure'
+  AND NOT (
+    r.role_name IN (
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'admin',
+      'super-admin'
+    )
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-orders:offering-configure'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- review / authorize-without-proof / deliver: Local Field caja + platform admins.
+-- Union and division directors never review LF payment.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN (
+    'camporee-orders:review',
+    'camporee-orders:authorize-without-proof',
+    'camporee-orders:deliver'
+  )
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee-orders:review',
+    'camporee-orders:authorize-without-proof',
+    'camporee-orders:deliver'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- ============================================================================
+-- Camporee Supplies (insumos diarios; cobra el Campo Local)
+-- ============================================================================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director',
+    'secretary',
+    'secretary-treasurer'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-supplies:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-supplies:read'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-supplies:plan'
+  AND NOT (
+    r.role_name IN ('director', 'secretary', 'secretary-treasurer')
+    AND r.role_category = 'CLUB'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director', 'secretary', 'secretary-treasurer')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-supplies:plan'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporee-supplies:configure'
+  AND NOT (
+    r.role_name IN (
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'admin',
+      'super-admin'
+    )
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'admin',
+    'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporee-supplies:configure'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name IN (
+    'camporee-supplies:review-pay',
+    'camporee-supplies:deliver'
+  )
+  AND NOT (
+    r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee-supplies:review-pay',
+    'camporee-supplies:deliver'
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+-- ============================
+-- Ranking reads for Local Field leadership
+-- ============================
+-- Canon (docs/canon/runtime-rankings.md §14.7): read_lf is the local field
+-- tier of member and section rankings. Migration
+-- 20260429000002_enrollment_rankings_seeds granted it, but the director-lf /
+-- assistant-lf blocks above DELETE and reinsert their rows, so every seed run
+-- wiped it. Kept after those blocks. Same rows as migration
+-- 20261028130100_restore_lf_ranking_reads.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('member_rankings:read_lf', 'section_rankings:read_lf')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'director-lf'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'member_ranking_weights:read'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- Ranking reads for Union and Division leadership
+-- ============================
+-- Canon (docs/canon/runtime-rankings.md §14.7): read_union / read_division
+-- scope member and section rankings to the caller's union or division.
+-- read_global stays admin-only. Kept after the role blocks above, which
+-- DELETE and reinsert their rows. Same rows as migration
+-- 20261030120000_union_division_ranking_reads.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-union', 'assistant-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('member_rankings:read_union', 'section_rankings:read_union')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-dia', 'assistant-dia')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('member_rankings:read_division', 'section_rankings:read_division')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- Admin deletes held by territorial roles (decision 2026-10-30)
+-- ============================
+-- admin administers the same data as local field, union and division
+-- leadership, so it gets every :delete permission one of them holds. Kept
+-- at the end so every territorial block has run. Same rows as migration
+-- 20261030140000_admin_and_union_permission_grants.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), admin.role_id, p.permission_id
+FROM roles admin
+CROSS JOIN permissions p
+WHERE admin.role_name = 'admin'
+  AND admin.role_category = 'GLOBAL'
+  AND admin.active = true
+  AND p.active = true
+  AND p.permission_name LIKE '%:delete'
+  AND EXISTS (
+    SELECT 1
+    FROM role_permissions rp
+    JOIN roles territorial ON territorial.role_id = rp.role_id
+    WHERE rp.permission_id = p.permission_id
+      AND territorial.role_category = 'GLOBAL'
+      AND territorial.role_name IN (
+        'director-lf', 'assistant-lf',
+        'director-union', 'assistant-union',
+        'director-dia', 'assistant-dia'
+      )
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- Union camporee configuration (decision 2026-10-30)
+-- ============================
+-- Union leadership configures its union camporees: events, venues, judges,
+-- staff and templates (camporee_events:*), reading the event type catalog.
+-- The union blocks above copy assistant-lf, which does not hold these.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-union', 'assistant-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    'camporee_events:create',
+    'camporee_events:read',
+    'camporee_events:update',
+    'camporee_events:delete',
+    'camporee_event_types:read'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+COMMIT;

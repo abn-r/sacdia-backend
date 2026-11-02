@@ -354,3 +354,58 @@ describe('union leadership has no unscoped ranking reads', () => {
     expect(migration).not.toContain('member_ranking_weights');
   });
 });
+
+describe('role permissions aligned with the seeds (2026-11-02)', () => {
+  const migration = read(
+    'migrations/20261102130000_align_role_permissions_with_seed/migration.sql',
+  );
+  const statements = collapse(migration)
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+
+  it('runs as one transaction', () => {
+    expect(statements[0]).toBe('BEGIN');
+    expect(statements[statements.length - 1]).toBe('COMMIT');
+    expect(
+      statements.filter((s) => s === 'BEGIN' || s === 'COMMIT'),
+    ).toHaveLength(2);
+  });
+
+  it('wipes and re-seeds every role the seed wipes', () => {
+    const roles = [
+      ...SEED.matchAll(
+        /DELETE FROM role_permissions\s+WHERE role_id = \(\s*SELECT role_id FROM roles\s+WHERE role_name = '([a-z-]+)'/g,
+      ),
+    ].map((match) => match[1]);
+    expect(roles.length).toBeGreaterThan(15);
+    for (const role of roles) {
+      expect(migration).toMatch(
+        new RegExp(
+          `DELETE FROM role_permissions\\s+WHERE role_id = \\(\\s*SELECT role_id FROM roles\\s+WHERE role_name = '${role}'`,
+        ),
+      );
+    }
+  });
+
+  it('creates every permission of permissions.seed.sql', () => {
+    const permissionsSeed = stripComments(read('seeds/permissions.seed.sql'));
+    const names = [
+      ...permissionsSeed.matchAll(/\('([a-z_-]+:[a-z_-]+)',\s*'/g),
+    ].map((match) => match[1]);
+    expect(names.length).toBeGreaterThan(200);
+    for (const name of names) {
+      expect(migration).toContain(`('${name}',`);
+    }
+  });
+
+  it('never grants camporee event writes to club roles', () => {
+    const clubWrites = statements.filter(
+      (statement) =>
+        statement.includes('INSERT INTO role_permissions') &&
+        statement.includes("r.role_category = 'CLUB'") &&
+        /'camporee_events:(create|update|delete)'/.test(statement),
+    );
+    expect(clubWrites).toEqual([]);
+  });
+});
