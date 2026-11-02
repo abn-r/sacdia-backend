@@ -625,26 +625,4 @@ export class AnnualFoldersController {
     const data = await this.service.submitFolder(folderId, user.sub);
     return { status: 'success', data };
   }
-
-  @Post(':folderId/close')
-  @RequirePermissions('evidence_folders:update')
-  @ApiOperation({
-    summary: 'Close folder (field-level action)',
-    description:
-      "Closes an annual evidence folder. Accepts folders in 'submitted' or 'evaluated' status.",
-  })
-  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
-  @ApiResponse({ status: 200, description: 'Folder closed' })
-  @ApiResponse({
-    status: 400,
-    description: "Folder is not in 'submitted' or 'evaluated' status",
-  })
-  @ApiResponse({ status: 404, description: 'Folder not found' })
-  async closeFolder(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    const data = await this.service.closeFolder(folderId, user.sub);
-    return { status: 'success', data };
-  }
 }

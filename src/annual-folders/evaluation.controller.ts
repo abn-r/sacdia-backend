@@ -93,6 +93,44 @@ export class EvaluationController {
   }
 
   // ========================================
+  // CLOSE A FOLDER (field action)
+  // ========================================
+
+  @Post(':folderId/close')
+  @RequirePermissions('annual_folders:evaluate')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Close folder (field-level action)',
+    description:
+      "Closes an annual evidence folder in 'submitted' or 'evaluated' status. " +
+      'Requires annual_folders:evaluate and the folder local field inside the ' +
+      "actor's territory; club roles cannot close their own folder.",
+  })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
+  @ApiResponse({ status: 201, description: 'Folder closed' })
+  @ApiResponse({
+    status: 400,
+    description: "Folder is not in 'submitted' or 'evaluated' status",
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Missing annual_folders:evaluate, or folder outside the actor territory',
+  })
+  @ApiResponse({ status: 404, description: 'Folder not found' })
+  async closeFolder(
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    await this.evaluationService.assertFolderCloseAccess(folderId, user.sub);
+    const data = await this.annualFoldersService.closeFolder(
+      folderId,
+      user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  // ========================================
   // REOPEN A SECTION
   // ========================================
 

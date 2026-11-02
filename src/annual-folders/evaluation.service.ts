@@ -695,6 +695,21 @@ export class EvaluationService {
     return evaluations.map((e) => this.formatEvaluation(e));
   }
 
+  /**
+   * Closing a folder is a field action: same territory rule as evaluating
+   * its sections (the folder's local field must be in the actor's scope).
+   */
+  async assertFolderCloseAccess(
+    folderId: string,
+    actorUserId: string,
+  ): Promise<void> {
+    await this.assertFolderEvaluationTerritoryAccess(
+      folderId,
+      actorUserId,
+      'folder',
+    );
+  }
+
   private async assertFolderEvaluationTerritoryAccess(
     folderId: string,
     actorUserId: string,

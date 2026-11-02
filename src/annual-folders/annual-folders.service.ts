@@ -2108,15 +2108,12 @@ export class AnnualFoldersService {
    * Close a folder (change status to 'closed'). Field-level action.
    * Accepts folders in 'submitted' OR 'evaluated' status.
    *
-   * The real folder club permission is verified before the transaction opens:
-   * an update permission granted in another club is not enough.
+   * Authorization belongs to the caller: `EvaluationController.closeFolder`
+   * requires `annual_folders:evaluate` and the folder's local field in the
+   * actor's territory (`EvaluationService.assertFolderCloseAccess`). Club
+   * roles cannot close their own folder.
    */
   async closeFolder(folderId: string, userId: string) {
-    await this.assertFolderPermissionAccess(
-      folderId,
-      userId,
-      'evidence_folders:update',
-    );
     return this.prisma.$transaction(async (tx) => {
       // Existence check first so callers get a clean NotFoundException when
       // the folder simply does not exist (as opposed to a state conflict).
