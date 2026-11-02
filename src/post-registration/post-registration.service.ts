@@ -34,6 +34,10 @@ type ClubInstanceField = 'club_section_id';
 type ResolvedClubSection = {
   club_section_id: number;
   club_type_id: number;
+  /** Territory of the section's club: the source of truth for the user's geo. */
+  country_id: number;
+  union_id: number;
+  local_field_id: number;
 };
 
 type ResolvedMemberAssignment = {
@@ -257,9 +261,9 @@ export class PostRegistrationService {
         const authorityUser = await tx.users.update({
           where: { user_id: userId },
           data: {
-            country_id: dto.country_id,
-            union_id: dto.union_id,
-            local_field_id: dto.local_field_id,
+            country_id: selectedClub.country_id,
+            union_id: selectedClub.union_id,
+            local_field_id: selectedClub.local_field_id,
           },
           select: { user_id: true },
         });
@@ -532,14 +536,47 @@ export class PostRegistrationService {
       select: {
         club_section_id: true,
         club_type_id: true,
+        clubs: {
+          select: {
+            local_field_id: true,
+            local_fields: {
+              select: {
+                union_id: true,
+                unions: { select: { country_id: true } },
+              },
+            },
+          },
+        },
       },
     });
 
-    if (!section) {
+    const localField = section?.clubs?.local_fields;
+    if (!section || !section.clubs || !localField) {
       throw new AppBadRequestException(ErrorCode.POST_REG_CLUB_NOT_FOUND);
     }
 
-    return section;
+    const resolved: ResolvedClubSection = {
+      club_section_id: section.club_section_id,
+      club_type_id: section.club_type_id,
+      country_id: localField.unions.country_id,
+      union_id: localField.union_id,
+      local_field_id: section.clubs.local_field_id,
+    };
+
+    // The body values are optional and only checked: the user's country,
+    // union and local field always come from the chosen section.
+    if (
+      (dto.country_id != null && dto.country_id !== resolved.country_id) ||
+      (dto.union_id != null && dto.union_id !== resolved.union_id) ||
+      (dto.local_field_id != null &&
+        dto.local_field_id !== resolved.local_field_id)
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.POST_REG_CLUB_LOCATION_MISMATCH,
+      );
+    }
+
+    return resolved;
   }
 
   private async resolveMemberAssignment(
