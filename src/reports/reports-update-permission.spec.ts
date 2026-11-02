@@ -410,14 +410,21 @@ describe('Seed and migration: reports:update and reports:write', () => {
     );
   });
 
-  it.each([...CLUB_ROLES, 'assistant-lf', 'pastor'])(
-    'the %s seed block lists reports:write next to reports:submit',
-    (role) => {
-      const block = seedBlock(role);
-      expect(block).toContain("'reports:submit'");
-      expect(block).toContain("'reports:write'");
-    },
-  );
+  it.each([
+    ...CLUB_ROLES.filter((role) => role !== 'treasurer'),
+    'assistant-lf',
+    'pastor',
+  ])('the %s seed block lists reports:write next to reports:submit', (role) => {
+    const block = seedBlock(role);
+    expect(block).toContain("'reports:submit'");
+    expect(block).toContain("'reports:write'");
+  });
+
+  it('the treasurer seed block has neither reports:submit nor reports:write (2026-11-02)', () => {
+    const block = seedBlock('treasurer');
+    expect(block).not.toContain("'reports:submit'");
+    expect(block).not.toContain("'reports:write'");
+  });
 
   it.each(COORDINATOR_ROLES)(
     'the %s seed block never lists reports:write',

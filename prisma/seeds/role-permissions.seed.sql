@@ -638,13 +638,11 @@ WHERE r.role_name = 'treasurer'
     'finances:create',
     'finances:update',
     'finances:delete',
-    -- Reports (view/preview and download financial reports)
+    -- Reports (view/preview and download). The treasurer does not draft, edit,
+    -- generate, submit or regenerate the monthly report (no reports:submit or
+    -- reports:write; decision 2026-11-02): that belongs to the club board.
     'reports:read',
     'reports:download',
-    -- Draft, edit, generate and submit monthly reports (split from reports:read)
-    'reports:submit',
-    -- Re-render the stored monthly PDF from its frozen snapshot
-    'reports:write',
     -- Insurance management (register and update for section members/staff)
     'insurance:create',
     'insurance:update',
