@@ -1264,6 +1264,57 @@ export class HonorsService {
     };
   }
 
+  /**
+   * `certificate`, `images` and `document` of the PATCH are references the
+   * client sends back, and they end up in front of reviewers. Only accept
+   * references into our own buckets (key, public URL or this account's signed
+   * URL). A value the row already holds is kept as is, so legacy rows with
+   * foreign URLs can still be edited (e.g. removing one image).
+   */
+  private assertFileReferencesOwned(
+    current: {
+      certificate?: string | null;
+      document?: string | null;
+      images?: unknown;
+    },
+    dto: UpdateUserHonorDto,
+  ) {
+    const stored = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === 'string')
+        : typeof value === 'string'
+          ? [value]
+          : [];
+    const check = (
+      bucket: StorageBucketAlias,
+      incoming: unknown,
+      existing: unknown,
+    ) => {
+      const known = new Set(stored(existing));
+      for (const value of stored(incoming)) {
+        if (
+          value.trim() === '' ||
+          known.has(value) ||
+          isCertificateImportObjectKey(value) ||
+          this.fileStorage.isOwnedReference(bucket, value)
+        ) {
+          continue;
+        }
+        throw new AppBadRequestException(
+          ErrorCode.HONOR_FILE_REFERENCE_INVALID,
+        );
+      }
+    };
+
+    check(
+      StorageBucketAlias.USERS_HONORS_CERT,
+      dto.certificate,
+      current.certificate,
+    );
+    check(StorageBucketAlias.USERS_HONORS, dto.images, current.images);
+    check(StorageBucketAlias.USERS_HONORS, dto.document, current.document);
+  }
+
   async updateUserHonor(
     userId: string,
     honorId: number,
@@ -1282,6 +1333,7 @@ export class HonorsService {
     }
 
     this.assertHonorIsMutable(userHonor.validation_status);
+    this.assertFileReferencesOwned(userHonor, dto);
 
     const updateData: any = {
       modified_at: new Date(),

@@ -249,6 +249,7 @@
   "HONOR_BULK_NOT_FOUND": "Honores no encontrados o inactivos: {ids}",
   "HONOR_FILE_REQUIRED": "Se requiere al menos un archivo: certificado, documento o imágenes",
   "HONOR_USER_HONOR_NOT_FOUND": "Registro de honor del usuario no encontrado",
+  "HONOR_FILE_REFERENCE_INVALID": "Solo se aceptan archivos subidos a SACDIA como evidencia, documento o certificado",
   "HONOR_FILE_UPLOAD_FAILED": "Error al subir los archivos del honor",
   "HONOR_FILE_INVALID_FORMAT": "Formato de archivo no válido. Permitidos: {allowed}",
   "HONOR_FILE_TOO_LARGE": "El archivo supera el tamaño máximo de {max_mb} MB",

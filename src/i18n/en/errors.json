@@ -249,6 +249,7 @@
   "HONOR_BULK_NOT_FOUND": "Honors not found or inactive: {ids}",
   "HONOR_FILE_REQUIRED": "At least one file is required: certificate, document or images",
   "HONOR_USER_HONOR_NOT_FOUND": "User honor record not found",
+  "HONOR_FILE_REFERENCE_INVALID": "Only files uploaded to SACDIA are accepted as evidence, document or certificate",
   "HONOR_FILE_UPLOAD_FAILED": "Failed to upload honor files",
   "HONOR_FILE_INVALID_FORMAT": "Invalid file format. Allowed: {allowed}",
   "HONOR_FILE_TOO_LARGE": "File exceeds the maximum size of {max_mb} MB",

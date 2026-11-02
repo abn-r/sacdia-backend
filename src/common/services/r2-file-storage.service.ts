@@ -155,6 +155,71 @@ export class R2FileStorageService implements FileStorageService {
     return this.toObjectKey(keyPrefix, relativeKey);
   }
 
+  isOwnedReference(bucketAlias: StorageBucketAlias, value: string): boolean {
+    const input = typeof value === 'string' ? value.trim() : '';
+    if (!input || input.length > 2048) return false;
+
+    const config = this.getBucketConfig(bucketAlias);
+
+    if (this.looksLikeUrl(input)) {
+      const parsed = this.parseUrl(input);
+      if (!parsed || parsed.username || parsed.password) return false;
+      const host = parsed.hostname.toLowerCase();
+
+      let publicHost: string | null;
+      try {
+        publicHost = new URL(config.publicBaseUrl).hostname.toLowerCase();
+      } catch {
+        publicHost = null;
+      }
+      if (publicHost && host === publicHost) {
+        return this.extractKeyFromPublicUrl(bucketAlias, input) !== null;
+      }
+
+      const accountId = this.configService.get<string>('R2_ACCOUNT_ID');
+      if (
+        accountId &&
+        host === `${accountId}.r2.cloudflarestorage.com`.toLowerCase()
+      ) {
+        const path = this.safeDecode(parsed.pathname).replace(/^\/+/, '');
+        const bucketPrefix = `${config.bucket}/`;
+        if (!path.startsWith(bucketPrefix)) return false;
+        const key = path.slice(bucketPrefix.length);
+        return (
+          key.length > 0 &&
+          this.isSafeKey(key) &&
+          this.hasKeyPrefix(config.keyPrefix, key)
+        );
+      }
+      return false;
+    }
+
+    const key = this.normalizeKey(input);
+    if (!this.isSafeKey(key)) return false;
+    const hasPrefix = config.keyPrefix.trim().replace(/^\/+|\/+$/g, '') !== '';
+    // Unprefixed buckets store bare file names: require an extension so free
+    // text is not mistaken for a key.
+    return hasPrefix
+      ? this.hasKeyPrefix(config.keyPrefix, key)
+      : /\.[A-Za-z0-9]{2,5}$/.test(key);
+  }
+
+  private isSafeKey(key: string): boolean {
+    return (
+      key.length > 0 &&
+      !key.split('/').some((segment) => segment === '..' || segment === '.') &&
+      /^[\p{L}\p{N}_\-./ %()+,=@]+$/u.test(key)
+    );
+  }
+
+  private safeDecode(value: string): string {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+
   async getSignedDownloadUrl(
     bucketAlias: StorageBucketAlias,
     keyOrPublicUrl: string,

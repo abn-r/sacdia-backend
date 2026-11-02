@@ -246,6 +246,7 @@
   "HONOR_BULK_NOT_FOUND": "Honneurs introuvables ou inactifs : {ids}",
   "HONOR_FILE_REQUIRED": "Au moins un fichier est requis : certificat, document ou images",
   "HONOR_USER_HONOR_NOT_FOUND": "Enregistrement d'honneur de l'utilisateur introuvable",
+  "HONOR_FILE_REFERENCE_INVALID": "Seuls les fichiers téléversés dans SACDIA sont acceptés comme preuve, document ou certificat",
   "HONOR_FILE_UPLOAD_FAILED": "Échec du téléversement des fichiers d'honneur",
   "HONOR_FILE_INVALID_FORMAT": "Format de fichier invalide. Autorisés : {allowed}",
   "HONOR_FILE_TOO_LARGE": "Le fichier dépasse la taille maximale de {max_mb} MB",
