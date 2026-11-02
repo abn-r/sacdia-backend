@@ -195,6 +195,65 @@ describe('platform admin seed cleanups after the 2026-10-30 grants', () => {
   });
 });
 
+describe('seed-only permissions and seed cleanups (2026-11-02)', () => {
+  const migration = read(
+    'migrations/20261102120000_seed_only_permissions_and_cleanups/migration.sql',
+  );
+  const collapsedMigration = collapse(migration);
+  const permissionsSeed = stripComments(read('seeds/permissions.seed.sql'));
+  const seedRow = (name: string) =>
+    new RegExp(`\\('${name}',\\s*'([^']*)',\\s*(true|false)\\)`).exec(
+      permissionsSeed,
+    );
+
+  it.each([
+    'users:create',
+    'users:bulk_create',
+    'insurance:review',
+    'insurance:configure',
+    'certifications:configure',
+    'certifications:publish',
+    'certifications:review',
+    'certifications:certify',
+    'camporee-supplies:read',
+    'camporee-supplies:plan',
+    'camporee-supplies:configure',
+    'camporee-supplies:review-pay',
+    'camporee-supplies:deliver',
+  ])('inserts %s with its seed row', (name) => {
+    const row = seedRow(name);
+    expect(row?.[2]).toBe('true');
+    expect(migration).toContain(`('${name}', '${row?.[1]}', true)`);
+  });
+
+  it('re-runs every per-permission cleanup of the seed', () => {
+    const cleanups = collapse(SEED)
+      .split(';')
+      .map((statement) => statement.trim())
+      .filter(
+        (statement) =>
+          statement.startsWith('DELETE FROM role_permissions rp') &&
+          statement.includes('AND NOT ('),
+      );
+    expect(cleanups.length).toBeGreaterThanOrEqual(16);
+    for (const cleanup of cleanups) {
+      expect(collapsedMigration).toContain(cleanup);
+    }
+  });
+
+  it('retires every permission the seed marks inactive', () => {
+    const inactive = [
+      ...permissionsSeed.matchAll(
+        /\('([a-z_-]+:[a-z_-]+)',\s*'[^']*',\s*false\)/g,
+      ),
+    ].map((match) => match[1]);
+    expect(inactive.length).toBeGreaterThan(0);
+    for (const name of inactive) {
+      expect(migration).toContain(`'${name}'`);
+    }
+  });
+});
+
 describe('assistant-admin role migration', () => {
   const migration = collapse(
     read('migrations/20261028130000_ensure_assistant_admin_role/migration.sql'),
