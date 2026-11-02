@@ -110,13 +110,16 @@ export class MonthlyReportsController {
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
     @Query('month', ParseIntPipe) month: number,
     @Query('year', ParseIntPipe) year: number,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    const data = await this.monthlyReportsService.getOrCreateDraft(
-      enrollmentId,
-      month,
-      year,
-    );
-    return { status: 'success', data };
+    const { report, created } =
+      await this.monthlyReportsService.getOrCreateDraftWithCreated(
+        enrollmentId,
+        month,
+        year,
+      );
+    res.status(created ? HttpStatus.CREATED : HttpStatus.OK);
+    return { status: 'success', data: report };
   }
 
   // ========================================

@@ -106,7 +106,7 @@ const baseline = {
   'membership-requests/membership-requests.service.ts':
     'workflowWhere|allowlist|11|d7eb2512556b',
   'monthly-reports/monthly-reports.service.ts':
-    'effectiveWhere|T09|3|b00f9c8d194d',
+    'effectiveWhere|T09|3|eb81d3c23f25',
   'notifications/notifications.processor.ts':
     'effectiveWhere|T09|3|3bf28a58f9e2',
   'notifications/notifications.service.ts': 'effectiveWhere|T09|2|12585f37569f',
