@@ -195,6 +195,65 @@ describe('platform admin seed cleanups after the 2026-10-30 grants', () => {
   });
 });
 
+describe('seed-only permissions and seed cleanups (2026-11-02)', () => {
+  const migration = read(
+    'migrations/20261102120000_seed_only_permissions_and_cleanups/migration.sql',
+  );
+  const collapsedMigration = collapse(migration);
+  const permissionsSeed = stripComments(read('seeds/permissions.seed.sql'));
+  const seedRow = (name: string) =>
+    new RegExp(`\\('${name}',\\s*'([^']*)',\\s*(true|false)\\)`).exec(
+      permissionsSeed,
+    );
+
+  it.each([
+    'users:create',
+    'users:bulk_create',
+    'insurance:review',
+    'insurance:configure',
+    'certifications:configure',
+    'certifications:publish',
+    'certifications:review',
+    'certifications:certify',
+    'camporee-supplies:read',
+    'camporee-supplies:plan',
+    'camporee-supplies:configure',
+    'camporee-supplies:review-pay',
+    'camporee-supplies:deliver',
+  ])('inserts %s with its seed row', (name) => {
+    const row = seedRow(name);
+    expect(row?.[2]).toBe('true');
+    expect(migration).toContain(`('${name}', '${row?.[1]}', true)`);
+  });
+
+  it('re-runs every per-permission cleanup of the seed', () => {
+    const cleanups = collapse(SEED)
+      .split(';')
+      .map((statement) => statement.trim())
+      .filter(
+        (statement) =>
+          statement.startsWith('DELETE FROM role_permissions rp') &&
+          statement.includes('AND NOT ('),
+      );
+    expect(cleanups.length).toBeGreaterThanOrEqual(16);
+    for (const cleanup of cleanups) {
+      expect(collapsedMigration).toContain(cleanup);
+    }
+  });
+
+  it('retires every permission the seed marks inactive', () => {
+    const inactive = [
+      ...permissionsSeed.matchAll(
+        /\('([a-z_-]+:[a-z_-]+)',\s*'[^']*',\s*false\)/g,
+      ),
+    ].map((match) => match[1]);
+    expect(inactive.length).toBeGreaterThan(0);
+    for (const name of inactive) {
+      expect(migration).toContain(`'${name}'`);
+    }
+  });
+});
+
 describe('assistant-admin role migration', () => {
   const migration = collapse(
     read('migrations/20261028130000_ensure_assistant_admin_role/migration.sql'),
@@ -293,5 +352,60 @@ describe('union leadership has no unscoped ranking reads', () => {
       "p.permission_name IN ('member_rankings:read_global', 'section_rankings:read_global')",
     );
     expect(migration).not.toContain('member_ranking_weights');
+  });
+});
+
+describe('role permissions aligned with the seeds (2026-11-02)', () => {
+  const migration = read(
+    'migrations/20261102130000_align_role_permissions_with_seed/migration.sql',
+  );
+  const statements = collapse(migration)
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+
+  it('runs as one transaction', () => {
+    expect(statements[0]).toBe('BEGIN');
+    expect(statements[statements.length - 1]).toBe('COMMIT');
+    expect(
+      statements.filter((s) => s === 'BEGIN' || s === 'COMMIT'),
+    ).toHaveLength(2);
+  });
+
+  it('wipes and re-seeds every role the seed wipes', () => {
+    const roles = [
+      ...SEED.matchAll(
+        /DELETE FROM role_permissions\s+WHERE role_id = \(\s*SELECT role_id FROM roles\s+WHERE role_name = '([a-z-]+)'/g,
+      ),
+    ].map((match) => match[1]);
+    expect(roles.length).toBeGreaterThan(15);
+    for (const role of roles) {
+      expect(migration).toMatch(
+        new RegExp(
+          `DELETE FROM role_permissions\\s+WHERE role_id = \\(\\s*SELECT role_id FROM roles\\s+WHERE role_name = '${role}'`,
+        ),
+      );
+    }
+  });
+
+  it('creates every permission of permissions.seed.sql', () => {
+    const permissionsSeed = stripComments(read('seeds/permissions.seed.sql'));
+    const names = [
+      ...permissionsSeed.matchAll(/\('([a-z_-]+:[a-z_-]+)',\s*'/g),
+    ].map((match) => match[1]);
+    expect(names.length).toBeGreaterThan(200);
+    for (const name of names) {
+      expect(migration).toContain(`('${name}',`);
+    }
+  });
+
+  it('never grants camporee event writes to club roles', () => {
+    const clubWrites = statements.filter(
+      (statement) =>
+        statement.includes('INSERT INTO role_permissions') &&
+        statement.includes("r.role_category = 'CLUB'") &&
+        /'camporee_events:(create|update|delete)'/.test(statement),
+    );
+    expect(clubWrites).toEqual([]);
   });
 });
