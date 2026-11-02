@@ -6,7 +6,6 @@ import {
   Query,
   Body,
   ParseIntPipe,
-  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -30,6 +29,7 @@ import {
   CurrentUser,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 @ApiTags('requests')
@@ -127,7 +127,7 @@ export class RequestsController {
     description: 'Solicitud no encontrada o fuera del alcance del actor',
   })
   async getTransferRequest(
-    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Param('requestId', ParseUuidParamPipe) requestId: string,
     @CurrentUser() user: { user_id: string },
   ) {
     return this.requestsService.getTransferRequest(requestId, user.user_id);
@@ -155,7 +155,7 @@ export class RequestsController {
     description: 'La solicitud ya fue revisada',
   })
   async reviewTransferRequest(
-    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Param('requestId', ParseUuidParamPipe) requestId: string,
     @Body() dto: ReviewTransferRequestDto,
     @CurrentUser() user: { user_id: string },
   ) {
@@ -256,7 +256,7 @@ export class RequestsController {
     description: 'Solicitud no encontrada o fuera del alcance del actor',
   })
   async getAssignmentRequest(
-    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Param('requestId', ParseUuidParamPipe) requestId: string,
     @CurrentUser() user: { user_id: string },
   ) {
     return this.requestsService.getAssignmentRequest(requestId, user.user_id);
@@ -284,7 +284,7 @@ export class RequestsController {
     description: 'La solicitud ya fue revisada o se alcanzó el límite de slots',
   })
   async reviewAssignmentRequest(
-    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Param('requestId', ParseUuidParamPipe) requestId: string,
     @Body() dto: ReviewAssignmentRequestDto,
     @CurrentUser() user: { user_id: string },
   ) {
