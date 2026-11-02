@@ -1331,7 +1331,7 @@ export class AnnualFoldersService {
 
     return {
       clubId: club.club_id,
-      clubSectionId: folder.club_enrollment!.club_section_id,
+      clubSectionId: folder.club_enrollment.club_section_id,
       localFieldId: club.local_field_id ?? null,
       unionId: club.local_fields?.union_id ?? null,
     };
