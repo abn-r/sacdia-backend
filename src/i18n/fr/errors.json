@@ -429,6 +429,7 @@
   "REQUEST_ASSIGNMENT_PENDING_EXISTS": "Une demande d'attribution en attente existe déjà pour cet utilisateur, ce rôle et cette section",
   "REQUEST_ASSIGNMENT_NOT_FOUND": "Demande d'attribution introuvable",
   "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "La demande d'attribution a déjà été traitée",
+  "REQUEST_ASSIGNMENT_DUPLICATE_MEMBERSHIP": "L'utilisateur a déjà une adhésion active ou en attente dans un club du même type",
   "REQUEST_ROLE_SLOT_LIMIT_REACHED": "Le nombre maximum d'attributions de rôle par section a été atteint",
   "REQUEST_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée",
   "SCORING_CATEGORY_NOT_FOUND": "Catégorie de score introuvable",

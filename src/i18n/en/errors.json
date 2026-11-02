@@ -432,6 +432,7 @@
   "REQUEST_ASSIGNMENT_PENDING_EXISTS": "A pending assignment request already exists for this user, role, and section",
   "REQUEST_ASSIGNMENT_NOT_FOUND": "Assignment request not found",
   "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "Assignment request has already been reviewed",
+  "REQUEST_ASSIGNMENT_DUPLICATE_MEMBERSHIP": "The user already has an active or pending membership in a club of the same type",
   "REQUEST_ROLE_SLOT_LIMIT_REACHED": "Maximum role assignments per section reached",
   "REQUEST_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
   "SCORING_CATEGORY_NOT_FOUND": "Scoring category not found",

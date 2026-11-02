@@ -9,7 +9,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ErrorCode } from '../common/errors/error-codes';
-import { AppForbiddenException } from '../common/errors/app.exception';
+import {
+  AppConflictException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { ActorSectionScopeService } from '../coordination/actor-section-scope.service';
 
@@ -654,6 +657,86 @@ describe('RequestsService', () => {
       expect(
         transactionMock.club_role_assignments.create,
       ).not.toHaveBeenCalled();
+    });
+
+    describe('duplicate membership guard (member role only)', () => {
+      it('checks pending or same-club-type active assignments for the member role', async () => {
+        await service.reviewAssignment(
+          'role-request-1',
+          'approver-1',
+          'approved',
+        );
+
+        expect(
+          transactionMock.club_role_assignments.findFirst,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              user_id: 'user-2',
+              active: true,
+              OR: [
+                { status: 'pending' },
+                { status: 'active', club_sections: { club_type_id: 2 } },
+              ],
+            },
+          }),
+        );
+        expect(
+          transactionMock.club_role_assignments.create,
+        ).toHaveBeenCalledTimes(1);
+      });
+
+      it('rejects with 409 REQUEST_ASSIGNMENT_DUPLICATE_MEMBERSHIP and creates nothing', async () => {
+        transactionMock.club_role_assignments.findFirst.mockResolvedValueOnce({
+          assignment_id: 'existing-av-membership',
+        });
+
+        const attempt = service.reviewAssignment(
+          'role-request-1',
+          'approver-1',
+          'approved',
+        );
+
+        await expect(attempt).rejects.toBeInstanceOf(AppConflictException);
+        await expect(attempt).rejects.toMatchObject({
+          code: ErrorCode.REQUEST_ASSIGNMENT_DUPLICATE_MEMBERSHIP,
+        });
+        expect(
+          transactionMock.club_role_assignments.create,
+        ).not.toHaveBeenCalled();
+        expect(authorizationContextVersion.bump).not.toHaveBeenCalled();
+        expect(
+          transactionMock.role_assignment_requests.update,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('does not apply the guard to leadership roles', async () => {
+        prisma.role_assignment_requests.findUnique.mockResolvedValue({
+          request_id: 'role-request-1',
+          user_id: 'user-2',
+          requested_by: 'requester-1',
+          role_id: 'role-counselor',
+          club_section_id: 20,
+          status: 'pending',
+          role: { role_id: 'role-counselor', role_name: 'counselor' },
+        });
+        transactionMock.club_role_assignments.findFirst.mockResolvedValue({
+          assignment_id: 'existing-av-membership',
+        });
+
+        await service.reviewAssignment(
+          'role-request-1',
+          'approver-1',
+          'approved',
+        );
+
+        expect(
+          transactionMock.club_role_assignments.findFirst,
+        ).not.toHaveBeenCalled();
+        expect(
+          transactionMock.club_role_assignments.create,
+        ).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('does not version authority for a rejected assignment request', async () => {
