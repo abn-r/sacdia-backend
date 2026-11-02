@@ -58,6 +58,7 @@ describe('AnnualFoldersService — getFolderByEnrollment', () => {
       .mockResolvedValueOnce({ annual_folder_id: 'folder-1' })
       .mockResolvedValueOnce({
         club_enrollment: {
+          club_section_id: 163,
           club_section: {
             clubs: { club_id: 10 },
           },
@@ -81,6 +82,7 @@ describe('AnnualFoldersService — getFolderByEnrollment', () => {
   it('allows territorial local-field supervision when the caller has global evidence_folders:read', async () => {
     mockPrismaService.annual_folders.findUnique.mockResolvedValueOnce({
       club_enrollment: {
+        club_section_id: 163,
         club_section: {
           clubs: {
             club_id: 10,

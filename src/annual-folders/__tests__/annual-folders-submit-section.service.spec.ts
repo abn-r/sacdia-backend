@@ -58,6 +58,7 @@ const mockTx = {
 // Club chain shape for assertFolderClubAccess (first annual_folders.findUnique call)
 const mockFolderClubChain = {
   club_enrollment: {
+    club_section_id: 163,
     club_section: {
       clubs: { club_id: 10 },
     },

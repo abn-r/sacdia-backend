@@ -31,7 +31,7 @@ const baseline = {
   'analytics/operations-dashboard.repository.ts':
     'effectiveWhere|T09|5|b1e4bbcd3060',
   'annual-folders/annual-folders.service.ts':
-    'effectiveWhere|T08|2|c7726a03d3c1',
+    'effectiveWhere|T08|2|afd1c18e8edc',
   'annual-folders/score-calculators/sacdia-operational-usage-score.ts':
     'effectiveWhere|T09|1|bbabd16a2b24',
   'annual-membership/annual-membership-policy.service.ts':

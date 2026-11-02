@@ -32,6 +32,7 @@ const SIGNED_URL = 'signed://presigned-url';
 const mockEvidenceClubChain = {
   annual_folder: {
     club_enrollment: {
+      club_section_id: 163,
       club_section: {
         clubs: { club_id: 10 },
       },
@@ -41,6 +42,7 @@ const mockEvidenceClubChain = {
 
 const mockFolderClubChain = {
   club_enrollment: {
+    club_section_id: 163,
     club_section: {
       clubs: { club_id: 10 },
     },
@@ -51,6 +53,7 @@ const mockFolderClubChain = {
 const mockEvidenceTerritoryChain = {
   annual_folder: {
     club_enrollment: {
+      club_section_id: 163,
       club_section: {
         clubs: {
           club_id: 10,

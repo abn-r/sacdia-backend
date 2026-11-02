@@ -42,6 +42,7 @@ describe('AnnualFoldersService — setReviewerNote', () => {
   const mockEvidenceTerritoryShape = {
     annual_folder: {
       club_enrollment: {
+        club_section_id: 163,
         club_section: {
           clubs: {
             club_id: 10,

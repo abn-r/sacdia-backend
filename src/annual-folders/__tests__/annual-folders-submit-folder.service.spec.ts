@@ -13,6 +13,7 @@ const requiredSections = [
 
 const mockFolderClubChain = {
   club_enrollment: {
+    club_section_id: 163,
     club_section: {
       clubs: { club_id: 10 },
     },
@@ -117,7 +118,7 @@ describe('AnnualFoldersService — submitFolder', () => {
     });
   });
 
-  it('allows submission when the caller has annual_folders:submit in the folder club', async () => {
+  it('allows submission when the caller has annual_folders:submit in the folder section', async () => {
     mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
     mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
       assignment_id: 'club-submit-grant',
@@ -134,7 +135,7 @@ describe('AnnualFoldersService — submitFolder', () => {
           user_id: USER_ID,
           active: true,
           status: 'active',
-          club_sections: { clubs: { club_id: 10 } },
+          club_section_id: 163,
           roles: expect.objectContaining({
             role_permissions: {
               some: expect.objectContaining({
@@ -147,6 +148,52 @@ describe('AnnualFoldersService — submitFolder', () => {
         }),
       }),
     );
+    expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('denies submission (403) when the caller only holds a role in another section of the same club', async () => {
+    mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
+    // Simulates the DB: the only grant lives in section 164 of the same club, so
+    // a query filtered by the folder's section (163) finds nothing.
+    mockPrismaService.club_role_assignments.findFirst.mockImplementation(
+      ({ where }: { where: { club_section_id?: number } }) =>
+        Promise.resolve(
+          where.club_section_id === 164
+            ? { assignment_id: 'sibling-section-grant' }
+            : null,
+        ),
+    );
+
+    await expect(
+      service.submitFolder(FOLDER_ID, USER_ID),
+    ).rejects.toMatchObject({
+      code: ErrorCode.ANNUAL_FOLDER_FOLDER_ACCESS_DENIED,
+    });
+
+    expect(
+      mockPrismaService.club_role_assignments.findFirst,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ club_section_id: 163 }),
+      }),
+    );
+    expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('allows submission when the caller holds the role in the folder section', async () => {
+    mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
+    mockPrismaService.club_role_assignments.findFirst.mockImplementation(
+      ({ where }: { where: { club_section_id?: number } }) =>
+        Promise.resolve(
+          where.club_section_id === 163
+            ? { assignment_id: 'same-section-grant' }
+            : null,
+        ),
+    );
+    setTransactionFolder();
+
+    await service.submitFolder(FOLDER_ID, USER_ID);
+
     expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
   });
 
