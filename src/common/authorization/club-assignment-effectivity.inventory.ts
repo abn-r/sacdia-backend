@@ -26,12 +26,12 @@ const baseline = {
   'admin/admin-geography.service.ts':
     'historicalWhere|allowlist|1|d56c9a4907fd',
   'admin/admin-reference.service.ts': 'effectiveWhere|T09|1|f9e0a7b798f8',
-  'admin/admin-users.service.ts': 'effectiveWhere|T09|4|d435f7ee3328',
+  'admin/admin-users.service.ts': 'effectiveWhere|T09|4|6dc79160e792',
   'analytics/analytics.service.ts': 'effectiveWhere|T09|9|01ab8142bda8',
   'analytics/operations-dashboard.repository.ts':
     'effectiveWhere|T09|5|b1e4bbcd3060',
   'annual-folders/annual-folders.service.ts':
-    'effectiveWhere|T08|2|c7726a03d3c1',
+    'effectiveWhere|T08|2|afd1c18e8edc',
   'annual-folders/score-calculators/sacdia-operational-usage-score.ts':
     'effectiveWhere|T09|1|bbabd16a2b24',
   'annual-membership/annual-membership-policy.service.ts':
@@ -118,7 +118,7 @@ const baseline = {
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
     'effectiveWhere|T08|1|11a310c43604',
   'rbac/rbac.service.ts': 'effectiveWhere|T08|1|68c2f63166fd',
-  'requests/requests.service.ts': 'effectiveWhere|T08|8|a71623a3306a',
+  'requests/requests.service.ts': 'effectiveWhere|T08|9|dfcece1b51a2',
   'scoring-categories/scoring-categories.service.ts':
     'effectiveWhere|T09|2|13fb6223b7d5',
   'support/support.service.ts': 'effectiveWhere|T09|1|1048e37fdce1',

@@ -158,8 +158,11 @@ const adminUserListSelect = Prisma.validator<Prisma.usersSelect>()({
     },
   },
   club_role_assignments: {
+    // Only effective assignments: a rejected membership request keeps
+    // active=true with status='rejected' (history), and must not read as a role.
     where: {
       active: true,
+      status: 'active',
       roles: {
         active: true,
         role_category: role_category.CLUB,
@@ -259,7 +262,9 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
     },
   },
   club_role_assignments: {
-    where: { active: true },
+    // Current assignments only (the admin renders them as the user's roles):
+    // rejected/pending requests keep active=true and must be excluded.
+    where: { active: true, status: 'active' },
     orderBy: { created_at: 'desc' },
     select: {
       assignment_id: true,
@@ -1675,6 +1680,7 @@ export class AdminUsersService {
             club_role_assignments: {
               some: {
                 active: true,
+                status: 'active',
                 roles: {
                   active: true,
                   role_category: role_category.CLUB,

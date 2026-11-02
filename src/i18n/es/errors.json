@@ -432,6 +432,7 @@
   "REQUEST_ASSIGNMENT_PENDING_EXISTS": "Ya existe una solicitud de asignación pendiente para este usuario, rol y sección",
   "REQUEST_ASSIGNMENT_NOT_FOUND": "Solicitud de asignación no encontrada",
   "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "La solicitud de asignación ya fue procesada",
+  "REQUEST_ASSIGNMENT_DUPLICATE_MEMBERSHIP": "El usuario ya tiene una membresía activa o pendiente en un club del mismo tipo",
   "REQUEST_ROLE_SLOT_LIMIT_REACHED": "Se alcanzó el máximo de asignaciones permitidas para este rol en la sección",
   "REQUEST_NO_ACTIVE_YEAR": "No hay un año eclesiástico activo configurado",
   "SCORING_CATEGORY_NOT_FOUND": "Categoría de puntuación no encontrada",

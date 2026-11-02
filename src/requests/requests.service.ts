@@ -725,6 +725,46 @@ export class RequestsService {
     return result;
   }
 
+  /**
+   * Mirrors the post-registration guard (POST_REG_DUPLICATE_MEMBERSHIP): the
+   * user must not already have another active=true assignment that is pending,
+   * or active in a section of the same club type.
+   */
+  private async assertNoDuplicateMembership(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    clubSectionId: number,
+  ): Promise<void> {
+    const targetSection = await tx.club_sections.findUnique({
+      where: { club_section_id: clubSectionId },
+      select: { club_type_id: true },
+    });
+    if (!targetSection) {
+      throw new AppNotFoundException(ErrorCode.REQUEST_SECTION_NOT_FOUND);
+    }
+
+    const conflicting = await tx.club_role_assignments.findFirst({
+      where: {
+        user_id: userId,
+        active: true,
+        OR: [
+          { status: 'pending' },
+          {
+            status: 'active',
+            club_sections: { club_type_id: targetSection.club_type_id },
+          },
+        ],
+      },
+      select: { assignment_id: true },
+    });
+
+    if (conflicting) {
+      throw new AppConflictException(
+        ErrorCode.REQUEST_ASSIGNMENT_DUPLICATE_MEMBERSHIP,
+      );
+    }
+  }
+
   async reviewAssignment(
     requestId: string,
     approverId: string,
@@ -783,6 +823,17 @@ export class RequestsService {
 
         // A dependent needs verified guardian consent before any active role.
         await assertAssignmentActivationAllowed(tx, request.user_id);
+
+        // Same rule as post-registration: a user cannot hold two memberships of
+        // the same club type. Only the `member` role is a membership; leadership
+        // roles are not affected.
+        if (request.role.role_name === 'member') {
+          await this.assertNoDuplicateMembership(
+            tx,
+            request.user_id,
+            request.club_section_id,
+          );
+        }
 
         // Create the club_role_assignment
         const assignment = await tx.club_role_assignments.create({

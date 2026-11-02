@@ -870,6 +870,63 @@ describe('AdminUsersService', () => {
     });
   });
 
+  describe('current club assignments exclude non-effective statuses', () => {
+    const superAdmin = () =>
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+          permissions: ['users:read_detail'],
+        }),
+      );
+
+    it('listUsers selects only status=active club assignments (rejected requests keep active=true)', async () => {
+      superAdmin();
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+      mockPrismaService.users.count.mockResolvedValue(0);
+
+      await service.listUsers('actor-super', buildListQuery());
+
+      const { select } = mockPrismaService.users.findMany.mock.calls[0][0];
+      expect(select.club_role_assignments.where).toEqual(
+        expect.objectContaining({ active: true, status: 'active' }),
+      );
+    });
+
+    it('getUserById selects only status=active club assignments', async () => {
+      superAdmin();
+      mockPrismaService.users.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getUserById('actor-super', 'user-1'),
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_NOT_FOUND });
+
+      const { select } = mockPrismaService.users.findFirst.mock.calls[0][0];
+      expect(select.club_role_assignments.where).toEqual({
+        active: true,
+        status: 'active',
+      });
+    });
+
+    it('the club role filter only matches status=active assignments', async () => {
+      superAdmin();
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+      mockPrismaService.users.count.mockResolvedValue(0);
+
+      await service.listUsers(
+        'actor-super',
+        buildListQuery({ role: 'member' }),
+      );
+
+      const { where } = mockPrismaService.users.findMany.mock.calls[0][0];
+      const clubClause = where.OR.find(
+        (c: Record<string, unknown>) => 'club_role_assignments' in c,
+      );
+      expect(clubClause.club_role_assignments.some).toEqual(
+        expect.objectContaining({ active: true, status: 'active' }),
+      );
+    });
+  });
+
   describe('getUserById', () => {
     it('should return user detail in scope', async () => {
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(

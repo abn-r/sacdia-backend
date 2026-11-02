@@ -429,6 +429,7 @@
   "REQUEST_ASSIGNMENT_PENDING_EXISTS": "Já existe uma solicitação de atribuição pendente para este usuário, função e seção",
   "REQUEST_ASSIGNMENT_NOT_FOUND": "Solicitação de atribuição não encontrada",
   "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "A solicitação de atribuição já foi processada",
+  "REQUEST_ASSIGNMENT_DUPLICATE_MEMBERSHIP": "O usuário já possui uma associação ativa ou pendente em um clube do mesmo tipo",
   "REQUEST_ROLE_SLOT_LIMIT_REACHED": "O máximo de atribuições permitidas para esta função na seção foi atingido",
   "REQUEST_NO_ACTIVE_YEAR": "Não há um ano eclesiástico ativo configurado",
   "SCORING_CATEGORY_NOT_FOUND": "Categoria de pontuação não encontrada",

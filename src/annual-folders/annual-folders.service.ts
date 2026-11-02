@@ -74,6 +74,8 @@ type EvaluationQueueStatus =
 
 type FolderAccessContext = {
   clubId: number;
+  /** club_enrollment.club_section_id of the folder's owning enrollment. */
+  clubSectionId: number;
   localFieldId: number | null;
   unionId: number | null;
 };
@@ -1150,9 +1152,9 @@ export class AnnualFoldersService {
 
     for (const permissionName of permissionNames) {
       if (
-        await this.hasClubPermissionForClub(
+        await this.hasClubPermissionForSection(
           userId,
-          context.clubId,
+          context.clubSectionId,
           permissionName,
         )
       ) {
@@ -1188,9 +1190,9 @@ export class AnnualFoldersService {
     }
 
     if (
-      await this.hasClubPermissionForClub(
+      await this.hasClubPermissionForSection(
         userId,
-        context.clubId,
+        context.clubSectionId,
         permissionName,
       )
     ) {
@@ -1214,9 +1216,9 @@ export class AnnualFoldersService {
     }
 
     if (
-      await this.hasClubPermissionForClub(
+      await this.hasClubPermissionForSection(
         userId,
-        context.clubId,
+        context.clubSectionId,
         permissionName,
       )
     ) {
@@ -1240,9 +1242,9 @@ export class AnnualFoldersService {
     }
 
     if (
-      await this.hasClubPermissionForClub(
+      await this.hasClubPermissionForSection(
         userId,
-        context.clubId,
+        context.clubSectionId,
         permissionName,
       )
     ) {
@@ -1270,9 +1272,9 @@ export class AnnualFoldersService {
     }
 
     if (
-      await this.hasClubPermissionForClub(
+      await this.hasClubPermissionForSection(
         userId,
-        context.clubId,
+        context.clubSectionId,
         'evidence_folders:read',
       )
     ) {
@@ -1296,6 +1298,7 @@ export class AnnualFoldersService {
       select: {
         club_enrollment: {
           select: {
+            club_section_id: true,
             club_section: {
               select: {
                 clubs: {
@@ -1328,6 +1331,7 @@ export class AnnualFoldersService {
 
     return {
       clubId: club.club_id,
+      clubSectionId: folder.club_enrollment.club_section_id,
       localFieldId: club.local_field_id ?? null,
       unionId: club.local_fields?.union_id ?? null,
     };
@@ -1339,6 +1343,7 @@ export class AnnualFoldersService {
     const enrollment = await this.prisma.club_enrollments.findUnique({
       where: { club_enrollment_id: enrollmentId },
       select: {
+        club_section_id: true,
         club_section: {
           select: {
             clubs: {
@@ -1369,6 +1374,7 @@ export class AnnualFoldersService {
 
     return {
       clubId: club.club_id,
+      clubSectionId: enrollment.club_section_id,
       localFieldId: club.local_field_id ?? null,
       unionId: club.local_fields?.union_id ?? null,
     };
@@ -1384,6 +1390,7 @@ export class AnnualFoldersService {
           select: {
             club_enrollment: {
               select: {
+                club_section_id: true,
                 club_section: {
                   select: {
                     clubs: {
@@ -1412,6 +1419,7 @@ export class AnnualFoldersService {
 
     return {
       clubId: club.club_id,
+      clubSectionId: evidence!.annual_folder.club_enrollment.club_section_id,
       localFieldId: club.local_field_id ?? null,
       unionId: club.local_fields?.union_id ?? null,
     };
@@ -1434,9 +1442,14 @@ export class AnnualFoldersService {
     return Boolean(superAdminGrant);
   }
 
-  private async hasClubPermissionForClub(
+  /**
+   * Club-role grants are scoped to the folder's owning section, not to the whole
+   * club: a role held only in a sibling section of the same club must not grant
+   * access to this section's folder.
+   */
+  private async hasClubPermissionForSection(
     userId: string,
-    clubId: number,
+    clubSectionId: number,
     permissionName: string,
   ): Promise<boolean> {
     const clubGrant = await this.prisma.club_role_assignments.findFirst({
@@ -1444,9 +1457,7 @@ export class AnnualFoldersService {
         user_id: userId,
         active: true,
         status: 'active',
-        club_sections: {
-          clubs: { club_id: clubId },
-        },
+        club_section_id: clubSectionId,
         roles: {
           active: true,
           role_permissions: {
@@ -2097,15 +2108,12 @@ export class AnnualFoldersService {
    * Close a folder (change status to 'closed'). Field-level action.
    * Accepts folders in 'submitted' OR 'evaluated' status.
    *
-   * The real folder club permission is verified before the transaction opens:
-   * an update permission granted in another club is not enough.
+   * Authorization belongs to the caller: `EvaluationController.closeFolder`
+   * requires `annual_folders:evaluate` and the folder's local field in the
+   * actor's territory (`EvaluationService.assertFolderCloseAccess`). Club
+   * roles cannot close their own folder.
    */
   async closeFolder(folderId: string, userId: string) {
-    await this.assertFolderPermissionAccess(
-      folderId,
-      userId,
-      'evidence_folders:update',
-    );
     return this.prisma.$transaction(async (tx) => {
       // Existence check first so callers get a clean NotFoundException when
       // the folder simply does not exist (as opposed to a state conflict).
