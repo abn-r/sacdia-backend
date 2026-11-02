@@ -1,12 +1,14 @@
 import {
-  IsInt,
   IsBoolean,
+  IsInt,
   IsOptional,
   IsString,
-  Min,
+  Max,
   MaxLength,
+  Min,
   ValidateIf,
 } from 'class-validator';
+import { INT4_MAX } from '../../common/constants/int4.constants';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateManualDataDto {
@@ -17,6 +19,7 @@ export class UpdateManualDataDto {
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   planning_meetings?: number;
 
   @ApiPropertyOptional({
@@ -26,6 +29,7 @@ export class UpdateManualDataDto {
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   parent_meetings?: number;
 
   @ApiPropertyOptional({
@@ -35,6 +39,7 @@ export class UpdateManualDataDto {
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   youth_council_attendance?: number;
 
   @ApiPropertyOptional({
@@ -44,6 +49,7 @@ export class UpdateManualDataDto {
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   church_board_attendance?: number;
 
   @ApiPropertyOptional({
@@ -53,6 +59,7 @@ export class UpdateManualDataDto {
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   soul_target?: number;
 
   @ApiPropertyOptional({
@@ -62,6 +69,7 @@ export class UpdateManualDataDto {
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   unbaptized_members?: number;
 
   @ApiPropertyOptional({
@@ -71,6 +79,7 @@ export class UpdateManualDataDto {
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   bible_studies_receiving?: number;
 
   @ApiPropertyOptional({
@@ -104,6 +113,7 @@ export class UpdateManualDataDto {
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   baptized_this_month?: number;
 
   @ApiPropertyOptional({
@@ -113,6 +123,7 @@ export class UpdateManualDataDto {
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   total_baptized?: number;
 
   @ApiPropertyOptional({

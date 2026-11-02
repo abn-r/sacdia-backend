@@ -1,11 +1,13 @@
 import {
-  IsInt,
   IsBoolean,
+  IsInt,
   IsOptional,
   IsString,
-  Min,
+  Max,
   MaxLength,
+  Min,
 } from 'class-validator';
+import { INT4_MAX } from '../../common/constants/int4.constants';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateQuarterlyManualDataDto {
@@ -16,6 +18,7 @@ export class UpdateQuarterlyManualDataDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   planning_meetings?: number;
 
   @ApiPropertyOptional({
@@ -25,6 +28,7 @@ export class UpdateQuarterlyManualDataDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   parent_meetings?: number;
 
   @ApiPropertyOptional({
@@ -34,6 +38,7 @@ export class UpdateQuarterlyManualDataDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   youth_council_attendance?: number;
 
   @ApiPropertyOptional({
@@ -43,6 +48,7 @@ export class UpdateQuarterlyManualDataDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   church_board_attendance?: number;
 
   @ApiPropertyOptional({
@@ -52,6 +58,7 @@ export class UpdateQuarterlyManualDataDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   soul_target?: number;
 
   @ApiPropertyOptional({
@@ -61,6 +68,7 @@ export class UpdateQuarterlyManualDataDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   baptized_this_quarter?: number;
 
   @ApiPropertyOptional({
@@ -88,6 +96,7 @@ export class UpdateQuarterlyManualDataDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   camporees_attended?: number;
 
   @ApiPropertyOptional({
