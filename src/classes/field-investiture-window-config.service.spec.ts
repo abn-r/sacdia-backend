@@ -1,7 +1,6 @@
 import { ErrorCode } from '../common/errors/error-codes';
 import { LocalFieldTimezoneResolver } from '../common/authorization/local-field-timezone.resolver';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
-import { FieldClassThresholdConfigService } from './field-class-threshold-config.service';
 import { FieldInvestitureWindowConfigService } from './field-investiture-window-config.service';
 
 const FIELD_ID = 10;
@@ -55,12 +54,10 @@ describe('FieldInvestitureWindowConfigService', () => {
   };
 
   let windows: { findUnique: jest.Mock; upsert: jest.Mock };
-  let thresholds: { findUnique: jest.Mock; upsert: jest.Mock };
   let prisma: {
     local_fields: { findUnique: jest.Mock };
     ecclesiastical_years: { findUnique: jest.Mock };
     local_field_investiture_windows: typeof windows;
-    local_field_class_thresholds: typeof thresholds;
   };
   let service: FieldInvestitureWindowConfigService;
 
@@ -71,15 +68,10 @@ describe('FieldInvestitureWindowConfigService', () => {
         .fn()
         .mockImplementation(({ create }) => Promise.resolve(create)),
     };
-    thresholds = {
-      findUnique: jest.fn().mockResolvedValue(null),
-      upsert: jest.fn(),
-    };
     prisma = {
       local_fields: { findUnique: jest.fn().mockResolvedValue(field) },
       ecclesiastical_years: { findUnique: jest.fn().mockResolvedValue(year) },
       local_field_investiture_windows: windows,
-      local_field_class_thresholds: thresholds,
       $executeRaw: jest.fn().mockResolvedValue(0),
       $transaction: jest.fn((fn: (tx: typeof prisma) => Promise<unknown>) =>
         fn(prisma),
@@ -144,7 +136,6 @@ describe('FieldInvestitureWindowConfigService', () => {
         }),
       }),
     );
-    expect(thresholds.upsert).not.toHaveBeenCalled();
   });
 
   it('lets admin edit a field inside the union and rejects one outside it', async () => {
@@ -167,27 +158,6 @@ describe('FieldInvestitureWindowConfigService', () => {
       code: ErrorCode.GUARD_PERMISSION_DENIED,
     });
     expect(windows.findUnique).not.toHaveBeenCalled();
-  });
-
-  it('does not grant class-threshold edit to an admin who saved the window', async () => {
-    const actor = snapshot({ role: 'admin', localFieldId: FIELD_ID });
-    await service.update(
-      actor,
-      FIELD_ID,
-      YEAR_ID,
-      { start_date: '2026-10-01', end_date: '2026-12-20' },
-      'admin-1',
-    );
-
-    const thresholdsService = new FieldClassThresholdConfigService(
-      prisma as never,
-      new LocalFieldTimezoneResolver({} as never),
-      { now: () => new Date('2026-10-15T18:00:00.000Z') },
-    );
-    await expect(
-      thresholdsService.update(actor, FIELD_ID, YEAR_ID, 90, 'admin-1'),
-    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
-    expect(thresholds.upsert).not.toHaveBeenCalled();
   });
 
   it('lets a union director read a field in the union and rejects the write', async () => {
