@@ -5,9 +5,9 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class InvestitureInvestDecisionDto {
   @ApiProperty({ format: 'uuid' })
@@ -17,7 +17,7 @@ export class InvestitureInvestDecisionDto {
   @ApiPropertyOptional({ maxLength: 500 })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   comment?: string;
 }
 
@@ -28,7 +28,7 @@ export class InvestitureRejectDecisionDto {
 
   @ApiProperty({ maxLength: 1000 })
   @IsString()
-  @MaxLength(1000)
+  @MaxLengthIfString(1000)
   reason!: string;
 }
 
