@@ -1202,12 +1202,9 @@ export class ClassesService {
     const isCompletedProgress = (
       progress: (typeof sectionProgress)[number] | undefined,
     ) =>
-      Boolean(
-        progress &&
-        progress.status !== evidence_validation_enum.REJECTED &&
-        (progress.status === evidence_validation_enum.VALIDATED ||
-          progress.score >= (eligibility?.passing_score ?? 80)),
-      );
+      // Only a reviewer's validation completes a requirement; the
+      // self-reported score does not (decision 2026-11-02).
+      progress?.status === evidence_validation_enum.VALIDATED;
 
     const modulesProgress = classData.class_modules
       .map((module) => {

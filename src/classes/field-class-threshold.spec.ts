@@ -1,7 +1,7 @@
 import {
   canEditFieldClassThreshold,
   june30InsideYear,
-  sectionMeetsThreshold,
+  sectionCountsAsComplete,
 } from './field-class-threshold';
 
 describe('field class threshold', () => {
@@ -43,21 +43,10 @@ describe('field class threshold', () => {
     ).toBe(false);
   });
 
-  it('counts VALIDATED below the threshold, ignores REJECTED, and applies the configured percent', () => {
-    expect(
-      sectionMeetsThreshold({ status: 'VALIDATED', score: 10, threshold: 90 }),
-    ).toBe(true);
-    expect(
-      sectionMeetsThreshold({ status: 'REJECTED', score: 100, threshold: 80 }),
-    ).toBe(false);
-    expect(
-      sectionMeetsThreshold({ status: 'PENDING', score: 85, threshold: 90 }),
-    ).toBe(false);
-    expect(
-      sectionMeetsThreshold({ status: 'PENDING', score: 80, threshold: 80 }),
-    ).toBe(true);
-    expect(
-      sectionMeetsThreshold({ status: 'PENDING', score: 79, threshold: 80 }),
-    ).toBe(false);
+  it('counts only VALIDATED requirements, whatever the self-reported score', () => {
+    expect(sectionCountsAsComplete({ status: 'VALIDATED' })).toBe(true);
+    expect(sectionCountsAsComplete({ status: 'REJECTED' })).toBe(false);
+    expect(sectionCountsAsComplete({ status: 'PENDING' })).toBe(false);
+    expect(sectionCountsAsComplete({ status: 'SUBMITTED' })).toBe(false);
   });
 });

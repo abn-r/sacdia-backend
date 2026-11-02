@@ -409,3 +409,30 @@ describe('role permissions aligned with the seeds (2026-11-02)', () => {
     expect(clubWrites).toEqual([]);
   });
 });
+
+describe('treasurer monthly reports are read-only (2026-11-02)', () => {
+  const migration = collapse(
+    read(
+      'migrations/20261102140000_treasurer_monthly_report_read_only/migration.sql',
+    ),
+  );
+
+  it('the seed treasurer block keeps read and download only', () => {
+    const start = lastRoleWipe('treasurer');
+    const block = SEED.slice(start).split(';')[1];
+    expect(block).toContain("'reports:read'");
+    expect(block).toContain("'reports:download'");
+    expect(block).not.toContain("'reports:submit'");
+    expect(block).not.toContain("'reports:write'");
+    expect(grantedAfter('treasurer', 'reports:submit', start)).toBe(false);
+    expect(grantedAfter('treasurer', 'reports:write', start)).toBe(false);
+  });
+
+  it('the migration removes submit and write from the club treasurer', () => {
+    expect(migration).toContain("r.role_name = 'treasurer'");
+    expect(migration).toContain("r.role_category = 'CLUB'");
+    expect(migration).toContain(
+      "p.permission_name IN ('reports:submit', 'reports:write')",
+    );
+  });
+});

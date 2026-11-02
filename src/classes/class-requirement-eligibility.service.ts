@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_CLASS_THRESHOLD_PERCENT,
-  sectionMeetsThreshold,
+  sectionCountsAsComplete,
 } from './field-class-threshold';
 
 export type ClassRequirementTrack = 'BASIC' | 'ADVANCED' | 'EXTRA';
@@ -346,11 +346,7 @@ export class ClassRequirementEligibilityService {
     const completedSectionIds = new Set(
       progressRows
         .filter((progress) =>
-          sectionMeetsThreshold({
-            status: progress.status,
-            score: progress.score,
-            threshold: passingScore,
-          }),
+          sectionCountsAsComplete({ status: progress.status }),
         )
         .map((progress) => progress.section_id),
     );

@@ -577,6 +577,7 @@ describe('ClassesService', () => {
           module_id: 11,
           section_id: 101,
           score: 90,
+          status: 'VALIDATED',
           evidences: null,
           submitted_by: {
             name: 'Consejero',
@@ -756,7 +757,7 @@ describe('ClassesService', () => {
       expect(result.completed_sections).toBe(1);
     });
 
-    it('counts a PENDING section as completed when score is at least 70', async () => {
+    it('does not count a PENDING section with a high self-reported score (2026-11-02)', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
         year_id: 2026,
       });
@@ -786,7 +787,7 @@ describe('ClassesService', () => {
       const result = await service.getUserProgress('user-1', 7);
 
       expect(result.modules[0].sections[0]).toMatchObject({
-        completed: true,
+        completed: false,
         status: 'PENDING',
       });
     });
@@ -1780,8 +1781,12 @@ describe('ClassesService', () => {
         mockClassProgressAccessService.assertCanAccessProgress,
       ).not.toHaveBeenCalled();
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
-      expect(mockPrismaService.class_section_progress.create).not.toHaveBeenCalled();
-      expect(mockPrismaService.class_section_progress.update).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.class_section_progress.create,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.class_section_progress.update,
+      ).not.toHaveBeenCalled();
       expect(mockPrismaService.evidence_files.create).not.toHaveBeenCalled();
       expect(mockPrismaService.evidence_files.update).not.toHaveBeenCalled();
       expect((service as any).fileStorage.upload).not.toHaveBeenCalled();
@@ -1810,7 +1815,13 @@ describe('ClassesService', () => {
 
     it('submit is CLASS_ENROLLMENT_NOT_FOUND and writes nothing', async () => {
       await expect(
-        (service as any).submitSection(CHILD, CHILD, 7, 101, SIBLING_ENROLLMENT),
+        (service as any).submitSection(
+          CHILD,
+          CHILD,
+          7,
+          101,
+          SIBLING_ENROLLMENT,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CLASS_ENROLLMENT_NOT_FOUND });
       expectNothingWritten();
     });
