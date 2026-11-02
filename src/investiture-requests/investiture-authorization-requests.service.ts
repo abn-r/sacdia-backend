@@ -1393,24 +1393,34 @@ export class InvestitureAuthorizationRequestService {
         (person) => person.person_id,
       ),
     });
+    // The writes build person views without names; label them the same way
+    // `readRequest` does so the response matches the read.
+    const labels = await this.requestLabels(this.prisma, [
+      {
+        club_section_id: request.club_section_id,
+        people: [
+          ...outcome.view.invested,
+          ...outcome.view.rejected_by_person,
+          ...outcome.view.rejected_by_system,
+          ...outcome.view.retired,
+        ],
+      },
+    ]);
+    const sectionName =
+      labels.sections.get(request.club_section_id)?.sectionName ?? null;
+    const labeled = (person: InvestitureRequestPersonView) => ({
+      ...person,
+      user_name: labels.users.get(person.user_id) ?? null,
+      class_name: labels.classes.get(person.class_id) ?? null,
+      section_name: sectionName,
+      rejection_reason: null,
+    });
     return {
       ...outcome.view,
-      invested: outcome.view.invested.map((person) => ({
-        ...person,
-        rejection_reason: null,
-      })),
-      rejected_by_person: outcome.view.rejected_by_person.map((person) => ({
-        ...person,
-        rejection_reason: null,
-      })),
-      rejected_by_system: outcome.view.rejected_by_system.map((person) => ({
-        ...person,
-        rejection_reason: null,
-      })),
-      retired: outcome.view.retired.map((person) => ({
-        ...person,
-        rejection_reason: null,
-      })),
+      invested: outcome.view.invested.map(labeled),
+      rejected_by_person: outcome.view.rejected_by_person.map(labeled),
+      rejected_by_system: outcome.view.rejected_by_system.map(labeled),
+      retired: outcome.view.retired.map(labeled),
     };
   }
 
@@ -1778,7 +1788,9 @@ export class InvestitureAuthorizationRequestService {
       select: ENROLLMENT_ROW_SELECT,
     });
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      );
     }
     return enrollment;
   }

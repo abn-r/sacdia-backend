@@ -3695,6 +3695,11 @@ describe('investiture authorization requests', () => {
       INSIDE,
     );
     expect(decided.rejected_by_person[0].rejection_reason).toBeNull();
+    expect(decided.rejected_by_person[0]).toMatchObject({
+      user_name: 'Ana Ruiz',
+      class_name: 'Amigo',
+      section_name: 'Conquistadores',
+    });
     expect(world.people[0].rejection_reason).toBe('motivo-humano');
     const boardHistory = await service.sectionHistory(director(), SECTION_ID);
     expect(boardHistory[0]).toMatchObject({
