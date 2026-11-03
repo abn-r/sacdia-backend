@@ -23,7 +23,6 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ListByClubResult } from '../audit-logs/audit-logs.service';
@@ -70,7 +69,6 @@ export class ClubsService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly authorizationContext: AuthorizationContextService,
-    private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly notificationsService: NotificationsService,
     private readonly auditLogs: AuditLogsService,
     private readonly ecclesiasticalYear: EcclesiasticalYearService,
@@ -779,7 +777,6 @@ export class ClubsService {
           roles: { select: { role_name: true } },
         },
       });
-      await this.authorizationContextVersion.bump(tx, dto.user_id);
       return created;
     });
 
@@ -948,7 +945,6 @@ export class ClubsService {
           club_section_id: true,
         },
       });
-      await this.authorizationContextVersion.bump(tx, updated.user_id);
       return updated;
     });
 
@@ -981,7 +977,6 @@ export class ClubsService {
           club_section_id: true,
         },
       });
-      await this.authorizationContextVersion.bump(tx, removed.user_id);
       return removed;
     });
 
@@ -1113,10 +1108,6 @@ export class ClubsService {
         },
       });
 
-      await this.authorizationContextVersion.bumpOrdered(tx, [
-        ended.user_id,
-        created.user_id,
-      ]);
       return { ended, created };
     });
 
@@ -1216,7 +1207,6 @@ export class ClubsService {
           club_section_id: true,
         },
       });
-      await this.authorizationContextVersion.bump(tx, created.user_id);
       return created;
     });
 

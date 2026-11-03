@@ -4,7 +4,6 @@ import {
   EcclesiasticalYearService,
   ecclesiasticalYearName,
 } from '../common/services/ecclesiastical-year.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AnnualMembershipPolicyService } from './annual-membership-policy.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -110,7 +109,6 @@ export class AnnualMembershipService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ecclesiasticalYear: EcclesiasticalYearService,
-    private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly membershipPolicy: AnnualMembershipPolicyService,
     private readonly auditLogs: AuditLogsService,
@@ -425,7 +423,6 @@ export class AnnualMembershipService {
       });
     }
 
-    await this.authorizationContextVersion.bumpMany(tx, [params.userId]);
     await this._applyClassInTransaction(tx, {
       userId: params.userId,
       sectionId: params.destSectionId,
@@ -554,7 +551,6 @@ export class AnnualMembershipService {
         where: { assignment_id: existingMember.assignment_id },
         data: { status: 'active' },
       });
-      await this.authorizationContextVersion.bumpMany(tx, [params.userId]);
       return this._afterClass(tx, params);
     }
 
@@ -645,7 +641,6 @@ export class AnnualMembershipService {
       });
     }
 
-    await this.authorizationContextVersion.bumpMany(tx, [params.userId]);
     return this._afterClass(tx, params);
   }
 

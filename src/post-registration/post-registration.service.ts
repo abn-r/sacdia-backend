@@ -7,7 +7,6 @@ import { MembershipRequestsService } from '../membership-requests/membership-req
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
 import { CompleteGuardianOnlyDto } from './dto/complete-guardian-only.dto';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import {
   ClassAssignmentResolverService,
   ClassResolutionYear,
@@ -63,7 +62,6 @@ export class PostRegistrationService {
     private classAssignmentResolver: ClassAssignmentResolverService,
     private membershipRequestsService: MembershipRequestsService,
     private authorizationContext: AuthorizationContextService,
-    private authorizationContextVersion: AuthorizationContextVersionService,
     private roleEligibility: ClubRoleEligibilityService,
     private actingForCache: ActingForCache,
     private postRegistrationRow: PostRegistrationRowService,
@@ -313,8 +311,6 @@ export class PostRegistrationService {
           },
         });
 
-        await this.authorizationContextVersion.bump(tx, authorityUser.user_id);
-
         this.logger.log(
           `Step 3 (club selection) completed for user ${userId} - Post-registration COMPLETE`,
         );
@@ -437,8 +433,6 @@ export class PostRegistrationService {
           date_completed: new Date(),
         },
       });
-
-      await this.authorizationContextVersion.bump(tx, userId);
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);

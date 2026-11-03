@@ -61,7 +61,6 @@ function setup(persona: Persona) {
     prisma as never,
     { notifySafe: jest.fn(), sendToSectionRole: jest.fn() } as never,
     authorizationContext as never,
-    { bump: jest.fn() } as never,
     { assertAssignment: jest.fn() } as never,
     scope,
   );

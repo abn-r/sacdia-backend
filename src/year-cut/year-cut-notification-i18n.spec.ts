@@ -51,7 +51,6 @@ describe('YearCutService skipped-director notification (real i18n)', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
       notifications as never,
       i18n,
     );

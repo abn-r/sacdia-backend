@@ -680,10 +680,6 @@ export class AdminGeographyService {
         },
       });
 
-      if (timezoneWasProvided && validTimezone !== existing.timezone) {
-        await this.bumpAuthorizationContextVersions(tx, localFieldId);
-      }
-
       await this.translationService.upsertTranslations(
         tx,
         'local_fields_translations',
@@ -1546,24 +1542,6 @@ export class AdminGeographyService {
     }
 
     return classification.value;
-  }
-
-  private async bumpAuthorizationContextVersions(
-    tx: Prisma.TransactionClient,
-    localFieldId: number,
-  ) {
-    await tx.$executeRaw(Prisma.sql`
-      INSERT INTO authorization_context_versions (user_id, version, modified_at)
-      SELECT DISTINCT assignment.user_id, 1, NOW()
-      FROM club_role_assignments AS assignment
-      INNER JOIN club_sections AS section
-        ON section.club_section_id = assignment.club_section_id
-      INNER JOIN clubs AS club ON club.club_id = section.main_club_id
-      WHERE club.local_field_id = ${localFieldId}
-      ON CONFLICT (user_id) DO UPDATE
-      SET version = authorization_context_versions.version + 1,
-          modified_at = EXCLUDED.modified_at
-    `);
   }
 
   private async ensureDistrictExists(districtId: number) {

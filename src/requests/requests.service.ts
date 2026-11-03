@@ -10,7 +10,6 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import {
   type ActorSectionScopePermissions,
   clubSectionScopeWhere,
@@ -53,7 +52,6 @@ export class RequestsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly authorizationContext: AuthorizationContextService,
-    private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly roleEligibility: ClubRoleEligibilityService,
     private readonly actorSectionScope: ActorSectionScopeService,
   ) {}
@@ -317,9 +315,6 @@ export class RequestsService {
         const userIds = [
           ...new Set(affectedAssignments.map(({ user_id }) => user_id)),
         ];
-        for (const userId of userIds) {
-          await this.authorizationContextVersion.bump(tx, userId);
-        }
 
         // Update the transfer request status
         const updated = await tx.club_transfer_requests.update({
@@ -848,7 +843,6 @@ export class RequestsService {
           },
           select: { user_id: true },
         });
-        await this.authorizationContextVersion.bump(tx, assignment.user_id);
 
         // Update the request status
         const updated = await tx.role_assignment_requests.update({

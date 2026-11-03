@@ -29,7 +29,6 @@ import { TemporalContextFactory } from './clock/temporal-context.factory';
 import { LocalFieldTimezoneResolver } from './authorization/local-field-timezone.resolver';
 import { ClubAssignmentEffectivityPolicy } from './authorization/club-assignment-effectivity.policy';
 import { MemberTerritoryScopeService } from './authorization/member-territory-scope.service';
-import { AuthorizationContextVersionService } from './authorization/authorization-context-version.service';
 import { EcclesiasticalYearService } from './services/ecclesiastical-year.service';
 import { ClubCycleReadinessService } from './services/club-cycle-readiness.service';
 import { ProcessMemoryLoggerService } from './observability/process-memory-logger.service';
@@ -101,7 +100,6 @@ import { PostRegistrationRowService } from './services/post-registration-row.ser
     LocalFieldTimezoneResolver,
     ClubAssignmentEffectivityPolicy,
     MemberTerritoryScopeService,
-    AuthorizationContextVersionService,
     EcclesiasticalYearService,
     ClubCycleReadinessService,
     CountryAgePolicyService,
@@ -142,7 +140,6 @@ import { PostRegistrationRowService } from './services/post-registration-row.ser
     LocalFieldTimezoneResolver,
     ClubAssignmentEffectivityPolicy,
     MemberTerritoryScopeService,
-    AuthorizationContextVersionService,
     EcclesiasticalYearService,
     ClubCycleReadinessService,
     CountryAgePolicyService,

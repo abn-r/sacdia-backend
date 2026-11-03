@@ -9,7 +9,6 @@ import { MembershipRequestsService } from './membership-requests.service';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
@@ -89,11 +88,6 @@ describe('MembershipRequestsService', () => {
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
   };
 
-  const mockAuthorizationContextVersion = {
-    bump: jest.fn().mockResolvedValue(1n),
-    bumpMany: jest.fn().mockResolvedValue(2),
-  };
-
   const mockNotificationsService = {
     sendSilentToSection: jest.fn().mockResolvedValue(undefined),
     sendToSectionRole: jest.fn().mockResolvedValue(undefined),
@@ -141,10 +135,6 @@ describe('MembershipRequestsService', () => {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContext,
         },
-        {
-          provide: AuthorizationContextVersionService,
-          useValue: mockAuthorizationContextVersion,
-        },
         { provide: NotificationsService, useValue: mockNotificationsService },
         { provide: ClubRoleEligibilityService, useValue: mockRoleEligibility },
         // Real gate: it only talks to the transaction client, which is mocked.
@@ -187,10 +177,6 @@ describe('MembershipRequestsService', () => {
           modified_at: expect.any(Date),
         },
       });
-      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
-        transactionMock,
-        userId,
-      );
     });
 
     it('asserts member eligibility in the tx before activating', async () => {
@@ -219,7 +205,6 @@ describe('MembershipRequestsService', () => {
       expect(
         transactionMock.club_role_assignments.updateMany,
       ).not.toHaveBeenCalled();
-      expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();
@@ -269,10 +254,6 @@ describe('MembershipRequestsService', () => {
           modified_at: expect.any(Date),
         },
       });
-      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
-        transactionMock,
-        userId,
-      );
     });
     describe('consent gate (FP-39)', () => {
       it('blocks a dependent with pending consent with 409 and activates nothing', async () => {
@@ -291,7 +272,6 @@ describe('MembershipRequestsService', () => {
         expect(
           transactionMock.club_role_assignments.updateMany,
         ).not.toHaveBeenCalled();
-        expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
         expect(mockAuditLogs.recordEvent).not.toHaveBeenCalled();
       });
 
@@ -429,7 +409,6 @@ describe('MembershipRequestsService', () => {
         expect(
           transactionMock.club_role_assignments.updateMany,
         ).not.toHaveBeenCalled();
-        expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
         expect(mockAuditLogs.recordEvent).not.toHaveBeenCalled();
       });
 
@@ -591,10 +570,6 @@ describe('MembershipRequestsService', () => {
           active_club_assignment_id: null,
         },
       });
-      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
-        transactionMock,
-        userId,
-      );
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(userId);
@@ -625,20 +600,6 @@ describe('MembershipRequestsService', () => {
         transactionMock.club_role_assignments.updateMany,
       ).not.toHaveBeenCalled();
       expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
-    });
-
-    it('does not run Redis cleanup when the durable version write rejects', async () => {
-      mockAuthorizationContextVersion.bump.mockRejectedValueOnce(
-        new Error('version write failed'),
-      );
-
-      await expect(
-        service.cancelPendingForUser(userId, actorId),
-      ).rejects.toThrow('version write failed');
-
-      expect(
-        mockAuthorizationContext.invalidateUserAuthorizationCache,
-      ).not.toHaveBeenCalled();
     });
   });
 
@@ -702,12 +663,6 @@ describe('MembershipRequestsService', () => {
       await expect(service.expireStaleRequests()).resolves.toBe(3);
 
       const expectedUserIds = [userId, dependentId];
-      expect(mockAuthorizationContextVersion.bumpMany).toHaveBeenCalledTimes(1);
-      expect(mockAuthorizationContextVersion.bumpMany).toHaveBeenCalledWith(
-        transactionMock,
-        expectedUserIds,
-      );
-      expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledTimes(2);
@@ -716,14 +671,6 @@ describe('MembershipRequestsService', () => {
           ([affectedUserId]) => affectedUserId,
         ),
       ).toEqual(expectedUserIds);
-      expect(
-        mockAuthorizationContextVersion.bumpMany.mock.invocationCallOrder[0],
-      ).toBeLessThan(
-        Math.min(
-          ...mockAuthorizationContext.invalidateUserAuthorizationCache.mock
-            .invocationCallOrder,
-        ),
-      );
       expect(
         transactionMock.club_role_assignments.updateManyAndReturn,
       ).toHaveBeenCalledWith(
@@ -746,26 +693,6 @@ describe('MembershipRequestsService', () => {
       expect(
         transactionMock.club_role_assignments.updateManyAndReturn,
       ).not.toHaveBeenCalled();
-      expect(mockAuthorizationContextVersion.bumpMany).not.toHaveBeenCalled();
-      expect(
-        mockAuthorizationContext.invalidateUserAuthorizationCache,
-      ).not.toHaveBeenCalled();
-    });
-
-    it('rolls back the bulk write before cleanup when a returned user bump fails', async () => {
-      arrange({
-        candidates: [
-          { assignment_id: 'a1', user_id: userId, created_at: daysAgo(9) },
-        ],
-      });
-      mockAuthorizationContextVersion.bumpMany.mockRejectedValueOnce(
-        new Error('version write failed'),
-      );
-
-      await expect(service.expireStaleRequests()).rejects.toThrow(
-        'version write failed',
-      );
-
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();

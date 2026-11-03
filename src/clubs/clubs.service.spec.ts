@@ -11,7 +11,6 @@ import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import {
@@ -119,12 +118,6 @@ describe('ClubsService', () => {
     resolveUserAuthorization: jest.fn(),
   };
 
-  const mockAuthorizationContextVersionService = {
-    bump: jest.fn().mockResolvedValue(1n),
-    bumpOrdered: jest.fn().mockResolvedValue(undefined),
-    bumpMany: jest.fn().mockResolvedValue(0),
-  };
-
   const mockEcclesiasticalYearService = {
     getCurrentYear: jest.fn(),
   };
@@ -149,10 +142,6 @@ describe('ClubsService', () => {
         {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContextService,
-        },
-        {
-          provide: AuthorizationContextVersionService,
-          useValue: mockAuthorizationContextVersionService,
         },
         {
           provide: NotificationsService,
@@ -915,9 +904,6 @@ describe('ClubsService', () => {
         ).not.toHaveBeenCalled();
         expect(mockRoleEligibility.assertAssignment).not.toHaveBeenCalled();
         expect(mockRoleEligibility.evaluateMany).not.toHaveBeenCalled();
-        expect(
-          mockAuthorizationContextVersionService.bump,
-        ).not.toHaveBeenCalled();
       },
     );
 
@@ -1517,10 +1503,6 @@ describe('ClubsService', () => {
           }),
         }),
       );
-      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledWith(
-        mockPrismaService,
-        'user-1',
-      );
     });
 
     it('rejects updating an assignment into a second active director in the same section even when role_slot_limits is not seeded', async () => {
@@ -1604,10 +1586,6 @@ describe('ClubsService', () => {
         ecclesiastical_year_id: 2026,
       });
 
-      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledWith(
-        mockPrismaService,
-        'user-1',
-      );
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith('user-1');
@@ -1674,10 +1652,6 @@ describe('ClubsService', () => {
 
       await service.removeRoleAssignment('assignment-1');
 
-      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledWith(
-        mockPrismaService,
-        'user-1',
-      );
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith('user-1');
@@ -1763,10 +1737,6 @@ describe('ClubsService', () => {
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(directorUserId);
-      expect(mockAuthorizationContextVersionService.bump).toHaveBeenCalledWith(
-        tx,
-        directorUserId,
-      );
       expect(
         mockAuthorizationContextService.hasAnyGlobalRole,
       ).toHaveBeenCalledWith(actorUserId, [
@@ -1924,9 +1894,6 @@ describe('ClubsService', () => {
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(successorUserId);
-      expect(
-        mockAuthorizationContextVersionService.bumpOrdered,
-      ).toHaveBeenCalledWith(tx, [oldDirectorUserId, successorUserId]);
       expect(
         mockAuthorizationContextService.hasAnyGlobalRole,
       ).toHaveBeenCalledWith(actorUserId, [
@@ -2958,9 +2925,6 @@ describe('ClubsService', () => {
         });
         expect(
           mockPrismaService.club_role_assignments.create,
-        ).not.toHaveBeenCalled();
-        expect(
-          mockAuthorizationContextVersionService.bump,
         ).not.toHaveBeenCalled();
       });
 

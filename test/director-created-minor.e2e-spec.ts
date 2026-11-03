@@ -16,7 +16,6 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { ActingForCache } from '../src/auth/acting-for/acting-for.cache';
 import { ClubRoleEligibilityService } from '../src/club-role-eligibility/club-role-eligibility.service';
-import { AuthorizationContextVersionService } from '../src/common/authorization/authorization-context-version.service';
 import { accessJwtClaims } from '../src/common/constants/jwt-audiences';
 import { AuthorizationContextService } from '../src/common/services/authorization-context.service';
 import { UserAwareThrottlerGuard } from '../src/config/user-aware-throttler.guard';
@@ -59,9 +58,8 @@ import { createTable, type Row } from './helpers/world-prisma-double';
  * What is NOT driven (state is flipped, the real code has unit coverage):
  *  - the consent form upload (R2 is not configured in the sandbox): the
  *    evidence row is written straight into the double;
- *  - ClubRoleEligibilityService and AuthorizationContextVersionService are
- *    stubbed (approval eligibility rules and the authorization cache version
- *    are unrelated to the consent journey);
+ *  - ClubRoleEligibilityService is stubbed (approval eligibility rules are
+ *    unrelated to the consent journey);
  *  - the push/inbox delivery: NotificationsService.sendToUser is a spy, so the
  *    asserts are on WHO is told and with what payload.
  *
@@ -596,8 +594,6 @@ describe('Director-created minor E2E', () => {
       })
       .overrideProvider(ClubRoleEligibilityService)
       .useValue({ assertAssignment: jest.fn().mockResolvedValue({}) })
-      .overrideProvider(AuthorizationContextVersionService)
-      .useValue({ bump: jest.fn().mockResolvedValue(1n) })
       .overrideProvider(PrismaService)
       .useValue(prismaDouble)
       .compile();
