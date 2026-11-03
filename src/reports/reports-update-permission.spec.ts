@@ -1,3 +1,4 @@
+import { clubAssignmentEffectivityArgs } from '../common/authorization/testing/club-assignment-effectivity.testing';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type ExecutionContext } from '@nestjs/common';
@@ -125,6 +126,8 @@ function guardFor(profile: unknown) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
   jest
     .spyOn(authorizationContext, 'resolveUserAuthorization')
@@ -134,6 +137,7 @@ function guardFor(profile: unknown) {
     authorizationContext,
     prisma as unknown as PrismaService,
     hierarchy as unknown as InstitutionalHierarchyService,
+    ...clubAssignmentEffectivityArgs(),
   );
 }
 

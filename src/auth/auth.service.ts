@@ -61,6 +61,12 @@ import {
 } from '../common/age/age.util';
 import { CountryAgePolicyService } from '../common/age/country-age-policy.service';
 import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-assignment-effectivity.policy';
+import {
+  CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
+  toTemporalLocalField,
+} from '../common/authorization/club-assignment-temporal';
 import {
   principalSeesClubData,
   type AuthPrincipal,
@@ -125,6 +131,8 @@ export class AuthService {
     private readonly linkedDeviceGate: LinkedDeviceGate,
     private readonly linkedDevices: LinkedDevicesService,
     private readonly postRegistrationRow: PostRegistrationRowService,
+    private readonly assignmentEffectivity: ClubAssignmentEffectivityPolicy,
+    private readonly temporalContexts: TemporalContextFactory,
     // REQUIRED (no @Optional): an unbound token must fail at boot, not turn
     // every guardian security notice into a silent no-op (FP3-23).
     @Inject(SUPERVISED_LOGIN_EVENTS)
@@ -1278,13 +1286,23 @@ export class AuthService {
       select: {
         assignment_id: true,
         ecclesiastical_year_id: true,
+        active: true,
         status: true,
+        ...CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
         roles: { select: { role_name: true } },
         club_sections: {
           select: {
             club_section_id: true,
             club_types: { select: { name: true } },
-            clubs: { select: { club_id: true, name: true } },
+            clubs: {
+              select: {
+                club_id: true,
+                name: true,
+                local_fields: {
+                  select: { local_field_id: true, timezone: true },
+                },
+              },
+            },
           },
         },
       },
@@ -1300,9 +1318,17 @@ export class AuthService {
     // become the active context. Designated (next year) and past-year
     // assignments are visible in grants.club_assignments but cannot be
     // activated as the operative club context.
+    // Temporal effectivity (start/end/expiry) is decided by the policy with
+    // the business date of the club's Local Field.
     if (
       assignment.status !== 'active' ||
-      assignment.ecclesiastical_year_id !== currentYear.year_id
+      assignment.ecclesiastical_year_id !== currentYear.year_id ||
+      !this.assignmentEffectivity.isEffective(
+        assignment,
+        this.temporalContexts.forLocalField(
+          toTemporalLocalField(assignment.club_sections?.clubs?.local_fields),
+        ),
+      )
     ) {
       throw new AppBadRequestException(
         ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH,

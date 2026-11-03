@@ -44,7 +44,7 @@ La documentación funcional por módulo vive en `../docs/features/`.
   - catálogo público de honores agrupado + categorías (`cache:catalogs:honors:*`, TTL 1h; invalidación por epoch al mutar honores, categorías o tipos de club);
   - categorías de recursos, inventario y finanzas (`cache:catalogs:resource_categories|inventory_categories|finance_categories:*`, TTL 1h);
   - división default de scoring (`cache:catalogs:scoring_default_division`, TTL 1h);
-  - contexto de autorización (`auth:context:v7:{userId}`, TTL 5 min; las claves v2–v6 se purgan al invalidar);
+  - contexto de autorización (`auth:context:v8:{userId}`, TTL 5 min; las claves v2–v6 se purgan al invalidar);
   - blacklist JWT y lista de sesiones concurrentes.
   Invalidación en mutaciones admin. Endpoint manual: `POST /api/v1/admin/catalogs/cache/invalidate` (`catalogs:update`). Si Redis cae en runtime, lecturas de catálogo caen a DB.
 - BullMQ: colas `emails`, `notifications`, `achievements`, `background-jobs`, `master-honors` y `certificate-import-ocr`. HTTP encola recálculo de rankings y generate/regenerate de informe mensual (202; poll GET). Cron nightly de rankings sigue club-only. Sin Redis, esos HTTP corren inline; data export responde 503.

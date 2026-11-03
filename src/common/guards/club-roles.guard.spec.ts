@@ -1,9 +1,29 @@
+import { clubAssignmentEffectivityArgs } from '../authorization/testing/club-assignment-effectivity.testing';
 import { Reflector } from '@nestjs/core';
 import { ClubRolesGuard } from './club-roles.guard';
 import { AuthorizationContextService } from '../services/authorization-context.service';
 import { ErrorCode } from '../errors/error-codes';
 import { AUTHORIZATION_RESOURCE_KEY } from '../decorators';
 import { PrismaService } from '../../prisma/prisma.service';
+
+// Test clock: 2026-06-01T12:00Z => business date 2026-06-01 (Mexico City).
+const investitureAssignment = (overrides: Record<string, unknown> = {}) => ({
+  active: true,
+  status: 'active',
+  start_date: new Date('2026-01-01'),
+  end_date: null,
+  expires_at: null,
+  club_sections: {
+    main_club_id: 99,
+    clubs: {
+      local_fields: {
+        local_field_id: 3,
+        timezone: 'America/Mexico_City',
+      },
+    },
+  },
+  ...overrides,
+});
 
 describe('ClubRolesGuard', () => {
   const mockReflector = {
@@ -16,13 +36,14 @@ describe('ClubRolesGuard', () => {
   };
   const mockPrisma = {
     enrollments: { findFirst: jest.fn() },
-    club_role_assignments: { findFirst: jest.fn() },
+    club_role_assignments: { findMany: jest.fn() },
   };
 
   const guard = new ClubRolesGuard(
     mockReflector as unknown as Reflector,
     mockAuthorizationContext as unknown as AuthorizationContextService,
     mockPrisma as unknown as PrismaService,
+    ...clubAssignmentEffectivityArgs(),
   );
 
   const createContext = (request: Record<string, unknown>) =>
@@ -199,9 +220,9 @@ describe('ClubRolesGuard', () => {
       ecclesiastical_year_id: 2026,
       classes: { club_type_id: 2 },
     });
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-      club_sections: { main_club_id: 99 },
-    });
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      investitureAssignment(),
+    ]);
 
     await expect(
       guard.canActivate(
@@ -216,5 +237,31 @@ describe('ClubRolesGuard', () => {
       'club-a-actor',
       99,
     );
+  });
+
+  it('denies (403) when the enrollee assignment ended yesterday', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) =>
+      key === AUTHORIZATION_RESOURCE_KEY
+        ? { type: 'investiture_enrollment', idParam: 'enrollmentId' }
+        : ['director'],
+    );
+    mockPrisma.enrollments.findFirst.mockResolvedValue({
+      user_id: 'member-b',
+      ecclesiastical_year_id: 2026,
+      classes: { club_type_id: 2 },
+    });
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      investitureAssignment({ end_date: new Date('2026-05-31') }),
+    ]);
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-a-actor' },
+          params: { enrollmentId: '123' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_ID_REQUIRED });
+    expect(mockAuthorizationContext.canManageClub).not.toHaveBeenCalled();
   });
 });
