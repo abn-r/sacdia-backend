@@ -79,4 +79,75 @@ describe('ClassAssignmentResolverService', () => {
       }),
     ).rejects.toMatchObject({ code: 'POST_REG_CLASS_NOT_ELIGIBLE' });
   });
+
+  describe('assertAgeWithinClubTypeRange (2026-11-02)', () => {
+    const year = {
+      year_id: 2026,
+      start_date: new Date('2026-01-01T00:00:00.000Z'),
+    };
+
+    function txFor(
+      birthday: string,
+      oldest: number | null,
+      nextMin: number | null,
+    ) {
+      return {
+        users: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ birthday: new Date(birthday) }),
+        },
+        classes: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(
+              oldest === null ? null : { minimum_age: oldest },
+            )
+            .mockResolvedValueOnce(
+              nextMin === null ? null : { minimum_age: nextMin },
+            ),
+        },
+      };
+    }
+
+    it('rejects an adult joining Adventurers (4-9)', async () => {
+      const adultTx = txFor('1990-01-01T00:00:00.000Z', 9, 10);
+
+      await expect(
+        service.assertAgeWithinClubTypeRange(adultTx as never, {
+          userId: 'user-1',
+          clubTypeId: 1,
+          currentYear: year,
+        }),
+      ).rejects.toMatchObject({
+        code: 'POST_REG_AGE_ABOVE_CLUB_TYPE',
+      });
+      expect(adultTx.classes.findFirst).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            club_type_id: { not: 1 },
+            minimum_age: { gt: 9 },
+          }),
+        }),
+      );
+    });
+
+    it('accepts the oldest age of the range', async () => {
+      await expect(
+        service.assertAgeWithinClubTypeRange(
+          txFor('2017-01-01T00:00:00.000Z', 9, 10) as never,
+          { userId: 'user-1', clubTypeId: 1, currentYear: year },
+        ),
+      ).resolves.toBeUndefined();
+    });
+
+    it('has no upper limit when no older club type exists (Master Guides)', async () => {
+      await expect(
+        service.assertAgeWithinClubTypeRange(
+          txFor('1980-01-01T00:00:00.000Z', 16, null) as never,
+          { userId: 'user-1', clubTypeId: 3, currentYear: year },
+        ),
+      ).resolves.toBeUndefined();
+    });
+  });
 });

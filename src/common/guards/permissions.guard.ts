@@ -108,16 +108,27 @@ type ResolvedUnionCamporeeScope = {
  */
 export const BASE_GLOBAL_ROLE_NAME = 'user';
 
-const SECTION_MEMBER_PROFILE_READ_PERMISSIONS = new Set([
-  'users:read_detail',
-  'classes:read',
-  'user_honors:read',
-]);
-
 const SECTION_MEMBER_PROFILE_GATE_PERMISSIONS = new Set([
   'club_roles:read',
   'club_members:approve',
   'users:read_detail',
+]);
+
+/**
+ * Club-scoped reads of a member of the actor's active section, each with the
+ * club permissions that open it. Investiture eligibility
+ * (`validation:read`) is for the section board only, the roles that present
+ * investiture requests (decision 2026-11-02): `club_members:approve` is held
+ * by director, deputy-director, secretary and secretary-treasurer.
+ */
+const SECTION_MEMBER_READ_GATES: ReadonlyMap<
+  string,
+  ReadonlySet<string>
+> = new Map<string, ReadonlySet<string>>([
+  ['users:read_detail', SECTION_MEMBER_PROFILE_GATE_PERMISSIONS],
+  ['classes:read', SECTION_MEMBER_PROFILE_GATE_PERMISSIONS],
+  ['user_honors:read', SECTION_MEMBER_PROFILE_GATE_PERMISSIONS],
+  ['validation:read', new Set(['club_members:approve'])],
 ]);
 
 /** E2E-only. Nest cannot rebind APP_GUARD via overrideGuard(PermissionsGuard). */
@@ -639,16 +650,19 @@ export class PermissionsGuard implements CanActivate {
     if (
       requirement.permissions.length === 0 ||
       !requirement.permissions.every((permission) =>
-        SECTION_MEMBER_PROFILE_READ_PERMISSIONS.has(permission),
+        SECTION_MEMBER_READ_GATES.has(permission),
       )
     ) {
       return false;
     }
 
     const activeClubPermissions = this.getActiveClubPermissions(resolved);
-    const canReadSectionMemberProfile = [
-      ...SECTION_MEMBER_PROFILE_GATE_PERMISSIONS,
-    ].some((permission) => activeClubPermissions.has(permission));
+    const canReadSectionMemberProfile = requirement.permissions.every(
+      (permission) =>
+        [...(SECTION_MEMBER_READ_GATES.get(permission) ?? [])].some((gate) =>
+          activeClubPermissions.has(gate),
+        ),
+    );
     if (!canReadSectionMemberProfile) {
       return false;
     }

@@ -1139,6 +1139,56 @@ describe('PermissionsGuard', () => {
     ).resolves.toBe(true);
   });
 
+  describe('investiture eligibility of a section member (validation:read)', () => {
+    function mockEligibilityRoute(activeClubPermissions: string[]) {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY) {
+          return { permissions: ['validation:read'], mode: 'all' };
+        }
+        if (key === AUTHORIZATION_RESOURCE_KEY) {
+          return { type: 'user', ownerParam: 'userId' };
+        }
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ activeClubPermissions, instanceId: 22 }),
+      );
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'active-assignment-1',
+      });
+    }
+
+    it('lets the section board (club_members:approve) read a member of their active section', async () => {
+      mockEligibilityRoute(['validation:read', 'club_members:approve']);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'director-1' },
+            params: { userId: MEMBER_USER_ID },
+          }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('keeps counselors and treasurers out even with club_roles:read', async () => {
+      mockEligibilityRoute([
+        'validation:read',
+        'club_roles:read',
+        'users:read_detail',
+      ]);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'counselor-1' },
+            params: { userId: MEMBER_USER_ID },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+    });
+  });
+
   it('rejects membership approvers when the target user has no active or pending assignment in their active section', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {

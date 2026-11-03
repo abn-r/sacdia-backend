@@ -528,6 +528,7 @@
   "POST_REG_CLUB_LOCATION_MISMATCH": "The country, union or local field does not match the selected club",
   "POST_REG_CLASS_NOT_FOUND": "Class not found or inactive",
   "POST_REG_CLASS_NOT_ELIGIBLE": "The selected class does not match the user's age and selected club type for the current ecclesiastical year",
+  "POST_REG_AGE_ABOVE_CLUB_TYPE": "Your age is above the selected club type. Choose a club for your age or the Master Guides section.",
   "POST_REG_DUPLICATE_MEMBERSHIP": "You already have an active or pending membership in a club of the same type",
   "POST_REG_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
   "POST_REG_MEMBER_ROLE_NOT_FOUND": "Role 'member' not found in the system",
