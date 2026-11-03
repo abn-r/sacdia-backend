@@ -250,6 +250,11 @@ export class PostRegistrationService {
         const clubInstanceField: ClubInstanceField = 'club_section_id';
 
         const selectedClub = await this.resolveSelectedClub(tx, dto);
+        await this.classAssignmentResolver.assertAgeWithinClubTypeRange(tx, {
+          userId,
+          clubTypeId: selectedClub.club_type_id,
+          currentYear,
+        });
         const resolvedClassId =
           await this.classAssignmentResolver.resolveClassIdForUserClubType(tx, {
             userId,

@@ -106,6 +106,68 @@ export class ClassAssignmentResolverService {
     return selectedClass.class_id;
   }
 
+  /**
+   * A member must not be older than the club type they join (decision
+   * 2026-11-02). The range comes from the class catalog: a club type ends one
+   * year before the youngest class of the next older club type (Adventurers
+   * 4-9, Pathfinders 10-15, Master Guides 16 and up, with no upper limit when
+   * no older club type exists). The age is taken at the start of the
+   * ecclesiastical year, like the class assignment. Being too young is
+   * already rejected by `resolveClassIdForUserClubType`.
+   */
+  async assertAgeWithinClubTypeRange(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      clubTypeId: number;
+      currentYear: ClassResolutionYear;
+    },
+  ): Promise<void> {
+    const user = await tx.users.findUnique({
+      where: { user_id: params.userId },
+      select: { birthday: true },
+    });
+    if (!user?.birthday) {
+      return;
+    }
+
+    const availability = this.buildClassAvailabilityWhere(
+      params.currentYear.start_date,
+    );
+    const oldestClass = await tx.classes.findFirst({
+      where: { active: true, club_type_id: params.clubTypeId, ...availability },
+      orderBy: { minimum_age: 'desc' },
+      select: { minimum_age: true },
+    });
+    if (!oldestClass) {
+      return;
+    }
+
+    const nextClubTypeClass = await tx.classes.findFirst({
+      where: {
+        active: true,
+        club_type_id: { not: params.clubTypeId },
+        minimum_age: { gt: oldestClass.minimum_age },
+        ...availability,
+      },
+      orderBy: { minimum_age: 'asc' },
+      select: { minimum_age: true },
+    });
+    if (!nextClubTypeClass) {
+      return;
+    }
+
+    const ageAtYearStart = ageAt(user.birthday, params.currentYear.start_date);
+    const maxAge = nextClubTypeClass.minimum_age - 1;
+    if (ageAtYearStart > maxAge) {
+      throw new AppBadRequestException(ErrorCode.POST_REG_AGE_ABOVE_CLUB_TYPE, {
+        age: ageAtYearStart,
+        maxAge,
+        clubTypeId: params.clubTypeId,
+      });
+    }
+  }
+
   private buildClassAvailabilityWhere(
     targetYearStartDate: Date,
   ): Prisma.classesWhereInput {
