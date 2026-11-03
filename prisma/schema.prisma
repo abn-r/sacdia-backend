@@ -2837,6 +2837,9 @@ model user_fcm_tokens {
   fcm_token_id String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
   user_id      String   @db.Uuid
   token        String   @unique @db.VarChar(255)
+  /// What `token` holds: 'token' (FCM registration token) or 'fid' (Firebase
+  /// Installation ID). Guarded by CHECK user_fcm_tokens_kind_ck (not expressible here).
+  kind         String   @default("token") @db.VarChar(16)
   device_type  String?  @db.VarChar(50)
   device_name  String?  @db.VarChar(100)
   active       Boolean  @default(true)
