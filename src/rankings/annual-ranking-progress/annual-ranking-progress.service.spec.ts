@@ -160,7 +160,7 @@ function makeLocalFieldProfile(): ResolvedAuthorizationProfile {
     clubId: 999,
     sectionId: 999,
     localFieldId: LOCAL_FIELD_ID,
-    permissions: ['rankings:read_lf'],
+    permissions: ['section_rankings:read_lf'],
   });
 
   profile.authorization.effective.scope.global = {
