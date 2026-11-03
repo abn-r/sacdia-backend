@@ -7,7 +7,7 @@
     "^.+\\.(t|j)sx?$": "ts-jest"
   },
   "transformIgnorePatterns": [
-    "/node_modules/.pnpm/(?!(jose@|jwks-rsa@|@scure\\+base@|@otplib\\+|otplib@|@noble\\+hashes@|@noble\\+ciphers@|p-limit@|yocto-queue@))"
+    "/node_modules/.pnpm/(?!(jose@|jwks-rsa@|@scure\\+base@|@otplib\\+|otplib@|@noble\\+hashes@|@noble\\+ciphers@|p-limit@|yocto-queue@|@nestjs\\+passport@|@nestjs\\+schedule@|@nestjs\\+cache-manager@))"
   ],
   "moduleNameMapper": {
     "^src/(.*)$": "<rootDir>/../src/$1",

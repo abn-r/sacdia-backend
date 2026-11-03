@@ -10,6 +10,22 @@ const DEFAULT_REDIS_CONNECTION_TIMEOUT_MS = 5_000;
 const CACHE_BOOTSTRAP_PROBE_KEY = 'health:cache:bootstrap';
 const logger = new Logger('CacheConfig');
 
+/** One entry of `CacheModuleOptions.stores`. */
+type CacheStore = Extract<
+  NonNullable<CacheModuleOptions['stores']>,
+  readonly unknown[]
+>[number];
+
+/**
+ * `@keyv/redis` returns the CommonJS declaration of `Keyv`, while
+ * `@nestjs/cache-manager` 12 (ESM only) types `stores` with the ESM declaration
+ * of the same `keyv` package, so TypeScript sees two unrelated classes. At
+ * runtime the module recognizes a Keyv store by its shape (`isKeyvInstance`),
+ * not with `instanceof`, so the store is used as is.
+ */
+const asCacheStore = (store: Keyv): CacheStore =>
+  store as unknown as CacheStore;
+
 export type RedisCacheStoreFactory = (
   redisUrl: string,
   connectionTimeoutMs: number,
@@ -89,7 +105,7 @@ export async function buildCacheOptions(
   try {
     const store = await redisStoreFactory(redisUrl, connectionTimeoutMs);
     logger.log('Redis cache connection verified');
-    return { stores: [store], ttl };
+    return { stores: [asCacheStore(store)], ttl };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (isProduction && bootOptional) {
@@ -100,7 +116,9 @@ export async function buildCacheOptions(
         `Redis cache connection failed: ${message}. REDIS_BOOT_OPTIONAL=true: starting WITHOUT a verified cache connection; the Redis store will reconnect when Redis returns, and cache reads/writes fail (and fall back to the database) until then.`,
       );
       return {
-        stores: [unverifiedStoreFactory(redisUrl, connectionTimeoutMs)],
+        stores: [
+          asCacheStore(unverifiedStoreFactory(redisUrl, connectionTimeoutMs)),
+        ],
         ttl,
       };
     }
