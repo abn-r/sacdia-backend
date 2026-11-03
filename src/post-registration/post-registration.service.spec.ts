@@ -8,7 +8,10 @@ import { MembershipRequestsService } from '../membership-requests/membership-req
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
-import { AppForbiddenException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 
@@ -22,6 +25,7 @@ const GUARDIAN_ID = '9f1d9a40-79f0-4e0c-a8c7-5f0f1c7d9a11';
 
 describe('PostRegistrationService', () => {
   let service: PostRegistrationService;
+  let ageRangeSpy: jest.SpyInstance;
 
   const createTransactionMock = () => ({
     users: {
@@ -210,6 +214,14 @@ describe('PostRegistrationService', () => {
     }).compile();
 
     service = module.get<PostRegistrationService>(PostRegistrationService);
+    // The age range has its own spec (class-assignment-resolver); here it
+    // must not consume the transaction mocks of the class resolution.
+    ageRangeSpy = jest
+      .spyOn(
+        module.get(ClassAssignmentResolverService),
+        'assertAgeWithinClubTypeRange',
+      )
+      .mockResolvedValue(undefined);
   });
 
   it('should be defined', () => {
@@ -614,6 +626,30 @@ describe('PostRegistrationService', () => {
       ).not.toHaveBeenCalled();
       expect(
         transactionMock.club_role_assignments.update,
+      ).not.toHaveBeenCalled();
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a member older than the selected club type and writes nothing (2026-11-02)', async () => {
+      ageRangeSpy.mockRejectedValueOnce(
+        new AppBadRequestException(ErrorCode.POST_REG_AGE_ABOVE_CLUB_TYPE, {
+          age: 36,
+          maxAge: 9,
+          clubTypeId: 1,
+        }),
+      );
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_AGE_ABOVE_CLUB_TYPE });
+
+      expect(ageRangeSpy).toHaveBeenCalledWith(
+        transactionMock,
+        expect.objectContaining({ userId }),
+      );
+      expect(
+        transactionMock.club_role_assignments.create,
       ).not.toHaveBeenCalled();
       expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
       expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
