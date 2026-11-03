@@ -6,19 +6,19 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 
 export class CreateProductDto {
   @ApiProperty({ description: 'Unique product SKU', maxLength: 100 })
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare sku: string;
 
   @ApiProperty({ description: 'Product title', maxLength: 200 })
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   declare title: string;
 
   @ApiProperty({ description: 'Category UUID' })

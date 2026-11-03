@@ -1,12 +1,5 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -43,7 +36,7 @@ export class RankingTiersController {
   @ApiOperation({ summary: 'Update a ranking recognition tier' })
   @ApiResponse({ status: 200, description: 'Ranking tier updated' })
   async update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: UpdateRankingTierDto,
   ) {
     const data = await this.service.update(id, dto);

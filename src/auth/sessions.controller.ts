@@ -3,12 +3,12 @@ import {
   Get,
   Delete,
   Param,
-  ParseUUIDPipe,
   UseGuards,
   Req,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
@@ -119,7 +119,7 @@ export class SessionsController {
   })
   async revokeSession(
     @Req() req: Request,
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Param('sessionId', ParseUuidParamPipe) sessionId: string,
   ): Promise<void> {
     const user = req.user as any;
     await this.sessionsService.revokeSession(

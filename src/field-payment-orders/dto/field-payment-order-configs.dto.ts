@@ -1,12 +1,6 @@
 import { Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsInt,
-  IsOptional,
-  IsString,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class UpsertFieldPaymentOrderConfigDto {
   /** Optional for LF leadership (resolved from actor); required for global admins. */
@@ -18,22 +12,22 @@ export class UpsertFieldPaymentOrderConfigDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   bank_name?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(64)
+  @MaxLengthIfString(64)
   bank_account?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(32)
+  @MaxLengthIfString(32)
   bank_clabe?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   bank_holder?: string;
 
   @IsOptional()

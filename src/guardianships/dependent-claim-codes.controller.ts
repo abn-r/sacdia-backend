@@ -2,10 +2,10 @@ import {
   Controller,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -50,7 +50,7 @@ export class DependentClaimCodesController {
   @ApiResponse({ status: 409, description: 'GUARDIANSHIP_ALREADY_GUARDIAN' })
   async issue(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
-    @Param('userId', ParseUUIDPipe) dependentId: string,
+    @Param('userId', ParseUuidParamPipe) dependentId: string,
     @CurrentUser() user: { sub: string },
   ) {
     return {

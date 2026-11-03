@@ -3,12 +3,12 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Post,
   Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -71,7 +71,7 @@ export class AdminHonorInstructorProposalsController {
   @ApiParam({ name: 'proposalId', description: 'ID UUID de la propuesta' })
   async approve(
     @Request() req: AuthenticatedRequest,
-    @Param('proposalId', ParseUUIDPipe) proposalId: string,
+    @Param('proposalId', ParseUuidParamPipe) proposalId: string,
   ) {
     const data = await this.service.approve(req.user.sub, proposalId);
     return { status: 'success', data };
@@ -85,7 +85,7 @@ export class AdminHonorInstructorProposalsController {
   @ApiParam({ name: 'proposalId', description: 'ID UUID de la propuesta' })
   async reject(
     @Request() req: AuthenticatedRequest,
-    @Param('proposalId', ParseUUIDPipe) proposalId: string,
+    @Param('proposalId', ParseUuidParamPipe) proposalId: string,
     @Body() dto: RejectHonorInstructorProposalDto,
   ) {
     const data = await this.service.reject(req.user.sub, proposalId, dto);

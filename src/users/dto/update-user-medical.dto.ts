@@ -8,10 +8,10 @@ import {
   IsOptional,
   IsString,
   Max,
-  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 // ── Severity enum (mirrors Postgres severity_level ENUM) ─────────────────────
 
@@ -71,7 +71,7 @@ export class MedicineEntryDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   dose?: string;
 }
 

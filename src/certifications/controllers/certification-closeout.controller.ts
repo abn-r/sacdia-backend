@@ -4,11 +4,11 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -65,7 +65,7 @@ export class CertificationCloseoutController {
   @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
   @ApiResponse({ status: 201, description: 'URL de subida generada' })
   async presignCloseoutEvidence(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Body() dto: PresignCertificationCloseoutEvidenceDto,
   ) {
@@ -89,7 +89,7 @@ export class CertificationCloseoutController {
   @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
   @ApiResponse({ status: 201, description: 'Comprobante confirmado' })
   async confirmCloseoutEvidence(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Body() dto: ConfirmCertificationCloseoutEvidenceDto,
   ) {
@@ -111,13 +111,16 @@ export class CertificationCloseoutController {
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
   @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
-  @ApiResponse({ status: 201, description: 'Inscripción enviada a revisión final' })
+  @ApiResponse({
+    status: 201,
+    description: 'Inscripción enviada a revisión final',
+  })
   @ApiResponse({
     status: 400,
     description: 'Faltan requisitos aprobados o el comprobante de junta',
   })
   async submitFinal(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
   ) {
     const data = await this.closeoutService.submitFinal(userId, enrollmentId);

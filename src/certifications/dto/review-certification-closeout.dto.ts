@@ -7,8 +7,8 @@ import {
   IsPositive,
   IsString,
   Length,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { CERTIFICATION_EVIDENCE_ALLOWED_MIME_TYPES } from '../evidence/certification-evidence.constants';
 
 export class PresignCertificationCloseoutEvidenceDto {
@@ -17,7 +17,7 @@ export class PresignCertificationCloseoutEvidenceDto {
     example: 'acta-junta.pdf',
   })
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare file_name: string;
 
   @ApiProperty({
@@ -61,6 +61,6 @@ export class RequestCertificationCloseoutChangesDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(2000)
+  @MaxLengthIfString(2000)
   declare comment: string;
 }

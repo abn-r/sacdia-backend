@@ -5,7 +5,6 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -13,6 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import 'multer';
@@ -89,7 +89,9 @@ export class AnnualFolderTemplatesController {
   @ApiParam({ name: 'templateId', description: 'Template UUID' })
   @ApiResponse({ status: 200, description: 'Template details' })
   @ApiResponse({ status: 404, description: 'Template not found' })
-  async getTemplate(@Param('templateId', ParseUUIDPipe) templateId: string) {
+  async getTemplate(
+    @Param('templateId', ParseUuidParamPipe) templateId: string,
+  ) {
     const data = await this.service.getTemplate(templateId);
     return { status: 'success', data };
   }
@@ -161,7 +163,7 @@ export class AnnualFolderTemplatesController {
   @ApiResponse({ status: 200, description: 'Template updated' })
   @ApiResponse({ status: 404, description: 'Template not found' })
   async updateTemplate(
-    @Param('templateId', ParseUUIDPipe) templateId: string,
+    @Param('templateId', ParseUuidParamPipe) templateId: string,
     @Body() dto: UpdateTemplateDto,
   ) {
     const data = await this.service.updateTemplate(templateId, dto);
@@ -175,7 +177,7 @@ export class AnnualFolderTemplatesController {
   @ApiResponse({ status: 201, description: 'Template draft copied' })
   @ApiResponse({ status: 404, description: 'Template not found' })
   async copyTemplate(
-    @Param('templateId', ParseUUIDPipe) templateId: string,
+    @Param('templateId', ParseUuidParamPipe) templateId: string,
     @Body() dto: CopyTemplateDto,
   ) {
     const data = await this.service.copyTemplate(templateId, dto);
@@ -189,7 +191,7 @@ export class AnnualFolderTemplatesController {
   @ApiResponse({ status: 201, description: 'Section added' })
   @ApiResponse({ status: 404, description: 'Template not found' })
   async addSection(
-    @Param('templateId', ParseUUIDPipe) templateId: string,
+    @Param('templateId', ParseUuidParamPipe) templateId: string,
     @Body() dto: CreateTemplateSectionDto,
   ) {
     const data = await this.service.addTemplateSection(templateId, dto);
@@ -203,7 +205,7 @@ export class AnnualFolderTemplatesController {
   @ApiResponse({ status: 200, description: 'Section updated' })
   @ApiResponse({ status: 404, description: 'Section not found' })
   async updateSection(
-    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
     @Body() dto: UpdateTemplateSectionDto,
   ) {
     const data = await this.service.updateTemplateSection(sectionId, dto);
@@ -217,7 +219,9 @@ export class AnnualFolderTemplatesController {
   @ApiResponse({ status: 200, description: 'Section deleted' })
   @ApiResponse({ status: 404, description: 'Section not found' })
   @ApiResponse({ status: 409, description: 'Section has evidences' })
-  async removeSection(@Param('sectionId', ParseUUIDPipe) sectionId: string) {
+  async removeSection(
+    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
+  ) {
     const data = await this.service.removeTemplateSection(sectionId);
     return { status: 'success', ...data };
   }
@@ -230,7 +234,9 @@ export class AnnualFolderTemplatesController {
   @ApiResponse({ status: 400, description: 'Template is not a draft' })
   @ApiResponse({ status: 404, description: 'Template not found' })
   @ApiResponse({ status: 409, description: 'Template has generated folders' })
-  async removeTemplate(@Param('templateId', ParseUUIDPipe) templateId: string) {
+  async removeTemplate(
+    @Param('templateId', ParseUuidParamPipe) templateId: string,
+  ) {
     const data = await this.service.removeTemplate(templateId);
     return { status: 'success', ...data };
   }
@@ -261,7 +267,7 @@ export class AnnualFoldersController {
     description: 'Folder already exists for enrollment',
   })
   async createFolderForEnrollment(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.service.createFolderForEnrollment(
@@ -403,7 +409,7 @@ export class AnnualFoldersController {
   })
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async getFolder(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.service.getFolder(folderId, user.sub);
@@ -444,7 +450,7 @@ export class AnnualFoldersController {
   })
   @ApiResponse({ status: 404, description: 'Folder not found for enrollment' })
   async getFolderByEnrollment(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.service.getFolderByEnrollment(
@@ -486,8 +492,8 @@ export class AnnualFoldersController {
   })
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async uploadEvidence(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
+    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
     @UploadedFile(
       new FileValidationPipe({
         allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
@@ -515,7 +521,7 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Evidence not found' })
   async updateEvidence(
-    @Param('evidenceId', ParseUUIDPipe) evidenceId: string,
+    @Param('evidenceId', ParseUuidParamPipe) evidenceId: string,
     @Body() dto: UpdateEvidenceDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -531,7 +537,7 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Evidence not found' })
   async deleteEvidence(
-    @Param('evidenceId', ParseUUIDPipe) evidenceId: string,
+    @Param('evidenceId', ParseUuidParamPipe) evidenceId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.service.deleteEvidence(evidenceId, user.sub);
@@ -556,8 +562,8 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 200, description: 'Section status snapshot' })
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async getSectionStatus(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
+    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.service.getSectionStatus(
@@ -589,8 +595,8 @@ export class AnnualFoldersController {
   })
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async submitSection(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
+    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.service.submitSection(
@@ -619,7 +625,7 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async submitFolder(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.service.submitFolder(folderId, user.sub);

@@ -5,11 +5,11 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   ValidateNested,
   ArrayMaxSize,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
 
@@ -22,13 +22,13 @@ export class CreateCamporeeEventTypeDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(40)
+  @MaxLengthIfString(40)
   code?: string;
 
   @ApiProperty({ example: 'Espiritual' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiPropertyOptional({
@@ -65,14 +65,14 @@ export class UpdateCamporeeEventTypeDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(40)
+  @MaxLengthIfString(40)
   code?: string;
 
   @ApiPropertyOptional({ example: 'Espiritual' })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name?: string;
 
   @ApiPropertyOptional({

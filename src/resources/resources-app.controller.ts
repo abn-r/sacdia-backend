@@ -2,11 +2,11 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -84,7 +84,7 @@ export class ResourcesAppController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
   async getMyResource(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Request() req: any,
   ) {
     const resolved = await this.authorizationContext.resolveUserAuthorization(
@@ -113,7 +113,7 @@ export class ResourcesAppController {
   })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
   async getMyResourceSignedUrl(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Request() req: any,
   ) {
     const resolved = await this.authorizationContext.resolveUserAuthorization(

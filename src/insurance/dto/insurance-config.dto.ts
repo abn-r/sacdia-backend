@@ -8,10 +8,10 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   Validate,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { IsIanaTimezoneConstraint } from '../../common/validators/iana-timezone.validator';
 
 export const INSURANCE_COVERAGE_SCOPES = ['GENERAL', 'EVENT'] as const;
@@ -27,7 +27,7 @@ export class CreateInsuranceProductDto {
   @ApiProperty({ example: 'Seguro anual' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare name: string;
 
   @ApiProperty({ enum: INSURANCE_COVERAGE_SCOPES })
@@ -55,7 +55,7 @@ export class UpdateInsuranceProductDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare name?: string;
 
   @ApiPropertyOptional({ enum: INSURANCE_COVERAGE_SCOPES })
@@ -105,7 +105,7 @@ export class CreateInsuranceCycleDto {
   @ApiProperty({ example: 'America/Mexico_City' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(64)
+  @MaxLengthIfString(64)
   @Validate(IsIanaTimezoneConstraint)
   declare timezone: string;
 
@@ -131,7 +131,7 @@ export class UpdateInsuranceCycleDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(64)
+  @MaxLengthIfString(64)
   @Validate(IsIanaTimezoneConstraint)
   declare timezone?: string;
 

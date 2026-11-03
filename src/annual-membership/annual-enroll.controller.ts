@@ -3,11 +3,11 @@ import {
   Post,
   Param,
   Body,
-  ParseUUIDPipe,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -52,7 +52,7 @@ export class AnnualEnrollController {
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async annualEnroll(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() body: AnnualEnrollBodyDto,
   ) {
     const result = await this.annualMembershipService.annualEnroll(

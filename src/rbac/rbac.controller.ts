@@ -9,10 +9,10 @@ import {
   Param,
   Query,
   UseGuards,
-  ParseUUIDPipe,
   Put,
   Headers,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
@@ -70,7 +70,7 @@ export class RbacController {
   @RequirePermissions('permissions:read')
   @ApiOperation({ summary: 'Obtener un permiso por ID' })
   @ApiResponse({ status: 200, description: 'Detalle del permiso' })
-  async getPermission(@Param('id', ParseUUIDPipe) id: string) {
+  async getPermission(@Param('id', ParseUuidParamPipe) id: string) {
     const data = await this.rbacService.getPermissionById(id);
     return { status: 'success', data };
   }
@@ -93,7 +93,7 @@ export class RbacController {
   @ApiOperation({ summary: 'Actualizar un permiso' })
   @ApiResponse({ status: 200, description: 'Permiso actualizado' })
   async updatePermission(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: UpdatePermissionDto,
   ) {
     const data = await this.rbacService.updatePermission(id, dto);
@@ -106,7 +106,7 @@ export class RbacController {
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Desactivar un permiso' })
   @ApiResponse({ status: 200, description: 'Permiso desactivado' })
-  async deletePermission(@Param('id', ParseUUIDPipe) id: string) {
+  async deletePermission(@Param('id', ParseUuidParamPipe) id: string) {
     return this.rbacService.deletePermission(id);
   }
 
@@ -135,7 +135,7 @@ export class RbacController {
   @RequirePermissions('roles:read')
   @ApiOperation({ summary: 'Obtener rol con sus permisos' })
   @ApiResponse({ status: 200, description: 'Rol con permisos' })
-  async getRole(@Param('id', ParseUUIDPipe) id: string) {
+  async getRole(@Param('id', ParseUuidParamPipe) id: string) {
     const data = await this.rbacService.getRoleWithPermissions(id);
     return { status: 'success', data };
   }
@@ -169,7 +169,7 @@ export class RbacController {
   @ApiResponse({ status: 403, description: 'El rol super-admin es protegido' })
   @ApiResponse({ status: 404, description: 'Rol no encontrado' })
   async updateRole(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: UpdateRoleDto,
   ) {
     const data = await this.rbacService.updateRole(id, dto);
@@ -191,7 +191,7 @@ export class RbacController {
     status: 409,
     description: 'El rol tiene usuarios asignados activos',
   })
-  async deactivateRole(@Param('id', ParseUUIDPipe) id: string) {
+  async deactivateRole(@Param('id', ParseUuidParamPipe) id: string) {
     const data = await this.rbacService.deactivateRole(id);
     return { status: 'success', data };
   }
@@ -206,7 +206,7 @@ export class RbacController {
   @ApiResponse({ status: 200, description: 'Permisos asignados' })
   async assignPermissions(
     @CurrentUser() actor: { userId: string },
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: AssignPermissionsDto,
   ) {
     return this.rbacService.assignPermissionsToRole(id, dto.permission_ids, {
@@ -222,7 +222,7 @@ export class RbacController {
   @ApiResponse({ status: 200, description: 'Permisos sincronizados' })
   async syncPermissions(
     @CurrentUser() actor: { userId: string },
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: AssignPermissionsDto,
   ) {
     return this.rbacService.syncRolePermissions(
@@ -240,8 +240,8 @@ export class RbacController {
   @ApiResponse({ status: 200, description: 'Permiso removido del rol' })
   async removePermission(
     @CurrentUser() actor: { userId: string },
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('permissionId', ParseUUIDPipe) permissionId: string,
+    @Param('id', ParseUuidParamPipe) id: string,
+    @Param('permissionId', ParseUuidParamPipe) permissionId: string,
   ) {
     return this.rbacService.removePermissionFromRole(
       id,
@@ -256,7 +256,9 @@ export class RbacController {
   @RequirePermissions('permissions:read')
   @ApiOperation({ summary: 'Listar permisos directos de un usuario' })
   @ApiResponse({ status: 200, description: 'Permisos directos del usuario' })
-  async getUserPermissions(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getUserPermissions(
+    @Param('userId', ParseUuidParamPipe) userId: string,
+  ) {
     const data = await this.rbacService.getUserPermissions(userId);
     return { status: 'success', data };
   }
@@ -269,7 +271,7 @@ export class RbacController {
   @ApiResponse({ status: 200, description: 'Permiso asignado al usuario' })
   async assignPermissionToUser(
     @CurrentUser() actor: { userId: string },
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: AssignPermissionsDto,
   ) {
     const permissionId = dto.permission_ids[0];
@@ -288,8 +290,8 @@ export class RbacController {
   @ApiResponse({ status: 200, description: 'Permiso removido del usuario' })
   async removePermissionFromUser(
     @CurrentUser() actor: { userId: string },
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('permissionId', ParseUUIDPipe) permissionId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
+    @Param('permissionId', ParseUuidParamPipe) permissionId: string,
   ) {
     return this.rbacService.removePermissionFromUser(
       userId,
@@ -306,7 +308,7 @@ export class RbacController {
   @RequirePermissions('roles:read')
   @ApiOperation({ summary: 'Listar roles asignados a un usuario' })
   @ApiResponse({ status: 200, description: 'Lista de roles del usuario' })
-  async getUserRoles(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getUserRoles(@Param('userId', ParseUuidParamPipe) userId: string) {
     const data = await this.rbacService.getUserRoles(userId);
     return { status: 'success', data };
   }
@@ -319,7 +321,7 @@ export class RbacController {
   @ApiResponse({ status: 201, description: 'Rol asignado al usuario' })
   async assignRoleToUser(
     @CurrentUser() actor: { userId: string },
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: AssignRoleDto,
   ) {
     return this.rbacService.assignRoleToUser(userId, dto.role_id, actor.userId);
@@ -333,8 +335,8 @@ export class RbacController {
   @ApiResponse({ status: 200, description: 'Rol removido del usuario' })
   async removeRoleFromUser(
     @CurrentUser() actor: { userId: string },
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('roleId', ParseUUIDPipe) roleId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
+    @Param('roleId', ParseUuidParamPipe) roleId: string,
   ) {
     return this.rbacService.removeRoleFromUser(userId, roleId, actor.userId);
   }

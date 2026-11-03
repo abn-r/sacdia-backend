@@ -6,9 +6,9 @@ import {
   Query,
   Body,
   ParseIntPipe,
-  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -231,7 +231,7 @@ export class ValidationController {
     status: 200,
     description: 'Resultado de elegibilidad con porcentaje y detalle',
   })
-  async checkEligibility(@Param('userId', ParseUUIDPipe) userId: string) {
+  async checkEligibility(@Param('userId', ParseUuidParamPipe) userId: string) {
     return this.validationService.checkInvestmentEligibility(userId);
   }
 }

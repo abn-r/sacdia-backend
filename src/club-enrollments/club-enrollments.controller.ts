@@ -7,9 +7,9 @@ import {
   Query,
   Body,
   ParseIntPipe,
-  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -169,7 +169,7 @@ export class ClubEnrollmentsController {
   })
   async update(
     @Param('sectionId', ParseIntPipe) sectionId: number,
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @Body() dto: UpdateClubEnrollmentDto,
   ) {
     return this.clubEnrollmentsService.update(enrollmentId, dto, sectionId);

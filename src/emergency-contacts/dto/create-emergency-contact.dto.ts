@@ -1,16 +1,11 @@
-import {
-  IsString,
-  IsUUID,
-  IsBoolean,
-  IsOptional,
-  MaxLength,
-} from 'class-validator';
+import { IsString, IsUUID, IsBoolean, IsOptional } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateEmergencyContactDto {
   @ApiProperty({ example: 'María García López' })
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiProperty({
@@ -22,7 +17,7 @@ export class CreateEmergencyContactDto {
 
   @ApiProperty({ example: '+52 55 1234 5678' })
   @IsString()
-  @MaxLength(20)
+  @MaxLengthIfString(20)
   declare phone: string;
 
   @ApiPropertyOptional({

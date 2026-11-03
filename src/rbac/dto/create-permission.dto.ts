@@ -1,10 +1,5 @@
-import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  Matches,
-  MaxLength,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, Matches } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreatePermissionDto {
@@ -14,7 +9,7 @@ export class CreatePermissionDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   @Matches(/^[a-z_]+:[a-z_]+$/, {
     message:
       'permission_name debe seguir el formato resource:action (lowercase, separado por :)',

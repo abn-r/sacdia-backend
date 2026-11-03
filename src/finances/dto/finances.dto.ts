@@ -5,8 +5,8 @@ import {
   IsDateString,
   Min,
   Max,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -57,7 +57,7 @@ export class CreateFinanceDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   post_closing_note?: string;
 }
 
@@ -89,7 +89,7 @@ export class UpdateFinanceDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   post_closing_note?: string;
 }
 

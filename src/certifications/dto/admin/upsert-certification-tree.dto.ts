@@ -10,9 +10,9 @@ import {
   IsOptional,
   IsString,
   Min,
-  MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 import { certification_component_type_enum } from '@prisma/client';
 
 export class UpsertComponentDto {
@@ -29,7 +29,7 @@ export class UpsertComponentDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   label!: string;
 
   @ApiPropertyOptional({ example: 'Responde en al menos 200 palabras' })
@@ -78,7 +78,7 @@ export class UpsertSectionDto {
   @ApiProperty({ example: 'Liderazgo de unidad', maxLength: 255 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   name!: string;
 
   @ApiPropertyOptional({ example: 'Evidencia de liderazgo práctico' })
@@ -113,7 +113,7 @@ export class UpsertModuleDto {
   @ApiProperty({ example: 'Módulo 1 — Liderazgo', maxLength: 255 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   name!: string;
 
   @ApiPropertyOptional({ example: 'Fundamentos de liderazgo de club' })

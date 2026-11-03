@@ -7,9 +7,9 @@ import {
   IsOptional,
   IsString,
   IsUrl,
-  MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -28,7 +28,7 @@ export class UpdateRequirementProgressDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(800)
+  @MaxLengthIfString(800)
   textResponse?: string | null;
 
   @ApiPropertyOptional({
@@ -37,7 +37,7 @@ export class UpdateRequirementProgressDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(2000)
+  @MaxLengthIfString(2000)
   notes?: string | null;
 }
 
@@ -103,7 +103,7 @@ export class CreateRequirementDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(10)
+  @MaxLengthIfString(10)
   displayLabel?: string | null;
 
   @ApiProperty({ description: 'Texto del requisito' })
@@ -144,7 +144,7 @@ export class UpdateRequirementDto {
   @ApiPropertyOptional({ description: 'Etiqueta visual' })
   @IsOptional()
   @IsString()
-  @MaxLength(10)
+  @MaxLengthIfString(10)
   displayLabel?: string | null;
 
   @ApiPropertyOptional({ description: 'Texto del requisito' })

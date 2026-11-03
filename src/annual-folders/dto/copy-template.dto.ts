@@ -1,4 +1,11 @@
-import { IsDateString, IsInt, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CopyTemplateDto {
@@ -9,11 +16,12 @@ export class CopyTemplateDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   name?: string;
 
   @ApiPropertyOptional({
-    description: 'Año eclesiástico destino. Si se omite se conserva el año origen.',
+    description:
+      'Año eclesiástico destino. Si se omite se conserva el año origen.',
     example: 2,
   })
   @IsOptional()
@@ -21,7 +29,8 @@ export class CopyTemplateDto {
   ecclesiastical_year_id?: number;
 
   @ApiPropertyOptional({
-    description: 'Tipo de club destino. Si se omite se conserva el tipo origen.',
+    description:
+      'Tipo de club destino. Si se omite se conserva el tipo origen.',
     example: 2,
   })
   @IsOptional()
@@ -38,7 +47,8 @@ export class CopyTemplateDto {
   closing_date?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Unión propietaria destino. Exclusivo con owner_local_field_id.',
+    description:
+      'Unión propietaria destino. Exclusivo con owner_local_field_id.',
     example: 1,
   })
   @IsOptional()
@@ -46,7 +56,8 @@ export class CopyTemplateDto {
   owner_union_id?: number | null;
 
   @ApiPropertyOptional({
-    description: 'Campo local propietario destino. Exclusivo con owner_union_id.',
+    description:
+      'Campo local propietario destino. Exclusivo con owner_union_id.',
     example: 3,
   })
   @IsOptional()

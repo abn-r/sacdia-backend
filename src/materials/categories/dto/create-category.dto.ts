@@ -5,16 +5,16 @@ import {
   IsOptional,
   IsString,
   Matches,
-  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 
 export class CreateCategoryDto {
   @ApiProperty({ description: 'URL-safe identifier — lowercase, kebab-case' })
   @IsString()
   @MinLength(1)
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   @Matches(/^[a-z0-9-]+$/, {
     message: 'slug must be lowercase letters, digits and dashes only',
   })
@@ -23,7 +23,7 @@ export class CreateCategoryDto {
   @ApiProperty({ description: 'Display label, e.g. "Uniformes"' })
   @IsString()
   @MinLength(1)
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   declare label: string;
 
   @ApiPropertyOptional({
@@ -32,7 +32,7 @@ export class CreateCategoryDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   icon?: string;
 
   @ApiPropertyOptional({ description: 'Sort order, ascending. Default 0.' })

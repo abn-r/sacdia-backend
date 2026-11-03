@@ -6,7 +6,6 @@ import {
   IsBoolean,
   IsArray,
   IsUUID,
-  MaxLength,
   Min,
   Max,
   ArrayMaxSize,
@@ -14,6 +13,7 @@ import {
   ValidateNested,
   IsNotEmpty,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -41,7 +41,7 @@ export class CreateClubEnrollmentDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   address?: string;
 
   @ApiPropertyOptional({
@@ -51,7 +51,7 @@ export class CreateClubEnrollmentDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   meeting_days?: string;
 
   // ─── Location ────────────────────────────────────────────────────────

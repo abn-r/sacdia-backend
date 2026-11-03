@@ -4,7 +4,6 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Delete,
@@ -12,6 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -191,7 +191,7 @@ export class AdminCoordinationController {
   @ApiParam({ name: 'assignmentId', type: String })
   async updateAssignment(
     @Req() req: AuthenticatedRequest,
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
     @Body() dto: UpdateCoordinatorAssignmentDto,
   ) {
     const data = await this.coordinationService.updateAssignment(

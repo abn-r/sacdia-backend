@@ -4,9 +4,9 @@ import {
   IsOptional,
   IsString,
   Max,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { INT4_MAX } from '../../common/constants/int4.constants';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -64,7 +64,7 @@ export class UpdateAnnualManualDataDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(6000)
+  @MaxLengthIfString(6000)
   annual_achievements_description?: string;
 
   @ApiPropertyOptional({
@@ -73,7 +73,7 @@ export class UpdateAnnualManualDataDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(6000)
+  @MaxLengthIfString(6000)
   community_service_description?: string;
 
   @ApiPropertyOptional({

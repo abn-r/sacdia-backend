@@ -5,12 +5,12 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -127,7 +127,7 @@ export class CamporeeStaffController {
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Update a camporee staff roster member' })
   async updateStaffMember(
-    @Param('staffMemberId', ParseUUIDPipe) staffMemberId: string,
+    @Param('staffMemberId', ParseUuidParamPipe) staffMemberId: string,
     @Body() dto: UpdateCamporeeStaffMemberDto,
     @Request() req: any,
   ) {
@@ -144,7 +144,7 @@ export class CamporeeStaffController {
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Deactivate a camporee staff roster member' })
   async deleteStaffMember(
-    @Param('staffMemberId', ParseUUIDPipe) staffMemberId: string,
+    @Param('staffMemberId', ParseUuidParamPipe) staffMemberId: string,
     @Request() req: any,
   ) {
     const data = await this.service.deactivateStaffMember(

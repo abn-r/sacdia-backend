@@ -16,4 +16,23 @@ describe('ParseUuidParamPipe', () => {
       status: 400,
     });
   });
+
+  it('lets undefined through when optional: true', async () => {
+    const optional = new ParseUuidParamPipe({ optional: true });
+    await expect(optional.transform(undefined, meta)).resolves.toBeUndefined();
+  });
+
+  it('still rejects a malformed id when optional: true', async () => {
+    const optional = new ParseUuidParamPipe({ optional: true });
+    await expect(optional.transform('nope', meta)).rejects.toMatchObject({
+      code: ErrorCode.GUARD_ID_PARAM_INVALID,
+      status: 400,
+    });
+  });
+
+  it('rejects undefined by default', async () => {
+    await expect(pipe.transform(undefined, meta)).rejects.toMatchObject({
+      code: ErrorCode.GUARD_ID_PARAM_INVALID,
+    });
+  });
 });

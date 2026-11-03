@@ -7,13 +7,13 @@ import {
   HttpStatus,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import type { Request as ExpressRequest } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -165,7 +165,7 @@ export class AdminReferenceController {
   @RequirePermissions('catalogs:update')
   @ApiOperation({ summary: 'Update relationship type' })
   async updateRelationshipType(
-    @Param('relationshipTypeId', ParseUUIDPipe) relationshipTypeId: string,
+    @Param('relationshipTypeId', ParseUuidParamPipe) relationshipTypeId: string,
     @Body() dto: UpdateRelationshipTypeDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
@@ -181,7 +181,7 @@ export class AdminReferenceController {
   @RequirePermissions('catalogs:delete')
   @ApiOperation({ summary: 'Soft delete relationship type' })
   async deleteRelationshipType(
-    @Param('relationshipTypeId', ParseUUIDPipe) relationshipTypeId: string,
+    @Param('relationshipTypeId', ParseUuidParamPipe) relationshipTypeId: string,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteRelationshipType(

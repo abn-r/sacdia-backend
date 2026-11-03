@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export const DEVICE_PLATFORMS = ['ios', 'android'] as const;
 
@@ -15,7 +16,7 @@ export class PairDeviceDto {
       'The single-use token read from the QR (`sacdia://pair?t=<token>`).',
   })
   @IsString()
-  @MaxLength(256)
+  @MaxLengthIfString(256)
   declare pairing_token: string;
 
   @ApiProperty({ enum: DEVICE_PLATFORMS })
@@ -27,7 +28,7 @@ export class PairDeviceDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(64)
+  @MaxLengthIfString(64)
   declare app_version?: string;
 
   @ApiPropertyOptional({
@@ -36,6 +37,6 @@ export class PairDeviceDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   declare label?: string;
 }

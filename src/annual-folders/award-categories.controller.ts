@@ -4,12 +4,12 @@ import {
   Delete,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -135,7 +135,7 @@ export class AwardCategoriesController {
     description: 'Insufficient permissions (award_categories:read required)',
   })
   @ApiResponse({ status: 404, description: 'Award category not found' })
-  async findOne(@Param('categoryId', ParseUUIDPipe) categoryId: string) {
+  async findOne(@Param('categoryId', ParseUuidParamPipe) categoryId: string) {
     const data = await this.service.findOne(categoryId);
     return { status: 'success', data };
   }
@@ -155,7 +155,7 @@ export class AwardCategoriesController {
     description: 'Award category or club type not found',
   })
   async update(
-    @Param('categoryId', ParseUUIDPipe) categoryId: string,
+    @Param('categoryId', ParseUuidParamPipe) categoryId: string,
     @Body() dto: UpdateAwardCategoryDto,
   ) {
     const data = await this.service.update(categoryId, dto);
@@ -177,7 +177,7 @@ export class AwardCategoriesController {
     description: 'Insufficient permissions (award_categories:delete required)',
   })
   @ApiResponse({ status: 404, description: 'Award category not found' })
-  async remove(@Param('categoryId', ParseUUIDPipe) categoryId: string) {
+  async remove(@Param('categoryId', ParseUuidParamPipe) categoryId: string) {
     const data = await this.service.remove(categoryId);
     return { status: 'success', ...data };
   }

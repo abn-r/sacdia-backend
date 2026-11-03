@@ -5,9 +5,9 @@ import {
   IsBoolean,
   IsNumber,
   IsDateString,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateTemplateDto {
@@ -17,7 +17,7 @@ export class CreateTemplateDto {
     maxLength: 200,
   })
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   declare name: string;
 
   @ApiProperty({

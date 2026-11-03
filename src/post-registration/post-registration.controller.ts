@@ -10,8 +10,8 @@ import {
   UseInterceptors,
   HttpCode,
   HttpStatus,
-  ParseUUIDPipe,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import 'multer';
@@ -79,7 +79,7 @@ export class PostRegistrationController {
     status: 403,
     description: 'Forbidden — owner or admin access only',
   })
-  async getPhotoStatus(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getPhotoStatus(@Param('userId', ParseUuidParamPipe) userId: string) {
     return this.postRegistrationService.getPhotoStatus(userId);
   }
 
@@ -94,7 +94,7 @@ export class PostRegistrationController {
     description: 'Forbidden — owner or admin access only',
   })
   async getStatus(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Req() request: AuthenticatedRequest,
   ) {
     return this.postRegistrationService.getStatus(
@@ -123,7 +123,7 @@ export class PostRegistrationController {
     description: 'Insufficient permissions — requires registration:complete',
   })
   async completeStep1(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Req() request: AuthenticatedRequest,
   ) {
     return this.postRegistrationService.completeStep1(
@@ -153,7 +153,7 @@ export class PostRegistrationController {
     description: 'Insufficient permissions — requires registration:complete',
   })
   async completeStep2(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Req() request: AuthenticatedRequest,
   ) {
     return this.postRegistrationService.completeStep2(
@@ -186,7 +186,7 @@ export class PostRegistrationController {
     description: 'Insufficient permissions — requires registration:complete',
   })
   async completeStep3(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: CompleteClubSelectionDto,
     @Req() request: AuthenticatedRequest,
   ) {
@@ -241,7 +241,7 @@ export class PostRegistrationController {
     description: 'GUARDIANSHIP_EVIDENCE_UNAVAILABLE',
   })
   async uploadConsentEvidence(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @CurrentUser() principal: AuthPrincipal,
     @UploadedFile(new ConsentEvidenceFilePipe()) file: Express.Multer.File,
   ) {
@@ -281,7 +281,7 @@ export class PostRegistrationController {
     description: 'POST_REG_GUARDIAN_ONLY_REQUIRES_ADULT',
   })
   async completeGuardianOnly(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: CompleteGuardianOnlyDto,
     @Req() request: AuthenticatedRequest,
   ) {
@@ -317,7 +317,7 @@ export class PostRegistrationController {
     description: 'Solicitud pendiente no encontrada',
   })
   async cancelPendingMembershipRequest(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Req() request: AuthenticatedRequest,
   ) {
     return this.postRegistrationService.cancelPendingMembershipRequest(

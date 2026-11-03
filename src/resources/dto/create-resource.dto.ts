@@ -1,18 +1,12 @@
-import {
-  IsString,
-  MaxLength,
-  IsOptional,
-  IsIn,
-  IsInt,
-  IsUrl,
-} from 'class-validator';
+import { IsString, IsOptional, IsIn, IsInt, IsUrl } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class CreateResourceDto {
   @ApiProperty({ description: 'Título del recurso', maxLength: 255 })
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare title: string;
 
   @ApiPropertyOptional({ description: 'Descripción del recurso' })
@@ -65,7 +59,7 @@ export class CreateResourceDto {
   })
   @IsOptional()
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
-  @MaxLength(1000)
+  @MaxLengthIfString(1000)
   external_url?: string;
 
   @ApiPropertyOptional({

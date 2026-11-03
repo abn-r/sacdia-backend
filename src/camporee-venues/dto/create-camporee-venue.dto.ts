@@ -6,9 +6,9 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class CreateCamporeeVenueDto {
   @ApiProperty({ example: 'union', enum: ['union', 'local_field'] })
@@ -29,13 +29,13 @@ export class CreateCamporeeVenueDto {
   @ApiProperty({ example: 'Anfiteatro Central' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(150)
+  @MaxLengthIfString(150)
   declare name: string;
 
   @ApiPropertyOptional({ example: 'Sala principal del campamento' })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   description?: string;
 
   @ApiPropertyOptional({ example: 200 })

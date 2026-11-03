@@ -6,9 +6,9 @@ import {
   IsString,
   IsUUID,
   Matches,
-  MaxLength,
   MinLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../common/validation/max-length-if-string.decorator';
 
 export const INSTRUCTOR_NAME_MIN = 3;
 export const INSTRUCTOR_NAME_MAX = 150;
@@ -52,7 +52,7 @@ export function InstructorNameField() {
     IsOptional(),
     IsString(),
     MinLength(INSTRUCTOR_NAME_MIN),
-    MaxLength(INSTRUCTOR_NAME_MAX),
+    MaxLengthIfString(INSTRUCTOR_NAME_MAX),
     Matches(/^[^\p{Cc}]+$/u),
   );
 }

@@ -4,7 +4,6 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -12,6 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -247,7 +247,7 @@ export class CamporeeSupplyPlansController {
   @ApiParam({ name: 'lineId', type: String })
   async deliverLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('lineId', ParseUUIDPipe) lineId: string,
+    @Param('lineId', ParseUuidParamPipe) lineId: string,
     @Body() dto: DeliverSupplyLineDto,
     @Req() request: RequestWithProfile,
   ) {
@@ -267,7 +267,7 @@ export class CamporeeSupplyPlansController {
   @AuthorizationResource({ type: 'global' })
   async deliverUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('lineId', ParseUUIDPipe) lineId: string,
+    @Param('lineId', ParseUuidParamPipe) lineId: string,
     @Body() dto: DeliverSupplyLineDto,
     @Req() request: RequestWithProfile,
   ) {
@@ -358,7 +358,7 @@ export class CamporeeSupplyPlansController {
       'Marcar folio de insumos (principal, cargo o devolución) como pagado',
   })
   async markPaid(
-    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Param('paymentId', ParseUuidParamPipe) paymentId: string,
     @Req() request: RequestWithProfile,
   ) {
     return this.wrap(

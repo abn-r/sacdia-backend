@@ -1,21 +1,16 @@
 import { PartialType } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsOptional,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class CreateCoordinationZoneDto {
   @IsString()
   @MinLength(2)
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name!: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   description?: string;
 
   @IsOptional()

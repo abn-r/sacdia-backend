@@ -4,7 +4,6 @@ import {
   Delete,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -13,6 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
@@ -204,7 +204,10 @@ export class ResourcesController {
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'Recurso encontrado' })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+  async findOne(
+    @Param('id', ParseUuidParamPipe) id: string,
+    @Request() req: any,
+  ) {
     const data = await this.resourcesService.findOne(id, req.authorization);
     return { status: 'success', data };
   }
@@ -229,7 +232,7 @@ export class ResourcesController {
   })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
   async getSignedUrl(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Request() req: any,
   ) {
     const data = await this.resourcesService.getSignedUrl(
@@ -258,7 +261,7 @@ export class ResourcesController {
   @ApiResponse({ status: 200, description: 'Recurso actualizado' })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
   async update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: UpdateResourceDto,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Request() req: any,
@@ -286,7 +289,10 @@ export class ResourcesController {
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'Recurso eliminado correctamente' })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
-  async remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+  async remove(
+    @Param('id', ParseUuidParamPipe) id: string,
+    @Request() req: any,
+  ) {
     const data = await this.resourcesService.remove(id, req.authorization);
     return { status: 'success', data };
   }

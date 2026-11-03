@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class ApproveInstitutionalCertificateRequestDto {
   @ApiProperty({ minimum: 0 })
@@ -12,7 +13,7 @@ export class ApproveInstitutionalCertificateRequestDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @MaxLength(1000)
+  @MaxLengthIfString(1000)
   comment?: string;
 }
 
@@ -26,6 +27,6 @@ export class RejectInstitutionalCertificateRequestDto {
   @ApiProperty({ minLength: 1, maxLength: 1000 })
   @IsString()
   @MinLength(1)
-  @MaxLength(1000)
+  @MaxLengthIfString(1000)
   declare reason: string;
 }

@@ -5,9 +5,9 @@ import {
   IsNotEmpty,
   IsNumber,
   IsString,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class SubmitInsurancePurchaseDto {
   @Type(() => Number)
@@ -30,13 +30,13 @@ export class SubmitInsurancePurchaseDto {
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   external_reference!: string;
 }
 
 export class RejectInsurancePurchaseDto {
   @IsString()
   @IsNotEmpty()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   reason!: string;
 }

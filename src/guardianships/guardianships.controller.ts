@@ -4,13 +4,13 @@ import {
   Get,
   HttpCode,
   Param,
-  ParseUUIDPipe,
   Post,
   Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
@@ -154,7 +154,7 @@ export class GuardianshipsController {
   @ApiResponse({ status: 404, description: 'GUARDIANSHIP_NOT_FOUND' })
   async detail(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
   ) {
     return {
       status: 'success',
@@ -197,7 +197,7 @@ export class GuardianshipsController {
   })
   async uploadConsentEvidence(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
     @UploadedFile(new ConsentEvidenceFilePipe()) file: Express.Multer.File,
   ) {
     return {
@@ -224,7 +224,7 @@ export class GuardianshipsController {
   })
   async getConsentEvidence(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
   ) {
     return {
       status: 'success',
@@ -244,7 +244,7 @@ export class GuardianshipsController {
   })
   async issueLinkCode(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
     @Body() _dto: IssueLinkCodeDto,
   ) {
     return {
@@ -296,7 +296,7 @@ export class GuardianshipsController {
   })
   async getSupervisedLogin(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
   ) {
     return {
       status: 'success',
@@ -336,7 +336,7 @@ export class GuardianshipsController {
   })
   async enableSupervisedLogin(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
     @Body() dto: EnableSupervisedLoginDto,
   ) {
     return {
@@ -360,7 +360,7 @@ export class GuardianshipsController {
   })
   async disableSupervisedLogin(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
     @Body() dto: DisableSupervisedLoginDto,
   ) {
     return {
@@ -385,7 +385,7 @@ export class GuardianshipsController {
   })
   async reactivateSupervisedLogin(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
     @Body() dto: ReactivateSupervisedLoginDto,
   ) {
     return {
@@ -413,7 +413,7 @@ export class GuardianshipsController {
   @ApiResponse({ status: 429, description: '5 resets per hour per dependent' })
   async resetSupervisedPassword(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
     @Body() dto: SetSupervisedPasswordDto,
   ) {
     return {
@@ -458,7 +458,7 @@ export class GuardianshipsController {
   })
   async issueDevicePairingToken(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
   ) {
     return {
       status: 'success',
@@ -478,7 +478,7 @@ export class GuardianshipsController {
   })
   async listDevices(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
   ) {
     return {
       status: 'success',
@@ -504,8 +504,8 @@ export class GuardianshipsController {
   })
   async revokeDevice(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
-    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
+    @Param('deviceId', ParseUuidParamPipe) deviceId: string,
   ) {
     return {
       status: 'success',
@@ -537,7 +537,7 @@ export class GuardianshipsController {
   @ApiResponse({ status: 403, description: 'GUARDIANSHIP_REVOKE_FORBIDDEN' })
   async revoke(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('guardianshipId', ParseUUIDPipe) guardianshipId: string,
+    @Param('guardianshipId', ParseUuidParamPipe) guardianshipId: string,
     @Body() dto: RevokeGuardianshipDto,
   ) {
     return {

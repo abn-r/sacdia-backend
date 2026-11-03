@@ -4,8 +4,8 @@ import {
   IsArray,
   IsUUID,
   MinLength,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateRoleDto {
@@ -16,7 +16,7 @@ export class UpdateRoleDto {
   @IsString()
   @IsOptional()
   @MinLength(10)
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   description?: string;
 
   @ApiPropertyOptional({

@@ -6,13 +6,13 @@ import {
   Headers,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Put,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiHeader,
@@ -42,7 +42,9 @@ import {
 @Controller()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class CamporeeScoringController {
-  private readonly idempotencyKeyPipe = new ParseUUIDPipe({ optional: true });
+  private readonly idempotencyKeyPipe = new ParseUuidParamPipe({
+    optional: true,
+  });
 
   constructor(private readonly service: CamporeeScoringService) {}
 
@@ -166,7 +168,7 @@ export class CamporeeScoringController {
   @ApiOperation({ summary: 'Update a camporee judge roster member' })
   @ApiParam({ name: 'judgeId', type: String, format: 'uuid' })
   async updateCamporeeJudge(
-    @Param('judgeId', ParseUUIDPipe) judgeId: string,
+    @Param('judgeId', ParseUuidParamPipe) judgeId: string,
     @Body() dto: UpdateCamporeeJudgeDto,
     @Request() req: any,
   ) {
@@ -184,7 +186,7 @@ export class CamporeeScoringController {
   @ApiOperation({ summary: 'Deactivate a camporee judge roster member' })
   @ApiParam({ name: 'judgeId', type: String, format: 'uuid' })
   async deactivateCamporeeJudge(
-    @Param('judgeId', ParseUUIDPipe) judgeId: string,
+    @Param('judgeId', ParseUuidParamPipe) judgeId: string,
     @Request() req: any,
   ) {
     const data = await this.service.deactivateCamporeeJudge(

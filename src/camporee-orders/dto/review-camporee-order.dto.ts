@@ -1,11 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class RejectCamporeeOrderDto {
   @ApiProperty({ maxLength: 500 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   reason!: string;
 }
 
@@ -13,7 +14,7 @@ export class AuthorizeWithoutProofDto {
   @ApiProperty({ maxLength: 500 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   reason!: string;
 }
 
@@ -21,6 +22,6 @@ export class CancelCamporeeOrderDto {
   @ApiPropertyOptional({ maxLength: 500 })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   reason?: string;
 }

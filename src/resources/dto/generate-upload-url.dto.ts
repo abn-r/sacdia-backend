@@ -5,9 +5,9 @@ import {
   IsString,
   Matches,
   Max,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -49,12 +49,12 @@ export class GenerateUploadUrlDto {
     maxLength: 255,
   })
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare file_name: string;
 
   @ApiProperty({ description: 'MIME type real del archivo', maxLength: 200 })
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   @Matches(/^[\w.+-]+\/[\w.+-]+$/, { message: 'mime_type inválido' })
   declare mime_type: string;
 

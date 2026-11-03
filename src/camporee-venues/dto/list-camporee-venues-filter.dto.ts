@@ -5,10 +5,10 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   Max,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Transform, Type } from 'class-transformer';
 
 export class ListCamporeeVenuesFilterDto {
@@ -43,7 +43,7 @@ export class ListCamporeeVenuesFilterDto {
   @ApiPropertyOptional({ example: 'anfiteatro' })
   @IsOptional()
   @IsString()
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   q?: string;
 
   @ApiPropertyOptional({ example: 50 })

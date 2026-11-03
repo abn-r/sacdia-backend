@@ -10,10 +10,10 @@ import {
   Req,
   Res,
   ParseIntPipe,
-  ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -71,7 +71,7 @@ export class MonthlyReportsController {
   })
   @ApiResponse({ status: 404, description: 'Matrícula no encontrada' })
   async preview(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @Query('month', ParseIntPipe) month: number,
     @Query('year', ParseIntPipe) year: number,
   ) {
@@ -107,7 +107,7 @@ export class MonthlyReportsController {
   @ApiResponse({ status: 201, description: 'Informe borrador creado' })
   @ApiResponse({ status: 404, description: 'Matrícula no encontrada' })
   async getOrCreateDraft(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @Query('month', ParseIntPipe) month: number,
     @Query('year', ParseIntPipe) year: number,
     @Res({ passthrough: true }) res: Response,
@@ -147,7 +147,7 @@ export class MonthlyReportsController {
   })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async updateManualData(
-    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Param('reportId', ParseUuidParamPipe) reportId: string,
     @Body() dto: UpdateManualDataDto,
   ) {
     const data = await this.monthlyReportsService.updateManualData(
@@ -187,7 +187,7 @@ export class MonthlyReportsController {
   })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async generate(
-    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Param('reportId', ParseUuidParamPipe) reportId: string,
     @Req() req: any,
   ) {
     const data = await this.monthlyReportsService.enqueueGenerate(
@@ -226,7 +226,7 @@ export class MonthlyReportsController {
   })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async submit(
-    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Param('reportId', ParseUuidParamPipe) reportId: string,
     @Req() req: any,
   ) {
     const data = await this.monthlyReportsService.submit(
@@ -266,7 +266,7 @@ export class MonthlyReportsController {
   @ApiResponse({ status: 200, description: 'Lista de informes' })
   @ApiResponse({ status: 404, description: 'Matrícula no encontrada' })
   async listReports(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @Query('status') status?: string,
   ) {
     const data = await this.monthlyReportsService.listReports(
@@ -306,7 +306,7 @@ export class MonthlyReportsController {
   })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async downloadPdf(
-    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Param('reportId', ParseUuidParamPipe) reportId: string,
     @Res() res: Response,
   ) {
     const pdfBuffer =
@@ -356,7 +356,7 @@ export class MonthlyReportsController {
       'Solo se pueden regenerar informes generados o enviados con snapshot',
   })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
-  async regenerate(@Param('reportId', ParseUUIDPipe) reportId: string) {
+  async regenerate(@Param('reportId', ParseUuidParamPipe) reportId: string) {
     const data = await this.monthlyReportsService.enqueueRegenerate(reportId);
     return {
       status: 'queued' in data && data.queued ? 'accepted' : 'success',
@@ -439,7 +439,7 @@ export class MonthlyReportsController {
   })
   @ApiResponse({ status: 200, description: 'Informe completo' })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
-  async getReport(@Param('reportId', ParseUUIDPipe) reportId: string) {
+  async getReport(@Param('reportId', ParseUuidParamPipe) reportId: string) {
     const data = await this.monthlyReportsService.getReport(reportId);
     return { status: 'success', data };
   }

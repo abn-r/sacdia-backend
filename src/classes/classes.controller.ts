@@ -8,11 +8,11 @@ import {
   Query,
   Body,
   ParseIntPipe,
-  ParseUUIDPipe,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import 'multer';
@@ -171,7 +171,7 @@ export class UserClassesController {
   })
   @ApiResponse({ status: 200, description: 'Inscripciones del usuario' })
   async getEnrollments(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Query('yearId', new ParseIntPipe({ optional: true })) yearId?: number,
   ) {
     return this.classesService.getUserEnrollments(userId, yearId);
@@ -188,7 +188,7 @@ export class UserClassesController {
   @ApiParam({ name: 'userId', type: String })
   @ApiResponse({ status: 201, description: 'Inscripción creada' })
   async enroll(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: EnrollClassDto,
   ) {
     return this.classesService.enrollUser(
@@ -226,7 +226,7 @@ export class UserClassesController {
     description: 'La solicitud class-scoped es ambigua; enviar enrollmentId',
   })
   async getProgress(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
     @Query('enrollmentId', new ParseIntPipe({ optional: true }))
     enrollmentId?: number,
@@ -261,7 +261,7 @@ export class UserClassesController {
     description: 'La solicitud class-scoped es ambigua; enviar enrollment_id',
   })
   async updateProgress(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
     @Body() dto: UpdateProgressDto,
     @CurrentUser() currentUser?: CurrentUserPayload,
@@ -306,7 +306,7 @@ export class UserClassesController {
   @ApiResponse({ status: 400, description: 'No evidence files to submit' })
   @ApiResponse({ status: 404, description: 'Section progress not found' })
   async submitSection(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Query('enrollmentId', new ParseIntPipe({ optional: true }))
@@ -361,7 +361,7 @@ export class UserClassesController {
   @ApiResponse({ status: 400, description: 'Invalid file or missing file' })
   @ApiResponse({ status: 404, description: 'Section or enrollment not found' })
   async uploadSectionFile(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @UploadedFile(
@@ -408,7 +408,7 @@ export class UserClassesController {
   @ApiResponse({ status: 200, description: 'File deleted successfully' })
   @ApiResponse({ status: 404, description: 'Evidence file not found' })
   async deleteSectionFile(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('fileId', ParseIntPipe) fileId: number,

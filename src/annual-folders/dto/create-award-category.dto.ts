@@ -5,10 +5,10 @@ import {
   IsOptional,
   IsIn,
   IsEnum,
-  MaxLength,
   Min,
   Max,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { award_tier_enum } from '@prisma/client';
 import {
@@ -23,7 +23,7 @@ export class CreateAwardCategoryDto {
     maxLength: 200,
   })
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   declare name: string;
 
   @ApiPropertyOptional({
@@ -72,7 +72,7 @@ export class CreateAwardCategoryDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   icon?: string;
 
   @ApiPropertyOptional({

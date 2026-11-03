@@ -7,9 +7,9 @@ import {
   IsString,
   IsUUID,
   Max,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import { CamporeeEventStatusDto } from './camporee-events.dto';
 
@@ -72,7 +72,7 @@ export class ListCamporeeEventsFilterDto {
   @ApiPropertyOptional({ example: 'nudos' })
   @IsOptional()
   @IsString()
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   q?: string;
 
   @ApiPropertyOptional({ example: 100, minimum: 1, maximum: 200 })

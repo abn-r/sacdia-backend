@@ -6,11 +6,11 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -71,7 +71,7 @@ export class CategoriesController {
     description: 'Cannot deactivate a category with active products',
   })
   update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: UpdateCategoryDto,
   ): Promise<CategoryAdminDto> {
     return this.categoriesService.update(id, dto);
@@ -97,7 +97,7 @@ export class CategoriesController {
   @ApiResponse({ status: 404, description: 'Category not found' })
   @ApiResponse({ status: 409, description: 'Category in use by products' })
   softDelete(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
   ): Promise<{ id: string; active: false }> {
     return this.categoriesService.softDelete(id);
   }

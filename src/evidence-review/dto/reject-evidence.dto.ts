@@ -1,4 +1,5 @@
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsString, MinLength } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty } from '@nestjs/swagger';
 import { i18nValidationMessage } from 'nestjs-i18n';
 
@@ -13,7 +14,7 @@ export class RejectEvidenceDto {
   @MinLength(1, {
     message: i18nValidationMessage('errors.VALIDATION.reject_reason_required'),
   })
-  @MaxLength(1000, {
+  @MaxLengthIfString(1000, {
     message: i18nValidationMessage(
       'errors.VALIDATION.reject_reason_max_length',
       { max: 1000 },

@@ -1,12 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import {
-  IsEnum,
-  IsOptional,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import {
   InstructorNameField,
@@ -48,7 +43,7 @@ export class RejectHonorInstructorProposalDto {
   )
   @IsString()
   @MinLength(PROPOSAL_REASON_MIN)
-  @MaxLength(PROPOSAL_REASON_MAX)
+  @MaxLengthIfString(PROPOSAL_REASON_MAX)
   declare reason: string;
 }
 

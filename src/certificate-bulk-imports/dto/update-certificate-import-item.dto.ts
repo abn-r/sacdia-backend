@@ -9,10 +9,10 @@ import {
   IsOptional,
   IsString,
   Max,
-  MaxLength,
   Min,
   ValidateIf,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import { IsDateInRange } from '../../common/utils/honor-date-range';
 import {
@@ -68,7 +68,7 @@ export class UpdateCertificateImportItemDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   detected_name?: string;
 
   @ApiPropertyOptional({
@@ -144,7 +144,8 @@ export class UpdateCertificateImportItemDto {
   mark_as_ready?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Revisión leída por el cliente. Si no coincide, no se pisa el cambio más nuevo.',
+    description:
+      'Revisión leída por el cliente. Si no coincide, no se pisa el cambio más nuevo.',
     minimum: 0,
   })
   @IsOptional()

@@ -1,12 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsIn,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-} from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export type CamporeeScopeType = 'local' | 'union';
 export type CamporeeStaffCategory =
@@ -40,7 +34,7 @@ export class AddCamporeeStaffMemberDto {
   @ApiPropertyOptional({ example: 'Coordinador de cocina' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare role_label?: string;
 
   @ApiPropertyOptional({ example: 'Disponible en turno de tarde.' })
@@ -58,7 +52,7 @@ export class UpdateCamporeeStaffMemberDto {
   @ApiPropertyOptional({ example: 'Responsable de logística' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare role_label?: string | null;
 
   @ApiPropertyOptional()

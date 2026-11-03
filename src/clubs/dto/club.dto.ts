@@ -3,17 +3,17 @@ import {
   IsOptional,
   IsInt,
   IsBoolean,
-  MaxLength,
   IsObject,
   IsArray,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class CreateClubDto {
   @ApiProperty({ example: 'Club Central', description: 'Nombre del club' })
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiPropertyOptional({ description: 'Descripción del club' })
@@ -62,7 +62,7 @@ export class UpdateClubDto {
   @ApiPropertyOptional({ example: 'Club Actualizado' })
   @IsOptional()
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name?: string;
 
   @ApiPropertyOptional()

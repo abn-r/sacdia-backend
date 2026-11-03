@@ -1,6 +1,7 @@
 import { applyDecorators } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsString, Matches, MinLength } from 'class-validator';
+import { MaxLengthIfString } from '../common/validation/max-length-if-string.decorator';
 import { i18nValidationMessage } from 'nestjs-i18n';
 
 /** New passwords only. Existing 8–11 char accounts can still login and rotate. */
@@ -28,7 +29,7 @@ export function IsNewPassword(
         min: NEW_PASSWORD_MIN_LENGTH,
       }),
     }),
-    MaxLength(NEW_PASSWORD_MAX_LENGTH),
+    MaxLengthIfString(NEW_PASSWORD_MAX_LENGTH),
     Matches(NEW_PASSWORD_COMPLEXITY, {
       message: i18nValidationMessage('errors.VALIDATION.password_format'),
     }),

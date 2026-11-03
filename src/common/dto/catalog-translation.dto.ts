@@ -3,9 +3,9 @@ import {
   IsIn,
   IsOptional,
   IsString,
-  MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -36,7 +36,7 @@ export class CatalogTranslationDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   name?: string;
 
   @ApiPropertyOptional({

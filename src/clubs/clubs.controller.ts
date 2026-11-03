@@ -9,10 +9,10 @@ import {
   Body,
   Headers,
   ParseIntPipe,
-  ParseUUIDPipe,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
@@ -611,7 +611,7 @@ export class ClubsController {
   async cancelDirectorDesignation(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
-    @Query('successionId', ParseUUIDPipe) successionId: string,
+    @Query('successionId', ParseUuidParamPipe) successionId: string,
     @Query('version', ParseIntPipe) version: number,
     @CurrentUser() user: { sub: string },
   ) {
@@ -652,7 +652,7 @@ export class ClubRolesController {
       'MR_CONSENT_NOT_VERIFIED: activar la asignación de un menor sin consentimiento del tutor verificado',
   })
   async updateAssignment(
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
     @Body() dto: UpdateRoleAssignmentDto,
   ) {
     return this.clubsService.updateRoleAssignment(assignmentId, dto);
@@ -665,7 +665,7 @@ export class ClubRolesController {
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Rol removido' })
   async removeAssignment(
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
   ) {
     return this.clubsService.removeRoleAssignment(assignmentId);
   }

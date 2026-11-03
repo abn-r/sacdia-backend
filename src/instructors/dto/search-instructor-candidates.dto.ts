@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export const INSTRUCTOR_QUERY_MIN = 3;
 /** Cada palabra de la búsqueda debe tener al menos estos caracteres. */
@@ -18,6 +19,6 @@ export class SearchInstructorCandidatesDto {
   )
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   q?: string;
 }

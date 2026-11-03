@@ -9,10 +9,10 @@ import {
   IsEnum,
   Min,
   Max,
-  MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsDateInRange } from '../../common/utils/honor-date-range';
@@ -212,6 +212,6 @@ export class HonorFiltersDto {
   @IsOptional()
   @IsString()
   @MinLength(2)
-  @MaxLength(60)
+  @MaxLengthIfString(60)
   search?: string;
 }

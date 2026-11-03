@@ -4,7 +4,6 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -13,6 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import {
@@ -368,7 +368,9 @@ export class InsuranceController {
     status: 404,
     description: 'Seguro no encontrado para el miembro',
   })
-  async getMemberInsurance(@Param('memberId', ParseUUIDPipe) memberId: string) {
+  async getMemberInsurance(
+    @Param('memberId', ParseUuidParamPipe) memberId: string,
+  ) {
     const data = await this.service.getMemberInsurance(memberId);
     return { status: 'success', data };
   }
@@ -402,7 +404,7 @@ export class InsuranceController {
   })
   @ApiResponse({ status: 201, description: 'Seguro creado' })
   async createInsurance(
-    @Param('memberId', ParseUUIDPipe) memberId: string,
+    @Param('memberId', ParseUuidParamPipe) memberId: string,
     @Body() dto: CreateInsuranceDto,
     @UploadedFile(
       new FileValidationPipe({

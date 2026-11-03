@@ -4,23 +4,23 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 
 export class UpdateCategoryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MinLength(1)
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   label?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   icon?: string | null;
 
   @ApiPropertyOptional()

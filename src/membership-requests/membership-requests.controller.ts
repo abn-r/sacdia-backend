@@ -7,12 +7,12 @@ import {
   Param,
   Body,
   ParseIntPipe,
-  ParseUUIDPipe,
   Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
@@ -189,7 +189,7 @@ export class MembershipRequestsController {
   })
   async approve(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.membershipRequestsService.approve(
@@ -221,7 +221,7 @@ export class MembershipRequestsController {
   @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
   async reject(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
     @Body() dto: RejectRequestDto,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
@@ -285,7 +285,7 @@ export class MembershipRequestsController {
   })
   async uploadConsentEvidence(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
     @UploadedFile(new ConsentEvidenceFilePipe()) file: Express.Multer.File,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
@@ -333,7 +333,7 @@ export class MembershipRequestsController {
   })
   async getConsentEvidence(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
     @CurrentUser() currentUser: CurrentUserPayload,
     @Req() request: AuthorizedRequest,
   ) {
@@ -383,7 +383,7 @@ export class MembershipRequestsController {
   })
   async verifyConsent(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
     @Body() dto: VerifyConsentDto,
     @CurrentUser() currentUser: CurrentUserPayload,
     @Req() request: AuthorizedRequest,

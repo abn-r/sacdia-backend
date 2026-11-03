@@ -4,13 +4,13 @@ import {
   Get,
   HttpCode,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -158,7 +158,7 @@ export class OrdersController {
   })
   patchLine(
     @Param('folio') folio: string,
-    @Param('lineId', ParseUUIDPipe) lineId: string,
+    @Param('lineId', ParseUuidParamPipe) lineId: string,
     @Body() dto: UpdateOrderLineDto,
     @Request() req: any,
   ): Promise<OrderDto> {

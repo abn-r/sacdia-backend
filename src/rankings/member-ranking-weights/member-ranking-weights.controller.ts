@@ -4,13 +4,13 @@ import {
   Delete,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -128,7 +128,7 @@ export class MemberRankingWeightsController {
   @ApiParam({ name: 'id', description: 'UUID of the weight row' })
   @ApiResponse({ status: 200, type: MemberRankingWeightsResponseDto })
   @ApiResponse({ status: 404, description: 'WEIGHTS_NOT_FOUND.' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+  async findOne(@Param('id', ParseUuidParamPipe) id: string) {
     return this.service.findOne(id);
   }
 
@@ -152,7 +152,7 @@ export class MemberRankingWeightsController {
   @ApiResponse({ status: 409, description: 'WEIGHTS_CONFLICT.' })
   async update(
     @Req() req: any,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: UpdateMemberRankingWeightsDto,
   ) {
     return this.service.update(id, dto, req.user.user_id);
@@ -173,7 +173,7 @@ export class MemberRankingWeightsController {
   @ApiResponse({ status: 200, description: '{ status: "deleted" }' })
   @ApiResponse({ status: 400, description: 'DEFAULT_WEIGHTS_NOT_DELETABLE.' })
   @ApiResponse({ status: 404, description: 'WEIGHTS_NOT_FOUND.' })
-  async remove(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+  async remove(@Req() req: any, @Param('id', ParseUuidParamPipe) id: string) {
     return this.service.remove(id, req.user.user_id);
   }
 }

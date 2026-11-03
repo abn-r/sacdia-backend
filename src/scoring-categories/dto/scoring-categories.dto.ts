@@ -5,10 +5,10 @@ import {
   IsOptional,
   IsBoolean,
   IsEnum,
-  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
@@ -21,7 +21,7 @@ export enum ScoringModeDto {
 export class CreateScoringCategoryDto {
   @ApiProperty({ description: 'Nombre de la categoría (máx 100 chars)' })
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiProperty({
@@ -60,7 +60,7 @@ export class UpdateScoringCategoryDto {
   @ApiPropertyOptional({ description: 'Nombre de la categoría' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name?: string;
 
   @ApiPropertyOptional({

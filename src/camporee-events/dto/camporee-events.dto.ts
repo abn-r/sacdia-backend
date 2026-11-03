@@ -12,11 +12,11 @@ import {
   IsString,
   IsUUID,
   Matches,
-  MaxLength,
   Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 // Camporee event status enum — mirrors Prisma CamporeeEventStatus
 export enum CamporeeEventStatusDto {
@@ -28,10 +28,7 @@ export enum CamporeeEventStatusDto {
 }
 
 export type CamporeeEventStaffAssignmentRole =
-  | 'responsible'
-  | 'assistant'
-  | 'evaluator'
-  | 'support';
+  'responsible' | 'assistant' | 'evaluator' | 'support';
 
 export class CamporeeEventStaffAssignmentDto {
   @ApiProperty({ example: '0d8901fd-8c8f-4c1c-bd8a-d7c9b51f7777' })
@@ -45,7 +42,7 @@ export class CamporeeEventStaffAssignmentDto {
   @ApiPropertyOptional({ example: 'Responsable de estación' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare title_override?: string;
 
   @ApiPropertyOptional({ example: 0 })
@@ -85,7 +82,7 @@ export class CamporeeEventScheduleBlockDto {
   @ApiPropertyOptional({ example: 'Primer bloque' })
   @IsOptional()
   @IsString()
-  @MaxLength(150)
+  @MaxLengthIfString(150)
   title?: string;
 
   @ApiPropertyOptional()
@@ -169,7 +166,7 @@ export class CreateCamporeeEventDto {
   @ApiProperty({ example: 'Orden Cerrado' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(150)
+  @MaxLengthIfString(150)
   declare title: string;
 
   @ApiPropertyOptional()
@@ -284,13 +281,13 @@ export class CreateCamporeeEventDto {
   @ApiPropertyOptional({ example: 'Dr. Roberto Gimenez' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   leader_name_override?: string;
 
   @ApiPropertyOptional({ example: 'Director de Juegos' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   leader_role?: string;
 
   @ApiPropertyOptional({
@@ -369,7 +366,7 @@ export class CloneFromTemplateDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(150)
+  @MaxLengthIfString(150)
   title?: string;
 
   @ApiPropertyOptional({ description: 'Override max_points from template' })
@@ -396,7 +393,7 @@ export class UpdateCamporeeEventDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(150)
+  @MaxLengthIfString(150)
   title?: string;
 
   @ApiPropertyOptional()
@@ -507,13 +504,13 @@ export class UpdateCamporeeEventDto {
   @ApiPropertyOptional({ example: 'Dr. Roberto Gimenez' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   leader_name_override?: string;
 
   @ApiPropertyOptional({ example: 'Director de Juegos' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   leader_role?: string;
 
   @ApiPropertyOptional({

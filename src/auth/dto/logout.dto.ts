@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class LogoutDto {
   @ApiPropertyOptional({
@@ -10,6 +11,6 @@ export class LogoutDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(2048)
+  @MaxLengthIfString(2048)
   refreshToken?: string;
 }

@@ -22,11 +22,11 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import {
   master_honor_applicability_scope_enum,
@@ -57,7 +57,7 @@ export class CreateClassDto {
   @ApiProperty({ example: 'Conquistadores', maxLength: 255 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   name!: string;
 
   @ApiPropertyOptional({ example: 'Clase de conquistadores para jóvenes' })
@@ -139,7 +139,7 @@ export class CreateClassModuleDto {
   @ApiProperty({ example: 'Módulo 1 — Fe', maxLength: 255 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   name!: string;
 
   @ApiPropertyOptional({ example: 'Descripción del módulo' })
@@ -176,7 +176,7 @@ export class CreateClassSectionDto {
   @ApiProperty({ example: 'Sección 1 — Introducción', maxLength: 255 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   name!: string;
 
   @ApiPropertyOptional({ example: 'Descripción de la sección' })
@@ -260,7 +260,7 @@ export class CreateFinanceCategoryDto {
   @ApiProperty({ example: 'Diezmos', maxLength: 100 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name!: string;
 
   @ApiPropertyOptional({ example: 'Categoría de ingresos por diezmos' })
@@ -321,7 +321,7 @@ export class InventoryTranslationDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name?: string;
 }
 
@@ -329,7 +329,7 @@ export class CreateInventoryCategoryDto {
   @ApiProperty({ example: 'Equipamiento', maxLength: 100 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name!: string;
 
   @ApiPropertyOptional({ example: 0, description: 'Icon identifier' })
@@ -364,7 +364,7 @@ export class CreateHonorCatalogDto {
   @ApiProperty({ example: 'Natación', maxLength: 100 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name!: string;
 
   @ApiPropertyOptional({ example: 'Honor de natación para conquistadores' })
@@ -456,7 +456,7 @@ export class MasterHonorRuleOptionDto {
   @ApiProperty({ example: 'Natación avanzada', maxLength: 200 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   label!: string;
 
   @ApiPropertyOptional({ example: 0 })
@@ -498,7 +498,7 @@ export class MasterHonorRequirementGroupDto {
   @ApiPropertyOptional({ example: 'Especialidades base', maxLength: 200 })
   @IsOptional()
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   title?: string;
 
   @ApiPropertyOptional({
@@ -548,7 +548,7 @@ export class CreateMasterHonorDto {
   @ApiProperty({ example: 'Maestro en Natación', maxLength: 100 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name!: string;
 
   @ApiPropertyOptional({

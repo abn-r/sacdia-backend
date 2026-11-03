@@ -8,10 +8,10 @@ import {
   IsString,
   Matches,
   Max,
-  MaxLength,
   Min,
   ValidateIf,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export const INVENTORY_CONDITIONS = ['bueno', 'regular', 'malo'] as const;
 export type InventoryCondition = (typeof INVENTORY_CONDITIONS)[number];
@@ -56,7 +56,7 @@ export class InventoryExtendedFieldsDto {
   @IsOptional()
   @Transform(trimToNull)
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   serial_number?: string | null;
 
   @ApiPropertyOptional({
@@ -96,7 +96,7 @@ export class InventoryExtendedFieldsDto {
   @IsOptional()
   @Transform(trimToNull)
   @IsString()
-  @MaxLength(150)
+  @MaxLengthIfString(150)
   location?: string | null;
 
   @ApiPropertyOptional({
@@ -109,7 +109,7 @@ export class InventoryExtendedFieldsDto {
   @IsOptional()
   @Transform(trimToNull)
   @IsString()
-  @MaxLength(150)
+  @MaxLengthIfString(150)
   assigned_to?: string | null;
 
   @ApiPropertyOptional({
@@ -121,6 +121,6 @@ export class InventoryExtendedFieldsDto {
   @IsOptional()
   @Transform(trimToNull)
   @IsString()
-  @MaxLength(2000)
+  @MaxLengthIfString(2000)
   notes?: string | null;
 }

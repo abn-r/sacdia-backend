@@ -5,9 +5,9 @@ import {
   IsString,
   Matches,
   Max,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { PRESIGNED_UPLOAD_MAX_BYTES } from './generate-upload-url.dto';
@@ -20,7 +20,7 @@ import { PRESIGNED_UPLOAD_MAX_BYTES } from './generate-upload-url.dto';
 export class CreateResourceFromUploadedDto {
   @ApiProperty({ description: 'Título del recurso', maxLength: 255 })
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare title: string;
 
   @ApiPropertyOptional({ description: 'Descripción del recurso' })
@@ -69,18 +69,18 @@ export class CreateResourceFromUploadedDto {
     maxLength: 1024,
   })
   @IsString()
-  @MaxLength(1024)
+  @MaxLengthIfString(1024)
   @Matches(/^[\w./-]+$/, { message: 'file_key contiene caracteres inválidos' })
   declare file_key: string;
 
   @ApiProperty({ description: 'Nombre original del archivo', maxLength: 255 })
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare file_name: string;
 
   @ApiProperty({ description: 'MIME type del archivo', maxLength: 200 })
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   @Matches(/^[\w.+-]+\/[\w.+-]+$/, { message: 'file_mime_type inválido' })
   declare file_mime_type: string;
 

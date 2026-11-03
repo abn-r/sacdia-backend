@@ -8,9 +8,9 @@ import {
   Param,
   Query,
   ParseIntPipe,
-  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -136,7 +136,7 @@ export class UserCertificationsController {
     description: 'Usuario ya inscrito en esta certificación',
   })
   async enrollUser(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: EnrollCertificationDto,
   ) {
     const data = await this.certificationsService.enrollUser(userId, dto);
@@ -163,7 +163,9 @@ export class UserCertificationsController {
     status: 200,
     description: 'Lista de certificaciones del usuario con progreso',
   })
-  async getUserCertifications(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getUserCertifications(
+    @Param('userId', ParseUuidParamPipe) userId: string,
+  ) {
     const data = await this.certificationsService.getUserCertifications(userId);
     return {
       status: 'success',
@@ -195,7 +197,7 @@ export class UserCertificationsController {
   })
   @ApiResponse({ status: 404, description: 'Certificación no encontrada' })
   async getEligibility(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
   ) {
     const data = await this.certificationsService.getEligibility(
@@ -235,7 +237,7 @@ export class UserCertificationsController {
     description: 'Inscripción en certificación no encontrada',
   })
   async getCertificationProgress(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
   ) {
     const data = await this.certificationsService.getCertificationProgress(
@@ -279,7 +281,7 @@ export class UserCertificationsController {
     description: 'Inscripción en certificación no encontrada',
   })
   async updateProgress(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
     @Body() dto: UpdateCertificationProgressDto,
   ) {
@@ -321,7 +323,7 @@ export class UserCertificationsController {
     description: 'Inscripción en certificación no encontrada',
   })
   async deleteCertification(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
   ) {
     const data = await this.certificationsService.deleteCertification(

@@ -5,7 +5,6 @@ import {
   Headers,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -14,6 +13,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import type { Response } from 'express';
@@ -60,7 +60,9 @@ import { ProofFileValidationPipe } from './proof-file-validation.pipe';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller()
 export class CamporeeOrdersController {
-  private readonly idempotencyKeyPipe = new ParseUUIDPipe({ optional: true });
+  private readonly idempotencyKeyPipe = new ParseUuidParamPipe({
+    optional: true,
+  });
 
   constructor(private readonly orders: CamporeeOrdersService) {}
 
@@ -155,7 +157,7 @@ export class CamporeeOrdersController {
   })
   @ApiParam({ name: 'orderId', format: 'uuid' })
   async get(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {
@@ -170,7 +172,7 @@ export class CamporeeOrdersController {
   @ApiOperation({ summary: 'Descargar PDF imprimible del pedido' })
   @ApiParam({ name: 'orderId', format: 'uuid' })
   async getDocument(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
     @Res() response: Response,
   ) {
@@ -194,7 +196,7 @@ export class CamporeeOrdersController {
   @ApiOperation({ summary: 'URL firmada del comprobante vigente' })
   @ApiParam({ name: 'orderId', format: 'uuid' })
   async getProof(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {
@@ -222,7 +224,7 @@ export class CamporeeOrdersController {
     },
   })
   async uploadProof(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @UploadedFile(new ProofFileValidationPipe())
     file: Express.Multer.File,
     @Req() request: RequestWithProfile,
@@ -248,7 +250,7 @@ export class CamporeeOrdersController {
   })
   @ApiParam({ name: 'orderId', format: 'uuid' })
   async cancel(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
     @Body() dto: CancelCamporeeOrderDto = {},
   ) {
@@ -270,7 +272,7 @@ export class CamporeeOrdersController {
   })
   @ApiParam({ name: 'orderId', format: 'uuid' })
   async approve(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {
@@ -288,7 +290,7 @@ export class CamporeeOrdersController {
   @ApiOperation({ summary: 'Rechazar comprobante (permite re-subida)' })
   @ApiParam({ name: 'orderId', format: 'uuid' })
   async reject(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Body() dto: RejectCamporeeOrderDto,
     @Req() request: RequestWithProfile,
   ) {
@@ -311,7 +313,7 @@ export class CamporeeOrdersController {
   })
   @ApiParam({ name: 'orderId', format: 'uuid' })
   async authorizeWithoutProof(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Body() dto: AuthorizeWithoutProofDto,
     @Req() request: RequestWithProfile,
   ) {
@@ -333,7 +335,7 @@ export class CamporeeOrdersController {
   })
   @ApiParam({ name: 'orderId', format: 'uuid' })
   async deliver(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {
@@ -355,8 +357,8 @@ export class CamporeeOrdersController {
   @ApiParam({ name: 'orderId', format: 'uuid' })
   @ApiParam({ name: 'lineId', format: 'uuid' })
   async deliverToMember(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
-    @Param('lineId', ParseUUIDPipe) lineId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
+    @Param('lineId', ParseUuidParamPipe) lineId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {

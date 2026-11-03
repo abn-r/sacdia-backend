@@ -5,9 +5,9 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class CreateInsuranceReassignmentDto {
   @Type(() => Number)
@@ -20,7 +20,7 @@ export class CreateInsuranceReassignmentDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   reason?: string;
 }
 

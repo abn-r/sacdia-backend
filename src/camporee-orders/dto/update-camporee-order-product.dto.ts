@@ -6,10 +6,10 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import {
   CamporeeOrderOwnerScopeDto,
   CamporeeOrderSizeSchemeDto,
@@ -20,7 +20,7 @@ export class UpdateCamporeeOrderProductDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   title?: string;
 
   @ApiPropertyOptional()

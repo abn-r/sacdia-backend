@@ -3,10 +3,10 @@ import {
   Get,
   HttpCode,
   Param,
-  ParseUUIDPipe,
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -123,7 +123,7 @@ export class TeenLinkCodesController {
   @ApiResponse({ status: 404, description: 'GUARDIANSHIP_NOT_FOUND' })
   async revokePendingLink(
     @CurrentUser() user: AuthPrincipal,
-    @Param('guardianshipId', ParseUUIDPipe) guardianshipId: string,
+    @Param('guardianshipId', ParseUuidParamPipe) guardianshipId: string,
   ) {
     return {
       status: 'success',

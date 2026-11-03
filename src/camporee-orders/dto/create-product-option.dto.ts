@@ -5,16 +5,16 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class CreateProductOptionDto {
   @ApiProperty({ maxLength: 40, example: 'M' })
   @IsString()
   @MinLength(1)
-  @MaxLength(40)
+  @MaxLengthIfString(40)
   label!: string;
 
   @ApiPropertyOptional({ default: 0 })
@@ -30,7 +30,7 @@ export class UpdateProductOptionDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
-  @MaxLength(40)
+  @MaxLengthIfString(40)
   label?: string;
 
   @ApiPropertyOptional()
