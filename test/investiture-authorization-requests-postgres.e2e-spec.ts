@@ -2518,7 +2518,6 @@ describe('investiture authorization requests on isolated PostgreSQL', () => {
           end_date: new Date('2026-12-31T00:00:00.000Z'),
         }),
       } as never,
-      { bumpMany: async () => undefined } as never,
       { invalidateUserAuthorizationCache: async () => undefined } as never,
       {
         ensureNotEnrolled: async () => {

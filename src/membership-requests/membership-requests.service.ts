@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
   AppNotFoundException,
@@ -67,7 +66,6 @@ export class MembershipRequestsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
-    private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly notificationsService: NotificationsService,
     private readonly roleEligibility: ClubRoleEligibilityService,
     private readonly consentGate: ConsentGateService,
@@ -330,7 +328,6 @@ export class MembershipRequestsService {
           if (!assignment) {
             throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
           }
-          await this.authorizationContextVersion.bump(tx, assignment.user_id);
         }
         return { result, assignment };
       },
@@ -408,7 +405,6 @@ export class MembershipRequestsService {
           if (!assignment) {
             throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
           }
-          await this.authorizationContextVersion.bump(tx, assignment.user_id);
         }
         return { result, assignment };
       },
@@ -496,8 +492,6 @@ export class MembershipRequestsService {
           active_club_assignment_id: null,
         },
       });
-
-      await this.authorizationContextVersion.bump(tx, userId);
 
       return {
         ...pendingAssignment,
@@ -665,9 +659,6 @@ export class MembershipRequestsService {
           select: { user_id: true },
         });
         const userIds = [...new Set(affected.map(({ user_id }) => user_id))];
-        if (userIds.length) {
-          await this.authorizationContextVersion.bumpMany(tx, userIds);
-        }
 
         const frozenUserIds = await this.freezeAbandonedCustodialMinors(
           tx,

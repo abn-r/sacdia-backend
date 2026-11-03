@@ -7,7 +7,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualMembershipService } from './annual-membership.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { NextClassResolver } from '../classes/next-class.resolver';
 import { ClassEnrollmentPolicyService } from '../classes/class-enrollment-policy.service';
@@ -97,7 +96,6 @@ describe('AnnualMembershipService', () => {
     ensureNotEnrolled: jest.Mock;
     resolveBase: jest.Mock;
   };
-  let authContextVersion: { bumpMany: jest.Mock };
   let authContext: { invalidateUserAuthorizationCache: jest.Mock };
   let auditLogs: { recordEvent: jest.Mock };
 
@@ -130,7 +128,6 @@ describe('AnnualMembershipService', () => {
         clubTypeName: 'Guías Mayores',
       }),
     };
-    authContextVersion = { bumpMany: jest.fn().mockResolvedValue(1) };
     authContext = {
       invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
     };
@@ -145,10 +142,6 @@ describe('AnnualMembershipService', () => {
           useValue: {
             getCurrentYear: jest.fn().mockResolvedValue(CURRENT_YEAR),
           },
-        },
-        {
-          provide: AuthorizationContextVersionService,
-          useValue: authContextVersion,
         },
         { provide: AuthorizationContextService, useValue: authContext },
         { provide: NextClassResolver, useValue: nextClassResolver },
@@ -1315,7 +1308,6 @@ describe('AnnualMembershipService', () => {
         }),
       ]);
       expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
-      expect(authContextVersion.bumpMany).not.toHaveBeenCalled();
       expect(auditLogs.recordEvent).not.toHaveBeenCalled();
     });
 
@@ -1487,7 +1479,6 @@ describe('AnnualMembershipService', () => {
         expect(outcome).toBe('skipped');
         expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
         expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
-        expect(authContextVersion.bumpMany).not.toHaveBeenCalled();
       });
 
       it('enrolls a verified dependent', async () => {

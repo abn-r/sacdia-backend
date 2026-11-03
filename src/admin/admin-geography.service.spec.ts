@@ -552,22 +552,6 @@ describe('AdminGeographyService', () => {
       );
     });
 
-    it('versions affected assignment holders when timezone changes', async () => {
-      prismaMock.$queryRaw.mockResolvedValueOnce([baseLocalField]);
-      prismaMock.local_fields.update.mockResolvedValue({
-        ...baseLocalField,
-        timezone: 'America/Tijuana',
-      });
-
-      await service.updateLocalField(
-        1,
-        { timezone: 'America/Tijuana' },
-        ACTOR_ID,
-      );
-
-      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
-    });
-
     it('locks and compares the current timezone inside the transaction', async () => {
       prismaMock.$queryRaw.mockResolvedValueOnce([
         { ...baseLocalField, timezone: 'America/Tijuana' },
@@ -588,7 +572,6 @@ describe('AdminGeographyService', () => {
       };
       expect(lockQuery.strings.join('?')).toContain('FOR UPDATE');
       expect(prismaMock.local_fields.findUnique).not.toHaveBeenCalled();
-      expect(txMock.$executeRaw).not.toHaveBeenCalled();
     });
   });
 

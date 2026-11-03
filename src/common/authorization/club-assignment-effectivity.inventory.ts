@@ -23,8 +23,6 @@ const baseline = {
   'activities/activities-reminder.service.ts':
     'effectiveWhere|T09|2|2948ae2063cb',
   'activities/activities.service.ts': 'effectiveWhere|T09|4|01e15b0aca14',
-  'admin/admin-geography.service.ts':
-    'historicalWhere|allowlist|1|d56c9a4907fd',
   'admin/admin-reference.service.ts': 'effectiveWhere|T09|1|f9e0a7b798f8',
   'admin/admin-users.service.ts': 'effectiveWhere|T09|4|6dc79160e792',
   'analytics/analytics.service.ts': 'effectiveWhere|T09|9|01ab8142bda8',

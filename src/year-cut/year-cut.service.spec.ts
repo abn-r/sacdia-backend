@@ -9,7 +9,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { YearCutService } from './year-cut.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AnnualMembershipPolicyService } from '../annual-membership/annual-membership-policy.service';
 import { AnnualMembershipService } from '../annual-membership/annual-membership.service';
@@ -167,7 +166,6 @@ function makePrismaMock() {
 describe('YearCutService', () => {
   let service: YearCutService;
   let prisma: ReturnType<typeof makePrismaMock>;
-  let authContextVersion: { bumpMany: jest.Mock };
   let authContext: { invalidateUserAuthorizationCache: jest.Mock };
   let policy: {
     resolveBase: jest.Mock;
@@ -180,7 +178,6 @@ describe('YearCutService', () => {
 
   beforeEach(async () => {
     prisma = makePrismaMock();
-    authContextVersion = { bumpMany: jest.fn().mockResolvedValue(1) };
     authContext = {
       invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
     };
@@ -221,10 +218,6 @@ describe('YearCutService', () => {
           useValue: {
             getCurrentYear: jest.fn().mockResolvedValue(CURRENT_YEAR),
           },
-        },
-        {
-          provide: AuthorizationContextVersionService,
-          useValue: authContextVersion,
         },
         {
           provide: AuthorizationContextService,

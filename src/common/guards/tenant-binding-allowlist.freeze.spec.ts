@@ -1,0 +1,82 @@
+import { TENANT_BINDING_ALLOWLIST } from './tenant-binding-allowlist';
+
+/**
+ * RATCHET: tenant-binding-allowlist can only shrink.
+ *
+ * The allowlist is a frozen list of routes that still lack `bind`. This spec
+ * pins its size (total and per marker). Adding entries fails the build; removing
+ * entries also fails until FROZEN_* are lowered here, so every reduction is
+ * recorded and can never silently grow back.
+ *
+ * Markers are the reason strings of the allowlist constants (they are not
+ * exported, plus one inline-string reason), identified here by a stable prefix of their text.
+ */
+const MARKER_PREFIXES: Readonly<Record<string, string>> = {
+  GEOGRAPHY_CATALOG: 'Admin CRUD of the geography catalog',
+  FOLDER_TEMPLATE_SECTION: 'sectionId is an annual-folder template section',
+  FOLDER_SECTION: 'sectionId is an annual-folder section;',
+  CLASS_MODULE_SECTION: 'sectionId is a class module section',
+  PENDING_CAMPOREE: 'Camporee scope is resolved in the service',
+  PENDING_REVIEW: 'Pending tenant-binding review',
+  UNION_CAMPOREE_READ_INLINE: 'Union camporee detail read;',
+};
+
+const FROZEN_TOTAL = 69;
+const FROZEN_BY_MARKER: Readonly<Record<string, number>> = {
+  GEOGRAPHY_CATALOG: 6,
+  FOLDER_TEMPLATE_SECTION: 2,
+  FOLDER_SECTION: 6,
+  CLASS_MODULE_SECTION: 3,
+  PENDING_CAMPOREE: 38,
+  PENDING_REVIEW: 13,
+  UNION_CAMPOREE_READ_INLINE: 1,
+};
+
+const RAISED =
+  'No agregues rutas a tenant-binding-allowlist. Declara `bind` en @AuthorizationResource o una policy de recurso.';
+const lowered = (n: number) =>
+  `La allowlist bajó a ${n}. Baja FROZEN_* en este spec para fijar el nuevo mínimo.`;
+
+function countByMarker(): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const name of Object.keys(MARKER_PREFIXES)) counts[name] = 0;
+  counts.UNKNOWN = 0;
+  for (const reason of Object.values(TENANT_BINDING_ALLOWLIST)) {
+    const name =
+      Object.keys(MARKER_PREFIXES).find((k) =>
+        reason.startsWith(MARKER_PREFIXES[k]),
+      ) ?? 'UNKNOWN';
+    counts[name] += 1;
+  }
+  return counts;
+}
+
+function check(actual: number, frozen: number, label: string) {
+  if (actual > frozen) {
+    throw new Error(`${RAISED} (${label}: ${actual} > ${frozen})`);
+  }
+  if (actual < frozen) {
+    throw new Error(`${lowered(actual)} (${label}: ${frozen} -> ${actual})`);
+  }
+}
+
+describe('tenant-binding-allowlist freeze (ratchet)', () => {
+  const counts = countByMarker();
+
+  it('has no entries with an unknown marker', () => {
+    expect(counts.UNKNOWN).toBe(0);
+  });
+
+  it('total does not move', () => {
+    check(Object.keys(TENANT_BINDING_ALLOWLIST).length, FROZEN_TOTAL, 'total');
+  });
+
+  it.each(Object.keys(FROZEN_BY_MARKER))('marker %s does not move', (name) => {
+    check(counts[name], FROZEN_BY_MARKER[name], name);
+  });
+
+  it('FROZEN_BY_MARKER sums to FROZEN_TOTAL', () => {
+    const sum = Object.values(FROZEN_BY_MARKER).reduce((a, b) => a + b, 0);
+    expect(sum).toBe(FROZEN_TOTAL);
+  });
+});

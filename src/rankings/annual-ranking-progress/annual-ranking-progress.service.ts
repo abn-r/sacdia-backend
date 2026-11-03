@@ -385,12 +385,10 @@ export class AnnualRankingProgressService {
     const hasGlobalAccess = profile.authorization.grants.global_roles.some(
       (grant) =>
         ['super-admin', 'admin'].includes(grant.role_name) ||
-        grant.permissions.includes('rankings:read_global') ||
         grant.permissions.includes('section_rankings:read_global'),
     );
     if (
       hasGlobalAccess ||
-      permissions.includes('rankings:read_global') ||
       permissions.includes('section_rankings:read_global')
     ) {
       return;
@@ -401,8 +399,7 @@ export class AnnualRankingProgressService {
     );
     if (
       globalLocalFieldId === scope.localFieldId &&
-      (permissions.includes('rankings:read_lf') ||
-        permissions.includes('section_rankings:read_lf'))
+      permissions.includes('section_rankings:read_lf')
     ) {
       return;
     }

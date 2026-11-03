@@ -9,7 +9,6 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { BetterAuthService } from '../src/better-auth/better-auth.service';
 import { ClubRoleEligibilityService } from '../src/club-role-eligibility/club-role-eligibility.service';
-import { AuthorizationContextVersionService } from '../src/common/authorization/authorization-context-version.service';
 import { AuthorizationContextService } from '../src/common/services/authorization-context.service';
 import { UserAwareThrottlerGuard } from '../src/config/user-aware-throttler.guard';
 import { NotificationsService } from '../src/notifications/notifications.service';
@@ -565,8 +564,6 @@ describe('Coordinator consent queue E2E (GET /coordination/me/consent-pending)',
       })
       .overrideProvider(ClubRoleEligibilityService)
       .useValue({ assertAssignment: jest.fn().mockResolvedValue({}) })
-      .overrideProvider(AuthorizationContextVersionService)
-      .useValue({ bump: jest.fn().mockResolvedValue(1n) })
       .overrideProvider(PrismaService)
       .useValue(prismaDouble)
       .compile();

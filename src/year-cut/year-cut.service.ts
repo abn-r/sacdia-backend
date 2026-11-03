@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { I18nService } from 'nestjs-i18n';
 import { PrismaService } from '../prisma/prisma.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AnnualMembershipPolicyService } from '../annual-membership/annual-membership-policy.service';
 import { AnnualMembershipService } from '../annual-membership/annual-membership.service';
@@ -109,7 +108,6 @@ export class YearCutService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ecclesiasticalYear: EcclesiasticalYearService,
-    private readonly authorizationContextVersion: AuthorizationContextVersionService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly annualMembershipPolicy: AnnualMembershipPolicyService,
     private readonly nextClassResolver: NextClassResolver,
@@ -423,13 +421,6 @@ export class YearCutService {
           expired,
           jumpedUserIds,
         );
-
-        if (affectedUserIds.size > 0) {
-          await this.authorizationContextVersion.bumpMany(
-            tx,
-            Array.from(affectedUserIds),
-          );
-        }
 
         await tx.club_year_transitions.update({
           where: {

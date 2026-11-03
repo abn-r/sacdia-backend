@@ -375,10 +375,11 @@ export class AnnualRankingsService {
     const hasGlobalAccess = profile.authorization.grants.global_roles.some(
       (grant) =>
         ['super-admin', 'admin'].includes(grant.role_name) ||
-        grant.permissions.includes('rankings:read_global'),
+        grant.permissions.includes('section_rankings:read_global'),
     );
 
-    if (hasGlobalAccess || permissions.includes('rankings:read_global')) return;
+    if (hasGlobalAccess || permissions.includes('section_rankings:read_global'))
+      return;
 
     const activeAssignmentId =
       profile.authorization.active_assignment.assignment_id;

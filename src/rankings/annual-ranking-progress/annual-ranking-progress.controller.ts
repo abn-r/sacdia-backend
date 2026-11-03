@@ -35,8 +35,6 @@ export class AnnualRankingProgressController {
   @RequirePermissions({
     permissions: [
       'rankings:read',
-      'rankings:read_lf',
-      'rankings:read_global',
       'section_rankings:read_club',
       'section_rankings:read_lf',
       'section_rankings:read_global',

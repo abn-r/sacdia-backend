@@ -7,7 +7,6 @@ import { RequestsService } from './requests.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
   AppConflictException,
@@ -138,10 +137,6 @@ describe('RequestsService', () => {
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
   };
 
-  const authorizationContextVersion = {
-    bump: jest.fn().mockResolvedValue(1n),
-  };
-
   const roleEligibility = {
     assertAssignment: jest.fn(),
   };
@@ -214,7 +209,6 @@ describe('RequestsService', () => {
       prisma as unknown as PrismaService,
       notifications as unknown as NotificationsService,
       authorizationContext as unknown as AuthorizationContextService,
-      authorizationContextVersion as unknown as AuthorizationContextVersionService,
       roleEligibility as unknown as ClubRoleEligibilityService,
       actorSectionScope as unknown as ActorSectionScopeService,
     );
@@ -241,11 +235,6 @@ describe('RequestsService', () => {
         },
         select: { user_id: true },
       });
-      expect(authorizationContextVersion.bump).toHaveBeenCalledTimes(1);
-      expect(authorizationContextVersion.bump).toHaveBeenCalledWith(
-        transactionMock,
-        'user-1',
-      );
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith('user-1');
@@ -301,7 +290,6 @@ describe('RequestsService', () => {
       expect(
         transactionMock.club_transfer_requests.update,
       ).not.toHaveBeenCalled();
-      expect(authorizationContextVersion.bump).not.toHaveBeenCalled();
       expect(notifications.notifySafe).not.toHaveBeenCalled();
     });
 
@@ -312,55 +300,30 @@ describe('RequestsService', () => {
 
       await service.reviewTransfer('transfer-1', 'reviewer-1', 'approved');
 
-      expect(authorizationContextVersion.bump).toHaveBeenCalledTimes(1);
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledTimes(1);
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith('user-1');
-      expect(
-        Math.max(...authorizationContextVersion.bump.mock.invocationCallOrder),
-      ).toBeLessThan(
-        Math.min(
-          ...authorizationContext.invalidateUserAuthorizationCache.mock
-            .invocationCallOrder,
-        ),
-      );
     });
 
-    it('does not bump or clean up when transfer writes return no assignments', async () => {
+    it('does not clean up when transfer writes return no assignments', async () => {
       transactionMock.club_role_assignments.updateManyAndReturn.mockResolvedValue(
         [],
       );
 
       await service.reviewTransfer('transfer-1', 'reviewer-1', 'approved');
 
-      expect(authorizationContextVersion.bump).not.toHaveBeenCalled();
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();
     });
 
-    it('aborts transfer cleanup when the durable bump fails', async () => {
-      authorizationContextVersion.bump.mockRejectedValueOnce(
-        new Error('version write failed'),
-      );
-
-      await expect(
-        service.reviewTransfer('transfer-1', 'reviewer-1', 'approved'),
-      ).rejects.toThrow('version write failed');
-
-      expect(
-        authorizationContext.invalidateUserAuthorizationCache,
-      ).not.toHaveBeenCalled();
-    });
-
-    it('does not version authority for a rejected transfer', async () => {
+    it('does not touch authority for a rejected transfer', async () => {
       await service.reviewTransfer('transfer-1', 'reviewer-1', 'rejected');
 
       expect(prisma.$transaction).not.toHaveBeenCalled();
-      expect(authorizationContextVersion.bump).not.toHaveBeenCalled();
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();
@@ -619,10 +582,6 @@ describe('RequestsService', () => {
         'approved',
       );
 
-      expect(authorizationContextVersion.bump).toHaveBeenCalledWith(
-        transactionMock,
-        'user-2',
-      );
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith('user-2');
@@ -704,7 +663,6 @@ describe('RequestsService', () => {
         expect(
           transactionMock.club_role_assignments.create,
         ).not.toHaveBeenCalled();
-        expect(authorizationContextVersion.bump).not.toHaveBeenCalled();
         expect(
           transactionMock.role_assignment_requests.update,
         ).not.toHaveBeenCalled();
@@ -747,7 +705,6 @@ describe('RequestsService', () => {
       );
 
       expect(prisma.$transaction).not.toHaveBeenCalled();
-      expect(authorizationContextVersion.bump).not.toHaveBeenCalled();
       expect(
         authorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();
