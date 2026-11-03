@@ -283,6 +283,7 @@ describe('FcmTokensService', () => {
         where: {
           user_id: 'user-cap',
           active: true,
+          kind: 'token',
           fcm_token_id: { notIn: ['tok-1', 'tok-2', 'tok-3'] },
         },
       });
@@ -309,6 +310,7 @@ describe('FcmTokensService', () => {
         where: {
           user_id: 'user-cap',
           active: true,
+          kind: 'token',
           fcm_token_id: { notIn: top5Ids },
         },
       });
@@ -339,6 +341,7 @@ describe('FcmTokensService', () => {
         where: {
           user_id: 'user-cap',
           active: true,
+          kind: 'token',
           fcm_token_id: { notIn: existingIds },
         },
       });
@@ -347,6 +350,114 @@ describe('FcmTokensService', () => {
       const deleteCall =
         txMock.user_fcm_tokens.deleteMany.mock.results[0].value;
       await expect(deleteCall).resolves.toEqual({ count: 0 });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // registerToken — kind ('token' | 'fid')
+  // ---------------------------------------------------------------------------
+  describe('registerToken — kind', () => {
+    beforeEach(() => {
+      txMock.user_fcm_tokens.create.mockResolvedValue({
+        fcm_token_id: 'row-1',
+        user_id: 'user-k',
+      });
+      txMock.user_fcm_tokens.update.mockResolvedValue({
+        fcm_token_id: 'row-1',
+        user_id: 'user-k',
+      });
+      txMock.user_fcm_tokens.findMany.mockResolvedValue([
+        { fcm_token_id: 'row-1' },
+      ]);
+      txMock.user_fcm_tokens.deleteMany.mockResolvedValue({ count: 0 });
+    });
+
+    it('persists kind "fid" on create', async () => {
+      txMock.user_fcm_tokens.findFirst.mockResolvedValue(null);
+
+      await service.registerToken('user-k', { token: 'fid-abc', kind: 'fid' });
+
+      expect(txMock.user_fcm_tokens.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ token: 'fid-abc', kind: 'fid' }),
+        }),
+      );
+    });
+
+    it('defaults to kind "token" when the client omits it (old app versions)', async () => {
+      txMock.user_fcm_tokens.findFirst.mockResolvedValue(null);
+
+      await service.registerToken('user-k', { token: 'legacy' });
+
+      expect(txMock.user_fcm_tokens.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ kind: 'token' }),
+        }),
+      );
+    });
+
+    it('updates kind when the token value already exists (upsert by value)', async () => {
+      txMock.user_fcm_tokens.findFirst.mockResolvedValue({
+        fcm_token_id: 'row-1',
+        user_id: 'user-k',
+        kind: 'token',
+      });
+
+      await service.registerToken('user-k', { token: 'same', kind: 'fid' });
+
+      expect(txMock.user_fcm_tokens.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ kind: 'fid', active: true }),
+        }),
+      );
+    });
+
+    it('counts the cap per kind: a fid registration only ranks and prunes fid rows', async () => {
+      txMock.user_fcm_tokens.findFirst.mockResolvedValue(null);
+      const top5 = ['f1', 'f2', 'f3', 'f4', 'f5'];
+      txMock.user_fcm_tokens.findMany.mockResolvedValue(
+        top5.map((id) => ({ fcm_token_id: id })),
+      );
+      txMock.user_fcm_tokens.deleteMany.mockResolvedValue({ count: 1 });
+
+      await service.registerToken('user-k', { token: 'fid-new', kind: 'fid' });
+
+      expect(txMock.user_fcm_tokens.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { user_id: 'user-k', active: true, kind: 'fid' },
+          take: 5,
+        }),
+      );
+      expect(txMock.user_fcm_tokens.deleteMany).toHaveBeenCalledWith({
+        where: {
+          user_id: 'user-k',
+          active: true,
+          kind: 'fid',
+          fcm_token_id: { notIn: top5 },
+        },
+      });
+    });
+
+    it('a linked device that rotates from a token row to a fid row deactivates the old row', async () => {
+      txMock.user_fcm_tokens.findFirst.mockResolvedValue(null);
+      txMock.linked_devices.findFirst.mockResolvedValue({
+        fcm_token_id: 'tok-old',
+      });
+
+      await service.registerToken(
+        'user-k',
+        { token: 'fid-new', kind: 'fid' },
+        { linkedDeviceId: 'dev-1' },
+      );
+
+      expect(txMock.user_fcm_tokens.updateMany).toHaveBeenCalledWith({
+        where: { fcm_token_id: 'tok-old', user_id: 'user-k' },
+        data: { active: false },
+      });
+      expect(txMock.linked_devices.update).toHaveBeenCalledWith({
+        where: { linked_device_id: 'dev-1' },
+        data: { fcm_token_id: 'row-1' },
+      });
     });
   });
 

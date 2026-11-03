@@ -454,6 +454,81 @@ describe('NotificationsService', () => {
       });
     });
 
+    it('sends tokens and fids in one payload and maps failures back per kind', async () => {
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { token: 'fid-a', kind: 'fid' },
+        { token: 'tok-a', kind: 'token' },
+        { token: 'fid-b', kind: 'fid' },
+        { token: 'tok-b', kind: 'token' },
+      ]);
+      // Response order: tok-a, tok-b, fid-a, fid-b
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 2,
+        failureCount: 2,
+        responses: [
+          { success: true },
+          {
+            success: false,
+            error: { code: 'messaging/registration-token-not-registered' },
+          },
+          {
+            success: false,
+            error: { code: 'messaging/installation-id-not-registered' },
+          },
+          { success: true },
+        ],
+      });
+      mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+        count: 2,
+      });
+
+      await service.sendToUser(dto, SENT_BY);
+
+      expect(mockSendEachForMulticast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tokens: ['tok-a', 'tok-b'],
+          fids: ['fid-a', 'fid-b'],
+        }),
+      );
+      expect(mockPrismaService.user_fcm_tokens.updateMany).toHaveBeenCalledWith(
+        {
+          where: { token: { in: ['tok-b', 'fid-a'] } },
+          data: { active: false },
+        },
+      );
+    });
+
+    it('treats installation-id-not-registered as permanent for a FID-only user', async () => {
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { token: 'fid-dead', kind: 'fid' },
+      ]);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 0,
+        failureCount: 1,
+        responses: [
+          {
+            success: false,
+            error: { code: 'messaging/installation-id-not-registered' },
+          },
+        ],
+      });
+      mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+        count: 1,
+      });
+
+      await service.sendToUser(dto, SENT_BY);
+
+      const arg = mockSendEachForMulticast.mock.calls[0][0];
+      expect(arg.fids).toEqual(['fid-dead']);
+      expect(arg).not.toHaveProperty('tokens');
+      expect(mockPrismaService.user_fcm_tokens.updateMany).toHaveBeenCalledWith(
+        {
+          where: { token: { in: ['fid-dead'] } },
+          data: { active: false },
+        },
+      );
+    });
+
     it('should not call updateMany when all tokens succeed', async () => {
       mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
         { token: 'token-a' },
@@ -950,7 +1025,7 @@ describe('NotificationsService', () => {
       });
       expect(mockPrismaService.user_fcm_tokens.findMany).toHaveBeenCalledWith({
         where: { user_id: { in: ['user-1', 'user-2'] }, active: true },
-        select: { token: true },
+        select: { token: true, kind: true },
       });
       expect(result).toMatchObject({
         success: true,

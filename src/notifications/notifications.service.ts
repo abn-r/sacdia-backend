@@ -46,6 +46,12 @@ import {
   BROADCAST_CHUNK_JOB,
 } from './notifications.processor';
 import { isUuid, chunkArray } from '../common/utils/notification.utils';
+import {
+  classifySendResponse,
+  FCM_MAX_BATCH_SIZE,
+  sendToTargets,
+  type FcmTargetRow,
+} from './fcm-targets';
 
 export interface SendNotificationDto {
   userId: string;
@@ -88,17 +94,6 @@ const DEFAULT_JOB_OPTIONS = {
   removeOnComplete: { count: 100 },
   removeOnFail: { count: 50 },
 };
-
-/**
- * FCM error codes that indicate a token is permanently invalid and should be
- * deactivated. Transient errors (rate limits, server errors, etc.) are NOT
- * included — those tokens should be retried, not discarded.
- */
-const PERMANENT_FCM_ERROR_CODES = new Set([
-  'messaging/invalid-registration-token',
-  'messaging/registration-token-not-registered',
-  'messaging/invalid-argument',
-]);
 
 const BROADCAST_USERS_PAGE_SIZE = 500;
 const BROADCAST_CHUNK_SIZE = 500;
@@ -213,17 +208,12 @@ export class NotificationsService {
       );
       const tokens = await this.prisma.user_fcm_tokens.findMany({
         where: { user_id: dto.userId, active: true },
-        select: { token: true },
+        select: { token: true, kind: true },
       });
       if (tokens.length === 0) {
         return;
       }
-      await this.sendMulticastDirect(
-        tokens.map((token) => token.token),
-        dto.title,
-        dto.body,
-        dto.data,
-      );
+      await this.sendMulticastDirect(tokens, dto.title, dto.body, dto.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
@@ -1046,13 +1036,12 @@ export class NotificationsService {
     }
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: dto.userId, active: true },
-      select: { token: true },
+      select: { token: true, kind: true },
     });
 
     if (tokens.length > 0 && this.isFcmConfigured()) {
-      const tokenStrings = tokens.map((t) => t.token);
       ({ successCount, failureCount } = await this.sendMulticastDirect(
-        tokenStrings,
+        tokens,
         dto.title,
         dto.body,
         dto.data,
@@ -1158,12 +1147,11 @@ export class NotificationsService {
     }
     const tokenRows = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: { in: allowedUserIds }, active: true },
-      select: { token: true },
+      select: { token: true, kind: true },
     });
 
     if (tokenRows.length > 0 && this.isFcmConfigured()) {
-      const tokenStrings = tokenRows.map((t) => t.token);
-      const batches = chunkArray(tokenStrings, 500);
+      const batches = chunkArray(tokenRows, FCM_MAX_BATCH_SIZE);
 
       for (const batch of batches) {
         const result = await this.sendMulticastDirect(
@@ -1278,12 +1266,11 @@ export class NotificationsService {
     }
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: { in: userIds }, active: true },
-      select: { token: true },
+      select: { token: true, kind: true },
     });
 
     if (tokens.length > 0 && this.isFcmConfigured()) {
-      const tokenStrings = tokens.map((t) => t.token);
-      const batches = chunkArray(tokenStrings, 500);
+      const batches = chunkArray(tokens, FCM_MAX_BATCH_SIZE);
 
       for (const batch of batches) {
         const result = await this.sendMulticastDirect(
@@ -1404,7 +1391,7 @@ export class NotificationsService {
     }
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: { in: userIds }, active: true },
-      select: { token: true },
+      select: { token: true, kind: true },
     });
 
     if (tokens.length === 0 || !this.isFcmConfigured()) {
@@ -1414,8 +1401,7 @@ export class NotificationsService {
       return;
     }
 
-    const tokenStrings = tokens.map((t) => t.token);
-    const batches = chunkArray(tokenStrings, 500);
+    const batches = chunkArray(tokens, FCM_MAX_BATCH_SIZE);
 
     const { successCount, failureCount } =
       await this.sendMulticastDirectBatches(
@@ -1528,7 +1514,7 @@ export class NotificationsService {
     }
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: { in: userIds }, active: true },
-      select: { token: true },
+      select: { token: true, kind: true },
     });
 
     if (tokens.length === 0 || !this.isFcmConfigured()) {
@@ -1538,8 +1524,7 @@ export class NotificationsService {
       return;
     }
 
-    const tokenStrings = tokens.map((t) => t.token);
-    const batches = chunkArray(tokenStrings, 500);
+    const batches = chunkArray(tokens, FCM_MAX_BATCH_SIZE);
 
     const { successCount, failureCount } =
       await this.sendMulticastDirectBatches(
@@ -1562,7 +1547,7 @@ export class NotificationsService {
   // ---------------------------------------------------------------------------
 
   private async sendMulticastDirectBatches(
-    batches: string[][],
+    batches: FcmTargetRow[][],
     title: string,
     body: string,
     data: Record<string, string> | undefined,
@@ -1617,52 +1602,44 @@ export class NotificationsService {
    * async path.
    */
   private async sendMulticastDirect(
-    tokens: string[],
+    targets: FcmTargetRow[],
     title: string,
     body: string,
     data?: Record<string, string>,
   ): Promise<{ successCount: number; failureCount: number }> {
-    const response = await firebaseAdmin.getMessaging().sendEachForMulticast({
-      tokens,
+    const { response, ordered } = await sendToTargets(targets, {
       notification: { title, body },
       data,
     });
 
-    if (response.failureCount > 0) {
-      const permanentlyFailedTokens: string[] = [];
+    if (response.failureCount > 0 || response.successCount > 0) {
+      const { permanentlyFailed, transient, succeeded } = classifySendResponse(
+        ordered,
+        response,
+      );
 
-      response.responses.forEach((resp, idx) => {
-        if (resp.success) return;
-        const code = resp.error?.code;
-        if (PERMANENT_FCM_ERROR_CODES.has(code ?? '')) {
-          permanentlyFailedTokens.push(tokens[idx]);
-        } else {
-          this.logger.warn(
-            `Transient FCM error for token ${tokens[idx]}: ${code ?? 'unknown'} — not deactivating`,
-          );
-        }
-      });
+      for (const { row, code } of transient) {
+        this.logger.warn(
+          `Transient FCM error for ${row.kind === 'fid' ? 'fid' : 'token'} ${row.token}: ${code} — not deactivating`,
+        );
+      }
 
-      if (permanentlyFailedTokens.length > 0) {
+      if (permanentlyFailed.length > 0) {
         await this.prisma.user_fcm_tokens.updateMany({
-          where: { token: { in: permanentlyFailedTokens } },
+          where: { token: { in: permanentlyFailed.map((row) => row.token) } },
           data: { active: false },
         });
       }
-    }
 
-    if (response.successCount > 0) {
-      const succeededTokens = response.responses
-        .map((resp, idx) => (resp.success ? tokens[idx] : null))
-        .filter((token): token is string => token !== null);
-
-      this.fcmTokensService
-        .updateLastUsed(succeededTokens)
-        .catch((err: Error) => {
-          this.logger.warn(
-            `Failed to update last_used for delivered tokens: ${err.message}`,
-          );
-        });
+      if (succeeded.length > 0) {
+        this.fcmTokensService
+          .updateLastUsed(succeeded.map((row) => row.token))
+          .catch((err: Error) => {
+            this.logger.warn(
+              `Failed to update last_used for delivered tokens: ${err.message}`,
+            );
+          });
+      }
     }
 
     return {
