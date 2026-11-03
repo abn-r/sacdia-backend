@@ -1,9 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import {
-  SCHEDULE_CRON_OPTIONS,
-  SCHEDULER_NAME,
-} from '@nestjs/schedule/dist/schedule.constants';
+import { SCHEDULE_CRON_OPTIONS, SCHEDULER_NAME } from './schedule-metadata';
 import {
   CRON_JOB_DEFINITIONS,
   describeCronJob,

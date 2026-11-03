@@ -1,5 +1,5 @@
 import type { Type } from '@nestjs/common';
-import { SCHEDULE_CRON_OPTIONS } from '@nestjs/schedule/dist/schedule.constants';
+import { SCHEDULE_CRON_OPTIONS } from './schedule-metadata';
 import { ActivitiesReminderService } from '../../activities/activities-reminder.service';
 import { RankingsService } from '../../annual-folders/rankings.service';
 import { AnnualReportsCronService } from '../../annual-reports/annual-reports-cron.service';
