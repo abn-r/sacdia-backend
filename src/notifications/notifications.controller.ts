@@ -9,12 +9,12 @@ import {
   Put,
   Request,
   UseGuards,
+  ParseUUIDPipe,
   Query,
   ParseIntPipe,
   DefaultValuePipe,
   ParseEnumPipe,
 } from '@nestjs/common';
-import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { AppBadRequestException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
@@ -308,7 +308,7 @@ export class NotificationsController {
     description: 'Delivery not found or not owned by caller',
   })
   async markRead(
-    @Param('deliveryId', ParseUuidParamPipe) deliveryId: string,
+    @Param('deliveryId', ParseUUIDPipe) deliveryId: string,
     @Request() req,
   ) {
     return this.notificationsService.markDeliveryRead(deliveryId, req.user.sub);
@@ -394,7 +394,7 @@ export class FcmTokensController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({ status: 404, description: 'Token record not found' })
   async unregisterToken(
-    @Param('id', ParseUuidParamPipe) id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Request() req,
   ) {
     return this.fcmTokensService.unregisterTokenById(id, req.user.sub);
@@ -421,7 +421,7 @@ export class FcmTokensController {
     status: 403,
     description: 'Forbidden — must be owner or admin',
   })
-  async getUserTokens(@Param('userId', ParseUuidParamPipe) userId: string) {
+  async getUserTokens(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.fcmTokensService.getUserTokens(userId);
   }
 }

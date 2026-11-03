@@ -6,12 +6,12 @@ import {
   Delete,
   Body,
   Param,
+  ParseUUIDPipe,
   UseGuards,
   HttpCode,
   HttpStatus,
   Request,
 } from '@nestjs/common';
-import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -238,7 +238,7 @@ export class UserNotificationPreferencesController {
   })
   @ApiResponse({ status: 404, description: 'Token not found' })
   async unregisterFcmToken(
-    @Param('tokenId', ParseUuidParamPipe) tokenId: string,
+    @Param('tokenId', ParseUUIDPipe) tokenId: string,
     @Request() req,
   ): Promise<void> {
     await this.fcmTokensService.unregisterTokenById(tokenId, req.user.sub);
