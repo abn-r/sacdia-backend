@@ -7,6 +7,7 @@ import {
 import { MAX_GUARDIANS_PER_DEPENDENT } from '../guardianships/guardianships.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { FCM_MAX_BATCH_SIZE, type FcmTargetRow } from './fcm-targets';
 
 /** Sources emitted TO guardians directly must never be re-fanned-out. */
 const FAMILY_SOURCE_PREFIX = 'family:';
@@ -16,8 +17,6 @@ const FAMILY_SOURCE_PREFIX = 'family:';
  * cheaper than a huge IN list (dependents are a tiny fraction of the users).
  */
 const LOAD_ALL_DEPENDENTS_THRESHOLD = 2000;
-
-const FCM_BATCH_SIZE = 500;
 
 export interface DependentRoute {
   dependentUserId: string;
@@ -29,7 +28,8 @@ export interface DependentRoute {
 export interface GuardianPush {
   dependentUserId: string;
   guardianUserIds: string[];
-  tokens: string[];
+  /** Active FCM targets (tokens and FIDs) of the notified guardians. */
+  targets: FcmTargetRow[];
   title: string;
   body: string;
   data: Record<string, string>;
@@ -43,7 +43,7 @@ export interface PushPayload {
 }
 
 export type MulticastSender = (
-  tokens: string[],
+  targets: FcmTargetRow[],
   title: string,
   body: string,
   data?: Record<string, string>,
@@ -138,27 +138,32 @@ export class DependentPushRouterService {
 
     const tokenRows = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: { in: [...allowed] }, active: true },
-      select: { user_id: true, token: true },
+      select: { user_id: true, token: true, kind: true },
     });
-    const tokensByGuardian = new Map<string, string[]>();
+    const targetsByGuardian = new Map<string, FcmTargetRow[]>();
     for (const row of tokenRows) {
-      tokensByGuardian.set(row.user_id, [
-        ...(tokensByGuardian.get(row.user_id) ?? []),
-        row.token,
+      targetsByGuardian.set(row.user_id, [
+        ...(targetsByGuardian.get(row.user_id) ?? []),
+        { token: row.token, kind: row.kind },
       ]);
     }
 
     const pushes: GuardianPush[] = [];
     for (const route of routes) {
       const guardians = route.guardianUserIds.filter((id) => allowed.has(id));
-      const tokens = [
-        ...new Set(guardians.flatMap((id) => tokensByGuardian.get(id) ?? [])),
+      // A device shared by several guardians would otherwise be pushed twice.
+      const targets = [
+        ...new Map(
+          guardians
+            .flatMap((id) => targetsByGuardian.get(id) ?? [])
+            .map((target) => [target.token, target] as const),
+        ).values(),
       ];
-      if (tokens.length === 0) continue;
+      if (targets.length === 0) continue;
       pushes.push({
         dependentUserId: route.dependentUserId,
         guardianUserIds: guardians,
-        tokens,
+        targets,
         title: `${route.displayName} · ${payload.title}`,
         body: payload.body,
         data: {
@@ -186,7 +191,7 @@ export class DependentPushRouterService {
     try {
       const pushes = await this.buildPushes(userIds, payload);
       for (const push of pushes) {
-        for (const batch of chunkArray(push.tokens, FCM_BATCH_SIZE)) {
+        for (const batch of chunkArray(push.targets, FCM_MAX_BATCH_SIZE)) {
           try {
             const result = await send(batch, push.title, push.body, push.data);
             successCount += result.successCount;

@@ -7,7 +7,13 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { CronRunLock } from '../common/services/cron-run-lock.service';
+import { DEFAULT_FCM_TOKEN_KIND, type FcmTokenKind } from './fcm-targets';
 
+/**
+ * Cap of active rows per user AND per kind: a device mid-transition holds one
+ * registration-token row plus one FID row, and the FID must not push another
+ * device's token out (or the other way around).
+ */
 const MAX_ACTIVE_TOKENS_PER_USER = 5;
 
 /**
@@ -19,6 +25,8 @@ const STALE_CLEANUP_RUN_LOCK_TTL_MS = 10 * 60 * 1000;
 
 export interface RegisterFcmTokenDto {
   token: string;
+  /** What `token` holds. Defaults to a registration token (old app versions). */
+  kind?: FcmTokenKind;
   device_type?: string;
   device_name?: string;
 }
@@ -43,6 +51,7 @@ export class FcmTokensService {
   private readonly safeSelect = {
     fcm_token_id: true,
     user_id: true,
+    kind: true,
     device_type: true,
     device_name: true,
     last_used: true,
@@ -52,15 +61,17 @@ export class FcmTokensService {
 
   /**
    * Registrar o actualizar token FCM.
-   * Caps active tokens per user at MAX_ACTIVE_TOKENS_PER_USER (5).
-   * If the cap is exceeded after registration, the oldest tokens (by last_used ASC)
-   * are deleted inside the same transaction.
+   * Caps active rows per user and per kind at MAX_ACTIVE_TOKENS_PER_USER (5).
+   * If the cap is exceeded after registration, the oldest rows of the
+   * registered kind (by last_used ASC) are deleted inside the same transaction.
    */
   async registerToken(
     userId: string,
     dto: RegisterFcmTokenDto,
     context?: RegisterFcmTokenContext,
   ) {
+    const kind: FcmTokenKind = dto.kind ?? DEFAULT_FCM_TOKEN_KIND;
+
     return this.prisma.$transaction(async (tx) => {
       // Verificar si el token ya existe
       const existing = await tx.user_fcm_tokens.findFirst({
@@ -76,6 +87,7 @@ export class FcmTokensService {
           data: {
             user_id: userId,
             active: true,
+            kind,
             last_used: new Date(),
             device_type: dto.device_type,
             device_name: dto.device_name,
@@ -88,6 +100,7 @@ export class FcmTokensService {
           data: {
             user_id: userId,
             token: dto.token,
+            kind,
             device_type: dto.device_type,
             device_name: dto.device_name,
             active: true,
@@ -125,10 +138,11 @@ export class FcmTokensService {
         }
       }
 
-      // Cap: keep only the MAX_ACTIVE_TOKENS_PER_USER most recent active tokens.
-      // Fetch top-N by last_used DESC, then delete any that fall outside that set.
+      // Cap: keep only the MAX_ACTIVE_TOKENS_PER_USER most recent active rows
+      // of this kind. Fetch top-N by last_used DESC, then delete any of the
+      // same kind that fall outside that set.
       const topTokens = await tx.user_fcm_tokens.findMany({
-        where: { user_id: userId, active: true },
+        where: { user_id: userId, active: true, kind },
         orderBy: { last_used: 'desc' },
         take: MAX_ACTIVE_TOKENS_PER_USER,
         select: { fcm_token_id: true },
@@ -140,13 +154,14 @@ export class FcmTokensService {
         where: {
           user_id: userId,
           active: true,
+          kind,
           fcm_token_id: { notIn: topIds },
         },
       });
 
       if (pruned.count > 0) {
         this.logger.debug(
-          `FCM token cap enforced — pruned ${pruned.count} oldest active token(s) for user ${userId} (limit: ${MAX_ACTIVE_TOKENS_PER_USER})`,
+          `FCM token cap enforced — pruned ${pruned.count} oldest active ${kind} row(s) for user ${userId} (limit: ${MAX_ACTIVE_TOKENS_PER_USER})`,
         );
       }
 

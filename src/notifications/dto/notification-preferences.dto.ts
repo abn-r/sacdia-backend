@@ -1,5 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, IsNotEmpty } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsNotEmpty,
+} from 'class-validator';
+import {
+  DEFAULT_FCM_TOKEN_KIND,
+  FCM_TOKEN_KINDS,
+  type FcmTokenKind,
+} from '../fcm-targets';
 
 /**
  * Response shape for the mobile-facing notification preferences endpoint.
@@ -111,6 +122,17 @@ export class RegisterFcmTokenRequestDto {
   @IsString()
   @IsNotEmpty()
   token!: string;
+
+  @ApiPropertyOptional({
+    description:
+      "What `token` holds: an FCM registration token ('token', the default for old app versions) or a Firebase Installation ID ('fid')",
+    enum: FCM_TOKEN_KINDS,
+    default: DEFAULT_FCM_TOKEN_KIND,
+    example: 'fid',
+  })
+  @IsIn(FCM_TOKEN_KINDS)
+  @IsOptional()
+  kind?: FcmTokenKind;
 
   @ApiPropertyOptional({
     description: 'Device type (ios, android)',

@@ -120,11 +120,32 @@ describe('DependentPushRouterService.buildPushes', () => {
       {
         dependentUserId: D1,
         guardianUserIds: [G1],
-        tokens: ['t-g1'],
+        targets: [{ token: 't-g1', kind: undefined }],
         title: 'Ana · Clase aprobada',
         body: 'Buen trabajo',
         data: { type: 'class_approved', dependent_user_id: D1 },
       },
+    ]);
+  });
+
+  it('keeps the kind of each guardian target so FIDs are sent as fids', async () => {
+    const { router, prisma } = setup();
+    prisma.users.findMany.mockResolvedValue([dependentRow(D1, 'Ana', [G1])]);
+    prisma.user_fcm_tokens.findMany.mockResolvedValue([
+      { user_id: G1, token: 'fid-g1', kind: 'fid' },
+      { user_id: G1, token: 't-g1', kind: 'token' },
+    ]);
+
+    const pushes = await router.buildPushes([D1], { title: 'T', body: 'B' });
+
+    expect(prisma.user_fcm_tokens.findMany.mock.calls[0][0].select).toEqual({
+      user_id: true,
+      token: true,
+      kind: true,
+    });
+    expect(pushes[0].targets).toEqual([
+      { token: 'fid-g1', kind: 'fid' },
+      { token: 't-g1', kind: 'token' },
     ]);
   });
 
@@ -154,7 +175,7 @@ describe('DependentPushRouterService.buildPushes', () => {
     });
     expect(pushes).toHaveLength(1);
     expect(pushes[0].guardianUserIds).toEqual([G1]);
-    expect(pushes[0].tokens).toEqual(['t-g1']);
+    expect(pushes[0].targets.map((t) => t.token)).toEqual(['t-g1']);
   });
 
   it('sends nothing when every guardian opted out', async () => {
@@ -194,10 +215,12 @@ describe('DependentPushRouterService.buildPushes', () => {
 
     expect(prisma.users.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.user_fcm_tokens.findMany).toHaveBeenCalledTimes(1);
-    expect(pushes.map((p) => [p.title, p.tokens])).toEqual([
-      ['Ana · T', ['t-g1']],
-      ['Luis · T', ['t-g1', 't-g2']],
-    ]);
+    expect(pushes.map((p) => [p.title, p.targets.map((t) => t.token)])).toEqual(
+      [
+        ['Ana · T', ['t-g1']],
+        ['Luis · T', ['t-g1', 't-g2']],
+      ],
+    );
   });
 
   it.each(['family:evidence_uploaded', 'family:consent_verified'])(
@@ -383,7 +406,10 @@ describe('DependentPushRouterService for a device-paired child (3b, FP3-48)', ()
     });
     expect(pushes).toHaveLength(1);
     expect(pushes[0].title).toBe('Ana · Campamento');
-    expect(pushes[0].tokens).toEqual(['guardian-1-phone', 'guardian-2-phone']);
+    expect(pushes[0].targets.map((t) => t.token)).toEqual([
+      'guardian-1-phone',
+      'guardian-2-phone',
+    ]);
   });
 
   it('a guardian whose preference for the source is off gets no copy, the other still does', async () => {
@@ -403,7 +429,7 @@ describe('DependentPushRouterService for a device-paired child (3b, FP3-48)', ()
     });
 
     expect(pushes[0].guardianUserIds).toEqual([G2]);
-    expect(pushes[0].tokens).toEqual(['guardian-2-phone']);
+    expect(pushes[0].targets.map((t) => t.token)).toEqual(['guardian-2-phone']);
   });
 
   it('a guardian token shared between two guardians is sent once', async () => {
@@ -418,7 +444,7 @@ describe('DependentPushRouterService for a device-paired child (3b, FP3-48)', ()
 
     const pushes = await router.buildPushes([D1], { title: 'T', body: 'B' });
 
-    expect(pushes[0].tokens).toEqual(['family-tablet']);
+    expect(pushes[0].targets.map((t) => t.token)).toEqual(['family-tablet']);
   });
 
   it('family:* sources (device paired / revoked / evidence uploaded) are never fanned out again', async () => {

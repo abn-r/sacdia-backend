@@ -33,7 +33,9 @@ import {
   IsOptional,
   IsObject,
   IsBoolean,
+  IsIn,
 } from 'class-validator';
+import { FCM_TOKEN_KINDS, type FcmTokenKind } from './fcm-targets';
 import {
   AuthorizationResource,
   RequirePermissions,
@@ -91,10 +93,15 @@ class BroadcastNotificationDto {
   data?: Record<string, string>;
 }
 
-class RegisterFcmTokenDto {
+export class RegisterFcmTokenDto {
   @IsString()
   @IsNotEmpty()
   declare token: string;
+
+  /** What `token` holds. Omitted by old app versions: a registration token. */
+  @IsIn(FCM_TOKEN_KINDS)
+  @IsOptional()
+  kind?: FcmTokenKind;
 
   @IsString()
   @IsOptional()
