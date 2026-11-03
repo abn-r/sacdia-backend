@@ -15,8 +15,8 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  ParseUUIDPipe,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import type { Request as ExpressRequest, Response } from 'express';
@@ -235,7 +235,7 @@ export class AdminUsersController {
   @ApiParam({ name: 'userId', type: String })
   async getUserById(
     @Request() req: ExpressRequest & { user: { sub: string } },
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ): Promise<{
     status: string;
     data: Awaited<ReturnType<AdminUsersService['getUserById']>>;
@@ -274,8 +274,8 @@ export class AdminUsersController {
   })
   async getGuardianshipConsentEvidence(
     @Request() req: ExpressRequest & { user: { sub: string } },
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('guardianshipId', ParseUUIDPipe) guardianshipId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
+    @Param('guardianshipId', ParseUuidParamPipe) guardianshipId: string,
   ): Promise<{
     status: string;
     data: Awaited<ReturnType<GuardianEvidenceService['getForAdmin']>>;
@@ -322,7 +322,7 @@ export class AdminUsersController {
   })
   async disableSupervisedLogin(
     @Request() req: ExpressRequest & { user: { sub: string } },
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: AdminFamilyAccessReasonDto,
   ): Promise<{
     status: string;
@@ -368,8 +368,8 @@ export class AdminUsersController {
   })
   async revokeLinkedDevice(
     @Request() req: ExpressRequest & { user: { sub: string } },
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
+    @Param('deviceId', ParseUuidParamPipe) deviceId: string,
     @Body() dto: AdminFamilyAccessReasonDto,
   ): Promise<{
     status: string;
@@ -395,7 +395,7 @@ export class AdminUsersController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateUserApproval(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: UpdateUserApprovalDto,
   ) {
     const data = await this.adminUsersService.updateUserApproval(userId, dto);
@@ -413,7 +413,7 @@ export class AdminUsersController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateUser(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: UpdateAdminUserDto,
   ) {
     const data = await this.adminUsersService.updateUser(userId, dto);

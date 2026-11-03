@@ -5,13 +5,13 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { JwtAuthGuard } from '../common/guards';
@@ -114,7 +114,7 @@ export class InvestitureAuthorizationRequestsController {
   @ApiBody({ type: AddInvestitureRequestPeopleDto })
   async addPeople(
     @Request() req: AuthenticatedRequest,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Param('requestId', ParseUuidParamPipe) requestId: string,
     @Body() dto: AddInvestitureRequestPeopleDto,
   ) {
     const profile = await this.authorizationContext.resolveUserAuthorization(
@@ -137,8 +137,8 @@ export class InvestitureAuthorizationRequestsController {
   })
   async remove(
     @Request() req: AuthenticatedRequest,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
-    @Param('personId', ParseUUIDPipe) personId: string,
+    @Param('requestId', ParseUuidParamPipe) requestId: string,
+    @Param('personId', ParseUuidParamPipe) personId: string,
   ) {
     const profile = await this.authorizationContext.resolveUserAuthorization(
       req.user.sub,
@@ -160,7 +160,7 @@ export class InvestitureAuthorizationRequestsController {
   @ApiBody({ type: ChangeInvestitureRequestDatesDto })
   async changeDates(
     @Request() req: AuthenticatedRequest,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Param('requestId', ParseUuidParamPipe) requestId: string,
     @Body() dto: ChangeInvestitureRequestDatesDto,
   ) {
     const profile = await this.authorizationContext.resolveUserAuthorization(
@@ -248,7 +248,7 @@ export class InvestitureAuthorizationRequestsController {
   })
   async readForAuthorizer(
     @Request() req: AuthenticatedRequest,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Param('requestId', ParseUuidParamPipe) requestId: string,
   ) {
     const profile = await this.authorizationContext.resolveUserAuthorization(
       req.user.sub,
@@ -269,7 +269,7 @@ export class InvestitureAuthorizationRequestsController {
   @ApiBody({ type: ResolveInvestitureRequestDto })
   async resolve(
     @Request() req: AuthenticatedRequest,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Param('requestId', ParseUuidParamPipe) requestId: string,
     @Body() dto: ResolveInvestitureRequestDto,
   ) {
     const profile = await this.authorizationContext.resolveUserAuthorization(

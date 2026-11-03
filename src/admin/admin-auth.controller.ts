@@ -8,9 +8,9 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  ParseUUIDPipe,
   Request,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import type { Request as ExpressRequest } from 'express';
 import {
   ApiBearerAuth,
@@ -87,7 +87,7 @@ export class AdminAuthController {
   @ApiResponse({ status: 404, description: 'User not found' })
   async listUserSessions(
     @Request() request: ExpressRequest & { user: { sub: string } },
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ): Promise<{ status: string; data: AdminSessionListResponseDto }> {
     const data = await this.adminAuthService.listUserSessions(
       this.getActorId(request),
@@ -116,7 +116,7 @@ export class AdminAuthController {
   @ApiResponse({ status: 404, description: 'User or session not found' })
   async revokeUserSession(
     @Request() request: ExpressRequest & { user: { sub: string } },
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('sessionId') sessionId: string,
   ): Promise<{ status: string; message: string }> {
     await this.adminAuthService.revokeUserSession(
@@ -158,7 +158,7 @@ export class AdminAuthController {
   @ApiResponse({ status: 404, description: 'User not found' })
   async revokeAllUserSessions(
     @Request() request: ExpressRequest & { user: { sub: string } },
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ): Promise<{ status: string; data: { revokedCount: number } }> {
     const revokedCount = await this.adminAuthService.revokeAllUserSessions(
       this.getActorId(request),
@@ -193,7 +193,7 @@ export class AdminAuthController {
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   async getUserMfaStatus(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ): Promise<{ status: string; data: AdminMfaStatusResponseDto }> {
     const data = await this.adminAuthService.getUserMfaStatus(userId);
     return { status: 'success', data };
@@ -214,7 +214,7 @@ export class AdminAuthController {
   @ApiResponse({ status: 400, description: 'MFA is not enabled for this user' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async resetUserMfa(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ): Promise<{ status: string; message: string }> {
     await this.adminAuthService.resetUserMfa(userId);
     return { status: 'success', message: `MFA disabled for user ${userId}` };
@@ -242,7 +242,7 @@ export class AdminAuthController {
     description: 'User not found or has no credential account',
   })
   async setUserPassword(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: AdminSetPasswordDto,
   ): Promise<{ status: string; message: string }> {
     await this.adminAuthService.setUserPassword(userId, dto.newPassword);

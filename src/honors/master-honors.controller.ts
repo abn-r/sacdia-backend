@@ -3,9 +3,9 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -47,7 +47,9 @@ export class UserMasterHonorsController {
     type: UserMasterHonorDto,
     isArray: true,
   })
-  async getUserMasterHonors(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getUserMasterHonors(
+    @Param('userId', ParseUuidParamPipe) userId: string,
+  ) {
     return this.masterHonorsService.getUserMasterHonors(userId);
   }
 
@@ -67,7 +69,7 @@ export class UserMasterHonorsController {
     isArray: true,
   })
   async getUserMasterHonorRoadmap(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ) {
     return this.masterHonorsService.getUserMasterHonorRoadmap(userId);
   }
@@ -92,7 +94,7 @@ export class UserMasterHonorsController {
     description: 'Maestría de usuario no encontrada',
   })
   async getUserMasterHonorDetail(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('masterHonorId', ParseIntPipe) masterHonorId: number,
   ) {
     return this.masterHonorsService.getUserMasterHonorDetail(

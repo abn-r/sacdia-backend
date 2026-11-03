@@ -5,7 +5,6 @@ import {
   Headers,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -14,6 +13,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import type { Response } from 'express';
@@ -216,7 +216,7 @@ export class FieldPaymentOrdersController {
   @ApiOperation({ summary: 'Detalle de una orden de pago' })
   @ApiParam({ name: 'orderId', type: String })
   async get(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {
@@ -231,7 +231,7 @@ export class FieldPaymentOrdersController {
   @ApiOperation({ summary: 'Descargar PDF imprimible de la orden' })
   @ApiParam({ name: 'orderId', type: String })
   async getDocument(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
     @Res() response: Response,
   ) {
@@ -255,7 +255,7 @@ export class FieldPaymentOrdersController {
   @ApiOperation({ summary: 'URL firmada del comprobante vigente' })
   @ApiParam({ name: 'orderId', type: String })
   async getProof(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {
@@ -283,7 +283,7 @@ export class FieldPaymentOrdersController {
     },
   })
   async uploadProof(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @UploadedFile(new ProofFileValidationPipe())
     file: Express.Multer.File,
     @Req() request: RequestWithProfile,
@@ -304,7 +304,7 @@ export class FieldPaymentOrdersController {
   @ApiOperation({ summary: 'Cancelar una orden emitida o rechazada' })
   @ApiParam({ name: 'orderId', type: String })
   async cancel(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {
@@ -321,7 +321,7 @@ export class FieldPaymentOrdersController {
   })
   @ApiParam({ name: 'orderId', type: String })
   async approve(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {
@@ -336,7 +336,7 @@ export class FieldPaymentOrdersController {
   @ApiOperation({ summary: 'Rechazar comprobante (permite re-subida)' })
   @ApiParam({ name: 'orderId', type: String })
   async reject(
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId', ParseUuidParamPipe) orderId: string,
     @Body() dto: RejectPaymentOrderDto,
     @Req() request: RequestWithProfile,
   ) {

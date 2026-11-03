@@ -3,13 +3,13 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -81,7 +81,7 @@ export class CatalogController {
   @ApiOperation({ summary: 'Obtener un producto de la biblioteca' })
   @ApiParam({ name: 'productId', format: 'uuid' })
   async getById(
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('productId', ParseUuidParamPipe) productId: string,
     @Req() request: RequestWithProfile,
   ) {
     return {
@@ -100,7 +100,7 @@ export class CatalogController {
   })
   @ApiParam({ name: 'productId', format: 'uuid' })
   async update(
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('productId', ParseUuidParamPipe) productId: string,
     @Body() dto: UpdateCamporeeOrderProductDto,
     @Req() request: RequestWithProfile,
   ) {
@@ -119,7 +119,7 @@ export class CatalogController {
   @ApiOperation({ summary: 'Agregar una opción de talla al producto' })
   @ApiParam({ name: 'productId', format: 'uuid' })
   async addOption(
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('productId', ParseUuidParamPipe) productId: string,
     @Body() dto: CreateProductOptionDto,
     @Req() request: RequestWithProfile,
   ) {
@@ -141,7 +141,7 @@ export class CatalogController {
   })
   @ApiParam({ name: 'optionId', format: 'uuid' })
   async updateOption(
-    @Param('optionId', ParseUUIDPipe) optionId: string,
+    @Param('optionId', ParseUuidParamPipe) optionId: string,
     @Body() dto: UpdateProductOptionDto,
     @Req() request: RequestWithProfile,
   ) {

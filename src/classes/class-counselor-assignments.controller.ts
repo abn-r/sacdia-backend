@@ -5,12 +5,12 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -115,7 +115,7 @@ export class ClassCounselorAssignmentsController {
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Asignación actualizada' })
   async updateAssignment(
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
     @Body() dto: UpdateClassCounselorAssignmentDto,
   ) {
     return this.assignmentsService.updateAssignment(assignmentId, dto);
@@ -131,7 +131,7 @@ export class ClassCounselorAssignmentsController {
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Asignación revocada' })
   async removeAssignment(
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
   ) {
     return this.assignmentsService.removeAssignment(assignmentId);
   }

@@ -12,8 +12,8 @@ import {
   UseInterceptors,
   UploadedFile,
   ParseIntPipe,
-  ParseUUIDPipe,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import {
@@ -60,7 +60,7 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'Usuario encontrado' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async findOne(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Req() req?: { user?: AuthPrincipal },
   ) {
     return this.usersService.findOne(userId, {
@@ -86,7 +86,7 @@ export class UsersController {
     },
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async getAllergies(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getAllergies(@Param('userId', ParseUuidParamPipe) userId: string) {
     return this.usersService.getAllergies(userId);
   }
 
@@ -108,7 +108,7 @@ export class UsersController {
     },
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async getDiseases(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getDiseases(@Param('userId', ParseUuidParamPipe) userId: string) {
     return this.usersService.getDiseases(userId);
   }
 
@@ -130,7 +130,7 @@ export class UsersController {
     },
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async getMedicines(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getMedicines(@Param('userId', ParseUuidParamPipe) userId: string) {
     return this.usersService.getMedicines(userId);
   }
 
@@ -147,7 +147,7 @@ export class UsersController {
       'USER_SELF_ACCOUNT_BELOW_MINIMUM_AGE: self-edit birthday below the country minimum age',
   })
   async update(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() updateUserDto: UpdateUserDto,
     @Req() req: { user?: AuthPrincipal },
   ) {
@@ -181,7 +181,7 @@ export class UsersController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateAllergies(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: UpdateUserAllergiesDto,
   ) {
     return this.usersService.updateAllergies(userId, dto);
@@ -214,7 +214,7 @@ export class UsersController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateDiseases(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: UpdateUserDiseasesDto,
   ) {
     return this.usersService.updateDiseases(userId, dto);
@@ -247,7 +247,7 @@ export class UsersController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateMedicines(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: UpdateUserMedicinesDto,
   ) {
     return this.usersService.updateMedicines(userId, dto);
@@ -267,7 +267,7 @@ export class UsersController {
     description: 'Alergia no encontrada en el usuario',
   })
   async removeAllergy(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('allergyId', ParseIntPipe) allergyId: number,
   ) {
     return this.usersService.removeAllergy(userId, allergyId);
@@ -287,7 +287,7 @@ export class UsersController {
     description: 'Enfermedad no encontrada en el usuario',
   })
   async removeDisease(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
   ) {
     return this.usersService.removeDisease(userId, diseaseId);
@@ -307,7 +307,7 @@ export class UsersController {
     description: 'Medicamento no encontrado en el usuario',
   })
   async removeMedicine(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('medicineId', ParseIntPipe) medicineId: number,
   ) {
     return this.usersService.removeMedicine(userId, medicineId);
@@ -334,7 +334,7 @@ export class UsersController {
   @ApiResponse({ status: 201, description: 'Foto subida exitosamente' })
   @ApiResponse({ status: 400, description: 'Formato o tamaño inválido' })
   async uploadProfilePicture(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @UploadedFile(
       new FileValidationPipe({
         allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES,
@@ -352,7 +352,9 @@ export class UsersController {
   @ApiOperation({ summary: 'Eliminar foto de perfil' })
   @ApiResponse({ status: 200, description: 'Foto eliminada' })
   @ApiResponse({ status: 404, description: 'Usuario sin foto de perfil' })
-  async deleteProfilePicture(@Param('userId', ParseUUIDPipe) userId: string) {
+  async deleteProfilePicture(
+    @Param('userId', ParseUuidParamPipe) userId: string,
+  ) {
     return this.usersService.deleteProfilePicture(userId);
   }
 
@@ -362,7 +364,7 @@ export class UsersController {
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Calcular edad del usuario' })
   @ApiResponse({ status: 200, description: 'Edad calculada' })
-  async getAge(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getAge(@Param('userId', ParseUuidParamPipe) userId: string) {
     const age = await this.usersService.calculateAge(userId);
     return {
       status: 'success',
@@ -384,7 +386,7 @@ export class UsersController {
     description: 'Si requiere (edad < mayoría de edad del país) o no',
   })
   async requiresLegalRepresentative(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ) {
     const age = await this.usersService.calculateAge(userId);
     const required =

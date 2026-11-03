@@ -1,10 +1,5 @@
-import {
-  Controller,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -49,7 +44,7 @@ export class GuardianSummaryController {
   })
   async getSummary(
     @CurrentUser() user: { sub: string },
-    @Param('dependentId', ParseUUIDPipe) dependentId: string,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
   ) {
     return {
       status: 'success',

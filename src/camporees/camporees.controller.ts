@@ -8,12 +8,12 @@ import {
   Query,
   Body,
   ParseIntPipe,
-  ParseUUIDPipe,
   UseGuards,
   UseInterceptors,
   UploadedFile,
   Request,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import {
@@ -382,7 +382,7 @@ export class CamporeesController {
   @ApiResponse({ status: 404, description: 'Registro no encontrado' })
   async removeUnionMember(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ) {
     return this.camporeesService.removeUnionMember(camporeeId, userId);
   }
@@ -953,7 +953,7 @@ export class CamporeesController {
   @ApiResponse({ status: 404, description: 'Registro no encontrado' })
   async removeMember(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ) {
     return this.camporeesService.removeMember(camporeeId, userId);
   }
@@ -1135,7 +1135,7 @@ export class CamporeesController {
   @ApiResponse({ status: 200, description: 'Pago actualizado' })
   @ApiResponse({ status: 404, description: 'Pago no encontrado' })
   async updatePayment(
-    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Param('paymentId', ParseUuidParamPipe) paymentId: string,
     @Body() dto: UpdatePaymentDto,
   ) {
     return this.camporeesService.updatePayment(paymentId, dto);
@@ -1170,7 +1170,7 @@ export class CamporeesController {
   })
   async uploadPaymentVoucher(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Param('paymentId', ParseUuidParamPipe) paymentId: string,
     @UploadedFile(
       new FileValidationPipe({
         maxSize: 10 * 1024 * 1024,
@@ -1203,7 +1203,7 @@ export class CamporeesController {
   })
   async removePaymentVoucher(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Param('paymentId', ParseUuidParamPipe) paymentId: string,
   ) {
     return this.camporeesService.removePaymentVoucher(camporeeId, paymentId);
   }
@@ -1223,7 +1223,7 @@ export class CamporeesController {
   @ApiResponse({ status: 200, description: 'Pago aprobado' })
   @ApiResponse({ status: 404, description: 'Pago no encontrado' })
   async approvePayment(
-    @Param('camporeePaymentId', ParseUUIDPipe) camporeePaymentId: string,
+    @Param('camporeePaymentId', ParseUuidParamPipe) camporeePaymentId: string,
     @Request() req: any,
   ) {
     return this.camporeeLateApprovalsService.approvePayment(
@@ -1247,7 +1247,7 @@ export class CamporeesController {
   @ApiResponse({ status: 200, description: 'Pago rechazado' })
   @ApiResponse({ status: 404, description: 'Pago no encontrado' })
   async rejectPayment(
-    @Param('camporeePaymentId', ParseUUIDPipe) camporeePaymentId: string,
+    @Param('camporeePaymentId', ParseUuidParamPipe) camporeePaymentId: string,
     @Body() dto: RejectEnrollmentDto,
     @Request() req: any,
   ) {

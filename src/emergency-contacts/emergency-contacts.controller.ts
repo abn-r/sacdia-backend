@@ -8,8 +8,8 @@ import {
   Body,
   UseGuards,
   ParseIntPipe,
-  ParseUUIDPipe,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -44,7 +44,7 @@ export class EmergencyContactsController {
     description: 'Forbidden — owner or admin access only',
   })
   async create(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() createDto: CreateEmergencyContactDto,
   ) {
     return this.emergencyContactsService.create(userId, createDto);
@@ -60,7 +60,7 @@ export class EmergencyContactsController {
     status: 403,
     description: 'Forbidden — owner or admin access only',
   })
-  async findAll(@Param('userId', ParseUUIDPipe) userId: string) {
+  async findAll(@Param('userId', ParseUuidParamPipe) userId: string) {
     return this.emergencyContactsService.findAll(userId);
   }
 
@@ -76,7 +76,7 @@ export class EmergencyContactsController {
   })
   @ApiResponse({ status: 404, description: 'Contacto no encontrado' })
   async findOne(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('contactId', ParseIntPipe) contactId: number,
   ) {
     return this.emergencyContactsService.findOne(contactId, userId);
@@ -94,7 +94,7 @@ export class EmergencyContactsController {
   })
   @ApiResponse({ status: 404, description: 'Contacto no encontrado' })
   async update(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('contactId', ParseIntPipe) contactId: number,
     @Body() updateDto: UpdateEmergencyContactDto,
   ) {
@@ -113,7 +113,7 @@ export class EmergencyContactsController {
   })
   @ApiResponse({ status: 404, description: 'Contacto no encontrado' })
   async remove(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('contactId', ParseIntPipe) contactId: number,
   ) {
     return this.emergencyContactsService.remove(contactId, userId);

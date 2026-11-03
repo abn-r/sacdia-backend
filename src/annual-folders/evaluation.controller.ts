@@ -3,11 +3,11 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -78,8 +78,8 @@ export class EvaluationController {
   })
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async evaluateSection(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
+    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
     @Body() dto: EvaluateSectionDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -119,7 +119,7 @@ export class EvaluationController {
   })
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async closeFolder(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     await this.evaluationService.assertFolderCloseAccess(folderId, user.sub);
@@ -154,8 +154,8 @@ export class EvaluationController {
   })
   @ApiResponse({ status: 404, description: 'Folder or evaluation not found' })
   async reopenSection(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
+    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.evaluationService.reopenSection(
@@ -213,8 +213,8 @@ export class EvaluationController {
     description: 'Folder or section evaluation not found',
   })
   async confirmUnion(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
+    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
     @Body() dto: ConfirmUnionDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -249,7 +249,7 @@ export class EvaluationController {
   })
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async getFolderEvaluations(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @Param('folderId', ParseUuidParamPipe) folderId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     await this.annualFoldersService.assertFolderReadAccessForUser(
@@ -317,7 +317,7 @@ export class EvaluationController {
     description: 'Missing annual_folders:evaluate permission',
   })
   async setReviewerNote(
-    @Param('evidenceId', ParseUUIDPipe) evidenceId: string,
+    @Param('evidenceId', ParseUuidParamPipe) evidenceId: string,
     @Body() dto: SetReviewerNoteDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {

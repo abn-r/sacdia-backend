@@ -4,12 +4,12 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -156,7 +156,7 @@ export class CamporeeSupplyConfigController {
   @AuthorizationResource({ type: 'global' })
   async updateSlotLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('slotId', ParseUUIDPipe) slotId: string,
+    @Param('slotId', ParseUuidParamPipe) slotId: string,
     @Body() dto: UpdateSupplySlotDto,
     @Req() request: RequestWithProfile,
   ) {
@@ -177,7 +177,7 @@ export class CamporeeSupplyConfigController {
   @AuthorizationResource({ type: 'global' })
   async updateSlotUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('slotId', ParseUUIDPipe) slotId: string,
+    @Param('slotId', ParseUuidParamPipe) slotId: string,
     @Body() dto: UpdateSupplySlotDto,
     @Req() request: RequestWithProfile,
   ) {
@@ -236,7 +236,7 @@ export class CamporeeSupplyConfigController {
   @AuthorizationResource({ type: 'global' })
   async updateProductLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('productId', ParseUuidParamPipe) productId: string,
     @Body() dto: UpdateSupplyProductDto,
     @Req() request: RequestWithProfile,
   ) {
@@ -257,7 +257,7 @@ export class CamporeeSupplyConfigController {
   @AuthorizationResource({ type: 'global' })
   async updateProductUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('productId', ParseUuidParamPipe) productId: string,
     @Body() dto: UpdateSupplyProductDto,
     @Req() request: RequestWithProfile,
   ) {

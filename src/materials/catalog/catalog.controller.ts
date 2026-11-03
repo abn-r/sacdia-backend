@@ -2,11 +2,11 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -125,7 +125,10 @@ export class CatalogController {
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, type: MaterialProductDto })
   @ApiResponse({ status: 404 })
-  async getById(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+  async getById(
+    @Param('id', ParseUuidParamPipe) id: string,
+    @Request() req: any,
+  ) {
     const localFieldId = await resolveMaterialsListLocalFieldId(
       this.prisma,
       req.authorization,

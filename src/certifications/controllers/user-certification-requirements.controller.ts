@@ -5,11 +5,11 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -51,14 +51,17 @@ export class UserCertificationRequirementsController {
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
   @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
-  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
+  @ApiParam({
+    name: 'requirementId',
+    description: 'ID del requisito (sección)',
+  })
   @ApiResponse({ status: 200, description: 'Estado del requisito' })
   @ApiResponse({
     status: 404,
     description: 'Inscripción no encontrada o no pertenece al usuario',
   })
   async getRequirement(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
   ) {
@@ -82,14 +85,17 @@ export class UserCertificationRequirementsController {
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
   @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
-  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
+  @ApiParam({
+    name: 'requirementId',
+    description: 'ID del requisito (sección)',
+  })
   @ApiResponse({ status: 200, description: 'Borrador guardado' })
   @ApiResponse({
     status: 409,
     description: 'El requisito está bloqueado para edición',
   })
   async saveDraft(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
     @Body() dto: SaveRequirementDraftDto,
@@ -115,7 +121,10 @@ export class UserCertificationRequirementsController {
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
   @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
-  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
+  @ApiParam({
+    name: 'requirementId',
+    description: 'ID del requisito (sección)',
+  })
   @ApiResponse({ status: 200, description: 'Requisito enviado a revisión' })
   @ApiResponse({
     status: 400,
@@ -127,7 +136,7 @@ export class UserCertificationRequirementsController {
       'El requisito está bloqueado para edición o hubo un conflicto de concurrencia',
   })
   async submitRequirement(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
     @Body() dto: SubmitRequirementDto,
@@ -153,14 +162,17 @@ export class UserCertificationRequirementsController {
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
   @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
-  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
+  @ApiParam({
+    name: 'requirementId',
+    description: 'ID del requisito (sección)',
+  })
   @ApiResponse({ status: 201, description: 'URL de subida generada' })
   @ApiResponse({
     status: 400,
     description: 'Tipo de archivo o tamaño no permitido',
   })
   async presignEvidence(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
     @Body() dto: PresignCertificationEvidenceDto,
@@ -186,14 +198,17 @@ export class UserCertificationRequirementsController {
   })
   @ApiParam({ name: 'userId', description: 'UUID del usuario' })
   @ApiParam({ name: 'enrollmentId', description: 'ID de la inscripción' })
-  @ApiParam({ name: 'requirementId', description: 'ID del requisito (sección)' })
+  @ApiParam({
+    name: 'requirementId',
+    description: 'ID del requisito (sección)',
+  })
   @ApiResponse({ status: 201, description: 'Evidencia confirmada' })
   @ApiResponse({
     status: 400,
     description: 'El archivo subido no coincide con lo declarado',
   })
   async confirmEvidence(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
     @Body() dto: ConfirmCertificationEvidenceDto,
@@ -226,7 +241,7 @@ export class UserCertificationRequirementsController {
     description: 'El requisito ya no admite eliminar evidencias',
   })
   async deleteEvidence(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Param('evidenceId', ParseIntPipe) evidenceId: number,
   ) {

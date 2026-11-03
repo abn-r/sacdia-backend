@@ -7,11 +7,11 @@ import {
   Param,
   Body,
   ParseIntPipe,
-  ParseUUIDPipe,
   UseGuards,
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
 import {
@@ -114,7 +114,7 @@ export class UserHonorRequirementsController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
   async getUserProgress(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
   ) {
     const data = await this.honorRequirementsService.getUserProgress(
@@ -146,7 +146,7 @@ export class UserHonorRequirementsController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
   async bulkUpdateProgress(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Body() dto: BulkUpdateRequirementProgressDto,
   ) {
@@ -178,7 +178,7 @@ export class UserHonorRequirementsController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
   async updateProgress(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Param('requirementId', ParseIntPipe) _requirementId: number,
     @Body() dto: UpdateRequirementProgressDto,
@@ -210,7 +210,7 @@ export class UserHonorRequirementsController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
   async uploadEvidence(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
     @UploadedFile(
@@ -250,7 +250,7 @@ export class UserHonorRequirementsController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
   async addEvidenceLink(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
     @Body() dto: CreateEvidenceLinkDto,
@@ -283,7 +283,7 @@ export class UserHonorRequirementsController {
   })
   @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
   async getEvidences(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
   ) {
@@ -312,7 +312,7 @@ export class UserHonorRequirementsController {
   })
   @ApiResponse({ status: 404, description: 'Evidencia no encontrada' })
   async deleteEvidence(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
     @Param('evidenceId', ParseIntPipe) evidenceId: number,

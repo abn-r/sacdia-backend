@@ -8,12 +8,12 @@ import {
   Query,
   Body,
   ParseIntPipe,
-  ParseUUIDPipe,
   UseGuards,
   UploadedFiles,
   UseInterceptors,
   Request,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   FilesValidationPipe,
   ALLOWED_MIME_TYPES,
@@ -185,7 +185,7 @@ export class UserHonorsController {
   @ApiQuery({ name: 'validated', required: false, type: Boolean })
   @ApiResponse({ status: 200, description: 'Honores del usuario' })
   async getUserHonors(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Query('validated') validated?: string,
   ) {
     const validatedBool =
@@ -200,7 +200,7 @@ export class UserHonorsController {
   @ApiOperation({ summary: 'Obtener estadísticas de honores del usuario' })
   @ApiParam({ name: 'userId', type: String })
   @ApiResponse({ status: 200, description: 'Estadísticas de honores' })
-  async getStats(@Param('userId', ParseUUIDPipe) userId: string) {
+  async getStats(@Param('userId', ParseUuidParamPipe) userId: string) {
     return this.honorsService.getUserHonorStats(userId);
   }
 
@@ -216,7 +216,7 @@ export class UserHonorsController {
   @ApiParam({ name: 'userId', type: String })
   @ApiResponse({ status: 201, description: 'Honor registrado para el usuario' })
   async createUserHonor(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: CreateUserHonorDto,
   ) {
     return this.honorsService.createUserHonor(userId, dto);
@@ -237,7 +237,7 @@ export class UserHonorsController {
     description: 'Honores registrados de forma masiva',
   })
   async createUserHonorsBulk(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: BulkCreateUserHonorsDto,
   ) {
     return this.honorsService.createUserHonorsBulk(userId, dto);
@@ -280,7 +280,7 @@ export class UserHonorsController {
     description: 'Evidencias subidas y asociadas al honor del usuario',
   })
   async uploadHonorFiles(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @UploadedFiles(
       new FilesValidationPipe({
@@ -313,7 +313,7 @@ export class UserHonorsController {
   @ApiResponse({ status: 201, description: 'Honor iniciado' })
   @ApiResponse({ status: 409, description: 'Usuario ya tiene este honor' })
   async startHonor(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Body() dto: StartHonorDto,
   ) {
@@ -338,7 +338,7 @@ export class UserHonorsController {
       'Estado no editable, fecha fuera de 1960-01-01..hoy o instructor inválido (HONOR_INSTRUCTOR_INVALID/SELF/AMBIGUOUS)',
   })
   async updateHonor(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Body() dto: UpdateUserHonorDto,
   ) {
@@ -357,7 +357,7 @@ export class UserHonorsController {
   @ApiParam({ name: 'honorId', type: Number })
   @ApiResponse({ status: 200, description: 'Honor abandonado' })
   async abandonHonor(
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
   ) {
     return this.honorsService.abandonHonor(userId, honorId);
@@ -391,7 +391,7 @@ export class UserHonorsController {
   })
   async proposeInstructor(
     @Request() req: { user: { sub: string } },
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Body() dto: ProposeHonorInstructorDto,
   ) {
@@ -416,7 +416,7 @@ export class UserHonorsController {
   })
   async withdrawInstructorProposal(
     @Request() req: { user: { sub: string } },
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
   ) {
     return this.proposalsService.withdraw(req.user.sub, userId, honorId);

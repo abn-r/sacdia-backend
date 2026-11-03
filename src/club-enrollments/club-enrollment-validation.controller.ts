@@ -2,12 +2,12 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -111,7 +111,7 @@ export class ClubEnrollmentValidationController {
   @ApiResponse({ status: 201, description: 'Inscripción aprobada' })
   @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
   async approve(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const actorId = user.user_id ?? user.sub ?? 'unknown';
@@ -143,7 +143,7 @@ export class ClubEnrollmentValidationController {
   @ApiResponse({ status: 201, description: 'Inscripción rechazada' })
   @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
   async reject(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const actorId = user.user_id ?? user.sub ?? 'unknown';

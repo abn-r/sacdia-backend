@@ -5,13 +5,13 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { GlobalRoles } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
@@ -122,7 +122,7 @@ export class DistrictInvestiturePastorsController {
   async remove(
     @Request() req: AuthenticatedRequest,
     @Param('districtId', ParseIntPipe) districtId: number,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId', ParseUuidParamPipe) userId: string,
   ) {
     const profile = await this.authorizationContext.resolveUserAuthorization(
       req.user.sub,

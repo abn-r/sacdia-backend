@@ -5,12 +5,12 @@ import {
   HttpStatus,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
@@ -250,7 +250,7 @@ export class RankingsController {
   })
   @ApiResponse({ status: 404, description: 'Club enrollment not found' })
   async getRankingForClub(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @Query('year_id') yearIdRaw: string,
   ) {
     const yearId = parseInt(yearIdRaw, 10);
@@ -295,7 +295,7 @@ export class RankingsController {
   })
   @ApiResponse({ status: 404, description: 'Club enrollment not found' })
   async getBreakdown(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @Query('year_id', ParseIntPipe) yearId: number,
   ): Promise<RankingBreakdownDto> {
     return this.rankingsService.getBreakdown(enrollmentId, yearId);

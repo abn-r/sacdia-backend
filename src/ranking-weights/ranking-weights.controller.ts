@@ -4,12 +4,12 @@ import {
   Delete,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -60,7 +60,7 @@ export class RankingWeightsController {
   @ApiParam({ name: 'id', description: 'ranking_weight_config_id UUID' })
   @ApiResponse({ status: 200, description: 'Ranking weight config' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  getById(@Param('id', ParseUUIDPipe) id: string) {
+  getById(@Param('id', ParseUuidParamPipe) id: string) {
     return this.svc.getById(id);
   }
 
@@ -105,7 +105,7 @@ export class RankingWeightsController {
   @ApiResponse({ status: 400, description: 'Merged weights do not sum to 100' })
   @ApiResponse({ status: 404, description: 'Not found' })
   update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: UpdateRankingWeightsDto,
     @Req() req: any,
   ) {
@@ -127,7 +127,7 @@ export class RankingWeightsController {
   @ApiResponse({ status: 200, description: 'Deleted' })
   @ApiResponse({ status: 400, description: 'Cannot delete default global' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  delete(@Param('id', ParseUUIDPipe) id: string) {
+  delete(@Param('id', ParseUuidParamPipe) id: string) {
     return this.svc.delete(id);
   }
 }

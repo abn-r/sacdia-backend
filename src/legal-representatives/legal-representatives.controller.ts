@@ -1,10 +1,5 @@
-import {
-  Controller,
-  Get,
-  Param,
-  UseGuards,
-  ParseUUIDPipe,
-} from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -39,7 +34,7 @@ export class LegalRepresentativesController {
       'Access denied: caller is not the user or does not have admin role',
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async findOne(@Param('userId', ParseUUIDPipe) userId: string) {
+  async findOne(@Param('userId', ParseUuidParamPipe) userId: string) {
     return this.legalRepresentativesService.findOne(userId);
   }
 }

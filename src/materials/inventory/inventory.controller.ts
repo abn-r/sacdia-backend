@@ -6,13 +6,13 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ParseUuidParamPipe } from '../../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -150,7 +150,7 @@ export class InventoryController {
     description: 'Product has open orders (when deactivating)',
   })
   update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
     @Body() dto: UpdateProductDto,
   ): Promise<InventoryProductDto> {
     return this.inventoryService.update(id, dto);
@@ -177,7 +177,7 @@ export class InventoryController {
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({ status: 409, description: 'Product has open order lines' })
   softDelete(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseUuidParamPipe) id: string,
   ): Promise<{ id: string; active: false }> {
     return this.inventoryService.softDelete(id);
   }
@@ -207,8 +207,8 @@ export class InventoryController {
     description: 'Product or variant option not found',
   })
   updateVariantStock(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @Param('id', ParseUuidParamPipe) id: string,
+    @Param('variantId', ParseUuidParamPipe) variantId: string,
     @Body() dto: UpdateVariantStockDto,
   ): Promise<VariantStockUpdateResponseDto> {
     return this.inventoryService.updateVariantStock(id, variantId, dto);
