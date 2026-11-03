@@ -1,3 +1,4 @@
+import { clubAssignmentEffectivityArgs } from '../common/authorization/testing/club-assignment-effectivity.testing';
 import { type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ClubEnrollmentsController } from './club-enrollments.controller';
@@ -55,6 +56,7 @@ describe('ClubEnrollmentsController section binding', () => {
       mockAuthorizationContext as unknown as AuthorizationContextService,
       mockPrisma as unknown as PrismaService,
       {} as unknown as InstitutionalHierarchyService,
+      ...clubAssignmentEffectivityArgs(),
     );
 
     const permissions = Object.values(PERMISSION_BY_HANDLER);

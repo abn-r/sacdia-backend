@@ -12,6 +12,8 @@ import { EcclesiasticalYearService } from './ecclesiastical-year.service';
 import { ClubCycleReadinessService } from './club-cycle-readiness.service';
 import { CLOCK } from '../clock/clock';
 import { ZonedBusinessTimeService } from '../clock/zoned-business-time.service';
+import { TemporalContextFactory } from '../clock/temporal-context.factory';
+import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
 
 /** Canonical year_id used across all test fixtures. */
 const CURRENT_YEAR_ID = 7;
@@ -22,6 +24,7 @@ describe('AuthorizationContextService', () => {
   let mockClock: { now: jest.Mock };
   let mockZoned: { startOfNextBusinessDate: jest.Mock };
   let mockCycle: { readinessByClub: jest.Mock; isReady: jest.Mock };
+  const realZoned = new ZonedBusinessTimeService();
 
   const mockPrismaService = {
     users: {
@@ -91,6 +94,16 @@ describe('AuthorizationContextService', () => {
         { provide: CLOCK, useValue: mockClock },
         { provide: ZonedBusinessTimeService, useValue: mockZoned },
         { provide: ClubCycleReadinessService, useValue: mockCycle },
+        // Real policy + factory over the real zoned-time service and the
+        // injected test clock: effectivity is decided exactly as in prod.
+        {
+          provide: ClubAssignmentEffectivityPolicy,
+          useValue: new ClubAssignmentEffectivityPolicy(realZoned),
+        },
+        {
+          provide: TemporalContextFactory,
+          useFactory: () => new TemporalContextFactory(mockClock, realZoned),
+        },
       ],
     }).compile();
 
@@ -104,12 +117,13 @@ describe('AuthorizationContextService', () => {
   });
 
   it('uses versioned cache keys so stale legacy snapshots are bypassed', () => {
-    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v7:user-123');
+    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v8:user-123');
   });
 
   it('invalidates both current and legacy authorization cache keys', async () => {
     await service.invalidateUserAuthorizationCache('user-123');
 
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v8:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v7:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v6:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v5:user-123');
@@ -165,6 +179,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'assignment-1',
           ecclesiastical_year_id: CURRENT_YEAR_ID,
+          active: true,
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
@@ -200,6 +215,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'assignment-2',
           ecclesiastical_year_id: CURRENT_YEAR_ID,
+          active: true,
           status: 'active',
           start_date: new Date('2026-02-01'),
           end_date: null,
@@ -488,6 +504,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'assignment-1',
           ecclesiastical_year_id: CURRENT_YEAR_ID,
+          active: true,
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
@@ -538,6 +555,7 @@ describe('AuthorizationContextService', () => {
     ) => ({
       assignment_id: assignmentId,
       ecclesiastical_year_id: CURRENT_YEAR_ID,
+      active: true,
       status: 'active',
       start_date: new Date('2026-01-01'),
       end_date: null,
@@ -717,6 +735,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'past-assignment',
           ecclesiastical_year_id: pastYearId,
+          active: true,
           status: 'active',
           start_date: new Date('2025-01-01'),
           end_date: new Date('2025-12-31'),
@@ -789,6 +808,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'designated-assignment',
           ecclesiastical_year_id: nextYearId,
+          active: true,
           status: 'designated',
           start_date: new Date('2027-01-01'),
           end_date: null,
@@ -849,6 +869,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'inactive-assignment',
           ecclesiastical_year_id: CURRENT_YEAR_ID,
+          active: true,
           status: 'inactive',
           start_date: new Date('2026-01-01'),
           end_date: new Date('2026-06-30'),
@@ -923,6 +944,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'current-assignment',
           ecclesiastical_year_id: CURRENT_YEAR_ID,
+          active: true,
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
@@ -992,6 +1014,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'some-assignment',
           ecclesiastical_year_id: CURRENT_YEAR_ID,
+          active: true,
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
@@ -1107,6 +1130,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'past-assignment',
           ecclesiastical_year_id: CURRENT_YEAR_ID - 1,
+          active: true,
           status: 'active',
           start_date: new Date('2025-01-01'),
           end_date: null,
@@ -1164,6 +1188,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'new-dir',
           ecclesiastical_year_id: CURRENT_YEAR_ID,
+          active: true,
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
@@ -1263,6 +1288,7 @@ describe('AuthorizationContextService', () => {
         {
           assignment_id: 'member-1',
           ecclesiastical_year_id: CURRENT_YEAR_ID,
+          active: true,
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: new Date('2026-12-31'),
@@ -1332,6 +1358,162 @@ describe('AuthorizationContextService', () => {
 
       expect(mockPrismaService.users.findUnique).toHaveBeenCalledTimes(2);
       expect(result.profile.birthday).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('temporal effectivity of club assignments (clock 2026-06-01T12:00Z, business date 2026-06-01)', () => {
+    const baseUser = (assignments: unknown[], activeId: string | null = null) => ({
+      user_id: 'user-temporal',
+      email: 'temporal@example.com',
+      name: 'Temporal',
+      paternal_last_name: null,
+      maternal_last_name: null,
+      gender: null,
+      birthday: null,
+      baptism: false,
+      baptism_date: null,
+      blood: null,
+      user_image: null,
+      country_id: null,
+      union_id: null,
+      local_field_id: null,
+      created_at: new Date('2026-01-01'),
+      countries: null,
+      unions: null,
+      local_fields: null,
+      users_pr: { complete: true, active_club_assignment_id: activeId },
+      users_roles: [],
+      club_role_assignments: assignments,
+      users_permissions: [],
+    });
+
+    const assignment = (
+      id: string,
+      overrides: Record<string, unknown> = {},
+    ) => ({
+      assignment_id: id,
+      ecclesiastical_year_id: CURRENT_YEAR_ID,
+      active: true,
+      status: 'active',
+      start_date: new Date('2026-01-01'),
+      end_date: null,
+      expires_at: null,
+      roles: {
+        role_name: 'director',
+        role_permissions: [{ permissions: { permission_name: 'clubs:read' } }],
+      },
+      club_sections: {
+        club_section_id: 7,
+        club_type_id: 1,
+        club_types: { name: 'Conquistadores' },
+        clubs: {
+          club_id: 3,
+          name: 'Club Z',
+          local_fields: {
+            local_field_id: 3,
+            name: 'Campo',
+            timezone: 'America/Mexico_City',
+            unions: null,
+          },
+        },
+      },
+      ...overrides,
+    });
+
+    const resolveGrant = async (overrides: Record<string, unknown>) => {
+      mockPrismaService.users.findUnique.mockResolvedValue(
+        baseUser([assignment('a1', overrides)]),
+      );
+      const result = await service.resolveUserAuthorization('user-temporal');
+      return result.authorization.grants.club_assignments[0];
+    };
+
+    it('start_date tomorrow: not operational, no permissions', async () => {
+      const grant = await resolveGrant({ start_date: new Date('2026-06-02') });
+      expect(grant.operational).toBe(false);
+      expect(grant.permissions).toEqual([]);
+    });
+
+    it('start_date today: operational', async () => {
+      const grant = await resolveGrant({ start_date: new Date('2026-06-01') });
+      expect(grant.operational).toBe(true);
+      expect(grant.permissions).toEqual(['clubs:read']);
+    });
+
+    it('end_date today: operational', async () => {
+      const grant = await resolveGrant({ end_date: new Date('2026-06-01') });
+      expect(grant.operational).toBe(true);
+    });
+
+    it('end_date yesterday: not operational, no permissions', async () => {
+      const grant = await resolveGrant({ end_date: new Date('2026-05-31') });
+      expect(grant.operational).toBe(false);
+      expect(grant.permissions).toEqual([]);
+    });
+
+    it('expires_at in the past: not operational', async () => {
+      const grant = await resolveGrant({
+        expires_at: new Date('2026-06-01T11:59:00.000Z'),
+      });
+      expect(grant.operational).toBe(false);
+    });
+
+    it('persisted active assignment that is not effective falls back to another effective one', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(
+        baseUser(
+          [
+            assignment('expired', { end_date: new Date('2026-05-31') }),
+            assignment('valid'),
+          ],
+          'expired',
+        ),
+      );
+      const result = await service.resolveUserAuthorization('user-temporal');
+      expect(result.authorization.active_assignment.assignment_id).toBe('valid');
+    });
+
+    it('persisted active assignment not effective and no other: active is null', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(
+        baseUser(
+          [assignment('expired', { end_date: new Date('2026-05-31') })],
+          'expired',
+        ),
+      );
+      const result = await service.resolveUserAuthorization('user-temporal');
+      expect(result.authorization.active_assignment.assignment_id).toBeNull();
+      expect(result.authorization.grants.club_assignments).toHaveLength(1);
+    });
+
+    it('TTL stays at the 5 min base when the nearest boundary is 2 h away', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(
+        baseUser([
+          assignment('a1', {
+            expires_at: new Date('2026-06-01T14:00:00.000Z'),
+          }),
+        ]),
+      );
+      await service.resolveUserAuthorization('user-temporal');
+      expect(cacheManager.set).toHaveBeenCalledWith(
+        'auth:context:v8:user-temporal',
+        expect.anything(),
+        300_000,
+      );
+    });
+
+    it('TTL shrinks to 90 s when a grant expires in 90 s', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(
+        baseUser([
+          assignment('a1', {
+            expires_at: new Date('2026-06-01T12:01:30.000Z'),
+          }),
+        ]),
+      );
+      await service.resolveUserAuthorization('user-temporal');
+      expect(cacheManager.set).toHaveBeenCalledWith(
+        'auth:context:v8:user-temporal',
+        expect.anything(),
+        90_000,
+      );
     });
   });
 });

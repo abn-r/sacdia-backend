@@ -2,6 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { ClubAssignmentEffectivityPolicy } from '../common/authorization/club-assignment-effectivity.policy';
+import { buildClubAssignmentEffectivityDeps } from '../common/authorization/testing/club-assignment-effectivity.testing';
+
+const effectivityDeps = buildClubAssignmentEffectivityDeps();
 import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
@@ -332,6 +337,11 @@ describe('AuthService', () => {
         { provide: LinkedDeviceGate, useValue: mockDeviceGate },
         { provide: LinkedDevicesService, useValue: mockLinkedDevices },
         { provide: SUPERVISED_LOGIN_EVENTS, useValue: mockEvents },
+        {
+          provide: ClubAssignmentEffectivityPolicy,
+          useValue: effectivityDeps.policy,
+        },
+        { provide: TemporalContextFactory, useValue: effectivityDeps.factory },
       ],
     }).compile();
 
@@ -3243,7 +3253,11 @@ describe('AuthService', () => {
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'assignment-1',
         ecclesiastical_year_id: CURRENT_YEAR_ID,
+        active: true,
         status: 'active',
+        start_date: new Date('2026-01-01'),
+        end_date: null,
+        expires_at: null,
         roles: { role_name: 'member' },
         club_sections: {
           club_section_id: 22,
@@ -3447,7 +3461,11 @@ describe('AuthService', () => {
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'past-assignment',
         ecclesiastical_year_id: CURRENT_YEAR_ID - 1,
+        active: true,
         status: 'active',
+        start_date: new Date('2026-01-01'),
+        end_date: null,
+        expires_at: null,
         roles: { role_name: 'director' },
         club_sections: {
           club_section_id: 10,
@@ -3487,6 +3505,41 @@ describe('AuthService', () => {
       });
     });
 
+    it('throws AUTH_ASSIGNMENT_YEAR_MISMATCH when the assignment end_date was yesterday', async () => {
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'expired-assignment',
+        ecclesiastical_year_id: CURRENT_YEAR_ID,
+        active: true,
+        status: 'active',
+        // Test clock: 2026-06-01T12:00Z => business date 2026-06-01.
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-05-31'),
+        expires_at: null,
+        roles: { role_name: 'director' },
+        club_sections: {
+          club_section_id: 10,
+          club_types: { name: 'Conquistadores' },
+          clubs: {
+            club_id: 1,
+            name: 'Club A',
+            local_fields: {
+              local_field_id: 3,
+              timezone: 'America/Mexico_City',
+            },
+          },
+        },
+      });
+
+      await expect(
+        service.setActiveClubContext('user-123', {
+          assignment_id: 'expired-assignment',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_ASSIGNMENT_YEAR_MISMATCH,
+      });
+      expect(mockPrismaService.users_pr.upsert).not.toHaveBeenCalled();
+    });
+
     it('throws AUTH_ASSIGNMENT_YEAR_MISMATCH for ended assignment', async () => {
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'ended-assignment',
@@ -3513,7 +3566,11 @@ describe('AuthService', () => {
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'assignment-1',
         ecclesiastical_year_id: CURRENT_YEAR_ID,
+        active: true,
         status: 'active',
+        start_date: new Date('2026-01-01'),
+        end_date: null,
+        expires_at: null,
         roles: { role_name: 'director' },
         club_sections: {
           club_section_id: 10,
@@ -3539,7 +3596,11 @@ describe('AuthService', () => {
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'assignment-1',
         ecclesiastical_year_id: CURRENT_YEAR_ID,
+        active: true,
         status: 'active',
+        start_date: new Date('2026-01-01'),
+        end_date: null,
+        expires_at: null,
         roles: { role_name: 'member' },
         club_sections: {
           club_section_id: 22,

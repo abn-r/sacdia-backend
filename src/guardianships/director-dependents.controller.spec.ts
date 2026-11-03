@@ -1,3 +1,4 @@
+import { clubAssignmentEffectivityArgs } from '../common/authorization/testing/club-assignment-effectivity.testing';
 import { ValidationPipe, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
@@ -246,6 +247,8 @@ describe('DirectorDependentsController permissions (real PermissionsGuard)', () 
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
     );
     jest
       .spyOn(authorizationContext, 'resolveUserAuthorization')
@@ -255,6 +258,7 @@ describe('DirectorDependentsController permissions (real PermissionsGuard)', () 
       authorizationContext,
       prisma as unknown as PrismaService,
       hierarchy as unknown as InstitutionalHierarchyService,
+      ...clubAssignmentEffectivityArgs(),
     );
   }
 
