@@ -424,7 +424,7 @@ describe('MembershipRequestsService', () => {
 
         await expect(
           service.approve(10, pendingAssignment.assignment_id, actorId),
-        ).rejects.toMatchObject({ code: ErrorCode.MR_ALREADY_PENDING });
+        ).rejects.toMatchObject({ code: ErrorCode.MR_ALREADY_PROCESSED });
 
         expect(
           transactionMock.club_role_assignments.updateMany,
@@ -523,7 +523,7 @@ describe('MembershipRequestsService', () => {
 
         await expect(
           service.approve(10, pendingAssignment.assignment_id, actorId),
-        ).rejects.toMatchObject({ code: ErrorCode.MR_ALREADY_PENDING });
+        ).rejects.toMatchObject({ code: ErrorCode.MR_ALREADY_PROCESSED });
         expect(mockAuditLogs.recordEvent).not.toHaveBeenCalled();
       });
 

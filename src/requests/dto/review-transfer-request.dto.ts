@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ReviewTransferRequestDto {
@@ -7,9 +7,7 @@ export class ReviewTransferRequestDto {
     enum: ['approved', 'rejected'],
     example: 'approved',
   })
-  @IsEnum(['approved', 'rejected'], {
-    message: 'action must be either "approved" or "rejected"',
-  })
+  @IsIn(['approved', 'rejected'])
   declare action: 'approved' | 'rejected';
 
   @ApiPropertyOptional({

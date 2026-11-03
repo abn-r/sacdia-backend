@@ -452,7 +452,7 @@ describe('ConsentVerificationService.verify', () => {
     });
 
     it.each(['rejected', 'expired', 'cancelled'])(
-      'a %s request is the usual 409 MR_ALREADY_PENDING',
+      'a %s request is the usual 409 MR_ALREADY_PROCESSED',
       async (status) => {
         const s = setup();
         s.setAssignment({ ...pendingAssignment, status });
@@ -461,7 +461,7 @@ describe('ConsentVerificationService.verify', () => {
           s.service.verify(SECTION, ASSIGNMENT, DIRECTOR, dto()),
         );
 
-        expect(error.code).toBe(ErrorCode.MR_ALREADY_PENDING);
+        expect(error.code).toBe(ErrorCode.MR_ALREADY_PROCESSED);
         expect(error.getStatus()).toBe(409);
         untouched(s);
       },
@@ -475,7 +475,7 @@ describe('ConsentVerificationService.verify', () => {
         s.service.verify(SECTION, ASSIGNMENT, DIRECTOR, dto()),
       );
 
-      expect(error.code).toBe(ErrorCode.MR_ALREADY_PENDING);
+      expect(error.code).toBe(ErrorCode.MR_ALREADY_PROCESSED);
       expect(s.tx.audit_logs.create).not.toHaveBeenCalled();
       expect(s.actingCache.bump).not.toHaveBeenCalled();
     });
@@ -1014,7 +1014,7 @@ describe('ConsentVerificationService.verify for teens and active memberships (ph
     });
 
     it.each(['rejected', 'expired', 'cancelled'])(
-      'a %s request is still a 409 MR_ALREADY_PENDING',
+      'a %s request is still a 409 MR_ALREADY_PROCESSED',
       async (status) => {
         const s = setup();
         s.setAssignment({ ...pendingAssignment, status });
@@ -1023,7 +1023,7 @@ describe('ConsentVerificationService.verify for teens and active memberships (ph
           s.service.verify(SECTION, ASSIGNMENT, DIRECTOR, dto()),
         );
 
-        expect(error.code).toBe(ErrorCode.MR_ALREADY_PENDING);
+        expect(error.code).toBe(ErrorCode.MR_ALREADY_PROCESSED);
         expect(s.tx.guardianships.updateMany).not.toHaveBeenCalled();
       },
     );

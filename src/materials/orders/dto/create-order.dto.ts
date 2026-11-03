@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   ArrayMinSize,
   IsArray,
-  IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -44,7 +44,7 @@ export class CreateOrderDto {
   declare lines: CreateOrderLineDto[];
 
   @ApiProperty({ enum: ['recoger', 'envio'] })
-  @IsEnum(['recoger', 'envio'])
+  @IsIn(['recoger', 'envio'])
   declare entrega: 'recoger' | 'envio';
 
   @ApiProperty({ required: false })

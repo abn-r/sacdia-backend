@@ -1,10 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  DEFAULT_CLASS_THRESHOLD_PERCENT,
-  sectionCountsAsComplete,
-} from './field-class-threshold';
+import { sectionCountsAsComplete } from './field-class-threshold';
 
 export type ClassRequirementTrack = 'BASIC' | 'ADVANCED' | 'EXTRA';
 
@@ -52,7 +48,6 @@ export type ClassRequirementEligibilityResult = {
   extra_progress: RequirementTrackProgress;
   investiture_progress: RequirementTrackProgress;
   overall_progress: number;
-  passing_score: number;
   investiture_eligibility: {
     eligible: boolean;
     enabled: boolean;
@@ -83,7 +78,6 @@ type ClassSectionRows = Awaited<
 
 @Injectable()
 export class ClassRequirementEligibilityService {
-  private readonly logger = new Logger(ClassRequirementEligibilityService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   async calculateForEnrollment(
@@ -137,17 +131,7 @@ export class ClassRequirementEligibilityService {
       this.resolveRequirementContext(enrollment),
     ]);
 
-    const passingScore = await this.resolvePassingScore(
-      context.localFieldIds,
-      enrollment.ecclesiastical_year_id,
-    );
-    return this.composeResult(
-      enrollment,
-      sections,
-      progressRows,
-      context,
-      passingScore,
-    );
+    return this.composeResult(enrollment, sections, progressRows, context);
   }
 
   async calculateForEnrollments(
@@ -274,11 +258,6 @@ export class ClassRequirementEligibilityService {
     );
 
     const contexts = new Map<number, RequirementContext>();
-    const scorePairs: Array<{
-      localFieldId: number;
-      ecclesiasticalYearId: number;
-    }> = [];
-    const seenPairs = new Set<string>();
     for (const enrollment of enrollments) {
       const context = this.buildRequirementContext(
         this.rowsForEnrollment(
@@ -288,17 +267,7 @@ export class ClassRequirementEligibilityService {
         ),
       );
       contexts.set(enrollment.enrollment_id, context);
-      const localFieldId = [...context.localFieldIds][0];
-      if (localFieldId == null) continue;
-      const pairKey = `${localFieldId}|${enrollment.ecclesiastical_year_id}`;
-      if (seenPairs.has(pairKey)) continue;
-      seenPairs.add(pairKey);
-      scorePairs.push({
-        localFieldId,
-        ecclesiasticalYearId: enrollment.ecclesiastical_year_id,
-      });
     }
-    const scores = await this.resolvePassingScores(scorePairs);
 
     for (const enrollment of enrollments) {
       const context = contexts.get(enrollment.enrollment_id) ?? {
@@ -307,13 +276,6 @@ export class ClassRequirementEligibilityService {
         unionIds: new Set<number>(),
         localFieldIds: new Set<number>(),
       };
-      const localFieldId = [...context.localFieldIds][0];
-      const passingScore =
-        localFieldId == null
-          ? DEFAULT_CLASS_THRESHOLD_PERCENT
-          : (scores.get(
-              `${localFieldId}|${enrollment.ecclesiastical_year_id}`,
-            ) ?? DEFAULT_CLASS_THRESHOLD_PERCENT);
       results.set(
         enrollment.enrollment_id,
         this.composeResult(
@@ -321,7 +283,6 @@ export class ClassRequirementEligibilityService {
           sectionsByKey.get(this.sectionGroupKey(enrollment)) ?? [],
           progressByEnrollment.get(enrollment.enrollment_id) ?? [],
           context,
-          passingScore,
         ),
       );
     }
@@ -341,7 +302,6 @@ export class ClassRequirementEligibilityService {
       score: number | null;
     }>,
     context: RequirementContext,
-    passingScore: number,
   ): ClassRequirementEligibilityResult {
     const completedSectionIds = new Set(
       progressRows
@@ -432,7 +392,6 @@ export class ClassRequirementEligibilityService {
       extra_progress: progressByTrack.get('EXTRA') ?? this.emptyProgress(),
       investiture_progress: investitureProgress,
       overall_progress: investitureProgress.percentage,
-      passing_score: passingScore,
       investiture_eligibility: {
         eligible: investitureEligible,
         enabled: true,
@@ -464,57 +423,6 @@ export class ClassRequirementEligibilityService {
         completed: advancedProgress.completed,
       },
     };
-  }
-
-  private async resolvePassingScore(
-    localFieldIds: Set<number>,
-    ecclesiasticalYearId: number,
-  ): Promise<number> {
-    const localFieldId = [...localFieldIds][0];
-    if (localFieldId == null) {
-      return DEFAULT_CLASS_THRESHOLD_PERCENT;
-    }
-    const thresholds = (
-      this.prisma as PrismaService & {
-        local_field_class_thresholds?: {
-          findUnique: (args: {
-            where: {
-              local_field_id_ecclesiastical_year_id: {
-                local_field_id: number;
-                ecclesiastical_year_id: number;
-              };
-            };
-            select: { minimum_percent: true };
-          }) => Promise<{ minimum_percent: number } | null>;
-        };
-      }
-    ).local_field_class_thresholds;
-    if (!thresholds) {
-      return DEFAULT_CLASS_THRESHOLD_PERCENT;
-    }
-    try {
-      const row = await thresholds.findUnique({
-        where: {
-          local_field_id_ecclesiastical_year_id: {
-            local_field_id: localFieldId,
-            ecclesiastical_year_id: ecclesiasticalYearId,
-          },
-        },
-        select: { minimum_percent: true },
-      });
-      return row?.minimum_percent ?? DEFAULT_CLASS_THRESHOLD_PERCENT;
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2021'
-      ) {
-        this.logger.warn(
-          'local_field_class_thresholds no existe; se usa el 80 por defecto',
-        );
-        return DEFAULT_CLASS_THRESHOLD_PERCENT;
-      }
-      throw error;
-    }
   }
 
   private async findClassSections(enrollment: EnrollmentForEligibility) {
@@ -687,99 +595,6 @@ export class ClassRequirementEligibilityService {
           ? typed.filter((row) => row.assignment_id === explicitAssignmentId)
           : typed;
     return this.preferCrossTypeHome(enrollment, chosen);
-  }
-
-  private async resolvePassingScores(
-    pairs: Array<{ localFieldId: number; ecclesiasticalYearId: number }>,
-  ): Promise<Map<string, number>> {
-    const scores = new Map<string, number>();
-    const keyOf = (localFieldId: number, ecclesiasticalYearId: number) =>
-      `${localFieldId}|${ecclesiasticalYearId}`;
-    if (pairs.length === 0) return scores;
-
-    const thresholds = (
-      this.prisma as PrismaService & {
-        local_field_class_thresholds?: {
-          findMany?: (args: {
-            where: {
-              OR: Array<{
-                local_field_id: number;
-                ecclesiastical_year_id: number;
-              }>;
-            };
-            select: {
-              local_field_id: true;
-              ecclesiastical_year_id: true;
-              minimum_percent: true;
-            };
-          }) => Promise<
-            Array<{
-              local_field_id: number;
-              ecclesiastical_year_id: number;
-              minimum_percent: number;
-            }>
-          >;
-        };
-      }
-    ).local_field_class_thresholds;
-
-    if (!thresholds?.findMany) {
-      for (const pair of pairs) {
-        scores.set(
-          keyOf(pair.localFieldId, pair.ecclesiasticalYearId),
-          await this.resolvePassingScore(
-            new Set([pair.localFieldId]),
-            pair.ecclesiasticalYearId,
-          ),
-        );
-      }
-      return scores;
-    }
-
-    try {
-      const rows = await thresholds.findMany({
-        where: {
-          OR: pairs.map((pair) => ({
-            local_field_id: pair.localFieldId,
-            ecclesiastical_year_id: pair.ecclesiasticalYearId,
-          })),
-        },
-        select: {
-          local_field_id: true,
-          ecclesiastical_year_id: true,
-          minimum_percent: true,
-        },
-      });
-      for (const pair of pairs) {
-        const row = rows.find(
-          (item) =>
-            item.local_field_id === pair.localFieldId &&
-            item.ecclesiastical_year_id === pair.ecclesiasticalYearId,
-        );
-        scores.set(
-          keyOf(pair.localFieldId, pair.ecclesiasticalYearId),
-          row?.minimum_percent ?? DEFAULT_CLASS_THRESHOLD_PERCENT,
-        );
-      }
-      return scores;
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2021'
-      ) {
-        this.logger.warn(
-          'local_field_class_thresholds no existe; se usa el 80 por defecto',
-        );
-        for (const pair of pairs) {
-          scores.set(
-            keyOf(pair.localFieldId, pair.ecclesiasticalYearId),
-            DEFAULT_CLASS_THRESHOLD_PERCENT,
-          );
-        }
-        return scores;
-      }
-      throw error;
-    }
   }
 
   private buildRequirementContext(

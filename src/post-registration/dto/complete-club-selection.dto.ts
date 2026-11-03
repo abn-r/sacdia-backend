@@ -2,17 +2,32 @@ import { IsInt, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CompleteClubSelectionDto {
-  @ApiProperty({ example: 1, description: 'ID del país' })
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'ID del país. Opcional: el backend lo deriva de la sección elegida y responde 400 POST_REG_CLUB_LOCATION_MISMATCH si no coincide.',
+  })
+  @IsOptional()
   @IsInt()
-  declare country_id: number;
+  declare country_id?: number;
 
-  @ApiProperty({ example: 1, description: 'ID de la unión' })
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'ID de la unión. Opcional: el backend lo deriva de la sección elegida y responde 400 POST_REG_CLUB_LOCATION_MISMATCH si no coincide.',
+  })
+  @IsOptional()
   @IsInt()
-  declare union_id: number;
+  declare union_id?: number;
 
-  @ApiProperty({ example: 1, description: 'ID del campo local' })
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'ID del campo local. Opcional: el backend lo deriva de la sección elegida y responde 400 POST_REG_CLUB_LOCATION_MISMATCH si no coincide.',
+  })
+  @IsOptional()
   @IsInt()
-  declare local_field_id: number;
+  declare local_field_id?: number;
 
   @ApiProperty({
     example: 1,

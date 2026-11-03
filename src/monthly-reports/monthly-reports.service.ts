@@ -174,6 +174,34 @@ export class MonthlyReportsService {
     );
   }
 
+  /**
+   * Same as `getOrCreateDraft`, also telling whether this call created the
+   * row (HTTP 201) or returned an existing one (HTTP 200). The upsert stays
+   * atomic; the existence check only decides the status code, so two
+   * concurrent first calls may both report `created`.
+   */
+  async getOrCreateDraftWithCreated(
+    enrollmentId: string,
+    month: number,
+    year: number,
+  ) {
+    this.validateMonthYear(month, year);
+    await this.validateEnrollmentExists(enrollmentId);
+
+    const existing = await this.prisma.monthly_reports.findUnique({
+      where: {
+        club_enrollment_id_month_year: {
+          club_enrollment_id: enrollmentId,
+          month,
+          year,
+        },
+      },
+      select: { monthly_report_id: true },
+    });
+    const report = await this.getOrCreateDraft(enrollmentId, month, year);
+    return { report, created: existing === null };
+  }
+
   // ========================================
   // PREVIEW (live auto-calculated data)
   // ========================================
@@ -587,14 +615,23 @@ export class MonthlyReportsService {
       throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_GENERATED);
     }
 
+    // Conditional on the state we validated, so a concurrent submit,
+    // regeneration or rollback cannot be overwritten.
+    const submitted = await this.prisma.monthly_reports.updateMany({
+      where: { monthly_report_id: reportId, status: 'generated' },
+      data: {
+        status: 'submitted',
+        submitted_at: new Date(),
+        submitted_by: userId,
+      },
+    });
+    if (submitted.count === 0) {
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_GENERATED);
+    }
+
     return serializeMonthlyReport(
-      await this.prisma.monthly_reports.update({
+      await this.prisma.monthly_reports.findUniqueOrThrow({
         where: { monthly_report_id: reportId },
-        data: {
-          status: 'submitted',
-          submitted_at: new Date(),
-          submitted_by: userId,
-        },
         include: { manual_data: true },
       }),
     );
@@ -1564,6 +1601,7 @@ export class MonthlyReportsService {
         club_section_id: clubSectionId,
         ecclesiastical_year_id: yearId,
         active: true,
+        status: 'active',
       },
       select: { user_id: true },
       distinct: ['user_id'],

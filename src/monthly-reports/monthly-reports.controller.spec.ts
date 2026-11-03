@@ -104,3 +104,33 @@ describe('MonthlyReportsController stored PDF contract', () => {
     expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(1);
   });
 });
+
+describe('MonthlyReportsController draft status code', () => {
+  const ENROLLMENT_ID = '22222222-2222-4222-8222-222222222222';
+
+  it.each([
+    [true, 201],
+    [false, 200],
+  ])('created=%s answers HTTP %i', async (created, expected) => {
+    const service = {
+      getOrCreateDraftWithCreated: jest
+        .fn()
+        .mockResolvedValue({ report: { monthly_report_id: 'r' }, created }),
+    };
+    const controller = new MonthlyReportsController(service as any, {} as any);
+    const res = { status: jest.fn() };
+
+    const body = await controller.getOrCreateDraft(
+      ENROLLMENT_ID,
+      6,
+      2026,
+      res as any,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(expected);
+    expect(body).toEqual({
+      status: 'success',
+      data: { monthly_report_id: 'r' },
+    });
+  });
+});

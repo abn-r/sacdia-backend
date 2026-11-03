@@ -514,6 +514,67 @@ describe('R2FileStorageService', () => {
   });
 
   // =========================================================================
+  // isOwnedReference
+  // =========================================================================
+
+  describe('isOwnedReference', () => {
+    const alias = StorageBucketAlias.USER_PROFILES; // bucket sacdia-users, prefix user-profiles
+
+    it('accepts a key under the bucket prefix', () => {
+      expect(service.isOwnedReference(alias, 'user-profiles/a b.jpg')).toBe(
+        true,
+      );
+    });
+
+    it('accepts the bucket public URL', () => {
+      expect(
+        service.isOwnedReference(
+          alias,
+          'https://pub-xxx.r2.dev/user-profiles/photo.jpeg',
+        ),
+      ).toBe(true);
+    });
+
+    it('accepts a signed URL of this account endpoint for the bucket', () => {
+      expect(
+        service.isOwnedReference(
+          alias,
+          'https://test-account.r2.cloudflarestorage.com/sacdia-users/user-profiles/photo.jpeg?X-Amz-Signature=abc',
+        ),
+      ).toBe(true);
+    });
+
+    it.each([
+      ['empty', ''],
+      ['free text', 'hola mundo'],
+      ['key outside the prefix', 'other/photo.jpg'],
+      ['path traversal', 'user-profiles/../secret.jpg'],
+      ['foreign host', 'https://evil.example.com/user-profiles/photo.jpg'],
+      [
+        'other r2.dev bucket',
+        'https://pub-other.r2.dev/user-profiles/photo.jpg',
+      ],
+      [
+        'another account endpoint',
+        'https://other-account.r2.cloudflarestorage.com/sacdia-users/user-profiles/p.jpg',
+      ],
+      [
+        'another bucket on this account',
+        'https://test-account.r2.cloudflarestorage.com/another-bucket/user-profiles/p.jpg',
+      ],
+      ['javascript scheme', 'javascript:alert(1)'],
+    ])('rejects %s', (_label, value) => {
+      expect(service.isOwnedReference(alias, value)).toBe(false);
+    });
+
+    it('requires a file extension for bare names in an unprefixed bucket', () => {
+      const unprefixed = StorageBucketAlias.ACHIEVEMENTS_BADGES;
+      expect(service.isOwnedReference(unprefixed, 'badge-1.png')).toBe(true);
+      expect(service.isOwnedReference(unprefixed, 'hola')).toBe(false);
+    });
+  });
+
+  // =========================================================================
   // EMBEDDED-PREFIX pattern — regression for commit fcf04c7
   //
   // These tests mirror the REAL production env where publicBaseUrl already

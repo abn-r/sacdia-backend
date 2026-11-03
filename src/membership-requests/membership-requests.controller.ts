@@ -185,7 +185,7 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 409,
     description:
-      'MR_CONSENT_NOT_VERIFIED: the requester is a minor whose guardian consent is not verified yet. MR_ALREADY_PENDING: the request was already processed',
+      'MR_CONSENT_NOT_VERIFIED: the requester is a minor whose guardian consent is not verified yet. MR_ALREADY_PROCESSED: the request was already processed',
   })
   async approve(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
@@ -379,7 +379,7 @@ export class MembershipRequestsController {
   @ApiResponse({
     status: 409,
     description:
-      'GUARDIANSHIP_EVIDENCE_REQUIRED o MR_ALREADY_PENDING (a un revisor solo-verificación le responde 404 MR_NOT_FOUND)',
+      'GUARDIANSHIP_EVIDENCE_REQUIRED o MR_ALREADY_PROCESSED (a un revisor solo-verificación le responde 404 MR_NOT_FOUND)',
   })
   async verifyConsent(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,

@@ -89,6 +89,9 @@ describe('HonorsService', () => {
     getSignedDownloadUrl: jest.fn(
       async (_bucket: StorageBucketAlias, value: string) => value,
     ),
+    isOwnedReference: jest.fn((_bucket: StorageBucketAlias, value: string) =>
+      value.startsWith('https://cdn.r2.example/'),
+    ),
   };
 
   beforeEach(async () => {
@@ -1644,6 +1647,71 @@ describe('HonorsService', () => {
       });
 
       expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateUserHonor file references (M4)', () => {
+    const OWN = 'https://cdn.r2.example/users-honors/img-1.jpg';
+    const LEGACY = 'https://legacy.supabase.example/storage/old.jpg';
+    const row = (extra: Record<string, unknown> = {}) => ({
+      user_honor_id: 70,
+      validation_status: 'IN_PROGRESS',
+      active: true,
+      certificate: '',
+      document: null,
+      images: [],
+      ...extra,
+    });
+
+    beforeEach(() => {
+      mockPrismaService.users_honors.findFirst.mockResolvedValue(row());
+      mockPrismaService.users_honors.update.mockResolvedValue({
+        user_honor_id: 70,
+      });
+    });
+
+    it.each([
+      ['images', { images: ['https://evil.example.com/x.jpg'] }],
+      ['images with free text', { images: [OWN, 'hola'] }],
+      ['document', { document: 'https://evil.example.com/x.pdf' }],
+      ['certificate', { certificate: 'https://evil.example.com/c.pdf' }],
+    ])('rejects %s that is not our storage', async (_label, dto) => {
+      await expect(
+        service.updateUserHonor('user-123', 15, dto),
+      ).rejects.toMatchObject({
+        code: ErrorCode.HONOR_FILE_REFERENCE_INVALID,
+        status: 400,
+      });
+      expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts references into our storage and clearing values', async () => {
+      await service.updateUserHonor('user-123', 15, {
+        images: [OWN],
+        document: OWN,
+      });
+      await service.updateUserHonor('user-123', 15, {
+        images: [],
+        document: null,
+        certificate: '',
+      });
+
+      expect(mockPrismaService.users_honors.update).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps accepting values the row already holds (legacy URLs)', async () => {
+      mockPrismaService.users_honors.findFirst.mockResolvedValue(
+        row({ images: [LEGACY, OWN] }),
+      );
+
+      await expect(
+        service.updateUserHonor('user-123', 15, { images: [LEGACY] }),
+      ).resolves.toBeDefined();
+      await expect(
+        service.updateUserHonor('user-123', 15, {
+          images: [LEGACY, 'https://evil.example.com/new.jpg'],
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_FILE_REFERENCE_INVALID });
     });
   });
 

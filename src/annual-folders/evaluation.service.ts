@@ -896,6 +896,7 @@ export class EvaluationService {
       earned_points: evaluation.earned_points,
       max_points: evaluation.max_points,
       notes: evaluation.notes,
+      status: evaluation.status,
       evaluator: this.formatUserName(evaluation.lf_approver),
       lf_approved_at: evaluation.lf_approved_at,
     };

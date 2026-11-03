@@ -4,7 +4,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
-  IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -81,7 +81,7 @@ export class CreateSupplyProductDto {
   name!: string;
 
   @ApiProperty({ enum: ['KG', 'L', 'BAG', 'UNIT'] })
-  @IsEnum(['KG', 'L', 'BAG', 'UNIT'])
+  @IsIn(['KG', 'L', 'BAG', 'UNIT'])
   uom!: 'KG' | 'L' | 'BAG' | 'UNIT';
 
   @ApiProperty({ example: 2800, description: 'Precio unitario en centavos' })
@@ -101,7 +101,7 @@ export class UpdateSupplyProductDto {
 
   @ApiPropertyOptional({ enum: ['KG', 'L', 'BAG', 'UNIT'] })
   @IsOptional()
-  @IsEnum(['KG', 'L', 'BAG', 'UNIT'])
+  @IsIn(['KG', 'L', 'BAG', 'UNIT'])
   uom?: 'KG' | 'L' | 'BAG' | 'UNIT';
 
   @ApiPropertyOptional()

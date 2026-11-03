@@ -1,7 +1,3 @@
-export const DEFAULT_CLASS_THRESHOLD_PERCENT = 80;
-
-const FIELD_EDITOR_ROLES = new Set(['director-lf', 'assistant-lf']);
-
 export function june30InsideYear(
   startDate: string,
   endDate: string,
@@ -31,32 +27,6 @@ export function localCivilStamp(now: Date, timeZone: string): string {
   const pick = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((part) => part.type === type)?.value ?? '00';
   return `${pick('year')}-${pick('month')}-${pick('day')}T${pick('hour')}:${pick('minute')}:${pick('second')}`;
-}
-
-export function canEditFieldClassThreshold(params: {
-  roles: string[];
-  now: Date;
-  timeZone: string;
-  yearStart: string;
-  yearEnd: string;
-}): boolean {
-  const roles = new Set(params.roles.map((role) => role.toLowerCase()));
-  const stamp = localCivilStamp(params.now, params.timeZone);
-  const insideYear =
-    stamp.slice(0, 10) >= params.yearStart &&
-    stamp.slice(0, 10) <= params.yearEnd;
-  if (!insideYear) {
-    return false;
-  }
-  if (roles.has('super-admin')) {
-    return true;
-  }
-  const deadline = june30InsideYear(params.yearStart, params.yearEnd);
-  if (!deadline) {
-    return false;
-  }
-  const fieldEditor = [...roles].some((role) => FIELD_EDITOR_ROLES.has(role));
-  return fieldEditor && stamp <= `${deadline}T23:59:59`;
 }
 
 /**

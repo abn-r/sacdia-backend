@@ -217,6 +217,7 @@ describe('EvaluationService', () => {
       );
 
       expect(result.evaluation.earned_points).toBe(80);
+      expect(result.evaluation.status).toBe('PREAPPROVED_LF');
       expect(result.folder_summary.status).toBe('under_evaluation');
     });
 

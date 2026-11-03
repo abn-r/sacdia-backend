@@ -112,6 +112,13 @@ export interface FileStorageService {
     bucketAlias: StorageBucketAlias,
     publicUrl: string,
   ): string | null;
+  /**
+   * True when `value` points into `bucketAlias`: a key under the bucket's key
+   * prefix, the bucket's public URL, or a signed URL of this account's R2
+   * endpoint for that bucket. Anything else (other hosts, other buckets,
+   * free text) is false. Used to vet references sent by clients.
+   */
+  isOwnedReference(bucketAlias: StorageBucketAlias, value: string): boolean;
   getSignedDownloadUrl(
     bucketAlias: StorageBucketAlias,
     keyOrPublicUrl: string,

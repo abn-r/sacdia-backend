@@ -321,7 +321,6 @@ describe('ClassProgressScopeService', () => {
           {
             investiture_progress: { completed: number; total: number };
             overall_progress: number;
-            passing_score: number;
           }
         >();
         for (const enrollmentId of enrollmentIds) {
@@ -331,7 +330,6 @@ describe('ClassProgressScopeService', () => {
               total: 4,
             },
             overall_progress: enrollmentId === 101 ? 25 : 50,
-            passing_score: 80,
           });
         }
         return summaries;
@@ -455,8 +453,7 @@ describe('ClassProgressScopeService', () => {
             {
               investiture_progress: { completed: 0, total: 4 },
               overall_progress: 0,
-              passing_score: 80,
-            },
+              },
           ],
         ]),
       );

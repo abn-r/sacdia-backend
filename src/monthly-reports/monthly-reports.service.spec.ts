@@ -1368,3 +1368,122 @@ describe('MonthlyReportsService directiva', () => {
     ]);
   });
 });
+
+describe('MonthlyReportsService members, draft status and submit', () => {
+  it('counts only active assignments as club members', async () => {
+    const findMany = jest.fn().mockResolvedValue([{ user_id: 'u1' }]);
+    const service = new MonthlyReportsService(
+      { club_role_assignments: { findMany } } as any,
+      {} as any,
+    );
+
+    await expect((service as any).getClubMemberIds(7, 1)).resolves.toEqual([
+      'u1',
+    ]);
+
+    expect(findMany.mock.calls[0][0].where).toMatchObject({
+      club_section_id: 7,
+      ecclesiastical_year_id: 1,
+      active: true,
+      status: 'active',
+    });
+  });
+
+  describe('getOrCreateDraftWithCreated', () => {
+    const row = {
+      monthly_report_id: 'report-1',
+      club_enrollment_id: 'enrollment-1',
+      month: 6,
+      year: 2026,
+      status: 'draft',
+      manual_data: null,
+    };
+    const prisma = {
+      club_enrollments: { findUnique: jest.fn() },
+      monthly_reports: { findUnique: jest.fn(), upsert: jest.fn() },
+    };
+    const service = new MonthlyReportsService(prisma as any, {} as any);
+
+    beforeEach(() => {
+      prisma.club_enrollments.findUnique.mockResolvedValue({
+        club_enrollment_id: 'enrollment-1',
+      });
+      prisma.monthly_reports.upsert.mockResolvedValue(row);
+    });
+
+    it('reports created when the draft did not exist', async () => {
+      prisma.monthly_reports.findUnique.mockResolvedValue(null);
+
+      const result = await service.getOrCreateDraftWithCreated(
+        'enrollment-1',
+        6,
+        2026,
+      );
+
+      expect(result.created).toBe(true);
+      expect(result.report).toMatchObject({ monthly_report_id: 'report-1' });
+    });
+
+    it('reports not created when the draft already existed', async () => {
+      prisma.monthly_reports.findUnique.mockResolvedValue({
+        monthly_report_id: 'report-1',
+      });
+
+      const result = await service.getOrCreateDraftWithCreated(
+        'enrollment-1',
+        6,
+        2026,
+      );
+
+      expect(result.created).toBe(false);
+    });
+  });
+
+  describe('submit', () => {
+    const generated = { monthly_report_id: 'report-1', status: 'generated' };
+    const prisma = {
+      monthly_reports: {
+        findUnique: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
+        updateMany: jest.fn(),
+        update: jest.fn(),
+      },
+    };
+    const service = new MonthlyReportsService(prisma as any, {} as any);
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      prisma.monthly_reports.findUnique.mockResolvedValue(generated);
+    });
+
+    it('moves a generated report to submitted conditioned on its state', async () => {
+      prisma.monthly_reports.updateMany.mockResolvedValue({ count: 1 });
+      prisma.monthly_reports.findUniqueOrThrow.mockResolvedValue({
+        ...generated,
+        status: 'submitted',
+        manual_data: null,
+      });
+
+      await expect(service.submit('report-1', 'user-1')).resolves.toMatchObject(
+        { status: 'submitted' },
+      );
+
+      expect(prisma.monthly_reports.updateMany).toHaveBeenCalledWith({
+        where: { monthly_report_id: 'report-1', status: 'generated' },
+        data: expect.objectContaining({
+          status: 'submitted',
+          submitted_by: 'user-1',
+        }),
+      });
+      expect(prisma.monthly_reports.update).not.toHaveBeenCalled();
+    });
+
+    it('answers the state error when a concurrent change wins the race', async () => {
+      prisma.monthly_reports.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.submit('report-1', 'user-1')).rejects.toMatchObject({
+        code: ErrorCode.MONTHLY_REPORT_NOT_GENERATED,
+      });
+    });
+  });
+});

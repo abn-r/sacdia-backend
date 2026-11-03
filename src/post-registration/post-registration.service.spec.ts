@@ -12,6 +12,12 @@ import { AppForbiddenException } from '../common/errors/app.exception';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
 
+// Territory of the club behind section 10: country 1 > union 2 > field 3.
+const sectionClub = {
+  local_field_id: 3,
+  local_fields: { union_id: 2, unions: { country_id: 1 } },
+};
+
 const GUARDIAN_ID = '9f1d9a40-79f0-4e0c-a8c7-5f0f1c7d9a11';
 
 describe('PostRegistrationService', () => {
@@ -39,6 +45,7 @@ describe('PostRegistrationService', () => {
       findUnique: jest.fn().mockResolvedValue({
         club_section_id: 10,
         club_type_id: 2,
+        clubs: sectionClub,
       }),
     },
     club_role_assignments: {
@@ -377,6 +384,49 @@ describe('PostRegistrationService', () => {
       transactionMock.users.findUnique.mockResolvedValue({
         birthday: new Date('2016-01-01'),
       });
+    });
+
+    it('derives country, union and local field from the section, not the body', async () => {
+      await service.completeStep3(
+        userId,
+        { club_section_id: 10, class_id: 5 },
+        ownerActor,
+      );
+
+      expect(transactionMock.users.update).toHaveBeenCalledWith({
+        where: { user_id: userId },
+        data: { country_id: 1, union_id: 2, local_field_id: 3 },
+        select: { user_id: true },
+      });
+    });
+
+    it.each([
+      ['country_id', 9],
+      ['union_id', 9],
+      ['local_field_id', 9],
+    ])(
+      'rejects a body %s that does not match the section with POST_REG_CLUB_LOCATION_MISMATCH',
+      async (field, value) => {
+        await expect(
+          service.completeStep3(userId, { ...dto, [field]: value }, ownerActor),
+        ).rejects.toMatchObject({
+          code: ErrorCode.POST_REG_CLUB_LOCATION_MISMATCH,
+          status: 400,
+        });
+        expect(transactionMock.users.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects a section whose club cannot be resolved', async () => {
+      transactionMock.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 10,
+        club_type_id: 2,
+        clubs: null,
+      });
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_CLUB_NOT_FOUND });
     });
 
     it('should derive the operational class from birthday and selected club type when class_id is omitted', async () => {
@@ -778,6 +828,7 @@ describe('PostRegistrationService', () => {
       transactionMock.club_sections.findUnique.mockResolvedValue({
         club_section_id: 10,
         club_type_id: 3,
+        clubs: sectionClub,
       });
       transactionMock.classes.findUnique.mockResolvedValue({
         class_id: 5,
