@@ -14,6 +14,13 @@ import {
 import { ErrorCode } from '../errors/error-codes';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TemporalContextFactory } from '../clock/temporal-context.factory';
+import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
+import {
+  CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT,
+  CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
+  toTemporalLocalField,
+} from '../authorization/club-assignment-temporal';
 import {
   AuthorizationContextService,
   type ResolvedAuthorizationProfile,
@@ -158,6 +165,8 @@ export class PermissionsGuard implements CanActivate {
     private readonly authorizationContext: AuthorizationContextService,
     private readonly prisma: PrismaService,
     private readonly hierarchy: InstitutionalHierarchyService,
+    private readonly assignmentEffectivity: ClubAssignmentEffectivityPolicy,
+    private readonly temporalContexts: TemporalContextFactory,
     @Optional() private readonly memberScope?: MemberTerritoryScopeService,
   ) {}
 
@@ -743,7 +752,7 @@ export class PermissionsGuard implements CanActivate {
       return false;
     }
 
-    const sectionAssignment = await this.prisma.club_role_assignments.findFirst(
+    const sectionAssignments = await this.prisma.club_role_assignments.findMany(
       {
         where: {
           user_id: targetUserId,
@@ -758,11 +767,24 @@ export class PermissionsGuard implements CanActivate {
             },
           ],
         },
-        select: { assignment_id: true },
+        select: {
+          assignment_id: true,
+          active: true,
+          status: true,
+          ...CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
+          ...CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT,
+        },
       },
     );
 
-    return sectionAssignment != null;
+    // Filas 'active' deben estar vigentes (policy). Las no activas (p. ej.
+    // 'pending' en lecturas de flujo de alta) no otorgan autoridad y no
+    // tienen vigencia que evaluar.
+    return sectionAssignments.some(
+      (assignment) =>
+        assignment.status !== 'active' ||
+        this.isAssignmentEffective(assignment),
+    );
   }
 
   private async validateClubScope(
@@ -2100,7 +2122,7 @@ export class PermissionsGuard implements CanActivate {
       );
     }
 
-    const assignment = await this.prisma.club_role_assignments.findFirst({
+    const assignments = await this.prisma.club_role_assignments.findMany({
       where: {
         user_id: enrollment.user_id,
         active: true,
@@ -2111,15 +2133,23 @@ export class PermissionsGuard implements CanActivate {
         },
       },
       select: {
+        active: true,
+        status: true,
+        ...CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
         club_sections: {
           select: {
             club_section_id: true,
             main_club_id: true,
             club_type_id: true,
+            clubs:
+              CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT.club_sections.select.clubs,
           },
         },
       },
     });
+    const assignment = assignments.find((candidate) =>
+      this.isAssignmentEffective(candidate),
+    );
 
     return this.buildInstanceScopeFromSection(
       assignment?.club_sections ?? null,
@@ -2249,35 +2279,63 @@ export class PermissionsGuard implements CanActivate {
   private async resolveMemberAssignmentScopes(
     memberId: string,
   ): Promise<ResolvedInstanceScope[]> {
-    const assignments = await this.prisma.club_role_assignments.findMany({
-      where: {
-        user_id: memberId,
-        active: true,
-        status: 'active',
-      },
-      select: {
-        club_sections: {
-          select: {
-            club_section_id: true,
-            main_club_id: true,
-            club_type_id: true,
+    const assignments = (
+      await this.prisma.club_role_assignments.findMany({
+        where: {
+          user_id: memberId,
+          active: true,
+          status: 'active',
+        },
+        select: {
+          active: true,
+          status: true,
+          ...CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
+          club_sections: {
+            select: {
+              club_section_id: true,
+              main_club_id: true,
+              club_type_id: true,
+              clubs:
+                CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT.club_sections.select.clubs,
+            },
           },
         },
-      },
-    });
+      })
+    ).filter((candidate) => this.isAssignmentEffective(candidate));
 
     return assignments
-      .map((assignment) => assignment.club_sections)
-      .filter(
-        (
-          section,
-        ): section is {
-          club_section_id: number;
-          main_club_id: number;
-          club_type_id: number;
-        } => Boolean(section?.main_club_id),
-      )
+      .flatMap((assignment) => {
+        const section = assignment.club_sections;
+        return section?.main_club_id ? [section] : [];
+      })
       .map((section) => this.buildInstanceScopeFromSection(section));
+  }
+
+  /**
+   * Vigencia temporal del assignment evaluada con la fecha de negocio de SU
+   * Campo Local; toda decision pasa por `ClubAssignmentEffectivityPolicy`.
+   */
+  private isAssignmentEffective(assignment: {
+    active: boolean;
+    status: string | null;
+    start_date: Date;
+    end_date: Date | null;
+    expires_at: Date | null;
+    club_sections?: {
+      clubs?: {
+        local_fields?: {
+          local_field_id: number;
+          timezone: string | null;
+        } | null;
+      } | null;
+    } | null;
+  }): boolean {
+    return this.assignmentEffectivity.isEffective(
+      assignment,
+      this.temporalContexts.forLocalField(
+        toTemporalLocalField(assignment.club_sections?.clubs?.local_fields),
+      ),
+    );
   }
 
   private buildInstanceScopeFromSection(

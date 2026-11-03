@@ -28,6 +28,9 @@ import {
   type BusinessDate,
   ZonedBusinessTimeService,
 } from '../clock/zoned-business-time.service';
+import { TemporalContextFactory } from '../clock/temporal-context.factory';
+import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
+import { toTemporalLocalField } from '../authorization/club-assignment-temporal';
 
 export const CANONICAL_CLUB_ASSIGNMENT_ORDER = [
   { start_date: 'desc' as const },
@@ -179,8 +182,9 @@ type ClubHierarchyRecord = {
 type ClubAssignmentRecord = {
   assignment_id: string;
   ecclesiastical_year_id: number;
+  active: boolean;
   status: string | null;
-  start_date: Date | null;
+  start_date: Date;
   end_date: Date | null;
   expires_at: Date | null;
   roles: {
@@ -201,12 +205,13 @@ type ClubAssignmentRecord = {
  * authorization-resolution semantics.
  */
 export const AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
-  `auth:context:v7:${userId}`;
+  `auth:context:v8:${userId}`;
 
 const LEGACY_AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
   `auth:context:${userId}`;
 
 const PREVIOUS_AUTH_CONTEXT_CACHE_KEYS = (userId: string): string[] => [
+  `auth:context:v7:${userId}`,
   `auth:context:v6:${userId}`,
   `auth:context:v5:${userId}`,
   `auth:context:v4:${userId}`,
@@ -229,6 +234,7 @@ const CLUB_SCOPE_SELECT = {
     select: {
       local_field_id: true,
       name: true,
+      timezone: true,
       unions: {
         select: {
           union_id: true,
@@ -331,6 +337,8 @@ export class AuthorizationContextService {
     private readonly zonedBusinessTime: ZonedBusinessTimeService,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly assignmentEffectivity: ClubAssignmentEffectivityPolicy,
+    private readonly temporalContexts: TemporalContextFactory,
   ) {}
 
   /**
@@ -470,6 +478,7 @@ export class AuthorizationContextService {
           select: {
             assignment_id: true,
             ecclesiastical_year_id: true,
+            active: true,
             status: true,
             start_date: true,
             end_date: true,
@@ -646,7 +655,10 @@ export class AuthorizationContextService {
 
     // ── Cache SET path ──────────────────────────────────────────────────────
     try {
-      const ttlMs = this.cacheTtlMs(currentYear);
+      const ttlMs = this.cacheTtlMs(
+        currentYear,
+        user.club_role_assignments ?? [],
+      );
       if (ttlMs > 0) {
         const envelope: AuthContextCacheEnvelope = {
           calendarRevision,
@@ -822,6 +834,7 @@ export class AuthorizationContextService {
 
     const isOperational =
       assignment.status === 'active' &&
+      this.isAssignmentEffective(assignment) &&
       currentYearId !== null &&
       assignment.ecclesiastical_year_id === currentYearId &&
       cycleAllows;
@@ -979,7 +992,46 @@ export class AuthorizationContextService {
     return cached.calendarRevision === calendarRevision;
   }
 
-  private cacheTtlMs(currentYear: EcclesiasticalYear | null): number {
+  /**
+   * Vigencia temporal del assignment (inicio, fin, expiracion) evaluada con la
+   * fecha de negocio de SU Campo Local. Toda decision pasa por la policy.
+   */
+  private isAssignmentEffective(assignment: ClubAssignmentRecord): boolean {
+    return this.assignmentEffectivity.isEffective(
+      assignment,
+      this.temporalContextFor(assignment),
+    );
+  }
+
+  private temporalContextFor(assignment: ClubAssignmentRecord) {
+    return this.temporalContexts.forLocalField(
+      toTemporalLocalField(assignment.club_sections?.clubs?.local_fields),
+    );
+  }
+
+  /**
+   * TTL = min(base, fin del anio eclesiastico actual, proxima frontera
+   * temporal (inicio/fin/expiracion) de cualquier assignment cargado).
+   */
+  private cacheTtlMs(
+    currentYear: EcclesiasticalYear | null,
+    assignments: ClubAssignmentRecord[],
+  ): number {
+    let ttl = this.yearBoundaryTtlMs(currentYear);
+    const nowMs = this.clock.now().getTime();
+    for (const assignment of assignments) {
+      const boundary = this.assignmentEffectivity.nextBoundary(
+        assignment,
+        this.temporalContextFor(assignment),
+      );
+      if (boundary) {
+        ttl = Math.min(ttl, boundary.getTime() - nowMs);
+      }
+    }
+    return ttl;
+  }
+
+  private yearBoundaryTtlMs(currentYear: EcclesiasticalYear | null): number {
     if (currentYear == null) {
       return AUTH_CONTEXT_TTL_MS;
     }

@@ -1,3 +1,4 @@
+import { clubAssignmentEffectivityArgs } from '../authorization/testing/club-assignment-effectivity.testing';
 import { type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from './permissions.guard';
@@ -68,6 +69,7 @@ describe('PermissionsGuard tenant binding', () => {
     mockAuthorizationContext as unknown as AuthorizationContextService,
     mockPrisma as unknown as PrismaService,
     mockHierarchy as unknown as InstitutionalHierarchyService,
+    ...clubAssignmentEffectivityArgs(),
   );
 
   const createContext = (

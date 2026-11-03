@@ -4,6 +4,13 @@ import { AuthorizationContextService } from '../services/authorization-context.s
 import { AppForbiddenException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TemporalContextFactory } from '../clock/temporal-context.factory';
+import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
+import {
+  CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT,
+  CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
+  toTemporalLocalField,
+} from '../authorization/club-assignment-temporal';
 import {
   AUTHORIZATION_RESOURCE_KEY,
   type AuthorizationResourceMetadata,
@@ -45,6 +52,8 @@ export class ClubRolesGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly prisma: PrismaService,
+    private readonly assignmentEffectivity: ClubAssignmentEffectivityPolicy,
+    private readonly temporalContexts: TemporalContextFactory,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -153,7 +162,7 @@ export class ClubRolesGuard implements CanActivate {
       return null;
     }
 
-    const assignment = await this.prisma.club_role_assignments.findFirst({
+    const assignments = await this.prisma.club_role_assignments.findMany({
       where: {
         user_id: enrollment.user_id,
         active: true,
@@ -164,9 +173,29 @@ export class ClubRolesGuard implements CanActivate {
         },
       },
       select: {
-        club_sections: { select: { main_club_id: true } },
+        active: true,
+        status: true,
+        ...CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
+        club_sections: {
+          select: {
+            main_club_id: true,
+            clubs:
+              CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT.club_sections.select.clubs,
+          },
+        },
       },
     });
+
+    // Vigencia temporal (inicio/fin/expiracion) con la fecha de negocio del
+    // Campo Local del club; toda decision pasa por la policy.
+    const assignment = assignments.find((candidate) =>
+      this.assignmentEffectivity.isEffective(
+        candidate,
+        this.temporalContexts.forLocalField(
+          toTemporalLocalField(candidate.club_sections?.clubs?.local_fields),
+        ),
+      ),
+    );
 
     return assignment?.club_sections?.main_club_id ?? null;
   }

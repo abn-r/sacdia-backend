@@ -1,3 +1,4 @@
+import { clubAssignmentEffectivityArgs } from '../authorization/testing/club-assignment-effectivity.testing';
 import { type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from './permissions.guard';
@@ -10,6 +11,16 @@ import { ErrorCode } from '../errors/error-codes';
 import { InstitutionalHierarchyService } from '../services/institutional-hierarchy.service';
 
 const SENSITIVE_USER_SUBRESOURCE_KEY = 'sensitive_user_subresource';
+
+// Test clock: 2026-06-01T12:00Z => business date 2026-06-01 (Mexico City).
+const effectiveAssignment = (overrides: Record<string, unknown> = {}) => ({
+  active: true,
+  status: 'active',
+  start_date: new Date('2026-01-01'),
+  end_date: null,
+  expires_at: null,
+  ...overrides,
+});
 
 describe('PermissionsGuard', () => {
   const MEMBER_USER_ID = '88888888-8888-4888-8888-888888888888';
@@ -52,6 +63,7 @@ describe('PermissionsGuard', () => {
     mockAuthorizationContext as unknown as AuthorizationContextService,
     mockPrisma as unknown as PrismaService,
     mockHierarchy as unknown as InstitutionalHierarchyService,
+    ...clubAssignmentEffectivityArgs(),
   );
 
   const createContext = (
@@ -181,7 +193,7 @@ describe('PermissionsGuard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthorizationContext.canManageClub.mockResolvedValue(false);
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([]);
     // Target users sit inside the actor's territory unless a test says not.
     mockPrisma.users.count.mockResolvedValue(1);
     mockAuthorizationContext.canAccessHierarchyScope.mockImplementation(
@@ -1078,9 +1090,11 @@ describe('PermissionsGuard', () => {
         instanceId: 22,
       }),
     );
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-      assignment_id: 'pending-assignment-1',
-    });
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      effectiveAssignment({
+        assignment_id: 'pending-assignment-1',
+      }),
+    ]);
 
     await expect(
       guard.canActivate(
@@ -1091,7 +1105,7 @@ describe('PermissionsGuard', () => {
       ),
     ).resolves.toBe(true);
 
-    expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledWith({
+    expect(mockPrisma.club_role_assignments.findMany).toHaveBeenCalledWith({
       where: {
         user_id: '99999999-9999-4999-8999-999999999991',
         club_section_id: 22,
@@ -1105,7 +1119,12 @@ describe('PermissionsGuard', () => {
           },
         ],
       },
-      select: { assignment_id: true },
+      select: expect.objectContaining({
+        assignment_id: true,
+        start_date: true,
+        end_date: true,
+        expires_at: true,
+      }),
     });
   });
 
@@ -1125,9 +1144,11 @@ describe('PermissionsGuard', () => {
         instanceId: 22,
       }),
     );
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-      assignment_id: 'active-assignment-1',
-    });
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      effectiveAssignment({
+        assignment_id: 'active-assignment-1',
+      }),
+    ]);
 
     await expect(
       guard.canActivate(
@@ -1137,6 +1158,85 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).resolves.toBe(true);
+  });
+
+  it('denies (403) a section member read when the target assignment ended yesterday', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['users:read_detail'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'user', ownerParam: 'userId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['club_roles:read'],
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      effectiveAssignment({
+        assignment_id: 'ended-assignment-1',
+        end_date: new Date('2026-05-31'),
+      }),
+    ]);
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'director-1' },
+          params: { userId: MEMBER_USER_ID },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('denies insurance member access when the insured assignment in the actor section ended yesterday', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['insurance:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'insurance_member', idParam: 'memberId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['insurance:read'],
+        clubId: 10,
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.users.findUnique.mockResolvedValue({ user_id: 'member-b' });
+    const request = () =>
+      createContext({
+        user: { sub: 'club-a-actor' },
+        params: { memberId: '66666666-6666-4666-8666-666666666666' },
+      });
+    const sameSection = {
+      club_section_id: 22,
+      main_club_id: 10,
+      club_type_id: 2,
+    };
+
+    // Control: the same assignment, still effective, grants access.
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      effectiveAssignment({ club_sections: sameSection }),
+    ]);
+    await expect(guard.canActivate(request())).resolves.toBe(true);
+
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      effectiveAssignment({
+        end_date: new Date('2026-05-31'),
+        club_sections: sameSection,
+      }),
+    ]);
+    await expect(guard.canActivate(request())).rejects.toMatchObject({
+      status: 403,
+    });
   });
 
   describe('investiture eligibility of a section member (validation:read)', () => {
@@ -1153,9 +1253,11 @@ describe('PermissionsGuard', () => {
       mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
         createResolved({ activeClubPermissions, instanceId: 22 }),
       );
-      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-        assignment_id: 'active-assignment-1',
-      });
+      mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+        effectiveAssignment({
+          assignment_id: 'active-assignment-1',
+        }),
+      ]);
     }
 
     it('lets the section board (club_members:approve) read a member of their active section', async () => {
@@ -1205,7 +1307,7 @@ describe('PermissionsGuard', () => {
         instanceId: 22,
       }),
     );
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([]);
 
     await expect(
       guard.canActivate(
@@ -1259,7 +1361,7 @@ describe('PermissionsGuard', () => {
           }),
         ),
       ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
-      expect(mockPrisma.club_role_assignments.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.club_role_assignments.findMany).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -1277,23 +1379,28 @@ describe('PermissionsGuard', () => {
             instanceId: 22,
           }),
         );
-        mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-          assignment_id: 'active-assignment-1',
-        });
+        mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+          effectiveAssignment({
+            assignment_id: 'active-assignment-1',
+          }),
+        ]);
 
         await expect(guard.canActivate(directorContext())).resolves.toBe(true);
 
-        expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledWith(
-          {
-            where: {
-              user_id: MEMBER_USER_ID,
-              club_section_id: 22,
-              active: true,
-              OR: [{ status: null }, { status: { in: ['active'] } }],
-            },
-            select: { assignment_id: true },
+        expect(mockPrisma.club_role_assignments.findMany).toHaveBeenCalledWith({
+          where: {
+            user_id: MEMBER_USER_ID,
+            club_section_id: 22,
+            active: true,
+            OR: [{ status: null }, { status: { in: ['active'] } }],
           },
-        );
+          select: expect.objectContaining({
+            assignment_id: true,
+            start_date: true,
+            end_date: true,
+            expires_at: true,
+          }),
+        });
       },
     );
 
@@ -1305,7 +1412,7 @@ describe('PermissionsGuard', () => {
           instanceId: 22,
         }),
       );
-      mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      mockPrisma.club_role_assignments.findMany.mockResolvedValue([]);
 
       await expect(guard.canActivate(directorContext())).rejects.toMatchObject({
         code: ErrorCode.GUARD_PERMISSION_DENIED,
@@ -1320,9 +1427,11 @@ describe('PermissionsGuard', () => {
           instanceId: 22,
         }),
       );
-      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-        assignment_id: 'active-assignment-1',
-      });
+      mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+        effectiveAssignment({
+          assignment_id: 'active-assignment-1',
+        }),
+      ]);
 
       await expect(guard.canActivate(directorContext())).rejects.toMatchObject({
         code: ErrorCode.GUARD_PERMISSION_DENIED,
@@ -1337,9 +1446,11 @@ describe('PermissionsGuard', () => {
           instanceId: 22,
         }),
       );
-      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-        assignment_id: 'active-assignment-1',
-      });
+      mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+        effectiveAssignment({
+          assignment_id: 'active-assignment-1',
+        }),
+      ]);
 
       await expect(guard.canActivate(directorContext())).rejects.toMatchObject({
         code: ErrorCode.GUARD_PERMISSION_DENIED,
@@ -1522,13 +1633,15 @@ describe('PermissionsGuard', () => {
       ecclesiastical_year_id: 2026,
       classes: { club_type_id: 2 },
     });
-    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-      club_sections: {
-        club_section_id: 44,
-        main_club_id: 99,
-        club_type_id: 2,
-      },
-    });
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      effectiveAssignment({
+        club_sections: {
+          club_section_id: 44,
+          main_club_id: 99,
+          club_type_id: 2,
+        },
+      }),
+    ]);
 
     await expect(
       guard.canActivate(
@@ -1655,13 +1768,13 @@ describe('PermissionsGuard', () => {
     );
     mockPrisma.users.findUnique.mockResolvedValue({ user_id: 'member-b' });
     mockPrisma.club_role_assignments.findMany.mockResolvedValue([
-      {
+      effectiveAssignment({
         club_sections: {
           club_section_id: 44,
           main_club_id: 99,
           club_type_id: 2,
         },
-      },
+      }),
     ]);
 
     await expect(
@@ -1695,13 +1808,13 @@ describe('PermissionsGuard', () => {
       user_id: 'member-b',
     });
     mockPrisma.club_role_assignments.findMany.mockResolvedValue([
-      {
+      effectiveAssignment({
         club_sections: {
           club_section_id: 44,
           main_club_id: 99,
           club_type_id: 2,
         },
-      },
+      }),
     ]);
 
     await expect(
@@ -2297,9 +2410,11 @@ describe('PermissionsGuard', () => {
           instanceId: 22,
         }),
       );
-      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-        assignment_id: 'active-assignment-1',
-      });
+      mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+        effectiveAssignment({
+          assignment_id: 'active-assignment-1',
+        }),
+      ]);
 
       await expect(guard.canActivate(otherUserContext())).resolves.toBe(true);
     });
@@ -2319,9 +2434,11 @@ describe('PermissionsGuard', () => {
             instanceId: 22,
           }),
         );
-        mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-          assignment_id: 'active-assignment-1',
-        });
+        mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+          effectiveAssignment({
+            assignment_id: 'active-assignment-1',
+          }),
+        ]);
 
         await expect(guard.canActivate(otherUserContext())).resolves.toBe(true);
       },
@@ -2340,9 +2457,11 @@ describe('PermissionsGuard', () => {
           instanceId: 22,
         }),
       );
-      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
-        assignment_id: 'active-assignment-1',
-      });
+      mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+        effectiveAssignment({
+          assignment_id: 'active-assignment-1',
+        }),
+      ]);
 
       await expect(guard.canActivate(otherUserContext())).rejects.toMatchObject(
         { code: ErrorCode.GUARD_PERMISSION_DENIED },

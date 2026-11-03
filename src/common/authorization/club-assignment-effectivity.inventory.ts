@@ -63,10 +63,10 @@ const baseline = {
     'effectiveWhere|T08|1|40ea0dbf5bcf',
   'common/authorization/member-territory-scope.service.ts':
     'effectiveWhere|T09|2|977d674fbe2d',
-  'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|32d48d679749',
-  'common/guards/permissions.guard.ts': 'effectiveWhere|T08|3|2bd237ed53eb',
+  'common/guards/club-roles.guard.ts': 'effectiveWhere|T08|1|1c6ca3b5c753',
+  'common/guards/permissions.guard.ts': 'effectiveWhere|T08|3|8de9e2925a04',
   'common/services/authorization-context.service.ts':
-    'effectiveWhere|T08|1|388da81fc937',
+    'effectiveWhere|T08|1|756a9b39f554',
   'coordination/actor-section-scope.service.ts':
     'effectiveWhere|T09|1|fcb522b8aa1c',
   'coordination/coordination.service.ts': 'effectiveWhere|T08|1|9a134e551821',
