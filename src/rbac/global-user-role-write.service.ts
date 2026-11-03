@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { CriticalAuditWriterService } from '../audit-logs/critical-audit-writer.service';
@@ -32,7 +32,7 @@ export type GlobalUserRoleWriteResult = {
 @Injectable()
 export class GlobalUserRoleWriteService {
   constructor(
-    private readonly prisma: Database,
+    @Inject(PrismaService) private readonly prisma: Database,
     private readonly exactSuperAdmin: ExactSuperAdminWritePolicy,
     private readonly audit: CriticalAuditWriterService,
   ) {}
