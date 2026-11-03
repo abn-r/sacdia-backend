@@ -427,6 +427,7 @@ export class ClubsController {
   async assignRole(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() user: { sub: string },
     @Body() dto: AssignRoleDto,
   ) {
     await this.clubsService.assertSectionBelongsToClub(clubId, sectionId);
@@ -436,10 +437,13 @@ export class ClubsController {
       );
     }
 
-    return this.clubsService.assignRole({
-      ...dto,
-      club_section_id: sectionId,
-    });
+    return this.clubsService.assignRole(
+      {
+        ...dto,
+        club_section_id: sectionId,
+      },
+      user.sub,
+    );
   }
 
   @Post(':clubId/sections/:sectionId/director-assignment')
@@ -653,9 +657,10 @@ export class ClubRolesController {
   })
   async updateAssignment(
     @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
+    @CurrentUser() user: { sub: string },
     @Body() dto: UpdateRoleAssignmentDto,
   ) {
-    return this.clubsService.updateRoleAssignment(assignmentId, dto);
+    return this.clubsService.updateRoleAssignment(assignmentId, dto, user.sub);
   }
 
   @Delete(':assignmentId')
@@ -666,7 +671,8 @@ export class ClubRolesController {
   @ApiResponse({ status: 200, description: 'Rol removido' })
   async removeAssignment(
     @Param('assignmentId', ParseUuidParamPipe) assignmentId: string,
+    @CurrentUser() user: { sub: string },
   ) {
-    return this.clubsService.removeRoleAssignment(assignmentId);
+    return this.clubsService.removeRoleAssignment(assignmentId, user.sub);
   }
 }

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import {
   Controller,
   Get,
@@ -39,6 +39,9 @@ import {
   GlobalRolesGuard,
 } from '../common/guards';
 import { RbacService } from './rbac.service';
+import { GlobalUserRoleWriteService } from './global-user-role-write.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { getAuditCorrelationId } from '../audit-logs/audit-request-context';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { AssignPermissionsDto } from './dto/assign-permissions.dto';
@@ -53,7 +56,11 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 @AuthorizationResource({ type: 'global' })
 @Controller('admin/rbac')
 export class RbacController {
-  constructor(private readonly rbacService: RbacService) {}
+  constructor(
+    private readonly rbacService: RbacService,
+    private readonly globalUserRoleWrite: GlobalUserRoleWriteService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ─── Permisos CRUD ──────────────────────────────────────────
 
@@ -315,30 +322,50 @@ export class RbacController {
 
   @Post('users/:userId/roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
-  @ApiOperation({ summary: 'Asignar un rol a un usuario' })
+  @ApiOperation({ summary: 'Asignar un rol global a un usuario' })
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
   @ApiResponse({ status: 201, description: 'Rol asignado al usuario' })
   async assignRoleToUser(
     @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUuidParamPipe) userId: string,
     @Body() dto: AssignRoleDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.rbacService.assignRoleToUser(userId, dto.role_id, actor.userId);
+    const data = await this.globalUserRoleWrite.assign({
+      actorUserId: actor.userId,
+      targetUserId: userId,
+      roleId: dto.role_id,
+      correlationId: getAuditCorrelationId() ?? randomUUID(),
+      idempotencyKey: idempotencyKey?.trim() || randomUUID(),
+    });
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    return { status: 'success', data };
   }
 
   @Delete('users/:userId/roles/:roleId')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles('super-admin')
   @RequirePermissions('permissions:assign')
-  @ApiOperation({ summary: 'Remover un rol de un usuario' })
+  @ApiOperation({ summary: 'Revocar un rol global de un usuario' })
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
   @ApiResponse({ status: 200, description: 'Rol removido del usuario' })
   async removeRoleFromUser(
     @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('roleId', ParseUuidParamPipe) roleId: string,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.rbacService.removeRoleFromUser(userId, roleId, actor.userId);
+    const data = await this.globalUserRoleWrite.revoke({
+      actorUserId: actor.userId,
+      targetUserId: userId,
+      roleId,
+      correlationId: getAuditCorrelationId() ?? randomUUID(),
+      idempotencyKey: idempotencyKey?.trim() || randomUUID(),
+    });
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    return { status: 'success', data };
   }
 }
 

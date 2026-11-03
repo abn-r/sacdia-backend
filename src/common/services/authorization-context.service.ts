@@ -348,7 +348,7 @@ export class AuthorizationContextService {
    *
    * Mutation points that MUST call this method:
    *   - RbacService.assignPermissionToUser / removePermissionFromUser
-   *   - RbacService.assignRoleToUser / removeRoleFromUser / bootstrapAdmin
+   *   - GlobalUserRoleWriteService / RbacService.bootstrapAdmin
    *   - RbacService.assignPermissionsToRole / removePermissionFromRole / syncRolePermissions
    *     (affects all users that hold the modified role)
    *   - ClubsService.assignRole / updateRoleAssignment / removeRoleAssignment

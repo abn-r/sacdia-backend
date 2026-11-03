@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -26,6 +27,15 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ListByClubResult } from '../audit-logs/audit-logs.service';
+import { CriticalAuditWriterService } from '../audit-logs/critical-audit-writer.service';
+import type {
+  AuditJson,
+  CriticalAuditEvent,
+} from '../audit-logs/critical-audit-writer.service';
+import { getAuditCorrelationId } from '../audit-logs/audit-request-context';
+import { SectionRoleMutationPolicy } from '../common/authorization/section-role-mutation.policy';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { classifyLocalFieldTimezone } from '../common/validators/iana-timezone.validator';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -45,7 +55,10 @@ import {
   resolveActorTerritoryScope,
 } from '../common/authorization/actor-territory-scope';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
-import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
+import {
+  ECCLESIASTICAL_YEAR_TIMEZONE,
+  EcclesiasticalYearService,
+} from '../common/services/ecclesiastical-year.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
 
@@ -73,6 +86,9 @@ export class ClubsService {
     private readonly auditLogs: AuditLogsService,
     private readonly ecclesiasticalYear: EcclesiasticalYearService,
     private readonly roleEligibility: ClubRoleEligibilityService,
+    private readonly criticalAudit: CriticalAuditWriterService,
+    private readonly sectionRoleMutation: SectionRoleMutationPolicy,
+    private readonly temporalContexts: TemporalContextFactory,
   ) {}
 
   // ========================================
@@ -724,7 +740,7 @@ export class ClubsService {
     );
   }
 
-  async assignRole(dto: AssignRoleDto) {
+  async assignRole(dto: AssignRoleDto, actorUserId: string) {
     if (!dto.club_section_id) {
       throw new AppBadRequestException(ErrorCode.CLUB_SECTION_ID_REQUIRED);
     }
@@ -733,6 +749,16 @@ export class ClubsService {
     this.assertValidRoleDateRange(startDate, dto.end_date);
     const roleId = await this.resolveRoleId(dto);
     const targetRoleName = await this.resolveRoleName(roleId);
+    await this.sectionRoleMutation.assertCanMutate({
+      actorUserId,
+      clubSectionId: dto.club_section_id,
+      targetRoleName,
+      targetUserId: dto.user_id,
+      mutation: 'assign',
+    });
+    const auditContext = await this.resolveRoleAuditContext(
+      dto.club_section_id,
+    );
     const ecclesiasticalYearId =
       dto.ecclesiastical_year_id ??
       (await this.getActiveEcclesiasticalYearId());
@@ -777,6 +803,23 @@ export class ClubsService {
           roles: { select: { role_name: true } },
         },
       });
+      const fullName = [created.users?.name, created.users?.paternal_last_name]
+        .filter(Boolean)
+        .join(' ');
+      await this.criticalAudit.write(
+        tx,
+        this.buildRoleAuditEvent({
+          action: 'CLUB_ROLE_ASSIGNED',
+          actorUserId,
+          assignmentId: created.assignment_id,
+          targetUserId: created.user_id,
+          clubSectionId: dto.club_section_id as number,
+          context: auditContext,
+          before: {},
+          after: this.roleAuditSnapshot(created),
+          summary: `Asignado ${created.roles.role_name}: ${fullName || created.user_id}`,
+        }),
+      );
       return created;
     });
 
@@ -791,39 +834,13 @@ export class ClubsService {
       dto.user_id,
     );
 
-    // Audit: only track leadership role assignments
-    const roleName = created.roles.role_name.toLowerCase();
-    if (['director', 'deputy-director', 'secretary'].includes(roleName)) {
-      const fullName = [created.users?.name, created.users?.paternal_last_name]
-        .filter(Boolean)
-        .join(' ');
-
-      // Resolve club_id from the section
-      const section = await this.prisma.club_sections.findUnique({
-        where: { club_section_id: dto.club_section_id },
-        select: { main_club_id: true },
-      });
-
-      void this.auditLogs
-        .recordEvent({
-          entity_type: 'role_assignment',
-          entity_id: created.assignment_id,
-          action: 'CREATED',
-          club_id: section?.main_club_id ?? undefined,
-          actor_user_id: dto.user_id,
-          summary: `Asignado ${roleName}: ${fullName || dto.user_id}`,
-        })
-        .catch((err: unknown) =>
-          this.logger.warn(`[AuditLogs] assignRole hook error: ${String(err)}`),
-        );
-    }
-
     return created;
   }
 
   async updateRoleAssignment(
     assignmentId: string,
     dto: UpdateRoleAssignmentDto,
+    actorUserId: string,
   ) {
     const existing = await this.prisma.club_role_assignments.findUnique({
       where: { assignment_id: assignmentId },
@@ -836,7 +853,10 @@ export class ClubsService {
         status: true,
         start_date: true,
         end_date: true,
+        expires_at: true,
         ecclesiastical_year_id: true,
+        roles: { select: { role_name: true } },
+        users: { select: { name: true, paternal_last_name: true } },
       },
     });
 
@@ -863,6 +883,24 @@ export class ClubsService {
       dto.role_id || dto.role
         ? await this.resolveRoleId(dto)
         : existing.role_id;
+    // Authority is checked against the current role and, when the PATCH
+    // changes the role, against the new one too (no promoting via update).
+    const mutationRoleNames = new Set([existing.roles.role_name]);
+    if (targetRoleId !== existing.role_id) {
+      mutationRoleNames.add(await this.resolveRoleName(targetRoleId));
+    }
+    for (const targetRoleName of mutationRoleNames) {
+      await this.sectionRoleMutation.assertCanMutate({
+        actorUserId,
+        clubSectionId: existing.club_section_id ?? 0,
+        targetRoleName,
+        targetUserId: existing.user_id,
+        mutation: 'update',
+      });
+    }
+    const auditContext = await this.resolveRoleAuditContext(
+      existing.club_section_id,
+    );
     const slotYear =
       dto.ecclesiastical_year_id ?? existing.ecclesiastical_year_id;
     if (
@@ -936,16 +974,41 @@ export class ClubsService {
       }
       // activation-gate: existing.user_id
       // activation-gate-when: only a PATCH that writes status 'active' (or changes the role of an active row) activates; every other PATCH, e.g. ending a role, must not need consent
-      const updated = await tx.club_role_assignments.update({
+      const row = await tx.club_role_assignments.update({
         where: { assignment_id: assignmentId },
         data: updateData,
         select: {
           assignment_id: true,
           user_id: true,
           club_section_id: true,
+          active: true,
+          status: true,
+          start_date: true,
+          end_date: true,
+          expires_at: true,
+          ecclesiastical_year_id: true,
+          roles: { select: { role_name: true } },
         },
       });
-      return updated;
+      await this.criticalAudit.write(
+        tx,
+        this.buildRoleAuditEvent({
+          action: 'CLUB_ROLE_UPDATED',
+          actorUserId,
+          assignmentId: row.assignment_id,
+          targetUserId: row.user_id,
+          clubSectionId: row.club_section_id,
+          context: auditContext,
+          before: this.roleAuditSnapshot(existing),
+          after: this.roleAuditSnapshot(row),
+          summary: `Actualizado ${row.roles.role_name}: ${this.fullName(existing.users) || row.user_id}`,
+        }),
+      );
+      return {
+        assignment_id: row.assignment_id,
+        user_id: row.user_id,
+        club_section_id: row.club_section_id,
+      };
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
@@ -961,9 +1024,39 @@ export class ClubsService {
     return updated;
   }
 
-  async removeRoleAssignment(assignmentId: string) {
+  async removeRoleAssignment(assignmentId: string, actorUserId: string) {
+    const existing = await this.prisma.club_role_assignments.findUnique({
+      where: { assignment_id: assignmentId },
+      select: {
+        assignment_id: true,
+        user_id: true,
+        club_section_id: true,
+        active: true,
+        status: true,
+        start_date: true,
+        end_date: true,
+        expires_at: true,
+        ecclesiastical_year_id: true,
+        roles: { select: { role_name: true } },
+        users: { select: { name: true, paternal_last_name: true } },
+      },
+    });
+    if (!existing) {
+      throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
+    }
+    await this.sectionRoleMutation.assertCanMutate({
+      actorUserId,
+      clubSectionId: existing.club_section_id ?? 0,
+      targetRoleName: existing.roles.role_name,
+      targetUserId: existing.user_id,
+      mutation: 'revoke',
+    });
+    const auditContext = await this.resolveRoleAuditContext(
+      existing.club_section_id,
+    );
+
     const removed = await this.prisma.$transaction(async (tx) => {
-      const removed = await tx.club_role_assignments.update({
+      const row = await tx.club_role_assignments.update({
         where: { assignment_id: assignmentId },
         data: {
           active: false,
@@ -975,9 +1068,34 @@ export class ClubsService {
           assignment_id: true,
           user_id: true,
           club_section_id: true,
+          active: true,
+          status: true,
+          start_date: true,
+          end_date: true,
+          expires_at: true,
+          ecclesiastical_year_id: true,
+          roles: { select: { role_name: true } },
         },
       });
-      return removed;
+      await this.criticalAudit.write(
+        tx,
+        this.buildRoleAuditEvent({
+          action: 'CLUB_ROLE_REVOKED',
+          actorUserId,
+          assignmentId: row.assignment_id,
+          targetUserId: row.user_id,
+          clubSectionId: row.club_section_id,
+          context: auditContext,
+          before: this.roleAuditSnapshot(existing),
+          after: this.roleAuditSnapshot(row),
+          summary: `Revocado ${row.roles.role_name}: ${this.fullName(existing.users) || row.user_id}`,
+        }),
+      );
+      return {
+        assignment_id: row.assignment_id,
+        user_id: row.user_id,
+        club_section_id: row.club_section_id,
+      };
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
@@ -1145,6 +1263,13 @@ export class ClubsService {
     dto: DirectorInitialAssignmentDto,
   ): Promise<{ assignment_id: string }> {
     await this.assertCanSucceedSectionDirector(actorUserId, sectionId);
+    await this.sectionRoleMutation.assertCanMutate({
+      actorUserId,
+      clubSectionId: sectionId,
+      targetRoleName: 'director',
+      targetUserId: dto.user_id,
+      mutation: 'assign',
+    });
 
     const directorRole = await this.prisma.roles.findFirst({
       where: {
@@ -1770,6 +1895,129 @@ export class ClubsService {
         }
       }
     }
+  }
+
+  private fullName(
+    user: { name: string | null; paternal_last_name: string | null } | null,
+  ): string {
+    return [user?.name, user?.paternal_last_name].filter(Boolean).join(' ');
+  }
+
+  private roleAuditSnapshot(row: {
+    status: string | null;
+    active: boolean;
+    start_date: Date;
+    end_date: Date | null;
+    expires_at: Date | null;
+    ecclesiastical_year_id: number;
+    club_section_id: number | null;
+    roles: { role_name: string };
+  }): AuditJson {
+    return {
+      role_name: row.roles.role_name,
+      status: row.status,
+      active: row.active,
+      start_date: row.start_date.toISOString(),
+      end_date: row.end_date?.toISOString() ?? null,
+      expires_at: row.expires_at?.toISOString() ?? null,
+      ecclesiastical_year_id: row.ecclesiastical_year_id,
+      club_section_id: row.club_section_id,
+    };
+  }
+
+  /**
+   * Club + local field + business date of the section's local field, resolved
+   * before the transaction. An unusable local-field timezone falls back to the
+   * institutional one (an audit write must not fail on bad geography data).
+   */
+  private async resolveRoleAuditContext(clubSectionId: number | null) {
+    const section =
+      clubSectionId == null
+        ? null
+        : await this.prisma.club_sections.findUnique({
+            where: { club_section_id: clubSectionId },
+            select: {
+              clubs: {
+                select: {
+                  club_id: true,
+                  local_field_id: true,
+                  local_fields: {
+                    select: { local_field_id: true, timezone: true },
+                  },
+                },
+              },
+            },
+          });
+    const club = section?.clubs ?? null;
+    if (!club) {
+      return {
+        clubId: undefined,
+        localFieldId: null as number | null,
+        now: new Date(),
+        temporal: undefined,
+      };
+    }
+    const classified = classifyLocalFieldTimezone(club.local_fields?.timezone);
+    const timezone = classified.ok
+      ? classified.value
+      : ECCLESIASTICAL_YEAR_TIMEZONE;
+    const context = this.temporalContexts.forLocalField({
+      local_field_id: club.local_field_id,
+      timezone,
+    });
+    return {
+      clubId: club.club_id,
+      localFieldId: club.local_field_id,
+      now: context.now,
+      temporal: {
+        businessDate: context.businessDate,
+        businessTimezone: context.businessTimeZone,
+      },
+    };
+  }
+
+  private buildRoleAuditEvent(input: {
+    action: 'CLUB_ROLE_ASSIGNED' | 'CLUB_ROLE_UPDATED' | 'CLUB_ROLE_REVOKED';
+    actorUserId: string;
+    assignmentId: string;
+    targetUserId: string;
+    clubSectionId: number | null;
+    context: Awaited<ReturnType<ClubsService['resolveRoleAuditContext']>>;
+    before: AuditJson;
+    after: AuditJson;
+    summary: string;
+  }): CriticalAuditEvent {
+    const { context } = input;
+    return {
+      entityType: 'club_role_assignment',
+      entityId: input.assignmentId,
+      action: input.action,
+      // One key per request-operation: a role mutation has no client
+      // idempotency contract, so the key is a fresh UUID (never replayed).
+      eventKey: `club-role-assignment:${input.action}:${randomUUID()}`,
+      actor: {
+        kind: 'user',
+        userId: input.actorUserId,
+        roleName: null,
+        scope: { club_section_id: input.clubSectionId },
+      },
+      target: {
+        userId: input.targetUserId,
+        scope: {
+          club_section_id: input.clubSectionId,
+          club_id: context.clubId ?? null,
+          local_field_id: context.localFieldId,
+        },
+      },
+      before: input.before,
+      after: input.after,
+      clubId: context.clubId,
+      summary: input.summary,
+      effectiveAt: context.now,
+      temporal: context.temporal,
+      correlationId: getAuditCorrelationId(),
+      result: 'succeeded',
+    };
   }
 
   private async resolveRoleName(roleId: string): Promise<string> {

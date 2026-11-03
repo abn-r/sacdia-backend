@@ -508,6 +508,7 @@
   "CLUB_ROLE_GUIDE_MAJOR_REQUIRED": "Se requiere Guía Mayor cursando o investido para este cargo de club",
   "CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION": "Un Guía Mayor solo puede ser miembro de una sección de Guías Mayores",
   "CLUB_ROLE_NOT_FOUND": "Rol no encontrado en la categoría CLUB",
+  "CLUB_ROLE_MUTATION_FORBIDDEN": "No tienes permiso para asignar, modificar o revocar este cargo de club",
   "CLUB_DIRECTOR_DESIGNATION_YEAR_INVALID": "Este año eclesiástico no es válido para esta operación. La sucesión inmediata usa el año vigente; la preelección es solo para un año futuro (inicio posterior al cierre del año actual).",
   "CLUB_DIRECTOR_DESIGNATION_EXISTS": "Ya existe un director designado para esta sección y año; use reemplazar para actualizarlo",
   "CLUB_DIRECTOR_ALREADY_OPERATIONAL": "Esta sección ya tiene un director operativo para el año solicitado",
