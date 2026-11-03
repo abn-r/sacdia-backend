@@ -2,7 +2,6 @@ import {
   IsEmail,
   IsString,
   Length,
-  MaxLength,
   IsNotEmpty,
   MinLength,
   Validate,
@@ -11,6 +10,7 @@ import {
   type ValidatorConstraintInterface,
   type ValidationArguments,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { i18nValidationMessage } from 'nestjs-i18n';
@@ -70,7 +70,7 @@ export class LoginDto {
   })
   @IsString()
   @MinLength(1)
-  @MaxLength(128)
+  @MaxLengthIfString(128)
   declare password: string;
 }
 

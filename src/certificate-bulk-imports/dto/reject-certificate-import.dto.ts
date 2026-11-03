@@ -4,10 +4,10 @@ import {
   IsISO8601,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import {
   CERTIFICATE_IMPORT_COMMENT_MAX_LENGTH,
   CERTIFICATE_IMPORT_REJECTION_REASON_MAX_LENGTH,
@@ -22,7 +22,7 @@ export class RejectCertificateImportDto {
   })
   @IsString()
   @MinLength(1)
-  @MaxLength(CERTIFICATE_IMPORT_REJECTION_REASON_MAX_LENGTH)
+  @MaxLengthIfString(CERTIFICATE_IMPORT_REJECTION_REASON_MAX_LENGTH)
   declare reason: string;
 }
 
@@ -34,7 +34,7 @@ export class ApproveCertificateImportDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(CERTIFICATE_IMPORT_COMMENT_MAX_LENGTH)
+  @MaxLengthIfString(CERTIFICATE_IMPORT_COMMENT_MAX_LENGTH)
   comment?: string;
 
   @ApiPropertyOptional({

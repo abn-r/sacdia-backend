@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { IsNewPassword } from '../password-policy';
 
 export class ResetPasswordDto {
@@ -10,7 +11,7 @@ export class ResetPasswordDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(512)
+  @MaxLengthIfString(512)
   declare token: string;
 
   @IsNewPassword({ example: 'NewPassword123!' })

@@ -6,9 +6,9 @@ import {
   IsObject,
   IsOptional,
   IsString,
-  MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { IsCertificateImportFileRef } from '../certificate-import-file-ref';
 import {
   CERTIFICATE_IMPORT_MAX_FILES,
@@ -26,7 +26,7 @@ export class CertificateBulkImportFileDto {
     example: 'evidence/certificado.jpg',
   })
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   @IsCertificateImportFileRef()
   declare file_url: string;
 
@@ -36,7 +36,7 @@ export class CertificateBulkImportFileDto {
     example: 'certificado-investidura.jpg',
   })
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare file_name: string;
 
   @ApiProperty({
@@ -45,7 +45,7 @@ export class CertificateBulkImportFileDto {
     example: 'image/jpeg',
   })
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare file_type: string;
 
   @ApiPropertyOptional({

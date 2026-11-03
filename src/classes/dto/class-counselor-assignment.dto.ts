@@ -6,9 +6,9 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -59,7 +59,7 @@ export class CreateClassCounselorAssignmentDto {
   @ApiPropertyOptional({ description: 'Justificación de la excepción' })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   exception_reason?: string;
 
   @ApiPropertyOptional({ description: 'Fecha de inicio de la asignación' })
@@ -95,7 +95,7 @@ export class UpdateClassCounselorAssignmentDto {
   @ApiPropertyOptional({ description: 'Justificación de la excepción' })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   exception_reason?: string;
 
   @ApiPropertyOptional({ description: 'Fecha de inicio de la asignación' })

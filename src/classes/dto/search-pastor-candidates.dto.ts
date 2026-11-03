@@ -5,10 +5,10 @@ import {
   IsOptional,
   IsString,
   Matches,
-  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export const PASTOR_CANDIDATE_QUERY_MIN = 3;
 /** Cada palabra de la búsqueda debe tener al menos estos caracteres. */
@@ -32,7 +32,7 @@ export class SearchPastorCandidatesDto {
   @Matches(EVERY_TOKEN_LONG_ENOUGH, {
     message: `cada palabra de q debe tener al menos ${PASTOR_CANDIDATE_TOKEN_MIN} caracteres`,
   })
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   q!: string;
 
   @ApiPropertyOptional({

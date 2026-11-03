@@ -7,8 +7,8 @@ import {
   IsEnum,
   Matches,
   MinLength,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum RoleCategoryEnum {
@@ -25,7 +25,7 @@ export class CreateRoleDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(3)
-  @MaxLength(64)
+  @MaxLengthIfString(64)
   @Matches(/^[a-z][a-z-]*[a-z]$/, {
     message:
       'role_name debe contener solo letras minúsculas y guiones (no puede empezar ni terminar con guión)',
@@ -39,7 +39,7 @@ export class CreateRoleDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(10)
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   declare description: string;
 
   @ApiProperty({

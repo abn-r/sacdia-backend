@@ -6,11 +6,11 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   ValidateNested,
   ArrayMaxSize,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
 import { ClubIdealTranslationDto } from '../../common/dto/club-ideal-translation.dto';
@@ -19,7 +19,7 @@ export class CreateRelationshipTypeDto {
   @ApiProperty({ example: 'Padre' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiPropertyOptional({ example: 'Relación padre-hijo' })
@@ -48,7 +48,7 @@ export class UpdateRelationshipTypeDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name?: string;
 
   @ApiPropertyOptional({ example: 'Relación padre-hijo' })
@@ -76,7 +76,7 @@ export class CreateAllergyDto {
   @ApiProperty({ example: 'Polen' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiPropertyOptional({ example: 'Alergia estacional al polen' })
@@ -105,7 +105,7 @@ export class UpdateAllergyDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name?: string;
 
   @ApiPropertyOptional({ example: 'Alergia estacional al polen' })
@@ -133,7 +133,7 @@ export class CreateDiseaseDto {
   @ApiProperty({ example: 'Asma' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiPropertyOptional({ example: 'Enfermedad respiratoria crónica' })
@@ -162,7 +162,7 @@ export class UpdateDiseaseDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name?: string;
 
   @ApiPropertyOptional({ example: 'Enfermedad respiratoria crónica' })
@@ -190,7 +190,7 @@ export class CreateMedicineDto {
   @ApiProperty({ example: 'Ibuprofeno' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiPropertyOptional({ example: 'Analgésico antiinflamatorio' })
@@ -219,7 +219,7 @@ export class UpdateMedicineDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name?: string;
 
   @ApiPropertyOptional({ example: 'Analgésico antiinflamatorio' })
@@ -252,13 +252,13 @@ export class CreateActivityTypeDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   code?: string;
 
   @ApiProperty({ example: 'Culto de Adoración' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiPropertyOptional({ example: 'Servicio de adoración semanal' })
@@ -288,14 +288,14 @@ export class UpdateActivityTypeDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   code?: string;
 
   @ApiPropertyOptional({ example: 'Culto de Adoración' })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name?: string;
 
   @ApiPropertyOptional({ example: 'Servicio de adoración semanal' })
@@ -358,7 +358,7 @@ export class CreateClubTypeDto {
   @ApiProperty({ example: 'Conquistadores' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiPropertyOptional({ example: true })
@@ -383,7 +383,7 @@ export class UpdateClubTypeDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name?: string;
 
   @ApiPropertyOptional({ example: true })
@@ -409,7 +409,7 @@ export class CreateClubIdealDto {
   @ApiProperty({ example: 'Ser leal a Dios' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiProperty({ example: 1 })
@@ -450,7 +450,7 @@ export class UpdateClubIdealDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name?: string;
 
   @ApiPropertyOptional({ example: 1 })

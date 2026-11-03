@@ -10,29 +10,25 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  MaxLength,
   Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export type CamporeeScopeType = 'local' | 'union';
 export type CamporeeJudgeRole = 'primary' | 'assistant';
 export type CamporeeScoreSource =
-  | 'judge_primary'
-  | 'manual_lf'
-  | 'admin_override';
+  'judge_primary' | 'manual_lf' | 'admin_override';
 export type CamporeeScoreStatus = 'scored' | 'no_show';
 export type CamporeeJudgeStatus = 'active' | 'inactive';
 export type CamporeeJudgeEligibilityReason =
-  | 'adult'
-  | 'pastor_role'
-  | 'invested_master_guide';
+  'adult' | 'pastor_role' | 'invested_master_guide';
 
 export class CamporeeRubricItemDto {
   @ApiProperty({ example: 'Técnica' })
   @IsString()
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   declare title: string;
 
   @ApiPropertyOptional({ example: 'Ejecución correcta del procedimiento.' })

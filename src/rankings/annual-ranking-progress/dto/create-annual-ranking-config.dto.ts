@@ -5,11 +5,11 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 
 export class CreateAnnualRankingComponentConfigDto {
@@ -19,7 +19,7 @@ export class CreateAnnualRankingComponentConfigDto {
     example: 'annual_evidence_folder',
   })
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   component_key!: string;
 
   @ApiProperty({
@@ -27,7 +27,7 @@ export class CreateAnnualRankingComponentConfigDto {
     example: 'Carpeta Anual de Evidencias',
   })
   @IsString()
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   label!: string;
 
   @ApiProperty({
@@ -54,7 +54,7 @@ export class CreateAnnualRankingAxisConfigDto {
     example: 'administrative',
   })
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   axis_key!: string;
 
   @ApiProperty({
@@ -62,7 +62,7 @@ export class CreateAnnualRankingAxisConfigDto {
     example: 'Cumplimiento Administrativo',
   })
   @IsString()
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   label!: string;
 
   @ApiProperty({

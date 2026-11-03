@@ -1,4 +1,5 @@
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { union_evaluation_decision_enum } from '@prisma/client';
 
@@ -18,6 +19,6 @@ export class ConfirmUnionDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   notes?: string;
 }

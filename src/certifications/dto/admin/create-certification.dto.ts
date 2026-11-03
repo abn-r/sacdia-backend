@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 
 export class CreateCertificationDto {
   @ApiProperty({
@@ -10,7 +11,7 @@ export class CreateCertificationDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   name!: string;
 
   @ApiPropertyOptional({

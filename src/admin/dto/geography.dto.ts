@@ -5,11 +5,11 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   ValidateNested,
   ArrayMaxSize,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
 
@@ -17,13 +17,13 @@ export class CreateCountryDto {
   @ApiProperty({ example: 'México' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiProperty({ example: 'MX' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(8)
+  @MaxLengthIfString(8)
   declare abbreviation: string;
 
   @ApiPropertyOptional({ example: true })
@@ -47,14 +47,14 @@ export class UpdateCountryDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name?: string;
 
   @ApiPropertyOptional({ example: 'MX' })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(8)
+  @MaxLengthIfString(8)
   abbreviation?: string;
 
   @ApiPropertyOptional({ example: true })
@@ -77,19 +77,19 @@ export class CreateDivisionDto {
   @ApiProperty({ example: 'DIA' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare code: string;
 
   @ApiProperty({ example: 'División Interamericana' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiProperty({ example: 'DIA' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(16)
+  @MaxLengthIfString(16)
   declare abbreviation: string;
 
   @ApiPropertyOptional({ example: true })
@@ -113,21 +113,21 @@ export class UpdateDivisionDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   code?: string;
 
   @ApiPropertyOptional({ example: 'División Interamericana' })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name?: string;
 
   @ApiPropertyOptional({ example: 'DIA' })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(16)
+  @MaxLengthIfString(16)
   abbreviation?: string;
 
   @ApiPropertyOptional({ example: true })
@@ -150,13 +150,13 @@ export class CreateUnionDto {
   @ApiProperty({ example: 'Unión Mexicana del Norte' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiProperty({ example: 'UMN' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(8)
+  @MaxLengthIfString(8)
   declare abbreviation: string;
 
   @ApiProperty({ example: 1 })
@@ -190,14 +190,14 @@ export class UpdateUnionDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name?: string;
 
   @ApiPropertyOptional({ example: 'UMN' })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(8)
+  @MaxLengthIfString(8)
   abbreviation?: string;
 
   @ApiPropertyOptional({ example: 1 })
@@ -236,12 +236,12 @@ export class UpdateUnionDto {
 export class CreateLocalFieldDto {
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(8)
+  @MaxLengthIfString(8)
   declare abbreviation: string;
 
   @IsInt()
@@ -254,7 +254,7 @@ export class CreateLocalFieldDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(64)
+  @MaxLengthIfString(64)
   timezone?: string | null;
 
   @IsOptional()
@@ -332,14 +332,14 @@ export class UpdateLocalFieldDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name?: string;
 
   @ApiPropertyOptional({ example: 'CN' })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(8)
+  @MaxLengthIfString(8)
   abbreviation?: string;
 
   @ApiPropertyOptional({ example: 1 })
@@ -356,7 +356,7 @@ export class UpdateLocalFieldDto {
   @ApiPropertyOptional({ example: 'America/Mexico_City', nullable: true })
   @IsOptional()
   @IsString()
-  @MaxLength(64)
+  @MaxLengthIfString(64)
   timezone?: string | null;
 
   @ApiPropertyOptional({
@@ -374,7 +374,7 @@ export class CreateDistrictDto {
   @ApiProperty({ example: 'Distrito Norte' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiProperty({ example: 1 })
@@ -403,7 +403,7 @@ export class UpdateDistrictDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name?: string;
 
   @ApiPropertyOptional({ example: 1 })
@@ -432,7 +432,7 @@ export class CreateChurchDto {
   @ApiProperty({ example: 'Iglesia Central' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiProperty({ example: 1 })
@@ -461,7 +461,7 @@ export class UpdateChurchDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name?: string;
 
   @ApiPropertyOptional({ example: 1 })

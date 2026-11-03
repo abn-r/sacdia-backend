@@ -1,4 +1,5 @@
-import { IsString, IsOptional, MaxLength, IsUrl } from 'class-validator';
+import { IsString, IsOptional, IsUrl } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateEvidenceDto {
@@ -17,7 +18,7 @@ export class UpdateEvidenceDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   file_name?: string;
 
   @ApiPropertyOptional({

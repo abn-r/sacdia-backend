@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsInt, IsPositive, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsInt, IsPositive, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { CERTIFICATION_EVIDENCE_ALLOWED_MIME_TYPES } from '../evidence/certification-evidence.constants';
 
 export class PresignCertificationEvidenceDto {
@@ -17,7 +18,7 @@ export class PresignCertificationEvidenceDto {
     example: 'comprobante.pdf',
   })
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare file_name: string;
 
   @ApiProperty({

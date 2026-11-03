@@ -9,15 +9,15 @@ import {
   IsUUID,
   Matches,
   Max,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class ListAdminAuditLogsQueryDto {
   @ApiPropertyOptional({ description: 'Filter by entity_type' })
   @IsOptional()
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   entity_type?: string;
 
   @ApiPropertyOptional({ description: 'Filter by actor user UUID' })
@@ -30,7 +30,7 @@ export class ListAdminAuditLogsQueryDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(64)
+  @MaxLengthIfString(64)
   action?: string;
 
   @ApiPropertyOptional({ enum: ['succeeded', 'failed'] })

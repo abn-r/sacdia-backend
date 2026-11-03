@@ -9,17 +9,17 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class CamporeeEventTemplateRubricDto {
   @ApiProperty({ example: 'Técnica' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   declare title: string;
 
   @ApiPropertyOptional({ example: 'Ejecución correcta del procedimiento.' })
@@ -73,7 +73,7 @@ export class CreateCamporeeEventTemplateDto {
   @ApiProperty({ example: 'Orden Cerrado' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(150)
+  @MaxLengthIfString(150)
   declare title: string;
 
   @ApiPropertyOptional({ example: 'Marcha en formación perfecta.' })
@@ -185,7 +185,7 @@ export class UpdateCamporeeEventTemplateDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(150)
+  @MaxLengthIfString(150)
   title?: string;
 
   @ApiPropertyOptional()

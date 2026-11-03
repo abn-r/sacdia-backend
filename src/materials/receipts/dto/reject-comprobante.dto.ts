@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsString, IsUUID, MinLength } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 
 export class RejectComprobanteDto {
   /**
@@ -25,6 +26,6 @@ export class RejectComprobanteDto {
   })
   @IsString()
   @MinLength(1)
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   declare reject_reason: string;
 }

@@ -12,11 +12,11 @@ import {
   IsUUID,
   Matches,
   Max,
-  MaxLength,
   Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { SUPPLY_HHMM_PATTERN } from '../freeze';
 
 const YMD = '^\\d{4}-\\d{2}-\\d{2}$';
@@ -32,7 +32,7 @@ export class CreateSupplySlotDto {
   @ApiProperty({ example: 'Almuerzo sábado' })
   @IsString()
   @MinLength(1)
-  @MaxLength(80)
+  @MaxLengthIfString(80)
   label!: string;
 
   @ApiProperty({ example: '13:00' })
@@ -52,7 +52,7 @@ export class UpdateSupplySlotDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
-  @MaxLength(80)
+  @MaxLengthIfString(80)
   label?: string;
 
   @ApiPropertyOptional({ example: '19:00' })
@@ -77,7 +77,7 @@ export class CreateSupplyProductDto {
   @ApiProperty({ example: 'Tortillas' })
   @IsString()
   @MinLength(1)
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   name!: string;
 
   @ApiProperty({ enum: ['KG', 'L', 'BAG', 'UNIT'] })
@@ -96,7 +96,7 @@ export class UpdateSupplyProductDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   name?: string;
 
   @ApiPropertyOptional({ enum: ['KG', 'L', 'BAG', 'UNIT'] })
@@ -183,7 +183,7 @@ export class AdjustSupplyLineDto {
   @IsOptional()
   @IsString()
   @MinLength(3)
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   bypass_reason?: string;
 }
 
@@ -197,7 +197,7 @@ export class DeliverSupplyLineDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   note?: string;
 }
 

@@ -5,9 +5,9 @@ import {
   IsObject,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   achievement_scope,
@@ -18,12 +18,12 @@ import {
 export class CreateAchievementDto {
   @ApiProperty({ description: 'Nombre del logro', maxLength: 200 })
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   declare name: string;
 
   @ApiProperty({ description: 'Descripción del logro', maxLength: 1000 })
   @IsString()
-  @MaxLength(1000)
+  @MaxLengthIfString(1000)
   declare description: string;
 
   @ApiProperty({
@@ -116,7 +116,7 @@ export class CreateAchievementDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   badge_image_key?: string;
 
   @ApiPropertyOptional({

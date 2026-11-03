@@ -1,11 +1,5 @@
-import {
-  IsBoolean,
-  IsInt,
-  IsOptional,
-  IsString,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCategoryDto {
@@ -14,7 +8,7 @@ export class CreateCategoryDto {
     maxLength: 100,
   })
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiPropertyOptional({
@@ -23,7 +17,7 @@ export class CreateCategoryDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   description?: string;
 
   @ApiPropertyOptional({
@@ -32,7 +26,7 @@ export class CreateCategoryDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   icon?: string;
 
   @ApiPropertyOptional({ description: 'Orden de visualización', default: 0 })

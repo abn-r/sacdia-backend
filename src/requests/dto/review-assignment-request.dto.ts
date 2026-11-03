@@ -1,4 +1,5 @@
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ReviewAssignmentRequestDto {
@@ -16,6 +17,6 @@ export class ReviewAssignmentRequestDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   comment?: string;
 }

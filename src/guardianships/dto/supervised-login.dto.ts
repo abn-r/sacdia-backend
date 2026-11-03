@@ -5,9 +5,9 @@ import {
   IsOptional,
   IsString,
   Length,
-  MaxLength,
   ValidateIf,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Transform } from 'class-transformer';
 
 export const SUPERVISED_LOGIN_METHODS = ['handle', 'email'] as const;
@@ -38,7 +38,7 @@ export class EnableSupervisedLoginDto {
   @ValidateIf((dto: EnableSupervisedLoginDto) => dto.method === 'email')
   @Transform(trim)
   @IsEmail()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare email?: string;
 
   @ApiProperty({
@@ -55,7 +55,7 @@ export class DisableSupervisedLoginDto {
   @IsOptional()
   @Transform(trim)
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   declare reason?: string;
 }
 

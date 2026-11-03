@@ -8,8 +8,8 @@ import {
   IsString,
   IsUUID,
   Matches,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { trimLegalVersion } from '../../legal/dto/legal-version.transform';
 import { LEGAL_VERSION_MAX_LENGTH } from '../../legal/legal-documents.constants';
 
@@ -28,21 +28,21 @@ export class CreateDependentDto {
   @Transform(trimString)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiProperty({ example: 'Pérez' })
   @Transform(trimString)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare paternal_last_name: string;
 
   @ApiPropertyOptional({ example: 'López' })
   @IsOptional()
   @Transform(trimString)
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   maternal_last_name?: string;
 
   @ApiProperty({ example: '2017-04-02', description: 'YYYY-MM-DD' })
@@ -71,13 +71,13 @@ export class CreateDependentDto {
   @Transform(trimLegalVersion)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(LEGAL_VERSION_MAX_LENGTH)
+  @MaxLengthIfString(LEGAL_VERSION_MAX_LENGTH)
   declare accepted_terms_version: string;
 
   @ApiProperty({ example: '2.0.0-family' })
   @Transform(trimLegalVersion)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(LEGAL_VERSION_MAX_LENGTH)
+  @MaxLengthIfString(LEGAL_VERSION_MAX_LENGTH)
   declare accepted_privacy_version: string;
 }

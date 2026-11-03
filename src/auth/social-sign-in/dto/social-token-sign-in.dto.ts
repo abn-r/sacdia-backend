@@ -4,22 +4,22 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 
 /** Apple only sends the name to the client, and only on the first sign-in. */
 export class SocialFullNameDto {
   @ApiPropertyOptional({ example: 'Ana' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   givenName?: string;
 
   @ApiPropertyOptional({ example: 'Pérez' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   familyName?: string;
 }
 
@@ -29,7 +29,7 @@ export class SocialTokenSignInDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(4096)
+  @MaxLengthIfString(4096)
   idToken!: string;
 
   @ApiProperty({
@@ -38,7 +38,7 @@ export class SocialTokenSignInDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(256)
+  @MaxLengthIfString(256)
   nonce!: string;
 
   @ApiPropertyOptional({
@@ -47,7 +47,7 @@ export class SocialTokenSignInDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(2048)
+  @MaxLengthIfString(2048)
   authorizationCode?: string;
 
   @ApiPropertyOptional({ type: SocialFullNameDto })

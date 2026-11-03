@@ -10,10 +10,10 @@ import {
   IsOptional,
   IsString,
   Max,
-  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 function toBoolean(value: unknown): unknown {
@@ -29,7 +29,7 @@ export class AdminListUsersQueryDto extends PaginationDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   search?: string;
 
   @ApiPropertyOptional({
@@ -38,7 +38,7 @@ export class AdminListUsersQueryDto extends PaginationDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   role?: string;
 
   @ApiPropertyOptional({
@@ -220,7 +220,7 @@ export class UpdateUserApprovalDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   rejection_reason?: string;
 }
 
@@ -250,7 +250,7 @@ export class CreateAdminUserDto {
   })
   @IsString()
   @MinLength(1)
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   name!: string;
 
   @ApiProperty({
@@ -259,7 +259,7 @@ export class CreateAdminUserDto {
   })
   @IsString()
   @MinLength(1)
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   paternal_last_name!: string;
 
   @ApiPropertyOptional({
@@ -268,7 +268,7 @@ export class CreateAdminUserDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   maternal_last_name?: string;
 
   @ApiProperty({
@@ -276,7 +276,7 @@ export class CreateAdminUserDto {
     description: 'Email único del usuario (máx 120 caracteres)',
   })
   @IsEmail()
-  @MaxLength(120)
+  @MaxLengthIfString(120)
   email!: string;
 
   @ApiProperty({
@@ -364,6 +364,6 @@ export class UpdateAdminUserDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   rejection_reason?: string;
 }

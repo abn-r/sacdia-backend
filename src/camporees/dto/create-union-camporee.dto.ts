@@ -10,8 +10,8 @@ import {
   IsArray,
   Min,
   Max,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,7 +28,7 @@ export class CreateUnionCamporeeDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare name: string;
 
   @ApiPropertyOptional({
@@ -88,7 +88,7 @@ export class CreateUnionCamporeeDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare union_camporee_place: string;
 
   @ApiPropertyOptional({
@@ -191,7 +191,8 @@ export class CreateUnionCamporeeDto {
   orders_enabled?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Hora local de corte para editar insumos del día siguiente (HH:MM)',
+    description:
+      'Hora local de corte para editar insumos del día siguiente (HH:MM)',
     example: '21:00',
   })
   @IsOptional()

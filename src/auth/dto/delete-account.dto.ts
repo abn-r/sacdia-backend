@@ -5,13 +5,13 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  MaxLength,
   Validate,
   ValidateIf,
   ValidationArguments,
   ValidatorConstraint,
   ValidatorConstraintInterface,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { SOCIAL_PROVIDERS } from '../social-sign-in/social-sign-in.types';
 
 /** A body must carry exactly one re-auth branch, never both. */
@@ -72,7 +72,7 @@ export class DeleteAccountDto {
   )
   @IsString()
   @IsNotEmpty()
-  @MaxLength(4096)
+  @MaxLengthIfString(4096)
   idToken?: string;
 
   @ApiPropertyOptional({
@@ -84,7 +84,7 @@ export class DeleteAccountDto {
   )
   @IsString()
   @IsNotEmpty()
-  @MaxLength(256)
+  @MaxLengthIfString(256)
   nonce?: string;
 
   @ApiPropertyOptional({

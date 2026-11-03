@@ -5,8 +5,8 @@ import {
   IsNotEmpty,
   IsString,
   IsUUID,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export class RedeemLinkCodeDto {
   @ApiProperty({
@@ -15,7 +15,7 @@ export class RedeemLinkCodeDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(32)
+  @MaxLengthIfString(32)
   declare code: string;
 
   @ApiProperty({

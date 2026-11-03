@@ -7,8 +7,8 @@ import {
   IsOptional,
   IsString,
   Matches,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNewPassword } from '../password-policy';
 import { LEGAL_VERSION_MAX_LENGTH } from '../../legal/legal-documents.constants';
@@ -17,17 +17,17 @@ import { trimLegalVersion } from '../../legal/dto/legal-version.transform';
 export class RegisterDto {
   @ApiProperty({ example: 'Juan', description: 'Nombre del usuario' })
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare name: string;
 
   @ApiProperty({ example: 'García', description: 'Apellido paterno' })
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare paternal_last_name: string;
 
   @ApiProperty({ example: 'López', description: 'Apellido materno' })
   @IsString()
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   declare maternal_last_name: string;
 
   @ApiProperty({
@@ -48,7 +48,7 @@ export class RegisterDto {
   @Transform(trimLegalVersion)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(LEGAL_VERSION_MAX_LENGTH)
+  @MaxLengthIfString(LEGAL_VERSION_MAX_LENGTH)
   declare accepted_terms_version: string;
 
   @ApiProperty({
@@ -58,7 +58,7 @@ export class RegisterDto {
   @Transform(trimLegalVersion)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(LEGAL_VERSION_MAX_LENGTH)
+  @MaxLengthIfString(LEGAL_VERSION_MAX_LENGTH)
   declare accepted_privacy_version: string;
 
   @ApiPropertyOptional({

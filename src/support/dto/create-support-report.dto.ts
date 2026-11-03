@@ -5,8 +5,8 @@ import {
   IsObject,
   IsOptional,
   IsString,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { i18nValidationMessage } from 'nestjs-i18n';
 
 /**
@@ -52,7 +52,7 @@ export class CreateSupportReportDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(120, {
+  @MaxLengthIfString(120, {
     message: i18nValidationMessage(
       'errors.VALIDATION.support_title_max_length',
       { max: 120 },
@@ -68,7 +68,7 @@ export class CreateSupportReportDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(2000, {
+  @MaxLengthIfString(2000, {
     message: i18nValidationMessage(
       'errors.VALIDATION.support_description_max_length',
       { max: 2000 },

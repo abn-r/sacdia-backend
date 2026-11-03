@@ -6,10 +6,10 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { Type } from 'class-transformer';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
@@ -18,7 +18,7 @@ export class HonorCategoryListQueryDto extends PaginationDto {
   @ApiPropertyOptional({ example: 'Naturaleza' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   search?: string;
 }
 
@@ -26,7 +26,7 @@ export class CreateHonorCategoryDto {
   @ApiProperty({ example: 'Logro Misionero' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name!: string;
 
   @ApiPropertyOptional({ example: 'Categoría para honores de misión' })

@@ -6,10 +6,10 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export enum CamporeeOrderOwnerScopeDto {
   DIVISION = 'DIVISION',
@@ -27,7 +27,7 @@ export class CreateCamporeeOrderProductDto {
   @ApiProperty({ maxLength: 200 })
   @IsString()
   @MinLength(1)
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   title!: string;
 
   @ApiPropertyOptional()

@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MinLength, MaxLength } from 'class-validator';
+import { IsString, MinLength } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { i18nValidationMessage } from 'nestjs-i18n';
 import { IsNewPassword } from '../password-policy';
 
@@ -15,7 +16,7 @@ export class UpdatePasswordDto {
       min: 8,
     }),
   })
-  @MaxLength(128)
+  @MaxLengthIfString(128)
   currentPassword!: string;
 
   @IsNewPassword({ example: 'NewPassword123!' })

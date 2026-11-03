@@ -1,11 +1,5 @@
-import {
-  IsString,
-  IsInt,
-  IsOptional,
-  IsBoolean,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsString, IsInt, IsOptional, IsBoolean, Min } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateTemplateSectionDto {
@@ -16,7 +10,7 @@ export class UpdateTemplateSectionDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   name?: string;
 
   @ApiPropertyOptional({

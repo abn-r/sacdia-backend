@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty } from '@nestjs/swagger';
 import { LEGAL_VERSION_MAX_LENGTH } from '../legal-documents.constants';
 import { trimLegalVersion } from './legal-version.transform';
@@ -12,7 +13,7 @@ export class AcceptLegalDocumentsDto {
   @Transform(trimLegalVersion)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(LEGAL_VERSION_MAX_LENGTH)
+  @MaxLengthIfString(LEGAL_VERSION_MAX_LENGTH)
   declare terms_version: string;
 
   @ApiProperty({
@@ -22,6 +23,6 @@ export class AcceptLegalDocumentsDto {
   @Transform(trimLegalVersion)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(LEGAL_VERSION_MAX_LENGTH)
+  @MaxLengthIfString(LEGAL_VERSION_MAX_LENGTH)
   declare privacy_version: string;
 }

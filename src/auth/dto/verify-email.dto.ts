@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class VerifyEmailDto {
@@ -9,6 +10,6 @@ export class VerifyEmailDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(512)
+  @MaxLengthIfString(512)
   declare token: string;
 }

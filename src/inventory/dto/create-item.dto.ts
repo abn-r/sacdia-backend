@@ -4,9 +4,9 @@ import {
   IsPositive,
   IsOptional,
   MinLength,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty } from '@nestjs/swagger';
 import { InventoryExtendedFieldsDto } from './inventory-extended-fields.dto';
 
@@ -17,7 +17,7 @@ export class CreateItemDto extends InventoryExtendedFieldsDto {
   })
   @IsString()
   @MinLength(3)
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   declare name: string;
 
   @ApiProperty({
@@ -27,7 +27,7 @@ export class CreateItemDto extends InventoryExtendedFieldsDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   description?: string;
 
   @ApiProperty({

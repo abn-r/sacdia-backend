@@ -5,9 +5,9 @@ import {
   IsIn,
   IsNotEmpty,
   IsUUID,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
@@ -32,7 +32,7 @@ export class RegisterMemberDto {
   @IsOptional()
   @IsString()
   @IsIn(['local', 'union'])
-  @MaxLength(50)
+  @MaxLengthIfString(50)
   camporee_type?: 'local' | 'union';
 
   @ApiPropertyOptional({
@@ -41,7 +41,7 @@ export class RegisterMemberDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   club_name?: string;
 
   @ApiProperty({

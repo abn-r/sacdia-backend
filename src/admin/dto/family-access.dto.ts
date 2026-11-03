@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsString, MinLength } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 export const ADMIN_FAMILY_ACCESS_REASON_MIN_LENGTH = 5;
 export const ADMIN_FAMILY_ACCESS_REASON_MAX_LENGTH = 500;
@@ -24,6 +25,6 @@ export class AdminFamilyAccessReasonDto {
   )
   @IsString()
   @MinLength(ADMIN_FAMILY_ACCESS_REASON_MIN_LENGTH)
-  @MaxLength(ADMIN_FAMILY_ACCESS_REASON_MAX_LENGTH)
+  @MaxLengthIfString(ADMIN_FAMILY_ACCESS_REASON_MAX_LENGTH)
   declare reason: string;
 }

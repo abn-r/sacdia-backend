@@ -1,19 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsInt,
-  IsOptional,
-  IsString,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 
 export class UpdateProductDto {
   @ApiPropertyOptional({ description: 'Product title', maxLength: 200 })
   @IsOptional()
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   title?: string;
 
   @ApiPropertyOptional({ description: 'Product description' })

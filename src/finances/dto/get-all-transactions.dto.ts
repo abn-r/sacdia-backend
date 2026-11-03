@@ -6,8 +6,8 @@ import {
   IsDateString,
   Min,
   Max,
-  MaxLength,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -52,7 +52,7 @@ export class GetAllTransactionsDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(200)
+  @MaxLengthIfString(200)
   search?: string;
 
   @ApiPropertyOptional({

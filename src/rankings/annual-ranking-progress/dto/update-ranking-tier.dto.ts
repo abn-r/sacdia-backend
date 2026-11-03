@@ -5,15 +5,15 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  MaxLength,
   Min,
 } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 
 export class UpdateRankingTierDto {
   @ApiPropertyOptional({ example: 'Diamante' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   name?: string;
 
   @ApiPropertyOptional({ example: 5 })
@@ -25,13 +25,13 @@ export class UpdateRankingTierDto {
   @ApiPropertyOptional({ example: '#94a3b8' })
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @MaxLengthIfString(20)
   color?: string;
 
   @ApiPropertyOptional({ example: 'diamond' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLengthIfString(100)
   icon?: string;
 
   @ApiPropertyOptional({ example: 1 })

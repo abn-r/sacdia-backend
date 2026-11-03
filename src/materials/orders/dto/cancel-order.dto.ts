@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
+import { MaxLengthIfString } from '../../../common/validation/max-length-if-string.decorator';
 
 /**
  * DTO for POST /materials/orders/:folio/cancel
@@ -13,6 +14,6 @@ export class CancelOrderDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(500)
+  @MaxLengthIfString(500)
   declare cancel_reason: string;
 }

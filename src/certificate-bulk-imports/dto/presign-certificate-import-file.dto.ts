@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsInt, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsString, Max, Min } from 'class-validator';
+import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import {
   CERTIFICATE_IMPORT_ALLOWED_MIME_TYPES,
   CERTIFICATE_IMPORT_MAX_BYTES,
@@ -8,7 +9,7 @@ import {
 export class PresignCertificateImportFileDto {
   @ApiProperty({ maxLength: 255, example: 'certificado.pdf' })
   @IsString()
-  @MaxLength(255)
+  @MaxLengthIfString(255)
   declare file_name: string;
 
   @ApiProperty({ enum: CERTIFICATE_IMPORT_ALLOWED_MIME_TYPES })
