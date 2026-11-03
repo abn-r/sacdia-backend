@@ -342,6 +342,180 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // FCM tokens + FIDs: one payload, responses mapped back per kind
+  // ---------------------------------------------------------------------------
+  describe('tokens and FIDs', () => {
+    // Rows deliberately interleaved: FCM answers tokens first, then FIDs.
+    const mixedRows = [
+      { user_id: MEMBER_ID_A, token: 'fid-1', kind: 'fid' },
+      { user_id: MEMBER_ID_A, token: 'tok-1', kind: 'token' },
+      { user_id: MEMBER_ID_B, token: 'fid-2', kind: 'fid' },
+      { user_id: MEMBER_ID_B, token: 'tok-2', kind: 'token' },
+    ];
+
+    it('silent push splits rows into tokens and fids', async () => {
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue(mixedRows);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 4,
+        failureCount: 0,
+        responses: [
+          { success: true },
+          { success: true },
+          { success: true },
+          { success: true },
+        ],
+      });
+
+      await processor.process(makeJob(makePayload()) as any);
+
+      const arg = mockSendEachForMulticast.mock.calls[0][0];
+      expect(arg.tokens).toEqual(['tok-1', 'tok-2']);
+      expect(arg.fids).toEqual(['fid-1', 'fid-2']);
+      expect(mockPrismaService.user_fcm_tokens.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: { user_id: true, token: true, kind: true },
+        }),
+      );
+    });
+
+    it('silent push omits fids when every row is a registration token', async () => {
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { user_id: MEMBER_ID_A, token: 'tok-1', kind: 'token' },
+      ]);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 1,
+        failureCount: 0,
+        responses: [{ success: true }],
+      });
+
+      await processor.process(makeJob(makePayload()) as any);
+
+      const arg = mockSendEachForMulticast.mock.calls[0][0];
+      expect(arg.tokens).toEqual(['tok-1']);
+      expect(arg).not.toHaveProperty('fids');
+    });
+
+    it('silent push: a failure on a FID response deactivates that FID, not a token', async () => {
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue(mixedRows);
+      // Response order: tok-1, tok-2, fid-1, fid-2
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 3,
+        failureCount: 1,
+        responses: [
+          { success: true },
+          { success: true },
+          { success: true },
+          {
+            success: false,
+            error: { code: 'messaging/installation-id-not-registered' },
+          },
+        ],
+      });
+      mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+        count: 1,
+      });
+
+      await processor.process(makeJob(makePayload()) as any);
+
+      expect(mockPrismaService.user_fcm_tokens.updateMany).toHaveBeenCalledWith(
+        {
+          where: { token: { in: ['fid-2'] } },
+          data: { active: false },
+        },
+      );
+    });
+
+    it('sendMulticast: a failure on a token response deactivates that token, not a FID', async () => {
+      // Response order: tok-1, tok-2, fid-1, fid-2
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 3,
+        failureCount: 1,
+        responses: [
+          { success: true },
+          {
+            success: false,
+            error: { code: 'messaging/registration-token-not-registered' },
+          },
+          { success: true },
+          { success: true },
+        ],
+      });
+      mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+        count: 1,
+      });
+
+      const result = await processor.sendMulticast(mixedRows, 'T', 'B');
+
+      expect(result).toEqual({ successCount: 3, failureCount: 1 });
+      expect(mockPrismaService.user_fcm_tokens.updateMany).toHaveBeenCalledWith(
+        {
+          where: { token: { in: ['tok-2'] } },
+          data: { active: false },
+        },
+      );
+      expect(mockFcmTokensService.updateLastUsed).toHaveBeenCalledWith([
+        'tok-1',
+        'fid-1',
+        'fid-2',
+      ]);
+    });
+
+    it('sendMulticast: installation-id-not-registered is permanent for a FID', async () => {
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 0,
+        failureCount: 1,
+        responses: [
+          {
+            success: false,
+            error: { code: 'messaging/installation-id-not-registered' },
+          },
+        ],
+      });
+      mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+        count: 1,
+      });
+
+      await processor.sendMulticast(
+        [{ token: 'fid-dead', kind: 'fid' }],
+        'T',
+        'B',
+      );
+
+      expect(mockSendEachForMulticast.mock.calls[0][0]).toEqual({
+        fids: ['fid-dead'],
+        notification: { title: 'T', body: 'B' },
+        data: undefined,
+      });
+      expect(mockPrismaService.user_fcm_tokens.updateMany).toHaveBeenCalledWith(
+        {
+          where: { token: { in: ['fid-dead'] } },
+          data: { active: false },
+        },
+      );
+    });
+
+    it('sendMulticast: a transient FID error keeps the row active', async () => {
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 0,
+        failureCount: 1,
+        responses: [
+          { success: false, error: { code: 'messaging/server-unavailable' } },
+        ],
+      });
+
+      await processor.sendMulticast(
+        [{ token: 'fid-ok', kind: 'fid' }],
+        'T',
+        'B',
+      );
+
+      expect(
+        mockPrismaService.user_fcm_tokens.updateMany,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // process() dispatch — unknown job type still handled gracefully
   // ---------------------------------------------------------------------------
   it('should warn and not throw for unknown job names', async () => {
@@ -889,9 +1063,14 @@ describe('NotificationsProcessor — dependent push routing', () => {
     });
     mockDependentPushRouter.routeAndSend.mockImplementationOnce(
       async (_ids: string[], payload: any, send: any) =>
-        send(['guardian-token'], `Ana · ${payload.title}`, payload.body, {
-          dependent_user_id: DEPENDENT_ID,
-        }),
+        send(
+          [{ token: 'guardian-token', kind: 'token' }],
+          `Ana · ${payload.title}`,
+          payload.body,
+          {
+            dependent_user_id: DEPENDENT_ID,
+          },
+        ),
     );
 
     await processor.process({
