@@ -16,6 +16,14 @@ import {
 } from '../membership-requests/assignment-activation-gate';
 import { NotificationsService } from '../notifications/notifications.service';
 import { closePendingInvestitureAuthorizations } from '../investiture-requests/investiture-year-close';
+import { CriticalAuditWriterService } from '../audit-logs/critical-audit-writer.service';
+import type {
+  AuditJson,
+  CriticalAuditEvent,
+} from '../audit-logs/critical-audit-writer.service';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { classifyLocalFieldTimezone } from '../common/validators/iana-timezone.validator';
+import { ECCLESIASTICAL_YEAR_TIMEZONE } from '../common/services/ecclesiastical-year.service';
 
 const BOARD_ROLE_NAMES = [
   'director',
@@ -64,6 +72,35 @@ type SkippedDirectorPlan = {
   sectionId: number;
   code?: string;
 };
+
+type ActivatedDirectorPlan = {
+  successionId: string;
+  sectionId: number;
+  successorUserId: string;
+  outgoingUserId: string | null;
+};
+
+type ScheduledPlanRow = {
+  succession_id: string;
+  club_section_id: number;
+  successor_user_id: string;
+  outgoing_assignment_id?: string | null;
+  outgoing_assignment?: { user_id: string } | null;
+  target_ecclesiastical_year_id?: number;
+  effective_date?: Date;
+  version?: number;
+  attempt_count?: number;
+};
+
+/** Per-club context for the durable audit events of a year cut. */
+type CutAuditContext = {
+  clubId: number;
+  localFieldId: number;
+  now: Date;
+  temporal: NonNullable<CriticalAuditEvent['temporal']>;
+};
+
+const DIRECTOR_ALREADY_ACTIVE = 'DIRECTOR_ALREADY_ACTIVE';
 
 type CurrentYear = {
   year_id: number;
@@ -115,6 +152,8 @@ export class YearCutService {
     private readonly roleEligibility: ClubRoleEligibilityService,
     private readonly notifications: NotificationsService,
     private readonly i18n: I18nService,
+    private readonly criticalAudit: CriticalAuditWriterService,
+    private readonly temporalContexts: TemporalContextFactory,
   ) {}
 
   async applyCut(now?: Date): Promise<YearCutSummary> {
@@ -140,7 +179,7 @@ export class YearCutService {
     const allAffected = new Set<string>();
 
     for (const clubId of clubIds) {
-      const part = await this.cutClub(clubId, currentYear, avCqTypeIds);
+      const part = await this.cutClub(clubId, currentYear, avCqTypeIds, now);
       totals.ended += part.ended;
       totals.activated += part.activated;
       totals.returnedNotEnrolled += part.returnedNotEnrolled;
@@ -290,10 +329,13 @@ export class YearCutService {
     clubId: number,
     currentYear: CurrentYear,
     avCqTypeIds: Set<number>,
+    now?: Date,
   ): Promise<
     Omit<YearCutSummary, 'usersInvalidated'> & { affectedUserIds: string[] }
   > {
     const skippedPlans: SkippedDirectorPlan[] = [];
+    const activatedPlans: ActivatedDirectorPlan[] = [];
+    const auditContext = await this.resolveCutAuditContext(clubId, now);
     const result = await this.prisma.$transaction(
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(${clubId}, ${currentYear.year_id})`;
@@ -357,6 +399,12 @@ export class YearCutService {
             succession_id: true,
             club_section_id: true,
             successor_user_id: true,
+            outgoing_assignment_id: true,
+            outgoing_assignment: { select: { user_id: true } },
+            target_ecclesiastical_year_id: true,
+            effective_date: true,
+            version: true,
+            attempt_count: true,
           },
         });
 
@@ -401,6 +449,8 @@ export class YearCutService {
           plans,
           affectedUserIds,
           skippedPlans,
+          activatedPlans,
+          auditContext,
         );
 
         const jumpedUserIds = await this.applyTypeGraduates(
@@ -450,8 +500,223 @@ export class YearCutService {
     // Only after the club transaction committed: a rolled-back cut must not
     // announce skipped plans. Never throws.
     await this.notifySkippedDirectorPlans(clubId, skippedPlans);
+    await this.notifyActivatedDirectorPlans(clubId, activatedPlans);
 
     return result;
+  }
+
+  /**
+   * Club + local-field business date for the durable audit events. An unusable
+   * local-field timezone falls back to the institutional one.
+   */
+  private async resolveCutAuditContext(
+    clubId: number,
+    now?: Date,
+  ): Promise<CutAuditContext> {
+    const club = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+      select: {
+        local_field_id: true,
+        local_fields: { select: { timezone: true } },
+      },
+    });
+    const classified = classifyLocalFieldTimezone(club?.local_fields?.timezone);
+    const localFieldId = club?.local_field_id ?? 0;
+    const context = this.temporalContexts.forLocalField(
+      {
+        local_field_id: localFieldId,
+        timezone: classified.ok
+          ? classified.value
+          : ECCLESIASTICAL_YEAR_TIMEZONE,
+      },
+      now,
+    );
+    return {
+      clubId,
+      localFieldId,
+      now: context.now,
+      temporal: {
+        businessDate: context.businessDate,
+        businessTimezone: context.businessTimeZone,
+      },
+    };
+  }
+
+  private planAuditSnapshot(
+    plan: ScheduledPlanRow,
+    status: string,
+    extra: AuditJson = {},
+  ): AuditJson {
+    return {
+      succession_id: plan.succession_id,
+      club_section_id: plan.club_section_id,
+      successor_user_id: plan.successor_user_id,
+      target_ecclesiastical_year_id: plan.target_ecclesiastical_year_id ?? null,
+      effective_date: plan.effective_date?.toISOString() ?? null,
+      outgoing_assignment_id: plan.outgoing_assignment_id ?? null,
+      version: plan.version ?? null,
+      status,
+      ...extra,
+    };
+  }
+
+  /**
+   * Durable audit row for a plan the cut activated or skipped. The actor is
+   * the system (`kind: 'system'`, `userId: null`). The key carries the attempt
+   * number, so a replay of the same attempt is idempotent.
+   */
+  private async writePlanAudit(
+    tx: DbClient,
+    ctx: CutAuditContext,
+    currentYear: CurrentYear,
+    plan: ScheduledPlanRow,
+    outcome:
+      | { kind: 'activated'; assignmentId: string }
+      | { kind: 'skipped'; code: string },
+  ): Promise<void> {
+    const attempt = (plan.attempt_count ?? 0) + 1;
+    const activated = outcome.kind === 'activated';
+    await this.criticalAudit.write(tx, {
+      entityType: 'director_succession_plan',
+      entityId: plan.succession_id,
+      action: activated
+        ? 'DIRECTOR_SUCCESSION_ACTIVATED'
+        : 'DIRECTOR_SUCCESSION_SKIPPED',
+      eventKey: `director-succession:${outcome.kind}:${plan.succession_id}:attempt-${attempt}`,
+      actor: {
+        kind: 'system',
+        userId: null,
+        roleName: null,
+        scope: { job: 'year-cut', ecclesiastical_year_id: currentYear.year_id },
+      },
+      target: {
+        userId: plan.successor_user_id,
+        scope: {
+          club_section_id: plan.club_section_id,
+          club_id: ctx.clubId,
+          local_field_id: ctx.localFieldId,
+        },
+      },
+      before: this.planAuditSnapshot(plan, 'scheduled'),
+      after: activated
+        ? this.planAuditSnapshot(plan, 'activated', {
+            activated_assignment_id: outcome.assignmentId,
+            attempt_count: attempt,
+          })
+        : this.planAuditSnapshot(plan, 'scheduled', {
+            block_code: outcome.code,
+            attempt_count: attempt,
+          }),
+      clubId: ctx.clubId,
+      summary: activated
+        ? `Plan de sucesión de director activado en la sección ${plan.club_section_id}`
+        : `Plan de sucesión de director omitido en la sección ${plan.club_section_id} (${outcome.code})`,
+      effectiveAt: ctx.now,
+      temporal: ctx.temporal,
+      correlationId: `year-cut:${currentYear.year_id}:club-${ctx.clubId}`,
+      result: activated ? 'succeeded' : 'blocked',
+    });
+  }
+
+  /** Records a skipped attempt: counters + block code; the plan stays scheduled. */
+  private async skipPlan(
+    tx: DbClient,
+    ctx: CutAuditContext,
+    currentYear: CurrentYear,
+    plan: ScheduledPlanRow,
+    code: string,
+    skipped: SkippedDirectorPlan[],
+  ): Promise<void> {
+    await tx.director_succession_plans.update({
+      where: { succession_id: plan.succession_id },
+      data: {
+        attempt_count: { increment: 1 },
+        last_attempt_at: ctx.now,
+        block_code: code,
+      },
+    });
+    await this.writePlanAudit(tx, ctx, currentYear, plan, {
+      kind: 'skipped',
+      code,
+    });
+    skipped.push({
+      successionId: plan.succession_id,
+      sectionId: plan.club_section_id,
+      code,
+    });
+  }
+
+  /**
+   * Fire-and-forget notice to the new director and (when there was one) the
+   * outgoing director. Any failure is logged and swallowed.
+   */
+  private async notifyActivatedDirectorPlans(
+    clubId: number,
+    activated: ActivatedDirectorPlan[],
+  ): Promise<void> {
+    if (activated.length === 0) {
+      return;
+    }
+
+    try {
+      const club = await this.prisma.clubs.findUnique({
+        where: { club_id: clubId },
+        select: { name: true },
+      });
+      const clubName = club?.name ?? String(clubId);
+      const source = 'system:year_cut_director_plan_activated';
+
+      for (const plan of activated) {
+        const args = { club: clubName, sectionId: plan.sectionId };
+        const data = {
+          type: 'director_plan_activated',
+          clubId: String(clubId),
+          clubSectionId: String(plan.sectionId),
+          successionId: plan.successionId,
+        };
+        await this.notifications.sendToUser(
+          {
+            userId: plan.successorUserId,
+            title: this.i18n.translate(
+              'notifications.notifications.year_cut.director_plan_activated_title',
+              { lang: 'es' },
+            ),
+            body: this.i18n.translate(
+              'notifications.notifications.year_cut.director_plan_activated_body',
+              { lang: 'es', args },
+            ),
+            data,
+          },
+          'system',
+          source,
+        );
+        if (
+          plan.outgoingUserId &&
+          plan.outgoingUserId !== plan.successorUserId
+        ) {
+          await this.notifications.sendToUser(
+            {
+              userId: plan.outgoingUserId,
+              title: this.i18n.translate(
+                'notifications.notifications.year_cut.director_plan_activated_outgoing_title',
+                { lang: 'es' },
+              ),
+              body: this.i18n.translate(
+                'notifications.notifications.year_cut.director_plan_activated_outgoing_body',
+                { lang: 'es', args },
+              ),
+              data: { ...data, type: 'director_plan_outgoing' },
+            },
+            'system',
+            source,
+          );
+        }
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        `YearCut: failed to notify activated director plans for club ${clubId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /**
@@ -637,13 +902,11 @@ export class YearCutService {
     tx: DbClient,
     clubId: number,
     currentYear: CurrentYear,
-    plans: Array<{
-      succession_id: string;
-      club_section_id: number;
-      successor_user_id: string;
-    }>,
+    plans: ScheduledPlanRow[],
     affectedUserIds: Set<string>,
     skipped: SkippedDirectorPlan[],
+    activatedPlans: ActivatedDirectorPlan[],
+    ctx: CutAuditContext,
   ): Promise<number> {
     if (plans.length === 0) {
       return 0;
@@ -678,6 +941,14 @@ export class YearCutService {
         this.logger.warn(
           `YearCut: section ${plan.club_section_id} already has an active director for year ${currentYear.year_id} — skipping plan ${plan.succession_id}`,
         );
+        await this.skipPlan(
+          tx,
+          ctx,
+          currentYear,
+          plan,
+          DIRECTOR_ALREADY_ACTIVE,
+          skipped,
+        );
         continue;
       }
 
@@ -691,11 +962,14 @@ export class YearCutService {
         this.logger.warn(
           `YearCut: successor ${plan.successor_user_id} is not eligible for director in section ${plan.club_section_id} (${eligibility.violation?.code}) — skipping plan ${plan.succession_id}`,
         );
-        skipped.push({
-          successionId: plan.succession_id,
-          sectionId: plan.club_section_id,
-          code: eligibility.violation?.code,
-        });
+        await this.skipPlan(
+          tx,
+          ctx,
+          currentYear,
+          plan,
+          eligibility.violation?.code ?? 'UNKNOWN',
+          skipped,
+        );
         continue;
       }
 
@@ -704,11 +978,14 @@ export class YearCutService {
         this.logger.warn(
           `YearCut: successor ${plan.successor_user_id} of section ${plan.club_section_id} has no verified guardian consent (${ErrorCode.MR_CONSENT_NOT_VERIFIED}) — skipping plan ${plan.succession_id}`,
         );
-        skipped.push({
-          successionId: plan.succession_id,
-          sectionId: plan.club_section_id,
-          code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
-        });
+        await this.skipPlan(
+          tx,
+          ctx,
+          currentYear,
+          plan,
+          ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          skipped,
+        );
         continue;
       }
 
@@ -730,8 +1007,21 @@ export class YearCutService {
         data: {
           status: 'activated',
           activated_assignment_id: created.assignment_id,
-          activated_at: new Date(),
+          activated_at: ctx.now,
+          block_code: null,
+          attempt_count: { increment: 1 },
+          last_attempt_at: ctx.now,
         },
+      });
+      await this.writePlanAudit(tx, ctx, currentYear, plan, {
+        kind: 'activated',
+        assignmentId: created.assignment_id,
+      });
+      activatedPlans.push({
+        successionId: plan.succession_id,
+        sectionId: plan.club_section_id,
+        successorUserId: plan.successor_user_id,
+        outgoingUserId: plan.outgoing_assignment?.user_id ?? null,
       });
 
       affectedUserIds.add(plan.successor_user_id);

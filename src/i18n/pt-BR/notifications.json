@@ -10,7 +10,11 @@
     },
     "year_cut": {
       "director_plan_skipped_title": "Plano de sucessão de diretor ignorado",
-      "director_plan_skipped_body": "O sucessor do plano de diretor da seção {sectionId} do clube {club} não é elegível ({code}). A seção começa o ano sem diretor: atribua um manualmente."
+      "director_plan_skipped_body": "O sucessor do plano de diretor da seção {sectionId} do clube {club} não é elegível ({code}). A seção começa o ano sem diretor: atribua um manualmente.",
+      "director_plan_activated_title": "Sucessão de diretor ativada",
+      "director_plan_activated_body": "Você é o diretor da seção {sectionId} do clube {club} para o novo ano eclesiástico.",
+      "director_plan_activated_outgoing_title": "Sucessão de diretor concluída",
+      "director_plan_activated_outgoing_body": "Seu mandato como diretor da seção {sectionId} do clube {club} terminou com o início do novo ano eclesiástico."
     }
   }
 }

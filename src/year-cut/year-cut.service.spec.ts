@@ -17,6 +17,12 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { I18nService } from 'nestjs-i18n';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { CriticalAuditWriterService } from '../audit-logs/critical-audit-writer.service';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { ZonedBusinessTimeService } from '../common/clock/zoned-business-time.service';
+import { TestingClock } from '../common/clock/testing-clock';
+
+const CUT_NOW = new Date('2026-01-01T12:00:00.000Z');
 
 const YEAR_ID_PREV = 2025;
 const YEAR_ID_CURRENT = 2026;
@@ -174,7 +180,8 @@ describe('YearCutService', () => {
   let nextClassResolver: { resolve: jest.Mock };
   let annualMembership: { writeTypeJumpEnrollment: jest.Mock };
   let roleEligibility: { evaluateAssignment: jest.Mock };
-  let notifications: { sendToGlobalRole: jest.Mock };
+  let notifications: { sendToGlobalRole: jest.Mock; sendToUser: jest.Mock };
+  let criticalAudit: { write: jest.Mock };
 
   beforeEach(async () => {
     prisma = makePrismaMock();
@@ -207,7 +214,9 @@ describe('YearCutService', () => {
 
     notifications = {
       sendToGlobalRole: jest.fn().mockResolvedValue(undefined),
+      sendToUser: jest.fn().mockResolvedValue(undefined),
     };
+    criticalAudit = { write: jest.fn().mockResolvedValue({ replayed: false }) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -231,6 +240,14 @@ describe('YearCutService', () => {
         { provide: AnnualMembershipService, useValue: annualMembership },
         { provide: ClubRoleEligibilityService, useValue: roleEligibility },
         { provide: NotificationsService, useValue: notifications },
+        { provide: CriticalAuditWriterService, useValue: criticalAudit },
+        {
+          provide: TemporalContextFactory,
+          useValue: new TemporalContextFactory(
+            new TestingClock(CUT_NOW),
+            new ZonedBusinessTimeService(),
+          ),
+        },
         {
           provide: I18nService,
           useValue: { translate: jest.fn((key: string) => key) },
@@ -406,7 +423,26 @@ describe('YearCutService', () => {
           (c: [{ where: { succession_id: string } }]) =>
             c[0].where.succession_id,
         );
-      expect(updatedPlanIds).toEqual([PLAN_CQ_2026]);
+      // The activated plan and the skipped attempt are both recorded.
+      expect(updatedPlanIds).toEqual(['plan-ineligible', PLAN_CQ_2026]);
+      expect(prisma.director_succession_plans.update).toHaveBeenCalledWith({
+        where: { succession_id: 'plan-ineligible' },
+        data: {
+          attempt_count: { increment: 1 },
+          last_attempt_at: CUT_NOW,
+          block_code: ErrorCode.CLUB_ROLE_GUIDE_MAJOR_REQUIRED,
+        },
+      });
+      expect(criticalAudit.write).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          action: 'DIRECTOR_SUCCESSION_SKIPPED',
+          entityId: 'plan-ineligible',
+          result: 'blocked',
+          actor: expect.objectContaining({ kind: 'system', userId: null }),
+        }),
+      );
+      expect(notifications.sendToGlobalRole).toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('plan-ineligible'),
       );
@@ -436,7 +472,13 @@ describe('YearCutService', () => {
 
       expect(summary.activated).toBe(0);
       expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
-      expect(prisma.director_succession_plans.update).not.toHaveBeenCalled();
+      expect(prisma.director_succession_plans.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            block_code: ErrorCode.MR_CONSENT_NOT_VERIFIED,
+          }),
+        }),
+      );
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining(ErrorCode.MR_CONSENT_NOT_VERIFIED),
       );
@@ -499,6 +541,88 @@ describe('YearCutService', () => {
         77,
         'admin:year_cut_director_plan_skipped',
       );
+    });
+
+    it('activation clears block_code, counts the attempt, writes ACTIVATED and notifies successor and outgoing director', async () => {
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        {
+          ...scheduledCqPlan(),
+          outgoing_assignment: { user_id: USER_CQ_DIRECTOR },
+        },
+      ]);
+
+      await service.applyCut();
+
+      expect(prisma.director_succession_plans.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'activated',
+            block_code: null,
+            attempt_count: { increment: 1 },
+            last_attempt_at: CUT_NOW,
+          }),
+        }),
+      );
+      expect(criticalAudit.write).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          action: 'DIRECTOR_SUCCESSION_ACTIVATED',
+          entityType: 'director_succession_plan',
+          entityId: PLAN_CQ_2026,
+          result: 'succeeded',
+          actor: expect.objectContaining({ kind: 'system', userId: null }),
+          target: expect.objectContaining({ userId: USER_SUCCESSOR }),
+        }),
+      );
+      expect(notifications.sendToUser).toHaveBeenCalledTimes(2);
+      expect(notifications.sendToUser).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: USER_SUCCESSOR }),
+        'system',
+        expect.any(String),
+      );
+      expect(notifications.sendToUser).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: USER_CQ_DIRECTOR }),
+        'system',
+        expect.any(String),
+      );
+    });
+
+    it('notifies only the successor when the section had no outgoing director', async () => {
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        { ...scheduledCqPlan(), outgoing_assignment: null },
+      ]);
+
+      await service.applyCut();
+
+      expect(notifications.sendToUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('a pre-existing active director skips the plan with DIRECTOR_ALREADY_ACTIVE and notifies', async () => {
+      prisma.director_succession_plans.findMany.mockResolvedValue([
+        scheduledCqPlan(),
+      ]);
+      prisma.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'already-active',
+      });
+
+      const summary = await service.applyCut();
+
+      expect(summary.activated).toBe(0);
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+      expect(prisma.director_succession_plans.update).toHaveBeenCalledWith({
+        where: { succession_id: PLAN_CQ_2026 },
+        data: {
+          attempt_count: { increment: 1 },
+          last_attempt_at: CUT_NOW,
+          block_code: 'DIRECTOR_ALREADY_ACTIVE',
+        },
+      });
+      expect(criticalAudit.write).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ action: 'DIRECTOR_SUCCESSION_SKIPPED' }),
+      );
+      expect(notifications.sendToGlobalRole).toHaveBeenCalled();
+      expect(notifications.sendToUser).not.toHaveBeenCalled();
     });
 
     it('does not notify when no plan is skipped', async () => {
