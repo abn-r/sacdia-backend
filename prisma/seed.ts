@@ -4,6 +4,17 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+const rolesCatalog = JSON.parse(
+    readFileSync(join(__dirname, 'authz/roles.json'), 'utf8'),
+) as Array<{
+    role_name: string;
+    description: string;
+    role_category: 'GLOBAL' | 'CLUB';
+    active: boolean;
+}>;
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -55,151 +66,16 @@ async function main() {
         skipDuplicates: true,
     });
 
-    // Seed roles (Global)
+    // Seed roles (Global + Club) — single source: prisma/authz/roles.json
     console.log('📝 Seeding roles (Global)...');
     await prisma.roles.createMany({
-        data: [
-            {
-                role_name: 'super-admin',
-                description: 'Full system access with unrestricted control over all platform features, users, clubs, and configuration.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'admin',
-                description: 'Platform administrator with broad access to manage clubs, users, catalogs, and system settings.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'assistant-admin',
-                description: 'Assistant administrator who supports platform management tasks with limited administrative privileges.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'coordinator',
-                description: 'Regional or district coordinator responsible for overseeing multiple clubs within a geographic area.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'zone-coordinator',
-                description: 'Zonal coordinator overseeing clubs in a zone.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'general-coordinator',
-                description: 'General coordinator overseeing zone coordinators in a local field.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'director-lf',
-                description: 'Local-field director.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'assistant-lf',
-                description: 'Local-field assistant director.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'director-union',
-                description: 'Union director.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'assistant-union',
-                description: 'Union assistant director.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'director-dia',
-                description: 'Division director.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'assistant-dia',
-                description: 'Division assistant director.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'pastor',
-                description: 'Church pastor with visibility into club activities and spiritual oversight responsibilities.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-            {
-                role_name: 'user',
-                description: 'Standard authenticated user with access to their own profile and club membership data.',
-                role_category: 'GLOBAL',
-                active: true,
-            },
-        ],
+        data: rolesCatalog.filter((r) => r.role_category === 'GLOBAL'),
         skipDuplicates: true,
     });
 
-    // Seed roles (Club)
     console.log('📝 Seeding roles (Club)...');
     await prisma.roles.createMany({
-        data: [
-            {
-                role_name: 'director',
-                description: 'Club director responsible for overall club leadership, planning, and operations.',
-                role_category: 'CLUB',
-                active: true,
-            },
-            {
-                role_name: 'deputy-director',
-                description: 'Deputy director who assists the club director and assumes leadership in their absence.',
-                role_category: 'CLUB',
-                active: true,
-            },
-            {
-                role_name: 'secretary',
-                description: 'Club secretary responsible for record-keeping, attendance tracking, and administrative documentation.',
-                role_category: 'CLUB',
-                active: true,
-            },
-            {
-                role_name: 'treasurer',
-                description: 'Club treasurer who manages financial records, budgets, dues, and expense reporting.',
-                role_category: 'CLUB',
-                active: true,
-            },
-            {
-                role_name: 'secretary-treasurer',
-                description: 'Combined secretary and treasurer club role.',
-                role_category: 'CLUB',
-                active: true,
-            },
-            {
-                role_name: 'counselor',
-                description: 'Unit counselor who guides and mentors a group of club members in their spiritual and personal development.',
-                role_category: 'CLUB',
-                active: true,
-            },
-            {
-                role_name: 'instructor',
-                description: 'Instructor who teaches honors, classes, and specialized skills to club members.',
-                role_category: 'CLUB',
-                active: true,
-            },
-            {
-                role_name: 'member',
-                description: 'Regular club member participating in Pathfinder, Adventurer, or Master Guide club activities.',
-                role_category: 'CLUB',
-                active: true,
-            },
-        ],
+        data: rolesCatalog.filter((r) => r.role_category === 'CLUB'),
         skipDuplicates: true,
     });
 
