@@ -8,13 +8,13 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
-import { GlobalRole } from '../common/authorization/roles';
+import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
 const SECTION_WIDE_ROLE_NAMES = new Set([
-  'director',
-  'deputy-director',
-  'secretary',
-  'secretary-treasurer',
+  ClubRole.DIRECTOR,
+  ClubRole.DEPUTY_DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
 ]);
 
 const GLOBAL_PROGRESS_SCOPE_ROLES = [

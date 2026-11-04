@@ -24,14 +24,14 @@ import type {
 import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
 import { classifyLocalFieldTimezone } from '../common/validators/iana-timezone.validator';
 import { ECCLESIASTICAL_YEAR_TIMEZONE } from '../common/services/ecclesiastical-year.service';
-import { ClubRole } from '../common/authorization/roles';
+import { ClubRole, GlobalRole } from '../common/authorization/roles';
 
 const BOARD_ROLE_NAMES = [
-  'director',
-  'deputy-director',
-  'secretary',
-  'treasurer',
-  'secretary-treasurer',
+  ClubRole.DIRECTOR,
+  ClubRole.DEPUTY_DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.TREASURER,
+  ClubRole.SECRETARY_TREASURER,
 ] as const;
 
 const AV_CQ_TYPE_NAMES = ['Aventureros', 'Conquistadores'] as const;
@@ -766,7 +766,7 @@ export class YearCutService {
         const source = 'admin:year_cut_director_plan_skipped';
 
         await this.notifications.sendToGlobalRole(
-          ['super-admin', 'admin'],
+          [GlobalRole.SUPER_ADMIN, GlobalRole.ADMIN],
           title,
           body,
           data,
@@ -775,7 +775,7 @@ export class YearCutService {
         );
         if (club?.local_field_id) {
           await this.notifications.sendToGlobalRole(
-            ['director-lf', 'assistant-lf'],
+            [GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF],
             title,
             body,
             data,

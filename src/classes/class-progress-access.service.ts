@@ -4,13 +4,13 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { GlobalRole } from '../common/authorization/roles';
+import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
-const SECTION_WIDE_ROLE_NAMES = new Set([
-  'director',
-  'deputy-director',
-  'secretary',
-  'secretary-treasurer',
+const SECTION_WIDE_ROLE_NAMES = new Set<string>([
+  ClubRole.DIRECTOR,
+  ClubRole.DEPUTY_DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
 ]);
 
 const GLOBAL_PROGRESS_ACCESS_ROLES = [

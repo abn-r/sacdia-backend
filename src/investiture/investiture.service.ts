@@ -11,7 +11,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { pendingInvestitureAuthorization } from '../investiture-requests/investiture-request-lock';
-import { ClubRole } from '../common/authorization/roles';
+import { ClubRole, GlobalRole } from '../common/authorization/roles';
 
 const EXPIRABLE_STATUSES: investiture_status_enum[] = [
   investiture_status_enum.IN_PROGRESS,
@@ -64,10 +64,10 @@ export class InvestitureService {
 
     // 2. Authorization check — query DB for actual global roles (JWT payload does NOT carry roles)
     const allowedGlobalRoles = [
-      'admin',
-      'coordinator',
-      'super-admin',
-      'assistant-admin',
+      GlobalRole.ADMIN,
+      GlobalRole.COORDINATOR,
+      GlobalRole.SUPER_ADMIN,
+      GlobalRole.ASSISTANT_ADMIN,
     ];
     const hasGlobalAccess = await this.authorizationContext.hasAnyGlobalRole(
       actorId,

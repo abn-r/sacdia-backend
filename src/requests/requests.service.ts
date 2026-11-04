@@ -43,10 +43,10 @@ export class RequestsService {
     number
   > = {
     director: 1,
-    'deputy-director': 2,
+    [ClubRole.DEPUTY_DIRECTOR]: 2,
     secretary: 1,
     treasurer: 1,
-    'secretary-treasurer': 1,
+    [ClubRole.SECRETARY_TREASURER]: 1,
   };
 
   constructor(
@@ -1167,10 +1167,10 @@ export class RequestsService {
     ecclesiasticalYearId: number,
   ): Promise<void> {
     const conflictingRoleNames =
-      roleName === 'secretary' || roleName === 'treasurer'
-        ? ['secretary-treasurer']
-        : roleName === 'secretary-treasurer'
-          ? ['secretary', 'treasurer']
+      roleName === ClubRole.SECRETARY || roleName === ClubRole.TREASURER
+        ? [ClubRole.SECRETARY_TREASURER]
+        : roleName === ClubRole.SECRETARY_TREASURER
+          ? [ClubRole.SECRETARY, ClubRole.TREASURER]
           : [];
 
     if (conflictingRoleNames.length === 0) return;

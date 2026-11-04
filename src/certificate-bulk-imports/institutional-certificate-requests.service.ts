@@ -28,6 +28,7 @@ import type {
 } from './dto/review-institutional-certificate-request.dto';
 import { INSTITUTIONAL_CLASS_ASSET_CODES } from './institutional-class-codes';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
+import { GlobalRole } from '../common/authorization/roles';
 
 type InstitutionalStore = Pick<
   Prisma.TransactionClient,
@@ -471,7 +472,7 @@ export class InstitutionalCertificateRequestsService {
         entry.roles.role_name.toLowerCase(),
       ),
     );
-    if (!roles.has('super-admin')) {
+    if (!roles.has(GlobalRole.SUPER_ADMIN)) {
       throw new ForbiddenException(
         'CERTIFICATE_IMPORT_INSTITUTIONAL_FORBIDDEN',
       );

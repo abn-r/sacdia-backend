@@ -106,7 +106,7 @@ export function assertCanDistribute(
   const role = activeClubRole(actor);
   if (
     !section ||
-    role !== 'director' ||
+    role !== ClubRole.DIRECTOR ||
     section.club_section_id !== orderClubSectionId
   ) {
     throw new AppForbiddenException(ErrorCode.CAMPOREE_ORDER_FORBIDDEN);

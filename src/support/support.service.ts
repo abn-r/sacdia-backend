@@ -25,6 +25,7 @@ import {
   AdminSupportReportDto,
   AdminSupportReportsPageDto,
 } from './dto/admin-support-report.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 type SupportReportWithUser = Prisma.support_reportsGetPayload<{
   include: {
@@ -199,14 +200,17 @@ export class SupportService {
     );
 
     if (
-      roleNames.has('admin') ||
-      roleNames.has('assistant-admin') ||
-      roleNames.has('super-admin')
+      roleNames.has(GlobalRole.ADMIN) ||
+      roleNames.has(GlobalRole.ASSISTANT_ADMIN) ||
+      roleNames.has(GlobalRole.SUPER_ADMIN)
     ) {
       return {};
     }
 
-    if (roleNames.has('director-lf') || roleNames.has('assistant-lf')) {
+    if (
+      roleNames.has(GlobalRole.DIRECTOR_LF) ||
+      roleNames.has(GlobalRole.ASSISTANT_LF)
+    ) {
       const actorFieldId = toTerritoryId(
         resolved.authorization.effective.scope.global.local_field?.id,
       );
@@ -223,9 +227,9 @@ export class SupportService {
     }
 
     if (
-      roleNames.has('coordinator') ||
-      roleNames.has('zone-coordinator') ||
-      roleNames.has('general-coordinator')
+      roleNames.has(GlobalRole.COORDINATOR) ||
+      roleNames.has(GlobalRole.ZONE_COORDINATOR) ||
+      roleNames.has(GlobalRole.GENERAL_COORDINATOR)
     ) {
       const sectionIds =
         await this.coordinationService.getEffectiveCoordinatorSectionIds(

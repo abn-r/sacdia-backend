@@ -38,6 +38,7 @@ import {
   RejectInsurancePurchaseDto,
   SubmitInsurancePurchaseDto,
 } from './dto/insurance-purchases.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 type UserPayload = { sub?: string; user_id?: string; userId?: string };
 type RequestWithProfile = {
@@ -248,14 +249,14 @@ export class InsurancePurchasesController {
       profile.authorization.effective.scope.global.local_field?.id ??
       sectionGrant?.scope.local_field?.id;
     const globalAccess =
-      (roles.has('admin') || roles.has('super-admin')) &&
+      (roles.has(GlobalRole.ADMIN) || roles.has(GlobalRole.SUPER_ADMIN)) &&
       typeof localFieldId !== 'number';
     const canReview =
       review &&
-      (roles.has('director-lf') ||
-        roles.has('assistant-lf') ||
-        roles.has('admin') ||
-        roles.has('super-admin')) &&
+      (roles.has(GlobalRole.DIRECTOR_LF) ||
+        roles.has(GlobalRole.ASSISTANT_LF) ||
+        roles.has(GlobalRole.ADMIN) ||
+        roles.has(GlobalRole.SUPER_ADMIN)) &&
       (globalAccess || typeof localFieldId === 'number');
     return {
       userId,

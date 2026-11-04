@@ -29,14 +29,14 @@ import {
   DirectorDesignationDto,
   ReplaceDirectorPlanDto,
 } from './dto/role-assignment.dto';
-import { ClubRole } from '../common/authorization/roles';
+import { ClubRole, GlobalRole } from '../common/authorization/roles';
 
 /** Global roles that can schedule a director plan; the first match is stored as `scheduled_by_role`. */
 const SCHEDULER_ROLE_NAMES = [
-  'super-admin',
-  'admin',
-  'director-lf',
-  'assistant-lf',
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
 ] as const;
 
 /**

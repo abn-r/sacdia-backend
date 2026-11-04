@@ -33,6 +33,7 @@ import { LATER_CERTIFICATE_ACCREDITATION_REASON } from '../investiture-requests/
 import { instructorKind, sameInstructor } from '../instructors/instructor-view';
 import { honorCompletionDate } from '../honors/honor-completion-date';
 import { checkDateInRange } from '../common/utils/honor-date-range';
+import { GlobalRole } from '../common/authorization/roles';
 
 type CertificateImportApplicationTransaction = Pick<
   Prisma.TransactionClient,
@@ -544,19 +545,19 @@ export class CertificateBulkImportApplicationService {
         entry.roles.role_name.toLowerCase(),
       ),
     );
-    if (roles.has('super-admin')) return;
+    if (roles.has(GlobalRole.SUPER_ADMIN)) return;
     if (
-      (roles.has('admin') || roles.has('assistant-admin')) &&
+      (roles.has(GlobalRole.ADMIN) || roles.has(GlobalRole.ASSISTANT_ADMIN)) &&
       reviewer?.local_field_id == null
     ) {
       return;
     }
     const fieldId = reviewer?.local_field_id ?? null;
     const fieldRole =
-      roles.has('director-lf') ||
-      roles.has('assistant-lf') ||
-      roles.has('admin') ||
-      roles.has('assistant-admin');
+      roles.has(GlobalRole.DIRECTOR_LF) ||
+      roles.has(GlobalRole.ASSISTANT_LF) ||
+      roles.has(GlobalRole.ADMIN) ||
+      roles.has(GlobalRole.ASSISTANT_ADMIN);
     if (
       fieldId != null &&
       fieldRole &&

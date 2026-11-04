@@ -55,7 +55,7 @@ import {
 } from './mappers/formative-read-model.mapper';
 import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
 import { REVOKED_DEVICE_HISTORY_MS } from '../guardianships/guardianships.constants';
-import { GlobalRole } from '../common/authorization/roles';
+import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
 // ── Bulk upload types ────────────────────────────────────────────────────────
 export type BulkUserRowResult = {
@@ -913,7 +913,7 @@ export class AdminUsersService {
   }> = [
     {
       // super-admin can create any role (DTO already blocks super-admin creation)
-      actorRoles: ['super-admin'],
+      actorRoles: [GlobalRole.SUPER_ADMIN],
       allowedTargetRoles: [
         ...AdminUsersService.BASE_T5_ROLES,
         ...AdminUsersService.LF_ROLES,
@@ -934,7 +934,7 @@ export class AdminUsersService {
     },
     {
       // DIA assigns down to UNION, NOT DIA peers
-      actorRoles: ['director-dia', 'assistant-dia'],
+      actorRoles: [GlobalRole.DIRECTOR_DIA, GlobalRole.ASSISTANT_DIA],
       allowedTargetRoles: [
         ...AdminUsersService.BASE_T5_ROLES,
         ...AdminUsersService.LF_ROLES,
@@ -943,7 +943,7 @@ export class AdminUsersService {
     },
     {
       // UNION assigns down to LF, NOT UNION peers
-      actorRoles: ['director-union', 'assistant-union'],
+      actorRoles: [GlobalRole.DIRECTOR_UNION, GlobalRole.ASSISTANT_UNION],
       allowedTargetRoles: [
         ...AdminUsersService.BASE_T5_ROLES,
         ...AdminUsersService.LF_ROLES,
@@ -951,7 +951,7 @@ export class AdminUsersService {
     },
     {
       // LF assigns only T5 base roles. Cannot grow its own tier.
-      actorRoles: ['director-lf', 'assistant-lf'],
+      actorRoles: [GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF],
       allowedTargetRoles: [...AdminUsersService.BASE_T5_ROLES],
     },
   ];
@@ -1521,7 +1521,7 @@ export class AdminUsersService {
       (await this.authorizationContext.resolveUserAuthorization(actorUserId));
     const roles = this.extractResolvedRoleNames(resolved);
 
-    if (roles.includes('super-admin')) {
+    if (roles.includes(GlobalRole.SUPER_ADMIN)) {
       return { type: 'ALL', roles };
     }
 
@@ -1882,9 +1882,9 @@ export class AdminUsersService {
   ): AdminUserListItem['club_assignments'] {
     const rank: Record<string, number> = {
       director: 0,
-      'deputy-director': 1,
+      [ClubRole.DEPUTY_DIRECTOR]: 1,
       secretary: 2,
-      'secretary-treasurer': 3,
+      [ClubRole.SECRETARY_TREASURER]: 3,
       treasurer: 4,
       counselor: 5,
       instructor: 6,
@@ -2214,15 +2214,15 @@ export class AdminUsersService {
   private static readonly ROLE_LABELS_ES: Record<string, string> = {
     user: 'Usuario',
     coordinator: 'Coordinador',
-    'zone-coordinator': 'Coordinador de Zona',
-    'general-coordinator': 'Coordinador General',
+    [GlobalRole.ZONE_COORDINATOR]: 'Coordinador de Zona',
+    [GlobalRole.GENERAL_COORDINATOR]: 'Coordinador General',
     pastor: 'Pastor',
-    'assistant-lf': 'Secretario de Campo Local',
-    'director-lf': 'Director de Campo Local',
-    'assistant-union': 'Secretario de Unión',
-    'director-union': 'Director de Unión',
-    'assistant-dia': 'Secretario de División',
-    'director-dia': 'Director de División',
+    [GlobalRole.ASSISTANT_LF]: 'Secretario de Campo Local',
+    [GlobalRole.DIRECTOR_LF]: 'Director de Campo Local',
+    [GlobalRole.ASSISTANT_UNION]: 'Secretario de Unión',
+    [GlobalRole.DIRECTOR_UNION]: 'Director de Unión',
+    [GlobalRole.ASSISTANT_DIA]: 'Secretario de División',
+    [GlobalRole.DIRECTOR_DIA]: 'Director de División',
     admin: 'Administrador',
   };
 
@@ -2235,7 +2235,7 @@ export class AdminUsersService {
 
     // Pick an example role the actor can actually use. Default to 'user'
     // since every authorized tier can create T5 base roles.
-    const exampleRole = allowedRoles.includes('user')
+    const exampleRole = allowedRoles.includes(GlobalRole.USER)
       ? 'user'
       : (allowedRoles[0] ?? 'user');
 

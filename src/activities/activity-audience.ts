@@ -1,9 +1,10 @@
+import { ClubRole } from '../common/authorization/roles';
 export const ACTIVITY_BOARD_ROLE_NAMES = [
-  'director',
-  'deputy-director',
-  'secretary',
-  'treasurer',
-  'secretary-treasurer',
+  ClubRole.DIRECTOR,
+  ClubRole.DEPUTY_DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.TREASURER,
+  ClubRole.SECRETARY_TREASURER,
 ] as const;
 
 export type ActivityAudience = 'all' | 'board' | 'classes';
@@ -33,5 +34,7 @@ export function activityVisibleToViewer(
   if (audience === 'all') return true;
   if (audience === 'board') return false;
   const classId = viewer.classId;
-  return classId != null && classIdsFromJson(activity.classes).includes(classId);
+  return (
+    classId != null && classIdsFromJson(activity.classes).includes(classId)
+  );
 }

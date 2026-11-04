@@ -34,6 +34,7 @@ import {
   ApproveCertificationRequirementDto,
   RequestCertificationRequirementChangesDto,
 } from '../dto/review-certification-requirement.dto';
+import { GlobalRole } from '../../common/authorization/roles';
 
 type UserPayload = { sub?: string; user_id?: string; userId?: string };
 type RequestWithProfile = {
@@ -175,7 +176,7 @@ export class CertificationReviewController {
     const localFieldId =
       profile.authorization.effective.scope.global.local_field?.id;
     const globalAccess =
-      (roles.has('admin') || roles.has('super-admin')) &&
+      (roles.has(GlobalRole.ADMIN) || roles.has(GlobalRole.SUPER_ADMIN)) &&
       typeof localFieldId !== 'number';
 
     return {

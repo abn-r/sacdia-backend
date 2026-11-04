@@ -240,7 +240,7 @@ export class FieldInvestitureWindowConfigService {
   ): AppForbiddenException {
     const flags = editorFlags(authorization, localFieldId);
     const editor =
-      flags.roles.includes('super-admin') ||
+      flags.roles.includes(GlobalRole.SUPER_ADMIN) ||
       flags.editsOwnField ||
       flags.editsByAdminScope;
     return new AppForbiddenException(
@@ -353,9 +353,11 @@ function editorFlags(
   return {
     roles: [...roles],
     editsOwnField:
-      (roles.has('director-lf') || roles.has('assistant-lf')) &&
+      (roles.has(GlobalRole.DIRECTOR_LF) ||
+        roles.has(GlobalRole.ASSISTANT_LF)) &&
       ownFieldId === localFieldId,
-    editsByAdminScope: roles.has('admin') || roles.has('assistant-admin'),
+    editsByAdminScope:
+      roles.has(GlobalRole.ADMIN) || roles.has(GlobalRole.ASSISTANT_ADMIN),
   };
 }
 

@@ -194,7 +194,9 @@ export class MemberOfMonthService {
         (g: { role_name: string }) => g.role_name.toLowerCase(),
       ),
     );
-    const isAdmin = globalRoles.has('admin') || globalRoles.has('super-admin');
+    const isAdmin =
+      globalRoles.has(GlobalRole.ADMIN) ||
+      globalRoles.has(GlobalRole.SUPER_ADMIN);
     const isCoordinator =
       !isAdmin && [...COORDINATOR_ROLES].some((role) => globalRoles.has(role));
 

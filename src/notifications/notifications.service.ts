@@ -864,7 +864,7 @@ export class NotificationsService {
       ),
     );
 
-    if (globalRoleNames.has('super-admin')) {
+    if (globalRoleNames.has(GlobalRole.SUPER_ADMIN)) {
       return {};
     }
 

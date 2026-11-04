@@ -60,6 +60,9 @@ export default tseslint.config(
       'src/common/authorization/role-sets.ts',
       'src/common/guards/global-role-aliases.ts',
       'src/common/guards/club-roles.guard.ts',
+      // Domain label map keyed by role name (role -> display label); the keys
+      // are the roles themselves, so they cannot be GlobalRole/ClubRole refs.
+      'src/common/constants/club-directiva-roles.ts',
     ],
     plugins: { local: { rules: { 'no-role-literals': noRoleLiterals } } },
     rules: { 'local/no-role-literals': 'error' },

@@ -22,6 +22,7 @@ import {
 } from '../common/authorization/actor-territory-scope';
 import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
 import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
+import { GlobalRole } from '../common/authorization/roles';
 
 type InsuranceMutationInput = {
   insurance_type?: string;
@@ -309,9 +310,9 @@ export class InsuranceService {
     );
 
     if (
-      roleNames.has('admin') ||
-      roleNames.has('assistant-admin') ||
-      roleNames.has('super-admin')
+      roleNames.has(GlobalRole.ADMIN) ||
+      roleNames.has(GlobalRole.ASSISTANT_ADMIN) ||
+      roleNames.has(GlobalRole.SUPER_ADMIN)
     ) {
       if (localFieldId === undefined) {
         return {};
@@ -344,9 +345,9 @@ export class InsuranceService {
     }
 
     if (
-      roleNames.has('coordinator') ||
-      roleNames.has('zone-coordinator') ||
-      roleNames.has('general-coordinator')
+      roleNames.has(GlobalRole.COORDINATOR) ||
+      roleNames.has(GlobalRole.ZONE_COORDINATOR) ||
+      roleNames.has(GlobalRole.GENERAL_COORDINATOR)
     ) {
       const sectionIds =
         await this.coordinationService.getEffectiveCoordinatorSectionIds(

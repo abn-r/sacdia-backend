@@ -164,7 +164,8 @@ export class DistrictInvestiturePastorService {
     return {
       districlub_type_id: districtId,
       slots,
-      can_assign: actor.kind !== 'super-admin' && pastors.length < slots,
+      can_assign:
+        actor.kind !== GlobalRole.SUPER_ADMIN && pastors.length < slots,
       pastors,
     };
   }

@@ -1,5 +1,6 @@
 import { coordinator_assignment_type, type Prisma } from '@prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
+import { GlobalRole } from './roles';
 
 /**
  * Canonical coordinator territory (docs/canon/runtime-coordination.md):
@@ -24,9 +25,9 @@ import type { PrismaService } from '../../prisma/prisma.service';
  */
 /** GLOBAL roles whose territory is the coordinator scope below. */
 export const COORDINATOR_GLOBAL_ROLE_NAMES: ReadonlySet<string> = new Set([
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
+  GlobalRole.COORDINATOR,
+  GlobalRole.ZONE_COORDINATOR,
+  GlobalRole.GENERAL_COORDINATOR,
 ]);
 
 /**

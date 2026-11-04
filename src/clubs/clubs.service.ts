@@ -72,10 +72,10 @@ export class ClubsService {
     number
   > = {
     director: 1,
-    'deputy-director': 2,
+    [ClubRole.DEPUTY_DIRECTOR]: 2,
     secretary: 1,
     treasurer: 1,
-    'secretary-treasurer': 1,
+    [ClubRole.SECRETARY_TREASURER]: 1,
   };
 
   constructor(
@@ -1875,7 +1875,7 @@ export class ClubsService {
     }
 
     // 2. Mutual exclusivity: secretary / treasurer vs secretary-treasurer
-    if (roleName === 'secretary' || roleName === 'treasurer') {
+    if (roleName === ClubRole.SECRETARY || roleName === ClubRole.TREASURER) {
       const secTreasRoles = await this.prisma.roles.findMany({
         where: {
           role_name: { in: [ClubRole.SECRETARY_TREASURER] },
@@ -1910,7 +1910,7 @@ export class ClubsService {
       }
     }
 
-    if (roleName === 'secretary-treasurer') {
+    if (roleName === ClubRole.SECRETARY_TREASURER) {
       const conflictingRoles = await this.prisma.roles.findMany({
         where: {
           role_name: { in: [ClubRole.SECRETARY, ClubRole.TREASURER] },

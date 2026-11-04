@@ -27,6 +27,12 @@ describe('no-role-literals rule', () => {
         "const r = 'instructor' in item;",
         'const r = grant.role_name === ClubRole.DIRECTOR;',
         "const t = x.type === 'user';",
+        "const s = { tags: ['pastor'] };",
+        "const s = { type: 'director-lf' as const };",
+        "type MailRole = 'pastor' | 'director-lf';",
+        "@ApiProperty({ example: 'director-lf' }) class A {}",
+        "const t = name.includes('admin-panel');",
+        "const a = ['admin', 'user'];",
       ],
       invalid: [
         {
@@ -52,6 +58,34 @@ describe('no-role-literals rule', () => {
         {
           code: "const q = { role_name: { in: ['pastor'] } };",
           errors: [{ messageId: 'literal' }],
+        },
+        {
+          code: "const r = roles.has('director-lf');",
+          errors: [{ messageId: 'literal' }],
+        },
+        {
+          code: "foo(['director-lf','assistant-lf']);",
+          errors: [{ messageId: 'literal' }, { messageId: 'literal' }],
+        },
+        {
+          code: "const X: Record<string, number> = { 'director-lf': 1 };",
+          errors: [{ messageId: 'literal' }],
+        },
+        {
+          code: "const r = ['admin','director-lf'].includes(r);",
+          errors: [{ messageId: 'literal' }, { messageId: 'literal' }],
+        },
+        {
+          code: "const x = grant.role_name; const b = x === 'member';",
+          errors: [{ messageId: 'literal' }],
+        },
+        {
+          code: "const b = roleName === 'member';",
+          errors: [{ messageId: 'literal' }],
+        },
+        {
+          code: "const m = { admin: ['pastor', 'admin'] };",
+          errors: [{ messageId: 'literal' }, { messageId: 'literal' }],
         },
         {
           code: "switch (grant.role_name) { case 'director': break; }",

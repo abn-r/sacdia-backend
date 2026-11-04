@@ -1,4 +1,5 @@
 import type { PrismaService } from '../../prisma/prisma.service';
+import { GlobalRole } from '../authorization/roles';
 
 /**
  * Alcance de un revisor del Campo Local. Lo comparten la carga por certificado
@@ -42,12 +43,12 @@ export async function resolveReviewerAccess(
     reviewer.users_roles.map((entry) => entry.roles.role_name.toLowerCase()),
   );
 
-  if (roles.has('super-admin')) {
+  if (roles.has(GlobalRole.SUPER_ADMIN)) {
     return { global: true, localFieldId: null, superAdmin: true };
   }
 
   if (
-    (roles.has('admin') || roles.has('assistant-admin')) &&
+    (roles.has(GlobalRole.ADMIN) || roles.has(GlobalRole.ASSISTANT_ADMIN)) &&
     reviewer.local_field_id == null
   ) {
     return { global: true, localFieldId: null, superAdmin: false };
@@ -55,10 +56,10 @@ export async function resolveReviewerAccess(
 
   if (
     reviewer.local_field_id &&
-    (roles.has('admin') ||
-      roles.has('assistant-admin') ||
-      roles.has('director-lf') ||
-      roles.has('assistant-lf'))
+    (roles.has(GlobalRole.ADMIN) ||
+      roles.has(GlobalRole.ASSISTANT_ADMIN) ||
+      roles.has(GlobalRole.DIRECTOR_LF) ||
+      roles.has(GlobalRole.ASSISTANT_LF))
   ) {
     return {
       global: false,

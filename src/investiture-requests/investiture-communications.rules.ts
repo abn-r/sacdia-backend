@@ -556,7 +556,7 @@ export function dueReminders(input: {
             localDate: clock.date,
           }),
         );
-      const pastorDay = schedule.pastorDay && runAllowed('pastor');
+      const pastorDay = schedule.pastorDay && runAllowed(GlobalRole.PASTOR);
       const fieldDay = schedule.fieldDay;
       const included = includableRequests(
         field,
@@ -884,20 +884,20 @@ export function reminderRetryDraft(input: {
 }
 
 function presentationSubject(role: MailRole): string {
-  if (role === 'pastor') {
+  if (role === GlobalRole.PASTOR) {
     return 'Solicitud de investidura — pastor del distrito';
   }
-  if (role === 'assistant-lf') {
+  if (role === GlobalRole.ASSISTANT_LF) {
     return 'Solicitud de investidura — asistente del Campo';
   }
   return 'Solicitud de investidura — director del Campo';
 }
 
 function reminderSubject(role: MailRole): string {
-  if (role === 'pastor') {
+  if (role === GlobalRole.PASTOR) {
     return 'Recordatorio de investiduras pendientes — pastor del distrito';
   }
-  if (role === 'assistant-lf') {
+  if (role === GlobalRole.ASSISTANT_LF) {
     return 'Resumen de investiduras pendientes — asistente del Campo';
   }
   return 'Resumen de investiduras pendientes — director del Campo';
