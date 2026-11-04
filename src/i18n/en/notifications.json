@@ -10,7 +10,11 @@
     },
     "year_cut": {
       "director_plan_skipped_title": "Director succession plan skipped",
-      "director_plan_skipped_body": "The successor in the director plan for section {sectionId} of club {club} is not eligible ({code}). The section starts the year without a director: assign one manually."
+      "director_plan_skipped_body": "The successor in the director plan for section {sectionId} of club {club} is not eligible ({code}). The section starts the year without a director: assign one manually.",
+      "director_plan_activated_title": "Director succession plan activated",
+      "director_plan_activated_body": "You are the director of section {sectionId} of club {club} for the new ecclesiastical year.",
+      "director_plan_activated_outgoing_title": "Director succession completed",
+      "director_plan_activated_outgoing_body": "Your term as director of section {sectionId} of club {club} ended with the start of the new ecclesiastical year."
     }
   }
 }

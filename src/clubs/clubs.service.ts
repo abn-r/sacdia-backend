@@ -1119,7 +1119,20 @@ export class ClubsService {
     ended_assignment_id: string;
     new_assignment_id: string;
   }> {
-    await this.assertCanSucceedSectionDirector(actorUserId, sectionId);
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { main_club_id: true },
+    });
+    if (!section || section.main_club_id == null) {
+      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
+    }
+    await this.sectionRoleMutation.assertCanMutate({
+      actorUserId,
+      clubSectionId: sectionId,
+      targetRoleName: 'director',
+      targetUserId: dto.successor_user_id,
+      mutation: 'update',
+    });
 
     const directorRole = await this.prisma.roles.findFirst({
       where: {
@@ -1134,7 +1147,8 @@ export class ClubsService {
       throw new AppNotFoundException(ErrorCode.CLUB_ROLE_NOT_FOUND);
     }
 
-    const startDate = dto.start_date ?? new Date();
+    const auditContext = await this.resolveRoleAuditContext(sectionId);
+    const startDate = dto.start_date ?? auditContext.now;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.club_role_assignments.findUnique({
@@ -1146,6 +1160,9 @@ export class ClubsService {
           role_id: true,
           active: true,
           status: true,
+          start_date: true,
+          end_date: true,
+          expires_at: true,
           ecclesiastical_year_id: true,
           roles: { select: { role_name: true } },
         },
@@ -1223,8 +1240,30 @@ export class ClubsService {
           assignment_id: true,
           user_id: true,
           club_section_id: true,
+          active: true,
+          status: true,
+          start_date: true,
+          end_date: true,
+          expires_at: true,
+          ecclesiastical_year_id: true,
+          roles: { select: { role_name: true } },
         },
       });
+
+      await this.criticalAudit.write(
+        tx,
+        this.buildRoleAuditEvent({
+          action: 'DIRECTOR_SUCCEEDED',
+          actorUserId,
+          assignmentId: created.assignment_id,
+          targetUserId: created.user_id,
+          clubSectionId: sectionId,
+          context: auditContext,
+          before: this.roleAuditSnapshot(current),
+          after: this.roleAuditSnapshot(created),
+          summary: `Sucesión de director en la sección ${sectionId}: ${current.user_id} -> ${created.user_id}`,
+        }),
+      );
 
       return { ended, created };
     });
@@ -1977,7 +2016,11 @@ export class ClubsService {
   }
 
   private buildRoleAuditEvent(input: {
-    action: 'CLUB_ROLE_ASSIGNED' | 'CLUB_ROLE_UPDATED' | 'CLUB_ROLE_REVOKED';
+    action:
+      | 'CLUB_ROLE_ASSIGNED'
+      | 'CLUB_ROLE_UPDATED'
+      | 'CLUB_ROLE_REVOKED'
+      | 'DIRECTOR_SUCCEEDED';
     actorUserId: string;
     assignmentId: string;
     targetUserId: string;

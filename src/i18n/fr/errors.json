@@ -512,6 +512,7 @@
   "CLUB_DIRECTOR_PLAN_NOT_FOUND": "Aucune programmation de directeur n'existe pour cette section et cette année",
   "CLUB_DIRECTOR_PLAN_IDEMPOTENCY_REQUIRED": "La présélection de directeur exige l'en-tête Idempotency-Key",
   "CLUB_DIRECTOR_PLAN_YEAR_INVALID": "L'année de présélection doit commencer après la fin de l'année ecclésiastique en cours",
+  "CLUB_DIRECTOR_PLAN_WINDOW_CLOSED": "Les plans de succession du directeur ne peuvent être programmés qu'entre octobre et décembre",
   "CLUB_DIRECTOR_DESIGNATED_UNRECONCILED": "Cette affectation de directeur désigné n'est pas réconciliée ; elle ne peut pas être activée ni modifiée",
   "POST_REG_NOT_INITIATED": "Le post-enregistrement n'a pas été initié",
   "POST_REG_PHOTO_REQUIRED": "Vous devez télécharger une photo de profil avant de terminer cette étape",

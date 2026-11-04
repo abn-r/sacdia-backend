@@ -517,6 +517,7 @@
   "CLUB_DIRECTOR_PLAN_NOT_FOUND": "No director succession plan exists for this section and year",
   "CLUB_DIRECTOR_PLAN_IDEMPOTENCY_REQUIRED": "Director preselection requires the Idempotency-Key header",
   "CLUB_DIRECTOR_PLAN_YEAR_INVALID": "The preselection year must start after the current ecclesiastical year ends",
+  "CLUB_DIRECTOR_PLAN_WINDOW_CLOSED": "Director succession plans can only be scheduled between October and December",
   "CLUB_DIRECTOR_DESIGNATED_UNRECONCILED": "This designated director assignment is not reconciled; it cannot be activated or changed",
   "POST_REG_NOT_INITIATED": "Post-registration has not been initiated",
   "POST_REG_PHOTO_REQUIRED": "You must upload a profile photo before completing this step",

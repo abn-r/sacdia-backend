@@ -11,12 +11,16 @@ import { CLOCK } from '../clock/clock';
 
 describe('EcclesiasticalYearService', () => {
   let service: EcclesiasticalYearService;
-  let prisma: { ecclesiastical_years: { findMany: jest.Mock } };
+  let prisma: {
+    ecclesiastical_years: { findMany: jest.Mock; findFirst: jest.Mock };
+  };
   let zonedTime: { businessDate: jest.Mock };
   let mockClock: { now: jest.Mock };
 
   beforeEach(async () => {
-    prisma = { ecclesiastical_years: { findMany: jest.fn() } };
+    prisma = {
+      ecclesiastical_years: { findMany: jest.fn(), findFirst: jest.fn() },
+    };
     zonedTime = { businessDate: jest.fn() };
     mockClock = {
       now: jest.fn().mockReturnValue(new Date('2026-09-08T12:00:00.000Z')),
@@ -36,6 +40,37 @@ describe('EcclesiasticalYearService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('getNextYear', () => {
+    const current = {
+      year_id: 2026,
+      start_date: new Date('2026-01-01'),
+      end_date: new Date('2026-12-31'),
+      active: true,
+      modified_at: null,
+    };
+
+    it('returns the year with the earliest start strictly after current.end_date', async () => {
+      const next = { ...current, year_id: 2027 };
+      prisma.ecclesiastical_years.findFirst.mockResolvedValue(next);
+
+      await expect(service.getNextYear(current)).resolves.toBe(next);
+      expect(prisma.ecclesiastical_years.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { start_date: { gt: current.end_date } },
+          orderBy: { start_date: 'asc' },
+        }),
+      );
+    });
+
+    it('throws CLUB_DIRECTOR_PLAN_YEAR_INVALID when there is no later year', async () => {
+      prisma.ecclesiastical_years.findFirst.mockResolvedValue(null);
+
+      await expect(service.getNextYear(current)).rejects.toMatchObject({
+        code: ErrorCode.CLUB_DIRECTOR_PLAN_YEAR_INVALID,
+      });
+    });
   });
 
   it('returns the current ecclesiastical year when date is within range', async () => {

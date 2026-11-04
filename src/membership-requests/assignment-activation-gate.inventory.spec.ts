@@ -1308,8 +1308,9 @@ describe('club role activation consent gate inventory (family-profiles C1/C2)', 
 
 /**
  * Phase 3a (FP3-01/FP3-02): the gate is keyed on AGE, not on a dependent
- * profile. These checks keep the inventory honest about that: the seven files
- * that run the gate are the expected ones, the gate source encodes the
+ * profile. These checks keep the inventory honest about that: the eight files
+ * that run the gate are the expected ones (director-designation checks the
+ * successor's consent when the plan is scheduled, not only when it activates), the gate source encodes the
  * age-based rule, and the real gate refuses a 16-year-old without consent.
  */
 describe('activation gate is age-based (family-profiles phase 3a)', () => {
@@ -1324,6 +1325,7 @@ describe('activation gate is age-based (family-profiles phase 3a)', () => {
   const EXPECTED_GATE_FILES = [
     'annual-membership/annual-membership.service.ts',
     'clubs/clubs.service.ts',
+    'clubs/director-designation.service.ts',
     'membership-requests/assignment-activation-gate.ts',
     'membership-requests/consent-gate.service.ts',
     'membership-requests/membership-requests.service.ts',
@@ -1331,7 +1333,7 @@ describe('activation gate is age-based (family-profiles phase 3a)', () => {
     'year-cut/year-cut.service.ts',
   ];
 
-  it('is invoked by exactly the seven expected activating files', () => {
+  it('is invoked by exactly the eight expected activating files', () => {
     const files = productionFiles(srcRoot).filter((path) =>
       GATE_HELPERS.test(readFileSync(join(srcRoot, path), 'utf8')),
     );
