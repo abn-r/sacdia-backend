@@ -2,13 +2,9 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { Client } from 'pg';
-import { CONSUMER_INVENTORY } from '../../scripts/verify-authorization-director-succession-p0';
-import { createTestConsumerRoots } from './testing/authorization-p0-consumer-roots.fixture';
 import { assertLoopbackDatabaseUrl } from './testing/loopback-database-url';
 
 const root = join(__dirname, '../..');
-const consumerRoots = createTestConsumerRoots(CONSUMER_INVENTORY);
-afterAll(() => consumerRoots.dispose());
 const databaseUrl = process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
 if (process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl) {
   assertLoopbackDatabaseUrl(
@@ -105,8 +101,6 @@ describe('authorization P0 public PostgreSQL signal lifecycle', () => {
           detached: true,
           env: {
             ...process.env,
-            SACDIA_WORKSPACE_ROOT: consumerRoots.workspaceRoot,
-            SACDIA_CANONICAL_DOCS_ROOT: consumerRoots.docsRoot,
             AUTHORIZATION_P0_LOCK_TIMEOUT_MS: '10000',
             AUTHORIZATION_P0_QUERY_TIMEOUT_MS: '30000',
             AUTHORIZATION_P0_STATEMENT_TIMEOUT_MS: '20000',

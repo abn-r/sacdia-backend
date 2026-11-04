@@ -311,21 +311,11 @@ Precondiciones:
   controlada, nunca credenciales compartidas;
 - conservar `prisma/scripts/authorization-p0-preflight.sql` junto al checkout;
   su resolución es relativa al módulo y no depende del CWD;
-- ejecutar las unidades backend con roots temporales herméticos. La integración
-  cross-repo declara `SACDIA_ADMIN_ROOT`, `SACDIA_APP_ROOT` y
-  `SACDIA_CANONICAL_DOCS_ROOT`; `SACDIA_WORKSPACE_ROOT` queda disponible para
-  ejecución manual compatible.
-- fijar los tres checkouts públicos mediante las variables de repositorio
-  `SACDIA_ROOT_CONTRACT_REF`, `SACDIA_ADMIN_CONTRACT_REF` y
-  `SACDIA_APP_CONTRACT_REF`, cada una con un SHA-40 inmutable. No se requiere
-  PAT ni secret para leer esos repositorios públicos.
-
-El inventario inspecciona admin, Flutter y documentación. Un root ausente o
-ilegible produce `CONSUMER_INVENTORY_UNAVAILABLE`; consumidores que divergen del
-inventario revisado producen `CONSUMER_INVENTORY_DRIFT`. Ningún checkout
-backend aislado omite esa validación silenciosamente. Una ref ausente, inválida
-o distinta del `HEAD` inspeccionado produce
-`CONSUMER_INVENTORY_REF_MISMATCH`.
+- el preflight no inspecciona repositorios consumidores ni documentación; la
+  puerta cross-repo vive en `src/common/authorization/authz-catalog.crossrepo.spec.ts`,
+  que en CI usa `SACDIA_ADMIN_ROOT` y `SACDIA_APP_ROOT` fijados por las variables
+  de repositorio `SACDIA_ADMIN_CONTRACT_REF` y `SACDIA_APP_CONTRACT_REF`
+  (SHA-40 inmutables; no requiere PAT ni secret).
 
 El executor abre y valida una única snapshot `REPEATABLE READ READ ONLY`.
 Confirma `COMMIT` al completar el reporte; ante error o señal después de
@@ -375,8 +365,7 @@ URL dedicada ausente produce `MISSING_DATABASE_URL`; fallos de conexión,
 `DATABASE_UNAVAILABLE`; timeouts,
 `QUERY_TIMEOUT`; un SQL ausente o fallo posterior a conectar,
 `PREFLIGHT_FAILED`; un catálogo ausente/corrupto,
-`CATALOG_INTEGRITY_ERROR`; y un inventario no verificable,
-`CONSUMER_INVENTORY_UNAVAILABLE` o `CONSUMER_INVENTORY_DRIFT`. Todos conservan
+`CATALOG_INTEGRITY_ERROR`. Todos conservan
 JSON puro por stdout y cleanup idempotente.
 
 ## Documentación del proyecto
