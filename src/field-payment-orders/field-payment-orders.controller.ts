@@ -82,7 +82,7 @@ export class FieldPaymentOrdersController {
 
   @Post('camporees/:camporeeId/payment-orders')
   @RequirePermissions('field-payment-orders:create')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Emitir orden de pago grupal de camporee' })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiHeader({ name: 'Idempotency-Key', required: false })
@@ -106,7 +106,7 @@ export class FieldPaymentOrdersController {
 
   @Post('union-camporees/:camporeeId/payment-orders')
   @RequirePermissions('field-payment-orders:create')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary:
       'Emitir orden de pago grupal de camporee de unión (cobra el Campo Local)',

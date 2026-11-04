@@ -51,7 +51,7 @@ export class CamporeeSupplyPlansController {
 
   @Get('camporees/:camporeeId/supply-plan')
   @RequirePermissions(CAMPOREE_SUPPLIES_PLAN)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Plan de insumos de la sección activa (local)' })
   async getLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -68,7 +68,7 @@ export class CamporeeSupplyPlansController {
 
   @Get('union-camporees/:camporeeId/supply-plan')
   @RequirePermissions(CAMPOREE_SUPPLIES_PLAN)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Plan de insumos de la sección activa (unión)' })
   async getUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -85,7 +85,7 @@ export class CamporeeSupplyPlansController {
 
   @Put('camporees/:camporeeId/supply-plan')
   @RequirePermissions(CAMPOREE_SUPPLIES_PLAN)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Reemplazar líneas del plan en DRAFT (local)' })
   async putLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -104,7 +104,7 @@ export class CamporeeSupplyPlansController {
 
   @Put('union-camporees/:camporeeId/supply-plan')
   @RequirePermissions(CAMPOREE_SUPPLIES_PLAN)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Reemplazar líneas del plan en DRAFT (unión)' })
   async putUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -123,7 +123,7 @@ export class CamporeeSupplyPlansController {
 
   @Post('camporees/:camporeeId/supply-plan/submit')
   @RequirePermissions(CAMPOREE_SUPPLIES_PLAN)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Enviar plan y emitir folio PRINCIPAL (local)' })
   async submitLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -140,7 +140,7 @@ export class CamporeeSupplyPlansController {
 
   @Post('union-camporees/:camporeeId/supply-plan/submit')
   @RequirePermissions(CAMPOREE_SUPPLIES_PLAN)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Enviar plan y emitir folio PRINCIPAL (unión)' })
   async submitUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -164,7 +164,10 @@ export class CamporeeSupplyPlansController {
     ],
     mode: 'any',
   })
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   @ApiOperation({ summary: 'Ajustar una línea de un plan SUBMITTED (local)' })
   async adjustLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -190,7 +193,16 @@ export class CamporeeSupplyPlansController {
     ],
     mode: 'any',
   })
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   @ApiOperation({ summary: 'Ajustar una línea de un plan SUBMITTED (unión)' })
   async adjustUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -209,7 +221,10 @@ export class CamporeeSupplyPlansController {
 
   @Get('camporees/:camporeeId/supply-plans')
   @RequirePermissions(CAMPOREE_SUPPLIES_READ)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   @ApiOperation({ summary: 'Listar planes de insumos del camporee local' })
   async listLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -226,7 +241,16 @@ export class CamporeeSupplyPlansController {
 
   @Get('union-camporees/:camporeeId/supply-plans')
   @RequirePermissions(CAMPOREE_SUPPLIES_READ)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   @ApiOperation({ summary: 'Listar planes de insumos del camporee de unión' })
   async listUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -243,7 +267,10 @@ export class CamporeeSupplyPlansController {
 
   @Post('camporees/:camporeeId/supply-lines/:lineId/deliveries')
   @RequirePermissions(CAMPOREE_SUPPLIES_DELIVER)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   @ApiParam({ name: 'lineId', type: String })
   async deliverLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -264,7 +291,16 @@ export class CamporeeSupplyPlansController {
 
   @Post('union-camporees/:camporeeId/supply-lines/:lineId/deliveries')
   @RequirePermissions(CAMPOREE_SUPPLIES_DELIVER)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   async deliverUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('lineId', ParseUuidParamPipe) lineId: string,
@@ -284,7 +320,10 @@ export class CamporeeSupplyPlansController {
 
   @Get('camporees/:camporeeId/supply-reports/kitchen')
   @RequirePermissions(CAMPOREE_SUPPLIES_READ)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   async kitchenLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() query: KitchenReportQueryDto,
@@ -302,7 +341,16 @@ export class CamporeeSupplyPlansController {
 
   @Get('union-camporees/:camporeeId/supply-reports/kitchen')
   @RequirePermissions(CAMPOREE_SUPPLIES_READ)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   async kitchenUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() query: KitchenReportQueryDto,
@@ -320,7 +368,10 @@ export class CamporeeSupplyPlansController {
 
   @Get('camporees/:camporeeId/supply-reports/cash')
   @RequirePermissions(CAMPOREE_SUPPLIES_READ)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   async cashLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Req() request: RequestWithProfile,
@@ -336,7 +387,16 @@ export class CamporeeSupplyPlansController {
 
   @Get('union-camporees/:camporeeId/supply-reports/cash')
   @RequirePermissions(CAMPOREE_SUPPLIES_READ)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   async cashUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Req() request: RequestWithProfile,

@@ -47,7 +47,7 @@ export class CamporeeSupplyConfigController {
 
   @Get('camporees/:camporeeId/supply-catalog')
   @RequirePermissions(CAMPOREE_SUPPLIES_READ)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Catálogo de insumos del camporee local' })
   @ApiParam({ name: 'camporeeId', type: Number })
   async catalogLocal(@Param('camporeeId', ParseIntPipe) camporeeId: number) {
@@ -59,7 +59,7 @@ export class CamporeeSupplyConfigController {
 
   @Get('union-camporees/:camporeeId/supply-catalog')
   @RequirePermissions(CAMPOREE_SUPPLIES_READ)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Catálogo de insumos del camporee de unión' })
   @ApiParam({ name: 'camporeeId', type: Number })
   async catalogUnion(@Param('camporeeId', ParseIntPipe) camporeeId: number) {
@@ -71,7 +71,10 @@ export class CamporeeSupplyConfigController {
 
   @Patch('camporees/:camporeeId/supply-settings')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   @ApiOperation({ summary: 'Actualizar corte de edición de insumos (local)' })
   @ApiParam({ name: 'camporeeId', type: Number })
   async settingsLocal(
@@ -92,7 +95,16 @@ export class CamporeeSupplyConfigController {
 
   @Patch('union-camporees/:camporeeId/supply-settings')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   @ApiOperation({ summary: 'Actualizar corte de edición de insumos (unión)' })
   @ApiParam({ name: 'camporeeId', type: Number })
   async settingsUnion(
@@ -113,7 +125,10 @@ export class CamporeeSupplyConfigController {
 
   @Post('camporees/:camporeeId/supply-slots')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   @ApiOperation({ summary: 'Crear horario de entrega de insumos (local)' })
   async createSlotLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -133,7 +148,16 @@ export class CamporeeSupplyConfigController {
 
   @Post('union-camporees/:camporeeId/supply-slots')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   @ApiOperation({ summary: 'Crear horario de entrega de insumos (unión)' })
   async createSlotUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -153,7 +177,10 @@ export class CamporeeSupplyConfigController {
 
   @Patch('camporees/:camporeeId/supply-slots/:slotId')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   async updateSlotLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('slotId', ParseUuidParamPipe) slotId: string,
@@ -174,7 +201,16 @@ export class CamporeeSupplyConfigController {
 
   @Patch('union-camporees/:camporeeId/supply-slots/:slotId')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   async updateSlotUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('slotId', ParseUuidParamPipe) slotId: string,
@@ -195,7 +231,10 @@ export class CamporeeSupplyConfigController {
 
   @Post('camporees/:camporeeId/supply-products')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   async createProductLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Body() dto: CreateSupplyProductDto,
@@ -214,7 +253,16 @@ export class CamporeeSupplyConfigController {
 
   @Post('union-camporees/:camporeeId/supply-products')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   async createProductUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Body() dto: CreateSupplyProductDto,
@@ -233,7 +281,10 @@ export class CamporeeSupplyConfigController {
 
   @Patch('camporees/:camporeeId/supply-products/:productId')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   async updateProductLocal(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('productId', ParseUuidParamPipe) productId: string,
@@ -254,7 +305,16 @@ export class CamporeeSupplyConfigController {
 
   @Patch('union-camporees/:camporeeId/supply-products/:productId')
   @RequirePermissions(CAMPOREE_SUPPLIES_CONFIGURE)
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   async updateProductUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('productId', ParseUuidParamPipe) productId: string,

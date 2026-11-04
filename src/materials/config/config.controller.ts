@@ -147,6 +147,10 @@ export class ConfigController {
   // ---------------------------------------------------------------------------
 
   @Patch(':localFieldId')
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [{ kind: 'local_field', source: 'param', field: 'localFieldId' }],
+  })
   @RequirePermissions(MATERIALS_CONFIGURE)
   @ApiOperation({
     summary: 'Upsert config for a specific local_field (admin direct)',

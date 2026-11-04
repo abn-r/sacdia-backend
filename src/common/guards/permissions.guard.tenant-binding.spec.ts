@@ -11,6 +11,28 @@ import { FinancesController } from '../../finances/finances.controller';
 import { CamporeesController } from '../../camporees/camporees.controller';
 import { CamporeeEventsController } from '../../camporee-events/camporee-events.controller';
 import { CamporeeVenuesController } from '../../camporee-venues/camporee-venues.controller';
+import { CamporeeOrdersController } from '../../camporee-orders/camporee-orders.controller';
+import {
+  CAMPOREE_ORDERS_CREATE,
+  CAMPOREE_ORDERS_OFFERING_CONFIGURE,
+  CAMPOREE_ORDERS_READ,
+} from '../../camporee-orders/permissions';
+import {
+  CAMPOREE_SUPPLIES_CONFIGURE,
+  CAMPOREE_SUPPLIES_DELIVER,
+  CAMPOREE_SUPPLIES_PLAN,
+  CAMPOREE_SUPPLIES_READ,
+} from '../../camporee-supplies/permissions';
+import { OfferingsController } from '../../camporee-orders/offerings.controller';
+import { CamporeeSupplyConfigController } from '../../camporee-supplies/config.controller';
+import { CamporeeSupplyPlansController } from '../../camporee-supplies/plans.controller';
+import { FieldPaymentOrdersController } from '../../field-payment-orders/field-payment-orders.controller';
+import { AdminCoordinationController } from '../../coordination/coordination.controller';
+import { ConfigController } from '../../materials/config/config.controller';
+import { NotificationsController } from '../../notifications/notifications.controller';
+import { AnnualRankingProgressController } from '../../rankings/annual-ranking-progress/annual-ranking-progress.controller';
+import { SectionRankingsController } from '../../rankings/section-rankings/section-rankings.controller';
+import { ScoringCategoriesController } from '../../scoring-categories/scoring-categories.controller';
 
 /**
  * Regression tests for tenant binding (audit run-1, §2). Dummy tenants:
@@ -29,6 +51,16 @@ describe('PermissionsGuard tenant binding', () => {
   const UNION_CAMPOREES: Record<number, { union_id: number }> = {
     100: { union_id: 1 },
     900: { union_id: 2 },
+  };
+
+  // Local camporees: 300 belongs to local field 50 / union 1, 301 to local
+  // field 60 / union 2.
+  const LOCAL_CAMPOREES: Record<
+    number,
+    { local_field_id: number; local_fields: { union_id: number } }
+  > = {
+    300: { local_field_id: 50, local_fields: { union_id: 1 } },
+    301: { local_field_id: 60, local_fields: { union_id: 2 } },
   };
 
   const mockAuthorizationContext = {
@@ -58,6 +90,7 @@ describe('PermissionsGuard tenant binding', () => {
   const mockPrisma = {
     club_sections: { findUnique: jest.fn() },
     union_camporees: { findUnique: jest.fn() },
+    local_camporees: { findUnique: jest.fn() },
     union_camporee_local_fields: { findFirst: jest.fn() },
     camporee_events: { findUnique: jest.fn() },
     camporee_venues: { findUnique: jest.fn() },
@@ -172,6 +205,17 @@ describe('PermissionsGuard tenant binding', () => {
       async ({ where }: { where: { union_camporee_id: number } }) => {
         const row = UNION_CAMPOREES[where.union_camporee_id];
         return row ? { ...row, unions: { country_id: 1 } } : null;
+      },
+    );
+    mockPrisma.local_camporees.findUnique.mockImplementation(
+      async ({ where }: { where: { local_camporee_id: number } }) => {
+        const row = LOCAL_CAMPOREES[where.local_camporee_id];
+        return row
+          ? {
+              ...row,
+              local_fields: { ...row.local_fields, unions: { country_id: 1 } },
+            }
+          : null;
       },
     );
     mockPrisma.union_camporee_local_fields.findFirst.mockImplementation(
@@ -467,6 +511,553 @@ describe('PermissionsGuard tenant binding', () => {
       expect(
         mockPrisma.union_camporee_local_fields.findFirst,
       ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('camporee routes (orders, offerings, payment orders, supplies, union detail)', () => {
+    type Kind = 'local-typed' | 'local-global' | 'union-typed' | 'union-global';
+    const PLAN = [CAMPOREE_SUPPLIES_PLAN];
+    const READ = [CAMPOREE_SUPPLIES_READ];
+    const CONFIGURE = [CAMPOREE_SUPPLIES_CONFIGURE];
+    const OFFERING = [CAMPOREE_ORDERS_OFFERING_CONFIGURE];
+    const ORDERS_READ = [CAMPOREE_ORDERS_READ];
+
+    // [label, controller, handler, permissions, kind]
+    const ROUTES: Array<
+      [string, new (...args: never[]) => unknown, string, string[], Kind]
+    > = [
+      [
+        'orders local',
+        CamporeeOrdersController,
+        'createLocal',
+        [CAMPOREE_ORDERS_CREATE],
+        'local-typed',
+      ],
+      [
+        'orders union',
+        CamporeeOrdersController,
+        'createUnion',
+        [CAMPOREE_ORDERS_CREATE],
+        'union-typed',
+      ],
+      [
+        'offerings read local',
+        OfferingsController,
+        'listLocalOfferings',
+        ORDERS_READ,
+        'local-global',
+      ],
+      [
+        'offerings read union',
+        OfferingsController,
+        'listUnionOfferings',
+        ORDERS_READ,
+        'union-global',
+      ],
+      [
+        'offerings settings local',
+        OfferingsController,
+        'updateLocalSettings',
+        OFFERING,
+        'local-global',
+      ],
+      [
+        'offerings replace local',
+        OfferingsController,
+        'replaceLocalOfferings',
+        OFFERING,
+        'local-global',
+      ],
+      [
+        'payment-orders local',
+        FieldPaymentOrdersController,
+        'createCamporeeOrder',
+        ['field-payment-orders:create'],
+        'local-typed',
+      ],
+      [
+        'payment-orders union',
+        FieldPaymentOrdersController,
+        'createUnionCamporeeOrder',
+        ['field-payment-orders:create'],
+        'union-typed',
+      ],
+      [
+        'supply config local',
+        CamporeeSupplyConfigController,
+        'settingsLocal',
+        CONFIGURE,
+        'local-global',
+      ],
+      [
+        'supply config union',
+        CamporeeSupplyConfigController,
+        'settingsUnion',
+        CONFIGURE,
+        'union-global',
+      ],
+      [
+        'supply catalog local',
+        CamporeeSupplyConfigController,
+        'catalogLocal',
+        READ,
+        'local-typed',
+      ],
+      [
+        'supply catalog union',
+        CamporeeSupplyConfigController,
+        'catalogUnion',
+        READ,
+        'union-typed',
+      ],
+      [
+        'plan get local',
+        CamporeeSupplyPlansController,
+        'getLocal',
+        PLAN,
+        'local-typed',
+      ],
+      [
+        'plan get union',
+        CamporeeSupplyPlansController,
+        'getUnion',
+        PLAN,
+        'union-typed',
+      ],
+      [
+        'plan list local',
+        CamporeeSupplyPlansController,
+        'listLocal',
+        READ,
+        'local-global',
+      ],
+      [
+        'plan list union',
+        CamporeeSupplyPlansController,
+        'listUnion',
+        READ,
+        'union-global',
+      ],
+      [
+        'plan adjust local',
+        CamporeeSupplyPlansController,
+        'adjustLocal',
+        PLAN,
+        'local-global',
+      ],
+      [
+        'plan adjust union',
+        CamporeeSupplyPlansController,
+        'adjustUnion',
+        PLAN,
+        'union-global',
+      ],
+      [
+        'plan deliver local',
+        CamporeeSupplyPlansController,
+        'deliverLocal',
+        [CAMPOREE_SUPPLIES_DELIVER],
+        'local-global',
+      ],
+      [
+        'plan deliver union',
+        CamporeeSupplyPlansController,
+        'deliverUnion',
+        [CAMPOREE_SUPPLIES_DELIVER],
+        'union-global',
+      ],
+      [
+        'reports kitchen local',
+        CamporeeSupplyPlansController,
+        'kitchenLocal',
+        READ,
+        'local-global',
+      ],
+      [
+        'reports cash union',
+        CamporeeSupplyPlansController,
+        'cashUnion',
+        READ,
+        'union-global',
+      ],
+      [
+        'union detail read',
+        CamporeesController,
+        'findOneUnion',
+        ['camporees:read'],
+        'union-typed',
+      ],
+    ];
+
+    // Allowed / cross-tenant camporee ids per kind.
+    const IDS = {
+      local: { ok: '300', other: '301', missing: '999' },
+      union: { ok: '100', other: '900', missing: '999' },
+    };
+
+    const actorFor = (kind: Kind, permissions: string[]) => {
+      if (kind === 'local-typed' || kind === 'union-typed') {
+        return clubDirector(permissions); // LF 50 / union 1 in the club grant
+      }
+      return territorialActor('director', permissions, {
+        [kind === 'local-global' ? 'local_field' : 'union']: {
+          id: kind === 'local-global' ? 50 : 1,
+        },
+      });
+    };
+
+    const run = (
+      controller: new (...args: never[]) => unknown,
+      handler: string,
+      camporeeId: string,
+    ) =>
+      guard.canActivate(
+        createContext(controller, handler, {
+          user: { sub: 'actor' },
+          params: { camporeeId, lineId: '1', slotId: '1', productId: '1' },
+          body: {},
+          query: {},
+        }),
+      );
+
+    describe.each(ROUTES)('%s', (_label, controller, handler, perms, kind) => {
+      const ids = kind.startsWith('local') ? IDS.local : IDS.union;
+      const notFound = kind.startsWith('local')
+        ? ErrorCode.CAMPOREE_NOT_FOUND
+        : ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND;
+
+      beforeEach(() => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          actorFor(kind, perms),
+        );
+      });
+
+      it('allows an actor of the camporee scope', async () => {
+        await expect(run(controller, handler, ids.ok)).resolves.toBe(true);
+      });
+
+      it('rejects a camporee of another tenant', async () => {
+        await expect(run(controller, handler, ids.other)).rejects.toMatchObject(
+          {
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          },
+        );
+      });
+
+      it('returns 404 for an unknown camporee', async () => {
+        await expect(
+          run(controller, handler, ids.missing),
+        ).rejects.toMatchObject({ code: notFound });
+      });
+    });
+
+    describe('union configure routes are owner-only', () => {
+      beforeEach(() => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-union', OFFERING, { union: { id: 1 } }),
+        );
+      });
+
+      it.each(['updateUnionSettings', 'replaceUnionOfferings'])(
+        '%s: owner union passes, other union is rejected',
+        async (handler) => {
+          await expect(run(OfferingsController, handler, '100')).resolves.toBe(
+            true,
+          );
+          await expect(
+            run(OfferingsController, handler, '900'),
+          ).rejects.toMatchObject({
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          });
+        },
+      );
+
+      it('does not admit a participating local-field actor', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-lf', OFFERING, {
+            local_field: { id: 50 },
+          }),
+        );
+        await expect(
+          run(OfferingsController, 'updateUnionSettings', '100'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      });
+    });
+  });
+
+  describe('fase 5 batch 3: remaining tenant routes', () => {
+    const operational = <T extends ReturnType<typeof clubDirector>>(
+      actor: T,
+    ): T => {
+      for (const grant of actor.authorization.grants.club_assignments) {
+        (grant as Record<string, unknown>).operational = true;
+      }
+      return actor;
+    };
+
+    const runWith = (
+      controller: new (...args: never[]) => unknown,
+      handler: string,
+      params: Record<string, string>,
+    ) =>
+      guard.canActivate(
+        createContext(controller, handler, {
+          user: { sub: 'actor' },
+          params,
+          body: {},
+          query: {},
+        }),
+      );
+
+    describe('coordination local-field routes (local_field)', () => {
+      const ROUTES: Array<[string, string]> = [
+        ['GET zones', 'listZones'],
+        ['POST zones', 'createZone'],
+        ['GET assignments', 'listAssignments'],
+        ['POST assignments', 'createAssignment'],
+        ['POST backfill', 'backfillLegacyAssignments'],
+      ];
+
+      beforeEach(() => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-lf', ['coordination:manage'], {
+            local_field: { id: 50 },
+          }),
+        );
+      });
+
+      it.each(ROUTES)('%s: allows its own local field', async (_l, handler) => {
+        await expect(
+          runWith(AdminCoordinationController, handler, {
+            localFieldId: '50',
+          }),
+        ).resolves.toBe(true);
+      });
+
+      it.each(ROUTES)(
+        '%s: rejects another local field',
+        async (_l, handler) => {
+          await expect(
+            runWith(AdminCoordinationController, handler, {
+              localFieldId: '60',
+            }),
+          ).rejects.toMatchObject({
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          });
+        },
+      );
+    });
+
+    describe('PATCH /materials/config/:localFieldId', () => {
+      beforeEach(() => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-lf', ['materiales:configure'], {
+            local_field: { id: 50 },
+          }),
+        );
+      });
+
+      it('allows its own local field and rejects another', async () => {
+        await expect(
+          runWith(ConfigController, 'updateById', { localFieldId: '50' }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ConfigController, 'updateById', { localFieldId: '60' }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+      });
+    });
+
+    describe('POST /notifications/club/:instanceType/:instanceId (club_section)', () => {
+      const run = (instanceId: string) =>
+        runWith(NotificationsController, 'sendToClub', {
+          instanceType: 'club',
+          instanceId,
+        });
+
+      it('allows the director of the section club', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubDirector(['notifications:club']),
+        );
+        await expect(run('10')).resolves.toBe(true);
+      });
+
+      it('rejects a section of another club', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubDirector(['notifications:club']),
+        );
+        await expect(run('20')).rejects.toMatchObject({
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      });
+
+      it('returns 404 for an unknown section', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubDirector(['notifications:club']),
+        );
+        await expect(run('999')).rejects.toMatchObject({
+          code: ErrorCode.CLUB_SECTION_NOT_FOUND,
+        });
+      });
+    });
+
+    describe.each([
+      [
+        'GET /club-sections/:sectionId/annual-ranking-progress',
+        AnnualRankingProgressController,
+        'getProgress',
+        'rankings:read',
+      ],
+      [
+        'GET /section-rankings/:sectionId/members',
+        SectionRankingsController,
+        'getMembers',
+        'section_rankings:read_club',
+      ],
+    ] as const)(
+      '%s (club_section_membership)',
+      (_l, controller, handler, perm) => {
+        const run = (sectionId: string) =>
+          runWith(controller, handler, { sectionId });
+
+        it('allows an actor with an operational grant in the club (not the active one)', async () => {
+          const actor = operational(clubDirector([perm]));
+          // Active assignment is in club 2; the grant in club 1 is a secondary one.
+          const club1Grant = actor.authorization.grants.club_assignments[0];
+          actor.authorization.grants.club_assignments = [
+            {
+              ...club1Grant,
+              assignment_id: 'assignment-2',
+              club: { club_id: 2, club_name: 'Club Dos' },
+              section: { club_section_id: 20, club_type_name: 'pathfinders' },
+            },
+            club1Grant,
+          ];
+          actor.authorization.active_assignment = {
+            assignment_id: 'assignment-2',
+          };
+          actor.authorization.effective.scope.club = {
+            ...actor.authorization.effective.scope.club,
+            assignment_id: 'assignment-2',
+            club: { club_id: 2, club_name: 'Club Dos' },
+            section: { club_section_id: 20, club_type_name: 'pathfinders' },
+          };
+          mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+            actor,
+          );
+          await expect(run('10')).resolves.toBe(true);
+        });
+
+        it('rejects a section of another club', async () => {
+          mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+            operational(clubDirector([perm])),
+          );
+          await expect(run('20')).rejects.toMatchObject({
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          });
+        });
+
+        it('allows an actor that can manage the club', async () => {
+          mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+            territorialActor('director-lf', [perm], {
+              local_field: { id: 50 },
+            }),
+          );
+          mockAuthorizationContext.canManageClub.mockImplementation(
+            async (_u: string, clubId: number) => clubId === 2,
+          );
+          await expect(run('20')).resolves.toBe(true);
+          await expect(run('10')).rejects.toMatchObject({
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          });
+        });
+
+        it('returns 404 for an unknown section', async () => {
+          mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+            operational(clubDirector([perm])),
+          );
+          await expect(run('999')).rejects.toMatchObject({
+            code: ErrorCode.CLUB_SECTION_NOT_FOUND,
+          });
+        });
+      },
+    );
+
+    describe('scoring categories (union_membership / local_field_membership)', () => {
+      const PERM = 'scoring_categories:read';
+      const clubMember = (unionId: number, lfId: number) => {
+        const actor = operational(clubDirector([PERM]));
+        actor.authorization.grants.club_assignments[0].scope = {
+          local_field: { id: lfId },
+          union: { id: unionId },
+        };
+        return actor;
+      };
+
+      it('union: allows a club member of the union, denies another union', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubMember(1, 50),
+        );
+        await expect(
+          runWith(ScoringCategoriesController, 'findUnionCategories', {
+            unionId: '1',
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ScoringCategoriesController, 'findUnionCategories', {
+            unionId: '2',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+      });
+
+      it('union: allows a union director through the hierarchy', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-union', [PERM], { union: { id: 1 } }),
+        );
+        await expect(
+          runWith(ScoringCategoriesController, 'findUnionCategories', {
+            unionId: '1',
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ScoringCategoriesController, 'findUnionCategories', {
+            unionId: '2',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+      });
+
+      it('local field: allows a club member of the field, denies another', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubMember(1, 50),
+        );
+        await expect(
+          runWith(ScoringCategoriesController, 'findLocalFieldCategories', {
+            fieldId: '50',
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ScoringCategoriesController, 'findLocalFieldCategories', {
+            fieldId: '60',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+      });
+
+      it('local field: allows a local-field director through the hierarchy', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-lf', [PERM], { local_field: { id: 50 } }),
+        );
+        await expect(
+          runWith(ScoringCategoriesController, 'findLocalFieldCategories', {
+            fieldId: '50',
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ScoringCategoriesController, 'findLocalFieldCategories', {
+            fieldId: '60',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+      });
     });
   });
 

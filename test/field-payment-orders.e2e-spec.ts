@@ -9,6 +9,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthorizationContextService } from '../src/common/services/authorization-context.service';
+import { InstitutionalHierarchyService } from '../src/common/services/institutional-hierarchy.service';
 import { FILE_STORAGE_SERVICE } from '../src/common/services/file-storage.service';
 import { UserAwareThrottlerGuard } from '../src/config/user-aware-throttler.guard';
 import {
@@ -217,6 +218,17 @@ describe('Field Payment Orders E2E — camporee lifecycle', () => {
       .useValue(mockFileStorage)
       .overrideProvider(AuthorizationContextService)
       .useValue(mockAuthorizationContext)
+      // The camporee resource policy resolves the camporee's territory through
+      // the hierarchy service, which runs raw SQL the Prisma auto-mock cannot
+      // answer. Pin the local field the fixtures already use.
+      .overrideProvider(InstitutionalHierarchyService)
+      .useValue({
+        resolveCurrent: jest.fn(async () => ({
+          division_id: null,
+          union_id: null,
+          local_field_id: LF_ID,
+        })),
+      })
       .overrideProvider(PrismaService)
       .useValue(
         createAutoMock({
@@ -307,7 +319,10 @@ describe('Field Payment Orders E2E — camporee lifecycle', () => {
     prismaMock.system_config.findUnique.mockImplementation(
       async (args: any) => {
         if (args.where.config_key === 'field_payment_orders_v1') {
-          return { config_key: args.where.config_key, config_value: `[${LF_ID}]` };
+          return {
+            config_key: args.where.config_key,
+            config_value: `[${LF_ID}]`,
+          };
         }
         if (args.where.config_key === 'field_payment_orders.expiry_days') {
           return { config_key: args.where.config_key, config_value: '15' };
@@ -607,9 +622,7 @@ describe('Field Payment Orders E2E — camporee lifecycle', () => {
         approved_by: REVIEWER_ID,
       }),
     });
-    expect(
-      prismaMock.field_payment_order_proofs.update,
-    ).toHaveBeenCalledWith(
+    expect(prismaMock.field_payment_order_proofs.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'APPROVED' }),
       }),

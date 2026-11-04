@@ -147,7 +147,7 @@ export class CamporeesController {
   @ApiOperation({ summary: 'Obtener camporee de unión por ID' })
   @ApiParam({ name: 'camporeeId', type: Number })
   @RequirePermissions('camporees:read')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiResponse({ status: 200, description: 'Camporee de unión encontrado' })
   @ApiResponse({
     status: 404,

@@ -32,6 +32,12 @@ export class AnnualRankingProgressController {
   constructor(private readonly service: AnnualRankingProgressService) {}
 
   @Get()
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [
+      { kind: 'club_section_membership', source: 'param', field: 'sectionId' },
+    ],
+  })
   @RequirePermissions({
     permissions: [
       'rankings:read',

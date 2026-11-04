@@ -46,6 +46,12 @@ export class SectionRankingsController {
   // ========================================
 
   @Get(':sectionId/members')
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [
+      { kind: 'club_section_membership', source: 'param', field: 'sectionId' },
+    ],
+  })
   @RequirePermissions({
     permissions: [
       'section_rankings:read_club',

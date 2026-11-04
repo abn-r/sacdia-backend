@@ -41,6 +41,10 @@ export class OfferingsController {
   constructor(private readonly offerings: OfferingsService) {}
 
   @Patch('camporees/:camporeeId/orders-settings')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   @RequirePermissions(CAMPOREE_ORDERS_OFFERING_CONFIGURE)
   @ApiOperation({ summary: 'Actualizar ventana de pedidos del camporee local' })
   @ApiParam({ name: 'camporeeId', type: Number })
@@ -61,6 +65,10 @@ export class OfferingsController {
   }
 
   @Patch('union-camporees/:camporeeId/orders-settings')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'union_camporee', source: 'param', field: 'camporeeId' }],
+  })
   @RequirePermissions(CAMPOREE_ORDERS_OFFERING_CONFIGURE)
   @ApiOperation({
     summary: 'Actualizar ventana de pedidos del camporee de unión',
@@ -83,6 +91,10 @@ export class OfferingsController {
   }
 
   @Get('camporees/:camporeeId/order-offerings')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   @RequirePermissions(CAMPOREE_ORDERS_READ)
   @ApiOperation({
     summary: 'Listar ofertas y settings de pedidos del camporee local',
@@ -98,6 +110,16 @@ export class OfferingsController {
   }
 
   @Get('union-camporees/:camporeeId/order-offerings')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'union_camporee_participant',
+        source: 'param',
+        field: 'camporeeId',
+      },
+    ],
+  })
   @RequirePermissions(CAMPOREE_ORDERS_READ)
   @ApiOperation({
     summary: 'Listar ofertas y settings de pedidos del camporee de unión',
@@ -113,6 +135,10 @@ export class OfferingsController {
   }
 
   @Put('camporees/:camporeeId/order-offerings')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'camporee', source: 'param', field: 'camporeeId' }],
+  })
   @RequirePermissions(CAMPOREE_ORDERS_OFFERING_CONFIGURE)
   @ApiOperation({
     summary: 'Reemplazar de forma idempotente las ofertas del camporee local',
@@ -135,9 +161,14 @@ export class OfferingsController {
   }
 
   @Put('union-camporees/:camporeeId/order-offerings')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'union_camporee', source: 'param', field: 'camporeeId' }],
+  })
   @RequirePermissions(CAMPOREE_ORDERS_OFFERING_CONFIGURE)
   @ApiOperation({
-    summary: 'Reemplazar de forma idempotente las ofertas del camporee de unión',
+    summary:
+      'Reemplazar de forma idempotente las ofertas del camporee de unión',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   async replaceUnionOfferings(

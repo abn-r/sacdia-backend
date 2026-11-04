@@ -80,11 +80,11 @@ export class AdminGeographyController {
     return { status: 'success', data };
   }
 
-  @Patch('divisions/:divisionId')
+  @Patch('divisions/:id')
   @RequirePermissions('countries:update')
   @ApiOperation({ summary: 'Update institutional division' })
   async updateDivision(
-    @Param('divisionId', ParseIntPipe) divisionId: number,
+    @Param('id', ParseIntPipe) divisionId: number,
     @Body() dto: UpdateDivisionDto,
     @Request() req,
   ) {
@@ -96,11 +96,11 @@ export class AdminGeographyController {
     return { status: 'success', data };
   }
 
-  @Delete('divisions/:divisionId')
+  @Delete('divisions/:id')
   @RequirePermissions('countries:delete')
   @ApiOperation({ summary: 'Soft delete institutional division' })
   async deleteDivision(
-    @Param('divisionId', ParseIntPipe) divisionId: number,
+    @Param('id', ParseIntPipe) divisionId: number,
     @Request() req,
   ) {
     const data = await this.geographyService.deleteDivision(
@@ -182,11 +182,11 @@ export class AdminGeographyController {
     return { status: 'success', data };
   }
 
-  @Patch('unions/:unionId')
+  @Patch('unions/:id')
   @RequirePermissions('unions:update')
   @ApiOperation({ summary: 'Update union' })
   async updateUnion(
-    @Param('unionId', ParseIntPipe) unionId: number,
+    @Param('id', ParseIntPipe) unionId: number,
     @Body() dto: UpdateUnionDto,
     @Request() req,
   ) {
@@ -198,11 +198,11 @@ export class AdminGeographyController {
     return { status: 'success', data };
   }
 
-  @Delete('unions/:unionId')
+  @Delete('unions/:id')
   @RequirePermissions('unions:delete')
   @ApiOperation({ summary: 'Soft delete union' })
   async deleteUnion(
-    @Param('unionId', ParseIntPipe) unionId: number,
+    @Param('id', ParseIntPipe) unionId: number,
     @Request() req,
   ) {
     const data = await this.geographyService.deleteUnion(unionId, req.user.sub);
@@ -246,11 +246,11 @@ export class AdminGeographyController {
     return { status: 'success', data };
   }
 
-  @Patch('local-fields/:localFieldId')
+  @Patch('local-fields/:id')
   @RequirePermissions('local_fields:update')
   @ApiOperation({ summary: 'Update local field' })
   async updateLocalField(
-    @Param('localFieldId', ParseIntPipe) localFieldId: number,
+    @Param('id', ParseIntPipe) localFieldId: number,
     @Body() dto: UpdateLocalFieldDto,
     @Request() req,
   ) {
@@ -262,11 +262,11 @@ export class AdminGeographyController {
     return { status: 'success', data };
   }
 
-  @Delete('local-fields/:localFieldId')
+  @Delete('local-fields/:id')
   @RequirePermissions('local_fields:delete')
   @ApiOperation({ summary: 'Soft delete local field' })
   async deleteLocalField(
-    @Param('localFieldId', ParseIntPipe) localFieldId: number,
+    @Param('id', ParseIntPipe) localFieldId: number,
     @Request() req,
   ) {
     const data = await this.geographyService.deleteLocalField(
