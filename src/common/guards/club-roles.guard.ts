@@ -5,6 +5,7 @@ import { AppForbiddenException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TemporalContextFactory } from '../clock/temporal-context.factory';
+import type { ClubRoleName } from '../authorization/generated/role-names';
 import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
 import {
   CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT,
@@ -18,16 +19,7 @@ import {
 
 export const CLUB_ROLES_KEY = 'club_roles';
 
-export type ClubRoleType =
-  | 'director'
-  | 'deputy-director'
-  | 'secretary'
-  | 'secretary-treasurer'
-  | 'treasurer'
-  | 'counselor'
-  | 'instructor'
-  | 'captain'
-  | 'member';
+export type ClubRoleType = ClubRoleName;
 
 const CLUB_ROLE_ALIASES: Record<string, string> = {
   subdirector: 'deputy-director',

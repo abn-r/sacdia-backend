@@ -3,10 +3,11 @@ import eslint from '@eslint/js';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import noRoleLiterals from './eslint/rules/no-role-literals.cjs';
 
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs'],
+    ignores: ['eslint.config.mjs', 'eslint/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -48,5 +49,19 @@ export default tseslint.config(
       'prefer-const': 'warn',
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
+  },
+  {
+    files: ['src/**/*.ts'],
+    ignores: [
+      '**/*.spec.ts',
+      '**/*.testing.ts',
+      'src/common/authorization/generated/**',
+      'src/common/authorization/roles.ts',
+      'src/common/authorization/role-sets.ts',
+      'src/common/guards/global-role-aliases.ts',
+      'src/common/guards/club-roles.guard.ts',
+    ],
+    plugins: { local: { rules: { 'no-role-literals': noRoleLiterals } } },
+    rules: { 'local/no-role-literals': 'error' },
   },
 );

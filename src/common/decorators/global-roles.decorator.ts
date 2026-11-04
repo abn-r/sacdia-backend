@@ -1,22 +1,9 @@
 import { SetMetadata } from '@nestjs/common';
+import type { GlobalRoleName } from '../authorization/generated/role-names';
 
 export const GLOBAL_ROLES_KEY = 'global_roles';
 
-export type GlobalRoleType =
-  | 'super-admin'
-  | 'admin'
-  | 'assistant-admin'
-  | 'coordinator'
-  | 'zone-coordinator'
-  | 'general-coordinator'
-  | 'pastor'
-  | 'user'
-  | 'director-lf'
-  | 'assistant-lf'
-  | 'director-union'
-  | 'assistant-union'
-  | 'director-dia'
-  | 'assistant-dia';
+export type GlobalRoleType = GlobalRoleName;
 
 /**
  * Decorator to require specific global roles for an endpoint.

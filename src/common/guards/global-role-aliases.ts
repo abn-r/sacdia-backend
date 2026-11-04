@@ -4,42 +4,35 @@
  * global-roles.guard.ts.
  */
 import type { GlobalRoleType } from '../decorators/global-roles.decorator';
+import { FIELD_ADMIN_ROLES } from '../authorization/role-sets';
+import { GlobalRole } from '../authorization/roles';
 
-// All field-level admin roles (lf/union/dia, director/assistant) share an
-// identical permission set via JOIN-copy from `assistant-lf` in
-// prisma/seeds/role-permissions.seed.sql. They are therefore treated as
-// mutually equivalent at the guard level — consistent with the existing
-// admin/assistant-admin symmetric pairing.
-export const FIELD_ADMIN_ROLES: GlobalRoleType[] = [
-  'director-lf',
-  'assistant-lf',
-  'director-union',
-  'assistant-union',
-  'director-dia',
-  'assistant-dia',
-];
+export { FIELD_ADMIN_ROLES };
 
 export const GLOBAL_ROLE_ALIASES: Record<GlobalRoleType, GlobalRoleType[]> = {
-  'super-admin': ['super-admin'],
-  admin: ['admin', 'assistant-admin'],
-  'assistant-admin': ['assistant-admin', 'admin'],
+  [GlobalRole.SUPER_ADMIN]: [GlobalRole.SUPER_ADMIN],
+  [GlobalRole.ADMIN]: [GlobalRole.ADMIN, GlobalRole.ASSISTANT_ADMIN],
+  [GlobalRole.ASSISTANT_ADMIN]: [GlobalRole.ASSISTANT_ADMIN, GlobalRole.ADMIN],
   // Local-field directors do what coordinators do (product 2026-09-15).
   // One-level expansion: listing `coordinator` admits LF without union/dia.
-  coordinator: [
-    'coordinator',
-    'zone-coordinator',
-    'general-coordinator',
-    'director-lf',
-    'assistant-lf',
+  [GlobalRole.COORDINATOR]: [
+    GlobalRole.COORDINATOR,
+    GlobalRole.ZONE_COORDINATOR,
+    GlobalRole.GENERAL_COORDINATOR,
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
   ],
-  'zone-coordinator': ['zone-coordinator', 'general-coordinator'],
-  'general-coordinator': ['general-coordinator'],
-  pastor: ['pastor'],
-  user: ['user'],
-  'director-lf': FIELD_ADMIN_ROLES,
-  'assistant-lf': FIELD_ADMIN_ROLES,
-  'director-union': FIELD_ADMIN_ROLES,
-  'assistant-union': FIELD_ADMIN_ROLES,
-  'director-dia': FIELD_ADMIN_ROLES,
-  'assistant-dia': FIELD_ADMIN_ROLES,
+  [GlobalRole.ZONE_COORDINATOR]: [
+    GlobalRole.ZONE_COORDINATOR,
+    GlobalRole.GENERAL_COORDINATOR,
+  ],
+  [GlobalRole.GENERAL_COORDINATOR]: [GlobalRole.GENERAL_COORDINATOR],
+  [GlobalRole.PASTOR]: [GlobalRole.PASTOR],
+  [GlobalRole.USER]: [GlobalRole.USER],
+  [GlobalRole.DIRECTOR_LF]: [...FIELD_ADMIN_ROLES],
+  [GlobalRole.ASSISTANT_LF]: [...FIELD_ADMIN_ROLES],
+  [GlobalRole.DIRECTOR_UNION]: [...FIELD_ADMIN_ROLES],
+  [GlobalRole.ASSISTANT_UNION]: [...FIELD_ADMIN_ROLES],
+  [GlobalRole.DIRECTOR_DIA]: [...FIELD_ADMIN_ROLES],
+  [GlobalRole.ASSISTANT_DIA]: [...FIELD_ADMIN_ROLES],
 };
