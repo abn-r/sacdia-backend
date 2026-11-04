@@ -29,6 +29,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { loadPermissionCatalog } from '../../../scripts/authz/catalog-source';
 
 /** Must stay EMPTY. Add a permission here only as a short-lived, justified exception. */
 const KNOWN_MISSING: string[] = [];
@@ -64,28 +65,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 function loadCatalog(): Set<string> {
-  const catalog = new Set<string>();
-  const seed = fs.readFileSync(
-    path.join(ROOT, 'prisma/seeds/permissions.seed.sql'),
-    'utf8',
-  );
-  for (const m of seed.matchAll(/\('([a-z_-]+:[a-z_-]+)'/g)) catalog.add(m[1]);
-
-  const migrationsDir = path.join(ROOT, 'prisma/migrations');
-  for (const file of walk(migrationsDir).filter((f) =>
-    f.endsWith('migration.sql'),
-  )) {
-    const sql = fs.readFileSync(file, 'utf8');
-    // Each INSERT INTO permissions ... up to its terminating ';'
-    for (const stmt of sql.matchAll(
-      /INSERT\s+INTO\s+"?permissions"?\b[^;]*;/gi,
-    )) {
-      for (const m of stmt[0].matchAll(/\('([a-z_-]+:[a-z_-]+)'/g)) {
-        catalog.add(m[1]);
-      }
-    }
-  }
-  return catalog;
+  return new Set(loadPermissionCatalog(ROOT).map((p) => p.key));
 }
 
 /** Returns the text inside the balanced parens starting at `openIdx` (index of '('). */
