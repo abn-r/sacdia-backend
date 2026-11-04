@@ -11,6 +11,22 @@ import { FinancesController } from '../../finances/finances.controller';
 import { CamporeesController } from '../../camporees/camporees.controller';
 import { CamporeeEventsController } from '../../camporee-events/camporee-events.controller';
 import { CamporeeVenuesController } from '../../camporee-venues/camporee-venues.controller';
+import { CamporeeOrdersController } from '../../camporee-orders/camporee-orders.controller';
+import {
+  CAMPOREE_ORDERS_CREATE,
+  CAMPOREE_ORDERS_OFFERING_CONFIGURE,
+  CAMPOREE_ORDERS_READ,
+} from '../../camporee-orders/permissions';
+import {
+  CAMPOREE_SUPPLIES_CONFIGURE,
+  CAMPOREE_SUPPLIES_DELIVER,
+  CAMPOREE_SUPPLIES_PLAN,
+  CAMPOREE_SUPPLIES_READ,
+} from '../../camporee-supplies/permissions';
+import { OfferingsController } from '../../camporee-orders/offerings.controller';
+import { CamporeeSupplyConfigController } from '../../camporee-supplies/config.controller';
+import { CamporeeSupplyPlansController } from '../../camporee-supplies/plans.controller';
+import { FieldPaymentOrdersController } from '../../field-payment-orders/field-payment-orders.controller';
 
 /**
  * Regression tests for tenant binding (audit run-1, §2). Dummy tenants:
@@ -29,6 +45,16 @@ describe('PermissionsGuard tenant binding', () => {
   const UNION_CAMPOREES: Record<number, { union_id: number }> = {
     100: { union_id: 1 },
     900: { union_id: 2 },
+  };
+
+  // Local camporees: 300 belongs to local field 50 / union 1, 301 to local
+  // field 60 / union 2.
+  const LOCAL_CAMPOREES: Record<
+    number,
+    { local_field_id: number; local_fields: { union_id: number } }
+  > = {
+    300: { local_field_id: 50, local_fields: { union_id: 1 } },
+    301: { local_field_id: 60, local_fields: { union_id: 2 } },
   };
 
   const mockAuthorizationContext = {
@@ -58,6 +84,7 @@ describe('PermissionsGuard tenant binding', () => {
   const mockPrisma = {
     club_sections: { findUnique: jest.fn() },
     union_camporees: { findUnique: jest.fn() },
+    local_camporees: { findUnique: jest.fn() },
     union_camporee_local_fields: { findFirst: jest.fn() },
     camporee_events: { findUnique: jest.fn() },
     camporee_venues: { findUnique: jest.fn() },
@@ -172,6 +199,17 @@ describe('PermissionsGuard tenant binding', () => {
       async ({ where }: { where: { union_camporee_id: number } }) => {
         const row = UNION_CAMPOREES[where.union_camporee_id];
         return row ? { ...row, unions: { country_id: 1 } } : null;
+      },
+    );
+    mockPrisma.local_camporees.findUnique.mockImplementation(
+      async ({ where }: { where: { local_camporee_id: number } }) => {
+        const row = LOCAL_CAMPOREES[where.local_camporee_id];
+        return row
+          ? {
+              ...row,
+              local_fields: { ...row.local_fields, unions: { country_id: 1 } },
+            }
+          : null;
       },
     );
     mockPrisma.union_camporee_local_fields.findFirst.mockImplementation(
@@ -467,6 +505,279 @@ describe('PermissionsGuard tenant binding', () => {
       expect(
         mockPrisma.union_camporee_local_fields.findFirst,
       ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('camporee routes (orders, offerings, payment orders, supplies, union detail)', () => {
+    type Kind = 'local-typed' | 'local-global' | 'union-typed' | 'union-global';
+    const PLAN = [CAMPOREE_SUPPLIES_PLAN];
+    const READ = [CAMPOREE_SUPPLIES_READ];
+    const CONFIGURE = [CAMPOREE_SUPPLIES_CONFIGURE];
+    const OFFERING = [CAMPOREE_ORDERS_OFFERING_CONFIGURE];
+    const ORDERS_READ = [CAMPOREE_ORDERS_READ];
+
+    // [label, controller, handler, permissions, kind]
+    const ROUTES: Array<
+      [string, new (...args: never[]) => unknown, string, string[], Kind]
+    > = [
+      [
+        'orders local',
+        CamporeeOrdersController,
+        'createLocal',
+        [CAMPOREE_ORDERS_CREATE],
+        'local-typed',
+      ],
+      [
+        'orders union',
+        CamporeeOrdersController,
+        'createUnion',
+        [CAMPOREE_ORDERS_CREATE],
+        'union-typed',
+      ],
+      [
+        'offerings read local',
+        OfferingsController,
+        'listLocalOfferings',
+        ORDERS_READ,
+        'local-global',
+      ],
+      [
+        'offerings read union',
+        OfferingsController,
+        'listUnionOfferings',
+        ORDERS_READ,
+        'union-global',
+      ],
+      [
+        'offerings settings local',
+        OfferingsController,
+        'updateLocalSettings',
+        OFFERING,
+        'local-global',
+      ],
+      [
+        'offerings replace local',
+        OfferingsController,
+        'replaceLocalOfferings',
+        OFFERING,
+        'local-global',
+      ],
+      [
+        'payment-orders local',
+        FieldPaymentOrdersController,
+        'createCamporeeOrder',
+        ['field-payment-orders:create'],
+        'local-typed',
+      ],
+      [
+        'payment-orders union',
+        FieldPaymentOrdersController,
+        'createUnionCamporeeOrder',
+        ['field-payment-orders:create'],
+        'union-typed',
+      ],
+      [
+        'supply config local',
+        CamporeeSupplyConfigController,
+        'settingsLocal',
+        CONFIGURE,
+        'local-global',
+      ],
+      [
+        'supply config union',
+        CamporeeSupplyConfigController,
+        'settingsUnion',
+        CONFIGURE,
+        'union-global',
+      ],
+      [
+        'supply catalog local',
+        CamporeeSupplyConfigController,
+        'catalogLocal',
+        READ,
+        'local-typed',
+      ],
+      [
+        'supply catalog union',
+        CamporeeSupplyConfigController,
+        'catalogUnion',
+        READ,
+        'union-typed',
+      ],
+      [
+        'plan get local',
+        CamporeeSupplyPlansController,
+        'getLocal',
+        PLAN,
+        'local-typed',
+      ],
+      [
+        'plan get union',
+        CamporeeSupplyPlansController,
+        'getUnion',
+        PLAN,
+        'union-typed',
+      ],
+      [
+        'plan list local',
+        CamporeeSupplyPlansController,
+        'listLocal',
+        READ,
+        'local-global',
+      ],
+      [
+        'plan list union',
+        CamporeeSupplyPlansController,
+        'listUnion',
+        READ,
+        'union-global',
+      ],
+      [
+        'plan adjust local',
+        CamporeeSupplyPlansController,
+        'adjustLocal',
+        PLAN,
+        'local-global',
+      ],
+      [
+        'plan adjust union',
+        CamporeeSupplyPlansController,
+        'adjustUnion',
+        PLAN,
+        'union-global',
+      ],
+      [
+        'plan deliver local',
+        CamporeeSupplyPlansController,
+        'deliverLocal',
+        [CAMPOREE_SUPPLIES_DELIVER],
+        'local-global',
+      ],
+      [
+        'plan deliver union',
+        CamporeeSupplyPlansController,
+        'deliverUnion',
+        [CAMPOREE_SUPPLIES_DELIVER],
+        'union-global',
+      ],
+      [
+        'reports kitchen local',
+        CamporeeSupplyPlansController,
+        'kitchenLocal',
+        READ,
+        'local-global',
+      ],
+      [
+        'reports cash union',
+        CamporeeSupplyPlansController,
+        'cashUnion',
+        READ,
+        'union-global',
+      ],
+      [
+        'union detail read',
+        CamporeesController,
+        'findOneUnion',
+        ['camporees:read'],
+        'union-typed',
+      ],
+    ];
+
+    // Allowed / cross-tenant camporee ids per kind.
+    const IDS = {
+      local: { ok: '300', other: '301', missing: '999' },
+      union: { ok: '100', other: '900', missing: '999' },
+    };
+
+    const actorFor = (kind: Kind, permissions: string[]) => {
+      if (kind === 'local-typed' || kind === 'union-typed') {
+        return clubDirector(permissions); // LF 50 / union 1 in the club grant
+      }
+      return territorialActor('director', permissions, {
+        [kind === 'local-global' ? 'local_field' : 'union']: {
+          id: kind === 'local-global' ? 50 : 1,
+        },
+      });
+    };
+
+    const run = (
+      controller: new (...args: never[]) => unknown,
+      handler: string,
+      camporeeId: string,
+    ) =>
+      guard.canActivate(
+        createContext(controller, handler, {
+          user: { sub: 'actor' },
+          params: { camporeeId, lineId: '1', slotId: '1', productId: '1' },
+          body: {},
+          query: {},
+        }),
+      );
+
+    describe.each(ROUTES)('%s', (_label, controller, handler, perms, kind) => {
+      const ids = kind.startsWith('local') ? IDS.local : IDS.union;
+      const notFound = kind.startsWith('local')
+        ? ErrorCode.CAMPOREE_NOT_FOUND
+        : ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND;
+
+      beforeEach(() => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          actorFor(kind, perms),
+        );
+      });
+
+      it('allows an actor of the camporee scope', async () => {
+        await expect(run(controller, handler, ids.ok)).resolves.toBe(true);
+      });
+
+      it('rejects a camporee of another tenant', async () => {
+        await expect(run(controller, handler, ids.other)).rejects.toMatchObject(
+          {
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          },
+        );
+      });
+
+      it('returns 404 for an unknown camporee', async () => {
+        await expect(
+          run(controller, handler, ids.missing),
+        ).rejects.toMatchObject({ code: notFound });
+      });
+    });
+
+    describe('union configure routes are owner-only', () => {
+      beforeEach(() => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-union', OFFERING, { union: { id: 1 } }),
+        );
+      });
+
+      it.each(['updateUnionSettings', 'replaceUnionOfferings'])(
+        '%s: owner union passes, other union is rejected',
+        async (handler) => {
+          await expect(run(OfferingsController, handler, '100')).resolves.toBe(
+            true,
+          );
+          await expect(
+            run(OfferingsController, handler, '900'),
+          ).rejects.toMatchObject({
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          });
+        },
+      );
+
+      it('does not admit a participating local-field actor', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-lf', OFFERING, {
+            local_field: { id: 50 },
+          }),
+        );
+        await expect(
+          run(OfferingsController, 'updateUnionSettings', '100'),
+        ).rejects.toMatchObject({
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      });
     });
   });
 

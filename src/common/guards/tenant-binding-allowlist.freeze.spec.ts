@@ -9,19 +9,15 @@ import { TENANT_BINDING_ALLOWLIST } from './tenant-binding-allowlist';
  * recorded and can never silently grow back.
  *
  * Markers are the reason strings of the allowlist constants (they are not
- * exported, plus one inline-string reason), identified here by a stable prefix of their text.
+ * exported), identified here by a stable prefix of their text.
  */
 const MARKER_PREFIXES: Readonly<Record<string, string>> = {
-  PENDING_CAMPOREE: 'Camporee scope is resolved in the service',
   PENDING_REVIEW: 'Pending tenant-binding review',
-  UNION_CAMPOREE_READ_INLINE: 'Union camporee detail read;',
 };
 
-const FROZEN_TOTAL = 52;
+const FROZEN_TOTAL = 13;
 const FROZEN_BY_MARKER: Readonly<Record<string, number>> = {
-  PENDING_CAMPOREE: 38,
   PENDING_REVIEW: 13,
-  UNION_CAMPOREE_READ_INLINE: 1,
 };
 
 const RAISED =
