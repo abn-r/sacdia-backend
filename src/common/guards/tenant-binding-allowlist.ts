@@ -6,47 +6,11 @@
  * its route is bound; tenant-binding-inventory.spec.ts fails on stale entries.
  */
 
-const GEOGRAPHY_CATALOG =
-  'Admin CRUD of the geography catalog entity itself, not a tenant-owned resource.';
-const FOLDER_TEMPLATE_SECTION =
-  'sectionId is an annual-folder template section, not a club section.';
-const FOLDER_SECTION =
-  'sectionId is an annual-folder section; folder ownership is not bound at guard level yet. Pending review.';
-const CLASS_MODULE_SECTION =
-  'sectionId is a class module section on a user-owned route, not a club section.';
 const PENDING_CAMPOREE =
   'Camporee scope is resolved in the service today. Pending migration to bind (audit run-1 camporee group).';
 const PENDING_REVIEW = 'Pending tenant-binding review (audit run-1).';
 
 export const TENANT_BINDING_ALLOWLIST: Readonly<Record<string, string>> = {
-  'admin/admin-geography.controller.ts DELETE /admin/divisions/:divisionId':
-    GEOGRAPHY_CATALOG,
-  'admin/admin-geography.controller.ts DELETE /admin/local-fields/:localFieldId':
-    GEOGRAPHY_CATALOG,
-  'admin/admin-geography.controller.ts DELETE /admin/unions/:unionId':
-    GEOGRAPHY_CATALOG,
-  'admin/admin-geography.controller.ts PATCH /admin/divisions/:divisionId':
-    GEOGRAPHY_CATALOG,
-  'admin/admin-geography.controller.ts PATCH /admin/local-fields/:localFieldId':
-    GEOGRAPHY_CATALOG,
-  'admin/admin-geography.controller.ts PATCH /admin/unions/:unionId':
-    GEOGRAPHY_CATALOG,
-  'annual-folders/annual-folders.controller.ts DELETE /annual-folders/templates/sections/:sectionId':
-    FOLDER_TEMPLATE_SECTION,
-  'annual-folders/annual-folders.controller.ts GET /annual-folders/:folderId/sections/:sectionId/status':
-    FOLDER_SECTION,
-  'annual-folders/annual-folders.controller.ts PATCH /annual-folders/templates/sections/:sectionId':
-    FOLDER_TEMPLATE_SECTION,
-  'annual-folders/annual-folders.controller.ts POST /annual-folders/:folderId/sections/:sectionId/evidences':
-    FOLDER_SECTION,
-  'annual-folders/annual-folders.controller.ts POST /annual-folders/:folderId/sections/:sectionId/submit':
-    FOLDER_SECTION,
-  'annual-folders/evaluation.controller.ts POST /annual-folders/:folderId/sections/:sectionId/confirm-union':
-    FOLDER_SECTION,
-  'annual-folders/evaluation.controller.ts POST /annual-folders/:folderId/sections/:sectionId/evaluate':
-    FOLDER_SECTION,
-  'annual-folders/evaluation.controller.ts POST /annual-folders/:folderId/sections/:sectionId/reopen':
-    FOLDER_SECTION,
   'camporees/camporees.controller.ts GET /camporees/union/:camporeeId':
     'Union camporee detail read; participants outside the organizing union read it too. Read scoping pending review.',
   'camporee-orders/camporee-orders.controller.ts POST /camporees/:camporeeId/orders':
@@ -121,12 +85,6 @@ export const TENANT_BINDING_ALLOWLIST: Readonly<Record<string, string>> = {
     PENDING_CAMPOREE,
   'camporee-supplies/plans.controller.ts PUT /union-camporees/:camporeeId/supply-plan':
     PENDING_CAMPOREE,
-  'classes/classes.controller.ts DELETE /users/:userId/classes/:classId/sections/:sectionId/files/:fileId':
-    CLASS_MODULE_SECTION,
-  'classes/classes.controller.ts POST /users/:userId/classes/:classId/sections/:sectionId/files':
-    CLASS_MODULE_SECTION,
-  'classes/classes.controller.ts POST /users/:userId/classes/:classId/sections/:sectionId/submit':
-    CLASS_MODULE_SECTION,
   'coordination/coordination.controller.ts GET /admin/coordination/local-fields/:localFieldId/assignments':
     PENDING_REVIEW,
   'coordination/coordination.controller.ts GET /admin/coordination/local-fields/:localFieldId/zones':

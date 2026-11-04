@@ -12,21 +12,13 @@ import { TENANT_BINDING_ALLOWLIST } from './tenant-binding-allowlist';
  * exported, plus one inline-string reason), identified here by a stable prefix of their text.
  */
 const MARKER_PREFIXES: Readonly<Record<string, string>> = {
-  GEOGRAPHY_CATALOG: 'Admin CRUD of the geography catalog',
-  FOLDER_TEMPLATE_SECTION: 'sectionId is an annual-folder template section',
-  FOLDER_SECTION: 'sectionId is an annual-folder section;',
-  CLASS_MODULE_SECTION: 'sectionId is a class module section',
   PENDING_CAMPOREE: 'Camporee scope is resolved in the service',
   PENDING_REVIEW: 'Pending tenant-binding review',
   UNION_CAMPOREE_READ_INLINE: 'Union camporee detail read;',
 };
 
-const FROZEN_TOTAL = 69;
+const FROZEN_TOTAL = 52;
 const FROZEN_BY_MARKER: Readonly<Record<string, number>> = {
-  GEOGRAPHY_CATALOG: 6,
-  FOLDER_TEMPLATE_SECTION: 2,
-  FOLDER_SECTION: 6,
-  CLASS_MODULE_SECTION: 3,
   PENDING_CAMPOREE: 38,
   PENDING_REVIEW: 13,
   UNION_CAMPOREE_READ_INLINE: 1,

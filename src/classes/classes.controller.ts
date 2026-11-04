@@ -282,7 +282,7 @@ export class UserClassesController {
   // CLASS SECTION SUBMIT FOR VALIDATION
   // ========================================
 
-  @Post(':classId/sections/:sectionId/submit')
+  @Post(':classId/sections/:moduleSectionId/submit')
   @ActingScope('evidence:submit')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
@@ -294,7 +294,7 @@ export class UserClassesController {
   })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'classId', type: Number })
-  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiParam({ name: 'moduleSectionId', type: Number })
   @ApiQuery({
     name: 'enrollmentId',
     required: false,
@@ -308,7 +308,7 @@ export class UserClassesController {
   async submitSection(
     @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('moduleSectionId', ParseIntPipe) sectionId: number,
     @Query('enrollmentId', new ParseIntPipe({ optional: true }))
     enrollmentId: number | undefined,
     @CurrentUser() currentUser: CurrentUserPayload,
@@ -327,7 +327,7 @@ export class UserClassesController {
   // CLASS SECTION FILE EVIDENCE
   // ========================================
 
-  @Post(':classId/sections/:sectionId/files')
+  @Post(':classId/sections/:moduleSectionId/files')
   @ActingScope('evidence:upload')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
@@ -341,7 +341,7 @@ export class UserClassesController {
   })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'classId', type: Number })
-  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiParam({ name: 'moduleSectionId', type: Number })
   @ApiQuery({
     name: 'enrollmentId',
     required: false,
@@ -363,7 +363,7 @@ export class UserClassesController {
   async uploadSectionFile(
     @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('moduleSectionId', ParseIntPipe) sectionId: number,
     @UploadedFile(
       new FileValidationPipe({
         allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
@@ -385,7 +385,7 @@ export class UserClassesController {
     return { status: 'success', data };
   }
 
-  @Delete(':classId/sections/:sectionId/files/:fileId')
+  @Delete(':classId/sections/:moduleSectionId/files/:fileId')
   @ActingScope('evidence:upload')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
@@ -396,7 +396,7 @@ export class UserClassesController {
   })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'classId', type: Number })
-  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiParam({ name: 'moduleSectionId', type: Number })
   @ApiParam({ name: 'fileId', type: Number })
   @ApiQuery({
     name: 'enrollmentId',
@@ -410,7 +410,7 @@ export class UserClassesController {
   async deleteSectionFile(
     @Param('userId', ParseUuidParamPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
-    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('moduleSectionId', ParseIntPipe) sectionId: number,
     @Param('fileId', ParseIntPipe) fileId: number,
     @Query('enrollmentId', new ParseIntPipe({ optional: true }))
     enrollmentId: number | undefined,
