@@ -1,5 +1,6 @@
 import type { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
 import { stripClubContext } from './strip-club-context';
+import { computeActorAuthorizationSummary } from '../../common/authorization/capabilities';
 
 const clubGrant = {
   assignment_id: 'assign-1',
@@ -96,6 +97,45 @@ describe('stripClubContext', () => {
     expect(JSON.stringify(stripClubContext(resolved()))).not.toContain(
       'Club Aguila',
     );
+  });
+
+  it('keeps the per-request authorization summary fields and yields no club capabilities', () => {
+    // GET /auth/me computes the summary AFTER the strip; if an enriched
+    // object is ever stripped, the extra keys must not be dropped.
+    const enriched = {
+      ...resolved(),
+      authorization: {
+        ...resolved().authorization,
+        capabilities: ['club.staff_mode'],
+        territory: {
+          level: 'open',
+          division_id: null,
+          union_id: null,
+          local_field_id: null,
+        },
+        assignable_global_roles: [],
+      },
+    } as unknown as ResolvedAuthorizationProfile;
+
+    const out = stripClubContext(enriched) as unknown as {
+      authorization: Record<string, unknown>;
+    };
+    expect(out.authorization.capabilities).toEqual(['club.staff_mode']);
+    expect(out.authorization.territory).toEqual({
+      level: 'open',
+      division_id: null,
+      union_id: null,
+      local_field_id: null,
+    });
+    expect(out.authorization.assignable_global_roles).toEqual([]);
+
+    // Computed after the strip, the club keys are gone.
+    const summary = computeActorAuthorizationSummary(
+      stripClubContext(resolved()),
+    );
+    expect(summary.capabilities).toEqual([]);
+    expect(summary.territory.level).toBe('open');
+    expect(summary.assignable_global_roles).toEqual([]);
   });
 
   it('does not mutate its input (the authorization cache may share the object)', () => {

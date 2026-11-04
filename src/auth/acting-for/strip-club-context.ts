@@ -30,6 +30,10 @@ export function stripClubContext(
   return {
     ...resolved,
     authorization: {
+      // Keys outside the snapshot (e.g. the per-request `capabilities`,
+      // `territory`, `assignable_global_roles` of GET /auth/me, normally
+      // computed AFTER this strip) survive untouched.
+      ...resolved.authorization,
       grants: {
         ...grants,
         club_assignments: [],

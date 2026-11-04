@@ -285,6 +285,40 @@ describe('AuthController', () => {
       );
       expect(result).toEqual(expected);
     });
+
+    it('returns the authorization summary (capabilities, territory, assignable roles) untouched', async () => {
+      const currentUser = { userId: 'user-123', kind: 'user' } as any;
+      const expected = {
+        status: 'success',
+        data: {
+          user_id: 'user-123',
+          authorization: {
+            grants: { global_roles: [], club_assignments: [] },
+            active_assignment: { assignment_id: null },
+            effective: { permissions: [], scope: { global: {}, club: null } },
+            capabilities: ['admin_panel.access', 'coordination.hub_view'],
+            territory: {
+              level: 'open',
+              division_id: null,
+              union_id: null,
+              local_field_id: null,
+            },
+            assignable_global_roles: [],
+          },
+        },
+      };
+      mockAuthService.getProfile.mockResolvedValue(expected);
+
+      const result = await controller.getProfile(currentUser);
+
+      expect(result).toBe(expected);
+      expect(result.data.authorization.capabilities).toEqual([
+        'admin_panel.access',
+        'coordination.hub_view',
+      ]);
+      expect(result.data.authorization.territory.level).toBe('open');
+      expect(result.data.authorization.assignable_global_roles).toEqual([]);
+    });
   });
 
   describe('getCompletionStatus', () => {

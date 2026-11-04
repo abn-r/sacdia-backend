@@ -2138,6 +2138,234 @@ describe('AuthService', () => {
       );
     });
 
+    describe('authorization summary (phase 7)', () => {
+      const directorLfProfile = () => ({
+        profile: {
+          user_id: 'lf-1',
+          email: 'lf@example.com',
+          name: 'Luis',
+          paternal_last_name: 'Perez',
+          maternal_last_name: null,
+          user_image: null,
+          local_field_id: 3,
+        },
+        post_register_complete: true,
+        authorization: {
+          grants: {
+            global_roles: [
+              {
+                role_name: 'director-lf',
+                permissions: ['club_roles:assign'],
+                scope: {
+                  union: { id: 2, name: 'Union' },
+                  local_field: { id: 3, name: 'Campo' },
+                },
+              },
+            ],
+            club_assignments: [],
+            direct_permissions: [],
+          },
+          active_assignment: { assignment_id: null },
+          effective: {
+            permissions: ['club_roles:assign'],
+            scope: {
+              global: {
+                union: { id: 2, name: 'Union' },
+                local_field: { id: 3, name: 'Campo' },
+              },
+              club: null,
+            },
+          },
+        },
+        legacy: {
+          roles: ['director-lf'],
+          permissions: ['club_roles:assign'],
+          club: null,
+          club_context: {
+            active_assignment_id: null,
+            active: null,
+            available: [],
+          },
+        },
+      });
+
+      const clubGrant = {
+        assignment_id: 'assign-1',
+        role_name: 'director',
+        permissions: ['club_members:read'],
+        operational: true,
+        ecclesiastical_year_id: 7,
+        club: { club_id: 10, club_name: 'Club Aguila' },
+        section: { club_section_id: 20, club_type_id: 2 },
+        scope: {},
+        status: 'active',
+      };
+
+      const clubDirectorProfile = () => ({
+        ...directorLfProfile(),
+        profile: {
+          ...directorLfProfile().profile,
+          user_id: 'teen-1',
+          local_field_id: null,
+        },
+        authorization: {
+          grants: {
+            global_roles: [{ role_name: 'user', permissions: [], scope: {} }],
+            club_assignments: [clubGrant],
+            direct_permissions: [],
+          },
+          active_assignment: { assignment_id: 'assign-1' },
+          effective: {
+            permissions: ['club_members:read'],
+            scope: {
+              global: {},
+              club: {
+                assignment_id: 'assign-1',
+                role_name: 'director',
+                club: clubGrant.club,
+                section: clubGrant.section,
+              },
+            },
+          },
+        },
+        legacy: {
+          roles: ['user'],
+          permissions: [],
+          club: { club_id: 10, club_name: 'Club Aguila', club_type: null },
+          club_context: {
+            active_assignment_id: 'assign-1',
+            active: null,
+            available: [],
+          },
+        },
+      });
+
+      it('publishes capabilities, territory and assignable_global_roles next to the snapshot', async () => {
+        const resolved = directorLfProfile();
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolved,
+        );
+
+        const result = await service.getProfile('lf-1');
+        const authorization = result.data.authorization as Record<
+          string,
+          unknown
+        >;
+
+        expect(authorization.grants).toEqual(resolved.authorization.grants);
+        expect(authorization.active_assignment).toEqual({
+          assignment_id: null,
+        });
+        expect(authorization.effective).toEqual(
+          resolved.authorization.effective,
+        );
+        expect(authorization.territory).toEqual({
+          level: 'local_field',
+          division_id: null,
+          union_id: 2,
+          local_field_id: 3,
+        });
+        expect(authorization.assignable_global_roles).toEqual([
+          'coordinator',
+          'general-coordinator',
+          'pastor',
+          'user',
+          'zone-coordinator',
+        ]);
+        const capabilities = authorization.capabilities as string[];
+        expect(capabilities).toEqual([...capabilities].sort());
+        expect(capabilities).toEqual(
+          expect.arrayContaining([
+            'admin_panel.access',
+            'club_roles.assign_section',
+            'coordination.manage',
+            'reports.view_local_field',
+            'users.create_in_scope',
+          ]),
+        );
+        expect(capabilities).not.toContain('club.staff_mode');
+        expect(capabilities).not.toContain('rbac.manage');
+      });
+
+      it('computes the summary per request and never writes it into the cached profile', async () => {
+        const resolved = directorLfProfile();
+        const snapshot = JSON.stringify(resolved);
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolved,
+        );
+
+        await service.getProfile('lf-1');
+
+        expect(JSON.stringify(resolved)).toBe(snapshot);
+        expect(resolved.authorization).not.toHaveProperty('capabilities');
+        expect(
+          mockAuthorizationContextService.resolveUserAuthorization,
+        ).toHaveBeenCalledTimes(1);
+      });
+
+      it('exposes the club capabilities of an active club director', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          clubDirectorProfile(),
+        );
+
+        const result = await service.getProfile('teen-1');
+        const authorization = result.data.authorization as Record<
+          string,
+          unknown
+        >;
+
+        expect(authorization.capabilities).toEqual([
+          'camporee_orders.issue',
+          'camporee_supplies.plan',
+          'club.active_director',
+          'club.operational_staff',
+          'club.staff_mode',
+          'club_sections.create_active',
+          'clubs.deactivate_active',
+          'clubs.manage_active',
+          'investiture.board',
+          'scoring_categories.manage',
+          'units.manage',
+        ]);
+        expect(authorization.territory).toEqual({
+          level: 'open',
+          division_id: null,
+          union_id: null,
+          local_field_id: null,
+        });
+        expect(authorization.assignable_global_roles).toEqual([]);
+      });
+
+      it('computes the summary after the club context is stripped for a pending teen', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          clubDirectorProfile(),
+        );
+
+        const result = await service.getProfile('teen-1', {
+          kind: 'supervised_user',
+          supervision: 'pending_guardian',
+          scopes: ['self:read'],
+        } as any);
+        const authorization = result.data.authorization as Record<
+          string,
+          unknown
+        >;
+
+        expect(authorization.capabilities).toEqual([]);
+        expect(authorization.territory).toEqual({
+          level: 'open',
+          division_id: null,
+          union_id: null,
+          local_field_id: null,
+        });
+        expect(authorization.assignable_global_roles).toEqual([]);
+        expect(
+          (authorization.effective as { scope: { club: unknown } }).scope.club,
+        ).toBeNull();
+        expect(result.data.club).toBeNull();
+      });
+    });
+
     describe('acting_for and family', () => {
       const resolvedProfile = (userId: string) => ({
         profile: {
@@ -3068,6 +3296,15 @@ describe('AuthService', () => {
             club: null,
           },
         },
+        // Phase 7 per-request summary (see 'authorization summary').
+        capabilities: [],
+        territory: {
+          level: 'open',
+          division_id: null,
+          union_id: null,
+          local_field_id: null,
+        },
+        assignable_global_roles: [],
       });
       expect(result.data.post_register_complete).toBe(true);
       expect(mockLegalService.getStatus).toHaveBeenCalledWith('user-123');

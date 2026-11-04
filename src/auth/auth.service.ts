@@ -72,6 +72,7 @@ import {
   type AuthPrincipal,
 } from './acting-for/auth-principal';
 import { stripClubContext } from './acting-for/strip-club-context';
+import { computeActorAuthorizationSummary } from '../common/authorization/capabilities';
 import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
 import { SupervisionStateService } from '../guardianships/supervision-state.service';
 import { LinkedDeviceGate } from './device/linked-device.gate';
@@ -1065,6 +1066,10 @@ export class AuthService {
       principal && !principalSeesClubData(principal)
         ? stripClubContext(fullyResolved)
         : fullyResolved;
+    // Phase 7: what the actor can attempt, computed per request over the
+    // (possibly stripped) profile. Pure and never cached: the cache entry keeps
+    // the `ResolvedAuthorizationProfile` shape and the `auth:context:v8` key.
+    const actorSummary = computeActorAuthorizationSummary(resolved);
     const acting = principal?.acting_for === true;
     const supervisionStatus =
       principal?.kind === 'supervised_user' ? principal.supervision : undefined;
@@ -1129,7 +1134,9 @@ export class AuthService {
         // The dependent's own pending membership request while there is no
         // active club; null for every other principal and state.
         pending_club_membership: pendingClubMembership,
-        authorization: resolved.authorization,
+        // `capabilities`, `territory` and `assignable_global_roles` are the
+        // per-request summary; the rest is the canonical snapshot.
+        authorization: { ...resolved.authorization, ...actorSummary },
         legal,
         acting_for: acting
           ? {

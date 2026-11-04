@@ -75,6 +75,7 @@ En e2e, `E2E_PASSTHROUGH_PERMISSIONS=true` desactiva `PermissionsGuard` solo con
 - `policies/build-policy-registry.ts` y `policies/policy-registry.ts`: el guard construye el registro en su constructor (firma sin cambios).
 - `tenant-binding.enforcer.ts`: `TenantBindingEnforcer.enforce(ctx)` aplica `bind` (propietarios incluidos, y después de la policy).
 - `section-member-access.ts`: lecturas de miembros de la sección activa (`SectionMemberAccess`).
+- `capabilities.ts` (+ `user-role-tiers.ts`, `generated/capability-keys.ts`): resumen del actor publicado en `GET /auth/me` (ver "Capabilities").
 - `actor-scope.ts`: `ActorScope.from(resolved)`, vista de solo lectura del actor (roles globales, división/unión/campo local, club y sección activos, secciones de coordinador) con `hasRole`/`hasAnyRole`, `coversHierarchy`, `coversClub`, `coversSection`, `coversLocalField`. Los adaptadores (`report-visibility-scope`, `camporee-*-actor`, `order-actor`) lo usan en lugar de copiar sets de roles.
 - `access-decision-locality.arch.spec.ts`: ratchet que congela (`KNOWN_ACCESS_DECISION_FILES`) los archivos fuera de `common/authorization` y `common/guards` que deciden acceso con un filtro `users.local_field_id` o un predicado de `club_role_assignments`. Solo se pueden quitar entradas; un archivo nuevo, o uno listado que ya no coincide, rompe el test.
 
@@ -102,6 +103,26 @@ La regla ESLint `local/no-role-literals` (`eslint/rules/no-role-literals.cjs`, n
 
 - `@GlobalRoles(GlobalRole.DIRECTOR_LF)` expande alias (`GLOBAL_ROLE_ALIASES`): la lista declarada admite también a los roles equivalentes (p. ej. `admin` admite `assistant-admin`; un rol de campo admite sus pares de unión/DIA según el alias).
 - `@ExactGlobalRoles(...)` acepta únicamente los roles listados, sin alias. Úsalo cuando la matriz de enforcement (`docs/features/auth/RBAC-ENFORCEMENT-MATRIX.md`) exige un rol exacto (p. ej. superficies con alcance de revisor de campo local). `super-admin` pasa en ambos casos.
+
+## Capabilities (`GET /auth/me`)
+
+Fase 7 del plan RBAC: el backend publica qué puede intentar el actor para que admin (Next.js) y app (Flutter) dejen de replicar reglas de rol. En `data.authorization` de `GET /auth/me`, junto al snapshot canónico (`grants`, `active_assignment`, `effective`), viajan tres campos:
+
+- `capabilities: string[]`, ordenado ascendente (orden de bytes). Claves del catálogo `src/common/authorization/generated/capability-keys.ts` (47 claves; el mismo archivo se genera para admin en `src/lib/auth/generated/capability-keys.ts` y para app en `lib/core/authorization/generated/capability_keys.dart`).
+- `territory: { level, division_id, union_id, local_field_id }`, con `level` en `all | open | unconfigured | division | union | local_field` e ids numéricos o `null`, tomado de `resolveActorTerritoryScope(resolved)` (`actor-territory-scope.ts`).
+- `assignable_global_roles: string[]`, ordenado: roles globales que el actor puede asignar al crear usuarios según `user-role-tiers.ts` (`ROLE_HIERARCHY` / `resolveAllowedTargetRoles`, los mismos que usa `AdminUsersService`). super-admin → T5 + LF + UNION + DIA + admin; admin → lo mismo sin admin; DIA → T5 + LF + UNION; UNION → T5 + LF; LF → T5; cualquier otro → `[]`.
+
+**Semántica.** Una capability significa "el actor puede intentarlo sobre al menos un objetivo". Los servicios siguen siendo la autoridad y responden 403 cuando el objetivo concreto no coincide (territorio, club, ventana temporal, estado). Las claves basadas en territorio son falsas con `level` `open` o `unconfigured`. `super-admin` solo entra en las claves donde está listado (p. ej. no en `folders.confirm_union`). Las claves de club (`club.*`, `clubs.*`, `club_sections.*`, `units.manage`, `investiture.board`, `camporee_orders.issue`, `camporee_supplies.plan`) se evalúan sobre el rol del grant de club activo (`effective.scope.club.role_name`) y solo si ese grant es `operational`.
+
+**Dónde se calcula y por qué no se cachea.** `AuthService.getProfile` llama a `computeActorAuthorizationSummary(resolved)` (`src/common/authorization/capabilities.ts`) POR REQUEST sobre el perfil ya pasado por `stripClubContext`: un teen pendiente o una cuenta de edad desconocida no obtiene capabilities de club aunque tenga asignación. Las funciones son puras (sin inyección ni I/O): `computeCapabilities`, `computeTerritory`, `assignableGlobalRoles`. Nada entra al caché de autorización: `ResolvedAuthorizationProfile` y la clave `auth:context:v8` no cambian. `stripClubContext` conserva cualquier campo extra de `authorization` por si alguna vez recibe un objeto ya enriquecido.
+
+**Push silencioso.** `AuthorizationContextService.invalidateUserAuthorizationCache(userId)` emite, fire-and-forget, `NotificationsService.sendSilentToUser({ userId, resource: 'authorization', action: 'UPDATED', timestamp })`: un job `realtime.invalidate` por usuario (sin `sectionId`) que `NotificationsProcessor.handleRealtimeInvalidate` resuelve por `user_fcm_tokens.user_id` (sin el gate de destinatarios de datos de club ni exclusión del actor) y envía como FCM data-only `{ type: 'cache_invalidate', resource: 'authorization', action: 'UPDATED', userId, entityId, timestamp }`. Sin Redis/BullMQ el push se descarta y el cliente resincroniza en su siguiente `GET /auth/me`.
+
+**Cómo añadir una clave.**
+
+1. Añade el predicado en `CAPABILITY_DEFINITIONS` (`capabilities.ts`) con `GlobalRole`/`ClubRole`, los sets de `role-sets.ts`, `ActorScope` y `territory` (la regla `local/no-role-literals` aplica aquí).
+2. Ejecuta `pnpm authz:generate`: reescribe `generated/capability-keys.ts` (backend y admin) y `capability_keys.dart` (app) a partir de las claves de `CAPABILITY_DEFINITIONS`; `pnpm authz:check` y `authz-catalog.crossrepo.spec.ts` fallan si algún repo queda desfasado (el cross-repo se salta con aviso mientras el hermano aún no tenga el archivo).
+3. Extiende `capabilities.spec.ts` (tabla esperada por actor) y documenta la clave en el contrato compartido.
 
 ## Acting-for: un tutor actúa como su dependiente
 
