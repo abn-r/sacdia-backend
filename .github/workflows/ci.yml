@@ -308,7 +308,6 @@ jobs:
     permissions:
       contents: read
     env:
-      SACDIA_ROOT_CONTRACT_REF: ${{ vars.SACDIA_ROOT_CONTRACT_REF }}
       SACDIA_ADMIN_CONTRACT_REF: ${{ vars.SACDIA_ADMIN_CONTRACT_REF }}
       SACDIA_APP_CONTRACT_REF: ${{ vars.SACDIA_APP_CONTRACT_REF }}
 
@@ -316,7 +315,6 @@ jobs:
       - name: Validate immutable contract refs
         run: |
           for ref in \
-            "$SACDIA_ROOT_CONTRACT_REF" \
             "$SACDIA_ADMIN_CONTRACT_REF" \
             "$SACDIA_APP_CONTRACT_REF"
           do
@@ -327,12 +325,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      - name: Checkout canonical docs
-        run: |
-          git init .contract-sources/sacdia
-          git -C .contract-sources/sacdia fetch --depth=1 https://github.com/abn-r/sacdia.git "$SACDIA_ROOT_CONTRACT_REF"
-          git -C .contract-sources/sacdia checkout --detach FETCH_HEAD
 
       - name: Checkout admin consumer
         uses: actions/checkout@v4
@@ -364,11 +356,9 @@ jobs:
 
       - name: Verify exact cross-repository contract
         env:
-          ALLOW_AUTHORIZATION_P0_CROSS_REPO: '1'
           SACDIA_ADMIN_ROOT: ${{ github.workspace }}/.contract-sources/sacdia-admin
           SACDIA_APP_ROOT: ${{ github.workspace }}/.contract-sources/sacdia-app
-          SACDIA_CANONICAL_DOCS_ROOT: ${{ github.workspace }}/.contract-sources/sacdia
-        run: pnpm exec jest --runTestsByPath src/common/verify-authorization-director-succession-p0-crossrepo.spec.ts src/common/authorization/authz-catalog.crossrepo.spec.ts
+        run: pnpm exec jest --runTestsByPath src/common/authorization/authz-catalog.crossrepo.spec.ts
 
   required_unit_tests:
     name: Unit Tests

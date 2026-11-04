@@ -3,15 +3,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  CONSUMER_INVENTORY,
-  finalizeChecks,
-} from '../../scripts/verify-authorization-director-succession-p0';
-import { createTestConsumerRoots } from './testing/authorization-p0-consumer-roots.fixture';
+import { finalizeChecks } from '../../scripts/verify-authorization-director-succession-p0';
 
 const root = join(__dirname, '../..');
-const consumerRoots = createTestConsumerRoots(CONSUMER_INVENTORY);
-afterAll(() => consumerRoots.dispose());
 const script = join(
   root,
   'scripts/verify-authorization-director-succession-p0.ts',
@@ -31,8 +25,6 @@ function runDirect(extraEnv: NodeJS.ProcessEnv) {
     timeout: 10_000,
     env: {
       ...process.env,
-      SACDIA_WORKSPACE_ROOT: consumerRoots.workspaceRoot,
-      SACDIA_CANONICAL_DOCS_ROOT: consumerRoots.docsRoot,
       ...extraEnv,
     },
   });
@@ -52,8 +44,6 @@ async function interrupt(signal: 'SIGINT' | 'SIGTERM') {
     cwd: root,
     env: {
       ...process.env,
-      SACDIA_WORKSPACE_ROOT: consumerRoots.workspaceRoot,
-      SACDIA_CANONICAL_DOCS_ROOT: consumerRoots.docsRoot,
       AUTHORIZATION_P0_VERIFY_DATABASE_URL: `postgresql://127.0.0.1:${address.port}/postgres`,
       AUTHORIZATION_P0_CONNECTION_TIMEOUT_MS: '5000',
     },

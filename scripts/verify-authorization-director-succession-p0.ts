@@ -1,6 +1,4 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { writeFileSync } from 'node:fs';
 import { Client } from 'pg';
 import {
   executeAuthorizationP0Preflight,
@@ -25,208 +23,6 @@ type Lifecycle = {
   cleanup?: Promise<void>;
   signal?: NodeJS.Signals;
 };
-export const CONSUMER_INVENTORY = Object.freeze([
-  'sacdia-admin/src/lib/api/clubs.ts',
-  'sacdia-admin/src/lib/clubs/actions.ts',
-  'sacdia-admin/src/lib/clubs/actions.test.ts',
-  'sacdia-admin/src/lib/auth/director-succession.ts',
-  'sacdia-admin/src/lib/auth/director-succession.test.ts',
-  'docs/api/ENDPOINTS-LIVE-REFERENCE.md',
-  'docs/features/gestion-clubs.md',
-  'docs/features/gestion-clubs/ux-reset-phase0.md',
-]);
-export const CANONICAL_CONTRACT_PHRASES = Object.freeze([
-  'El baseline actual sigue ejecutando la sucesión inmediata',
-  'El contrato P0 de scheduling todavía no está implementado ni habilitado',
-  'no crea assignment ni grant',
-]);
-const CONSUMER_PATTERN =
-  /director[-_ ]succession|succeedClubSectionDirector|can_schedule_director_succession/i;
-type ConsumerInventory = {
-  known_internal_consumers: readonly string[];
-  active_jsx_consumers: string[];
-  flutter_consumers: string[];
-};
-export type ConsumerRoots = {
-  workspaceRoot?: string;
-  adminRoot?: string;
-  appRoot?: string;
-  docsRoot?: string;
-};
-export type ResolvedConsumerRoots = {
-  adminRoot: string;
-  appRoot: string;
-  docsRoot: string;
-};
-export type ContractRefs = {
-  adminRef: string;
-  appRef: string;
-  docsRef: string;
-};
-
-function sourceFiles(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name);
-    return entry.isDirectory() ? sourceFiles(path) : [path];
-  });
-}
-
-function discoverConsumers(
-  directory: string,
-  sourceRoot: string,
-  prefix = '',
-): string[] {
-  return sourceFiles(directory)
-    .filter((path) =>
-      CONSUMER_PATTERN.test(`${basename(path)}\n${readFileSync(path, 'utf8')}`),
-    )
-    .map((path) => join(prefix, relative(sourceRoot, path)))
-    .sort();
-}
-
-function locateWorkspace(start: string): string {
-  if (process.env.SACDIA_WORKSPACE_ROOT)
-    return resolve(process.env.SACDIA_WORKSPACE_ROOT);
-  for (
-    let current = start;
-    dirname(current) !== current;
-    current = dirname(current)
-  )
-    if (
-      existsSync(join(current, 'sacdia-admin/src')) &&
-      existsSync(join(current, 'sacdia-app/lib'))
-    )
-      return current;
-  throw new Error('CONSUMER_INVENTORY_UNAVAILABLE');
-}
-
-export function resolveConsumerRoots(
-  roots: ConsumerRoots = {},
-): ResolvedConsumerRoots {
-  const adminRoot = roots.adminRoot ?? process.env.SACDIA_ADMIN_ROOT;
-  const appRoot = roots.appRoot ?? process.env.SACDIA_APP_ROOT;
-  const workspaceRoot =
-    roots.workspaceRoot ?? process.env.SACDIA_WORKSPACE_ROOT;
-  const workspace =
-    workspaceRoot || !adminRoot || !appRoot
-      ? resolve(workspaceRoot ?? locateWorkspace(resolve(__dirname, '..')))
-      : undefined;
-  return {
-    adminRoot: resolve(adminRoot ?? join(workspace!, 'sacdia-admin')),
-    appRoot: resolve(appRoot ?? join(workspace!, 'sacdia-app')),
-    docsRoot: resolve(
-      roots.docsRoot ??
-        process.env.SACDIA_CANONICAL_DOCS_ROOT ??
-        workspace ??
-        locateWorkspace(resolve(__dirname, '..')),
-    ),
-  };
-}
-
-function environmentContractRefs(): ContractRefs | undefined {
-  const refs = {
-    adminRef: process.env.SACDIA_ADMIN_CONTRACT_REF,
-    appRef: process.env.SACDIA_APP_CONTRACT_REF,
-    docsRef: process.env.SACDIA_ROOT_CONTRACT_REF,
-  };
-  const noRefs = Object.values(refs).every((ref) => ref === undefined);
-  if (noRefs && process.env.ALLOW_AUTHORIZATION_P0_CROSS_REPO !== '1')
-    return undefined;
-  if (Object.values(refs).some((ref) => !ref))
-    throw new Error('CONSUMER_INVENTORY_REF_MISMATCH');
-  return refs as ContractRefs;
-}
-
-export function verifyConsumerRootRevisions(
-  roots: ResolvedConsumerRoots,
-  refs: ContractRefs | undefined = environmentContractRefs(),
-): void {
-  if (!refs) return;
-  try {
-    for (const [directory, expected] of [
-      [roots.adminRoot, refs.adminRef],
-      [roots.appRoot, refs.appRef],
-      [roots.docsRoot, refs.docsRef],
-    ] as const) {
-      if (!/^[0-9a-f]{40}$/.test(expected)) throw new Error();
-      const actual = execFileSync(
-        'git',
-        ['-C', directory, 'rev-parse', 'HEAD'],
-        {
-          encoding: 'utf8',
-        },
-      ).trim();
-      if (actual !== expected) throw new Error();
-    }
-  } catch {
-    throw new Error('CONSUMER_INVENTORY_REF_MISMATCH');
-  }
-}
-
-export function verifyCanonicalDocsContract(content: string): void {
-  if (CANONICAL_CONTRACT_PHRASES.some((phrase) => !content.includes(phrase)))
-    throw new Error('CONSUMER_CONTRACT_DRIFT');
-}
-
-export function discoverConsumerInventory(
-  roots: ResolvedConsumerRoots,
-): ConsumerInventory {
-  const required = [
-    join(roots.adminRoot, 'src'),
-    join(roots.appRoot, 'lib'),
-    join(roots.docsRoot, 'docs/api'),
-    join(roots.docsRoot, 'docs/features'),
-  ];
-  if (!required.every((directory) => existsSync(directory)))
-    throw new Error('CONSUMER_INVENTORY_UNAVAILABLE');
-  let adminConsumers: string[];
-  let documentationConsumers: string[];
-  let flutterConsumers: string[];
-  try {
-    adminConsumers = discoverConsumers(
-      required[0],
-      roots.adminRoot,
-      'sacdia-admin',
-    );
-    flutterConsumers = discoverConsumers(
-      required[1],
-      roots.appRoot,
-      'sacdia-app',
-    );
-    documentationConsumers = [
-      ...discoverConsumers(required[2], roots.docsRoot),
-      ...discoverConsumers(required[3], roots.docsRoot),
-    ].sort();
-  } catch {
-    throw new Error('CONSUMER_INVENTORY_UNAVAILABLE');
-  }
-  const discovered = [
-    ...adminConsumers,
-    ...flutterConsumers,
-    ...documentationConsumers,
-  ].sort();
-  if (
-    JSON.stringify(discovered) !==
-    JSON.stringify([...CONSUMER_INVENTORY].sort())
-  )
-    throw new Error('CONSUMER_INVENTORY_DRIFT');
-  return {
-    known_internal_consumers: CONSUMER_INVENTORY,
-    active_jsx_consumers: adminConsumers.filter((path) =>
-      /\.[jt]sx$/i.test(path),
-    ),
-    flutter_consumers: flutterConsumers,
-  };
-}
-
-export function inspectConsumerInventory(
-  unresolvedRoots: ConsumerRoots = {},
-): ConsumerInventory {
-  const roots = resolveConsumerRoots(unresolvedRoots);
-  verifyConsumerRootRevisions(roots);
-  return discoverConsumerInventory(roots);
-}
-
 function setting(name: string, fallback: number, maximum: number): number {
   const value = Number(process.env[name]);
   return Number.isInteger(value) && value > 0
@@ -236,7 +32,7 @@ function setting(name: string, fallback: number, maximum: number): number {
 
 function errorReport(diagnostic: string): Row {
   return {
-    report_version: 'authorization-director-succession-p0/v1',
+    report_version: 'authorization-director-succession-p0/v2',
     dry_run: true,
     status: 'error',
     error: { diagnostic },
@@ -413,7 +209,6 @@ export function classifyOperationalFailure(
 async function run(lifecycle: Lifecycle): Promise<Row> {
   const databaseUrl = process.env.AUTHORIZATION_P0_VERIFY_DATABASE_URL;
   if (!databaseUrl) throw new Error('MISSING_DATABASE_URL');
-  const consumerInventory = inspectConsumerInventory();
   let catalog: Catalog;
   try {
     catalog = loadCanonicalGeographicIanaTimezoneCatalog();
@@ -464,7 +259,7 @@ async function run(lifecycle: Lifecycle): Promise<Row> {
     const checks = finalizeChecks(raw, catalog, sampleLimit);
     const blockers = checks.filter((check) => check.total_count > 0);
     return {
-      report_version: 'authorization-director-succession-p0/v1',
+      report_version: 'authorization-director-succession-p0/v2',
       dry_run: true,
       status: blockers.length === 0 ? 'clean' : 'blocked',
       summary: {
@@ -477,11 +272,6 @@ async function run(lifecycle: Lifecycle): Promise<Row> {
       schema: raw.schema,
       timezone_catalog: catalog.metadata,
       checks,
-      consumer_inventory: {
-        source: 'sdd/authorization-and-director-succession-p0/design#11.2',
-        ...consumerInventory,
-        external_consumers_status: 'unknown',
-      },
     };
   } catch (error) {
     throw new Error(classifyOperationalFailure(error, lifecycle.connected), {
