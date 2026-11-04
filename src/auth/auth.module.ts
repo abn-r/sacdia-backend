@@ -8,7 +8,6 @@ import { AccountDeletionService } from './account-deletion.service';
 import { OAuthController } from './oauth.controller';
 import { OAuthService } from './oauth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { MfaController } from './mfa.controller';
 import { MfaGuard } from '../common/guards/mfa.guard';
 import { SessionsController } from './sessions.controller';
@@ -67,7 +66,13 @@ import { DeviceAuthController } from './device/device-auth.controller';
     AccountDeletionService,
     OAuthService,
     JwtStrategy,
-    AuthorizationContextService,
+    // AuthorizationContextService is NOT declared here on purpose: the single
+    // instance lives in the global CommonModule (which imports
+    // NotificationsModule, so its optional NotificationsService resolves and
+    // the per-user `authorization` push is emitted). A second instance in
+    // this module would never receive NotificationsService and would silently
+    // skip that push for AuthService.setActiveAssignment and for every
+    // module that imports AuthModule. See auth-module.wiring.spec.ts.
     MfaGuard,
     SessionsService,
     LoginFailureCounter,
@@ -78,7 +83,6 @@ import { DeviceAuthController } from './device/device-auth.controller';
     OAuthService,
     JwtStrategy,
     PassportModule,
-    AuthorizationContextService,
     MfaGuard,
     SessionsService,
   ],
