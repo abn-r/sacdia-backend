@@ -66,9 +66,11 @@ describe('authorization P0 preflight SQL loader', () => {
     const config = JSON.parse(
       readFileSync(join(root, 'nest-cli.json'), 'utf8'),
     );
+    // Nest CLI copies to `outDir` + the path relative to the project root
+    // (`prisma/scripts/...`), so `dist` yields `dist/prisma/scripts/...`.
     expect(config.compilerOptions.assets).toContainEqual({
       include: '../prisma/scripts/authorization-p0-preflight.sql',
-      outDir: 'dist/prisma/scripts',
+      outDir: 'dist',
     });
   });
 

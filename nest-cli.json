@@ -11,11 +11,11 @@
       },
       {
         "include": "common/timezone/iana-tzdb-2026b/*.gz",
-        "outDir": "dist/src"
+        "outDir": "dist"
       },
       {
         "include": "../prisma/scripts/authorization-p0-preflight.sql",
-        "outDir": "dist/prisma/scripts"
+        "outDir": "dist"
       }
     ],
     "plugins": [
