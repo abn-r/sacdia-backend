@@ -76,9 +76,13 @@ describe('canonical timezone catalog packaging', () => {
     const config = JSON.parse(
       readFileSync(join(root, 'nest-cli.json'), 'utf8'),
     ) as { compilerOptions: { assets: Array<Record<string, unknown>> } };
+    // Nest CLI copies an asset to `outDir` + its path relative to the project
+    // root (`src/common/timezone/...`), so `dist` yields
+    // `dist/src/common/timezone/iana-tzdb-2026b`, next to the compiled module.
+    // `dist/src` would nest it again under `dist/src/src/...`.
     expect(config.compilerOptions.assets).toContainEqual({
       include: 'common/timezone/iana-tzdb-2026b/*.gz',
-      outDir: 'dist/src',
+      outDir: 'dist',
     });
   });
 
