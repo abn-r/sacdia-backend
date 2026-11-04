@@ -17,16 +17,29 @@ import type {
   OperationsDashboardScopePathNode,
   ResolvedOperationsDashboardScope,
 } from './operations-dashboard.types';
+import { GlobalRole } from '../common/authorization/roles';
 
-const GLOBAL_ROLES = new Set(['super-admin']);
-const DIVISION_ROLES = new Set(['director-dia', 'assistant-dia']);
-const UNION_ROLES = new Set(['director-union', 'assistant-union']);
-const LOCAL_FIELD_ROLES = new Set(['director-lf', 'assistant-lf']);
-const ADMIN_SCOPE_ROLES = new Set(['admin', 'assistant-admin']);
+const GLOBAL_ROLES = new Set([GlobalRole.SUPER_ADMIN]);
+const DIVISION_ROLES = new Set([
+  GlobalRole.DIRECTOR_DIA,
+  GlobalRole.ASSISTANT_DIA,
+]);
+const UNION_ROLES = new Set([
+  GlobalRole.DIRECTOR_UNION,
+  GlobalRole.ASSISTANT_UNION,
+]);
+const LOCAL_FIELD_ROLES = new Set([
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+]);
+const ADMIN_SCOPE_ROLES = new Set([
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+]);
 const COORDINATOR_ROLES = new Set([
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
+  GlobalRole.COORDINATOR,
+  GlobalRole.ZONE_COORDINATOR,
+  GlobalRole.GENERAL_COORDINATOR,
 ]);
 const COORDINATOR_SCOPE_NAME = 'Secciones asignadas';
 

@@ -14,6 +14,7 @@ import { GlobalRoles, Public } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import { SkipAllThrottlerTiers } from '../config/throttler.helpers';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('health')
 @Controller('health')
@@ -49,7 +50,7 @@ export class HealthController {
 
   @Get('details')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @SkipPermissions()
   @ApiBearerAuth()
   @ApiOperation({

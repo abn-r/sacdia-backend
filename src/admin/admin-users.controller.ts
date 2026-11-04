@@ -55,6 +55,7 @@ import {
 import { GuardianEvidenceService } from '../guardianships/guardian-evidence.service';
 import { AdminFamilyAccessService } from './admin-family-access.service';
 import { AdminUsersService, type BulkUsersResult } from './admin-users.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 const BULK_ALLOWED_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -74,21 +75,21 @@ const BULK_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
  * `@GlobalRoles('admin', 'super-admin')` on the methods where applied.
  */
 export const USER_MANAGEMENT_ROLES: readonly GlobalRoleType[] = [
-  'admin',
-  'super-admin',
-  'director-lf',
-  'assistant-lf',
-  'director-union',
-  'assistant-union',
-  'director-dia',
-  'assistant-dia',
+  GlobalRole.ADMIN,
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+  GlobalRole.DIRECTOR_UNION,
+  GlobalRole.ASSISTANT_UNION,
+  GlobalRole.DIRECTOR_DIA,
+  GlobalRole.ASSISTANT_DIA,
 ] as const;
 
 @ApiTags('admin-users')
 @ApiBearerAuth()
 @ApiExtraModels(AdminCurrentOperationalEnrollmentDto, AdminTrajectoryClassDto)
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminUsersController {

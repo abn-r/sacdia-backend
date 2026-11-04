@@ -30,6 +30,7 @@ import {
 import { QR_MEMBER_AUDIENCE } from '../common/constants/jwt-audiences';
 import type { QrMemberTokenDto } from './dto/qr-token.dto';
 import type { ScanResponseDto } from './dto/scan-qr.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 const QR_MEMBER_VERSION = 1;
 const QR_MEMBER_TTL_SECONDS = 24 * 60 * 60;
@@ -37,11 +38,15 @@ const QR_PRIVATE_ASSET_TTL_SECONDS = 300;
 const QR_CARD_TITLE = 'SACDIA';
 const QR_CARD_SUBTITLE = 'Credencial virtual';
 
-const ADMIN_SCOPE_ROLES = new Set(['admin', 'super-admin', 'assistant-admin']);
+const ADMIN_SCOPE_ROLES = new Set([
+  GlobalRole.ADMIN,
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+]);
 const COORDINATOR_SCOPE_ROLES = [
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
+  GlobalRole.COORDINATOR,
+  GlobalRole.ZONE_COORDINATOR,
+  GlobalRole.GENERAL_COORDINATOR,
 ];
 
 type QrMemberPayload = {

@@ -36,6 +36,7 @@ import {
   AdminSessionListResponseDto,
   AdminSetPasswordDto,
 } from './dto/admin-auth.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 /**
  * AdminAuthController — Admin-scoped session, MFA, and password management.
@@ -47,7 +48,7 @@ import {
 @ApiTags('admin-auth')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @AuthorizationResource({ type: 'global' })
 @Controller('admin/users/:userId')
 export class AdminAuthController {

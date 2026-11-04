@@ -33,11 +33,12 @@ import {
   ReorderRequirementsDto,
   UpdateRequirementDto,
 } from '../honors/dto/honor-requirements.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('Admin - Honors Requirements')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @AuthorizationResource({ type: 'global' })
 @Controller('admin/honors')
 export class AdminHonorsController {

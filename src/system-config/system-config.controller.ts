@@ -13,6 +13,7 @@ import { GlobalRoles } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { UpdateSystemConfigDto } from './dto/update-system-config.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('system-config')
 @Controller('system-config')
@@ -27,7 +28,7 @@ export class SystemConfigController {
   // ========================================
 
   @Get()
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Listar todas las configuraciones del sistema',
     description:
@@ -51,7 +52,7 @@ export class SystemConfigController {
   // ========================================
 
   @Get(':key')
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Obtener una configuracion por clave',
     description:
@@ -79,7 +80,7 @@ export class SystemConfigController {
   // ========================================
 
   @Patch(':key')
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Actualizar una configuracion del sistema',
     description:

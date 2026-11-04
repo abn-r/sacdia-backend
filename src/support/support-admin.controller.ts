@@ -25,6 +25,7 @@ import {
 import { QuerySupportReportsDto } from './dto/query-support-reports.dto';
 import { UpdateSupportReportStatusDto } from './dto/update-support-report-status.dto';
 import { SupportService } from './support.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('admin-support')
 @ApiBearerAuth()
@@ -35,7 +36,7 @@ export class SupportAdminController {
   constructor(private readonly supportService: SupportService) {}
 
   @Get('reports')
-  @GlobalRoles('admin', 'coordinator')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.COORDINATOR)
   @ApiOperation({
     summary: 'Listar reportes de soporte',
     description:
@@ -51,7 +52,7 @@ export class SupportAdminController {
   }
 
   @Get('reports/:reportId')
-  @GlobalRoles('admin', 'coordinator')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.COORDINATOR)
   @ApiOperation({ summary: 'Obtener detalle de un reporte de soporte' })
   @ApiParam({ name: 'reportId', description: 'UUID del reporte' })
   @ApiOkResponse({ type: AdminSupportReportDto })
@@ -64,7 +65,7 @@ export class SupportAdminController {
   }
 
   @Patch('reports/:reportId/status')
-  @GlobalRoles('admin', 'coordinator')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.COORDINATOR)
   @ApiOperation({ summary: 'Actualizar estado de un reporte de soporte' })
   @ApiParam({ name: 'reportId', description: 'UUID del reporte' })
   @ApiOkResponse({ type: AdminSupportReportDto })

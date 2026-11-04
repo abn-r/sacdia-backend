@@ -40,6 +40,7 @@ import {
   OperationsDashboardQueryDto,
 } from './dto/operations-dashboard.dto';
 import { OperationsDashboardService } from './operations-dashboard.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('analytics')
 @ApiBearerAuth()
@@ -59,7 +60,7 @@ export class AnalyticsController {
   ) {}
 
   @Get('sla-dashboard')
-  @GlobalRoles('admin', 'coordinator')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.COORDINATOR)
   @ApiOperation({
     summary: 'SLA Dashboard',
     description:
@@ -90,15 +91,15 @@ export class AnalyticsController {
 
   @Get('local-field-dashboard')
   @GlobalRoles(
-    'admin',
-    'super-admin',
-    'coordinator',
-    'director-lf',
-    'assistant-lf',
-    'director-union',
-    'assistant-union',
-    'director-dia',
-    'assistant-dia',
+    GlobalRole.ADMIN,
+    GlobalRole.SUPER_ADMIN,
+    GlobalRole.COORDINATOR,
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
+    GlobalRole.DIRECTOR_UNION,
+    GlobalRole.ASSISTANT_UNION,
+    GlobalRole.DIRECTOR_DIA,
+    GlobalRole.ASSISTANT_DIA,
   )
   @ApiOperation({
     summary: 'Dashboard operativo del campo local',
@@ -126,17 +127,17 @@ export class AnalyticsController {
 
   @Get('operations-dashboard')
   @GlobalRoles(
-    'admin',
-    'super-admin',
-    'director-dia',
-    'assistant-dia',
-    'director-union',
-    'assistant-union',
-    'director-lf',
-    'assistant-lf',
-    'coordinator',
-    'zone-coordinator',
-    'general-coordinator',
+    GlobalRole.ADMIN,
+    GlobalRole.SUPER_ADMIN,
+    GlobalRole.DIRECTOR_DIA,
+    GlobalRole.ASSISTANT_DIA,
+    GlobalRole.DIRECTOR_UNION,
+    GlobalRole.ASSISTANT_UNION,
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
+    GlobalRole.COORDINATOR,
+    GlobalRole.ZONE_COORDINATOR,
+    GlobalRole.GENERAL_COORDINATOR,
   )
   @ApiOperation({
     summary: 'Dashboard operativo jerárquico',
@@ -167,7 +168,7 @@ export class AnalyticsController {
   }
 
   @Get('jobs-overview')
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Overview de jobs y colas BullMQ (admin only)',
     description:
@@ -195,7 +196,7 @@ export class AnalyticsController {
   }
 
   @Post('jobs/:queue/:jobId/retry')
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Retry failed BullMQ job (super-admin only)' })
   @ApiParam({ name: 'queue', description: 'Queue name' })
   @ApiParam({ name: 'jobId', description: 'Job ID' })
@@ -211,7 +212,7 @@ export class AnalyticsController {
   }
 
   @Get('queues/:queueName/health')
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Queue health snapshot (admin only)',
     description:
@@ -257,7 +258,7 @@ export class AnalyticsController {
   }
 
   @Get('cron-runs')
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Resumen de ejecuciones de cron jobs (admin only)' })
   @ApiOkResponse({
     description: 'Cron runs summary',
@@ -274,7 +275,7 @@ export class AnalyticsController {
   }
 
   @Get('cron-runs/history')
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Historial paginado de cron runs con filtros' })
   @ApiQuery({ name: 'job_name', required: false })
   @ApiQuery({

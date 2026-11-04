@@ -28,11 +28,12 @@ import {
 } from '../common/guards';
 import { AdminCamporeeEventTypesService } from './admin-camporee-event-types.service';
 import { CreateCamporeeEventTypeDto, UpdateCamporeeEventTypeDto } from './dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('admin-camporee-event-types')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminCamporeeEventTypesController {

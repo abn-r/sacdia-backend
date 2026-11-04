@@ -47,6 +47,7 @@ import {
   UpdateLocalFieldDto,
   UpdateUnionDto,
 } from './dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('admin-geography')
 @ApiBearerAuth()
@@ -55,7 +56,7 @@ import {
   CreateLocalFieldInactiveOpenApiDto,
 )
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminGeographyController {

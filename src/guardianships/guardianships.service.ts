@@ -41,6 +41,7 @@ import type {
   DependentGuardianEntry,
   DependentSummary,
 } from './guardianships.types';
+import { GlobalRole } from '../common/authorization/roles';
 
 const SUMMARY_SELECT = {
   guardianship_id: true,
@@ -240,7 +241,7 @@ export class GuardianshipsService {
       }
 
       const userRole = await tx.roles.findFirst({
-        where: { role_name: 'user', role_category: 'GLOBAL' },
+        where: { role_name: GlobalRole.USER, role_category: 'GLOBAL' },
         select: { role_id: true },
       });
       if (!userRole) {

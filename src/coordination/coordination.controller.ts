@@ -46,6 +46,7 @@ import {
   UpdateCoordinationZoneDto,
   UpdateCoordinatorAssignmentDto,
 } from './dto';
+import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
 type AuthenticatedRequest = Request & { user: { sub: string } };
 
@@ -60,14 +61,14 @@ type AuthorizedRequest = AuthenticatedRequest & {
 @RequirePermissions('coordination:manage')
 @AuthorizationResource({ type: 'global' })
 @GlobalRoles(
-  'admin',
-  'super-admin',
-  'director-lf',
-  'assistant-lf',
-  'director-union',
-  'assistant-union',
-  'director-dia',
-  'assistant-dia',
+  GlobalRole.ADMIN,
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+  GlobalRole.DIRECTOR_UNION,
+  GlobalRole.ASSISTANT_UNION,
+  GlobalRole.DIRECTOR_DIA,
+  GlobalRole.ASSISTANT_DIA,
 )
 @Controller('admin/coordination')
 export class AdminCoordinationController {
@@ -291,7 +292,7 @@ export class CoordinationController {
               },
               roles: {
                 role_id: 'c4d2e8f1-5a6b-4c7d-9e0f-1a2b3c4d5e6f',
-                role_name: 'member',
+                role_name: ClubRole.MEMBER,
               },
               consent: {
                 required: true,

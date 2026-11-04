@@ -49,11 +49,12 @@ import {
   UpdateMedicineDto,
   UpdateRelationshipTypeDto,
 } from './dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('admin-reference')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminReferenceController {
@@ -304,7 +305,7 @@ export class AdminReferenceController {
   }
 
   @Post('club-ideals')
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('catalogs:create')
   @ApiOperation({ summary: 'Create club ideal (super-admin only)' })
   async createClubIdeal(
@@ -337,7 +338,7 @@ export class AdminReferenceController {
   }
 
   @Delete('club-ideals/:clubIdealId')
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('catalogs:delete')
   @ApiOperation({ summary: 'Soft delete club ideal (super-admin only)' })
   async deleteClubIdeal(
@@ -364,7 +365,7 @@ export class AdminReferenceController {
   }
 
   @Post('club-types')
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('catalogs:create')
   @ApiOperation({ summary: 'Create club type (super-admin only)' })
   async createClubType(
@@ -397,7 +398,7 @@ export class AdminReferenceController {
   }
 
   @Delete('club-types/:clubTypeId')
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('catalogs:delete')
   @ApiOperation({ summary: 'Soft delete club type (super-admin only)' })
   async deleteClubType(
@@ -532,7 +533,7 @@ export class AdminReferenceController {
   }
 
   @Post('ecclesiastical-years')
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('ecclesiastical_years:create')
   @ApiOperation({ summary: 'Create ecclesiastical year' })
   async createEcclesiasticalYear(
@@ -563,7 +564,7 @@ export class AdminReferenceController {
   }
 
   @Delete('ecclesiastical-years/:yearId')
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('ecclesiastical_years:delete')
   @ApiOperation({ summary: 'Soft delete ecclesiastical year' })
   async deleteEcclesiasticalYear(

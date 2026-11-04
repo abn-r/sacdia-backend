@@ -91,11 +91,12 @@ import {
   UpdateClassHonorDto,
   CreateClassPrerequisiteDto,
 } from './dto/phase-e-catalogs.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('Admin - Phase E Catalogs (i18n)')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminPhaseECatalogsController {
@@ -287,7 +288,9 @@ export class AdminPhaseECatalogsController {
 
   @Post('classes/:classId/prerequisites')
   @RequirePermissions('catalogs:create')
-  @ApiOperation({ summary: 'Create a class prerequisite with cycle validation' })
+  @ApiOperation({
+    summary: 'Create a class prerequisite with cycle validation',
+  })
   async createClassPrerequisite(
     @Param('classId', ParseIntPipe) classId: number,
     @Body() dto: CreateClassPrerequisiteDto,

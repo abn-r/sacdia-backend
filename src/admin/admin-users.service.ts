@@ -55,6 +55,7 @@ import {
 } from './mappers/formative-read-model.mapper';
 import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
 import { REVOKED_DEVICE_HISTORY_MS } from '../guardianships/guardianships.constants';
+import { GlobalRole } from '../common/authorization/roles';
 
 // ── Bulk upload types ────────────────────────────────────────────────────────
 export type BulkUserRowResult = {
@@ -863,47 +864,47 @@ export class AdminUsersService {
   //     self-assign or grow its own tier.
   // T5 (base) = user, coordinator, zone-coordinator, general-coordinator, pastor
   private static readonly BASE_T5_ROLES: ReadonlyArray<string> = [
-    'user',
-    'coordinator',
-    'zone-coordinator',
-    'general-coordinator',
-    'pastor',
+    GlobalRole.USER,
+    GlobalRole.COORDINATOR,
+    GlobalRole.ZONE_COORDINATOR,
+    GlobalRole.GENERAL_COORDINATOR,
+    GlobalRole.PASTOR,
   ];
   private static readonly LF_ROLES: ReadonlyArray<string> = [
-    'assistant-lf',
-    'director-lf',
+    GlobalRole.ASSISTANT_LF,
+    GlobalRole.DIRECTOR_LF,
   ];
   private static readonly UNION_ROLES: ReadonlyArray<string> = [
-    'assistant-union',
-    'director-union',
+    GlobalRole.ASSISTANT_UNION,
+    GlobalRole.DIRECTOR_UNION,
   ];
   private static readonly DIA_ROLES: ReadonlyArray<string> = [
-    'assistant-dia',
-    'director-dia',
+    GlobalRole.ASSISTANT_DIA,
+    GlobalRole.DIRECTOR_DIA,
   ];
   private static readonly DIVISION_SCOPE_ROLES: ReadonlyArray<string> = [
-    'director-dia',
-    'assistant-dia',
+    GlobalRole.DIRECTOR_DIA,
+    GlobalRole.ASSISTANT_DIA,
   ];
   private static readonly UNION_SCOPE_ROLES: ReadonlyArray<string> = [
-    'director-union',
-    'assistant-union',
+    GlobalRole.DIRECTOR_UNION,
+    GlobalRole.ASSISTANT_UNION,
   ];
   private static readonly LOCAL_FIELD_SCOPE_ROLES: ReadonlyArray<string> = [
-    'director-lf',
-    'assistant-lf',
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
   ];
   private static readonly ADMIN_SCOPE_ROLES: ReadonlyArray<string> = [
-    'admin',
-    'assistant-admin',
+    GlobalRole.ADMIN,
+    GlobalRole.ASSISTANT_ADMIN,
   ];
   private static readonly COORDINATOR_SCOPE_ROLES: ReadonlyArray<string> = [
-    'coordinator',
-    'zone-coordinator',
-    'general-coordinator',
+    GlobalRole.COORDINATOR,
+    GlobalRole.ZONE_COORDINATOR,
+    GlobalRole.GENERAL_COORDINATOR,
   ];
   private static readonly PASTOR_SCOPE_ROLES: ReadonlyArray<string> = [
-    'pastor',
+    GlobalRole.PASTOR,
   ];
 
   private static readonly ROLE_HIERARCHY: ReadonlyArray<{
@@ -1961,19 +1962,19 @@ export class AdminUsersService {
       'local_field_id',
     ] as const;
 
-    const VALID_ROLES = new Set([
-      'user',
-      'coordinator',
-      'zone-coordinator',
-      'general-coordinator',
-      'pastor',
-      'assistant-lf',
-      'director-lf',
-      'assistant-union',
-      'director-union',
-      'assistant-dia',
-      'director-dia',
-      'admin',
+    const VALID_ROLES = new Set<string>([
+      GlobalRole.USER,
+      GlobalRole.COORDINATOR,
+      GlobalRole.ZONE_COORDINATOR,
+      GlobalRole.GENERAL_COORDINATOR,
+      GlobalRole.PASTOR,
+      GlobalRole.ASSISTANT_LF,
+      GlobalRole.DIRECTOR_LF,
+      GlobalRole.ASSISTANT_UNION,
+      GlobalRole.DIRECTOR_UNION,
+      GlobalRole.ASSISTANT_DIA,
+      GlobalRole.DIRECTOR_DIA,
+      GlobalRole.ADMIN,
     ]);
 
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

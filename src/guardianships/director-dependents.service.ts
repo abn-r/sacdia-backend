@@ -25,13 +25,14 @@ import { LegalService } from '../legal/legal.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateDirectorDependentDto } from './dto';
+import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
 /** Who sees the new request. The creator is never told about their own action. */
 const REVIEWER_ROLES = [
-  'director',
-  'deputy-director',
-  'secretary',
-  'secretary-treasurer',
+  ClubRole.DIRECTOR,
+  ClubRole.DEPUTY_DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
 ] as const;
 
 /** Same stored base timeout post-registration gives a pending request. */
@@ -221,7 +222,7 @@ export class DirectorDependentsService {
     }
 
     const memberRole = await tx.roles.findFirst({
-      where: { role_name: 'member', role_category: 'CLUB' },
+      where: { role_name: ClubRole.MEMBER, role_category: 'CLUB' },
       select: { role_id: true },
     });
     if (!memberRole) {
@@ -230,7 +231,7 @@ export class DirectorDependentsService {
       );
     }
     const userRole = await tx.roles.findFirst({
-      where: { role_name: 'user', role_category: 'GLOBAL' },
+      where: { role_name: GlobalRole.USER, role_category: 'GLOBAL' },
       select: { role_id: true },
     });
     if (!userRole) {
