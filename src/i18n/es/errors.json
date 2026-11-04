@@ -517,6 +517,7 @@
   "CLUB_DIRECTOR_PLAN_NOT_FOUND": "No hay una programación de director para esta sección y año",
   "CLUB_DIRECTOR_PLAN_IDEMPOTENCY_REQUIRED": "La preelección de director requiere el encabezado Idempotency-Key",
   "CLUB_DIRECTOR_PLAN_YEAR_INVALID": "El año de preelección debe ser posterior al cierre del año eclesiástico vigente",
+  "CLUB_DIRECTOR_PLAN_WINDOW_CLOSED": "Los planes de sucesión de director solo se pueden programar entre octubre y diciembre",
   "CLUB_DIRECTOR_DESIGNATED_UNRECONCILED": "Esta asignación de director designado no está reconciliada; no se puede activar ni modificar",
   "POST_REG_NOT_INITIATED": "El post-registro no ha sido iniciado",
   "POST_REG_PHOTO_REQUIRED": "Debe subir una foto de perfil antes de completar este paso",

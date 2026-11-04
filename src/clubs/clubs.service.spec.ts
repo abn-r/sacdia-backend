@@ -1904,6 +1904,9 @@ describe('ClubsService', () => {
             active: true,
             status: 'active',
             ecclesiastical_year_id: overrideCurrentYearId,
+            start_date: new Date('2026-01-01T00:00:00.000Z'),
+            end_date: null,
+            expires_at: null,
             roles: { role_name: 'director' },
           }),
           count: jest.fn().mockResolvedValue(0),
@@ -1916,6 +1919,13 @@ describe('ClubsService', () => {
             assignment_id: newAssignmentId,
             user_id: successorUserId,
             club_section_id: 7,
+            active: true,
+            status: 'active',
+            start_date: new Date('2026-10-01T00:00:00.000Z'),
+            end_date: null,
+            expires_at: null,
+            ecclesiastical_year_id: 2026,
+            roles: { role_name: 'director' },
           }),
         },
       };
@@ -1974,18 +1984,64 @@ describe('ClubsService', () => {
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(successorUserId);
-      expect(
-        mockAuthorizationContextService.hasAnyGlobalRole,
-      ).toHaveBeenCalledWith(actorUserId, [
-        'super-admin',
-        'admin',
-        'director-lf',
-        'assistant-lf',
-      ]);
+      expect(mockSectionRoleMutation.assertCanMutate).toHaveBeenCalledWith({
+        actorUserId,
+        clubSectionId: 7,
+        targetRoleName: 'director',
+        targetUserId: successorUserId,
+        mutation: 'update',
+      });
+      expect(mockCriticalAudit.write).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          action: 'DIRECTOR_SUCCEEDED',
+          entityType: 'club_role_assignment',
+          entityId: newAssignmentId,
+          actor: expect.objectContaining({ kind: 'user', userId: actorUserId }),
+          target: expect.objectContaining({ userId: successorUserId }),
+          before: expect.objectContaining({
+            role_name: 'director',
+            active: true,
+            status: 'active',
+          }),
+          after: expect.objectContaining({
+            role_name: 'director',
+            active: true,
+            start_date: '2026-10-01T00:00:00.000Z',
+          }),
+        }),
+      );
     });
 
-    it('rejects actors without director succession roles before mutating data', async () => {
-      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
+    it('propagates an audit writer failure so the succession rolls back', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: directorRoleId,
+      });
+      mockSuccessionTransaction();
+      mockCriticalAudit.write.mockRejectedValue(new Error('audit unavailable'));
+
+      await expect(
+        service.succeedSectionDirector(7, actorUserId, {
+          current_assignment_id: currentAssignmentId,
+          successor_user_id: successorUserId,
+          ecclesiastical_year_id: 2026,
+        }),
+      ).rejects.toThrow('audit unavailable');
+      expect(
+        mockAuthorizationContextService.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rejects a union-level actor (CLUB_ROLE_MUTATION_FORBIDDEN) before mutating data', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      mockSectionRoleMutation.assertCanMutate.mockRejectedValue(
+        new AppForbiddenException(ErrorCode.CLUB_ROLE_MUTATION_FORBIDDEN),
+      );
 
       await expect(
         service.succeedSectionDirector(7, actorUserId, {
@@ -1994,7 +2050,7 @@ describe('ClubsService', () => {
           ecclesiastical_year_id: 2026,
         }),
       ).rejects.toMatchObject({
-        code: ErrorCode.GUARD_PERMISSION_DENIED,
+        code: ErrorCode.CLUB_ROLE_MUTATION_FORBIDDEN,
       });
 
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
@@ -3298,6 +3354,9 @@ describe('ClubsService', () => {
               active: true,
               status: 'active',
               ecclesiastical_year_id: 2026,
+              start_date: new Date('2026-01-01T00:00:00.000Z'),
+              end_date: null,
+              expires_at: null,
               roles: { role_name: 'director' },
             }),
             count: jest.fn().mockResolvedValue(0),
@@ -3310,6 +3369,13 @@ describe('ClubsService', () => {
               assignment_id: 'new',
               user_id: dependentId,
               club_section_id: 7,
+              active: true,
+              status: 'active',
+              start_date: new Date('2026-10-01T00:00:00.000Z'),
+              end_date: null,
+              expires_at: null,
+              ecclesiastical_year_id: 2026,
+              roles: { role_name: 'director' },
             }),
           },
         };

@@ -1,9 +1,12 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
+import {
+  ECCLESIASTICAL_YEAR_TIMEZONE,
+  EcclesiasticalYearService,
+} from '../common/services/ecclesiastical-year.service';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -11,17 +14,38 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { SectionRoleMutationPolicy } from '../common/authorization/section-role-mutation.policy';
+import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { classifyLocalFieldTimezone } from '../common/validators/iana-timezone.validator';
+import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
+import { CriticalAuditWriterService } from '../audit-logs/critical-audit-writer.service';
+import type {
+  AuditJson,
+  CriticalAuditEvent,
+} from '../audit-logs/critical-audit-writer.service';
+import { getAuditCorrelationId } from '../audit-logs/audit-request-context';
 import {
   DirectorDesignationDto,
   ReplaceDirectorPlanDto,
 } from './dto/role-assignment.dto';
 
-const ALLOWED_DESIGNATION_ROLES = [
+/** Global roles that can schedule a director plan; the first match is stored as `scheduled_by_role`. */
+const SCHEDULER_ROLE_NAMES = [
   'super-admin',
   'admin',
   'director-lf',
   'assistant-lf',
 ] as const;
+
+/**
+ * Calendar months (business date of the club's local field, inclusive) in
+ * which a new director plan can be scheduled.
+ */
+export const DIRECTOR_DESIGNATION_WINDOW = {
+  fromMonth: 10,
+  toMonth: 12,
+} as const;
 
 const OPEN_PLAN_STATUSES = ['scheduled', 'activated', 'blocked'] as const;
 
@@ -33,6 +57,9 @@ export type DirectorPlanView = {
   status: string;
   version: number;
   outgoing_assignment_id: string | null;
+  attempt_count: number;
+  last_attempt_at: Date | null;
+  block_code: string | null;
 };
 
 export type UnreconciledDesignatedRow = {
@@ -64,18 +91,30 @@ export function hashDirectorDesignationRequest(input: {
 type SectionScope = {
   clubId: number;
   localFieldId: number;
+  now: Date;
+  businessMonth: number;
+  temporal: NonNullable<CriticalAuditEvent['temporal']>;
 };
 
 type PlanRow = {
   succession_id: string;
+  club_section_id?: number;
   successor_user_id: string;
   target_ecclesiastical_year_id: number;
   effective_date: Date;
   status: string;
   version: number;
   outgoing_assignment_id: string | null;
+  attempt_count?: number;
+  last_attempt_at?: Date | null;
+  block_code?: string | null;
   request_hash?: string;
 };
+
+type PlanAuditAction =
+  | 'DIRECTOR_SUCCESSION_SCHEDULED'
+  | 'DIRECTOR_SUCCESSION_REPLACED'
+  | 'DIRECTOR_SUCCESSION_CANCELLED';
 
 @Injectable()
 export class DirectorDesignationService {
@@ -83,6 +122,10 @@ export class DirectorDesignationService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly ecclesiasticalYear: EcclesiasticalYearService,
+    private readonly sectionRoleMutation: SectionRoleMutationPolicy,
+    private readonly roleEligibility: ClubRoleEligibilityService,
+    private readonly criticalAudit: CriticalAuditWriterService,
+    private readonly temporalContexts: TemporalContextFactory,
   ) {}
 
   async designate(
@@ -99,12 +142,32 @@ export class DirectorDesignationService {
       );
     }
 
-    const scope = await this.assertCanDesignateDirector(
+    const scope = await this.resolveSectionScope(clubId, sectionId);
+    await this.sectionRoleMutation.assertCanMutate({
       actorUserId,
-      clubId,
-      sectionId,
-    );
-    const requestedYear = await this.requireFutureYear(dto.ecclesiastical_year_id);
+      clubSectionId: sectionId,
+      targetRoleName: 'director',
+      targetUserId: dto.user_id,
+      mutation: 'assign',
+    });
+
+    const currentYear = await this.ecclesiasticalYear.getCurrentYear();
+    const requestedYear =
+      await this.ecclesiasticalYear.getNextYear(currentYear);
+    if (dto.ecclesiastical_year_id !== requestedYear.year_id) {
+      throw new AppBadRequestException(
+        ErrorCode.CLUB_DIRECTOR_PLAN_YEAR_INVALID,
+      );
+    }
+    if (
+      scope.businessMonth < DIRECTOR_DESIGNATION_WINDOW.fromMonth ||
+      scope.businessMonth > DIRECTOR_DESIGNATION_WINDOW.toMonth
+    ) {
+      throw new AppForbiddenException(
+        ErrorCode.CLUB_DIRECTOR_PLAN_WINDOW_CLOSED,
+      );
+    }
+
     const schedulerRole = await this.resolveSchedulerRole(actorUserId);
     const directorRoleId = await this.resolveDirectorRoleId();
     const requestHash = hashDirectorDesignationRequest({
@@ -113,7 +176,6 @@ export class DirectorDesignationService {
       userId: dto.user_id,
       ecclesiasticalYearId: dto.ecclesiastical_year_id,
     });
-    const currentYear = await this.ecclesiasticalYear.getCurrentYear();
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -145,6 +207,8 @@ export class DirectorDesignationService {
           throw new AppConflictException(ErrorCode.CLUB_DIRECTOR_PLAN_CONFLICT);
         }
 
+        await this.assertSuccessorEligible(tx, dto.user_id, sectionId);
+
         const outgoing = await tx.club_role_assignments.findFirst({
           where: {
             club_section_id: sectionId,
@@ -172,10 +236,33 @@ export class DirectorDesignationService {
           },
         });
 
+        await this.criticalAudit.write(
+          tx,
+          this.buildPlanEvent({
+            action: 'DIRECTOR_SUCCESSION_SCHEDULED',
+            eventKey: `director-succession:scheduled:${actorUserId}:${normalizedKey}`,
+            actorUserId,
+            actorRoleName: schedulerRole,
+            scope,
+            sectionId,
+            targetUserId: dto.user_id,
+            entityId: created.succession_id,
+            before: {},
+            after: this.planSnapshot({
+              ...created,
+              club_section_id: sectionId,
+            }),
+            idempotencyKey: normalizedKey,
+            summary: `Sucesión de director programada para la sección ${sectionId}`,
+          }),
+        );
+
         return this.mapPlan(created);
       });
     } catch (error) {
-      if (this.isUniqueViolation(error, ['scheduled_by_id', 'idempotency_key'])) {
+      if (
+        this.isUniqueViolation(error, ['scheduled_by_id', 'idempotency_key'])
+      ) {
         const replay = await this.prisma.director_succession_plans.findUnique({
           where: {
             scheduled_by_id_idempotency_key: {
@@ -207,7 +294,17 @@ export class DirectorDesignationService {
     yearId: number,
     actorUserId: string,
   ): Promise<DirectorPlanView | null> {
-    await this.assertCanDesignateDirector(actorUserId, clubId, sectionId);
+    await this.resolveSectionScope(clubId, sectionId);
+    // Reading a plan needs the same authority as managing it. With the actor
+    // as target, a section director (who cannot touch the director seat) is
+    // rejected while admins and the same-field director-lf / assistant-lf pass.
+    await this.sectionRoleMutation.assertCanMutate({
+      actorUserId,
+      clubSectionId: sectionId,
+      targetRoleName: 'director',
+      targetUserId: actorUserId,
+      mutation: 'update',
+    });
 
     const plan = await this.prisma.director_succession_plans.findFirst({
       where: {
@@ -226,7 +323,14 @@ export class DirectorDesignationService {
     dto: ReplaceDirectorPlanDto,
     actorUserId: string,
   ): Promise<DirectorPlanView> {
-    await this.assertCanDesignateDirector(actorUserId, clubId, sectionId);
+    const scope = await this.resolveSectionScope(clubId, sectionId);
+    await this.sectionRoleMutation.assertCanMutate({
+      actorUserId,
+      clubSectionId: sectionId,
+      targetRoleName: 'director',
+      targetUserId: dto.successor_user_id,
+      mutation: 'update',
+    });
 
     const existing = await this.prisma.director_succession_plans.findFirst({
       where: {
@@ -246,16 +350,39 @@ export class DirectorDesignationService {
       );
     }
 
-    const updated = await this.prisma.director_succession_plans.update({
-      where: { succession_id: dto.succession_id },
-      data: {
-        successor_user_id: dto.successor_user_id,
-        version: existing.version + 1,
-        modified_at: new Date(),
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      await this.assertSuccessorEligible(tx, dto.successor_user_id, sectionId);
 
-    return this.mapPlan(updated);
+      const updated = await tx.director_succession_plans.update({
+        where: { succession_id: dto.succession_id },
+        data: {
+          successor_user_id: dto.successor_user_id,
+          version: existing.version + 1,
+          modified_at: new Date(),
+        },
+      });
+
+      await this.criticalAudit.write(
+        tx,
+        this.buildPlanEvent({
+          action: 'DIRECTOR_SUCCESSION_REPLACED',
+          eventKey: `director-succession:replaced:${existing.succession_id}:v${existing.version + 1}`,
+          actorUserId,
+          scope,
+          sectionId,
+          targetUserId: dto.successor_user_id,
+          entityId: existing.succession_id,
+          before: this.planSnapshot({
+            ...existing,
+            club_section_id: sectionId,
+          }),
+          after: this.planSnapshot({ ...updated, club_section_id: sectionId }),
+          summary: `Sucesión de director reemplazada en la sección ${sectionId}`,
+        }),
+      );
+
+      return this.mapPlan(updated);
+    });
   }
 
   async cancelPlan(
@@ -265,7 +392,7 @@ export class DirectorDesignationService {
     version: number,
     actorUserId: string,
   ): Promise<DirectorPlanView> {
-    await this.assertCanDesignateDirector(actorUserId, clubId, sectionId);
+    const scope = await this.resolveSectionScope(clubId, sectionId);
 
     const existing = await this.prisma.director_succession_plans.findFirst({
       where: {
@@ -279,22 +406,51 @@ export class DirectorDesignationService {
       throw new AppNotFoundException(ErrorCode.CLUB_DIRECTOR_PLAN_NOT_FOUND);
     }
 
+    await this.sectionRoleMutation.assertCanMutate({
+      actorUserId,
+      clubSectionId: sectionId,
+      targetRoleName: 'director',
+      targetUserId: existing.successor_user_id,
+      mutation: 'revoke',
+    });
+
     if (existing.version !== version) {
       throw new AppConflictException(
         ErrorCode.CLUB_DIRECTOR_PLAN_VERSION_CONFLICT,
       );
     }
 
-    const updated = await this.prisma.director_succession_plans.update({
-      where: { succession_id: successionId },
-      data: {
-        status: 'cancelled',
-        version: existing.version + 1,
-        modified_at: new Date(),
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.director_succession_plans.update({
+        where: { succession_id: successionId },
+        data: {
+          status: 'cancelled',
+          version: existing.version + 1,
+          modified_at: new Date(),
+        },
+      });
 
-    return this.mapPlan(updated);
+      await this.criticalAudit.write(
+        tx,
+        this.buildPlanEvent({
+          action: 'DIRECTOR_SUCCESSION_CANCELLED',
+          eventKey: `director-succession:cancelled:${existing.succession_id}:v${existing.version + 1}`,
+          actorUserId,
+          scope,
+          sectionId,
+          targetUserId: existing.successor_user_id,
+          entityId: existing.succession_id,
+          before: this.planSnapshot({
+            ...existing,
+            club_section_id: sectionId,
+          }),
+          after: this.planSnapshot({ ...updated, club_section_id: sectionId }),
+          summary: `Sucesión de director cancelada en la sección ${sectionId}`,
+        }),
+      );
+
+      return this.mapPlan(updated);
+    });
   }
 
   async reportUnreconciledDesignated(): Promise<UnreconciledDesignatedRow[]> {
@@ -318,26 +474,39 @@ export class DirectorDesignationService {
     }));
   }
 
-  private async assertCanDesignateDirector(
-    actorUserId: string,
+  private async assertSuccessorEligible(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    sectionId: number,
+  ): Promise<void> {
+    await this.roleEligibility.assertAssignment({
+      userId,
+      roleName: 'director',
+      clubSectionId: sectionId,
+      db: tx,
+    });
+    await assertAssignmentActivationAllowed(tx, userId);
+  }
+
+  /**
+   * Section ↔ club validation plus the club's local-field business date.
+   * Authority is NOT checked here (see SectionRoleMutationPolicy).
+   */
+  private async resolveSectionScope(
     clubId: number,
     sectionId: number,
   ): Promise<SectionScope> {
-    const hasAllowedGlobalRole =
-      await this.authorizationContext.hasAnyGlobalRole(
-        actorUserId,
-        [...ALLOWED_DESIGNATION_ROLES],
-      );
-
-    if (!hasAllowedGlobalRole) {
-      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
-    }
-
     const section = await this.prisma.club_sections.findUnique({
       where: { club_section_id: sectionId },
       select: {
         main_club_id: true,
-        clubs: { select: { club_id: true, local_field_id: true } },
+        clubs: {
+          select: {
+            club_id: true,
+            local_field_id: true,
+            local_fields: { select: { local_field_id: true, timezone: true } },
+          },
+        },
       },
     });
 
@@ -349,48 +518,87 @@ export class DirectorDesignationService {
       throw new AppForbiddenException(ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID);
     }
 
-    const canManageClub = await this.authorizationContext.canManageClub(
-      actorUserId,
-      section.main_club_id,
-    );
-
-    if (!canManageClub) {
-      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
-    }
-
     const localFieldId = section.clubs?.local_field_id;
     if (localFieldId == null) {
       throw new AppNotFoundException(ErrorCode.CLUB_NOT_FOUND);
     }
 
-    return { clubId: section.main_club_id, localFieldId };
-  }
-
-  private async requireFutureYear(ecclesiasticalYearId: number): Promise<{
-    year_id: number;
-    start_date: Date;
-    end_date: Date;
-  }> {
-    const requestedYear = await this.prisma.ecclesiastical_years.findFirst({
-      where: { year_id: ecclesiasticalYearId },
-      select: { year_id: true, start_date: true, end_date: true },
+    const classified = classifyLocalFieldTimezone(
+      section.clubs?.local_fields?.timezone,
+    );
+    const context = this.temporalContexts.forLocalField({
+      local_field_id: localFieldId,
+      timezone: classified.ok ? classified.value : ECCLESIASTICAL_YEAR_TIMEZONE,
     });
 
-    if (!requestedYear) {
-      throw new AppBadRequestException(
-        ErrorCode.CLUB_DIRECTOR_PLAN_YEAR_INVALID,
-      );
-    }
+    return {
+      clubId: section.main_club_id,
+      localFieldId,
+      now: context.now,
+      businessMonth: Number(context.businessDate.slice(5, 7)),
+      temporal: {
+        businessDate: context.businessDate,
+        businessTimezone: context.businessTimeZone,
+      },
+    };
+  }
 
-    const currentYear = await this.ecclesiasticalYear.getCurrentYear();
+  private planSnapshot(plan: PlanRow): AuditJson {
+    return {
+      succession_id: plan.succession_id,
+      club_section_id: plan.club_section_id ?? null,
+      successor_user_id: plan.successor_user_id,
+      target_ecclesiastical_year_id: plan.target_ecclesiastical_year_id,
+      effective_date: plan.effective_date.toISOString(),
+      status: plan.status,
+      version: plan.version,
+      outgoing_assignment_id: plan.outgoing_assignment_id,
+    };
+  }
 
-    if (requestedYear.start_date <= currentYear.end_date) {
-      throw new AppBadRequestException(
-        ErrorCode.CLUB_DIRECTOR_PLAN_YEAR_INVALID,
-      );
-    }
-
-    return requestedYear;
+  private buildPlanEvent(input: {
+    action: PlanAuditAction;
+    eventKey: string;
+    actorUserId: string;
+    actorRoleName?: string | null;
+    scope: SectionScope;
+    sectionId: number;
+    targetUserId: string;
+    entityId: string;
+    before: AuditJson;
+    after: AuditJson;
+    idempotencyKey?: string;
+    summary: string;
+  }): CriticalAuditEvent {
+    return {
+      entityType: 'director_succession_plan',
+      entityId: input.entityId,
+      action: input.action,
+      eventKey: input.eventKey,
+      actor: {
+        kind: 'user',
+        userId: input.actorUserId,
+        roleName: input.actorRoleName ?? null,
+        scope: { club_section_id: input.sectionId },
+      },
+      target: {
+        userId: input.targetUserId,
+        scope: {
+          club_section_id: input.sectionId,
+          club_id: input.scope.clubId,
+          local_field_id: input.scope.localFieldId,
+        },
+      },
+      before: input.before,
+      after: input.after,
+      clubId: input.scope.clubId,
+      summary: input.summary,
+      effectiveAt: input.scope.now,
+      temporal: input.scope.temporal,
+      correlationId: getAuditCorrelationId() ?? randomUUID(),
+      idempotencyKey: input.idempotencyKey,
+      result: 'succeeded',
+    };
   }
 
   private async resolveDirectorRoleId(): Promise<string> {
@@ -414,7 +622,7 @@ export class DirectorDesignationService {
     const profile =
       await this.authorizationContext.resolveUserAuthorization(actorUserId);
     const match = profile.authorization.grants.global_roles.find((role) =>
-      (ALLOWED_DESIGNATION_ROLES as readonly string[]).includes(role.role_name),
+      (SCHEDULER_ROLE_NAMES as readonly string[]).includes(role.role_name),
     );
 
     if (!match) {
@@ -433,6 +641,9 @@ export class DirectorDesignationService {
       status: plan.status,
       version: plan.version,
       outgoing_assignment_id: plan.outgoing_assignment_id,
+      attempt_count: plan.attempt_count ?? 0,
+      last_attempt_at: plan.last_attempt_at ?? null,
+      block_code: plan.block_code ?? null,
     };
   }
 
@@ -460,13 +671,16 @@ export class DirectorDesignationService {
     }
 
     if (Array.isArray(meta.target)) {
-      return meta.target.filter((item): item is string => typeof item === 'string');
+      return meta.target.filter(
+        (item): item is string => typeof item === 'string',
+      );
     }
     if (typeof meta.target === 'string') {
       return [meta.target];
     }
 
-    const directConstraint = meta.constraint as { fields?: unknown } | undefined;
+    const directConstraint = meta.constraint as
+      { fields?: unknown } | undefined;
     if (Array.isArray(directConstraint?.fields)) {
       return directConstraint.fields.filter(
         (item): item is string => typeof item === 'string',
@@ -482,7 +696,9 @@ export class DirectorDesignationService {
       | undefined;
     const adapterFields = adapter?.cause?.constraint?.fields;
     if (Array.isArray(adapterFields)) {
-      return adapterFields.filter((item): item is string => typeof item === 'string');
+      return adapterFields.filter(
+        (item): item is string => typeof item === 'string',
+      );
     }
 
     return [];

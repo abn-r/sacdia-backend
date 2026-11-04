@@ -2,6 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ZonedBusinessTimeService } from '../clock/zoned-business-time.service';
 import {
+  AppBadRequestException,
   AppConflictException,
   AppNotFoundException,
 } from '../errors/app.exception';
@@ -126,6 +127,32 @@ export class EcclesiasticalYearService {
       }
     });
     return value;
+  }
+
+  /**
+   * The year that follows `current`: the one with the earliest `start_date`
+   * strictly after `current.end_date`.
+   *
+   * @throws {AppBadRequestException} `CLUB_DIRECTOR_PLAN_YEAR_INVALID` when no such year exists.
+   */
+  async getNextYear(current: EcclesiasticalYear): Promise<EcclesiasticalYear> {
+    const next = await this.prisma.ecclesiastical_years.findFirst({
+      where: { start_date: { gt: current.end_date } },
+      orderBy: { start_date: 'asc' },
+      select: {
+        year_id: true,
+        start_date: true,
+        end_date: true,
+        active: true,
+        modified_at: true,
+      },
+    });
+    if (!next) {
+      throw new AppBadRequestException(
+        ErrorCode.CLUB_DIRECTOR_PLAN_YEAR_INVALID,
+      );
+    }
+    return next;
   }
 
   /** Drops the memoized current year (call after `ecclesiastical_years` writes). */
