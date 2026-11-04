@@ -3,26 +3,30 @@ import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ActorScope } from '../common/authorization/actor-scope';
 import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 const ALL_REPORTS_ROLES = new Set([
-  'super-admin',
-  'admin',
-  'director-dia',
-  'assistant-dia',
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.DIRECTOR_DIA,
+  GlobalRole.ASSISTANT_DIA,
 ]);
 
-const UNION_REPORTS_ROLES = new Set(['director-union', 'assistant-union']);
+const UNION_REPORTS_ROLES = new Set([
+  GlobalRole.DIRECTOR_UNION,
+  GlobalRole.ASSISTANT_UNION,
+]);
 
 const LOCAL_FIELD_REPORTS_ROLES = new Set([
-  'assistant-admin',
-  'director-lf',
-  'assistant-lf',
+  GlobalRole.ASSISTANT_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
 ]);
 
 const COORDINATOR_REPORT_ROLES = new Set([
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
+  GlobalRole.COORDINATOR,
+  GlobalRole.ZONE_COORDINATOR,
+  GlobalRole.GENERAL_COORDINATOR,
 ]);
 
 export type ReportVisibilityFilters = {

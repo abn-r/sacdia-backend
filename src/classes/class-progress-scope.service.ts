@@ -8,6 +8,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 const SECTION_WIDE_ROLE_NAMES = new Set([
   'director',
@@ -17,15 +18,15 @@ const SECTION_WIDE_ROLE_NAMES = new Set([
 ]);
 
 const GLOBAL_PROGRESS_SCOPE_ROLES = [
-  'super-admin',
-  'admin',
-  'assistant-admin',
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
 ];
 
 const COORDINATOR_PROGRESS_SCOPE_ROLES = [
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
+  GlobalRole.COORDINATOR,
+  GlobalRole.ZONE_COORDINATOR,
+  GlobalRole.GENERAL_COORDINATOR,
 ];
 
 export type ProgressScopeAccessLevel = 'section' | 'assigned';
@@ -350,7 +351,10 @@ export class ClassProgressScopeService {
     return year.year_id;
   }
 
-  private async resolveSection(clubId: number, sectionId: number): Promise<{
+  private async resolveSection(
+    clubId: number,
+    sectionId: number,
+  ): Promise<{
     club_section_id: number;
     club_type_id: number;
   }> {
@@ -367,7 +371,9 @@ export class ClassProgressScopeService {
     });
 
     if (!section) {
-      throw new AppNotFoundException(ErrorCode.CLASS_COUNSELOR_SECTION_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.CLASS_COUNSELOR_SECTION_NOT_FOUND,
+      );
     }
 
     return section;

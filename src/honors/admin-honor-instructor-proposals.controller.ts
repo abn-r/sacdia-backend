@@ -23,6 +23,7 @@ import {
   ListHonorInstructorProposalsDto,
   RejectHonorInstructorProposalDto,
 } from './dto/honor-instructor-proposals.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 interface AuthenticatedRequest {
   user: { sub: string };
@@ -38,11 +39,11 @@ interface AuthenticatedRequest {
 @Controller('admin/honor-instructor-proposals')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
 @GlobalRoles(
-  'super-admin',
-  'admin',
-  'assistant-admin',
-  'director-lf',
-  'assistant-lf',
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
 )
 @SkipPermissions()
 export class AdminHonorInstructorProposalsController {

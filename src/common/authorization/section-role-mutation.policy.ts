@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AppForbiddenException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { AuthorizationContextService } from '../services/authorization-context.service';
+import { ClubRole } from './roles';
 
 export type SectionRoleMutation = 'assign' | 'update' | 'revoke';
 
@@ -27,7 +28,7 @@ export class SectionRoleMutationPolicy {
   ) {}
 
   async assertCanMutate(input: SectionRoleMutationInput): Promise<void> {
-    if (input.targetRoleName === 'member') return;
+    if (input.targetRoleName === ClubRole.MEMBER) return;
 
     const resolved = await this.authorizationContext.resolveUserAuthorization(
       input.actorUserId,
@@ -57,13 +58,13 @@ export class SectionRoleMutationPolicy {
     const isSectionDirector = grants.club_assignments.some(
       (g) =>
         g.operational === true &&
-        g.role_name === 'director' &&
+        g.role_name === ClubRole.DIRECTOR &&
         g.section.club_section_id === input.clubSectionId,
     );
     if (
       isSectionDirector &&
       input.targetUserId !== input.actorUserId &&
-      input.targetRoleName !== 'director'
+      input.targetRoleName !== ClubRole.DIRECTOR
     )
       return;
 

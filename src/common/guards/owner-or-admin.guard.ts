@@ -2,11 +2,12 @@ import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { AuthorizationContextService } from '../services/authorization-context.service';
 import { AppForbiddenException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
+import { GlobalRole } from '../authorization/roles';
 
 const OWNER_OR_ADMIN_ROLES = [
-  'admin',
-  'assistant-admin',
-  'super-admin',
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+  GlobalRole.SUPER_ADMIN,
 ] as const;
 
 /**
@@ -44,10 +45,9 @@ export class OwnerOrAdminGuard implements CanActivate {
     }
 
     // Caso 2: El usuario tiene rol administrativo global
-    const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
-      user.sub,
-      [...OWNER_OR_ADMIN_ROLES],
-    );
+    const isAdmin = await this.authorizationContext.hasAnyGlobalRole(user.sub, [
+      ...OWNER_OR_ADMIN_ROLES,
+    ]);
 
     if (isAdmin) {
       return true;

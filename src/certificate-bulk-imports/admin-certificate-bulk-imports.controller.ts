@@ -22,6 +22,7 @@ import { GlobalRoles } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { AdminCertificateBulkImportsService } from './admin-certificate-bulk-imports.service';
 import { ApproveCertificateImportDto, RejectCertificateImportDto } from './dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 interface AuthenticatedRequest {
   user: { sub: string };
@@ -32,11 +33,11 @@ interface AuthenticatedRequest {
 @Controller('admin/certificate-bulk-imports')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
 @GlobalRoles(
-  'super-admin',
-  'admin',
-  'assistant-admin',
-  'director-lf',
-  'assistant-lf',
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
 )
 @SkipPermissions()
 export class AdminCertificateBulkImportsController {

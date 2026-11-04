@@ -24,17 +24,18 @@ import {
   investitureWindowAllowsOperation,
   isCivilDate,
 } from './field-investiture-window';
+import { GlobalRole } from '../common/authorization/roles';
 
-const CONSULT_ROLES = new Set([
-  'super-admin',
-  'admin',
-  'assistant-admin',
-  'director-lf',
-  'assistant-lf',
-  'director-union',
-  'assistant-union',
-  'director-dia',
-  'assistant-dia',
+const CONSULT_ROLES = new Set<string>([
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+  GlobalRole.DIRECTOR_UNION,
+  GlobalRole.ASSISTANT_UNION,
+  GlobalRole.DIRECTOR_DIA,
+  GlobalRole.ASSISTANT_DIA,
 ]);
 
 export type InvestitureWindowView = {

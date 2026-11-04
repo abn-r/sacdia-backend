@@ -32,6 +32,7 @@ import {
 } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('investiture')
 @ApiBearerAuth()
@@ -45,7 +46,7 @@ export class InvestitureController {
   @Post('admin/classes/enrollments/expire-overdue')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-  @GlobalRoles('admin')
+  @GlobalRoles(GlobalRole.ADMIN)
   @RequirePermissions('catalogs:update')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({

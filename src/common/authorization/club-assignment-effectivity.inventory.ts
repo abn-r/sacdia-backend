@@ -45,7 +45,7 @@ const baseline = {
   'classes/class-counselor-assignments.service.ts':
     'effectiveWhere|T08|1|94591f7414a0',
   'classes/class-progress-access.service.ts':
-    'effectiveWhere|T08|2|636ca870e3ce',
+    'effectiveWhere|T08|2|5e737d2c3093',
   'classes/class-progress-scope.service.ts':
     'effectiveWhere|T08|3|4213f4a7f3ae',
   'classes/class-requirement-eligibility.service.ts':
@@ -97,7 +97,7 @@ const baseline = {
     'effectiveWhere|T08|2|637369e238ef',
   'honors/master-honors.service.ts': 'effectiveWhere|T08|2|2741ba22d4d7',
   'insurance/insurance.service.ts': 'effectiveWhere|T09|3|d2a51bca41f2',
-  'investiture/investiture.service.ts': 'effectiveWhere|T08|2|47c100be2ca8',
+  'investiture/investiture.service.ts': 'effectiveWhere|T08|2|130ddfc774da',
   'investiture-requests/investiture-authorization-requests.service.ts':
     'historicalWhere|allowlist|5|619bfde7ccc3',
   'investiture-requests/investiture-communications.loader.ts':
@@ -105,7 +105,7 @@ const baseline = {
   'investiture-requests/investiture-presentation-context.ts':
     'historicalWhere|allowlist|2|aaf0b4f4e058',
   'member-of-month/member-of-month.service.ts':
-    'effectiveWhere|T09|2|4a63b7e684b3',
+    'effectiveWhere|T09|2|618beda01bbe',
   'membership-requests/membership-requests.service.ts':
     'workflowWhere|allowlist|11|d7eb2512556b',
   'monthly-reports/monthly-reports.service.ts':

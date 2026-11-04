@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { pendingInvestitureAuthorization } from '../investiture-requests/investiture-request-lock';
+import { ClubRole } from '../common/authorization/roles';
 
 const EXPIRABLE_STATUSES: investiture_status_enum[] = [
   investiture_status_enum.IN_PROGRESS,
@@ -95,7 +96,7 @@ export class InvestitureService {
                 active: true,
                 status: 'active',
                 roles: {
-                  role_name: { in: ['director', 'counselor'] },
+                  role_name: { in: [ClubRole.DIRECTOR, ClubRole.COUNSELOR] },
                 },
                 club_section_id: { in: enrollmentUserSections },
               },

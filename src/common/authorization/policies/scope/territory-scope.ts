@@ -10,6 +10,7 @@ import type {
 } from '../../../services/authorization-context.service';
 import type { InstitutionalHierarchyService } from '../../../services/institutional-hierarchy.service';
 import { ActorScope } from '../../actor-scope';
+import { GlobalRole } from '../../roles';
 
 export type ResolvedTerritoryScope = {
   localFieldId: number;
@@ -179,7 +180,12 @@ export class TerritoryScopeValidator {
 
     if (
       typeof actor.localFieldId === 'number' &&
-      actor.hasRole('admin', 'assistant-admin', 'director-lf', 'assistant-lf')
+      actor.hasRole(
+        GlobalRole.ADMIN,
+        GlobalRole.ASSISTANT_ADMIN,
+        GlobalRole.DIRECTOR_LF,
+        GlobalRole.ASSISTANT_LF,
+      )
     ) {
       return actor.localFieldId;
     }
@@ -213,7 +219,7 @@ export class TerritoryScopeValidator {
       typeof resourceScope.countryId === 'number' &&
       typeof actor.countryId === 'number' &&
       actor.countryId === resourceScope.countryId &&
-      actor.hasRole('admin')
+      actor.hasRole(GlobalRole.ADMIN)
     );
   }
 

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { ActorScope } from '../common/authorization/actor-scope';
 import { toTerritoryId } from '../common/authorization/actor-territory-scope';
+import { GlobalRole } from '../common/authorization/roles';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -576,18 +578,20 @@ export class DistrictInvestiturePastorService {
   private assertQuotaReader(authorization: AuthorizationSnapshot): void {
     const roles = roleSet(authorization);
     const allowed =
-      roles.has('super-admin') ||
-      roles.has('director-union') ||
-      roles.has('assistant-union') ||
-      roles.has('director-lf') ||
-      roles.has('assistant-lf');
+      roles.has(GlobalRole.SUPER_ADMIN) ||
+      roles.has(GlobalRole.DIRECTOR_UNION) ||
+      roles.has(GlobalRole.ASSISTANT_UNION) ||
+      roles.has(GlobalRole.DIRECTOR_LF) ||
+      roles.has(GlobalRole.ASSISTANT_LF);
     if (!allowed) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
   }
 
   private isSuperAdmin(authorization: AuthorizationSnapshot): boolean {
-    return roleSet(authorization).has('super-admin');
+    return ActorScope.fromRoleNames(roleSet(authorization)).hasRole(
+      GlobalRole.SUPER_ADMIN,
+    );
   }
 
   private access(
@@ -598,16 +602,22 @@ export class DistrictInvestiturePastorService {
     const global = authorization.effective?.scope?.global;
     const unionId = toTerritoryId(global?.union?.id);
     const localFieldId = toTerritoryId(global?.local_field?.id);
-    if (mode === 'read' && roles.has('super-admin')) {
+    if (mode === 'read' && roles.has(GlobalRole.SUPER_ADMIN)) {
       return { kind: 'super-admin' };
     }
-    if (roles.has('director-union') || roles.has('assistant-union')) {
+    if (
+      roles.has(GlobalRole.DIRECTOR_UNION) ||
+      roles.has(GlobalRole.ASSISTANT_UNION)
+    ) {
       if (!unionId) {
         throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
       }
       return { kind: 'union', unionId };
     }
-    if (roles.has('director-lf') || roles.has('assistant-lf')) {
+    if (
+      roles.has(GlobalRole.DIRECTOR_LF) ||
+      roles.has(GlobalRole.ASSISTANT_LF)
+    ) {
       if (!localFieldId) {
         throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
       }

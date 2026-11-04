@@ -61,10 +61,18 @@ import {
   lockInvestitureAuthorizationUser,
   lockInvestitureAuthorizationYear,
 } from './investiture-request-lock';
+import { ClubRole, GlobalRole } from '../common/authorization/roles';
 export { INVESTITURE_REQUEST_USER_LOCK_PREFIX } from './investiture-request-lock';
 
-const MARK_ROLES = new Set(['director', 'secretary', 'secretary-treasurer']);
-const FIELD_AUTHORIZER_ROLES = new Set(['director-lf', 'assistant-lf']);
+const MARK_ROLES = new Set<string>([
+  ClubRole.DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
+]);
+const FIELD_AUTHORIZER_ROLES = new Set([
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+]);
 const COMMENT_MAX = 500;
 const REASON_MAX = 1000;
 
@@ -1948,7 +1956,8 @@ export class InvestitureAuthorizationRequestService {
 
   private isSuperAdmin(authorization: AuthorizationSnapshot): boolean {
     return (authorization.grants?.global_roles ?? []).some(
-      (grant) => grant.role_name.trim().toLowerCase() === 'super-admin',
+      (grant) =>
+        grant.role_name.trim().toLowerCase() === GlobalRole.SUPER_ADMIN,
     );
   }
 
@@ -2494,7 +2503,10 @@ export class InvestitureAuthorizationRequestService {
     if (this.fieldAuthorizesSection(authorization, context)) {
       return true;
     }
-    if (!this.hasGlobalRole(authorization, 'pastor') || !context.districtId) {
+    if (
+      !this.hasGlobalRole(authorization, GlobalRole.PASTOR) ||
+      !context.districtId
+    ) {
       return false;
     }
     const assignment = await store.district_investiture_pastors.findFirst({
@@ -2553,7 +2565,7 @@ export class InvestitureAuthorizationRequestService {
     authorization: AuthorizationSnapshot,
     actorId: string,
   ): Promise<number[]> {
-    if (!this.hasGlobalRole(authorization, 'pastor')) {
+    if (!this.hasGlobalRole(authorization, GlobalRole.PASTOR)) {
       return [];
     }
     const rows = await this.prisma.district_investiture_pastors.findMany({

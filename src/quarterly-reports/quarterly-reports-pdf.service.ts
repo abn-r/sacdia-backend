@@ -16,6 +16,7 @@ import {
 } from '../common/pdf/report-pdf-helpers';
 import { QuarterlyComputedData } from './quarterly-reports.service';
 import { buildQuarterlyReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
+import { ClubRole } from '../common/authorization/roles';
 
 // ============================================================
 // Constants
@@ -455,7 +456,7 @@ export class QuarterlyReportsPdfService {
     directiva: { role: string; name: string }[] | null | undefined,
   ): string[] {
     return (directiva ?? [])
-      .filter((member) => member.role === 'director' && member.name)
+      .filter((member) => member.role === ClubRole.DIRECTOR && member.name)
       .map((member) => member.name);
   }
 

@@ -1,11 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import {
-  AppForbiddenException,
-} from '../common/errors/app.exception';
+import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 const SECTION_WIDE_ROLE_NAMES = new Set([
   'director',
@@ -15,15 +14,15 @@ const SECTION_WIDE_ROLE_NAMES = new Set([
 ]);
 
 const GLOBAL_PROGRESS_ACCESS_ROLES = [
-  'super-admin',
-  'admin',
-  'assistant-admin',
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
 ];
 
 const COORDINATOR_PROGRESS_ACCESS_ROLES = [
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
+  GlobalRole.COORDINATOR,
+  GlobalRole.ZONE_COORDINATOR,
+  GlobalRole.GENERAL_COORDINATOR,
 ];
 
 export type ClassProgressAccessParams = {
@@ -62,7 +61,9 @@ export class ClassProgressAccessService {
     }
   }
 
-  async assertCanAccessProgress(params: ClassProgressAccessParams): Promise<void> {
+  async assertCanAccessProgress(
+    params: ClassProgressAccessParams,
+  ): Promise<void> {
     return this.assertCanAccessClassProgress(params);
   }
 
@@ -136,8 +137,8 @@ export class ClassProgressAccessService {
       }
     }
 
-    const counselorAssignment = await this.prisma.class_counselor_assignments.findFirst(
-      {
+    const counselorAssignment =
+      await this.prisma.class_counselor_assignments.findFirst({
         where: {
           user_id: params.actorUserId,
           club_section_id: { in: targetSectionIds },
@@ -152,15 +153,14 @@ export class ClassProgressAccessService {
           ecclesiastical_year_id: true,
           active: true,
         },
-      },
-    );
+      });
 
     if (counselorAssignment) {
       return true;
     }
 
-    const sectionWideAssignments = await this.prisma.club_role_assignments.findMany(
-      {
+    const sectionWideAssignments =
+      await this.prisma.club_role_assignments.findMany({
         where: {
           user_id: params.actorUserId,
           club_section_id: { in: targetSectionIds },
@@ -185,22 +185,19 @@ export class ClassProgressAccessService {
             },
           },
         },
-      },
-    );
+      });
 
-    return sectionWideAssignments.some(
-      (assignment) => {
-        const sectionId = assignment.club_sections?.club_section_id;
+    return sectionWideAssignments.some((assignment) => {
+      const sectionId = assignment.club_sections?.club_section_id;
 
-        return (
-          SECTION_WIDE_ROLE_NAMES.has(
-            assignment.roles?.role_name?.toLowerCase?.() ?? '',
-          ) &&
-          sectionId !== undefined &&
-          targetSectionIds.includes(sectionId)
-        );
-      },
-    );
+      return (
+        SECTION_WIDE_ROLE_NAMES.has(
+          assignment.roles?.role_name?.toLowerCase?.() ?? '',
+        ) &&
+        sectionId !== undefined &&
+        targetSectionIds.includes(sectionId)
+      );
+    });
   }
 
   private async resolveTargetSectionIds(params: {
@@ -237,7 +234,9 @@ export class ClassProgressAccessService {
       ...new Set(
         targetMemberships
           .map((membership) => membership.club_section_id)
-          .filter((sectionId): sectionId is number => typeof sectionId === 'number'),
+          .filter(
+            (sectionId): sectionId is number => typeof sectionId === 'number',
+          ),
       ),
     ];
   }
