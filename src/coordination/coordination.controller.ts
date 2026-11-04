@@ -75,6 +75,10 @@ export class AdminCoordinationController {
   constructor(private readonly coordinationService: CoordinationService) {}
 
   @Get('local-fields/:localFieldId/zones')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'local_field', source: 'param', field: 'localFieldId' }],
+  })
   @ApiOperation({ summary: 'Listar zonas de coordinación de un campo local' })
   @ApiParam({ name: 'localFieldId', type: Number })
   async listZones(
@@ -89,6 +93,10 @@ export class AdminCoordinationController {
   }
 
   @Post('local-fields/:localFieldId/zones')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'local_field', source: 'param', field: 'localFieldId' }],
+  })
   @ApiOperation({ summary: 'Crear zona de coordinación en un campo local' })
   @ApiParam({ name: 'localFieldId', type: Number })
   async createZone(
@@ -155,6 +163,10 @@ export class AdminCoordinationController {
   }
 
   @Get('local-fields/:localFieldId/assignments')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'local_field', source: 'param', field: 'localFieldId' }],
+  })
   @ApiOperation({ summary: 'Listar asignaciones de coordinadores' })
   @ApiParam({ name: 'localFieldId', type: Number })
   @ApiQuery({ name: 'active', required: false, type: Boolean })
@@ -172,6 +184,10 @@ export class AdminCoordinationController {
   }
 
   @Post('local-fields/:localFieldId/assignments')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'local_field', source: 'param', field: 'localFieldId' }],
+  })
   @ApiOperation({ summary: 'Crear asignación de coordinador' })
   @ApiParam({ name: 'localFieldId', type: Number })
   async createAssignment(
@@ -204,6 +220,10 @@ export class AdminCoordinationController {
   }
 
   @Post('local-fields/:localFieldId/backfill')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [{ kind: 'local_field', source: 'param', field: 'localFieldId' }],
+  })
   @ApiOperation({
     summary:
       'Migrar coordinadores legacy (rol + local_field_id) a asignación GENERAL',

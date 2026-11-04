@@ -25,7 +25,7 @@ export const UNBOUND_RESOURCE_TYPES = new Set([
 ]);
 
 export const TENANT_PATH_PARAM =
-  /:(clubId|sectionId|clubSectionId|instanceId|localFieldId|unionId|divisionId|camporeeId|unionCamporeeId|localCamporeeId)\b/;
+  /:(clubId|sectionId|clubSectionId|instanceId|localFieldId|fieldId|unionId|divisionId|camporeeId|unionCamporeeId|localCamporeeId)\b/;
 
 export const TENANT_FIELD_NAMES =
   /^(club_id|club_section_id|local_field_id|union_id|division_id|camporee_id|union_camporee_id|local_camporee_id|clubId|localFieldId|unionId|divisionId)$/;

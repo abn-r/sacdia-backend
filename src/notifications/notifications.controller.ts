@@ -161,7 +161,10 @@ export class NotificationsController {
 
   @Post('club/:instanceType/:instanceId')
   @RequirePermissions('notifications:club')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [{ kind: 'club_section', source: 'param', field: 'instanceId' }],
+  })
   @ApiOperation({ summary: 'Send notification to club members' })
   @ApiResponse({ status: 201, description: 'Club notification queued' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })

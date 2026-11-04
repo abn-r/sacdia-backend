@@ -118,7 +118,10 @@ export class ScoringCategoriesController {
   @Get('unions/:unionId/scoring-categories')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:read')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [{ kind: 'union_membership', source: 'param', field: 'unionId' }],
+  })
   @ApiOperation({
     summary:
       'Listar categorías de puntuación para una unión (heredadas + propias)',
@@ -138,7 +141,10 @@ export class ScoringCategoriesController {
   @Post('unions/:unionId/scoring-categories')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [{ kind: 'union_membership', source: 'param', field: 'unionId' }],
+  })
   @ApiOperation({ summary: 'Crear categoría de puntuación para una unión' })
   @ApiParam({ name: 'unionId', type: Number })
   @ApiResponse({ status: 201, description: 'Categoría creada' })
@@ -158,7 +164,10 @@ export class ScoringCategoriesController {
   @Patch('unions/:unionId/scoring-categories/:id')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [{ kind: 'union_membership', source: 'param', field: 'unionId' }],
+  })
   @ApiOperation({
     summary: 'Actualizar categoría de puntuación propia de una unión',
   })
@@ -187,7 +196,10 @@ export class ScoringCategoriesController {
   @Delete('unions/:unionId/scoring-categories/:id')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [{ kind: 'union_membership', source: 'param', field: 'unionId' }],
+  })
   @ApiOperation({
     summary:
       'Desactivar categoría de puntuación propia de una unión (soft delete)',
@@ -220,7 +232,12 @@ export class ScoringCategoriesController {
   @Get('local-fields/:fieldId/scoring-categories')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:read')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [
+      { kind: 'local_field_membership', source: 'param', field: 'fieldId' },
+    ],
+  })
   @ApiOperation({
     summary:
       'Listar categorías de puntuación para un campo local (división + unión + propias)',
@@ -240,7 +257,12 @@ export class ScoringCategoriesController {
   @Post('local-fields/:fieldId/scoring-categories')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [
+      { kind: 'local_field_membership', source: 'param', field: 'fieldId' },
+    ],
+  })
   @ApiOperation({
     summary: 'Crear categoría de puntuación para un campo local',
   })
@@ -265,7 +287,12 @@ export class ScoringCategoriesController {
   @Patch('local-fields/:fieldId/scoring-categories/:id')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [
+      { kind: 'local_field_membership', source: 'param', field: 'fieldId' },
+    ],
+  })
   @ApiOperation({
     summary: 'Actualizar categoría de puntuación propia de un campo local',
   })
@@ -294,7 +321,12 @@ export class ScoringCategoriesController {
   @Delete('local-fields/:fieldId/scoring-categories/:id')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({
+    type: 'active_assignment',
+    bind: [
+      { kind: 'local_field_membership', source: 'param', field: 'fieldId' },
+    ],
+  })
   @ApiOperation({
     summary:
       'Desactivar categoría de puntuación propia de un campo local (soft delete)',

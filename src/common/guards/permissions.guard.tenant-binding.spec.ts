@@ -27,6 +27,12 @@ import { OfferingsController } from '../../camporee-orders/offerings.controller'
 import { CamporeeSupplyConfigController } from '../../camporee-supplies/config.controller';
 import { CamporeeSupplyPlansController } from '../../camporee-supplies/plans.controller';
 import { FieldPaymentOrdersController } from '../../field-payment-orders/field-payment-orders.controller';
+import { AdminCoordinationController } from '../../coordination/coordination.controller';
+import { ConfigController } from '../../materials/config/config.controller';
+import { NotificationsController } from '../../notifications/notifications.controller';
+import { AnnualRankingProgressController } from '../../rankings/annual-ranking-progress/annual-ranking-progress.controller';
+import { SectionRankingsController } from '../../rankings/section-rankings/section-rankings.controller';
+import { ScoringCategoriesController } from '../../scoring-categories/scoring-categories.controller';
 
 /**
  * Regression tests for tenant binding (audit run-1, §2). Dummy tenants:
@@ -777,6 +783,280 @@ describe('PermissionsGuard tenant binding', () => {
         ).rejects.toMatchObject({
           code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
         });
+      });
+    });
+  });
+
+  describe('fase 5 batch 3: remaining tenant routes', () => {
+    const operational = <T extends ReturnType<typeof clubDirector>>(
+      actor: T,
+    ): T => {
+      for (const grant of actor.authorization.grants.club_assignments) {
+        (grant as Record<string, unknown>).operational = true;
+      }
+      return actor;
+    };
+
+    const runWith = (
+      controller: new (...args: never[]) => unknown,
+      handler: string,
+      params: Record<string, string>,
+    ) =>
+      guard.canActivate(
+        createContext(controller, handler, {
+          user: { sub: 'actor' },
+          params,
+          body: {},
+          query: {},
+        }),
+      );
+
+    describe('coordination local-field routes (local_field)', () => {
+      const ROUTES: Array<[string, string]> = [
+        ['GET zones', 'listZones'],
+        ['POST zones', 'createZone'],
+        ['GET assignments', 'listAssignments'],
+        ['POST assignments', 'createAssignment'],
+        ['POST backfill', 'backfillLegacyAssignments'],
+      ];
+
+      beforeEach(() => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-lf', ['coordination:manage'], {
+            local_field: { id: 50 },
+          }),
+        );
+      });
+
+      it.each(ROUTES)('%s: allows its own local field', async (_l, handler) => {
+        await expect(
+          runWith(AdminCoordinationController, handler, {
+            localFieldId: '50',
+          }),
+        ).resolves.toBe(true);
+      });
+
+      it.each(ROUTES)(
+        '%s: rejects another local field',
+        async (_l, handler) => {
+          await expect(
+            runWith(AdminCoordinationController, handler, {
+              localFieldId: '60',
+            }),
+          ).rejects.toMatchObject({
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          });
+        },
+      );
+    });
+
+    describe('PATCH /materials/config/:localFieldId', () => {
+      beforeEach(() => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-lf', ['materiales:configure'], {
+            local_field: { id: 50 },
+          }),
+        );
+      });
+
+      it('allows its own local field and rejects another', async () => {
+        await expect(
+          runWith(ConfigController, 'updateById', { localFieldId: '50' }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ConfigController, 'updateById', { localFieldId: '60' }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+      });
+    });
+
+    describe('POST /notifications/club/:instanceType/:instanceId (club_section)', () => {
+      const run = (instanceId: string) =>
+        runWith(NotificationsController, 'sendToClub', {
+          instanceType: 'club',
+          instanceId,
+        });
+
+      it('allows the director of the section club', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubDirector(['notifications:club']),
+        );
+        await expect(run('10')).resolves.toBe(true);
+      });
+
+      it('rejects a section of another club', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubDirector(['notifications:club']),
+        );
+        await expect(run('20')).rejects.toMatchObject({
+          code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+        });
+      });
+
+      it('returns 404 for an unknown section', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubDirector(['notifications:club']),
+        );
+        await expect(run('999')).rejects.toMatchObject({
+          code: ErrorCode.CLUB_SECTION_NOT_FOUND,
+        });
+      });
+    });
+
+    describe.each([
+      [
+        'GET /club-sections/:sectionId/annual-ranking-progress',
+        AnnualRankingProgressController,
+        'getProgress',
+        'rankings:read',
+      ],
+      [
+        'GET /section-rankings/:sectionId/members',
+        SectionRankingsController,
+        'getMembers',
+        'section_rankings:read_club',
+      ],
+    ] as const)(
+      '%s (club_section_membership)',
+      (_l, controller, handler, perm) => {
+        const run = (sectionId: string) =>
+          runWith(controller, handler, { sectionId });
+
+        it('allows an actor with an operational grant in the club (not the active one)', async () => {
+          const actor = operational(clubDirector([perm]));
+          // Active assignment is in club 2; the grant in club 1 is a secondary one.
+          const club1Grant = actor.authorization.grants.club_assignments[0];
+          actor.authorization.grants.club_assignments = [
+            {
+              ...club1Grant,
+              assignment_id: 'assignment-2',
+              club: { club_id: 2, club_name: 'Club Dos' },
+              section: { club_section_id: 20, club_type_name: 'pathfinders' },
+            },
+            club1Grant,
+          ];
+          actor.authorization.active_assignment = {
+            assignment_id: 'assignment-2',
+          };
+          actor.authorization.effective.scope.club = {
+            ...actor.authorization.effective.scope.club,
+            assignment_id: 'assignment-2',
+            club: { club_id: 2, club_name: 'Club Dos' },
+            section: { club_section_id: 20, club_type_name: 'pathfinders' },
+          };
+          mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+            actor,
+          );
+          await expect(run('10')).resolves.toBe(true);
+        });
+
+        it('rejects a section of another club', async () => {
+          mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+            operational(clubDirector([perm])),
+          );
+          await expect(run('20')).rejects.toMatchObject({
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          });
+        });
+
+        it('allows an actor that can manage the club', async () => {
+          mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+            territorialActor('director-lf', [perm], {
+              local_field: { id: 50 },
+            }),
+          );
+          mockAuthorizationContext.canManageClub.mockImplementation(
+            async (_u: string, clubId: number) => clubId === 2,
+          );
+          await expect(run('20')).resolves.toBe(true);
+          await expect(run('10')).rejects.toMatchObject({
+            code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
+          });
+        });
+
+        it('returns 404 for an unknown section', async () => {
+          mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+            operational(clubDirector([perm])),
+          );
+          await expect(run('999')).rejects.toMatchObject({
+            code: ErrorCode.CLUB_SECTION_NOT_FOUND,
+          });
+        });
+      },
+    );
+
+    describe('scoring categories (union_membership / local_field_membership)', () => {
+      const PERM = 'scoring_categories:read';
+      const clubMember = (unionId: number, lfId: number) => {
+        const actor = operational(clubDirector([PERM]));
+        actor.authorization.grants.club_assignments[0].scope = {
+          local_field: { id: lfId },
+          union: { id: unionId },
+        };
+        return actor;
+      };
+
+      it('union: allows a club member of the union, denies another union', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubMember(1, 50),
+        );
+        await expect(
+          runWith(ScoringCategoriesController, 'findUnionCategories', {
+            unionId: '1',
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ScoringCategoriesController, 'findUnionCategories', {
+            unionId: '2',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+      });
+
+      it('union: allows a union director through the hierarchy', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-union', [PERM], { union: { id: 1 } }),
+        );
+        await expect(
+          runWith(ScoringCategoriesController, 'findUnionCategories', {
+            unionId: '1',
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ScoringCategoriesController, 'findUnionCategories', {
+            unionId: '2',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+      });
+
+      it('local field: allows a club member of the field, denies another', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          clubMember(1, 50),
+        );
+        await expect(
+          runWith(ScoringCategoriesController, 'findLocalFieldCategories', {
+            fieldId: '50',
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ScoringCategoriesController, 'findLocalFieldCategories', {
+            fieldId: '60',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+      });
+
+      it('local field: allows a local-field director through the hierarchy', async () => {
+        mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+          territorialActor('director-lf', [PERM], { local_field: { id: 50 } }),
+        );
+        await expect(
+          runWith(ScoringCategoriesController, 'findLocalFieldCategories', {
+            fieldId: '50',
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          runWith(ScoringCategoriesController, 'findLocalFieldCategories', {
+            fieldId: '60',
+          }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
       });
     });
   });
