@@ -198,29 +198,29 @@ export class AnnualFolderTemplatesController {
     return { status: 'success', data };
   }
 
-  @Patch('sections/:sectionId')
+  @Patch('sections/:templateSectionId')
   @RequirePermissions('annual_folder_templates:update')
   @ApiOperation({ summary: 'Update template section' })
-  @ApiParam({ name: 'sectionId', description: 'Section UUID' })
+  @ApiParam({ name: 'templateSectionId', description: 'Section UUID' })
   @ApiResponse({ status: 200, description: 'Section updated' })
   @ApiResponse({ status: 404, description: 'Section not found' })
   async updateSection(
-    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
+    @Param('templateSectionId', ParseUuidParamPipe) sectionId: string,
     @Body() dto: UpdateTemplateSectionDto,
   ) {
     const data = await this.service.updateTemplateSection(sectionId, dto);
     return { status: 'success', data };
   }
 
-  @Delete('sections/:sectionId')
+  @Delete('sections/:templateSectionId')
   @RequirePermissions('annual_folder_templates:delete')
   @ApiOperation({ summary: 'Remove template section' })
-  @ApiParam({ name: 'sectionId', description: 'Section UUID' })
+  @ApiParam({ name: 'templateSectionId', description: 'Section UUID' })
   @ApiResponse({ status: 200, description: 'Section deleted' })
   @ApiResponse({ status: 404, description: 'Section not found' })
   @ApiResponse({ status: 409, description: 'Section has evidences' })
   async removeSection(
-    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
+    @Param('templateSectionId', ParseUuidParamPipe) sectionId: string,
   ) {
     const data = await this.service.removeTemplateSection(sectionId);
     return { status: 'success', ...data };
@@ -460,13 +460,13 @@ export class AnnualFoldersController {
     return { status: 'success', data };
   }
 
-  @Post(':folderId/sections/:sectionId/evidences')
+  @Post(':folderId/sections/:templateSectionId/evidences')
   @RequirePermissions('evidence_folders:update')
   @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload evidence to a folder section' })
   @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
-  @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiParam({ name: 'templateSectionId', description: 'Template section UUID' })
   @ApiBody({
     schema: {
       type: 'object',
@@ -493,7 +493,7 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async uploadEvidence(
     @Param('folderId', ParseUuidParamPipe) folderId: string,
-    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
+    @Param('templateSectionId', ParseUuidParamPipe) sectionId: string,
     @UploadedFile(
       new FileValidationPipe({
         allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
@@ -549,7 +549,7 @@ export class AnnualFoldersController {
    * Returns the current snapshot for one section: evidence count,
    * submission record (if any), and evaluation record (if any).
    */
-  @Get(':folderId/sections/:sectionId/status')
+  @Get(':folderId/sections/:templateSectionId/status')
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({
     summary:
@@ -558,12 +558,12 @@ export class AnnualFoldersController {
       'Returns section metadata, evidence count, submission record (if submitted), and evaluation record (if evaluated). Useful for the Flutter app to show per-section progress.',
   })
   @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
-  @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiParam({ name: 'templateSectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 200, description: 'Section status snapshot' })
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async getSectionStatus(
     @Param('folderId', ParseUuidParamPipe) folderId: string,
-    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
+    @Param('templateSectionId', ParseUuidParamPipe) sectionId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.service.getSectionStatus(
@@ -579,7 +579,7 @@ export class AnnualFoldersController {
    * Marks a single section as submitted. The folder-level status is NOT changed.
    * The Flutter app should call this after uploading evidence for each section.
    */
-  @Post(':folderId/sections/:sectionId/submit')
+  @Post(':folderId/sections/:templateSectionId/submit')
   @RequirePermissions('evidence_folders:update')
   @ApiOperation({
     summary: 'Submit a single section of an annual evidence folder',
@@ -587,7 +587,7 @@ export class AnnualFoldersController {
       'Club-user operation. Records that the user has finished uploading evidence for this section. Does NOT change the overall folder status.',
   })
   @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
-  @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiParam({ name: 'templateSectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 201, description: 'Section submitted' })
   @ApiResponse({
     status: 400,
@@ -596,7 +596,7 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async submitSection(
     @Param('folderId', ParseUuidParamPipe) folderId: string,
-    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
+    @Param('templateSectionId', ParseUuidParamPipe) sectionId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.service.submitSection(

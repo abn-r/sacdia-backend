@@ -382,11 +382,11 @@ const TEEN_APP_FLOW: Array<{ key: string; pending: boolean }> = [
   { key: 'GET /users/:userId/classes/:classId/progress', pending: true },
   { key: 'PATCH /users/:userId/classes/:classId/progress', pending: false },
   {
-    key: 'POST /users/:userId/classes/:classId/sections/:sectionId/files',
+    key: 'POST /users/:userId/classes/:classId/sections/:moduleSectionId/files',
     pending: false,
   },
   {
-    key: 'POST /users/:userId/classes/:classId/sections/:sectionId/submit',
+    key: 'POST /users/:userId/classes/:classId/sections/:moduleSectionId/submit',
     pending: false,
   },
   { key: 'GET /users/:userId/honors', pending: true },

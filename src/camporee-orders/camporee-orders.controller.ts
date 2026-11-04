@@ -68,7 +68,7 @@ export class CamporeeOrdersController {
 
   @Post('camporees/:camporeeId/orders')
   @RequirePermissions(CAMPOREE_ORDERS_CREATE)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Emitir un pedido de sección para un camporee local',
   })
@@ -94,7 +94,7 @@ export class CamporeeOrdersController {
 
   @Post('union-camporees/:camporeeId/orders')
   @RequirePermissions(CAMPOREE_ORDERS_CREATE)
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Emitir un pedido de sección para un camporee de unión',
   })

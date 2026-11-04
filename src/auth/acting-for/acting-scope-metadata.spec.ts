@@ -94,12 +94,12 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'PATCH /users/:userId/classes/:classId/progress': 'classes:write',
   // ---- evidence:submit (retagged from classes:write: the device can submit a
   // section without being able to enroll or patch progress)
-  'POST /users/:userId/classes/:classId/sections/:sectionId/submit':
+  'POST /users/:userId/classes/:classId/sections/:moduleSectionId/submit':
     'evidence:submit',
   // ---- evidence:upload
-  'POST /users/:userId/classes/:classId/sections/:sectionId/files':
+  'POST /users/:userId/classes/:classId/sections/:moduleSectionId/files':
     'evidence:upload',
-  'DELETE /users/:userId/classes/:classId/sections/:sectionId/files/:fileId':
+  'DELETE /users/:userId/classes/:classId/sections/:moduleSectionId/files/:fileId':
     'evidence:upload',
   // (honor evidence is NOT here: a child's device may upload CLASS evidence only,
   // so the honor evidence mutations moved to honors:write in 3b, FP3-47)
@@ -404,11 +404,11 @@ const DEVICE_SURFACE: Record<
     'own_read',
   'GET /users/me/legal-acceptance': 'own_read',
   'GET /users/me/supervision': 'own_read',
-  'POST /users/:userId/classes/:classId/sections/:sectionId/files':
+  'POST /users/:userId/classes/:classId/sections/:moduleSectionId/files':
     'class_evidence',
-  'DELETE /users/:userId/classes/:classId/sections/:sectionId/files/:fileId':
+  'DELETE /users/:userId/classes/:classId/sections/:moduleSectionId/files/:fileId':
     'class_evidence',
-  'POST /users/:userId/classes/:classId/sections/:sectionId/submit':
+  'POST /users/:userId/classes/:classId/sections/:moduleSectionId/submit':
     'class_evidence',
   'GET /clubs/:clubId/activities': 'agenda',
   'GET /activities/:activityId': 'agenda',

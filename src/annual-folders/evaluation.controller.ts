@@ -60,12 +60,12 @@ export class EvaluationController {
   // EVALUATE A SECTION
   // ========================================
 
-  @Post(':folderId/sections/:sectionId/evaluate')
+  @Post(':folderId/sections/:templateSectionId/evaluate')
   @RequirePermissions('annual_folders:evaluate')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Evaluate a section of an annual evidence folder' })
   @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
-  @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiParam({ name: 'templateSectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 201, description: 'Section evaluated' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
@@ -79,7 +79,7 @@ export class EvaluationController {
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async evaluateSection(
     @Param('folderId', ParseUuidParamPipe) folderId: string,
-    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
+    @Param('templateSectionId', ParseUuidParamPipe) sectionId: string,
     @Body() dto: EvaluateSectionDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -134,14 +134,14 @@ export class EvaluationController {
   // REOPEN A SECTION
   // ========================================
 
-  @Post(':folderId/sections/:sectionId/reopen')
+  @Post(':folderId/sections/:templateSectionId/reopen')
   @RequirePermissions('annual_folders:evaluate')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({
     summary: 'Reopen a section for re-evaluation (removes existing evaluation)',
   })
   @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
-  @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiParam({ name: 'templateSectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 201, description: 'Section reopened' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
@@ -155,7 +155,7 @@ export class EvaluationController {
   @ApiResponse({ status: 404, description: 'Folder or evaluation not found' })
   async reopenSection(
     @Param('folderId', ParseUuidParamPipe) folderId: string,
-    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
+    @Param('templateSectionId', ParseUuidParamPipe) sectionId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.evaluationService.reopenSection(
@@ -170,7 +170,7 @@ export class EvaluationController {
   // CONFIRM UNION EVALUATION
   // ========================================
 
-  @Post(':folderId/sections/:sectionId/confirm-union')
+  @Post(':folderId/sections/:templateSectionId/confirm-union')
   @RequirePermissions('annual_folders:evaluate')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({
@@ -181,7 +181,7 @@ export class EvaluationController {
       'rationale for any override. Requires annual_folders:evaluate at global scope.',
   })
   @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
-  @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiParam({ name: 'templateSectionId', description: 'Template section UUID' })
   @ApiBody({ type: ConfirmUnionDto })
   @ApiResponse({
     status: 201,
@@ -214,7 +214,7 @@ export class EvaluationController {
   })
   async confirmUnion(
     @Param('folderId', ParseUuidParamPipe) folderId: string,
-    @Param('sectionId', ParseUuidParamPipe) sectionId: string,
+    @Param('templateSectionId', ParseUuidParamPipe) sectionId: string,
     @Body() dto: ConfirmUnionDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {

@@ -47,10 +47,20 @@ Para `user` (y `active_assignment` con `ownerParam`), el propietario del recurso
 })
 ```
 
-- `kind`: `club`, `club_section` (debe pertenecer al `:clubId` de la ruta si existe; 404 si no), `local_field`, `union`, `camporee`, `union_camporee` (estricto: solo el territorio organizador, sin el fallback de participación de `type: 'union_camporee'`), `club_enrollment_territory` (recibe UUID de inscripción anual y exige que el territorio del actor cubra el club, sin fallback de asignación de club).
+- `kind` (11) y el predicado que reproduce cada uno:
+  - `club`: el actor accede al club (`assertClubAccess`).
+  - `club_section`: la sección debe pertenecer al `:clubId` de la ruta si existe (404 si no) y el actor accede al club de la sección (`assertClubAccess`); la regla exacta de sección del servicio se mantiene.
+  - `local_field` / `union`: la jerarquía del actor cubre el campo local / la unión (`assertHierarchyAccess`). Es el predicado de `ensureActorCanManageLocalField`.
+  - `camporee`: el territorio del actor cubre el camporee local (`validateTerritoryScope`).
+  - `union_camporee`: estricto, solo el territorio organizador (`assertUnionCamporeeOwnerScope`), sin el fallback de participación de `type: 'union_camporee'`.
+  - `union_camporee_participant`: igual que la policy de recurso `union_camporee` (`validateUnionCamporeeScope`): unión organizadora, fallback legacy por país, campo local participante con fila activa en `union_camporee_local_fields`, o actor de club cuyo campo local participa.
+  - `club_section_membership`: el actor puede gestionar el club de la sección (`canManageClub`) O tiene cualquier asignación de club operativa en ese club (no solo la activa). Regla "cualquier asignación" de rankings.
+  - `union_membership` / `local_field_membership`: la jerarquía del actor cubre la unión / campo local (`assertHierarchyAccess`) O cualquier asignación de club operativa del actor tiene esa unión / campo local en su scope (`assertUserBelongsToUnion` / `assertUserBelongsToLocalField`).
+  - `club_enrollment_territory`: recibe el UUID de la inscripción anual y exige que el territorio del actor cubra el club, sin fallback de asignación de club.
 - `source`: `param`, `query` o `body`. Valor ausente o no entero positivo (o UUID inválido en los kinds de inscripción) → 403, salvo `optional: true`.
 - El bypass de propietario no omite `bind`.
-- `tenant-binding-inventory.spec.ts` falla si una ruta `global`/`user`/`active_assignment` con parámetro de tenant en el path no declara `bind`. Las rutas legacy están congeladas en `tenant-binding-allowlist.ts`; no agregues rutas nuevas ahí.
+- La allowlist de rutas con tenant en el path (`tenant-binding-allowlist.ts`) está vacía desde la fase 5. Una ruta nueva con parámetro de tenant en el path debe declarar `bind` o un recurso tipado (`club`, `club_section`, ...). `tenant-binding-inventory.spec.ts` falla el build si una ruta `global`/`user`/`active_assignment` con parámetro de tenant no lo hace, y `tenant-binding-allowlist.freeze.spec.ts` exige que la allowlist siga vacía.
+- Inventario de body/query: los ids de tenant que viajan en el body o la query y aún no tienen `bind` están en `tenant-body-allowlist.ts` (55 rutas pendientes de revisión). Es un ratchet que solo baja (`tenant-body-allowlist.freeze.spec.ts`); las rutas nuevas deben declarar `bind` con `source: 'body'` / `'query'`, no agregarse ahí.
 
 El contexto de autorización (grants globales, de club y territoriales) lo resuelve `AuthorizationContextService` (`src/common/services/authorization-context.service.ts`) y se cachea 5 minutos.
 
