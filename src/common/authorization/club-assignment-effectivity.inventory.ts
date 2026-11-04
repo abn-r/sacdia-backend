@@ -68,7 +68,8 @@ const baseline = {
     'effectiveWhere|T08|1|a6d7f2a02d66',
   'common/authorization/policies/club/member-assignment-scopes.ts':
     'effectiveWhere|T08|1|b10da911cdc5',
-  'common/guards/permissions.guard.ts': 'effectiveWhere|T08|1|262b9e188dcc',
+  'common/authorization/section-member-access.ts':
+    'effectiveWhere|T08|1|262b9e188dcc',
   'common/services/authorization-context.service.ts':
     'effectiveWhere|T08|1|756a9b39f554',
   'coordination/actor-section-scope.service.ts':

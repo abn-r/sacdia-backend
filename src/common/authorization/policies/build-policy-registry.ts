@@ -4,8 +4,12 @@ import type { AuthorizationContextService } from '../../services/authorization-c
 import type { InstitutionalHierarchyService } from '../../services/institutional-hierarchy.service';
 import type { ClubAssignmentEffectivityPolicy } from '../club-assignment-effectivity.policy';
 import type { MemberTerritoryScopeService } from '../member-territory-scope.service';
-import { LegacyPolicy, type LegacyScopeDispatcher } from './legacy.policy';
 import { ResourcePolicyRegistry } from './policy-registry';
+import { CamporeeEventPolicy } from './camporee/camporee-event.policy';
+import { CamporeePaymentPolicy } from './camporee/camporee-payment.policy';
+import { CamporeeVenuePolicy } from './camporee/camporee-venue.policy';
+import { CamporeePolicy } from './camporee/camporee.policy';
+import { UnionCamporeePolicy } from './camporee/union-camporee.policy';
 import { ActivityPolicy } from './club/activity.policy';
 import { ActivitySeriesPolicy } from './club/activity-series.policy';
 import { ClassCounselorAssignmentPolicy } from './club/class-counselor-assignment.policy';
@@ -23,6 +27,10 @@ import {
   AssignmentEffectivity,
   InstanceScopeValidator,
 } from './scope/instance-scope';
+import {
+  CamporeeScopeLoader,
+  TerritoryScopeValidator,
+} from './scope/territory-scope';
 import { ActiveAssignmentPolicy } from './simple/active-assignment.policy';
 import { GlobalPolicy } from './simple/global.policy';
 import { UserPolicy } from './simple/user.policy';
@@ -36,17 +44,18 @@ export type PolicyDeps = {
   memberScope?: MemberTerritoryScopeService;
 };
 
-/**
- * Simple and club-family types have real policies. The camporee types still
- * delegate to the guard's legacy switch through `legacy` until they are
- * migrated.
- */
+/** One real policy per resource type; the registry type enforces it. */
 export function buildResourcePolicyRegistry(
   deps: PolicyDeps,
-  legacy: LegacyScopeDispatcher,
 ): ResourcePolicyRegistry {
   const { prisma } = deps;
   const scopes = new InstanceScopeValidator(prisma, deps.authorizationContext);
+  const territory = new TerritoryScopeValidator(
+    deps.authorizationContext,
+    prisma,
+    deps.hierarchy,
+  );
+  const loader = new CamporeeScopeLoader(prisma, deps.hierarchy);
   const effectivity = new AssignmentEffectivity(
     deps.effectivity,
     deps.temporal,
@@ -58,11 +67,11 @@ export function buildResourcePolicyRegistry(
     active_assignment: new ActiveAssignmentPolicy(),
     club: new ClubPolicy(deps.authorizationContext),
     club_section: new ClubSectionPolicy(prisma, scopes),
-    camporee: new LegacyPolicy('camporee', legacy),
-    union_camporee: new LegacyPolicy('union_camporee', legacy),
-    camporee_event: new LegacyPolicy('camporee_event', legacy),
-    camporee_venue: new LegacyPolicy('camporee_venue', legacy),
-    camporee_payment: new LegacyPolicy('camporee_payment', legacy),
+    camporee: new CamporeePolicy(territory, loader),
+    union_camporee: new UnionCamporeePolicy(territory, loader),
+    camporee_event: new CamporeeEventPolicy(prisma, territory, loader),
+    camporee_venue: new CamporeeVenuePolicy(prisma, deps.hierarchy, territory),
+    camporee_payment: new CamporeePaymentPolicy(prisma, territory, loader),
     activity: new ActivityPolicy(prisma, scopes),
     activity_series: new ActivitySeriesPolicy(prisma, scopes),
     finance: new FinancePolicy(prisma, scopes),
