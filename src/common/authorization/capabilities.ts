@@ -61,6 +61,11 @@ export type CapabilityContext = {
    * `stripClubContext`).
    */
   activeClubRole: ClubRoleName | string | undefined;
+  /**
+   * Local field of the active club grant (`scope.local_field.id`), only when
+   * that grant is `operational` and the id is numeric; null otherwise.
+   */
+  activeClubLocalFieldId: number | null;
   /** At least one `operational` club grant, active or not. */
   hasOperationalClubGrant: boolean;
   /** `profile.local_field_id` (the person's own field). */
@@ -169,8 +174,33 @@ const localFieldCamporeeReviewer: CapabilityPredicate = every(
   levelIn('all', 'local_field'),
 );
 
+/**
+ * Mirrors `resolveOrderActor` (`field-payment-orders/order-actor.ts`): a local
+ * field role reviews with the field of its global scope OR the field of its
+ * active club grant; platform admins review everywhere.
+ */
+const fieldPaymentOrderReviewer: CapabilityPredicate = some(
+  globalRoleIn(PLATFORM_ADMINS),
+  every(
+    globalRoleIn(LOCAL_FIELD_ROLES),
+    ({ territory, activeClubLocalFieldId }) =>
+      territory.local_field_id !== null || activeClubLocalFieldId !== null,
+  ),
+);
+
 const sectionRoleManager: CapabilityPredicate = globalRoleIn(
   PLATFORM_ADMINS_AND_LOCAL_FIELD,
+);
+
+/**
+ * Mirrors `SectionRoleMutationPolicy.assertCanMutate`: besides the global
+ * section-role managers, the operational director of the active club section
+ * may assign another user any role but director. The window and the "not
+ * yourself / not director" checks stay on the server.
+ */
+const sectionRoleAssigner: CapabilityPredicate = some(
+  sectionRoleManager,
+  clubRoleIn([ClubRole.DIRECTOR]),
 );
 
 /**
@@ -205,7 +235,7 @@ export const CAPABILITY_DEFINITIONS: Record<
   'club.operational_staff': clubRoleIn(CLUB_OPERATIONAL_STAFF),
   'club.staff_mode': ({ activeClubRole }) =>
     activeClubRole !== undefined && activeClubRole !== ClubRole.MEMBER,
-  'club_roles.assign_section': sectionRoleManager,
+  'club_roles.assign_section': sectionRoleAssigner,
   // The October–December window is still enforced by the server.
   'club_roles.designate_director': sectionRoleManager,
   'club_roles.succeed_director': sectionRoleManager,
@@ -218,13 +248,7 @@ export const CAPABILITY_DEFINITIONS: Record<
     ...LOCAL_FIELD_ROLES,
   ]),
   'coordination.manage': levelIn(...LEVELS_WITH_TERRITORY),
-  'field_payment_orders.review': some(
-    globalRoleIn(PLATFORM_ADMINS),
-    every(
-      globalRoleIn(LOCAL_FIELD_ROLES),
-      ({ territory }) => territory.local_field_id !== null,
-    ),
-  ),
+  'field_payment_orders.review': fieldPaymentOrderReviewer,
   'folders.confirm_union': globalRoleIn(UNION_ROLES),
   'folders.evaluate': levelIn(...LEVELS_WITH_TERRITORY),
   'honors.review_instructor_proposals': localFieldReviewer,
@@ -325,6 +349,14 @@ export function buildCapabilityContext(
     activeGrant?.operational === true
       ? activeClub?.role_name?.toLowerCase()
       : undefined;
+  const activeGrantLocalFieldId =
+    activeGrant?.operational === true
+      ? activeGrant.scope?.local_field?.id
+      : undefined;
+  const activeClubLocalFieldId =
+    typeof activeGrantLocalFieldId === 'number'
+      ? activeGrantLocalFieldId
+      : null;
   const profileLocalFieldId =
     (resolved.profile as { local_field_id?: number | null } | undefined)
       ?.local_field_id ?? null;
@@ -333,6 +365,7 @@ export function buildCapabilityContext(
     actor,
     territory: computeTerritory(resolved),
     activeClubRole,
+    activeClubLocalFieldId,
     hasOperationalClubGrant: clubGrants.some(
       (grant) => grant.operational === true,
     ),
