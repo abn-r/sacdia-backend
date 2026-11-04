@@ -23,6 +23,9 @@ import {
   BROADCAST_CHUNK_JOB,
   REALTIME_INVALIDATE_JOB,
   RealtimeInvalidatePayload,
+  SectionRealtimeInvalidatePayload,
+  UserRealtimeInvalidatePayload,
+  silentPushData,
   SendToClubMembersJobData,
   BroadcastChunkJobData,
 } from './notifications.processor';
@@ -40,20 +43,20 @@ const ACTOR_ID = '00000000-0000-0000-0000-000000000001';
 const MEMBER_ID_A = '00000000-0000-0000-0000-000000000002';
 const MEMBER_ID_B = '00000000-0000-0000-0000-000000000003';
 
-function makeJob(
-  data: RealtimeInvalidatePayload,
+function makeJob<T extends RealtimeInvalidatePayload>(
+  data: T,
   id = 'job-test-1',
-): Job<RealtimeInvalidatePayload> {
+): Job<T> {
   return {
     id,
     name: REALTIME_INVALIDATE_JOB,
     data,
-  } as unknown as Job<RealtimeInvalidatePayload>;
+  } as unknown as Job<T>;
 }
 
 function makePayload(
-  overrides: Partial<RealtimeInvalidatePayload> = {},
-): RealtimeInvalidatePayload {
+  overrides: Partial<SectionRealtimeInvalidatePayload> = {},
+): SectionRealtimeInvalidatePayload {
   return {
     sectionId: 10,
     resource: 'activities',
@@ -551,6 +554,194 @@ function makeClubMembersJob(
     },
   } as unknown as Job<SendToClubMembersJobData>;
 }
+
+describe('NotificationsProcessor — realtime.invalidate (authorization, per user)', () => {
+  let processor: NotificationsProcessor;
+  let mockSendEachForMulticast: jest.Mock;
+  let firebaseAdminMock: any;
+
+  const USER_ID = '00000000-0000-0000-0000-0000000000aa';
+  const authorizationPayload = (
+    overrides: Partial<UserRealtimeInvalidatePayload> = {},
+  ): UserRealtimeInvalidatePayload => ({
+    userId: USER_ID,
+    resource: 'authorization',
+    action: 'UPDATED',
+    timestamp: '2026-11-04T10:00:00.000Z',
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    firebaseAdminMock = jest.requireMock(
+      '../config/firebase-admin.module',
+    ).firebaseAdmin;
+    mockSendEachForMulticast = jest.fn();
+    (firebaseAdminMock.getMessaging as jest.Mock).mockReturnValue({
+      sendEachForMulticast: mockSendEachForMulticast,
+    });
+    passThroughClubData();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        NotificationsProcessor,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FcmTokensService, useValue: mockFcmTokensService },
+        {
+          provide: NotificationPreferencesService,
+          useValue: mockPreferencesService,
+        },
+        {
+          provide: DependentPushRouterService,
+          useValue: mockDependentPushRouter,
+        },
+        {
+          provide: ClubDataRecipientsService,
+          useValue: mockClubDataRecipients,
+        },
+      ],
+    }).compile();
+
+    processor = module.get<NotificationsProcessor>(NotificationsProcessor);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
+  });
+
+  it('looks tokens up by user_id only: no section membership, no actor exclusion, no club-data gate', async () => {
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+      { user_id: USER_ID, token: 'tok-phone', kind: 'token' },
+      { user_id: USER_ID, token: 'tok-tablet', kind: 'token' },
+    ]);
+    mockSendEachForMulticast.mockResolvedValue({
+      successCount: 2,
+      failureCount: 0,
+      responses: [{ success: true }, { success: true }],
+    });
+
+    const result = await processor.process(
+      makeJob(authorizationPayload()) as any,
+    );
+
+    expect(mockPrismaService.user_fcm_tokens.findMany).toHaveBeenCalledWith({
+      where: { active: true, user_id: USER_ID },
+      select: { user_id: true, token: true, kind: true },
+    });
+    expect(
+      mockClubDataRecipients.filterClubDataRecipients,
+    ).not.toHaveBeenCalled();
+    expect(mockDependentPushRouter.routeAndSend).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      recipientCount: 2,
+      successCount: 2,
+      failureCount: 0,
+    });
+  });
+
+  it('sends a data-only cache_invalidate push with resource authorization', async () => {
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+      { user_id: USER_ID, token: 'tok-phone', kind: 'token' },
+    ]);
+    mockSendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 0,
+      responses: [{ success: true }],
+    });
+
+    await processor.process(makeJob(authorizationPayload()) as any);
+
+    expect(mockSendEachForMulticast).toHaveBeenCalledTimes(1);
+    const message = mockSendEachForMulticast.mock.calls[0][0];
+    expect(message.tokens).toEqual(['tok-phone']);
+    expect(message.notification).toBeUndefined();
+    expect(message.data).toEqual({
+      type: 'cache_invalidate',
+      resource: 'authorization',
+      action: 'UPDATED',
+      userId: USER_ID,
+      entityId: USER_ID,
+      timestamp: '2026-11-04T10:00:00.000Z',
+    });
+    expect(message.apns).toEqual({
+      headers: { 'apns-priority': '5' },
+      payload: { aps: { 'content-available': 1 } },
+    });
+    expect(message.android).toEqual({ priority: 'high' });
+  });
+
+  it('skips without calling FCM when the user has no active device', async () => {
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+
+    const result = await processor.process(
+      makeJob(authorizationPayload()) as any,
+    );
+
+    expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      recipientCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      skipped: true,
+    });
+  });
+
+  it('revokes permanently invalid tokens like the section path', async () => {
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+      { user_id: USER_ID, token: 'tok-dead', kind: 'token' },
+    ]);
+    mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+      count: 1,
+    });
+    mockSendEachForMulticast.mockResolvedValue({
+      successCount: 0,
+      failureCount: 1,
+      responses: [
+        {
+          success: false,
+          error: { code: 'messaging/registration-token-not-registered' },
+        },
+      ],
+    });
+
+    await processor.process(makeJob(authorizationPayload()) as any);
+
+    expect(mockPrismaService.user_fcm_tokens.updateMany).toHaveBeenCalledWith({
+      where: { token: { in: ['tok-dead'] } },
+      data: { active: false },
+    });
+  });
+
+  it('silentPushData keeps the section contract unchanged and omits absent keys', () => {
+    expect(
+      silentPushData(
+        makePayload({ entityId: 42, timestamp: '2026-11-04T10:00:00.000Z' }),
+      ),
+    ).toEqual({
+      type: 'cache_invalidate',
+      sectionId: '10',
+      resource: 'activities',
+      action: 'CREATED',
+      entityId: '42',
+      actorId: ACTOR_ID,
+      timestamp: '2026-11-04T10:00:00.000Z',
+    });
+    expect(silentPushData(authorizationPayload({ actorId: ACTOR_ID }))).toEqual(
+      {
+        type: 'cache_invalidate',
+        resource: 'authorization',
+        action: 'UPDATED',
+        userId: USER_ID,
+        entityId: USER_ID,
+        actorId: ACTOR_ID,
+        timestamp: '2026-11-04T10:00:00.000Z',
+      },
+    );
+    expect(silentPushData(authorizationPayload())).not.toHaveProperty(
+      'sectionId',
+    );
+  });
+});
 
 describe('NotificationsProcessor — send-to-club-members', () => {
   let processor: NotificationsProcessor;

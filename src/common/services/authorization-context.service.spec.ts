@@ -6,7 +6,10 @@ import {
   AuthorizationContextService,
 } from './authorization-context.service';
 import { ErrorCode } from '../errors/error-codes';
-import { AppConflictException, AppNotFoundException } from '../errors/app.exception';
+import {
+  AppConflictException,
+  AppNotFoundException,
+} from '../errors/app.exception';
 import { InstitutionalHierarchyService } from './institutional-hierarchy.service';
 import { EcclesiasticalYearService } from './ecclesiastical-year.service';
 import { ClubCycleReadinessService } from './club-cycle-readiness.service';
@@ -14,6 +17,7 @@ import { CLOCK } from '../clock/clock';
 import { ZonedBusinessTimeService } from '../clock/zoned-business-time.service';
 import { TemporalContextFactory } from '../clock/temporal-context.factory';
 import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
+import { NotificationsService } from '../../notifications/notifications.service';
 
 /** Canonical year_id used across all test fixtures. */
 const CURRENT_YEAR_ID = 7;
@@ -38,6 +42,10 @@ describe('AuthorizationContextService', () => {
 
   const mockEcclesiasticalYearService = {
     getCurrentYear: jest.fn(),
+  };
+
+  const mockNotifications = {
+    sendSilentToUser: jest.fn().mockResolvedValue(undefined),
   };
 
   const CURRENT_YEAR = {
@@ -73,7 +81,9 @@ describe('AuthorizationContextService', () => {
       precision: 'exact',
     });
 
-    mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue(CURRENT_YEAR);
+    mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue(
+      CURRENT_YEAR,
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -104,6 +114,7 @@ describe('AuthorizationContextService', () => {
           provide: TemporalContextFactory,
           useFactory: () => new TemporalContextFactory(mockClock, realZoned),
         },
+        { provide: NotificationsService, useValue: mockNotifications },
       ],
     }).compile();
 
@@ -131,6 +142,83 @@ describe('AuthorizationContextService', () => {
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v3:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v2:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:user-123');
+  });
+
+  describe('authorization invalidation push (fire-and-forget)', () => {
+    it('emits one silent `authorization` push to the user after invalidating', async () => {
+      await service.invalidateUserAuthorizationCache('user-123');
+
+      expect(mockNotifications.sendSilentToUser).toHaveBeenCalledTimes(1);
+      expect(mockNotifications.sendSilentToUser).toHaveBeenCalledWith({
+        userId: 'user-123',
+        resource: 'authorization',
+        action: 'UPDATED',
+        timestamp: '2026-06-01T12:00:00.000Z',
+      });
+    });
+
+    it('still emits the push when a cache DEL fails', async () => {
+      cacheManager.del.mockRejectedValue(new Error('redis down'));
+
+      await expect(
+        service.invalidateUserAuthorizationCache('user-123'),
+      ).resolves.toBeUndefined();
+      expect(mockNotifications.sendSilentToUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not block or fail the caller when the push rejects or throws', async () => {
+      mockNotifications.sendSilentToUser.mockRejectedValueOnce(
+        new Error('queue down'),
+      );
+      await expect(
+        service.invalidateUserAuthorizationCache('user-123'),
+      ).resolves.toBeUndefined();
+
+      mockNotifications.sendSilentToUser.mockImplementationOnce(() => {
+        throw new Error('sync failure');
+      });
+      await expect(
+        service.invalidateUserAuthorizationCache('user-123'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('is a no-op without NotificationsService (specs and partial wiring)', async () => {
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          AuthorizationContextService,
+          { provide: PrismaService, useValue: mockPrismaService },
+          {
+            provide: InstitutionalHierarchyService,
+            useValue: mockHierarchyService,
+          },
+          {
+            provide: EcclesiasticalYearService,
+            useValue: mockEcclesiasticalYearService,
+          },
+          { provide: CACHE_MANAGER, useValue: cacheManager },
+          { provide: CLOCK, useValue: mockClock },
+          { provide: ZonedBusinessTimeService, useValue: mockZoned },
+          { provide: ClubCycleReadinessService, useValue: mockCycle },
+          {
+            provide: ClubAssignmentEffectivityPolicy,
+            useValue: new ClubAssignmentEffectivityPolicy(realZoned),
+          },
+          {
+            provide: TemporalContextFactory,
+            useFactory: () => new TemporalContextFactory(mockClock, realZoned),
+          },
+        ],
+      }).compile();
+      const bare = module.get<AuthorizationContextService>(
+        AuthorizationContextService,
+      );
+
+      await expect(
+        bare.invalidateUserAuthorizationCache('user-123'),
+      ).resolves.toBeUndefined();
+      expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v8:user-123');
+      expect(mockNotifications.sendSilentToUser).not.toHaveBeenCalled();
+    });
   });
 
   it('should throw UnauthorizedException when user is not found', async () => {
@@ -331,9 +419,7 @@ describe('AuthorizationContextService', () => {
         },
       ],
       club_role_assignments: [],
-      users_permissions: [
-        { permissions: { permission_name: 'reports:read' } },
-      ],
+      users_permissions: [{ permissions: { permission_name: 'reports:read' } }],
     });
 
     const result = await service.resolveUserAuthorization('user-direct');
@@ -765,16 +851,20 @@ describe('AuthorizationContextService', () => {
 
     // Past-year assignment appears in grants.club_assignments
     expect(result.authorization.grants.club_assignments).toHaveLength(1);
-    expect(
-      result.authorization.grants.club_assignments[0].assignment_id,
-    ).toBe('past-assignment');
+    expect(result.authorization.grants.club_assignments[0].assignment_id).toBe(
+      'past-assignment',
+    );
     // Past-year grant must carry EMPTY permissions (non-operational)
     expect(result.authorization.grants.club_assignments[0].permissions).toEqual(
       [],
     );
     // Past-year grant is NOT operational
-    expect(result.authorization.grants.club_assignments[0].operational).toBe(false);
-    expect(result.authorization.grants.club_assignments[0].ecclesiastical_year_id).toBe(pastYearId);
+    expect(result.authorization.grants.club_assignments[0].operational).toBe(
+      false,
+    );
+    expect(
+      result.authorization.grants.club_assignments[0].ecclesiastical_year_id,
+    ).toBe(pastYearId);
     // But does NOT contribute to effective.permissions
     expect(result.authorization.effective.permissions).toEqual([]);
     // And no active assignment is resolved
@@ -899,19 +989,23 @@ describe('AuthorizationContextService', () => {
 
     // Inactive grant appears in grants.club_assignments
     expect(result.authorization.grants.club_assignments).toHaveLength(1);
-    expect(
-      result.authorization.grants.club_assignments[0].assignment_id,
-    ).toBe('inactive-assignment');
+    expect(result.authorization.grants.club_assignments[0].assignment_id).toBe(
+      'inactive-assignment',
+    );
     expect(result.authorization.grants.club_assignments[0].status).toBe(
       'inactive',
     );
     // Inactive grant must carry EMPTY permissions (non-operational)
-    expect(
-      result.authorization.grants.club_assignments[0].permissions,
-    ).toEqual([]);
+    expect(result.authorization.grants.club_assignments[0].permissions).toEqual(
+      [],
+    );
     // Inactive grant is NOT operational
-    expect(result.authorization.grants.club_assignments[0].operational).toBe(false);
-    expect(result.authorization.grants.club_assignments[0].ecclesiastical_year_id).toBe(CURRENT_YEAR_ID);
+    expect(result.authorization.grants.club_assignments[0].operational).toBe(
+      false,
+    );
+    expect(
+      result.authorization.grants.club_assignments[0].ecclesiastical_year_id,
+    ).toBe(CURRENT_YEAR_ID);
     // Does NOT contribute to effective.permissions
     expect(result.authorization.effective.permissions).toEqual([]);
     // No active_assignment because inactive is not operational
@@ -981,8 +1075,12 @@ describe('AuthorizationContextService', () => {
       ['clubs:read'],
     );
     // Active current-year grant IS operational
-    expect(result.authorization.grants.club_assignments[0].operational).toBe(true);
-    expect(result.authorization.grants.club_assignments[0].ecclesiastical_year_id).toBe(CURRENT_YEAR_ID);
+    expect(result.authorization.grants.club_assignments[0].operational).toBe(
+      true,
+    );
+    expect(
+      result.authorization.grants.club_assignments[0].ecclesiastical_year_id,
+    ).toBe(CURRENT_YEAR_ID);
   });
 
   it('degrades gracefully when no current ecclesiastical year exists (permissions empty, no throw)', async () => {
@@ -1076,9 +1174,9 @@ describe('AuthorizationContextService', () => {
       users_permissions: [],
     });
 
-    await expect(
-      service.resolveUserAuthorization('user-err'),
-    ).rejects.toThrow('db down');
+    await expect(service.resolveUserAuthorization('user-err')).rejects.toThrow(
+      'db down',
+    );
 
     expect(cacheManager.set).not.toHaveBeenCalled();
   });
@@ -1099,9 +1197,16 @@ describe('AuthorizationContextService', () => {
       calendarRevision: '6:2025-01-01:2025-12-31:',
       payload: {
         authorization: {
-          grants: { club_assignments: [], global_roles: [], direct_permissions: [] },
+          grants: {
+            club_assignments: [],
+            global_roles: [],
+            direct_permissions: [],
+          },
           active_assignment: { assignment_id: 'stale-director' },
-          effective: { permissions: ['clubs:update'], scope: { global: {}, club: null } },
+          effective: {
+            permissions: ['clubs:update'],
+            scope: { global: {}, club: null },
+          },
         },
       },
     });
@@ -1124,7 +1229,10 @@ describe('AuthorizationContextService', () => {
       countries: null,
       unions: null,
       local_fields: null,
-      users_pr: { complete: true, active_club_assignment_id: 'past-assignment' },
+      users_pr: {
+        complete: true,
+        active_club_assignment_id: 'past-assignment',
+      },
       users_roles: [],
       club_role_assignments: [
         {
@@ -1362,7 +1470,10 @@ describe('AuthorizationContextService', () => {
   });
 
   describe('temporal effectivity of club assignments (clock 2026-06-01T12:00Z, business date 2026-06-01)', () => {
-    const baseUser = (assignments: unknown[], activeId: string | null = null) => ({
+    const baseUser = (
+      assignments: unknown[],
+      activeId: string | null = null,
+    ) => ({
       user_id: 'user-temporal',
       email: 'temporal@example.com',
       name: 'Temporal',
@@ -1469,7 +1580,9 @@ describe('AuthorizationContextService', () => {
         ),
       );
       const result = await service.resolveUserAuthorization('user-temporal');
-      expect(result.authorization.active_assignment.assignment_id).toBe('valid');
+      expect(result.authorization.active_assignment.assignment_id).toBe(
+        'valid',
+      );
     });
 
     it('persisted active assignment not effective and no other: active is null', async () => {

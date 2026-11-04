@@ -1966,6 +1966,48 @@ describe('NotificationsService', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // sendSilentToUser — per-user authorization invalidation
+  // ---------------------------------------------------------------------------
+  describe('sendSilentToUser', () => {
+    const USER_ID = '00000000-0000-0000-0000-000000000011';
+    const payload = {
+      userId: USER_ID,
+      resource: 'authorization' as const,
+      action: 'UPDATED' as const,
+      timestamp: '2026-11-04T10:00:00.000Z',
+    };
+
+    it('enqueues one realtime.invalidate job for the user, without a sectionId', async () => {
+      const mockAdd = jest.fn().mockResolvedValue({ id: 'job-authz' });
+      (service as any).queue = { add: mockAdd };
+
+      await service.sendSilentToUser(payload);
+
+      expect(mockAdd).toHaveBeenCalledTimes(1);
+      expect(mockAdd).toHaveBeenCalledWith(
+        'realtime.invalidate',
+        payload,
+        expect.objectContaining({ attempts: 2 }),
+      );
+      expect(mockAdd.mock.calls[0][1]).not.toHaveProperty('sectionId');
+    });
+
+    it('never throws when queue.add rejects', async () => {
+      (service as any).queue = {
+        add: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
+      };
+
+      await expect(service.sendSilentToUser(payload)).resolves.toBeUndefined();
+    });
+
+    it('silently skips when the queue is not available', async () => {
+      (service as any).queue = undefined;
+
+      await expect(service.sendSilentToUser(payload)).resolves.toBeUndefined();
+    });
+  });
+
   describe('dependent push routing', () => {
     const DEPENDENT = '00000000-0000-0000-0000-0000000000d1';
 

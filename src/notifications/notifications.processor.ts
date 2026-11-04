@@ -36,13 +36,68 @@ export const NOTIFICATIONS_QUEUE = 'notifications';
 export const REALTIME_INVALIDATE_JOB = 'realtime.invalidate';
 export const BROADCAST_CHUNK_JOB = 'broadcast-chunk';
 
-export interface RealtimeInvalidatePayload {
+export type RealtimeInvalidateAction = 'CREATED' | 'UPDATED' | 'DELETED';
+
+/** Club-data invalidation fanned out to the members of a section. */
+export interface SectionRealtimeInvalidatePayload {
   sectionId: number;
   resource: 'activities' | 'members';
-  action: 'CREATED' | 'UPDATED' | 'DELETED';
+  action: RealtimeInvalidateAction;
   entityId: number | string;
   actorId: string;
   timestamp: string; // ISO
+}
+
+/**
+ * Per-user invalidation: the person's own authorization changed (roles,
+ * club assignments, permissions). Sent to every active device of that user
+ * (no section, no club-data recipient gate, the actor is NOT excluded).
+ */
+export interface UserRealtimeInvalidatePayload {
+  userId: string;
+  resource: 'authorization';
+  action: 'UPDATED';
+  timestamp: string; // ISO
+  /** Who triggered the change, when known. */
+  actorId?: string;
+}
+
+export type RealtimeInvalidatePayload =
+  SectionRealtimeInvalidatePayload | UserRealtimeInvalidatePayload;
+
+export function isUserRealtimeInvalidate(
+  payload: RealtimeInvalidatePayload,
+): payload is UserRealtimeInvalidatePayload {
+  return payload.resource === 'authorization';
+}
+
+/**
+ * Data-only FCM payload (`type: 'cache_invalidate'`). Every value is a string
+ * as FCM requires; keys absent from the job are omitted.
+ */
+export function silentPushData(
+  payload: RealtimeInvalidatePayload,
+): Record<string, string> {
+  if (isUserRealtimeInvalidate(payload)) {
+    return {
+      type: 'cache_invalidate',
+      resource: payload.resource,
+      action: payload.action,
+      userId: payload.userId,
+      entityId: payload.userId,
+      ...(payload.actorId ? { actorId: payload.actorId } : {}),
+      timestamp: payload.timestamp,
+    };
+  }
+  return {
+    type: 'cache_invalidate',
+    sectionId: String(payload.sectionId),
+    resource: payload.resource,
+    action: payload.action,
+    entityId: String(payload.entityId),
+    actorId: payload.actorId,
+    timestamp: payload.timestamp,
+  };
 }
 
 export type NotificationJobType =
@@ -922,6 +977,11 @@ export class NotificationsProcessor
     failureCount: number;
     skipped?: boolean;
   }> {
+    if (isUserRealtimeInvalidate(job.data)) {
+      return this.handleUserRealtimeInvalidate(
+        job as Job<UserRealtimeInvalidatePayload>,
+      );
+    }
     const { sectionId, actorId, resource, action, entityId } = job.data;
 
     // Resolve FCM tokens for section members, excluding the actor.
@@ -994,6 +1054,64 @@ export class NotificationsProcessor
   }
 
   /**
+   * Per-user invalidation (`resource: 'authorization'`): every active device
+   * of the user gets the silent push so the app refreshes `GET /auth/me`.
+   * Looked up by `user_fcm_tokens.user_id` only: it carries no club data, so
+   * the club-data recipient gate does not apply, and the user is never
+   * excluded as "actor" (it is their own authorization that changed).
+   */
+  private async handleUserRealtimeInvalidate(
+    job: Job<UserRealtimeInvalidatePayload>,
+  ): Promise<{
+    recipientCount: number;
+    successCount: number;
+    failureCount: number;
+    skipped?: boolean;
+  }> {
+    const { userId, resource, action } = job.data;
+
+    const tokenRows = await this.prisma.user_fcm_tokens.findMany({
+      where: { active: true, user_id: userId },
+      select: { user_id: true, token: true, kind: true },
+    });
+
+    if (tokenRows.length === 0) {
+      this.logger.debug(
+        `handleUserRealtimeInvalidate: no active devices for user ${userId} (resource=${resource}) — job ${job.id}`,
+      );
+      return {
+        recipientCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        skipped: true,
+      };
+    }
+
+    const { successCount, failureCount } = await this.sendSilentMulticast(
+      tokenRows,
+      job.data,
+    );
+
+    this.logger.log(
+      JSON.stringify({
+        job_id: job.id,
+        user_id: userId,
+        resource,
+        action,
+        recipient_count: tokenRows.length,
+        success_count: successCount,
+        failure_count: failureCount,
+      }),
+    );
+
+    return {
+      recipientCount: tokenRows.length,
+      successCount,
+      failureCount,
+    };
+  }
+
+  /**
    * Sends a data-only (silent) FCM multicast message.
    * Does NOT include a `notification` key — prevents OS-level visible alerts.
    * All payload values are coerced to strings as required by FCM data messages.
@@ -1003,15 +1121,7 @@ export class NotificationsProcessor
     targets: FcmTargetRow[],
     payload: RealtimeInvalidatePayload,
   ): Promise<{ successCount: number; failureCount: number }> {
-    const data: Record<string, string> = {
-      type: 'cache_invalidate',
-      sectionId: String(payload.sectionId),
-      resource: payload.resource,
-      action: payload.action,
-      entityId: String(payload.entityId),
-      actorId: payload.actorId,
-      timestamp: payload.timestamp,
-    };
+    const data = silentPushData(payload);
 
     const { response, ordered } = await sendToTargets(targets, {
       data,
