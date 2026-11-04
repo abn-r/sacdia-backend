@@ -1,5 +1,6 @@
 import { DashboardController } from './dashboard.controller';
 import type { DashboardService } from './dashboard.service';
+import type { DashboardPendingService } from './dashboard-pending.service';
 import {
   AGE_UNKNOWN_SCOPES,
   GUARDIAN_PENDING_SCOPES,
@@ -23,12 +24,15 @@ const base: AuthPrincipal = {
 
 describe('DashboardController (club data by principal, FP3-03/FP3-07)', () => {
   const getSummary = jest.fn();
-  const controller = new DashboardController({
-    getSummary,
-  } as unknown as DashboardService);
+  const getPending = jest.fn();
+  const controller = new DashboardController(
+    { getSummary } as unknown as DashboardService,
+    { getPending } as unknown as DashboardPendingService,
+  );
 
   beforeEach(() => {
     getSummary.mockReset().mockResolvedValue({});
+    getPending.mockReset().mockResolvedValue({});
   });
 
   it.each<[string, AuthPrincipal, boolean]>([
@@ -84,5 +88,23 @@ describe('DashboardController (club data by principal, FP3-03/FP3-07)', () => {
       user: { ...base, kind: 'supervised_user', scopes: TEEN_PENDING_SCOPES },
     });
     expect(getSummary).toHaveBeenCalledWith('u1', { includeClubData: false });
+  });
+
+  it('pending: same principal gating as the summary (no club data => includeClubData false)', async () => {
+    await controller.getPending({
+      user: {
+        ...base,
+        kind: 'supervised_user',
+        scopes: TEEN_PENDING_SCOPES,
+        supervision: 'pending_guardian',
+      },
+    });
+    expect(getPending).toHaveBeenLastCalledWith('u1', {
+      includeClubData: false,
+    });
+    await controller.getPending({ user: base });
+    expect(getPending).toHaveBeenLastCalledWith('u1', {
+      includeClubData: true,
+    });
   });
 });

@@ -34,6 +34,7 @@ const EXPECTED_SCOPED_ROUTES: Record<string, ActingForScope> = {
   'GET /auth/me': 'self:read',
   'GET /auth/profile/completion-status': 'self:read',
   'GET /dashboard/summary': 'self:read',
+  'GET /dashboard/pending': 'self:read',
   'GET /users/:userId': 'self:read',
   'GET /users/:userId/age': 'self:read',
   'GET /users/:userId/post-registration/status': 'self:read',
@@ -255,6 +256,7 @@ const TEEN_ACCESS: Record<
  */
 const SHAPED_FOR_PENDING_TEEN: string[] = [
   'GET /dashboard/summary',
+  'GET /dashboard/pending',
   'GET /auth/me',
 ];
 
@@ -340,6 +342,7 @@ const PENDING_TEEN_SURFACE: Record<
   'DELETE /users/me/fcm-tokens/:tokenId': 'notifications',
   // Shaped for a pending teen.
   'GET /dashboard/summary': 'shaped',
+  'GET /dashboard/pending': 'shaped',
   'GET /auth/me': 'shaped',
 };
 
@@ -387,6 +390,7 @@ const DEVICE_SURFACE: Record<
   'GET /auth/me': 'own_read',
   'GET /auth/profile/completion-status': 'own_read',
   'GET /dashboard/summary': 'own_read',
+  'GET /dashboard/pending': 'own_read',
   'GET /notifications/history': 'own_read',
   'GET /notifications/unread-count': 'own_read',
   'PATCH /notifications/read-all': 'own_read',
