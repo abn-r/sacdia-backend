@@ -18,7 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
-import { GlobalRoles } from '../common/decorators';
+import { ExactGlobalRoles } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { AdminCertificateBulkImportsService } from './admin-certificate-bulk-imports.service';
 import { ApproveCertificateImportDto, RejectCertificateImportDto } from './dto';
@@ -32,7 +32,7 @@ interface AuthenticatedRequest {
 @ApiBearerAuth()
 @Controller('admin/certificate-bulk-imports')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles(
+@ExactGlobalRoles(
   GlobalRole.SUPER_ADMIN,
   GlobalRole.ADMIN,
   GlobalRole.ASSISTANT_ADMIN,

@@ -17,3 +17,14 @@ export type GlobalRoleType = GlobalRoleName;
  */
 export const GlobalRoles = (...roles: GlobalRoleType[]) =>
   SetMetadata(GLOBAL_ROLES_KEY, roles);
+
+export const EXACT_GLOBAL_ROLES_KEY = 'exact_global_roles';
+
+/**
+ * Like {@link GlobalRoles} but WITHOUT alias expansion: the accepted set is
+ * exactly the listed roles (e.g. `director-lf` does not admit
+ * `director-union`). super-admin still bypasses. When both decorators are
+ * present at the same level, `ExactGlobalRoles` wins.
+ */
+export const ExactGlobalRoles = (...roles: GlobalRoleType[]) =>
+  SetMetadata(EXACT_GLOBAL_ROLES_KEY, roles);
