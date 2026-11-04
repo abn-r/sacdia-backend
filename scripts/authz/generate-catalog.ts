@@ -1,9 +1,11 @@
 /**
  * Generates the authorization catalog (permission keys, role names, global
- * role aliases) for backend, admin and app from a single source:
- *  - permissions: prisma/permissions seed + migrations (see ./catalog-source)
- *  - roles:       prisma/authz/roles.json
- *  - aliases:     src/common/guards/global-role-aliases.ts
+ * role aliases, capability keys) for backend, admin and app from a single
+ * source:
+ *  - permissions:  prisma/permissions seed + migrations (see ./catalog-source)
+ *  - roles:        prisma/authz/roles.json
+ *  - aliases:      src/common/guards/global-role-aliases.ts
+ *  - capabilities: src/common/authorization/capabilities.ts (its definition keys)
  *
  * Usage:
  *   pnpm authz:generate   write generated files
@@ -16,6 +18,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  loadCapabilityCatalog,
   loadPermissionCatalog,
   type CatalogPermission,
 } from './catalog-source';
@@ -44,6 +47,8 @@ export type CatalogInput = {
   permissions: CatalogPermission[];
   roles: RoleSource[];
   aliases: AliasSource;
+  /** Capability keys (`capabilities.ts`); emitted sorted and deduplicated. */
+  capabilities: readonly string[];
   /** Repos to emit for. Backend is always emitted. */
   repos?: { admin?: boolean; app?: boolean };
 };
@@ -166,6 +171,26 @@ ${body}
 `;
 }
 
+function tsCapabilityKeys(keys: string[]): string {
+  return `${GENERATED_HEADER}
+
+export const CAPABILITY_KEYS = [
+${keys.map((k) => `  '${k}',`).join('\n')}
+] as const;
+
+export type CapabilityKey = (typeof CAPABILITY_KEYS)[number];
+`;
+}
+
+function dartCapabilityKeys(keys: string[]): string {
+  return `${GENERATED_HEADER}
+
+const Set<String> kCapabilityKeys = {
+${keys.map((k) => `  '${k}',`).join('\n')}
+};
+`;
+}
+
 function dartList(
   indent: string,
   prefix: string,
@@ -260,10 +285,16 @@ export function buildOutputs(input: CatalogInput): GeneratedFile[] {
     throw new Error(`Role aliases missing for: ${missingKeys.join(', ')}`);
   }
 
+  const capabilities = sorted([...new Set(input.capabilities)]);
+  if (capabilities.length === 0) {
+    throw new Error('Capability catalog is empty');
+  }
+
   const ts = {
     'permission-keys.ts': tsPermissionKeys(active, deprecated),
     'role-names.ts': tsRoleNames(globals, clubs),
     'role-aliases.ts': tsRoleAliases(input.aliases),
+    'capability-keys.ts': tsCapabilityKeys(capabilities),
   };
   const files: GeneratedFile[] = [];
   for (const [name, content] of Object.entries(ts)) {
@@ -277,6 +308,7 @@ export function buildOutputs(input: CatalogInput): GeneratedFile[] {
       'permission_keys.dart': dartPermissionKeys(active),
       'role_names.dart': dartRoleNames(globals, clubs),
       'role_aliases.dart': dartRoleAliases(input.aliases),
+      'capability_keys.dart': dartCapabilityKeys(capabilities),
     };
     for (const [name, content] of Object.entries(dart)) {
       files.push({ repo: 'app', relPath: `${APP_DIR}/${name}`, content });
@@ -314,6 +346,7 @@ export function generate(roots: Roots): Array<GeneratedFile & { abs: string }> {
     permissions: loadPermissionCatalog(roots.backend),
     roles: loadRoles(roots.backend),
     aliases: GLOBAL_ROLE_ALIASES,
+    capabilities: loadCapabilityCatalog(),
     repos: { admin: !!roots.admin, app: !!roots.app },
   });
   return files.map((f) => ({

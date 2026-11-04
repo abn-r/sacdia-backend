@@ -5,7 +5,10 @@ import {
   diffOutputs,
   loadRoles,
 } from '../../../scripts/authz/generate-catalog';
-import { loadPermissionCatalog } from '../../../scripts/authz/catalog-source';
+import {
+  loadCapabilityCatalog,
+  loadPermissionCatalog,
+} from '../../../scripts/authz/catalog-source';
 import { GLOBAL_ROLE_ALIASES } from '../guards/global-role-aliases';
 
 const BACKEND_ROOT = path.resolve(__dirname, '../../..');
@@ -25,15 +28,31 @@ const appIt = adopted(appRoot, 'lib/core/authorization/generated')
   ? it
   : it.skip;
 
+// Files the sibling may not have adopted yet (each adoption is a PR in that
+// repo): skipped with a warning while absent, compared like the rest once
+// they exist.
+const OPTIONAL_UNTIL_ADOPTED = new Set([
+  'src/lib/auth/generated/capability-keys.ts',
+  'lib/core/authorization/generated/capability_keys.dart',
+]);
+
 function stale(repo: 'admin' | 'app', root: string): string[] {
   const files = buildOutputs({
     permissions: loadPermissionCatalog(BACKEND_ROOT),
     roles: loadRoles(BACKEND_ROOT),
     aliases: GLOBAL_ROLE_ALIASES,
+    capabilities: loadCapabilityCatalog(),
     repos: { admin: repo === 'admin', app: repo === 'app' },
   })
     .filter((f) => f.repo === repo)
-    .map((f) => ({ ...f, abs: path.join(root, f.relPath) }));
+    .map((f) => ({ ...f, abs: path.join(root, f.relPath) }))
+    .filter((f) => {
+      if (!OPTIONAL_UNTIL_ADOPTED.has(f.relPath) || fs.existsSync(f.abs)) {
+        return true;
+      }
+      console.warn(`authz crossrepo: ${f.relPath} not adopted in ${root}`);
+      return false;
+    });
   return diffOutputs(files);
 }
 

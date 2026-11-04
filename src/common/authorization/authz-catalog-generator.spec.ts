@@ -12,7 +12,13 @@ import {
   writeOutputs,
   type CatalogInput,
 } from '../../../scripts/authz/generate-catalog';
-import { loadPermissionCatalog } from '../../../scripts/authz/catalog-source';
+import {
+  CAPABILITY_KEY_RE,
+  loadCapabilityCatalog,
+  loadPermissionCatalog,
+} from '../../../scripts/authz/catalog-source';
+import { CAPABILITY_DEFINITIONS } from './capabilities';
+import { CAPABILITY_KEYS } from './generated/capability-keys';
 
 const BACKEND_ROOT = path.resolve(__dirname, '../../..');
 
@@ -50,6 +56,11 @@ const aliases: CatalogInput['aliases'] = {
   user: ['user'],
   admin: ['admin', 'user'],
 };
+const capabilities: CatalogInput['capabilities'] = [
+  'users.create_in_scope',
+  'admin_panel.access',
+  'club.staff_mode',
+];
 
 describe('authz catalog source', () => {
   it('parses key, description, active and source from seed + migrations', () => {
@@ -88,6 +99,7 @@ describe('authz catalog generator', () => {
     permissions: loadPermissionCatalog(fixtureRoot()),
     roles,
     aliases,
+    capabilities,
     repos: { admin: true, app: true },
   });
   const find = (files: ReturnType<typeof buildOutputs>, rel: string) =>
@@ -121,6 +133,16 @@ export const Permission = {
     expect(find(files, 'role-aliases.ts')).toContain(
       "  admin: ['admin', 'user'],\n  user: ['user'],\n};",
     );
+    expect(find(files, 'capability-keys.ts')).toBe(`${GENERATED_HEADER}
+
+export const CAPABILITY_KEYS = [
+  'admin_panel.access',
+  'club.staff_mode',
+  'users.create_in_scope',
+] as const;
+
+export type CapabilityKey = (typeof CAPABILITY_KEYS)[number];
+`);
     expect(buildOutputs(input())).toEqual(files);
   });
 
@@ -145,6 +167,41 @@ abstract final class Permissions {
     );
     expect(find(files, 'role_aliases.dart')).toContain(
       "const Map<String, List<String>> kGlobalRoleAliases = {\n  'admin': ['admin', 'user'],",
+    );
+    expect(find(files, 'capability_keys.dart')).toBe(`${GENERATED_HEADER}
+
+const Set<String> kCapabilityKeys = {
+  'admin_panel.access',
+  'club.staff_mode',
+  'users.create_in_scope',
+};
+`);
+  });
+
+  it('writes the same capability file to backend and admin', () => {
+    const files = buildOutputs(input());
+    const backend = files.find(
+      (f) =>
+        f.repo === 'backend' &&
+        f.relPath === 'src/common/authorization/generated/capability-keys.ts',
+    );
+    const admin = files.find(
+      (f) =>
+        f.repo === 'admin' &&
+        f.relPath === 'src/lib/auth/generated/capability-keys.ts',
+    );
+    const app = files.find(
+      (f) =>
+        f.repo === 'app' &&
+        f.relPath === 'lib/core/authorization/generated/capability_keys.dart',
+    );
+    expect(backend?.content).toBe(admin?.content);
+    expect(app?.content).toBeDefined();
+  });
+
+  it('fails on an empty capability catalog', () => {
+    expect(() => buildOutputs({ ...input(), capabilities: [] })).toThrow(
+      /Capability catalog is empty/,
     );
   });
 
@@ -184,11 +241,34 @@ abstract final class Permissions {
     const files = buildOutputs(input())
       .filter((f) => f.repo === 'backend')
       .map((f) => ({ ...f, abs: path.join(root, f.relPath) }));
-    expect(diffOutputs(files)).toHaveLength(3);
+    expect(diffOutputs(files)).toHaveLength(4);
     writeOutputs(files);
     expect(diffOutputs(files)).toEqual([]);
     fs.appendFileSync(files[0].abs, '// drift\n');
     expect(diffOutputs(files)).toEqual([files[0].abs]);
+  });
+});
+
+describe('capability catalog source', () => {
+  it('reads the sorted keys of CAPABILITY_DEFINITIONS', () => {
+    const keys = loadCapabilityCatalog();
+    expect(keys).toEqual([...keys].sort((a, b) => (a < b ? -1 : 1)));
+    expect(new Set(keys)).toEqual(new Set(Object.keys(CAPABILITY_DEFINITIONS)));
+    expect(keys).toEqual([...CAPABILITY_KEYS]);
+  });
+
+  it('accepts dotted lower snake-case keys only', () => {
+    expect(loadCapabilityCatalog({ 'b.x': 1, 'a.y.z_1': 1 })).toEqual([
+      'a.y.z_1',
+      'b.x',
+    ]);
+    expect(() => loadCapabilityCatalog({ 'Users.Create': 1 })).toThrow(
+      /Malformed capability key/,
+    );
+    expect(() => loadCapabilityCatalog({ nodot: 1 })).toThrow(
+      /Malformed capability key/,
+    );
+    expect(CAPABILITY_KEY_RE.test('admin_panel.access')).toBe(true);
   });
 });
 
