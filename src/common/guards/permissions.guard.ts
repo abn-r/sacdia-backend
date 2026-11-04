@@ -4,7 +4,6 @@ import {
   Injectable,
   Optional,
 } from '@nestjs/common';
-import { isUUID } from 'class-validator';
 import {
   AppBadRequestException,
   AppForbiddenException,
@@ -13,6 +12,7 @@ import {
 } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { Reflector } from '@nestjs/core';
+import { isUUID } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TemporalContextFactory } from '../clock/temporal-context.factory';
 import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
@@ -29,8 +29,28 @@ import { InstitutionalHierarchyService } from '../services/institutional-hierarc
 import { MemberTerritoryScopeService } from '../authorization/member-territory-scope.service';
 import { isTargetUserInActorScope } from '../authorization/target-user-scope';
 import {
+  directPermissionsSatisfy,
+  getActiveClubPermissions,
+  hasRequiredPermissions,
+  isOwnerAwareResource,
+  BASE_GLOBAL_ROLE_NAME,
+} from '../authorization/permission-requirements';
+import {
+  getOptionalUuidValue,
+  getRequestValue,
+  getRequiredNumericValue,
+  parseEntityUuid,
+  parseTenantId,
+  requireMainClubId,
+  UUID_PARAM_PATTERN,
+} from '../authorization/policies/request-values';
+import { buildResourcePolicyRegistry } from '../authorization/policies/build-policy-registry';
+import type { ResourcePolicyRegistry } from '../authorization/policies/policy-registry';
+import type { PolicyContext } from '../authorization/policies/resource-policy';
+import {
   AUTHORIZATION_RESOURCE_KEY,
   type AuthorizationResourceMetadata,
+  type AuthorizationResourceType,
 } from '../decorators/authorization-resource.decorator';
 import {
   PERMISSIONS_KEY,
@@ -42,22 +62,11 @@ import {
   SENSITIVE_USER_SUBRESOURCE_KEY,
   type SensitiveUserSubresourceMetadata,
 } from '../decorators/sensitive-user-subresource.decorator';
+import { getSensitiveUserSubresourcePolicy } from './sensitive-user-subresource-policy';
 import {
-  getSensitiveUserSubresourceFallbackPermission,
-  getSensitiveUserSubresourcePolicy,
-} from './sensitive-user-subresource-policy';
-import {
-  COORDINATOR_GLOBAL_ROLE_NAMES,
   coordinatorRolePermissions,
   coordinatorScopeIncludesSection,
 } from '../authorization/coordinator-section-scope';
-
-/**
- * Same shape `ParseUUIDPipe` accepts (and Postgres `uuid` parses). Stricter
- * `isUUID(…, 'all')` rejects non-RFC variants that are valid ids in the DB.
- */
-const UUID_PARAM_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type AuthorizationSectionType = 'adventurers' | 'pathfinders' | 'master_guilds';
 
@@ -103,17 +112,12 @@ type ResolvedUnionCamporeeScope = {
   unionCamporeeId?: number | null;
 };
 
-/**
- * GLOBAL base role that every account receives at sign-up (see auth.service
- * and social-account.resolver). Its grants describe what a user may do with
- * their OWN data, so on an owner-aware resource they amount to "any signed-in
- * user". The owner already passes through the owner bypass, which means these
- * grants would only ever be consulted for a non-owner: they must never
- * authorize access to another user's object. A non-owner needs a non-base
- * source: another global role, a direct grant, or one of the club-scoped
- * section-member paths.
- */
-export const BASE_GLOBAL_ROLE_NAME = 'user';
+export { BASE_GLOBAL_ROLE_NAME };
+
+type LegacyResourceType = Exclude<
+  AuthorizationResourceType,
+  'global' | 'user' | 'active_assignment'
+>;
 
 const SECTION_MEMBER_PROFILE_GATE_PERMISSIONS = new Set([
   'club_roles:read',
@@ -160,6 +164,8 @@ interface PermissionsGrantMemo {
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
+  private readonly policies: ResourcePolicyRegistry;
+
   constructor(
     private readonly reflector: Reflector,
     private readonly authorizationContext: AuthorizationContextService,
@@ -168,7 +174,19 @@ export class PermissionsGuard implements CanActivate {
     private readonly assignmentEffectivity: ClubAssignmentEffectivityPolicy,
     private readonly temporalContexts: TemporalContextFactory,
     @Optional() private readonly memberScope?: MemberTerritoryScopeService,
-  ) {}
+  ) {
+    this.policies = buildResourcePolicyRegistry(
+      {
+        prisma,
+        authorizationContext,
+        hierarchy,
+        effectivity: assignmentEffectivity,
+        temporal: temporalContexts,
+        memberScope,
+      },
+      (ctx) => this.legacyResourceScope(ctx),
+    );
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Controllers re-declare `@UseGuards(JwtAuthGuard, PermissionsGuard)` on
@@ -276,7 +294,7 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    const hasRequiredPermissions = this.hasRequiredPermissions(
+    const permissionsSatisfied = hasRequiredPermissions(
       resolved,
       requirement,
       resource,
@@ -289,9 +307,9 @@ export class PermissionsGuard implements CanActivate {
     // A direct per-user grant is an explicit admin decision about this actor
     // and keeps working as before.
     const grantedByGlobalPermission =
-      hasRequiredPermissions &&
+      permissionsSatisfied &&
       (resource.type !== 'user' ||
-        this.directPermissionsSatisfy(resolved, requirement) ||
+        directPermissionsSatisfy(resolved, requirement) ||
         (await this.isTargetUserInScope(request, userId, resolved, resource)));
 
     if (
@@ -333,22 +351,32 @@ export class PermissionsGuard implements CanActivate {
 
   /**
    * Resolves the resource named by the route metadata and checks it against
-   * the actor's scope. `global`, `user` and `active_assignment` carry no
-   * resource of their own: any tenant identifier those routes accept must be
-   * declared through `bind` (see enforceTenantBindings).
+   * the actor's scope through the policy registry. `global`, `user` and
+   * `active_assignment` carry no resource of their own: any tenant identifier
+   * those routes accept must be declared through `bind` (see
+   * enforceTenantBindings).
    */
-  private async validateResourceScope(
+  private validateResourceScope(
     userId: string,
     request: any,
     resolved: ResolvedAuthorizationProfile,
     requirement: PermissionRequirement,
     resource: AuthorizationResourceMetadata,
   ): Promise<boolean> {
-    switch (resource.type) {
-      case 'global':
-      case 'user':
-      case 'active_assignment':
-        return true;
+    const policy = this.policies.get(resource.type);
+    if (!policy) {
+      throw new AppInternalServerErrorException(
+        ErrorCode.GUARD_RBAC_MISCONFIGURATION,
+      );
+    }
+    return policy.resolve({ userId, request, resolved, requirement, resource });
+  }
+
+  /** Pre-registry switch; shrinks as types move to their own policy. */
+  private async legacyResourceScope(ctx: PolicyContext): Promise<boolean> {
+    const { userId, request, resolved, requirement, resource } = ctx;
+    const type = resource.type as LegacyResourceType;
+    switch (type) {
       case 'club':
         return this.validateClubScope(userId, request, resolved, resource);
       case 'club_section':
@@ -488,7 +516,7 @@ export class PermissionsGuard implements CanActivate {
           await this.resolveInsuranceRecordScopes(request, resource),
         );
       default: {
-        const _exhaustive: never = resource.type;
+        const _exhaustive: never = type;
         void _exhaustive;
         throw new AppInternalServerErrorException(
           ErrorCode.GUARD_RBAC_MISCONFIGURATION,
@@ -497,25 +525,13 @@ export class PermissionsGuard implements CanActivate {
     }
   }
 
-  private directPermissionsSatisfy(
-    resolved: ResolvedAuthorizationProfile,
-    requirement: PermissionRequirement,
-  ): boolean {
-    const direct = new Set(
-      resolved.authorization.grants.direct_permissions ?? [],
-    );
-    return requirement.mode === 'any'
-      ? requirement.permissions.some((permission) => direct.has(permission))
-      : requirement.permissions.every((permission) => direct.has(permission));
-  }
-
   private async isTargetUserInScope(
     request: any,
     actorUserId: string,
     resolved: ResolvedAuthorizationProfile,
     resource: AuthorizationResourceMetadata,
   ): Promise<boolean> {
-    const targetUserId = this.getRequestValue(
+    const targetUserId = getRequestValue(
       request,
       'param',
       resource.ownerParam ?? 'userId',
@@ -532,116 +548,6 @@ export class PermissionsGuard implements CanActivate {
       resolved,
       targetUserId,
     );
-  }
-
-  private hasRequiredPermissions(
-    resolved: ResolvedAuthorizationProfile,
-    requirement: PermissionRequirement,
-    resource: AuthorizationResourceMetadata,
-    sensitiveUserSubresource?: SensitiveUserSubresourceMetadata,
-    {
-      excludeCoordinatorRoles = false,
-    }: { excludeCoordinatorRoles?: boolean } = {},
-  ): boolean {
-    // Reached only after the owner bypass failed: on an owner-aware resource
-    // the actor is a non-owner here, so the base role does not count.
-    const globalPermissions = this.getGlobalPermissions(resolved, {
-      excludeBaseRole: this.isOwnerAwareResource(resource),
-      excludeCoordinatorRoles,
-    });
-
-    if (resource.type === 'user' && sensitiveUserSubresource) {
-      return this.hasSensitiveUserSubresourcePermissions(
-        globalPermissions,
-        requirement,
-        sensitiveUserSubresource,
-      );
-    }
-
-    const activeClubPermissions = this.getActiveClubPermissions(resolved);
-    const candidatePermissions =
-      resource.type === 'global' || resource.type === 'user'
-        ? globalPermissions
-        : new Set([...globalPermissions, ...activeClubPermissions]);
-
-    if (requirement.mode === 'any') {
-      return requirement.permissions.some((permission) =>
-        candidatePermissions.has(permission),
-      );
-    }
-
-    return requirement.permissions.every((permission) =>
-      candidatePermissions.has(permission),
-    );
-  }
-
-  private hasSensitiveUserSubresourcePermissions(
-    globalPermissions: Set<string>,
-    requirement: PermissionRequirement,
-    sensitiveUserSubresource: SensitiveUserSubresourceMetadata,
-  ): boolean {
-    const matchesPermission = (permission: string): boolean => {
-      const legacyFallbackPermission =
-        getSensitiveUserSubresourceFallbackPermission(
-          sensitiveUserSubresource.family,
-          sensitiveUserSubresource.mode,
-        );
-
-      return (
-        globalPermissions.has(permission) ||
-        globalPermissions.has(legacyFallbackPermission)
-      );
-    };
-
-    if (requirement.mode === 'any') {
-      return requirement.permissions.some(matchesPermission);
-    }
-
-    return requirement.permissions.every(matchesPermission);
-  }
-
-  private getGlobalPermissions(
-    resolved: ResolvedAuthorizationProfile,
-    {
-      excludeBaseRole,
-      excludeCoordinatorRoles = false,
-    }: { excludeBaseRole: boolean; excludeCoordinatorRoles?: boolean },
-  ): Set<string> {
-    return new Set([
-      ...resolved.authorization.grants.global_roles
-        .filter(
-          (grant) =>
-            (!excludeBaseRole ||
-              grant.role_name.toLowerCase() !== BASE_GLOBAL_ROLE_NAME) &&
-            (!excludeCoordinatorRoles ||
-              !COORDINATOR_GLOBAL_ROLE_NAMES.has(
-                grant.role_name.toLowerCase(),
-              )),
-        )
-        .flatMap((grant) => grant.permissions),
-      ...(resolved.authorization.grants.direct_permissions ?? []),
-    ]);
-  }
-
-  private getActiveClubPermissions(
-    resolved: ResolvedAuthorizationProfile,
-  ): Set<string> {
-    const activeAssignmentId =
-      resolved.authorization.active_assignment.assignment_id;
-
-    if (!activeAssignmentId) {
-      return new Set<string>();
-    }
-
-    const activeGrant = resolved.authorization.grants.club_assignments.find(
-      (assignment) => assignment.assignment_id === activeAssignmentId,
-    );
-
-    if (!activeGrant || activeGrant.operational === false) {
-      return new Set<string>();
-    }
-
-    return new Set(activeGrant.permissions ?? []);
   }
 
   private async canReadSectionMemberProfile(
@@ -665,7 +571,7 @@ export class PermissionsGuard implements CanActivate {
       return false;
     }
 
-    const activeClubPermissions = this.getActiveClubPermissions(resolved);
+    const activeClubPermissions = getActiveClubPermissions(resolved);
     const canReadSectionMemberProfile = requirement.permissions.every(
       (permission) =>
         [...(SECTION_MEMBER_READ_GATES.get(permission) ?? [])].some((gate) =>
@@ -712,7 +618,7 @@ export class PermissionsGuard implements CanActivate {
       sensitiveUserSubresource.family,
       sensitiveUserSubresource.mode,
     ).finePermission;
-    if (!this.getActiveClubPermissions(resolved).has(finePermission)) {
+    if (!getActiveClubPermissions(resolved).has(finePermission)) {
       return false;
     }
 
@@ -738,7 +644,7 @@ export class PermissionsGuard implements CanActivate {
       return false;
     }
 
-    const targetUserId = this.getRequestValue(
+    const targetUserId = getRequestValue(
       request,
       'param',
       resource.ownerParam ?? 'userId',
@@ -793,8 +699,8 @@ export class PermissionsGuard implements CanActivate {
     resolved: ResolvedAuthorizationProfile,
     resource: AuthorizationResourceMetadata,
   ): Promise<boolean> {
-    const clubId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.clubIdParam ?? 'clubId'),
+    const clubId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.clubIdParam ?? 'clubId'),
       'Club ID not found in request',
     );
 
@@ -830,11 +736,7 @@ export class PermissionsGuard implements CanActivate {
     resource: AuthorizationResourceMetadata,
   ): Promise<void> {
     for (const binding of resource.bind ?? []) {
-      const rawValue = this.getRequestValue(
-        request,
-        binding.source,
-        binding.field,
-      );
+      const rawValue = getRequestValue(request, binding.source, binding.field);
 
       if (rawValue === undefined || rawValue === null || rawValue === '') {
         if (binding.optional) {
@@ -846,12 +748,12 @@ export class PermissionsGuard implements CanActivate {
       if (binding.kind === 'club_enrollment_territory') {
         await this.assertClubEnrollmentTerritoryAccess(
           userId,
-          this.parseEntityUuid(rawValue),
+          parseEntityUuid(rawValue),
         );
         continue;
       }
 
-      const tenantId = this.parseTenantId(rawValue);
+      const tenantId = parseTenantId(rawValue);
 
       switch (binding.kind) {
         case 'club':
@@ -912,7 +814,7 @@ export class PermissionsGuard implements CanActivate {
     resource: AuthorizationResourceMetadata,
     sectionId: number,
   ): Promise<void> {
-    const routeClubIdValue = this.getRequestValue(
+    const routeClubIdValue = getRequestValue(
       request,
       'param',
       resource.clubIdParam ?? 'clubId',
@@ -920,7 +822,7 @@ export class PermissionsGuard implements CanActivate {
     const routeClubId =
       routeClubIdValue === undefined || routeClubIdValue === null
         ? null
-        : this.parseTenantId(routeClubIdValue);
+        : parseTenantId(routeClubIdValue);
 
     const section = await this.prisma.club_sections.findUnique({
       where: { club_section_id: sectionId },
@@ -934,7 +836,7 @@ export class PermissionsGuard implements CanActivate {
       throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
     }
 
-    const mainClubId = this.requireMainClubId(
+    const mainClubId = requireMainClubId(
       section.main_club_id,
       'Club section without main club',
     );
@@ -960,7 +862,7 @@ export class PermissionsGuard implements CanActivate {
       throw new AppNotFoundException(ErrorCode.CE_ENROLLMENT_NOT_FOUND);
     }
 
-    const mainClubId = this.requireMainClubId(
+    const mainClubId = requireMainClubId(
       enrollment.club_section?.main_club_id,
       'Club enrollment section without main club',
     );
@@ -1034,34 +936,6 @@ export class PermissionsGuard implements CanActivate {
   }
 
   /**
-   * Tenant ids must be a positive integer or its plain decimal string form.
-   * Arrays, objects and partially numeric strings ("20abc") are rejected.
-   */
-  private parseTenantId(value: unknown): number {
-    if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
-      return value;
-    }
-
-    if (typeof value === 'string' && /^[1-9]\d{0,15}$/.test(value)) {
-      const parsed = Number(value);
-      if (Number.isSafeInteger(parsed)) {
-        return parsed;
-      }
-    }
-
-    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-  }
-
-  /** Entity UUIDs are checked before they reach a `@db.Uuid` lookup. */
-  private parseEntityUuid(value: unknown): string {
-    if (typeof value === 'string' && isUUID(value, 'all')) {
-      return value;
-    }
-
-    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-  }
-
-  /**
    * Only for routes that opted in with `coordinatorSections` (see
    * AuthorizationResourceMetadata); undefined everywhere else, so every other
    * route keeps the generic rule.
@@ -1076,7 +950,7 @@ export class PermissionsGuard implements CanActivate {
     }
     return {
       requirement,
-      clubAuthority: this.hasRequiredPermissions(
+      clubAuthority: hasRequiredPermissions(
         resolved,
         requirement,
         resource,
@@ -1295,23 +1169,13 @@ export class PermissionsGuard implements CanActivate {
     return request.params?.[ownerParam] === userId;
   }
 
-  /** Resources that belong to the user named by `ownerParam`. */
-  private isOwnerAwareResource(
-    resource: AuthorizationResourceMetadata,
-  ): boolean {
-    return (
-      resource.type === 'user' ||
-      (resource.type === 'active_assignment' && Boolean(resource.ownerParam))
-    );
-  }
-
   private canBypassForResourceOwner(
     request: any,
     userId: string,
     resource: AuthorizationResourceMetadata,
   ): boolean {
     return (
-      this.isOwnerAwareResource(resource) &&
+      isOwnerAwareResource(resource) &&
       this.isResourceOwner(request, userId, resource)
     );
   }
@@ -1320,8 +1184,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope | ResolvedJointActivityScope> {
-    const activityId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'activityId'),
+    const activityId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'activityId'),
       'Activity ID not found in request',
     );
 
@@ -1381,8 +1245,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope | ResolvedJointActivityScope> {
-    const seriesId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'seriesId'),
+    const seriesId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'seriesId'),
       'Activity series ID not found in request',
     );
 
@@ -1432,8 +1296,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedTerritoryScope> {
-    const camporeeId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'camporeeId'),
+    const camporeeId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'camporeeId'),
       'Camporee ID not found in request',
     );
 
@@ -1483,8 +1347,8 @@ export class PermissionsGuard implements CanActivate {
     | { type: 'local'; scope: ResolvedTerritoryScope }
     | { type: 'union'; scope: ResolvedUnionCamporeeScope }
   > {
-    const eventId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'eventId'),
+    const eventId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'eventId'),
       'Event ID not found in request',
     );
 
@@ -1586,14 +1450,14 @@ export class PermissionsGuard implements CanActivate {
     | { type: 'union'; scope: ResolvedUnionCamporeeScope }
   > {
     // Case 1: mutation by id (PATCH/DELETE).
-    const rawId = this.getRequestValue(
+    const rawId = getRequestValue(
       request,
       'param',
       resource.idParam ?? 'venueId',
     );
 
     if (rawId !== undefined && rawId !== null && rawId !== '') {
-      const venueId = this.getRequiredNumericValue(
+      const venueId = getRequiredNumericValue(
         rawId,
         'Venue ID not found in request',
       );
@@ -1699,8 +1563,8 @@ export class PermissionsGuard implements CanActivate {
     | { type: 'local'; scope: ResolvedTerritoryScope }
     | { type: 'union'; scope: ResolvedUnionCamporeeScope }
   > {
-    const paymentId = this.parseEntityUuid(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'paymentId'),
+    const paymentId = parseEntityUuid(
+      getRequestValue(request, 'param', resource.idParam ?? 'paymentId'),
     );
 
     const payment = await this.prisma.camporee_payments.findUnique({
@@ -1740,12 +1604,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedUnionCamporeeScope> {
-    const camporeeId = this.getRequiredNumericValue(
-      this.getRequestValue(
-        request,
-        'param',
-        resource.idParam ?? 'unionCamporeeId',
-      ),
+    const camporeeId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'unionCamporeeId'),
       'Union camporee ID not found in request',
     );
 
@@ -1904,8 +1764,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const financeId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'financeId'),
+    const financeId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'financeId'),
       'Finance ID not found in request',
     );
 
@@ -1934,11 +1794,11 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const sectionId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'sectionId'),
+    const sectionId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'sectionId'),
       'Club section ID not found in request',
     );
-    const expectedClubIdValue = this.getRequestValue(
+    const expectedClubIdValue = getRequestValue(
       request,
       'param',
       resource.clubIdParam ?? 'clubId',
@@ -1946,7 +1806,7 @@ export class PermissionsGuard implements CanActivate {
     const expectedClubId =
       expectedClubIdValue === undefined || expectedClubIdValue === null
         ? null
-        : this.getRequiredNumericValue(
+        : getRequiredNumericValue(
             expectedClubIdValue,
             'Club ID not found in request',
           );
@@ -1970,8 +1830,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const sectionId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'clubId'),
+    const sectionId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'clubId'),
       'Club section ID not found in request',
     );
 
@@ -1991,8 +1851,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const inventoryId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'id'),
+    const inventoryId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'id'),
       'Inventory item ID not found in request',
     );
 
@@ -2021,12 +1881,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const assignmentId = this.getOptionalUuidValue(
-      this.getRequestValue(
-        request,
-        'param',
-        resource.idParam ?? 'assignmentId',
-      ),
+    const assignmentId = getOptionalUuidValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'assignmentId'),
     );
 
     if (!assignmentId) {
@@ -2058,12 +1914,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const assignmentId = this.getOptionalUuidValue(
-      this.getRequestValue(
-        request,
-        'param',
-        resource.idParam ?? 'assignmentId',
-      ),
+    const assignmentId = getOptionalUuidValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'assignmentId'),
     );
 
     if (!assignmentId) {
@@ -2098,12 +1950,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const enrollmentId = this.getRequiredNumericValue(
-      this.getRequestValue(
-        request,
-        'param',
-        resource.idParam ?? 'enrollmentId',
-      ),
+    const enrollmentId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'enrollmentId'),
       'Investiture enrollment ID not found in request',
     );
 
@@ -2160,7 +2008,7 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const reportId = this.getRequestValue(request, 'param', 'reportId');
+    const reportId = getRequestValue(request, 'param', 'reportId');
 
     if (reportId) {
       if (!isUUID(String(reportId), 'all')) {
@@ -2194,11 +2042,8 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const enrollmentId = String(
-      this.getRequestValue(
-        request,
-        'param',
-        resource.idParam ?? 'enrollmentId',
-      ) ?? '',
+      getRequestValue(request, 'param', resource.idParam ?? 'enrollmentId') ??
+        '',
     );
 
     if (!enrollmentId) {
@@ -2235,8 +2080,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope[]> {
-    const memberId = this.getOptionalUuidValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'memberId'),
+    const memberId = getOptionalUuidValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'memberId'),
     );
 
     if (!memberId) {
@@ -2259,8 +2104,8 @@ export class PermissionsGuard implements CanActivate {
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope[]> {
-    const insuranceId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'insuranceId'),
+    const insuranceId = getRequiredNumericValue(
+      getRequestValue(request, 'param', resource.idParam ?? 'insuranceId'),
       'Insurance ID not found in request',
     );
 
@@ -2373,63 +2218,5 @@ export class PermissionsGuard implements CanActivate {
       default:
         return 'pathfinders'; // safe fallback
     }
-  }
-
-  private getRequestValue(
-    request: any,
-    source: 'param' | 'query' | 'body',
-    field: string,
-  ): unknown {
-    switch (source) {
-      case 'query':
-        return request.query?.[field];
-      case 'body':
-        return request.body?.[field];
-      case 'param':
-      default:
-        return request.params?.[field];
-    }
-  }
-
-  private getRequiredNumericValue(
-    value: unknown,
-    _errorMessage: string,
-  ): number {
-    const parsed =
-      typeof value === 'number' ? value : Number.parseInt(String(value), 10);
-
-    if (!Number.isFinite(parsed)) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-    }
-
-    return parsed;
-  }
-
-  /**
-   * Guards run before `ParseUUIDPipe`, so a malformed id would otherwise reach
-   * a `@db.Uuid` lookup and surface as a 500. Missing/empty → `null` (callers
-   * keep their own 403); present but not a UUID → 400.
-   */
-  private getOptionalUuidValue(value: unknown): string | null {
-    if (value === undefined || value === null || value === '') {
-      return null;
-    }
-
-    if (typeof value !== 'string' || !UUID_PARAM_PATTERN.test(value)) {
-      throw new AppBadRequestException(ErrorCode.GUARD_ID_PARAM_INVALID);
-    }
-
-    return value;
-  }
-
-  private requireMainClubId(
-    value: number | null | undefined,
-    _errorMessage: string,
-  ): number {
-    if (!Number.isFinite(value)) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-    }
-
-    return value as number;
   }
 }
