@@ -1,3 +1,4 @@
+import { ActorScope } from '../common/authorization/actor-scope';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
@@ -52,17 +53,11 @@ function normalizeRole(role: string): string {
   return role.trim().toLowerCase();
 }
 
-function globalRoleSet(actor: CamporeeOrderActor): Set<string> {
-  return new Set(actor.globalRoles.map(normalizeRole));
-}
-
-function hasAnyRole(roles: Set<string>, allowed: Set<string>): boolean {
-  for (const role of allowed) {
-    if (roles.has(role)) {
-      return true;
-    }
-  }
-  return false;
+function hasAnyRole(
+  actor: CamporeeOrderActor,
+  allowed: Iterable<string>,
+): boolean {
+  return ActorScope.fromRoleNames(actor.globalRoles).hasAnyRole(allowed);
 }
 
 function isMutationScopeClosed(territory: ActorTerritoryScope): boolean {
@@ -206,7 +201,7 @@ function canOperateLocalFieldCaja(
   if (isMutationScopeClosed(territory)) {
     return false;
   }
-  if (!hasAnyRole(globalRoleSet(actor), REVIEW_ROLES)) {
+  if (!hasAnyRole(actor, REVIEW_ROLES)) {
     return false;
   }
   if (territory.level === 'all') {

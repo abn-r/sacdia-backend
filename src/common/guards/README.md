@@ -65,6 +65,8 @@ En e2e, `E2E_PASSTHROUGH_PERMISSIONS=true` desactiva `PermissionsGuard` solo con
 - `policies/build-policy-registry.ts` y `policies/policy-registry.ts`: el guard construye el registro en su constructor (firma sin cambios).
 - `tenant-binding.enforcer.ts`: `TenantBindingEnforcer.enforce(ctx)` aplica `bind` (propietarios incluidos, y después de la policy).
 - `section-member-access.ts`: lecturas de miembros de la sección activa (`SectionMemberAccess`).
+- `actor-scope.ts`: `ActorScope.from(resolved)`, vista de solo lectura del actor (roles globales, división/unión/campo local, club y sección activos, secciones de coordinador) con `hasRole`/`hasAnyRole`, `coversHierarchy`, `coversClub`, `coversSection`, `coversLocalField`. Los adaptadores (`report-visibility-scope`, `camporee-*-actor`, `order-actor`) lo usan en lugar de copiar sets de roles.
+- `access-decision-locality.arch.spec.ts`: ratchet que congela (`KNOWN_ACCESS_DECISION_FILES`) los archivos fuera de `common/authorization` y `common/guards` que deciden acceso con un filtro `users.local_field_id` o un predicado de `club_role_assignments`. Solo se pueden quitar entradas; un archivo nuevo, o uno listado que ya no coincide, rompe el test.
 
 Para añadir un tipo de recurso: agrégalo a la unión `AuthorizationResourceType` (`decorators/authorization-resource.decorator.ts`). `ResourcePolicyTable` es un mapped type sobre esa unión, así que `buildResourcePolicyRegistry` no compila hasta registrar una policy para el tipo nuevo. Crea `policies/<familia>/<tipo>.policy.ts` con su spec y regístrala allí. Si falta en runtime, el guard responde `GUARD_RBAC_MISCONFIGURATION`.
 

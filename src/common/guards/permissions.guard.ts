@@ -106,7 +106,6 @@ export class PermissionsGuard implements CanActivate {
     this.tenantBindings = new TenantBindingEnforcer(
       prisma,
       authorizationContext,
-      hierarchy,
       territory,
       new CamporeeScopeLoader(prisma, hierarchy),
     );

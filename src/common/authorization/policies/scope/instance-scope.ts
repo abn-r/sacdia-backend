@@ -9,6 +9,7 @@ import type {
   ResolvedAuthorizationProfile,
 } from '../../../services/authorization-context.service';
 import type { ClubAssignmentEffectivityPolicy } from '../../club-assignment-effectivity.policy';
+import { ActorScope } from '../../actor-scope';
 import { toTemporalLocalField } from '../../club-assignment-temporal';
 import {
   coordinatorRolePermissions,
@@ -180,12 +181,11 @@ export class InstanceScopeValidator {
         return true;
       }
 
-      const activeClubScope = resolved.authorization.effective.scope.club;
+      const actor = ActorScope.from(resolved);
 
       if (
-        activeClubScope &&
-        activeClubScope.club.club_id === resourceScope.mainClubId &&
-        activeClubScope.section.club_section_id === resourceScope.instanceId
+        actor.activeClubId === resourceScope.mainClubId &&
+        actor.activeSectionId === resourceScope.instanceId
       ) {
         return true;
       }
@@ -255,14 +255,13 @@ export class InstanceScopeValidator {
       }
     }
 
-    const activeClubScope = resolved.authorization.effective.scope.club;
+    const actor = ActorScope.from(resolved);
 
     if (
-      activeClubScope &&
       resourceScopes.some(
         (resourceScope) =>
-          activeClubScope.club.club_id === resourceScope.mainClubId &&
-          activeClubScope.section.club_section_id === resourceScope.instanceId,
+          actor.activeClubId === resourceScope.mainClubId &&
+          actor.activeSectionId === resourceScope.instanceId,
       )
     ) {
       return true;
@@ -292,18 +291,18 @@ export class InstanceScopeValidator {
       return true;
     }
 
-    const activeClubScope = resolved.authorization.effective.scope.club;
+    const actor = ActorScope.from(resolved);
 
     if (
-      !activeClubScope ||
-      activeClubScope.club.club_id !== resourceScope.mainClubId
+      actor.activeClubId !== resourceScope.mainClubId ||
+      actor.activeSectionId === undefined
     ) {
       throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 
-    const activeSectionId = activeClubScope.section.club_section_id;
-
-    if (!resourceScope.participatingSectionIds.includes(activeSectionId)) {
+    if (
+      !resourceScope.participatingSectionIds.includes(actor.activeSectionId)
+    ) {
       throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 

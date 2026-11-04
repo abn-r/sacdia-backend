@@ -1,3 +1,4 @@
+import { ActorScope } from '../common/authorization/actor-scope';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
@@ -41,11 +42,7 @@ export function resolveOrderActor(request: RequestWithProfile): OrderActor {
     throw new AppForbiddenException(ErrorCode.GUARD_USER_NOT_AUTHENTICATED);
   }
 
-  const roles = new Set(
-    profile.authorization.grants.global_roles.map((grant) =>
-      grant.role_name.toLowerCase(),
-    ),
-  );
+  const actor = ActorScope.from(profile);
   const activeSectionGrants =
     profile.authorization.grants.club_assignments.filter(
       (grant) => grant.status === 'active',
@@ -68,10 +65,9 @@ export function resolveOrderActor(request: RequestWithProfile): OrderActor {
     profile.authorization.effective.scope.global.local_field?.id ??
     activeGrant?.scope.local_field?.id;
   const globalAccess =
-    (roles.has('admin') || roles.has('super-admin')) &&
-    typeof localFieldId !== 'number';
+    actor.hasRole('admin', 'super-admin') && typeof localFieldId !== 'number';
   const canReview =
-    REVIEW_ROLES.some((role) => roles.has(role)) &&
+    actor.hasAnyRole(REVIEW_ROLES) &&
     (globalAccess || typeof localFieldId === 'number');
 
   return {

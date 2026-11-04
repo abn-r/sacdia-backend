@@ -10,7 +10,6 @@ import type {
   AuthorizationContextService,
   ResolvedAuthorizationProfile,
 } from '../services/authorization-context.service';
-import type { InstitutionalHierarchyService } from '../services/institutional-hierarchy.service';
 import { assertClubAccess } from './policies/scope/club-access';
 import {
   getRequestValue,
@@ -32,7 +31,6 @@ export class TenantBindingEnforcer {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
-    private readonly hierarchy: InstitutionalHierarchyService,
     private readonly territory: TerritoryScopeValidator,
     private readonly loader: CamporeeScopeLoader,
   ) {}

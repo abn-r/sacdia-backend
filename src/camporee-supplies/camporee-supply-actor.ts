@@ -1,3 +1,4 @@
+import { ActorScope } from '../common/authorization/actor-scope';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
@@ -51,17 +52,11 @@ function normalizeRole(role: string): string {
   return role.trim().toLowerCase();
 }
 
-function globalRoleSet(actor: CamporeeSupplyActor): Set<string> {
-  return new Set(actor.globalRoles.map(normalizeRole));
-}
-
-function hasAnyRole(roles: Set<string>, allowed: Set<string>): boolean {
-  for (const role of allowed) {
-    if (roles.has(role)) {
-      return true;
-    }
-  }
-  return false;
+function hasAnyRole(
+  actor: CamporeeSupplyActor,
+  allowed: Iterable<string>,
+): boolean {
+  return ActorScope.fromRoleNames(actor.globalRoles).hasAnyRole(allowed);
 }
 
 function isMutationScopeClosed(territory: ActorTerritoryScope): boolean {
@@ -97,11 +92,11 @@ export function assertCanPlanSupplies(actor: CamporeeSupplyActor): void {
 }
 
 export function isLfCaja(actor: CamporeeSupplyActor): boolean {
-  return hasAnyRole(globalRoleSet(actor), LF_CAJA_ROLES);
+  return hasAnyRole(actor, LF_CAJA_ROLES);
 }
 
 export function isSupplyOrganizer(actor: CamporeeSupplyActor): boolean {
-  return hasAnyRole(globalRoleSet(actor), ORGANIZER_ROLES);
+  return hasAnyRole(actor, ORGANIZER_ROLES);
 }
 
 export function canOperateLocalFieldCaja(
@@ -185,10 +180,7 @@ export function canConfigureAsParticipatingLf(
     return false;
   }
   if (
-    !hasAnyRole(
-      globalRoleSet(actor),
-      new Set(['director-lf', 'assistant-lf', 'admin', 'super-admin']),
-    )
+    !hasAnyRole(actor, ['director-lf', 'assistant-lf', 'admin', 'super-admin'])
   ) {
     return false;
   }
@@ -196,15 +188,12 @@ export function canConfigureAsParticipatingLf(
 }
 
 export function canBypassSupplyFreeze(actor: CamporeeSupplyActor): boolean {
-  return hasAnyRole(
-    globalRoleSet(actor),
-    new Set([
-      'director-lf',
-      'assistant-lf',
-      'director-union',
-      'assistant-union',
-      'admin',
-      'super-admin',
-    ]),
-  );
+  return hasAnyRole(actor, [
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'admin',
+    'super-admin',
+  ]);
 }

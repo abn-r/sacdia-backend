@@ -9,6 +9,7 @@ import type {
   ResolvedAuthorizationProfile,
 } from '../../../services/authorization-context.service';
 import type { InstitutionalHierarchyService } from '../../../services/institutional-hierarchy.service';
+import { ActorScope } from '../../actor-scope';
 
 export type ResolvedTerritoryScope = {
   localFieldId: number;
@@ -114,16 +115,9 @@ export class TerritoryScopeValidator {
       return true;
     }
 
-    const activeAssignmentId =
-      resolved.authorization.active_assignment.assignment_id;
-    const activeGrant = resolved.authorization.grants.club_assignments.find(
-      (assignment) => assignment.assignment_id === activeAssignmentId,
-    );
-    const activeGrantLocalFieldId = activeGrant?.scope.local_field?.id;
-
     if (
-      typeof activeGrantLocalFieldId === 'number' &&
-      activeGrantLocalFieldId === resourceScope.localFieldId
+      ActorScope.from(resolved).activeLocalFieldId ===
+      resourceScope.localFieldId
     ) {
       return true;
     }
@@ -181,29 +175,16 @@ export class TerritoryScopeValidator {
   resolveUnionCamporeeParticipantLocalFieldId(
     resolved: ResolvedAuthorizationProfile,
   ): number | undefined {
-    const globalLocalFieldId =
-      resolved.authorization.effective.scope.global.local_field?.id;
+    const actor = ActorScope.from(resolved);
 
     if (
-      typeof globalLocalFieldId === 'number' &&
-      (this.hasGlobalRole(resolved, 'admin') ||
-        this.hasGlobalRole(resolved, 'assistant-admin') ||
-        this.hasGlobalRole(resolved, 'director-lf') ||
-        this.hasGlobalRole(resolved, 'assistant-lf'))
+      typeof actor.localFieldId === 'number' &&
+      actor.hasRole('admin', 'assistant-admin', 'director-lf', 'assistant-lf')
     ) {
-      return globalLocalFieldId;
+      return actor.localFieldId;
     }
 
-    const activeAssignmentId =
-      resolved.authorization.active_assignment.assignment_id;
-    const activeGrant = resolved.authorization.grants.club_assignments.find(
-      (assignment) => assignment.assignment_id === activeAssignmentId,
-    );
-    const activeGrantLocalFieldId = activeGrant?.scope.local_field?.id;
-
-    return typeof activeGrantLocalFieldId === 'number'
-      ? activeGrantLocalFieldId
-      : undefined;
+    return actor.activeLocalFieldId;
   }
 
   toHierarchyScope(
@@ -226,14 +207,13 @@ export class TerritoryScopeValidator {
       return false;
     }
 
-    const globalCountryId =
-      resolved.authorization.effective.scope.global.country?.id;
+    const actor = ActorScope.from(resolved);
 
     return (
       typeof resourceScope.countryId === 'number' &&
-      typeof globalCountryId === 'number' &&
-      globalCountryId === resourceScope.countryId &&
-      this.hasGlobalRole(resolved, 'admin')
+      typeof actor.countryId === 'number' &&
+      actor.countryId === resourceScope.countryId &&
+      actor.hasRole('admin')
     );
   }
 
@@ -241,9 +221,7 @@ export class TerritoryScopeValidator {
     resolved: ResolvedAuthorizationProfile,
     roleName: string,
   ): boolean {
-    return resolved.authorization.grants.global_roles.some(
-      (grant) => grant.role_name.toLowerCase() === roleName,
-    );
+    return ActorScope.from(resolved).hasRole(roleName);
   }
 }
 

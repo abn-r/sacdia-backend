@@ -21,7 +21,6 @@ describe('TenantBindingEnforcer', () => {
       authorizationContext,
       {} as any,
       {} as any,
-      {} as any,
     );
   };
   const ctx = (bind: any[], body: any = {}): PolicyContext => ({
