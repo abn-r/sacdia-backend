@@ -16,7 +16,13 @@
 // that source at all — the inbox is not an override of that intent.
 // =============================================================================
 
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { clubSectionDisplayLabel } from '../clubs/section-display';
 import {
   AppBadRequestException,
@@ -38,6 +44,8 @@ import {
   NOTIFICATIONS_QUEUE,
   REALTIME_INVALIDATE_JOB,
   RealtimeInvalidatePayload,
+  SectionRealtimeInvalidatePayload,
+  UserRealtimeInvalidatePayload,
   SendToUserJobData,
   SendToClubMembersJobData,
   SendToSectionRoleJobData,
@@ -112,6 +120,9 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly fcmTokensService: FcmTokensService,
     private readonly preferencesService: NotificationPreferencesService,
+    // forwardRef: AuthorizationContextService also injects this service (it
+    // publishes the per-user `authorization` invalidation push).
+    @Inject(forwardRef(() => AuthorizationContextService))
     private readonly authorizationContext: AuthorizationContextService,
     private readonly dependentPushRouter: DependentPushRouterService,
     private readonly clubDataRecipients: ClubDataRecipientsService,
@@ -540,10 +551,48 @@ export class NotificationsService {
    * - When Redis is unavailable the job is silently dropped (invalidation is
    *   best-effort; the client will sync on next foreground fetch).
    */
-  async sendSilentToSection(input: RealtimeInvalidatePayload): Promise<void> {
+  async sendSilentToSection(
+    input: SectionRealtimeInvalidatePayload,
+  ): Promise<void> {
+    await this.enqueueRealtimeInvalidate(
+      input,
+      `sendSilentToSection`,
+      `section ${input.sectionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // sendSilentToUser — per-user authorization invalidation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Enqueues a silent (data-only) FCM push to every active device of ONE
+   * user: `data: { type: 'cache_invalidate', resource: 'authorization',
+   * action: 'UPDATED', userId, timestamp }`. Emitted by
+   * `AuthorizationContextService.invalidateUserAuthorizationCache` so the app
+   * refreshes `GET /auth/me` (capabilities, territory, roles) right after a
+   * role, permission or club-assignment change.
+   *
+   * Same guarantees as `sendSilentToSection`: never throws, no inbox rows,
+   * dropped when the queue is unavailable (the client resyncs on its next
+   * foreground fetch).
+   */
+  async sendSilentToUser(input: UserRealtimeInvalidatePayload): Promise<void> {
+    await this.enqueueRealtimeInvalidate(
+      input,
+      `sendSilentToUser`,
+      `user ${input.userId}`,
+    );
+  }
+
+  private async enqueueRealtimeInvalidate(
+    input: RealtimeInvalidatePayload,
+    method: string,
+    target: string,
+  ): Promise<void> {
     if (!this.isQueueReady()) {
       this.logger.debug(
-        `sendSilentToSection: queue not available — skipping realtime invalidation for section ${input.sectionId}`,
+        `${method}: queue not available — skipping realtime invalidation for ${target}`,
       );
       return;
     }
@@ -555,7 +604,7 @@ export class NotificationsService {
       removeOnFail: { count: 25 },
     }).catch((err: Error) => {
       this.logger.error(
-        `sendSilentToSection: failed to enqueue realtime.invalidate for section ${input.sectionId}: ${err.message}`,
+        `${method}: failed to enqueue realtime.invalidate for ${target}: ${err.message}`,
       );
     });
   }

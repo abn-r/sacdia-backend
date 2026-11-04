@@ -1,4 +1,10 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import {
+  forwardRef,
+  Injectable,
+  Inject,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import {
   AppNotFoundException,
   AppUnauthorizedException,
@@ -32,6 +38,7 @@ import { TemporalContextFactory } from '../clock/temporal-context.factory';
 import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
 import { toTemporalLocalField } from '../authorization/club-assignment-temporal';
 import { GlobalRole } from '../authorization/roles';
+import { NotificationsService } from '../../notifications/notifications.service';
 
 export const CANONICAL_CLUB_ASSIGNMENT_ORDER = [
   { start_date: 'desc' as const },
@@ -340,6 +347,11 @@ export class AuthorizationContextService {
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     private readonly assignmentEffectivity: ClubAssignmentEffectivityPolicy,
     private readonly temporalContexts: TemporalContextFactory,
+    // Optional + forwardRef: NotificationsService injects this service too,
+    // and several specs build the service without it.
+    @Optional()
+    @Inject(forwardRef(() => NotificationsService))
+    private readonly notifications?: NotificationsService,
   ) {}
 
   /**
@@ -371,6 +383,38 @@ export class AuthorizationContextService {
           `Auth context cache DEL fallido para "${key}": ${this.extractMessage(err)}`,
         );
       }
+    }
+
+    this.publishAuthorizationInvalidation(userId);
+  }
+
+  /**
+   * Silent `authorization` push to the user's devices so the app re-reads
+   * `GET /auth/me` (capabilities, territory, assignable roles). Fire-and-forget:
+   * never awaited by the caller's response, never throws, a no-op when
+   * NotificationsService is absent or the queue (Redis/BullMQ) is down.
+   */
+  private publishAuthorizationInvalidation(userId: string): void {
+    if (!this.notifications) {
+      return;
+    }
+    try {
+      void this.notifications
+        .sendSilentToUser({
+          userId,
+          resource: 'authorization',
+          action: 'UPDATED',
+          timestamp: this.clock.now().toISOString(),
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `Authorization invalidation push fallido para ${userId}: ${this.extractMessage(err)}`,
+          );
+        });
+    } catch (err) {
+      this.logger.warn(
+        `Authorization invalidation push fallido para ${userId}: ${this.extractMessage(err)}`,
+      );
     }
   }
 

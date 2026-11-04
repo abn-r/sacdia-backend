@@ -36,6 +36,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { CoordinationService } from '../coordination/coordination.service';
 import { MemberTerritoryScopeService } from '../common/authorization/member-territory-scope.service';
+import { resolveAllowedTargetRoles } from '../common/authorization/user-role-tiers';
 import {
   memberInDivisionWhere,
   memberInLocalFieldWhere,
@@ -848,40 +849,6 @@ export class AdminUsersService {
     });
   }
 
-  /**
-   * Ordered list of global role hierarchies for scope-check purposes.
-   * Each entry is the set of roles an actor at that tier can create.
-   * Roles are ordered from highest (super-admin) to lowest (user).
-   */
-  // Hierarchy rule (Adventist club authority chain):
-  //   - super-admin → can create any role, including admin
-  //   - admin → can create everything BELOW admin (NOT admin itself; only super-admin
-  //     assigns admin); admin assigns director-dia
-  //   - director-dia / assistant-dia → assigns UNION roles + below (NOT DIA roles)
-  //   - director-union / assistant-union → assigns LF roles + below (NOT UNION roles)
-  //   - director-lf / assistant-lf → assigns base roles only (NOT LF roles).
-  //     Reason: LF directors are appointed by the union; the LF tier cannot
-  //     self-assign or grow its own tier.
-  // T5 (base) = user, coordinator, zone-coordinator, general-coordinator, pastor
-  private static readonly BASE_T5_ROLES: ReadonlyArray<string> = [
-    GlobalRole.USER,
-    GlobalRole.COORDINATOR,
-    GlobalRole.ZONE_COORDINATOR,
-    GlobalRole.GENERAL_COORDINATOR,
-    GlobalRole.PASTOR,
-  ];
-  private static readonly LF_ROLES: ReadonlyArray<string> = [
-    GlobalRole.ASSISTANT_LF,
-    GlobalRole.DIRECTOR_LF,
-  ];
-  private static readonly UNION_ROLES: ReadonlyArray<string> = [
-    GlobalRole.ASSISTANT_UNION,
-    GlobalRole.DIRECTOR_UNION,
-  ];
-  private static readonly DIA_ROLES: ReadonlyArray<string> = [
-    GlobalRole.ASSISTANT_DIA,
-    GlobalRole.DIRECTOR_DIA,
-  ];
   private static readonly DIVISION_SCOPE_ROLES: ReadonlyArray<string> = [
     GlobalRole.DIRECTOR_DIA,
     GlobalRole.ASSISTANT_DIA,
@@ -907,55 +874,6 @@ export class AdminUsersService {
     GlobalRole.PASTOR,
   ];
 
-  private static readonly ROLE_HIERARCHY: ReadonlyArray<{
-    actorRoles: ReadonlyArray<string>;
-    allowedTargetRoles: ReadonlyArray<string>;
-  }> = [
-    {
-      // super-admin can create any role (DTO already blocks super-admin creation)
-      actorRoles: [GlobalRole.SUPER_ADMIN],
-      allowedTargetRoles: [
-        ...AdminUsersService.BASE_T5_ROLES,
-        ...AdminUsersService.LF_ROLES,
-        ...AdminUsersService.UNION_ROLES,
-        ...AdminUsersService.DIA_ROLES,
-        'admin',
-      ],
-    },
-    {
-      // admin assigns down to director-dia, but NOT admin itself
-      actorRoles: ['admin'],
-      allowedTargetRoles: [
-        ...AdminUsersService.BASE_T5_ROLES,
-        ...AdminUsersService.LF_ROLES,
-        ...AdminUsersService.UNION_ROLES,
-        ...AdminUsersService.DIA_ROLES,
-      ],
-    },
-    {
-      // DIA assigns down to UNION, NOT DIA peers
-      actorRoles: [GlobalRole.DIRECTOR_DIA, GlobalRole.ASSISTANT_DIA],
-      allowedTargetRoles: [
-        ...AdminUsersService.BASE_T5_ROLES,
-        ...AdminUsersService.LF_ROLES,
-        ...AdminUsersService.UNION_ROLES,
-      ],
-    },
-    {
-      // UNION assigns down to LF, NOT UNION peers
-      actorRoles: [GlobalRole.DIRECTOR_UNION, GlobalRole.ASSISTANT_UNION],
-      allowedTargetRoles: [
-        ...AdminUsersService.BASE_T5_ROLES,
-        ...AdminUsersService.LF_ROLES,
-      ],
-    },
-    {
-      // LF assigns only T5 base roles. Cannot grow its own tier.
-      actorRoles: [GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF],
-      allowedTargetRoles: [...AdminUsersService.BASE_T5_ROLES],
-    },
-  ];
-
   /**
    * Resolves whether the actor is allowed to create a user with the given target role.
    * Returns true if allowed, false if forbidden.
@@ -967,21 +885,7 @@ export class AdminUsersService {
     actorRoles: string[],
     targetRole: string,
   ): boolean {
-    return this.resolveAllowedTargetRoles(actorRoles).includes(targetRole);
-  }
-
-  /**
-   * Resolves the full list of target roles an actor (by their roles) may
-   * create. Picks the HIGHEST tier the actor belongs to so a director-dia
-   * who also has user/coordinator roles still benefits from the dia scope.
-   */
-  private resolveAllowedTargetRoles(actorRoles: string[]): string[] {
-    for (const tier of AdminUsersService.ROLE_HIERARCHY) {
-      if (tier.actorRoles.some((r) => actorRoles.includes(r))) {
-        return [...tier.allowedTargetRoles];
-      }
-    }
-    return [];
+    return resolveAllowedTargetRoles(actorRoles).includes(targetRole);
   }
 
   /**
@@ -1003,7 +907,7 @@ export class AdminUsersService {
       },
     });
     const actorRoles = this.extractRoleNames(actorRecord?.users_roles ?? []);
-    return this.resolveAllowedTargetRoles(actorRoles);
+    return resolveAllowedTargetRoles(actorRoles);
   }
 
   /**
@@ -2198,7 +2102,8 @@ export class AdminUsersService {
    * Build an in-memory .xlsx template buffer for bulk user upload.
    * Sheet "Usuarios": row 1 headers, row 2 example values.
    * Sheet "Roles permitidos": ONLY the role slugs the calling actor is
-   * authorized to assign (filtered by `ROLE_HIERARCHY`). This prevents
+   * authorized to assign (filtered by `ROLE_HIERARCHY`, see
+   * `common/authorization/user-role-tiers.ts`). This prevents
    * confusion where a Local-Field assistant sees admin/director-dia in the
    * reference sheet but cannot actually create them.
    */

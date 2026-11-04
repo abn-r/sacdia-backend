@@ -262,6 +262,19 @@ Consultas sugeridas (Sentry/Logs):
     "path": "access"
   }
   ```
+- `GET /api/v1/auth/me`
+  - `data.authorization` trae el snapshot canónico (`grants`, `active_assignment`,
+    `effective`) más el resumen del actor calculado por request y nunca cacheado:
+    `capabilities` (claves ordenadas del catálogo generado
+    `src/common/authorization/generated/capability-keys.ts`, idéntico en admin y app),
+    `territory` (`{ level, division_id, union_id, local_field_id }`) y
+    `assignable_global_roles`. Una capability significa "puede intentarlo sobre al
+    menos un objetivo"; los servicios siguen respondiendo 403 cuando el objetivo no
+    coincide. Contrato y cómo añadir claves: `src/common/guards/README.md`
+    ("Capabilities"). Se regenera con `pnpm authz:generate` / `pnpm authz:check`.
+  - Al invalidarse el caché de autorización de un usuario, el backend envía a sus
+    dispositivos un push FCM silencioso `{ type: 'cache_invalidate', resource: 'authorization' }`
+    para que la app vuelva a leer `/auth/me`.
 
 ## API
 

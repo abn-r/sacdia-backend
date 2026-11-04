@@ -2,6 +2,10 @@
  * Single reader of the permission catalog sources. Pure fs/path: no Nest, no
  * Prisma. Shared by the parity spec and the authz catalog generator.
  *
+ * The capability catalog (`loadCapabilityCatalog`) is the one exception: its
+ * source is TypeScript (`src/common/authorization/capabilities.ts`), so it is
+ * imported rather than parsed.
+ *
  * Sources (later definitions win; the seed is the current state, so it is read
  * last):
  *  - every `INSERT INTO permissions ... ;` in prisma/migrations/** /migration.sql
@@ -14,6 +18,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { CAPABILITY_DEFINITIONS } from '../../src/common/authorization/capabilities';
 
 export type CatalogPermission = {
   key: string;
@@ -90,4 +95,22 @@ export function loadPermissionCatalog(root: string): CatalogPermission[] {
   return [...byKey.values()].sort((a, b) =>
     a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
   );
+}
+
+/** `<area>.<action>[.<qualifier>]`, lower snake-case segments. */
+export const CAPABILITY_KEY_RE = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
+
+/**
+ * Sorted (byte order) capability keys, the keys of `CAPABILITY_DEFINITIONS`.
+ * Throws on a malformed key so a typo never reaches the three repos.
+ */
+export function loadCapabilityCatalog(
+  definitions: Record<string, unknown> = CAPABILITY_DEFINITIONS,
+): string[] {
+  const keys = Object.keys(definitions);
+  const invalid = keys.filter((key) => !CAPABILITY_KEY_RE.test(key));
+  if (invalid.length) {
+    throw new Error(`Malformed capability key(s): ${invalid.join(', ')}`);
+  }
+  return [...keys].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }

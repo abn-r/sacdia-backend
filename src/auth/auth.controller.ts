@@ -366,7 +366,71 @@ export class AuthController {
             authorization: {
               type: 'object',
               description:
-                'Contrato canónico de autorización resuelto por backend.',
+                'Contrato canónico de autorización resuelto por backend (grants, active_assignment, effective) más el resumen del actor calculado por request: capabilities, territory y assignable_global_roles. El resumen es la vista del actor sobre al menos un objetivo; los servicios siguen siendo la autoridad y responden 403 cuando el objetivo no coincide.',
+              properties: {
+                grants: { type: 'object' },
+                active_assignment: {
+                  type: 'object',
+                  properties: {
+                    assignment_id: { type: 'string', nullable: true },
+                  },
+                },
+                effective: { type: 'object' },
+                capabilities: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description:
+                    'Claves del catálogo de capabilities (generated/capability-keys.ts, mismo catálogo en admin y app) que el actor puede intentar sobre al menos un objetivo, ordenadas ascendente. Las claves basadas en territorio son falsas con level open o unconfigured. Calculadas por request, nunca cacheadas.',
+                  example: [
+                    'admin_panel.access',
+                    'club_roles.assign_section',
+                    'coordination.manage',
+                    'users.create_in_scope',
+                  ],
+                },
+                territory: {
+                  type: 'object',
+                  description:
+                    'Alcance territorial del actor (resolveActorTerritoryScope). all: super-admin; open: sin rol territorial; unconfigured: rol territorial sin ids configurados.',
+                  properties: {
+                    level: {
+                      type: 'string',
+                      enum: [
+                        'all',
+                        'open',
+                        'unconfigured',
+                        'division',
+                        'union',
+                        'local_field',
+                      ],
+                    },
+                    division_id: { type: 'number', nullable: true },
+                    union_id: { type: 'number', nullable: true },
+                    local_field_id: { type: 'number', nullable: true },
+                  },
+                  required: [
+                    'level',
+                    'division_id',
+                    'union_id',
+                    'local_field_id',
+                  ],
+                },
+                assignable_global_roles: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description:
+                    'Roles globales que el actor puede asignar al crear usuarios (tier inferior al suyo), ordenados ascendente. Vacío fuera de los tiers administrativos.',
+                  example: ['coordinator', 'pastor', 'user'],
+                },
+              },
+              required: [
+                'grants',
+                'active_assignment',
+                'effective',
+                'capabilities',
+                'territory',
+                'assignable_global_roles',
+              ],
             },
             post_register_complete: {
               type: 'boolean',
