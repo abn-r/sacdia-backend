@@ -34,7 +34,11 @@ export type AuthorizationTenantBindingKind =
   | 'union'
   | 'camporee'
   | 'union_camporee'
-  | 'club_enrollment_territory';
+  | 'club_enrollment_territory'
+  | 'union_camporee_participant'
+  | 'club_section_membership'
+  | 'union_membership'
+  | 'local_field_membership';
 
 /**
  * Binds a tenant identifier carried by the request (param, query or body) to
@@ -45,6 +49,21 @@ export type AuthorizationTenantBindingKind =
  * `club_enrollment_territory` takes a club enrollment UUID instead of a
  * numeric id, resolves it to its club and requires the actor's territory to
  * cover that club (an active club assignment does not qualify).
+ *
+ * `union_camporee_participant` (union camporee id): same predicate as the
+ * `union_camporee` resource policy (`validateUnionCamporeeScope`): owner union
+ * hierarchy, legacy country fallback, participating local field with an
+ * active `union_camporee_local_fields` row, or a club actor whose active local
+ * field participates. The `union_camporee` bind kind stays owner-only.
+ *
+ * `club_section_membership` (club section id): the actor can manage the
+ * section's club (`canManageClub`) OR holds any operational club assignment in
+ * that club. Reproduces the rankings "any assignment" rule.
+ *
+ * `union_membership` / `local_field_membership` (union / local field id): the
+ * actor's hierarchy covers it (`assertHierarchyAccess`) OR any operational
+ * club assignment of the actor has that union / local field in its scope.
+ * Reproduces `assertUserBelongsToUnion` / `assertUserBelongsToLocalField`.
  */
 export type AuthorizationTenantBinding = {
   kind: AuthorizationTenantBindingKind;
