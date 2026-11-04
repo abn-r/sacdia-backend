@@ -2,6 +2,7 @@ import type {
   AuthorizationTerritoryScope,
   ResolvedAuthorizationProfile,
 } from '../services/authorization-context.service';
+import { ClubRole, GlobalRole } from '../authorization/roles';
 
 /**
  * Minimal authorization profiles for scope tests. Only the fields the
@@ -33,7 +34,7 @@ export function actorProfile(params: {
       grants: {
         global_roles: [
           {
-            role_name: 'user',
+            role_name: GlobalRole.USER,
             permissions: ['validation:read', 'requests:read'],
             scope: territory,
           },
@@ -97,7 +98,7 @@ export const ACTOR_FIXTURES = {
       clubGrants: [
         {
           sectionId: 10,
-          roleName: 'member',
+          roleName: ClubRole.MEMBER,
           permissions: MEMBER_CLUB_PERMISSIONS,
         },
       ],
@@ -108,7 +109,7 @@ export const ACTOR_FIXTURES = {
       clubGrants: [
         {
           sectionId: 10,
-          roleName: 'director',
+          roleName: ClubRole.DIRECTOR,
           permissions: DIRECTOR_CLUB_PERMISSIONS,
         },
       ],
@@ -117,7 +118,10 @@ export const ACTOR_FIXTURES = {
     actorProfile({
       userId: 'director-lf-1',
       globalRoles: [
-        { roleName: 'director-lf', permissions: TERRITORIAL_PERMISSIONS },
+        {
+          roleName: GlobalRole.DIRECTOR_LF,
+          permissions: TERRITORIAL_PERMISSIONS,
+        },
       ],
       territory: {
         local_field: { id: 7 },
@@ -129,7 +133,10 @@ export const ACTOR_FIXTURES = {
     actorProfile({
       userId: 'director-union-1',
       globalRoles: [
-        { roleName: 'director-union', permissions: TERRITORIAL_PERMISSIONS },
+        {
+          roleName: GlobalRole.DIRECTOR_UNION,
+          permissions: TERRITORIAL_PERMISSIONS,
+        },
       ],
       territory: { union: { id: 3 }, division: { id: 1 } },
     }),
@@ -137,21 +144,27 @@ export const ACTOR_FIXTURES = {
     actorProfile({
       userId: 'coordinator-1',
       globalRoles: [
-        { roleName: 'coordinator', permissions: COORDINATOR_PERMISSIONS },
+        {
+          roleName: GlobalRole.COORDINATOR,
+          permissions: COORDINATOR_PERMISSIONS,
+        },
       ],
     }),
   superAdmin: () =>
     actorProfile({
       userId: 'super-admin-1',
       globalRoles: [
-        { roleName: 'super-admin', permissions: TERRITORIAL_PERMISSIONS },
+        {
+          roleName: GlobalRole.SUPER_ADMIN,
+          permissions: TERRITORIAL_PERMISSIONS,
+        },
       ],
     }),
   adminWithoutTerritory: () =>
     actorProfile({
       userId: 'admin-1',
       globalRoles: [
-        { roleName: 'admin', permissions: TERRITORIAL_PERMISSIONS },
+        { roleName: GlobalRole.ADMIN, permissions: TERRITORIAL_PERMISSIONS },
       ],
     }),
 };

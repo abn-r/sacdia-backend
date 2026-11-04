@@ -15,6 +15,7 @@ import {
 } from 'class-validator';
 import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { GlobalRole } from '../../common/authorization/roles';
 
 function toBoolean(value: unknown): unknown {
   if (value === 'true') return true;
@@ -229,18 +230,18 @@ export class UpdateUserApprovalDto {
  * `super-admin` is intentionally excluded — defense in depth.
  */
 export const ALLOWED_CREATION_ROLES = [
-  'user',
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
-  'pastor',
-  'assistant-lf',
-  'director-lf',
-  'assistant-union',
-  'director-union',
-  'assistant-dia',
-  'director-dia',
-  'admin',
+  GlobalRole.USER,
+  GlobalRole.COORDINATOR,
+  GlobalRole.ZONE_COORDINATOR,
+  GlobalRole.GENERAL_COORDINATOR,
+  GlobalRole.PASTOR,
+  GlobalRole.ASSISTANT_LF,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_UNION,
+  GlobalRole.DIRECTOR_UNION,
+  GlobalRole.ASSISTANT_DIA,
+  GlobalRole.DIRECTOR_DIA,
+  GlobalRole.ADMIN,
 ] as const;
 
 export class CreateAdminUserDto {

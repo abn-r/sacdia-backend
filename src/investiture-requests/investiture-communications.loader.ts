@@ -8,9 +8,14 @@ import {
 } from './investiture-communications.rules';
 import type { PrismaService } from '../prisma/prisma.service';
 import { eligiblePastorUserIds } from './investiture-pastor-eligibility';
+import { ClubRole, GlobalRole } from '../common/authorization/roles';
 
-const BOARD_ROLE_NAMES = ['director', 'secretary', 'secretary-treasurer'];
-const FIELD_ROLE_NAMES = ['director-lf', 'assistant-lf'];
+const BOARD_ROLE_NAMES = [
+  ClubRole.DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
+];
+const FIELD_ROLE_NAMES = [GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF];
 
 type Db = PrismaService;
 

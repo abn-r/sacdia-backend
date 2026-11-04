@@ -6,12 +6,25 @@ import type {
   ResolvedAuthorizationProfile,
 } from '../services/authorization-context.service';
 import type { PrismaService } from '../../prisma/prisma.service';
+import { GlobalRole } from './roles';
 
-const SUPER_ADMIN_ROLES = new Set(['super-admin']);
-const DIVISION_ROLES = new Set(['director-dia', 'assistant-dia']);
-const UNION_ROLES = new Set(['director-union', 'assistant-union']);
-export const LOCAL_FIELD_ROLES = new Set(['director-lf', 'assistant-lf']);
-const ADMIN_SCOPE_ROLES = new Set(['admin', 'assistant-admin']);
+const SUPER_ADMIN_ROLES = new Set([GlobalRole.SUPER_ADMIN]);
+const DIVISION_ROLES = new Set([
+  GlobalRole.DIRECTOR_DIA,
+  GlobalRole.ASSISTANT_DIA,
+]);
+const UNION_ROLES = new Set([
+  GlobalRole.DIRECTOR_UNION,
+  GlobalRole.ASSISTANT_UNION,
+]);
+export const LOCAL_FIELD_ROLES = new Set([
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+]);
+const ADMIN_SCOPE_ROLES = new Set([
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+]);
 
 export type ActorTerritoryScope =
   | { level: 'all' }

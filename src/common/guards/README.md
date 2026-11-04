@@ -77,9 +77,21 @@ Para añadir un tipo de recurso: agrégalo a la unión `AuthorizationResourceTyp
 | `JwtAuthGuard` | Verificación JWT HS256 (`BETTER_AUTH_SECRET`, `iss`/`aud` de acceso) vía `JwtStrategy`. Rechaza tokens QR y tokens revocados. Aplica `@ActingScope` a principals sustituidos (ver acting-for). |
 | `OptionalJwtAuthGuard` | Rutas públicas que adjuntan `request.user` si llega un token válido y siguen como anónimas si no (un principal acting sin scope en la ruta se trata como anónimo). |
 | `GlobalRolesGuard` + `@GlobalRoles(...)` | Roles globales activos en `users_roles`. `admin` acepta también `assistant-admin`; `super-admin` pasa siempre. |
+| `GlobalRolesGuard` + `@ExactGlobalRoles(...)` | Igual que `@GlobalRoles` pero SIN expansión de alias: se acepta exactamente la lista declarada. `super-admin` sigue pasando. Si ambos decoradores coinciden, gana `@ExactGlobalRoles`. |
 | `ClubRolesGuard` + `@ClubRoles(...)` | Rol activo en `club_role_assignments` para el club de la ruta. |
 | `OwnerOrAdminGuard` | Propietario del recurso (`userId` de la ruta) o rol global administrativo. `coordinator` no es atajo. |
 | `MfaGuard` | Rechaza tokens `mfa_pending` (aal1). Se aplica de forma selectiva, no global. |
+
+## Constantes de rol y la regla `local/no-role-literals`
+
+Los nombres de rol se referencian con `GlobalRole` y `ClubRole` (`src/common/authorization/roles.ts`), tipados contra el catálogo generado (`generated/role-names.ts`). Los conjuntos reutilizables viven en `role-sets.ts` y los chequeos sobre grants en `role-checks.ts`; para decidir sobre el actor usa `ActorScope`.
+
+La regla ESLint `local/no-role-literals` (`eslint/rules/no-role-literals.cjs`, nivel `error`) marca un literal de rol solo en contexto de rol, nunca por valor suelto: argumentos de `@GlobalRoles`/`@ExactGlobalRoles`/`@ClubRoles`, comparaciones contra `role_name`/`roleName`/`role`, arrays o `new Set([...])` usados en chequeos de pertenencia o asignados a variables `*ROLES`/`*_ROLE`, argumentos de `hasRole`/`hasAnyRole`/`rolesInclude`, valores Prisma (`in`, `equals`, `not`) y `case` de un `switch` sobre un rol. Los literales están permitidos solo en specs, `*.testing.ts`, `generated/**`, `roles.ts`, `role-sets.ts`, `global-role-aliases.ts` y `club-roles.guard.ts`. Un `Set` de constantes se tipa `Set<string>` cuando se consulta con strings de runtime.
+
+### `@GlobalRoles` vs `@ExactGlobalRoles`
+
+- `@GlobalRoles(GlobalRole.DIRECTOR_LF)` expande alias (`GLOBAL_ROLE_ALIASES`): la lista declarada admite también a los roles equivalentes (p. ej. `admin` admite `assistant-admin`; un rol de campo admite sus pares de unión/DIA según el alias).
+- `@ExactGlobalRoles(...)` acepta únicamente los roles listados, sin alias. Úsalo cuando la matriz de enforcement (`docs/features/auth/RBAC-ENFORCEMENT-MATRIX.md`) exige un rol exacto (p. ej. superficies con alcance de revisor de campo local). `super-admin` pasa en ambos casos.
 
 ## Acting-for: un tutor actúa como su dependiente
 

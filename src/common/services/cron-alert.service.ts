@@ -5,6 +5,7 @@ import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import type { CronAlertCondition } from '../email/templates/cron-alert';
 import { CronRunLock } from './cron-run-lock.service';
+import { GlobalRole } from '../authorization/roles';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -33,7 +34,7 @@ const DEDUPE_WINDOW_HOURS = 6;
 const MAX_RECENT_FAILURES_IN_EMAIL = 5;
 
 /** Global role names considered "super admin" for alert targeting. */
-const ADMIN_ROLE_NAMES = ['super-admin'];
+const ADMIN_ROLE_NAMES = [GlobalRole.SUPER_ADMIN];
 
 /** Source tag used when creating in-app notifications for system alerts. */
 const ALERT_NOTIFICATION_SOURCE = 'system_alert:cron_failure';

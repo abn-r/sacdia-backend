@@ -1,4 +1,5 @@
 import { localCivilStamp } from './field-class-threshold';
+import { GlobalRole } from '../common/authorization/roles';
 
 export function defaultInvestitureWindow(
   yearStart: string,
@@ -66,13 +67,19 @@ export function canEditInvestitureWindow(params: {
     return false;
   }
   const roles = new Set(params.roles.map((role) => role.toLowerCase()));
-  if (roles.has('super-admin')) {
+  if (roles.has(GlobalRole.SUPER_ADMIN)) {
     return true;
   }
-  if (params.editsByAdminScope && hasAny(roles, ['admin', 'assistant-admin'])) {
+  if (
+    params.editsByAdminScope &&
+    hasAny(roles, [GlobalRole.ADMIN, GlobalRole.ASSISTANT_ADMIN])
+  ) {
     return true;
   }
-  if (params.editsOwnField && hasAny(roles, ['director-lf', 'assistant-lf'])) {
+  if (
+    params.editsOwnField &&
+    hasAny(roles, [GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF])
+  ) {
     return true;
   }
   return false;

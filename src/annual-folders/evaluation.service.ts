@@ -13,6 +13,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 type EvaluationTerritoryMode = 'folder' | 'union';
 
@@ -326,7 +327,10 @@ export class EvaluationService {
 
     const actorRoleNames = new Set(actorRoles.map((ur) => ur.roles.role_name));
 
-    const UNION_TIER_ROLES = ['director-union', 'assistant-union'];
+    const UNION_TIER_ROLES = [
+      GlobalRole.DIRECTOR_UNION,
+      GlobalRole.ASSISTANT_UNION,
+    ];
     const hasUnionRole = UNION_TIER_ROLES.some((r) => actorRoleNames.has(r));
 
     if (!hasUnionRole) {

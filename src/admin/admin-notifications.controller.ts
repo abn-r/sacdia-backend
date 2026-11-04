@@ -17,12 +17,13 @@ import {
 } from './dto';
 import { AdminNotificationsService } from './admin-notifications.service';
 import { NotificationCategorySettingsService } from '../notifications/notification-category-settings.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('admin-notifications')
 @ApiBearerAuth()
 @Controller('admin/notifications')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @SkipPermissions()
 export class AdminNotificationsController {
   constructor(

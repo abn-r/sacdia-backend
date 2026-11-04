@@ -1,13 +1,14 @@
+import { ClubRole } from '../authorization/roles';
 /**
  * Club roles listed as the "directiva" in monthly, quarterly and annual
  * reports, in display order. Names match `roles.role_name`.
  */
 export const CLUB_DIRECTIVA_ROLES = [
-  'director',
-  'deputy-director',
-  'secretary',
-  'secretary-treasurer',
-  'treasurer',
+  ClubRole.DIRECTOR,
+  ClubRole.DEPUTY_DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
+  ClubRole.TREASURER,
 ] as const;
 
 /** Sort key for a directiva role; unknown roles go last. */

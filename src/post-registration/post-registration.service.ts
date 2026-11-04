@@ -22,6 +22,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { PostRegistrationRowService } from '../common/services/post-registration-row.service';
+import { ClubRole } from '../common/authorization/roles';
 
 export type PostRegistrationActorContext = {
   actorUserId: string;
@@ -509,7 +510,7 @@ export class PostRegistrationService {
   ): Promise<string> {
     const memberRole = await tx.roles.findFirst({
       where: {
-        role_name: 'member',
+        role_name: ClubRole.MEMBER,
         role_category: 'CLUB',
       },
       select: {
@@ -664,7 +665,7 @@ export class PostRegistrationService {
     // --- Role eligibility (rule 3: GM-eligible user cannot be a member of AV/CQ) ---
     await this.roleEligibility.assertAssignment({
       userId: params.userId,
-      roleName: 'member',
+      roleName: ClubRole.MEMBER,
       clubSectionId: params.clubInstanceId,
       db: tx,
     });

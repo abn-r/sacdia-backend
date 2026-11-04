@@ -33,6 +33,7 @@ import { MemberRankingWeightsService } from './member-ranking-weights.service';
 import { CreateMemberRankingWeightsDto } from './dto/create-member-ranking-weights.dto';
 import { UpdateMemberRankingWeightsDto } from './dto/update-member-ranking-weights.dto';
 import { MemberRankingWeightsResponseDto } from './dto/member-ranking-weights-response.dto';
+import { GlobalRole } from '../../common/authorization/roles';
 
 /**
  * Admin CRUD endpoints for `enrollment_ranking_weights`.
@@ -46,7 +47,7 @@ import { MemberRankingWeightsResponseDto } from './dto/member-ranking-weights-re
 @ApiTags('Member Ranking Weights')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @AuthorizationResource({ type: 'global' })
 @Controller('member-ranking-weights')
 export class MemberRankingWeightsController {

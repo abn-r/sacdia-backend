@@ -25,6 +25,7 @@ import {
   type SupervisedLoginMethod,
   type SupervisedState,
 } from './supervised-principal.cache';
+import { GlobalRole } from '../../common/authorization/roles';
 
 export interface ResolvedFromDatabase {
   state: SupervisedState;
@@ -116,7 +117,7 @@ export const SUPERVISED_STATE_USER_SELECT = {
       roles: {
         active: true,
         role_category: 'GLOBAL',
-        role_name: { not: 'user' },
+        role_name: { not: GlobalRole.USER },
       },
     },
     select: { user_role_id: true },

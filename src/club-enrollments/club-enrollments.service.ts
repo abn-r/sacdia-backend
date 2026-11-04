@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ActorScope } from '../common/authorization/actor-scope';
+import { GlobalRole } from '../common/authorization/roles';
 import { ModuleRef } from '@nestjs/core';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -535,8 +537,8 @@ export class ClubEnrollmentsService {
     if (!authorizationProfile) return {};
 
     if (
-      this.hasGlobalRole(authorizationProfile, 'super-admin') ||
-      this.hasGlobalRole(authorizationProfile, 'admin')
+      ActorScope.from(authorizationProfile).hasRole(GlobalRole.SUPER_ADMIN) ||
+      ActorScope.from(authorizationProfile).hasRole(GlobalRole.ADMIN)
     ) {
       return {};
     }
@@ -584,16 +586,6 @@ export class ClubEnrollmentsService {
     }
 
     return { club_enrollment_id: '00000000-0000-0000-0000-000000000000' };
-  }
-
-  private hasGlobalRole(
-    authorizationProfile: ResolvedAuthorizationProfile,
-    roleName: string,
-  ): boolean {
-    const normalizedRole = roleName.toLowerCase();
-    return authorizationProfile.authorization.grants.global_roles.some(
-      (grant) => grant.role_name.toLowerCase() === normalizedRole,
-    );
   }
 
   private toNumericScopeId(value: number | string | undefined): number | null {

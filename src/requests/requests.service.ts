@@ -18,6 +18,7 @@ import {
 import { ActorSectionScopeService } from '../coordination/actor-section-scope.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
+import { ClubRole } from '../common/authorization/roles';
 
 /**
  * Reading other people's requests: club staff who approve them
@@ -42,10 +43,10 @@ export class RequestsService {
     number
   > = {
     director: 1,
-    'deputy-director': 2,
+    [ClubRole.DEPUTY_DIRECTOR]: 2,
     secretary: 1,
     treasurer: 1,
-    'secretary-treasurer': 1,
+    [ClubRole.SECRETARY_TREASURER]: 1,
   };
 
   constructor(
@@ -822,7 +823,7 @@ export class RequestsService {
         // Same rule as post-registration: a user cannot hold two memberships of
         // the same club type. Only the `member` role is a membership; leadership
         // roles are not affected.
-        if (request.role.role_name === 'member') {
+        if (request.role.role_name === ClubRole.MEMBER) {
           await this.assertNoDuplicateMembership(
             tx,
             request.user_id,
@@ -1166,10 +1167,10 @@ export class RequestsService {
     ecclesiasticalYearId: number,
   ): Promise<void> {
     const conflictingRoleNames =
-      roleName === 'secretary' || roleName === 'treasurer'
-        ? ['secretary-treasurer']
-        : roleName === 'secretary-treasurer'
-          ? ['secretary', 'treasurer']
+      roleName === ClubRole.SECRETARY || roleName === ClubRole.TREASURER
+        ? [ClubRole.SECRETARY_TREASURER]
+        : roleName === ClubRole.SECRETARY_TREASURER
+          ? [ClubRole.SECRETARY, ClubRole.TREASURER]
           : [];
 
     if (conflictingRoleNames.length === 0) return;

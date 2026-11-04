@@ -12,6 +12,7 @@ import {
   coordinatorScopeIncludesSection,
 } from './coordinator-section-scope';
 import type { MemberTerritoryScopeService } from './member-territory-scope.service';
+import { GlobalRole } from './roles';
 
 /** Effective club assignment when no MemberTerritoryScopeService is wired. */
 const ACTIVE_ASSIGNMENT: Prisma.club_role_assignmentsWhereInput = {
@@ -123,7 +124,7 @@ function territoryForTarget(
   }
 
   const isPastor = resolved.authorization.grants.global_roles.some(
-    (grant) => grant.role_name.trim().toLowerCase() === 'pastor',
+    (grant) => grant.role_name.trim().toLowerCase() === GlobalRole.PASTOR,
   );
   const localFieldId = toTerritoryId(
     resolved.authorization.effective.scope.global.local_field?.id,

@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AppForbiddenException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { AuthorizationContextService } from '../services/authorization-context.service';
+import { ClubRole, GlobalRole } from './roles';
 
 export type SectionRoleMutation = 'assign' | 'update' | 'revoke';
 
@@ -27,7 +28,7 @@ export class SectionRoleMutationPolicy {
   ) {}
 
   async assertCanMutate(input: SectionRoleMutationInput): Promise<void> {
-    if (input.targetRoleName === 'member') return;
+    if (input.targetRoleName === ClubRole.MEMBER) return;
 
     const resolved = await this.authorizationContext.resolveUserAuthorization(
       input.actorUserId,
@@ -35,9 +36,16 @@ export class SectionRoleMutationPolicy {
     const { grants, effective } = resolved.authorization;
     const globalRoles = new Set(grants.global_roles.map((g) => g.role_name));
 
-    if (globalRoles.has('super-admin') || globalRoles.has('admin')) return;
+    if (
+      globalRoles.has(GlobalRole.SUPER_ADMIN) ||
+      globalRoles.has(GlobalRole.ADMIN)
+    )
+      return;
 
-    if (globalRoles.has('director-lf') || globalRoles.has('assistant-lf')) {
+    if (
+      globalRoles.has(GlobalRole.DIRECTOR_LF) ||
+      globalRoles.has(GlobalRole.ASSISTANT_LF)
+    ) {
       const actorLocalFieldId = effective.scope.global.local_field?.id;
       if (actorLocalFieldId !== undefined && actorLocalFieldId !== null) {
         const section = await this.prisma.club_sections.findUnique({
@@ -57,13 +65,13 @@ export class SectionRoleMutationPolicy {
     const isSectionDirector = grants.club_assignments.some(
       (g) =>
         g.operational === true &&
-        g.role_name === 'director' &&
+        g.role_name === ClubRole.DIRECTOR &&
         g.section.club_section_id === input.clubSectionId,
     );
     if (
       isSectionDirector &&
       input.targetUserId !== input.actorUserId &&
-      input.targetRoleName !== 'director'
+      input.targetRoleName !== ClubRole.DIRECTOR
     )
       return;
 

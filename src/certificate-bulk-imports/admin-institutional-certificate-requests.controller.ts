@@ -17,6 +17,7 @@ import {
   ApproveInstitutionalCertificateRequestDto,
   RejectInstitutionalCertificateRequestDto,
 } from './dto/review-institutional-certificate-request.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 interface AuthenticatedRequest {
   user: { sub: string };
@@ -26,7 +27,7 @@ interface AuthenticatedRequest {
 @ApiBearerAuth()
 @Controller('admin/certificate-import-institutional-requests')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('super-admin')
+@GlobalRoles(GlobalRole.SUPER_ADMIN)
 @SkipPermissions()
 export class AdminInstitutionalCertificateRequestsController {
   constructor(

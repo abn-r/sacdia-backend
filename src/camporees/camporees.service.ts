@@ -53,6 +53,7 @@ import {
   CamporeeLifecyclePolicy,
   type CamporeeLifecycleContext,
 } from './policies';
+import { ClubRole, GlobalRole } from '../common/authorization/roles';
 
 // Module-level concurrency cap for applySignedPrivateUrls fan-out.
 // Phase 1 (USER_PROFILES public bucket) makes the call synchronous, so
@@ -168,7 +169,7 @@ export class CamporeesService {
 
     // Permissions on the grant are not enough: only the exact active director
     // role may create an enrollment for its own section.
-    if (activeGrant.role_name !== 'director') {
+    if (activeGrant.role_name !== ClubRole.DIRECTOR) {
       throw new AppForbiddenException(
         ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
       );
@@ -830,7 +831,8 @@ export class CamporeesService {
             : {}),
           ...(dto.supply_edit_cutoff_local_time !== undefined
             ? {
-                supply_edit_cutoff_local_time: dto.supply_edit_cutoff_local_time,
+                supply_edit_cutoff_local_time:
+                  dto.supply_edit_cutoff_local_time,
               }
             : {}),
           union_id: dto.union_id,
@@ -1055,7 +1057,7 @@ export class CamporeesService {
   ) {
     void actorId;
     const activeGrant = this.resolveActiveClubGrant(authorization);
-    if (activeGrant.role_name !== 'director') {
+    if (activeGrant.role_name !== ClubRole.DIRECTOR) {
       throw new AppForbiddenException(
         ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
       );
@@ -1331,7 +1333,7 @@ export class CamporeesService {
     if (isLate && camporeeLocalFieldId) {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
-          ['director-lf', 'assistant-lf'],
+          [GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF],
           'Inscripción tardía por revisar',
           `Un miembro se inscribió fuera de plazo al camporee y necesita revisión`,
           { camporeeId: String(camporeeId), type: 'member_enrollment' },
@@ -1804,7 +1806,7 @@ export class CamporeesService {
     if (isLate && camporeeLocalFieldId) {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
-          ['director-lf', 'assistant-lf'],
+          [GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF],
           'Inscripción tardía por revisar',
           `Un club se inscribió fuera de plazo al camporee y necesita revisión`,
           { camporeeId: String(camporeeId), type: 'club_enrollment' },
@@ -1983,7 +1985,7 @@ export class CamporeesService {
     if (isLate && camporeeLocalFieldId) {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
-          ['director-lf', 'assistant-lf'],
+          [GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF],
           'Pago tardío por revisar',
           `Se registró un pago fuera de plazo y necesita revisión`,
           { camporeeId: String(camporeeId), type: 'payment' },
@@ -2608,7 +2610,7 @@ export class CamporeesService {
     if (isLate && camporeeUnionId) {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
-          ['director-union', 'assistant-union'],
+          [GlobalRole.DIRECTOR_UNION, GlobalRole.ASSISTANT_UNION],
           'Inscripción tardía por revisar',
           'Un club se inscribió fuera de plazo al camporee de unión y necesita revisión',
           { camporeeId: String(unionCamporeeId), type: 'club_enrollment' },
@@ -2796,7 +2798,7 @@ export class CamporeesService {
     if (isLate && camporeeUnionId) {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
-          ['director-union', 'assistant-union'],
+          [GlobalRole.DIRECTOR_UNION, GlobalRole.ASSISTANT_UNION],
           'Inscripción tardía por revisar',
           'Un miembro se inscribió fuera de plazo al camporee de unión y necesita revisión',
           { camporeeId: String(unionCamporeeId), type: 'member_enrollment' },
@@ -2915,7 +2917,7 @@ export class CamporeesService {
     if (isLate && camporeeUnionId) {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
-          ['director-union', 'assistant-union'],
+          [GlobalRole.DIRECTOR_UNION, GlobalRole.ASSISTANT_UNION],
           'Pago tardío por revisar',
           'Se registró un pago fuera de plazo y necesita revisión',
           { camporeeId: String(unionCamporeeId), type: 'payment' },
@@ -3690,7 +3692,7 @@ export class CamporeesService {
   ): void {
     setImmediate(() => {
       void this.notificationsService.sendToGlobalRole(
-        ['director-lf', 'assistant-lf'],
+        [GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF],
         'Inscripción tardía por revisar',
         'Un club se inscribió fuera de plazo al camporee y necesita revisión',
         { camporeeId: String(camporeeId), type: 'club_enrollment' },
@@ -3735,7 +3737,8 @@ export class CamporeesService {
     clubTypeIncluded: boolean;
   }): CamporeeSectionRegistrationDto {
     const { activeGrant, enrollment, disposition } = input;
-    const director = activeGrant.role_name.trim().toLowerCase() === 'director';
+    const director =
+      activeGrant.role_name.trim().toLowerCase() === ClubRole.DIRECTOR;
     const canEnrollByDisposition =
       disposition === 'open' || disposition === 'late_approval_required';
 
@@ -3836,11 +3839,17 @@ export class CamporeesService {
       if (!grant.permissions.includes('camporees:register')) return false;
 
       const roleName = grant.role_name.toLowerCase();
-      if (roleName === 'assistant-lf' || roleName === 'director-lf') {
+      if (
+        roleName === GlobalRole.ASSISTANT_LF ||
+        roleName === GlobalRole.DIRECTOR_LF
+      ) {
         return grant.scope.local_field?.id === camporee.local_field_id;
       }
 
-      if (roleName === 'assistant-union' || roleName === 'director-union') {
+      if (
+        roleName === GlobalRole.ASSISTANT_UNION ||
+        roleName === GlobalRole.DIRECTOR_UNION
+      ) {
         const camporeeUnionId = camporee.local_fields?.union_id;
         return (
           typeof camporeeUnionId === 'number' &&
@@ -3996,11 +4005,14 @@ export class CamporeesService {
       return { type: 'local_field', id: actor.localFieldId };
     }
 
-    const isCoordinator = this.hasGlobalRole(authorization.grants.global_roles, [
-      'coordinator',
-      'zone-coordinator',
-      'general-coordinator',
-    ]);
+    const isCoordinator = this.hasGlobalRole(
+      authorization.grants.global_roles,
+      [
+        GlobalRole.COORDINATOR,
+        GlobalRole.ZONE_COORDINATOR,
+        GlobalRole.GENERAL_COORDINATOR,
+      ],
+    );
 
     const activeAssignmentId = authorization.active_assignment.assignment_id;
     const activeGrant = authorization.grants.club_assignments.find(

@@ -26,6 +26,7 @@ import {
   type CronJobRunResult,
 } from './admin-cron-jobs.service';
 import type { CronJobListItem } from './cron-job.registry';
+import { GlobalRole } from '../../common/authorization/roles';
 
 /**
  * Scheduled jobs on demand ("Ejecutar ahora").
@@ -37,7 +38,7 @@ import type { CronJobListItem } from './cron-job.registry';
 @ApiTags('admin')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('super-admin')
+@GlobalRoles(GlobalRole.SUPER_ADMIN)
 @SkipPermissions()
 @Controller('admin/cron-jobs')
 export class AdminCronJobsController {

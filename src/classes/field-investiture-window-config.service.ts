@@ -24,17 +24,18 @@ import {
   investitureWindowAllowsOperation,
   isCivilDate,
 } from './field-investiture-window';
+import { GlobalRole } from '../common/authorization/roles';
 
-const CONSULT_ROLES = new Set([
-  'super-admin',
-  'admin',
-  'assistant-admin',
-  'director-lf',
-  'assistant-lf',
-  'director-union',
-  'assistant-union',
-  'director-dia',
-  'assistant-dia',
+const CONSULT_ROLES = new Set<string>([
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+  GlobalRole.DIRECTOR_UNION,
+  GlobalRole.ASSISTANT_UNION,
+  GlobalRole.DIRECTOR_DIA,
+  GlobalRole.ASSISTANT_DIA,
 ]);
 
 export type InvestitureWindowView = {
@@ -239,7 +240,7 @@ export class FieldInvestitureWindowConfigService {
   ): AppForbiddenException {
     const flags = editorFlags(authorization, localFieldId);
     const editor =
-      flags.roles.includes('super-admin') ||
+      flags.roles.includes(GlobalRole.SUPER_ADMIN) ||
       flags.editsOwnField ||
       flags.editsByAdminScope;
     return new AppForbiddenException(
@@ -352,9 +353,11 @@ function editorFlags(
   return {
     roles: [...roles],
     editsOwnField:
-      (roles.has('director-lf') || roles.has('assistant-lf')) &&
+      (roles.has(GlobalRole.DIRECTOR_LF) ||
+        roles.has(GlobalRole.ASSISTANT_LF)) &&
       ownFieldId === localFieldId,
-    editsByAdminScope: roles.has('admin') || roles.has('assistant-admin'),
+    editsByAdminScope:
+      roles.has(GlobalRole.ADMIN) || roles.has(GlobalRole.ASSISTANT_ADMIN),
   };
 }
 

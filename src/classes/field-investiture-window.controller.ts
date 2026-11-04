@@ -21,6 +21,7 @@ import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { UpdateInvestitureWindowDto } from './dto/update-investiture-window.dto';
 import { FieldInvestitureWindowConfigService } from './field-investiture-window-config.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 type AuthenticatedRequest = {
   user: { sub: string };
@@ -33,7 +34,12 @@ type AuthenticatedRequest = {
 // El alias de director-lf también admite unión y división, y el de admin admite
 // assistant-admin. El servicio deja consultar a unión y división, y editar solo
 // a director/asistente de su Campo, admin/assistant-admin en su alcance y super-admin.
-@GlobalRoles('super-admin', 'admin', 'director-lf', 'assistant-lf')
+@GlobalRoles(
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+)
 @SkipPermissions()
 export class FieldInvestitureWindowController {
   constructor(

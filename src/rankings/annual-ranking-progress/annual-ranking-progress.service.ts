@@ -25,6 +25,7 @@ import type {
   AnnualRankingProgressResponseDto,
   AnnualRankingProgressTierDto,
 } from './dto/annual-ranking-progress-response.dto';
+import { GlobalRole } from '../../common/authorization/roles';
 
 interface ConfiguredRankingComponent {
   component_key: string;
@@ -384,8 +385,9 @@ export class AnnualRankingProgressService {
     const permissions = profile.authorization.effective.permissions;
     const hasGlobalAccess = profile.authorization.grants.global_roles.some(
       (grant) =>
-        ['super-admin', 'admin'].includes(grant.role_name) ||
-        grant.permissions.includes('section_rankings:read_global'),
+        ([GlobalRole.SUPER_ADMIN, GlobalRole.ADMIN] as string[]).includes(
+          grant.role_name,
+        ) || grant.permissions.includes('section_rankings:read_global'),
     );
     if (
       hasGlobalAccess ||

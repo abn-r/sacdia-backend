@@ -35,13 +35,14 @@ import {
   CLUB_DIRECTIVA_ROLES,
   directivaRoleOrder,
 } from '../common/constants/club-directiva-roles';
+import { ClubRole } from '../common/authorization/roles';
 
 const MONTHLY_REPORT_REMINDER_SOURCE = 'monthly_reports:reminder';
 const AUTO_GENERATION_STATUS_BATCH_SIZE = 500;
 const MONTHLY_REPORT_REMINDER_ROLES = [
-  'director',
-  'secretary',
-  'secretary-treasurer',
+  ClubRole.DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
 ] as const;
 const MONTHLY_REPORT_REMINDER_TIME_ZONE = 'America/Mexico_City';
 

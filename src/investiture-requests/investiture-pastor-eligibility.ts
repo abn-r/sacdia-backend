@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { GlobalRole } from '../common/authorization/roles';
 
 /**
  * BCR-6. Única regla que decide si una asignación de pastor de distrito puede
@@ -14,7 +15,7 @@ import type { Prisma } from '@prisma/client';
  * Una asignación que no cumple sigue ocupando cupo, pero no autoriza, no
  * figura entre los autorizadores y no recibe correos.
  */
-export const PASTOR_ROLE_NAME = 'pastor';
+export const PASTOR_ROLE_NAME = GlobalRole.PASTOR;
 
 const PASTOR_ROLE_WHERE: Prisma.users_rolesWhereInput = {
   active: true,

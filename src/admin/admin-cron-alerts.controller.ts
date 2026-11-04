@@ -22,11 +22,12 @@ import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { GlobalRoles } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { AdminCronAlertsService } from './admin-cron-alerts.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('admin')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @SkipPermissions()
 @Controller('admin/cron-alerts')
 export class AdminCronAlertsController {
@@ -115,7 +116,7 @@ export class AdminCronAlertsController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post(':id/resolve')
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Manually resolve a cron alert (super-admin only)',
     description:

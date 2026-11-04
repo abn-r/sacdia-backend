@@ -23,11 +23,12 @@ import {
   AdminAuditLogPageDto,
 } from './dto/admin-audit-log.response.dto';
 import { ListAdminAuditLogsQueryDto } from './dto/list-admin-audit-logs.query.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('admin-audit-logs')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('super-admin')
+@GlobalRoles(GlobalRole.SUPER_ADMIN)
 @RequirePermissions('audit:read')
 @AuthorizationResource({ type: 'global' })
 @Audit({ skip: true })

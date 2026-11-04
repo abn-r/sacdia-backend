@@ -52,6 +52,7 @@ import {
 } from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
+import { ClubRole } from '../common/authorization/roles';
 
 @ApiTags('activities')
 @Controller()
@@ -125,11 +126,11 @@ export class ActivitiesController {
   @Post('clubs/:clubId/activities')
   @UseGuards(ClubRolesGuard)
   @ClubRoles(
-    'director',
-    'deputy-director',
-    'secretary',
-    'secretary-treasurer',
-    'counselor',
+    ClubRole.DIRECTOR,
+    ClubRole.DEPUTY_DIRECTOR,
+    ClubRole.SECRETARY,
+    ClubRole.SECRETARY_TREASURER,
+    ClubRole.COUNSELOR,
   )
   @RequirePermissions('activities:create')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
@@ -156,11 +157,11 @@ export class ActivitiesController {
   @Post('clubs/:clubId/activity-series/preview')
   @UseGuards(ClubRolesGuard)
   @ClubRoles(
-    'director',
-    'deputy-director',
-    'secretary',
-    'secretary-treasurer',
-    'counselor',
+    ClubRole.DIRECTOR,
+    ClubRole.DEPUTY_DIRECTOR,
+    ClubRole.SECRETARY,
+    ClubRole.SECRETARY_TREASURER,
+    ClubRole.COUNSELOR,
   )
   @RequirePermissions('activities:create')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
@@ -181,11 +182,11 @@ export class ActivitiesController {
   @Post('clubs/:clubId/activity-series')
   @UseGuards(ClubRolesGuard)
   @ClubRoles(
-    'director',
-    'deputy-director',
-    'secretary',
-    'secretary-treasurer',
-    'counselor',
+    ClubRole.DIRECTOR,
+    ClubRole.DEPUTY_DIRECTOR,
+    ClubRole.SECRETARY,
+    ClubRole.SECRETARY_TREASURER,
+    ClubRole.COUNSELOR,
   )
   @RequirePermissions('activities:create')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })

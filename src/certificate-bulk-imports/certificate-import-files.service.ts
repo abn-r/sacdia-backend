@@ -29,6 +29,7 @@ import {
   PDF_CONFIRM_QUEUE_WAIT_MS,
 } from './certificate-import-pdf';
 import type { PresignCertificateImportFileDto } from './dto/presign-certificate-import-file.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 const LOCKED_ITEM_STATUSES = ['SUBMITTED', 'APPROVED', 'RESUBMITTED'] as const;
 
@@ -458,17 +459,17 @@ export class CertificateImportFilesService {
     );
 
     if (file.jurisdiction === 'INSTITUTIONAL') {
-      if (!roles.has('super-admin')) {
+      if (!roles.has(GlobalRole.SUPER_ADMIN)) {
         throw new ForbiddenException('CERTIFICATE_IMPORT_FILE_FORBIDDEN');
       }
       return;
     }
 
-    if (roles.has('super-admin')) return;
+    if (roles.has(GlobalRole.SUPER_ADMIN)) return;
     const fieldReviewer =
-      roles.has('director-lf') ||
-      roles.has('assistant-lf') ||
-      ((roles.has('admin') || roles.has('assistant-admin')) &&
+      roles.has(GlobalRole.DIRECTOR_LF) ||
+      roles.has(GlobalRole.ASSISTANT_LF) ||
+      ((roles.has(GlobalRole.ADMIN) || roles.has(GlobalRole.ASSISTANT_ADMIN)) &&
         actor?.local_field_id != null);
     if (
       fieldReviewer &&
@@ -478,7 +479,7 @@ export class CertificateImportFilesService {
       return;
     }
     if (
-      (roles.has('admin') || roles.has('assistant-admin')) &&
+      (roles.has(GlobalRole.ADMIN) || roles.has(GlobalRole.ASSISTANT_ADMIN)) &&
       actor?.local_field_id == null
     ) {
       return;

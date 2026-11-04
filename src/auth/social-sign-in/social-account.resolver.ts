@@ -6,6 +6,7 @@ import { AppConflictException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { VerifiedIdentity } from './social-sign-in.types';
+import { GlobalRole } from '../../common/authorization/roles';
 
 export interface ResolvedSocialAccount {
   userId: string;
@@ -255,7 +256,7 @@ export class SocialAccountResolver {
     const role = await tx.users_roles.findFirst({ where: { user_id: userId } });
     if (role) return;
     const userRole = await tx.roles.findFirst({
-      where: { role_name: 'user', role_category: 'GLOBAL' },
+      where: { role_name: GlobalRole.USER, role_category: 'GLOBAL' },
     });
     if (!userRole) {
       // Not fatal for login; the role seed is missing and must be fixed separately.

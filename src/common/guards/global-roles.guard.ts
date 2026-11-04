@@ -4,6 +4,7 @@ import { AuthorizationContextService } from '../services/authorization-context.s
 import { AppForbiddenException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import {
+  EXACT_GLOBAL_ROLES_KEY,
   GLOBAL_ROLES_KEY,
   type GlobalRoleType,
 } from '../decorators/global-roles.decorator';
@@ -19,10 +20,17 @@ export class GlobalRolesGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredRoles = this.reflector.getAllAndOverride<GlobalRoleType[]>(
-      GLOBAL_ROLES_KEY,
-      [context.getHandler(), context.getClass()],
+    const targets = [context.getHandler(), context.getClass()];
+    const exactRoles = this.reflector.getAllAndOverride<GlobalRoleType[]>(
+      EXACT_GLOBAL_ROLES_KEY,
+      targets,
     );
+    const requiredRoles =
+      exactRoles ??
+      this.reflector.getAllAndOverride<GlobalRoleType[]>(
+        GLOBAL_ROLES_KEY,
+        targets,
+      );
 
     // Si no se requieren roles específicos, permitir
     if (!requiredRoles || requiredRoles.length === 0) {
@@ -42,13 +50,17 @@ export class GlobalRolesGuard implements CanActivate {
     }
 
     // Verificar si el usuario tiene alguno de los roles requeridos
-    const acceptedRoles = Array.from(
-      new Set(
-        requiredRoles.flatMap(
-          (requiredRole) => GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole],
-        ),
-      ),
-    );
+    // @ExactGlobalRoles: no alias expansion. @GlobalRoles: expand aliases.
+    const acceptedRoles = exactRoles
+      ? Array.from(new Set(exactRoles))
+      : Array.from(
+          new Set(
+            requiredRoles.flatMap(
+              (requiredRole) =>
+                GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole],
+            ),
+          ),
+        );
     const hasRole = await this.authorizationContext.hasAnyGlobalRole(
       user.sub,
       acceptedRoles,

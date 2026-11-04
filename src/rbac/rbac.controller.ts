@@ -49,6 +49,7 @@ import { AssignRoleDto } from './dto/assign-role.dto';
 import { BootstrapAdminDto } from './dto/bootstrap-admin.dto';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('rbac')
 @ApiBearerAuth()
@@ -84,7 +85,7 @@ export class RbacController {
 
   @Post('permissions')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Crear un nuevo permiso' })
   @ApiResponse({ status: 201, description: 'Permiso creado' })
@@ -95,7 +96,7 @@ export class RbacController {
 
   @Patch('permissions/:id')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Actualizar un permiso' })
   @ApiResponse({ status: 200, description: 'Permiso actualizado' })
@@ -109,7 +110,7 @@ export class RbacController {
 
   @Delete('permissions/:id')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Desactivar un permiso' })
   @ApiResponse({ status: 200, description: 'Permiso desactivado' })
@@ -151,7 +152,7 @@ export class RbacController {
 
   @Post('roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Crear un nuevo rol' })
   @ApiResponse({ status: 201, description: 'Rol creado con sus permisos' })
@@ -165,7 +166,7 @@ export class RbacController {
 
   @Patch('roles/:id')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Actualizar descripción y/o permisos de un rol' })
   @ApiResponse({ status: 200, description: 'Rol actualizado' })
@@ -185,7 +186,7 @@ export class RbacController {
 
   @Delete('roles/:id')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Desactivar (soft delete) un rol' })
   @ApiResponse({
@@ -207,7 +208,7 @@ export class RbacController {
 
   @Post('roles/:id/permissions')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Asignar permisos a un rol' })
   @ApiResponse({ status: 200, description: 'Permisos asignados' })
@@ -223,7 +224,7 @@ export class RbacController {
 
   @Put('roles/:id/permissions')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Sincronizar permisos de un rol (reemplaza todos)' })
   @ApiResponse({ status: 200, description: 'Permisos sincronizados' })
@@ -241,7 +242,7 @@ export class RbacController {
 
   @Delete('roles/:id/permissions/:permissionId')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Remover un permiso de un rol' })
   @ApiResponse({ status: 200, description: 'Permiso removido del rol' })
@@ -272,7 +273,7 @@ export class RbacController {
 
   @Post('users/:userId/permissions')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Asignar un permiso directo a un usuario' })
   @ApiResponse({ status: 200, description: 'Permiso asignado al usuario' })
@@ -291,7 +292,7 @@ export class RbacController {
 
   @Delete('users/:userId/permissions/:permissionId')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Remover un permiso directo de un usuario' })
   @ApiResponse({ status: 200, description: 'Permiso removido del usuario' })
@@ -311,7 +312,7 @@ export class RbacController {
 
   @Get('users/:userId/roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @RequirePermissions('roles:read')
   @ApiOperation({ summary: 'Listar roles asignados a un usuario' })
   @ApiResponse({ status: 200, description: 'Lista de roles del usuario' })
@@ -322,7 +323,7 @@ export class RbacController {
 
   @Post('users/:userId/roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Asignar un rol global a un usuario' })
   @ApiHeader({ name: 'Idempotency-Key', required: false })
@@ -346,7 +347,7 @@ export class RbacController {
 
   @Delete('users/:userId/roles/:roleId')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('super-admin')
+  @GlobalRoles(GlobalRole.SUPER_ADMIN)
   @RequirePermissions('permissions:assign')
   @ApiOperation({ summary: 'Revocar un rol global de un usuario' })
   @ApiHeader({ name: 'Idempotency-Key', required: false })

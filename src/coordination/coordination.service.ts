@@ -25,19 +25,20 @@ import {
   UpdateCoordinationZoneDto,
   UpdateCoordinatorAssignmentDto,
 } from './dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 const COORDINATOR_ROLE_NAMES = [
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
+  GlobalRole.COORDINATOR,
+  GlobalRole.ZONE_COORDINATOR,
+  GlobalRole.GENERAL_COORDINATOR,
 ];
 
 const DIRECTOR_ROLE_NAME = 'director';
 
 const COORDINATOR_ROLE_RANK: Record<string, number> = {
-  'general-coordinator': 0,
+  [GlobalRole.GENERAL_COORDINATOR]: 0,
   coordinator: 1,
-  'zone-coordinator': 2,
+  [GlobalRole.ZONE_COORDINATOR]: 2,
 };
 
 export type CoordinatorBackfillSkipReason =
@@ -481,9 +482,9 @@ export class CoordinationService {
     );
 
     if (
-      roleNames.has('admin') ||
-      roleNames.has('assistant-admin') ||
-      roleNames.has('super-admin')
+      roleNames.has(GlobalRole.ADMIN) ||
+      roleNames.has(GlobalRole.ASSISTANT_ADMIN) ||
+      roleNames.has(GlobalRole.SUPER_ADMIN)
     ) {
       return undefined;
     }
@@ -499,9 +500,9 @@ export class CoordinationService {
     }
 
     const isCoordinator =
-      roleNames.has('coordinator') ||
-      roleNames.has('zone-coordinator') ||
-      roleNames.has('general-coordinator');
+      roleNames.has(GlobalRole.COORDINATOR) ||
+      roleNames.has(GlobalRole.ZONE_COORDINATOR) ||
+      roleNames.has(GlobalRole.GENERAL_COORDINATOR);
 
     if (!isCoordinator) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);

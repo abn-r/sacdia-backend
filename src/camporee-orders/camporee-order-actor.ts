@@ -11,22 +11,23 @@ import {
   type OrderActor,
   type RequestWithProfile,
 } from '../field-payment-orders/order-actor';
+import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
 export type { OrderActor, RequestWithProfile };
 
 export const ISSUER_CLUB_ROLES: ReadonlySet<string> = new Set([
-  'director',
-  'deputy-director',
-  'secretary',
-  'secretary-treasurer',
-  'treasurer',
+  ClubRole.DIRECTOR,
+  ClubRole.DEPUTY_DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
+  ClubRole.TREASURER,
 ]);
 
 const REVIEW_ROLES = new Set([
-  'director-lf',
-  'assistant-lf',
-  'admin',
-  'super-admin',
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+  GlobalRole.ADMIN,
+  GlobalRole.SUPER_ADMIN,
 ]);
 
 export type CamporeeOrderOwnerScope = 'DIVISION' | 'UNION' | 'LOCAL_FIELD';
@@ -105,7 +106,7 @@ export function assertCanDistribute(
   const role = activeClubRole(actor);
   if (
     !section ||
-    role !== 'director' ||
+    role !== ClubRole.DIRECTOR ||
     section.club_section_id !== orderClubSectionId
   ) {
     throw new AppForbiddenException(ErrorCode.CAMPOREE_ORDER_FORBIDDEN);

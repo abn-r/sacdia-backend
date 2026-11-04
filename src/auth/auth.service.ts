@@ -78,6 +78,7 @@ import { LinkedDeviceGate } from './device/linked-device.gate';
 import { LinkedDevicesService } from '../guardianships/linked-devices.service';
 import type { LinkedDeviceSessionInfo } from '../better-auth/better-auth.service';
 import { adminPanelPageBase } from '../better-auth/better-auth.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -259,7 +260,7 @@ export class AuthService {
         // 2c. Assign global "user" role
         const userRole = await tx.roles.findFirst({
           where: {
-            role_name: 'user',
+            role_name: GlobalRole.USER,
             role_category: 'GLOBAL',
           },
         });

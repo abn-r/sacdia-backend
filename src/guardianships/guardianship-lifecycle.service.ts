@@ -29,9 +29,10 @@ import {
   type LinkedDeviceRevoker,
   type LinkedDeviceRevokeReason,
 } from './linked-device-revoker.port';
+import { ClubRole } from '../common/authorization/roles';
 
 /** Club roles told that a minor is now under the club's custody. */
-const CUSTODY_NOTIFY_ROLES = ['director', 'deputy-director'];
+const CUSTODY_NOTIFY_ROLES = [ClubRole.DIRECTOR, ClubRole.DEPUTY_DIRECTOR];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

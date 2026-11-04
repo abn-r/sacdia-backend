@@ -14,6 +14,7 @@ import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { maskEmail } from '../common/utils/mask-email.util';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 type AssignRolePermissionOptions = {
   invalidateAffectedUsers?: boolean;
@@ -23,9 +24,9 @@ type AssignRolePermissionOptions = {
 
 /** Global roles only a super-admin may assign to or remove from a user. */
 export const SUPER_ADMIN_ONLY_GLOBAL_ROLES: ReadonlySet<string> = new Set([
-  'super-admin',
-  'admin',
-  'assistant-admin',
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
 ]);
 
 @Injectable()
@@ -167,7 +168,7 @@ export class RbacService {
   // ─── Role CRUD (super-admin only) ───────────────────────────
 
   async createRole(dto: CreateRoleDto) {
-    if (dto.role_name === 'super-admin') {
+    if (dto.role_name === GlobalRole.SUPER_ADMIN) {
       throw new AppBadRequestException(ErrorCode.RBAC_ROLE_NAME_RESERVED, {
         name: dto.role_name,
       });
@@ -256,7 +257,7 @@ export class RbacService {
       });
     }
 
-    if (role.role_name === 'super-admin') {
+    if (role.role_name === GlobalRole.SUPER_ADMIN) {
       throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
     }
 
@@ -324,7 +325,7 @@ export class RbacService {
       });
     }
 
-    if (role.role_name === 'super-admin') {
+    if (role.role_name === GlobalRole.SUPER_ADMIN) {
       throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
     }
 
@@ -652,7 +653,7 @@ export class RbacService {
       where: {
         active: true,
         roles: {
-          role_name: 'super-admin',
+          role_name: GlobalRole.SUPER_ADMIN,
           active: true,
         },
       },
@@ -674,7 +675,7 @@ export class RbacService {
     }
 
     const superAdminRole = await this.prisma.roles.findFirst({
-      where: { role_name: 'super-admin', active: true },
+      where: { role_name: GlobalRole.SUPER_ADMIN, active: true },
     });
 
     if (!superAdminRole) {
@@ -698,7 +699,7 @@ export class RbacService {
       success: true,
       message: `Usuario ${user.email ?? userId} es ahora super-admin`,
       user_id: userId,
-      role: 'super-admin',
+      role: GlobalRole.SUPER_ADMIN,
     };
   }
 

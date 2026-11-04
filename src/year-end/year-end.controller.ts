@@ -19,7 +19,12 @@ import {
   GlobalRoles,
   RequirePermissions,
 } from '../common/decorators';
-import { JwtAuthGuard, GlobalRolesGuard, PermissionsGuard } from '../common/guards';
+import {
+  JwtAuthGuard,
+  GlobalRolesGuard,
+  PermissionsGuard,
+} from '../common/guards';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('year-end')
 @Controller('year-end')
@@ -34,7 +39,7 @@ export class YearEndController {
   // ========================================
 
   @Get(':yearId/preview')
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @RequirePermissions('ecclesiastical_years:update')
   @ApiOperation({
     summary: 'Vista previa del impacto de cierre de ano',
@@ -66,7 +71,7 @@ export class YearEndController {
   // ========================================
 
   @Post(':yearId/close')
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @RequirePermissions('ecclesiastical_years:update')
   @ApiOperation({
     summary: 'Cerrar ano eclesiastico',

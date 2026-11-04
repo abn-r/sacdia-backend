@@ -1,6 +1,6 @@
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
-import { GLOBAL_ROLES_KEY } from '../common/decorators/global-roles.decorator';
+import { EXACT_GLOBAL_ROLES_KEY } from '../common/decorators/global-roles.decorator';
 import { SKIP_PERMISSIONS_KEY } from '../common/decorators/skip-permissions.decorator';
 import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
 import { AUTHORIZATION_RESOURCE_KEY } from '../common/decorators/authorization-resource.decorator';
@@ -33,7 +33,7 @@ describe('AdminHonorInstructorProposalsController (B9)', () => {
     ).toBe('admin/honor-instructor-proposals');
     expect(
       Reflect.getMetadata(
-        GLOBAL_ROLES_KEY,
+        EXACT_GLOBAL_ROLES_KEY,
         AdminHonorInstructorProposalsController,
       ),
     ).toEqual([

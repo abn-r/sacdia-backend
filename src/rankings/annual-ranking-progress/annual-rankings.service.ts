@@ -28,6 +28,7 @@ import type {
   AnnualRankingLeaderboardResponseDto,
   AnnualRankingLeaderboardRowDto,
 } from './dto/annual-ranking-leaderboard-response.dto';
+import { GlobalRole } from '../../common/authorization/roles';
 
 const GENERAL_RANKING_CATEGORY_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -374,8 +375,9 @@ export class AnnualRankingsService {
     const permissions = profile.authorization.effective.permissions;
     const hasGlobalAccess = profile.authorization.grants.global_roles.some(
       (grant) =>
-        ['super-admin', 'admin'].includes(grant.role_name) ||
-        grant.permissions.includes('section_rankings:read_global'),
+        ([GlobalRole.SUPER_ADMIN, GlobalRole.ADMIN] as string[]).includes(
+          grant.role_name,
+        ) || grant.permissions.includes('section_rankings:read_global'),
     );
 
     if (hasGlobalAccess || permissions.includes('section_rankings:read_global'))

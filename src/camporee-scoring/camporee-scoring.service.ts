@@ -40,6 +40,7 @@ import {
   UpdateCamporeeJudgeDto,
   UpdateCamporeeEventJudgeAssignmentDto,
 } from './dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 type CamporeeScope = { type: CamporeeScopeType; camporeeId: number };
 type PrismaLike = Record<string, any>;
@@ -259,7 +260,7 @@ export class CamporeeScoringService {
       reasons.push('adult');
     }
 
-    if (roles.includes('pastor')) {
+    if (roles.includes(GlobalRole.PASTOR)) {
       reasons.push('pastor_role');
     }
 
@@ -854,14 +855,14 @@ export class CamporeeScoringService {
       await this.authorizationContext.resolveUserAuthorization(actorUserId);
     const roles = this.roleNames(resolved);
     const hasTerritorialManagerRole =
-      roles.has('assistant-lf') ||
-      roles.has('director-lf') ||
-      roles.has('assistant-union') ||
-      roles.has('director-union');
+      roles.has(GlobalRole.ASSISTANT_LF) ||
+      roles.has(GlobalRole.DIRECTOR_LF) ||
+      roles.has(GlobalRole.ASSISTANT_UNION) ||
+      roles.has(GlobalRole.DIRECTOR_UNION);
     const hasGlobalAdminRole =
-      roles.has('admin') ||
-      roles.has('assistant-admin') ||
-      roles.has('super-admin');
+      roles.has(GlobalRole.ADMIN) ||
+      roles.has(GlobalRole.ASSISTANT_ADMIN) ||
+      roles.has(GlobalRole.SUPER_ADMIN);
 
     if (
       (!hasTerritorialManagerRole && !hasGlobalAdminRole) ||
@@ -1120,7 +1121,7 @@ export class CamporeeScoringService {
                 roles: {
                   active: true,
                   role_category: role_category.GLOBAL,
-                  role_name: { equals: 'pastor', mode: 'insensitive' },
+                  role_name: { equals: GlobalRole.PASTOR, mode: 'insensitive' },
                 },
               },
             },

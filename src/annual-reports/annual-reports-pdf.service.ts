@@ -17,6 +17,7 @@ import {
 import { collapseYearLabel } from './year-label';
 import { AnnualComputedData } from './annual-reports.service';
 import { buildAnnualReportDownloadFilename } from '../monthly-reports/monthly-report-download-filename';
+import { ClubRole } from '../common/authorization/roles';
 
 // ============================================================
 // Constants
@@ -515,7 +516,7 @@ export class AnnualReportsPdfService {
     directiva: { role: string; name: string }[] | null | undefined,
   ): string[] {
     return (directiva ?? [])
-      .filter((member) => member.role === 'director' && member.name)
+      .filter((member) => member.role === ClubRole.DIRECTOR && member.name)
       .map((member) => member.name);
   }
 

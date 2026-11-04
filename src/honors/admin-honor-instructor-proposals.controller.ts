@@ -16,13 +16,14 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
-import { GlobalRoles } from '../common/decorators';
+import { ExactGlobalRoles } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { HonorInstructorProposalsService } from './honor-instructor-proposals.service';
 import {
   ListHonorInstructorProposalsDto,
   RejectHonorInstructorProposalDto,
 } from './dto/honor-instructor-proposals.dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 interface AuthenticatedRequest {
   user: { sub: string };
@@ -37,12 +38,12 @@ interface AuthenticatedRequest {
 @ApiBearerAuth()
 @Controller('admin/honor-instructor-proposals')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles(
-  'super-admin',
-  'admin',
-  'assistant-admin',
-  'director-lf',
-  'assistant-lf',
+@ExactGlobalRoles(
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
 )
 @SkipPermissions()
 export class AdminHonorInstructorProposalsController {

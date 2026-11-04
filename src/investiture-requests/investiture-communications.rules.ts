@@ -5,6 +5,7 @@ import {
   investitureWindowAllowsOperation,
 } from '../classes/field-investiture-window';
 import { normalizeInvestitureTimeZone } from './ecclesiastical-year-local-day';
+import { ClubRole, GlobalRole } from '../common/authorization/roles';
 
 export const INVESTITURE_PERSON_INVESTED_TEXT =
   'El camino rindió fruto. Ya estás investido, y esta noticia es para celebrarla.';
@@ -25,8 +26,15 @@ const INVESTITURE_SYSTEM_REJECTION_TEXT =
 export const INVESTITURE_RESULT_INVESTED_SOURCE = 'investiture:invested';
 export const INVESTITURE_RESULT_REJECTED_SOURCE = 'investiture:rejected';
 
-const BOARD_ROLES = new Set(['director', 'secretary', 'secretary-treasurer']);
-const FIELD_ROLES = new Set(['director-lf', 'assistant-lf']);
+const BOARD_ROLES = new Set<string>([
+  ClubRole.DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
+]);
+const FIELD_ROLES = new Set<string>([
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+]);
 const REMINDER_HOUR = 10;
 
 export type MailRole = 'pastor' | 'director-lf' | 'assistant-lf';
@@ -216,7 +224,7 @@ export function presentationRecipients(input: {
       recipients.push({
         userId: pastor.userId,
         email: pastor.email,
-        role: 'pastor',
+        role: GlobalRole.PASTOR,
         scopeKey: `district:${input.districtId}`,
       });
     }
@@ -486,11 +494,19 @@ export function reminderRunsDue(input: {
     }
     const localDate = schedule.clock.date;
     if (schedule.pastorDay) {
-      runs.push({ fieldId: field.fieldId, role: 'pastor', localDate });
+      runs.push({ fieldId: field.fieldId, role: GlobalRole.PASTOR, localDate });
     }
     if (schedule.fieldDay) {
-      runs.push({ fieldId: field.fieldId, role: 'director-lf', localDate });
-      runs.push({ fieldId: field.fieldId, role: 'assistant-lf', localDate });
+      runs.push({
+        fieldId: field.fieldId,
+        role: GlobalRole.DIRECTOR_LF,
+        localDate,
+      });
+      runs.push({
+        fieldId: field.fieldId,
+        role: GlobalRole.ASSISTANT_LF,
+        localDate,
+      });
     }
   }
   return runs;
@@ -540,7 +556,7 @@ export function dueReminders(input: {
             localDate: clock.date,
           }),
         );
-      const pastorDay = schedule.pastorDay && runAllowed('pastor');
+      const pastorDay = schedule.pastorDay && runAllowed(GlobalRole.PASTOR);
       const fieldDay = schedule.fieldDay;
       const included = includableRequests(
         field,
@@ -577,7 +593,7 @@ export function dueReminders(input: {
               localDate: clock.date,
               recipientUserId: pastor.userId,
               email: pastor.email,
-              role: 'pastor',
+              role: GlobalRole.PASTOR,
               scopeKey: `field:${field.fieldId}`,
               requests: mine,
               panelBaseUrl: input.panelBaseUrl,
@@ -812,7 +828,7 @@ export function reminderRetryDraft(input: {
   if (input.scopeKey !== `field:${input.field.fieldId}`) {
     return null;
   }
-  if (input.role === 'pastor') {
+  if (input.role === GlobalRole.PASTOR) {
     const pastor = input.pastors.find(
       (item) =>
         item.userId === input.recipientUserId &&
@@ -837,7 +853,7 @@ export function reminderRetryDraft(input: {
       localDate: input.executionKey,
       recipientUserId: pastor.userId,
       email: pastor.email,
-      role: 'pastor',
+      role: GlobalRole.PASTOR,
       scopeKey: input.scopeKey,
       requests: mine,
       panelBaseUrl: input.panelBaseUrl,
@@ -868,20 +884,20 @@ export function reminderRetryDraft(input: {
 }
 
 function presentationSubject(role: MailRole): string {
-  if (role === 'pastor') {
+  if (role === GlobalRole.PASTOR) {
     return 'Solicitud de investidura — pastor del distrito';
   }
-  if (role === 'assistant-lf') {
+  if (role === GlobalRole.ASSISTANT_LF) {
     return 'Solicitud de investidura — asistente del Campo';
   }
   return 'Solicitud de investidura — director del Campo';
 }
 
 function reminderSubject(role: MailRole): string {
-  if (role === 'pastor') {
+  if (role === GlobalRole.PASTOR) {
     return 'Recordatorio de investiduras pendientes — pastor del distrito';
   }
-  if (role === 'assistant-lf') {
+  if (role === GlobalRole.ASSISTANT_LF) {
     return 'Resumen de investiduras pendientes — asistente del Campo';
   }
   return 'Resumen de investiduras pendientes — director del Campo';

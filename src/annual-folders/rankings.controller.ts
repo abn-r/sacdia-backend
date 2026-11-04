@@ -10,6 +10,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ActorScope } from '../common/authorization/actor-scope';
+import { GlobalRole } from '../common/authorization/roles';
 import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { Throttle } from '@nestjs/throttler';
 import {
@@ -173,7 +175,7 @@ export class RankingsController {
       return defaultLocalFieldId;
     }
 
-    if (this.hasGlobalRole(authorizationProfile, 'super-admin')) {
+    if (ActorScope.from(authorizationProfile).hasRole(GlobalRole.SUPER_ADMIN)) {
       return undefined;
     }
 
@@ -209,16 +211,6 @@ export class RankingsController {
       );
 
     return this.toNumericScopeId(activeAssignment?.scope.local_field?.id);
-  }
-
-  private hasGlobalRole(
-    authorizationProfile: ResolvedAuthorizationProfile,
-    roleName: string,
-  ): boolean {
-    const normalizedRole = roleName.toLowerCase();
-    return authorizationProfile.authorization.grants.global_roles.some(
-      (grant) => grant.role_name.toLowerCase() === normalizedRole,
-    );
   }
 
   // ========================================

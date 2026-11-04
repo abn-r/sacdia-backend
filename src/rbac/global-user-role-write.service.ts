@@ -10,6 +10,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { ExactSuperAdminWritePolicy } from './exact-super-admin-write.policy';
+import { GlobalRole } from '../common/authorization/roles';
 type Mutation = 'assign' | 'revoke';
 type Database = Pick<PrismaService, '$transaction'>;
 type Tx = Pick<
@@ -143,7 +144,7 @@ export class GlobalUserRoleWriteService {
       actor: {
         kind: 'user',
         userId: input.actorUserId,
-        roleName: 'super-admin',
+        roleName: GlobalRole.SUPER_ADMIN,
         scope: { role_category: 'GLOBAL' },
       },
       target: {

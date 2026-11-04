@@ -55,6 +55,7 @@ import { InsuranceConfigScopeResolver } from './insurance-config-scope';
 import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { GlobalRole } from '../common/authorization/roles';
 
 type CurrentUserPayload = {
   sub?: string;
@@ -298,7 +299,7 @@ export class InsuranceController {
 
   @Get('insurance/expiring')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('admin', 'coordinator')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.COORDINATOR)
   @SkipPermissions()
   @ApiOperation({
     summary: 'Listar seguros próximos a vencer',

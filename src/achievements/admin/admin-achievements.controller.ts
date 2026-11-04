@@ -45,11 +45,12 @@ import {
   UpdateCategoryDto,
 } from '../dto';
 import { AdminAchievementsService } from './admin-achievements.service';
+import { GlobalRole } from '../../common/authorization/roles';
 
 @ApiTags('Admin - Achievements')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super-admin')
+@GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
 @AuthorizationResource({ type: 'global' })
 @Controller('admin/achievements')
 export class AdminAchievementsController {

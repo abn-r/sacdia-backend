@@ -52,6 +52,7 @@ import {
   sendToTargets,
   type FcmTargetRow,
 } from './fcm-targets';
+import { GlobalRole } from '../common/authorization/roles';
 
 export interface SendNotificationDto {
   userId: string;
@@ -586,7 +587,7 @@ export class NotificationsService {
 
     const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
       callerUserId,
-      ['admin', 'super-admin', 'assistant-admin'],
+      [GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN, GlobalRole.ASSISTANT_ADMIN],
     );
 
     const skip = (page - 1) * safeLimit;
@@ -863,7 +864,7 @@ export class NotificationsService {
       ),
     );
 
-    if (globalRoleNames.has('super-admin')) {
+    if (globalRoleNames.has(GlobalRole.SUPER_ADMIN)) {
       return {};
     }
 

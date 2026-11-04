@@ -21,6 +21,7 @@ import { AssignDistrictInvestiturePastorDto } from './dto/assign-district-invest
 import { SearchPastorCandidatesDto } from './dto/search-pastor-candidates.dto';
 import { UpdateInvestiturePastorQuotaDto } from './dto/update-investiture-pastor-quota.dto';
 import { DistrictInvestiturePastorService } from './district-investiture-pastors.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 type AuthenticatedRequest = {
   user: { sub: string };
@@ -33,7 +34,11 @@ type AuthenticatedRequest = {
 // El alias de director-lf también admite unión y división. El servicio deja
 // asignar solo a director y asistente de Campo o de unión, dentro de su alcance.
 // super-admin cambia el cupo global y no asigna por ese rol.
-@GlobalRoles('super-admin', 'director-lf', 'assistant-lf')
+@GlobalRoles(
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+)
 @SkipPermissions()
 export class DistrictInvestiturePastorsController {
   constructor(

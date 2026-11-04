@@ -31,6 +31,7 @@ import {
 import { TemporalContextFactory } from '../clock/temporal-context.factory';
 import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
 import { toTemporalLocalField } from '../authorization/club-assignment-temporal';
+import { GlobalRole } from '../authorization/roles';
 
 export const CANONICAL_CLUB_ASSIGNMENT_ORDER = [
   { start_date: 'desc' as const },
@@ -706,7 +707,7 @@ export class AuthorizationContextService {
    * the same request window are cheap.
    */
   async isSuperAdmin(userId: string): Promise<boolean> {
-    return this.hasAnyGlobalRole(userId, ['super-admin']);
+    return this.hasAnyGlobalRole(userId, [GlobalRole.SUPER_ADMIN]);
   }
 
   /**

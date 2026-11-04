@@ -30,6 +30,7 @@ import {
 } from '../common/decorators';
 import { GlobalRolesGuard } from '../common/guards';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('scoring-categories')
 @Controller()
@@ -47,7 +48,7 @@ export class ScoringCategoriesController {
   @ActingScope('member:read')
   @Get('divisions/scoring-categories')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @RequirePermissions('scoring_categories:read')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Listar categorías de puntuación a nivel división' })
@@ -58,7 +59,7 @@ export class ScoringCategoriesController {
 
   @Post('divisions/scoring-categories')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Crear categoría de puntuación a nivel división' })
@@ -69,7 +70,7 @@ export class ScoringCategoriesController {
 
   @Patch('divisions/scoring-categories/:id')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({
@@ -91,7 +92,7 @@ export class ScoringCategoriesController {
 
   @Delete('divisions/scoring-categories/:id')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('admin', 'super-admin')
+  @GlobalRoles(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN)
   @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({

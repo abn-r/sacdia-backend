@@ -13,6 +13,7 @@ import {
   CreateClassCounselorAssignmentDto,
   UpdateClassCounselorAssignmentDto,
 } from './dto';
+import { ClubRole } from '../common/authorization/roles';
 
 type CreateAssignmentParams = {
   clubId: number;
@@ -29,7 +30,10 @@ type ListAssignmentParams = {
   active?: boolean;
 };
 
-const ASSIGNABLE_ROLE_NAMES = new Set(['counselor', 'secretary']);
+const ASSIGNABLE_ROLE_NAMES = new Set<string>([
+  ClubRole.COUNSELOR,
+  ClubRole.SECRETARY,
+]);
 const MAX_ASSIGNMENTS_PER_CLASS = 3;
 const MAX_ASSIGNMENTS_PER_USER = 2;
 
