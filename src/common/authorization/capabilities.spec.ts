@@ -15,7 +15,7 @@ type Fixture = {
   globalRoles?: string[];
   global?: { division?: number; union?: number; local_field?: number };
   profileLocalFieldId?: number | null;
-  club?: { role: string; operational?: boolean };
+  club?: { role: string; operational?: boolean; localField?: number | null };
 };
 
 const node = (id: number | undefined) =>
@@ -40,7 +40,15 @@ function resolvedFor(fixture: Fixture): ResolvedAuthorizationProfile {
           club_type_id: 2,
           club_type_name: 'Pathfinder',
         },
-        scope: { local_field: { id: 3, name: 'Campo 3' } },
+        scope:
+          fixture.club.localField === null
+            ? {}
+            : {
+                local_field: {
+                  id: fixture.club.localField ?? 3,
+                  name: `Campo ${fixture.club.localField ?? 3}`,
+                },
+              },
         status: 'active',
       }
     : null;
@@ -556,6 +564,53 @@ describe('capabilities catalog', () => {
       expect(caps).not.toContain('honors.review_instructor_proposals');
       expect(caps).toContain('field_payment_orders.review');
       expect(caps).toContain('reports.view_local_field');
+    });
+
+    it('field_payment_orders.review accepts the field of the active club grant, like resolveOrderActor', () => {
+      const viaClubGrant = resolvedFor({
+        globalRoles: ['director-lf'],
+        club: { role: 'secretary', localField: 5 },
+      });
+      expect(buildCapabilityContext(viaClubGrant).activeClubLocalFieldId).toBe(
+        5,
+      );
+      expect(computeTerritory(viaClubGrant).local_field_id).toBeNull();
+      expect(computeCapabilities(viaClubGrant)).toContain(
+        'field_payment_orders.review',
+      );
+
+      // The grant must be operational and carry a numeric local field.
+      expect(
+        computeCapabilities(
+          resolvedFor({
+            globalRoles: ['assistant-lf'],
+            club: { role: 'secretary', localField: 5, operational: false },
+          }),
+        ),
+      ).not.toContain('field_payment_orders.review');
+      expect(
+        computeCapabilities(
+          resolvedFor({
+            globalRoles: ['assistant-lf'],
+            club: { role: 'secretary', localField: null },
+          }),
+        ),
+      ).not.toContain('field_payment_orders.review');
+
+      // The grant alone never grants the key: the global role is required.
+      expect(
+        computeCapabilities(
+          resolvedFor({
+            globalRoles: ['user'],
+            club: { role: 'director', localField: 5 },
+          }),
+        ),
+      ).not.toContain('field_payment_orders.review');
+
+      // After stripClubContext the grant is gone and the territory decides.
+      expect(computeCapabilities(stripClubContext(viaClubGrant))).not.toContain(
+        'field_payment_orders.review',
+      );
     });
 
     it('a director-lf without a configured field loses every territory key', () => {
