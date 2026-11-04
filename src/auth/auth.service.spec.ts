@@ -2320,6 +2320,7 @@ describe('AuthService', () => {
           'club.active_director',
           'club.operational_staff',
           'club.staff_mode',
+          'club_roles.assign_section',
           'club_sections.create_active',
           'clubs.deactivate_active',
           'clubs.manage_active',

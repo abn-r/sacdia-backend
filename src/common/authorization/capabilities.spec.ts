@@ -360,6 +360,7 @@ const ACTORS: Array<{
       'club.active_director',
       'club.operational_staff',
       'club.staff_mode',
+      'club_roles.assign_section',
       'club_sections.create_active',
       'clubs.deactivate_active',
       'clubs.manage_active',
@@ -494,6 +495,26 @@ describe('capabilities catalog', () => {
         expect(table['admin without territory (unconfigured)']).toBe(false);
         expect(table['pastor only']).toBe(false);
         expect(table['user without grants']).toBe(false);
+      }
+    });
+
+    it('club_roles.assign_section follows SectionRoleMutationPolicy: global managers or the active club director', () => {
+      const assign = byKey('club_roles.assign_section');
+      expect(assign['super-admin']).toBe(true);
+      expect(assign['admin without territory (unconfigured)']).toBe(true);
+      expect(assign['director-lf with a local field']).toBe(true);
+      expect(assign['active club director']).toBe(true);
+      expect(assign['club secretary']).toBe(false);
+      expect(assign['club member']).toBe(false);
+      expect(assign['assistant-admin scoped to a local field']).toBe(false);
+      expect(assign['principal with the club context stripped']).toBe(false);
+      // Designating or succeeding the director still needs a global role.
+      for (const key of [
+        'club_roles.designate_director',
+        'club_roles.succeed_director',
+      ] as const) {
+        expect(byKey(key)['active club director']).toBe(false);
+        expect(byKey(key)['director-lf with a local field']).toBe(true);
       }
     });
 

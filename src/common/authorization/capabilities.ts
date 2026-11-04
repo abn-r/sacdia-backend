@@ -174,6 +174,17 @@ const sectionRoleManager: CapabilityPredicate = globalRoleIn(
 );
 
 /**
+ * Mirrors `SectionRoleMutationPolicy.assertCanMutate`: besides the global
+ * section-role managers, the operational director of the active club section
+ * may assign another user any role but director. The window and the "not
+ * yourself / not director" checks stay on the server.
+ */
+const sectionRoleAssigner: CapabilityPredicate = some(
+  sectionRoleManager,
+  clubRoleIn([ClubRole.DIRECTOR]),
+);
+
+/**
  * Key → pure predicate. Keys are the capability catalog: the generator emits
  * `generated/capability-keys.ts` (and the admin/app copies) from them, and
  * the `Record<CapabilityKey, …>` type keeps both in sync at compile time.
@@ -205,7 +216,7 @@ export const CAPABILITY_DEFINITIONS: Record<
   'club.operational_staff': clubRoleIn(CLUB_OPERATIONAL_STAFF),
   'club.staff_mode': ({ activeClubRole }) =>
     activeClubRole !== undefined && activeClubRole !== ClubRole.MEMBER,
-  'club_roles.assign_section': sectionRoleManager,
+  'club_roles.assign_section': sectionRoleAssigner,
   // The October–December window is still enforced by the server.
   'club_roles.designate_director': sectionRoleManager,
   'club_roles.succeed_director': sectionRoleManager,
