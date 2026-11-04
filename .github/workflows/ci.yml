@@ -42,6 +42,9 @@ jobs:
       - name: Run ESLint
         run: pnpm run lint
 
+      - name: Verify generated authorization catalog (backend outputs)
+        run: pnpm authz:check
+
       - name: Install deterministic IANA build tools
         run: |
           sudo apt-get update
@@ -365,7 +368,7 @@ jobs:
           SACDIA_ADMIN_ROOT: ${{ github.workspace }}/.contract-sources/sacdia-admin
           SACDIA_APP_ROOT: ${{ github.workspace }}/.contract-sources/sacdia-app
           SACDIA_CANONICAL_DOCS_ROOT: ${{ github.workspace }}/.contract-sources/sacdia
-        run: pnpm exec jest --runTestsByPath src/common/verify-authorization-director-succession-p0-crossrepo.spec.ts
+        run: pnpm exec jest --runTestsByPath src/common/verify-authorization-director-succession-p0-crossrepo.spec.ts src/common/authorization/authz-catalog.crossrepo.spec.ts
 
   required_unit_tests:
     name: Unit Tests
