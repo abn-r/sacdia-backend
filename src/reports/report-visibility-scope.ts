@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ActorScope } from '../common/authorization/actor-scope';
 import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
 
 const ALL_REPORTS_ROLES = new Set([
@@ -58,16 +59,16 @@ export type ReportVisibilityScope =
 export function needsCoordinatorReportSections(
   resolved: ResolvedAuthorizationProfile,
 ): boolean {
-  const roleNames = globalRoleNameSet(resolved);
+  const actor = ActorScope.from(resolved);
   if (
-    hasAnyRole(roleNames, ALL_REPORTS_ROLES) ||
-    hasAnyRole(roleNames, UNION_REPORTS_ROLES) ||
-    hasAnyRole(roleNames, LOCAL_FIELD_REPORTS_ROLES)
+    actor.hasAnyRole(ALL_REPORTS_ROLES) ||
+    actor.hasAnyRole(UNION_REPORTS_ROLES) ||
+    actor.hasAnyRole(LOCAL_FIELD_REPORTS_ROLES)
   ) {
     return false;
   }
 
-  return hasAnyRole(roleNames, COORDINATOR_REPORT_ROLES);
+  return actor.hasAnyRole(COORDINATOR_REPORT_ROLES);
 }
 
 export async function resolveReportVisibilityScopeForActor(
@@ -87,9 +88,9 @@ export function resolveReportVisibilityScope(
   filters: ReportVisibilityFilters,
   coordinatorSectionIds?: number[],
 ): ReportVisibilityScope {
-  const roleNames = globalRoleNameSet(resolved);
+  const actor = ActorScope.from(resolved);
 
-  if (hasAnyRole(roleNames, ALL_REPORTS_ROLES)) {
+  if (actor.hasAnyRole(ALL_REPORTS_ROLES)) {
     return {
       access: 'all',
       ...(filters.divisionId !== undefined && {
@@ -102,8 +103,8 @@ export function resolveReportVisibilityScope(
     };
   }
 
-  if (hasAnyRole(roleNames, UNION_REPORTS_ROLES)) {
-    const unionId = resolved.authorization.effective.scope.global.union?.id;
+  if (actor.hasAnyRole(UNION_REPORTS_ROLES)) {
+    const unionId = actor.unionId;
 
     if (typeof unionId !== 'number') {
       throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
@@ -118,9 +119,8 @@ export function resolveReportVisibilityScope(
     };
   }
 
-  if (hasAnyRole(roleNames, LOCAL_FIELD_REPORTS_ROLES)) {
-    const localFieldId =
-      resolved.authorization.effective.scope.global.local_field?.id;
+  if (actor.hasAnyRole(LOCAL_FIELD_REPORTS_ROLES)) {
+    const localFieldId = actor.localFieldId;
 
     if (typeof localFieldId !== 'number') {
       throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
@@ -129,7 +129,7 @@ export function resolveReportVisibilityScope(
     return { access: 'local_field', localFieldId };
   }
 
-  if (hasAnyRole(roleNames, COORDINATOR_REPORT_ROLES)) {
+  if (actor.hasAnyRole(COORDINATOR_REPORT_ROLES)) {
     if (!coordinatorSectionIds || coordinatorSectionIds.length === 0) {
       throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
     }
@@ -214,24 +214,4 @@ export function buildReportClubSectionWhere(
     }),
     ...(Object.keys(clubWhere).length > 0 && { clubs: clubWhere }),
   };
-}
-
-function globalRoleNameSet(
-  resolved: ResolvedAuthorizationProfile,
-): Set<string> {
-  return new Set(
-    resolved.authorization.grants.global_roles.map((grant) =>
-      grant.role_name.toLowerCase(),
-    ),
-  );
-}
-
-function hasAnyRole(
-  roleNames: Set<string>,
-  allowedRoles: Set<string>,
-): boolean {
-  for (const role of allowedRoles) {
-    if (roleNames.has(role)) return true;
-  }
-  return false;
 }

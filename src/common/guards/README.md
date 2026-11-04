@@ -56,6 +56,20 @@ El contexto de autorización (grants globales, de club y territoriales) lo resue
 
 En e2e, `E2E_PASSTHROUGH_PERMISSIONS=true` desactiva `PermissionsGuard` solo con `NODE_ENV=test` (Jest y el job e2e del CI); con cualquier otro `NODE_ENV` se ignora.
 
+## Resource policies
+
+`PermissionsGuard` solo orquesta (`canActivate`, `evaluate`, bypass de propietario). El alcance por `type` vive en `src/common/authorization/`:
+
+- `policies/<familia>/<tipo>.policy.ts` (+ `.spec.ts`): una clase `ResourcePolicy` por tipo (`simple/`, `club/`, `camporee/`). `resolve(ctx)` devuelve `true` o lanza la misma `App*Exception` (400/403/404) que antes.
+- `policies/scope/`: validadores compartidos (`instance-scope.ts`, `territory-scope.ts` con `TerritoryScopeValidator` y `CamporeeScopeLoader`, `club-access.ts`).
+- `policies/build-policy-registry.ts` y `policies/policy-registry.ts`: el guard construye el registro en su constructor (firma sin cambios).
+- `tenant-binding.enforcer.ts`: `TenantBindingEnforcer.enforce(ctx)` aplica `bind` (propietarios incluidos, y después de la policy).
+- `section-member-access.ts`: lecturas de miembros de la sección activa (`SectionMemberAccess`).
+- `actor-scope.ts`: `ActorScope.from(resolved)`, vista de solo lectura del actor (roles globales, división/unión/campo local, club y sección activos, secciones de coordinador) con `hasRole`/`hasAnyRole`, `coversHierarchy`, `coversClub`, `coversSection`, `coversLocalField`. Los adaptadores (`report-visibility-scope`, `camporee-*-actor`, `order-actor`) lo usan en lugar de copiar sets de roles.
+- `access-decision-locality.arch.spec.ts`: ratchet que congela (`KNOWN_ACCESS_DECISION_FILES`) los archivos fuera de `common/authorization` y `common/guards` que deciden acceso con un filtro `users.local_field_id` o un predicado de `club_role_assignments`. Solo se pueden quitar entradas; un archivo nuevo, o uno listado que ya no coincide, rompe el test.
+
+Para añadir un tipo de recurso: agrégalo a la unión `AuthorizationResourceType` (`decorators/authorization-resource.decorator.ts`). `ResourcePolicyTable` es un mapped type sobre esa unión, así que `buildResourcePolicyRegistry` no compila hasta registrar una policy para el tipo nuevo. Crea `policies/<familia>/<tipo>.policy.ts` con su spec y regístrala allí. Si falta en runtime, el guard responde `GUARD_RBAC_MISCONFIGURATION`.
+
 ## Guards de ruta (opt-in con `@UseGuards`)
 
 | Guard | Uso |
