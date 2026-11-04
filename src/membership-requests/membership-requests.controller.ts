@@ -38,6 +38,7 @@ import {
   AuthorizationResource,
   CurrentUser,
   RequirePermissions,
+  type PermissionRequirementInput,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
@@ -80,9 +81,9 @@ function isVerifyOnlyReviewer(request: AuthorizedRequest): boolean {
  * whose role carries one of these reach the sections their
  * coordinator_assignments cover.
  */
-const CONSENT_REVIEW_PERMISSIONS = {
+const CONSENT_REVIEW_PERMISSIONS: PermissionRequirementInput = {
   permissions: [APPROVE_PERMISSION, 'consent:verify'],
-  mode: 'any' as const,
+  mode: 'any',
 };
 
 @ApiTags('membership-requests')

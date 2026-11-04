@@ -1,3 +1,5 @@
+import type { PermissionKey } from '../authorization/generated/permission-keys';
+
 export type SensitiveUserSubresourceFamily =
   | 'health'
   | 'emergency_contacts'
@@ -7,15 +9,17 @@ export type SensitiveUserSubresourceFamily =
 export type SensitiveUserSubresourceMode = 'read' | 'update';
 
 export type SensitiveUserSubresourcePolicy = {
-  finePermission: string;
-  legacyFallbackPermission: string;
+  finePermission: PermissionKey;
+  legacyFallbackPermission: PermissionKey;
 };
 
-export const LEGACY_PERMISSION_BY_MODE: Record<SensitiveUserSubresourceMode, string> =
-  {
-    read: 'users:read_detail',
-    update: 'users:update_profile',
-  };
+export const LEGACY_PERMISSION_BY_MODE: Record<
+  SensitiveUserSubresourceMode,
+  PermissionKey
+> = {
+  read: 'users:read_detail',
+  update: 'users:update_profile',
+};
 
 /**
  * Last day the users:* OR fallback remains canonical for third-party
@@ -29,7 +33,10 @@ export function getSensitiveUserSubresourcePolicy(
   mode: SensitiveUserSubresourceMode,
 ): SensitiveUserSubresourcePolicy {
   return {
-    finePermission: `${family}:${mode}`,
+    // Cast, not `as const`: the post_registration + update pair is NOT in the
+    // permission catalog (no caller uses it; only 'read' is wired). Narrowing it away here
+    // would change the public family/mode types, so it is left for a follow-up.
+    finePermission: `${family}:${mode}` as PermissionKey,
     legacyFallbackPermission: LEGACY_PERMISSION_BY_MODE[mode],
   };
 }
@@ -37,7 +44,7 @@ export function getSensitiveUserSubresourcePolicy(
 export function getSensitiveUserSubresourceFallbackPermission(
   family: SensitiveUserSubresourceFamily,
   mode: SensitiveUserSubresourceMode,
-): string {
+): PermissionKey {
   return getSensitiveUserSubresourcePolicy(family, mode)
     .legacyFallbackPermission;
 }
