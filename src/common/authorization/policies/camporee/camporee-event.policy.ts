@@ -41,9 +41,16 @@ export class CamporeeEventPolicy implements ResourcePolicy<'camporee_event'> {
         await this.loader.loadCamporeeScope(event.local_camporee_id),
       );
     }
+    // An event belongs to a local or a union camporee; neither id means the
+    // row is inconsistent, so it reads as a missing union camporee.
+    if (event.union_camporee_id === null) {
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+      );
+    }
     return this.territory.validateUnionCamporeeScope(
       resolved,
-      await this.loader.loadUnionCamporeeScope(event.union_camporee_id!),
+      await this.loader.loadUnionCamporeeScope(event.union_camporee_id),
     );
   }
 }

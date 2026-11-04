@@ -89,4 +89,12 @@ describe('CamporeeEventPolicy', () => {
       code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
     });
   });
+
+  it('throws 404 when the event has neither camporee id', async () => {
+    const orphan = { local_camporee_id: null, union_camporee_id: null };
+    await expect(build(orphan, true).resolve(ctx())).rejects.toMatchObject({
+      status: 404,
+      code: ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+    });
+  });
 });
