@@ -52,7 +52,7 @@ describe('club assignment effectivity inventory', () => {
       assertAssignmentQueryInventory(findings, ASSIGNMENT_QUERY_INVENTORY),
     ).not.toThrow();
     expect(findings).toHaveLength(165);
-    expect(ASSIGNMENT_QUERY_INVENTORY).toHaveLength(63);
+    expect(ASSIGNMENT_QUERY_INVENTORY).toHaveLength(65);
     expect(
       Object.fromEntries(
         ['T08', 'T09', 'allowlist'].map((owner) => [

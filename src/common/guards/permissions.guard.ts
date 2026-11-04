@@ -5,21 +5,18 @@ import {
   Optional,
 } from '@nestjs/common';
 import {
-  AppBadRequestException,
   AppForbiddenException,
   AppInternalServerErrorException,
   AppNotFoundException,
 } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { Reflector } from '@nestjs/core';
-import { isUUID } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TemporalContextFactory } from '../clock/temporal-context.factory';
 import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
 import {
   CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT,
   CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
-  toTemporalLocalField,
 } from '../authorization/club-assignment-temporal';
 import {
   AuthorizationContextService,
@@ -36,7 +33,6 @@ import {
   BASE_GLOBAL_ROLE_NAME,
 } from '../authorization/permission-requirements';
 import {
-  getOptionalUuidValue,
   getRequestValue,
   getRequiredNumericValue,
   parseEntityUuid,
@@ -47,6 +43,8 @@ import {
 import { buildResourcePolicyRegistry } from '../authorization/policies/build-policy-registry';
 import type { ResourcePolicyRegistry } from '../authorization/policies/policy-registry';
 import type { PolicyContext } from '../authorization/policies/resource-policy';
+import { assertClubAccess } from '../authorization/policies/scope/club-access';
+import { AssignmentEffectivity } from '../authorization/policies/scope/instance-scope';
 import {
   AUTHORIZATION_RESOURCE_KEY,
   type AuthorizationResourceMetadata,
@@ -63,36 +61,6 @@ import {
   type SensitiveUserSubresourceMetadata,
 } from '../decorators/sensitive-user-subresource.decorator';
 import { getSensitiveUserSubresourcePolicy } from './sensitive-user-subresource-policy';
-import {
-  coordinatorRolePermissions,
-  coordinatorScopeIncludesSection,
-} from '../authorization/coordinator-section-scope';
-
-type AuthorizationSectionType = 'adventurers' | 'pathfinders' | 'master_guilds';
-
-type ResolvedInstanceScope = {
-  mainClubId: number;
-  instanceType: AuthorizationSectionType;
-  instanceId: number;
-};
-
-/**
- * What a `coordinatorSections` route hands to validateInstanceScope.
- * `clubAuthority`: the requirement is met WITHOUT the coordinator roles'
- * permissions (active club role, direct grants, other global roles). When it
- * is false, the permission came from a coordinator role, and a coordinator's
- * authority is their assignments only: the club branches cannot open the
- * section, the coordinator path decides.
- */
-type CoordinatorSectionsCheck = {
-  requirement: PermissionRequirement;
-  clubAuthority: boolean;
-};
-
-type ResolvedJointActivityScope = {
-  mainClubId: number;
-  participatingSectionIds: number[];
-};
 
 type ResolvedTerritoryScope = {
   localFieldId: number;
@@ -114,9 +82,13 @@ type ResolvedUnionCamporeeScope = {
 
 export { BASE_GLOBAL_ROLE_NAME };
 
-type LegacyResourceType = Exclude<
+type LegacyResourceType = Extract<
   AuthorizationResourceType,
-  'global' | 'user' | 'active_assignment'
+  | 'camporee'
+  | 'union_camporee'
+  | 'camporee_event'
+  | 'camporee_venue'
+  | 'camporee_payment'
 >;
 
 const SECTION_MEMBER_PROFILE_GATE_PERMISSIONS = new Set([
@@ -165,6 +137,7 @@ interface PermissionsGrantMemo {
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   private readonly policies: ResourcePolicyRegistry;
+  private readonly assignments: AssignmentEffectivity;
 
   constructor(
     private readonly reflector: Reflector,
@@ -175,6 +148,10 @@ export class PermissionsGuard implements CanActivate {
     private readonly temporalContexts: TemporalContextFactory,
     @Optional() private readonly memberScope?: MemberTerritoryScopeService,
   ) {
+    this.assignments = new AssignmentEffectivity(
+      assignmentEffectivity,
+      temporalContexts,
+    );
     this.policies = buildResourcePolicyRegistry(
       {
         prisma,
@@ -374,19 +351,9 @@ export class PermissionsGuard implements CanActivate {
 
   /** Pre-registry switch; shrinks as types move to their own policy. */
   private async legacyResourceScope(ctx: PolicyContext): Promise<boolean> {
-    const { userId, request, resolved, requirement, resource } = ctx;
+    const { request, resolved, resource } = ctx;
     const type = resource.type as LegacyResourceType;
     switch (type) {
-      case 'club':
-        return this.validateClubScope(userId, request, resolved, resource);
-      case 'club_section':
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          await this.resolveClubSectionScope(request, resource),
-          this.coordinatorSectionsCheck(resolved, requirement, resource),
-          request,
-        );
       case 'camporee':
         return this.validateTerritoryScope(
           resolved,
@@ -429,92 +396,6 @@ export class PermissionsGuard implements CanActivate {
         }
         return this.validateUnionCamporeeScope(resolved, paymentScope.scope);
       }
-      case 'activity': {
-        const activityScopeResult = await this.resolveActivityScope(
-          request,
-          resource,
-        );
-        if ('participatingSectionIds' in activityScopeResult) {
-          return this.validateJointActivityScope(
-            userId,
-            resolved,
-            activityScopeResult,
-          );
-        }
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          activityScopeResult,
-        );
-      }
-      case 'activity_series': {
-        const seriesScope = await this.resolveActivitySeriesScope(
-          request,
-          resource,
-        );
-        if ('participatingSectionIds' in seriesScope) {
-          return this.validateJointActivityScope(userId, resolved, seriesScope);
-        }
-        return this.validateInstanceScope(userId, resolved, seriesScope);
-      }
-      case 'finance':
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          await this.resolveFinanceScope(request, resource),
-        );
-      case 'inventory_instance':
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          await this.resolveInventoryInstanceScope(request, resource),
-        );
-      case 'inventory_item':
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          await this.resolveInventoryItemScope(request, resource),
-        );
-      case 'club_assignment':
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          await this.resolveClubAssignmentScope(request, resource),
-          this.coordinatorSectionsCheck(resolved, requirement, resource),
-          request,
-        );
-      case 'class_counselor_assignment':
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          await this.resolveClassCounselorAssignmentScope(request, resource),
-        );
-      case 'investiture_enrollment':
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          await this.resolveInvestitureEnrollmentScope(request, resource),
-        );
-      case 'monthly_report':
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          await this.resolveMonthlyReportScope(request, resource),
-          this.coordinatorSectionsCheck(resolved, requirement, resource),
-          request,
-        );
-      case 'insurance_member':
-        return this.validateAnyInstanceScope(
-          userId,
-          resolved,
-          await this.resolveInsuranceMemberScopes(request, resource),
-        );
-      case 'insurance_record':
-        return this.validateAnyInstanceScope(
-          userId,
-          resolved,
-          await this.resolveInsuranceRecordScopes(request, resource),
-        );
       default: {
         const _exhaustive: never = type;
         void _exhaustive;
@@ -689,44 +570,8 @@ export class PermissionsGuard implements CanActivate {
     return sectionAssignments.some(
       (assignment) =>
         assignment.status !== 'active' ||
-        this.isAssignmentEffective(assignment),
+        this.assignments.isAssignmentEffective(assignment),
     );
-  }
-
-  private async validateClubScope(
-    userId: string,
-    request: any,
-    resolved: ResolvedAuthorizationProfile,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<boolean> {
-    const clubId = getRequiredNumericValue(
-      getRequestValue(request, 'param', resource.clubIdParam ?? 'clubId'),
-      'Club ID not found in request',
-    );
-
-    await this.assertClubAccess(userId, resolved, clubId);
-    return true;
-  }
-
-  private async assertClubAccess(
-    userId: string,
-    resolved: ResolvedAuthorizationProfile,
-    clubId: number,
-  ): Promise<void> {
-    // Checked first because it needs no DB: a member of the club passes
-    // without the territorial hierarchy lookup inside canManageClub.
-    const activeClubScope = resolved.authorization.effective.scope.club;
-    if (activeClubScope && activeClubScope.club.club_id === clubId) {
-      return;
-    }
-
-    if (
-      await this.authorizationContext.canManageClub(userId, clubId, resolved)
-    ) {
-      return;
-    }
-
-    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 
   private async enforceTenantBindings(
@@ -757,7 +602,12 @@ export class PermissionsGuard implements CanActivate {
 
       switch (binding.kind) {
         case 'club':
-          await this.assertClubAccess(userId, resolved, tenantId);
+          await assertClubAccess(
+            this.authorizationContext,
+            userId,
+            resolved,
+            tenantId,
+          );
           break;
         case 'club_section':
           await this.assertClubSectionAccess(
@@ -841,7 +691,12 @@ export class PermissionsGuard implements CanActivate {
       'Club section without main club',
     );
 
-    await this.assertClubAccess(userId, resolved, mainClubId);
+    await assertClubAccess(
+      this.authorizationContext,
+      userId,
+      resolved,
+      mainClubId,
+    );
   }
 
   /**
@@ -935,196 +790,6 @@ export class PermissionsGuard implements CanActivate {
     throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 
-  /**
-   * Only for routes that opted in with `coordinatorSections` (see
-   * AuthorizationResourceMetadata); undefined everywhere else, so every other
-   * route keeps the generic rule.
-   */
-  private coordinatorSectionsCheck(
-    resolved: ResolvedAuthorizationProfile,
-    requirement: PermissionRequirement,
-    resource: AuthorizationResourceMetadata,
-  ): CoordinatorSectionsCheck | undefined {
-    if (!resource.coordinatorSections) {
-      return undefined;
-    }
-    return {
-      requirement,
-      clubAuthority: hasRequiredPermissions(
-        resolved,
-        requirement,
-        resource,
-        undefined,
-        { excludeCoordinatorRoles: true },
-      ),
-    };
-  }
-
-  /**
-   * `coordinator` is set only when the route opted in with
-   * `coordinatorSections`. There, the club branches (territory via
-   * canManageClub, the active club section) count only when the requirement
-   * is met WITHOUT the coordinator roles' permissions: a coordinator's
-   * permission is coordinator authority, and only their assignments open a
-   * section (a coordinator who is a plain member of the section, or whose
-   * territory comes from another role lacking the permission, is not let in
-   * by it). A coordinator who is also a director/secretary of the section
-   * keeps those club powers: their club role satisfies the requirement alone.
-   *
-   * When the request gets in ONLY through the coordinator path,
-   * `request.coordinatorSectionGrant` is set to true: the caller has
-   * coordinator authority over the section, not club authority, so a
-   * permission that came from somewhere else (a club role in ANOTHER club
-   * that happens to be the active one) must not widen what they see here.
-   */
-  private async validateInstanceScope(
-    userId: string,
-    resolved: ResolvedAuthorizationProfile,
-    resourceScope: ResolvedInstanceScope,
-    coordinator?: CoordinatorSectionsCheck,
-    request?: Record<string, unknown>,
-  ): Promise<boolean> {
-    if (coordinator?.clubAuthority ?? true) {
-      if (
-        await this.authorizationContext.canManageClub(
-          userId,
-          resourceScope.mainClubId,
-          resolved,
-        )
-      ) {
-        return true;
-      }
-
-      const activeClubScope = resolved.authorization.effective.scope.club;
-
-      if (
-        activeClubScope &&
-        activeClubScope.club.club_id === resourceScope.mainClubId &&
-        activeClubScope.section.club_section_id === resourceScope.instanceId
-      ) {
-        return true;
-      }
-    }
-
-    if (
-      coordinator &&
-      (await this.coordinatorCoversSection(
-        userId,
-        resolved,
-        coordinator.requirement,
-        resourceScope.instanceId,
-      ))
-    ) {
-      if (request) {
-        request.coordinatorSectionGrant = true;
-      }
-      return true;
-    }
-
-    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-  }
-
-  /**
-   * A coordinator ROLE carries the requirement by itself (direct grants and
-   * club assignments do not count: they say nothing about coordinator
-   * territory) and the canonical coordinator scope covers the section.
-   */
-  private async coordinatorCoversSection(
-    userId: string,
-    resolved: ResolvedAuthorizationProfile,
-    requirement: PermissionRequirement,
-    clubSectionId: number,
-  ): Promise<boolean> {
-    const coordinatorPermissions = coordinatorRolePermissions(
-      resolved.authorization.grants.global_roles,
-    );
-    const satisfied =
-      requirement.mode === 'any'
-        ? requirement.permissions.some((p) => coordinatorPermissions.has(p))
-        : requirement.permissions.every((p) => coordinatorPermissions.has(p));
-    if (!satisfied) {
-      return false;
-    }
-
-    return coordinatorScopeIncludesSection(this.prisma, userId, clubSectionId);
-  }
-
-  private async validateAnyInstanceScope(
-    userId: string,
-    resolved: ResolvedAuthorizationProfile,
-    resourceScopes: ResolvedInstanceScope[],
-  ): Promise<boolean> {
-    if (resourceScopes.length === 0) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-    }
-
-    for (const resourceScope of resourceScopes) {
-      if (
-        await this.authorizationContext.canManageClub(
-          userId,
-          resourceScope.mainClubId,
-          resolved,
-        )
-      ) {
-        return true;
-      }
-    }
-
-    const activeClubScope = resolved.authorization.effective.scope.club;
-
-    if (
-      activeClubScope &&
-      resourceScopes.some(
-        (resourceScope) =>
-          activeClubScope.club.club_id === resourceScope.mainClubId &&
-          activeClubScope.section.club_section_id === resourceScope.instanceId,
-      )
-    ) {
-      return true;
-    }
-
-    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-  }
-
-  /**
-   * Authorization check for joint activities.
-   * The user is authorized if they have a club-level admin override OR
-   * if their active section assignment is ANY of the participating sections.
-   * This enables directors of any participating section to manage the joint activity.
-   */
-  private async validateJointActivityScope(
-    userId: string,
-    resolved: ResolvedAuthorizationProfile,
-    resourceScope: ResolvedJointActivityScope,
-  ): Promise<boolean> {
-    if (
-      await this.authorizationContext.canManageClub(
-        userId,
-        resourceScope.mainClubId,
-        resolved,
-      )
-    ) {
-      return true;
-    }
-
-    const activeClubScope = resolved.authorization.effective.scope.club;
-
-    if (
-      !activeClubScope ||
-      activeClubScope.club.club_id !== resourceScope.mainClubId
-    ) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-    }
-
-    const activeSectionId = activeClubScope.section.club_section_id;
-
-    if (!resourceScope.participatingSectionIds.includes(activeSectionId)) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-    }
-
-    return true;
-  }
-
   private validateTerritoryScope(
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedTerritoryScope,
@@ -1178,118 +843,6 @@ export class PermissionsGuard implements CanActivate {
       isOwnerAwareResource(resource) &&
       this.isResourceOwner(request, userId, resource)
     );
-  }
-
-  private async resolveActivityScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope | ResolvedJointActivityScope> {
-    const activityId = getRequiredNumericValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'activityId'),
-      'Activity ID not found in request',
-    );
-
-    const activity = await this.prisma.activities.findUnique({
-      where: { activity_id: activityId },
-      select: {
-        is_joint: true,
-        club_section_id: true,
-        club_sections: {
-          select: {
-            club_section_id: true,
-            main_club_id: true,
-            club_type_id: true,
-          },
-        },
-        activity_instances: {
-          where: { active: true },
-          select: {
-            club_section_id: true,
-            club_sections: {
-              select: {
-                club_section_id: true,
-                main_club_id: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!activity) {
-      throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
-    }
-
-    // For joint activities, resolve authorization using all participating sections
-    if (activity.is_joint) {
-      const mainClubId = activity.club_sections?.main_club_id;
-
-      if (!mainClubId) {
-        throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-      }
-
-      const participatingSectionIds = activity.activity_instances
-        .map((instance) => instance.club_section_id)
-        .filter((id): id is number => id !== null);
-
-      return {
-        mainClubId,
-        participatingSectionIds,
-      };
-    }
-
-    return this.buildInstanceScopeFromSection(activity.club_sections);
-  }
-
-  private async resolveActivitySeriesScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope | ResolvedJointActivityScope> {
-    const seriesId = getRequiredNumericValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'seriesId'),
-      'Activity series ID not found in request',
-    );
-
-    const series = await this.prisma.activity_series.findUnique({
-      where: { activity_series_id: seriesId },
-      select: {
-        is_joint: true,
-        club_id: true,
-        club_section_id: true,
-        club_sections: {
-          select: {
-            club_section_id: true,
-            main_club_id: true,
-            club_type_id: true,
-          },
-        },
-        activity_series_sections: {
-          select: { club_section_id: true },
-        },
-      },
-    });
-
-    if (!series) {
-      throw new AppNotFoundException(ErrorCode.ACTIVITY_SERIES_NOT_FOUND);
-    }
-
-    const participatingSectionIds = series.activity_series_sections.map(
-      (row) => row.club_section_id,
-    );
-
-    if (series.is_joint || participatingSectionIds.length > 1) {
-      return {
-        mainClubId: series.club_id,
-        participatingSectionIds:
-          participatingSectionIds.length > 0
-            ? participatingSectionIds
-            : series.club_section_id
-              ? [series.club_section_id]
-              : [],
-      };
-    }
-
-    return this.buildInstanceScopeFromSection(series.club_sections);
   }
 
   private async resolveCamporeeScope(
@@ -1758,465 +1311,5 @@ export class PermissionsGuard implements CanActivate {
     return resolved.authorization.grants.global_roles.some(
       (grant) => grant.role_name.toLowerCase() === roleName,
     );
-  }
-
-  private async resolveFinanceScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
-    const financeId = getRequiredNumericValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'financeId'),
-      'Finance ID not found in request',
-    );
-
-    const finance = await this.prisma.finances.findUnique({
-      where: { finance_id: financeId },
-      select: {
-        club_section_id: true,
-        club_sections: {
-          select: {
-            club_section_id: true,
-            main_club_id: true,
-            club_type_id: true,
-          },
-        },
-      },
-    });
-
-    if (!finance) {
-      throw new AppNotFoundException(ErrorCode.FINANCE_TRANSACTION_NOT_FOUND);
-    }
-
-    return this.buildInstanceScopeFromSection(finance.club_sections);
-  }
-
-  private async resolveClubSectionScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
-    const sectionId = getRequiredNumericValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'sectionId'),
-      'Club section ID not found in request',
-    );
-    const expectedClubIdValue = getRequestValue(
-      request,
-      'param',
-      resource.clubIdParam ?? 'clubId',
-    );
-    const expectedClubId =
-      expectedClubIdValue === undefined || expectedClubIdValue === null
-        ? null
-        : getRequiredNumericValue(
-            expectedClubIdValue,
-            'Club ID not found in request',
-          );
-
-    const section = await this.prisma.club_sections.findUnique({
-      where: { club_section_id: sectionId },
-      select: { club_section_id: true, main_club_id: true, club_type_id: true },
-    });
-
-    if (
-      !section ||
-      (expectedClubId !== null && section.main_club_id !== expectedClubId)
-    ) {
-      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
-    }
-
-    return this.buildInstanceScopeFromSection(section);
-  }
-
-  private async resolveInventoryInstanceScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
-    const sectionId = getRequiredNumericValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'clubId'),
-      'Club section ID not found in request',
-    );
-
-    const section = await this.prisma.club_sections.findUnique({
-      where: { club_section_id: sectionId },
-      select: { club_section_id: true, main_club_id: true, club_type_id: true },
-    });
-
-    if (!section) {
-      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
-    }
-
-    return this.buildInstanceScopeFromSection(section);
-  }
-
-  private async resolveInventoryItemScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
-    const inventoryId = getRequiredNumericValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'id'),
-      'Inventory item ID not found in request',
-    );
-
-    const inventoryItem = await this.prisma.club_inventory.findUnique({
-      where: { club_inventory_id: inventoryId },
-      select: {
-        club_section_id: true,
-        club_sections: {
-          select: {
-            club_section_id: true,
-            main_club_id: true,
-            club_type_id: true,
-          },
-        },
-      },
-    });
-
-    if (!inventoryItem) {
-      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
-    }
-
-    return this.buildInstanceScopeFromSection(inventoryItem.club_sections);
-  }
-
-  private async resolveClubAssignmentScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
-    const assignmentId = getOptionalUuidValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'assignmentId'),
-    );
-
-    if (!assignmentId) {
-      throw new AppForbiddenException(ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID);
-    }
-
-    const assignment = await this.prisma.club_role_assignments.findUnique({
-      where: { assignment_id: assignmentId },
-      select: {
-        club_section_id: true,
-        club_sections: {
-          select: {
-            club_section_id: true,
-            main_club_id: true,
-            club_type_id: true,
-          },
-        },
-      },
-    });
-
-    if (!assignment) {
-      throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
-    }
-
-    return this.buildInstanceScopeFromSection(assignment.club_sections);
-  }
-
-  private async resolveClassCounselorAssignmentScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
-    const assignmentId = getOptionalUuidValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'assignmentId'),
-    );
-
-    if (!assignmentId) {
-      throw new AppForbiddenException(ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID);
-    }
-
-    const assignment = await (
-      this.prisma as any
-    ).class_counselor_assignments.findUnique({
-      where: { assignment_id: assignmentId },
-      select: {
-        club_sections: {
-          select: {
-            club_section_id: true,
-            main_club_id: true,
-            club_type_id: true,
-          },
-        },
-      },
-    });
-
-    if (!assignment) {
-      throw new AppNotFoundException(
-        ErrorCode.CLASS_COUNSELOR_ASSIGNMENT_NOT_FOUND,
-      );
-    }
-
-    return this.buildInstanceScopeFromSection(assignment.club_sections);
-  }
-
-  private async resolveInvestitureEnrollmentScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
-    const enrollmentId = getRequiredNumericValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'enrollmentId'),
-      'Investiture enrollment ID not found in request',
-    );
-
-    const enrollment = await this.prisma.enrollments.findFirst({
-      where: { enrollment_id: enrollmentId, active: true },
-      select: {
-        user_id: true,
-        ecclesiastical_year_id: true,
-        classes: { select: { club_type_id: true } },
-      },
-    });
-
-    if (!enrollment) {
-      throw new AppNotFoundException(
-        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
-      );
-    }
-
-    const assignments = await this.prisma.club_role_assignments.findMany({
-      where: {
-        user_id: enrollment.user_id,
-        active: true,
-        status: 'active',
-        ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
-        club_sections: {
-          club_type_id: enrollment.classes.club_type_id,
-        },
-      },
-      select: {
-        active: true,
-        status: true,
-        ...CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
-        club_sections: {
-          select: {
-            club_section_id: true,
-            main_club_id: true,
-            club_type_id: true,
-            clubs:
-              CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT.club_sections.select.clubs,
-          },
-        },
-      },
-    });
-    const assignment = assignments.find((candidate) =>
-      this.isAssignmentEffective(candidate),
-    );
-
-    return this.buildInstanceScopeFromSection(
-      assignment?.club_sections ?? null,
-    );
-  }
-
-  private async resolveMonthlyReportScope(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
-    const reportId = getRequestValue(request, 'param', 'reportId');
-
-    if (reportId) {
-      if (!isUUID(String(reportId), 'all')) {
-        throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_INVALID_ID);
-      }
-
-      const report = await this.prisma.monthly_reports.findUnique({
-        where: { monthly_report_id: String(reportId) },
-        select: {
-          club_enrollment: {
-            select: {
-              club_section: {
-                select: {
-                  club_section_id: true,
-                  main_club_id: true,
-                  club_type_id: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      if (!report) {
-        throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
-      }
-
-      return this.buildInstanceScopeFromSection(
-        report.club_enrollment.club_section,
-      );
-    }
-
-    const enrollmentId = String(
-      getRequestValue(request, 'param', resource.idParam ?? 'enrollmentId') ??
-        '',
-    );
-
-    if (!enrollmentId) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-    }
-
-    if (!isUUID(enrollmentId, 'all')) {
-      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_INVALID_ID);
-    }
-
-    const enrollment = await this.prisma.club_enrollments.findUnique({
-      where: { club_enrollment_id: enrollmentId },
-      select: {
-        club_section: {
-          select: {
-            club_section_id: true,
-            main_club_id: true,
-            club_type_id: true,
-          },
-        },
-      },
-    });
-
-    if (!enrollment) {
-      throw new AppNotFoundException(
-        ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND,
-      );
-    }
-
-    return this.buildInstanceScopeFromSection(enrollment.club_section);
-  }
-
-  private async resolveInsuranceMemberScopes(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope[]> {
-    const memberId = getOptionalUuidValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'memberId'),
-    );
-
-    if (!memberId) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-    }
-
-    const member = await this.prisma.users.findUnique({
-      where: { user_id: memberId },
-      select: { user_id: true },
-    });
-
-    if (!member) {
-      throw new AppNotFoundException(ErrorCode.INSURANCE_MEMBER_NOT_FOUND);
-    }
-
-    return this.resolveMemberAssignmentScopes(memberId);
-  }
-
-  private async resolveInsuranceRecordScopes(
-    request: any,
-    resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope[]> {
-    const insuranceId = getRequiredNumericValue(
-      getRequestValue(request, 'param', resource.idParam ?? 'insuranceId'),
-      'Insurance ID not found in request',
-    );
-
-    const insurance = await this.prisma.member_insurances.findUnique({
-      where: { insurance_id: insuranceId },
-      select: { user_id: true },
-    });
-
-    if (!insurance) {
-      throw new AppNotFoundException(ErrorCode.INSURANCE_NOT_FOUND);
-    }
-
-    return this.resolveMemberAssignmentScopes(insurance.user_id);
-  }
-
-  private async resolveMemberAssignmentScopes(
-    memberId: string,
-  ): Promise<ResolvedInstanceScope[]> {
-    const assignments = (
-      await this.prisma.club_role_assignments.findMany({
-        where: {
-          user_id: memberId,
-          active: true,
-          status: 'active',
-        },
-        select: {
-          active: true,
-          status: true,
-          ...CLUB_ASSIGNMENT_TEMPORAL_FIELDS,
-          club_sections: {
-            select: {
-              club_section_id: true,
-              main_club_id: true,
-              club_type_id: true,
-              clubs:
-                CLUB_ASSIGNMENT_LOCAL_FIELD_SELECT.club_sections.select.clubs,
-            },
-          },
-        },
-      })
-    ).filter((candidate) => this.isAssignmentEffective(candidate));
-
-    return assignments
-      .flatMap((assignment) => {
-        const section = assignment.club_sections;
-        return section?.main_club_id ? [section] : [];
-      })
-      .map((section) => this.buildInstanceScopeFromSection(section));
-  }
-
-  /**
-   * Vigencia temporal del assignment evaluada con la fecha de negocio de SU
-   * Campo Local; toda decision pasa por `ClubAssignmentEffectivityPolicy`.
-   */
-  private isAssignmentEffective(assignment: {
-    active: boolean;
-    status: string | null;
-    start_date: Date;
-    end_date: Date | null;
-    expires_at: Date | null;
-    club_sections?: {
-      clubs?: {
-        local_fields?: {
-          local_field_id: number;
-          timezone: string | null;
-        } | null;
-      } | null;
-    } | null;
-  }): boolean {
-    return this.assignmentEffectivity.isEffective(
-      assignment,
-      this.temporalContexts.forLocalField(
-        toTemporalLocalField(assignment.club_sections?.clubs?.local_fields),
-      ),
-    );
-  }
-
-  private buildInstanceScopeFromSection(
-    section: {
-      club_section_id: number;
-      main_club_id: number | null;
-      club_type_id: number;
-    } | null,
-  ): ResolvedInstanceScope {
-    if (!section || !section.main_club_id) {
-      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
-    }
-
-    // Map club_type_id to instance type name for backward compatibility
-    const instanceType = this.clubTypeIdToInstanceType(section.club_type_id);
-
-    return {
-      mainClubId: section.main_club_id,
-      instanceType,
-      instanceId: section.club_section_id,
-    };
-  }
-
-  private clubTypeIdToInstanceType(
-    clubTypeId: number,
-  ): AuthorizationSectionType {
-    // These mappings follow the club_types catalog convention
-    switch (clubTypeId) {
-      case 1:
-        return 'adventurers';
-      case 2:
-        return 'pathfinders';
-      case 3:
-        return 'master_guilds';
-      default:
-        return 'pathfinders'; // safe fallback
-    }
   }
 }

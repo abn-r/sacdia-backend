@@ -6,6 +6,23 @@ import type { ClubAssignmentEffectivityPolicy } from '../club-assignment-effecti
 import type { MemberTerritoryScopeService } from '../member-territory-scope.service';
 import { LegacyPolicy, type LegacyScopeDispatcher } from './legacy.policy';
 import { ResourcePolicyRegistry } from './policy-registry';
+import { ActivityPolicy } from './club/activity.policy';
+import { ActivitySeriesPolicy } from './club/activity-series.policy';
+import { ClassCounselorAssignmentPolicy } from './club/class-counselor-assignment.policy';
+import { ClubAssignmentPolicy } from './club/club-assignment.policy';
+import { ClubSectionPolicy } from './club/club-section.policy';
+import { ClubPolicy } from './club/club.policy';
+import { FinancePolicy } from './club/finance.policy';
+import { InsuranceMemberPolicy } from './club/insurance-member.policy';
+import { InsuranceRecordPolicy } from './club/insurance-record.policy';
+import { InventoryInstancePolicy } from './club/inventory-instance.policy';
+import { InventoryItemPolicy } from './club/inventory-item.policy';
+import { InvestitureEnrollmentPolicy } from './club/investiture-enrollment.policy';
+import { MonthlyReportPolicy } from './club/monthly-report.policy';
+import {
+  AssignmentEffectivity,
+  InstanceScopeValidator,
+} from './scope/instance-scope';
 import { ActiveAssignmentPolicy } from './simple/active-assignment.policy';
 import { GlobalPolicy } from './simple/global.policy';
 import { UserPolicy } from './simple/user.policy';
@@ -20,38 +37,49 @@ export type PolicyDeps = {
 };
 
 /**
- * Batch 1: only the three simple types have real policies. The rest delegate
- * to the guard's legacy switch through `legacy` until they are migrated.
+ * Simple and club-family types have real policies. The camporee types still
+ * delegate to the guard's legacy switch through `legacy` until they are
+ * migrated.
  */
 export function buildResourcePolicyRegistry(
-  // Unused until the migrated policies need their collaborators.
-  _deps: PolicyDeps,
+  deps: PolicyDeps,
   legacy: LegacyScopeDispatcher,
 ): ResourcePolicyRegistry {
+  const { prisma } = deps;
+  const scopes = new InstanceScopeValidator(prisma, deps.authorizationContext);
+  const effectivity = new AssignmentEffectivity(
+    deps.effectivity,
+    deps.temporal,
+  );
+
   return new ResourcePolicyRegistry({
     global: new GlobalPolicy(),
     user: new UserPolicy(),
     active_assignment: new ActiveAssignmentPolicy(),
-    club: new LegacyPolicy('club', legacy),
-    club_section: new LegacyPolicy('club_section', legacy),
+    club: new ClubPolicy(deps.authorizationContext),
+    club_section: new ClubSectionPolicy(prisma, scopes),
     camporee: new LegacyPolicy('camporee', legacy),
     union_camporee: new LegacyPolicy('union_camporee', legacy),
     camporee_event: new LegacyPolicy('camporee_event', legacy),
     camporee_venue: new LegacyPolicy('camporee_venue', legacy),
     camporee_payment: new LegacyPolicy('camporee_payment', legacy),
-    activity: new LegacyPolicy('activity', legacy),
-    activity_series: new LegacyPolicy('activity_series', legacy),
-    finance: new LegacyPolicy('finance', legacy),
-    inventory_instance: new LegacyPolicy('inventory_instance', legacy),
-    inventory_item: new LegacyPolicy('inventory_item', legacy),
-    club_assignment: new LegacyPolicy('club_assignment', legacy),
-    class_counselor_assignment: new LegacyPolicy(
-      'class_counselor_assignment',
-      legacy,
+    activity: new ActivityPolicy(prisma, scopes),
+    activity_series: new ActivitySeriesPolicy(prisma, scopes),
+    finance: new FinancePolicy(prisma, scopes),
+    inventory_instance: new InventoryInstancePolicy(prisma, scopes),
+    inventory_item: new InventoryItemPolicy(prisma, scopes),
+    club_assignment: new ClubAssignmentPolicy(prisma, scopes),
+    class_counselor_assignment: new ClassCounselorAssignmentPolicy(
+      prisma,
+      scopes,
     ),
-    investiture_enrollment: new LegacyPolicy('investiture_enrollment', legacy),
-    monthly_report: new LegacyPolicy('monthly_report', legacy),
-    insurance_member: new LegacyPolicy('insurance_member', legacy),
-    insurance_record: new LegacyPolicy('insurance_record', legacy),
+    investiture_enrollment: new InvestitureEnrollmentPolicy(
+      prisma,
+      scopes,
+      effectivity,
+    ),
+    monthly_report: new MonthlyReportPolicy(prisma, scopes),
+    insurance_member: new InsuranceMemberPolicy(prisma, scopes, effectivity),
+    insurance_record: new InsuranceRecordPolicy(prisma, scopes, effectivity),
   });
 }
