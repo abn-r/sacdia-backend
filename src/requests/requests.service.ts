@@ -18,6 +18,7 @@ import {
 import { ActorSectionScopeService } from '../coordination/actor-section-scope.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
+import { ClubRole } from '../common/authorization/roles';
 
 /**
  * Reading other people's requests: club staff who approve them
@@ -822,7 +823,7 @@ export class RequestsService {
         // Same rule as post-registration: a user cannot hold two memberships of
         // the same club type. Only the `member` role is a membership; leadership
         // roles are not affected.
-        if (request.role.role_name === 'member') {
+        if (request.role.role_name === ClubRole.MEMBER) {
           await this.assertNoDuplicateMembership(
             tx,
             request.user_id,

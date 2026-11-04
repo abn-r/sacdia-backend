@@ -53,6 +53,7 @@ import {
   CamporeeLifecyclePolicy,
   type CamporeeLifecycleContext,
 } from './policies';
+import { ClubRole } from '../common/authorization/roles';
 
 // Module-level concurrency cap for applySignedPrivateUrls fan-out.
 // Phase 1 (USER_PROFILES public bucket) makes the call synchronous, so
@@ -168,7 +169,7 @@ export class CamporeesService {
 
     // Permissions on the grant are not enough: only the exact active director
     // role may create an enrollment for its own section.
-    if (activeGrant.role_name !== 'director') {
+    if (activeGrant.role_name !== ClubRole.DIRECTOR) {
       throw new AppForbiddenException(
         ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
       );
@@ -830,7 +831,8 @@ export class CamporeesService {
             : {}),
           ...(dto.supply_edit_cutoff_local_time !== undefined
             ? {
-                supply_edit_cutoff_local_time: dto.supply_edit_cutoff_local_time,
+                supply_edit_cutoff_local_time:
+                  dto.supply_edit_cutoff_local_time,
               }
             : {}),
           union_id: dto.union_id,
@@ -1055,7 +1057,7 @@ export class CamporeesService {
   ) {
     void actorId;
     const activeGrant = this.resolveActiveClubGrant(authorization);
-    if (activeGrant.role_name !== 'director') {
+    if (activeGrant.role_name !== ClubRole.DIRECTOR) {
       throw new AppForbiddenException(
         ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
       );
@@ -3735,7 +3737,8 @@ export class CamporeesService {
     clubTypeIncluded: boolean;
   }): CamporeeSectionRegistrationDto {
     const { activeGrant, enrollment, disposition } = input;
-    const director = activeGrant.role_name.trim().toLowerCase() === 'director';
+    const director =
+      activeGrant.role_name.trim().toLowerCase() === ClubRole.DIRECTOR;
     const canEnrollByDisposition =
       disposition === 'open' || disposition === 'late_approval_required';
 
@@ -3996,11 +3999,10 @@ export class CamporeesService {
       return { type: 'local_field', id: actor.localFieldId };
     }
 
-    const isCoordinator = this.hasGlobalRole(authorization.grants.global_roles, [
-      'coordinator',
-      'zone-coordinator',
-      'general-coordinator',
-    ]);
+    const isCoordinator = this.hasGlobalRole(
+      authorization.grants.global_roles,
+      ['coordinator', 'zone-coordinator', 'general-coordinator'],
+    );
 
     const activeAssignmentId = authorization.active_assignment.assignment_id;
     const activeGrant = authorization.grants.club_assignments.find(

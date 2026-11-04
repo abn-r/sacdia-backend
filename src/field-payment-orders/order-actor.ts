@@ -2,6 +2,7 @@ import { ActorScope } from '../common/authorization/actor-scope';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
+import { GlobalRole } from '../common/authorization/roles';
 
 export type UserPayload = { sub?: string; user_id?: string; userId?: string };
 export type RequestWithProfile = {
@@ -27,7 +28,12 @@ export interface OrderActor {
   activeSection?: OrderActorSection;
 }
 
-const REVIEW_ROLES = ['director-lf', 'assistant-lf', 'admin', 'super-admin'];
+const REVIEW_ROLES = [
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+  GlobalRole.ADMIN,
+  GlobalRole.SUPER_ADMIN,
+];
 
 /**
  * Same actor semantics as InsurancePurchasesController.resolveActor, plus the
@@ -65,7 +71,8 @@ export function resolveOrderActor(request: RequestWithProfile): OrderActor {
     profile.authorization.effective.scope.global.local_field?.id ??
     activeGrant?.scope.local_field?.id;
   const globalAccess =
-    actor.hasRole('admin', 'super-admin') && typeof localFieldId !== 'number';
+    actor.hasRole(GlobalRole.ADMIN, GlobalRole.SUPER_ADMIN) &&
+    typeof localFieldId !== 'number';
   const canReview =
     actor.hasAnyRole(REVIEW_ROLES) &&
     (globalAccess || typeof localFieldId === 'number');

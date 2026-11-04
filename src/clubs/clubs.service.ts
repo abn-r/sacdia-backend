@@ -61,6 +61,7 @@ import {
 } from '../common/services/ecclesiastical-year.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
+import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
 @Injectable()
 export class ClubsService {
@@ -1129,14 +1130,14 @@ export class ClubsService {
     await this.sectionRoleMutation.assertCanMutate({
       actorUserId,
       clubSectionId: sectionId,
-      targetRoleName: 'director',
+      targetRoleName: ClubRole.DIRECTOR,
       targetUserId: dto.successor_user_id,
       mutation: 'update',
     });
 
     const directorRole = await this.prisma.roles.findFirst({
       where: {
-        role_name: 'director',
+        role_name: ClubRole.DIRECTOR,
         role_category: 'CLUB',
         active: true,
       },
@@ -1172,7 +1173,7 @@ export class ClubsService {
         !current ||
         current.club_section_id !== sectionId ||
         !current.active ||
-        current.roles.role_name.toLowerCase() !== 'director'
+        current.roles.role_name.toLowerCase() !== ClubRole.DIRECTOR
       ) {
         throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
       }
@@ -1189,7 +1190,7 @@ export class ClubsService {
 
       await this.roleEligibility.assertAssignment({
         userId: dto.successor_user_id,
-        roleName: 'director',
+        roleName: ClubRole.DIRECTOR,
         clubSectionId: sectionId,
         db: tx,
       });
@@ -1305,14 +1306,14 @@ export class ClubsService {
     await this.sectionRoleMutation.assertCanMutate({
       actorUserId,
       clubSectionId: sectionId,
-      targetRoleName: 'director',
+      targetRoleName: ClubRole.DIRECTOR,
       targetUserId: dto.user_id,
       mutation: 'assign',
     });
 
     const directorRole = await this.prisma.roles.findFirst({
       where: {
-        role_name: 'director',
+        role_name: ClubRole.DIRECTOR,
         role_category: 'CLUB',
         active: true,
       },
@@ -1335,7 +1336,7 @@ export class ClubsService {
     const created = await this.prisma.$transaction(async (tx) => {
       await this.roleEligibility.assertAssignment({
         userId: dto.user_id,
-        roleName: 'director',
+        roleName: ClubRole.DIRECTOR,
         clubSectionId: sectionId,
         db: tx,
       });
@@ -1471,22 +1472,26 @@ export class ClubsService {
     );
 
     const directors = resolved.filter(
-      (r) => r.role_name.toLowerCase() === 'director',
+      (r) => r.role_name.toLowerCase() === ClubRole.DIRECTOR,
     );
     const deputies = resolved.filter(
-      (r) => r.role_name.toLowerCase() === 'deputy-director',
+      (r) => r.role_name.toLowerCase() === ClubRole.DEPUTY_DIRECTOR,
     );
     const secretaries = resolved.filter((r) =>
-      ['secretary', 'secretary-treasurer'].includes(r.role_name.toLowerCase()),
+      ([ClubRole.SECRETARY, ClubRole.SECRETARY_TREASURER] as string[]).includes(
+        r.role_name.toLowerCase(),
+      ),
     );
     const others = resolved.filter(
       (r) =>
-        ![
-          'director',
-          'deputy-director',
-          'secretary',
-          'secretary-treasurer',
-        ].includes(r.role_name.toLowerCase()),
+        !(
+          [
+            ClubRole.DIRECTOR,
+            ClubRole.DEPUTY_DIRECTOR,
+            ClubRole.SECRETARY,
+            ClubRole.SECRETARY_TREASURER,
+          ] as string[]
+        ).includes(r.role_name.toLowerCase()),
     );
 
     return {
@@ -1872,7 +1877,10 @@ export class ClubsService {
     // 2. Mutual exclusivity: secretary / treasurer vs secretary-treasurer
     if (roleName === 'secretary' || roleName === 'treasurer') {
       const secTreasRoles = await this.prisma.roles.findMany({
-        where: { role_name: { in: ['secretary-treasurer'] }, active: true },
+        where: {
+          role_name: { in: [ClubRole.SECRETARY_TREASURER] },
+          active: true,
+        },
         select: { role_id: true },
       });
 
@@ -1904,7 +1912,10 @@ export class ClubsService {
 
     if (roleName === 'secretary-treasurer') {
       const conflictingRoles = await this.prisma.roles.findMany({
-        where: { role_name: { in: ['secretary', 'treasurer'] }, active: true },
+        where: {
+          role_name: { in: [ClubRole.SECRETARY, ClubRole.TREASURER] },
+          active: true,
+        },
         select: { role_id: true, role_name: true },
       });
 
@@ -2082,7 +2093,7 @@ export class ClubsService {
       where: { role_id: roleId },
       select: { role_name: true },
     });
-    if (!role || role.role_name.toLowerCase() !== 'director') {
+    if (!role || role.role_name.toLowerCase() !== ClubRole.DIRECTOR) {
       return;
     }
 
@@ -2143,10 +2154,10 @@ export class ClubsService {
   ): Promise<void> {
     const hasAllowedGlobalRole =
       await this.authorizationContext.hasAnyGlobalRole(actorUserId, [
-        'super-admin',
-        'admin',
-        'director-lf',
-        'assistant-lf',
+        GlobalRole.SUPER_ADMIN,
+        GlobalRole.ADMIN,
+        GlobalRole.DIRECTOR_LF,
+        GlobalRole.ASSISTANT_LF,
       ]);
 
     if (!hasAllowedGlobalRole) {

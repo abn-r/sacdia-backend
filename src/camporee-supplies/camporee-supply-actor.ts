@@ -10,29 +10,30 @@ import {
   type OrderActor,
   type RequestWithProfile,
 } from '../field-payment-orders/order-actor';
+import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
 export type { OrderActor, RequestWithProfile };
 
 export const SUPPLY_ISSUER_CLUB_ROLES: ReadonlySet<string> = new Set([
-  'director',
-  'secretary',
-  'secretary-treasurer',
+  ClubRole.DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
 ]);
 
 const LF_CAJA_ROLES = new Set([
-  'director-lf',
-  'assistant-lf',
-  'admin',
-  'super-admin',
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+  GlobalRole.ADMIN,
+  GlobalRole.SUPER_ADMIN,
 ]);
 
 const ORGANIZER_ROLES = new Set([
-  'director-lf',
-  'assistant-lf',
-  'director-union',
-  'assistant-union',
-  'admin',
-  'super-admin',
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+  GlobalRole.DIRECTOR_UNION,
+  GlobalRole.ASSISTANT_UNION,
+  GlobalRole.ADMIN,
+  GlobalRole.SUPER_ADMIN,
 ]);
 
 export type CamporeeKind = 'local' | 'union';
@@ -180,7 +181,12 @@ export function canConfigureAsParticipatingLf(
     return false;
   }
   if (
-    !hasAnyRole(actor, ['director-lf', 'assistant-lf', 'admin', 'super-admin'])
+    !hasAnyRole(actor, [
+      GlobalRole.DIRECTOR_LF,
+      GlobalRole.ASSISTANT_LF,
+      GlobalRole.ADMIN,
+      GlobalRole.SUPER_ADMIN,
+    ])
   ) {
     return false;
   }
@@ -189,11 +195,11 @@ export function canConfigureAsParticipatingLf(
 
 export function canBypassSupplyFreeze(actor: CamporeeSupplyActor): boolean {
   return hasAnyRole(actor, [
-    'director-lf',
-    'assistant-lf',
-    'director-union',
-    'assistant-union',
-    'admin',
-    'super-admin',
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
+    GlobalRole.DIRECTOR_UNION,
+    GlobalRole.ASSISTANT_UNION,
+    GlobalRole.ADMIN,
+    GlobalRole.SUPER_ADMIN,
   ]);
 }

@@ -13,6 +13,7 @@ import {
   BackgroundJobName,
   FinancePeriodCloseMonthPayload,
 } from '../background-jobs/background-jobs.types';
+import { GlobalRole } from '../common/authorization/roles';
 
 type CategoryBreakdownItem = {
   finance_category_id: number;
@@ -189,8 +190,8 @@ export class FinancePeriodService {
     if (!closing) return;
 
     const isAdmin = await this.authorizationContext.hasAnyGlobalRole(userId, [
-      'admin',
-      'super-admin',
+      GlobalRole.ADMIN,
+      GlobalRole.SUPER_ADMIN,
     ]);
 
     if (!isAdmin) {

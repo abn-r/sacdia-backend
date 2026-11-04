@@ -46,6 +46,7 @@ import {
   ALLOWED_MIME_TYPES,
   FileValidationPipe,
 } from '../common/pipes/file-validation.pipe';
+import { ClubRole } from '../common/authorization/roles';
 
 @ApiTags('finances')
 @Controller()
@@ -241,7 +242,12 @@ export class FinancesController {
 
   @Post('clubs/:clubId/finances')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'deputy-director', 'treasurer', 'secretary-treasurer')
+  @ClubRoles(
+    ClubRole.DIRECTOR,
+    ClubRole.DEPUTY_DIRECTOR,
+    ClubRole.TREASURER,
+    ClubRole.SECRETARY_TREASURER,
+  )
   @RequirePermissions('finances:create')
   @AuthorizationResource({
     type: 'club',

@@ -28,6 +28,7 @@ import {
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
+import { ClubRole } from '../common/authorization/roles';
 
 export type SuggestedClass = {
   status: 'pending' | 'blocked' | 'resolved' | 'complete';
@@ -177,7 +178,7 @@ export class AnnualMembershipService {
           (row) =>
             row.ecclesiastical_year_id === currentYear.year_id &&
             row.status === 'active' &&
-            row.roles?.role_name === 'member',
+            row.roles?.role_name === ClubRole.MEMBER,
         )
         .map((row) => row.user_id),
     );
@@ -188,7 +189,7 @@ export class AnnualMembershipService {
           (row) =>
             row.ecclesiastical_year_id === currentYear.year_id &&
             row.status === 'active' &&
-            row.roles?.role_name === 'director',
+            row.roles?.role_name === ClubRole.DIRECTOR,
         )
         .map((row) => row.user_id),
     );
@@ -331,7 +332,11 @@ export class AnnualMembershipService {
     },
   ): Promise<'enrolled' | 'already_enrolled' | 'skipped'> {
     const memberRole = await tx.roles.findFirst({
-      where: { role_name: 'member', role_category: 'CLUB', active: true },
+      where: {
+        role_name: ClubRole.MEMBER,
+        role_category: 'CLUB',
+        active: true,
+      },
       select: { role_id: true },
     });
     if (!memberRole) {
@@ -354,7 +359,7 @@ export class AnnualMembershipService {
 
     const placement = await this.roleEligibility.evaluateAssignment({
       userId: params.userId,
-      roleName: 'member',
+      roleName: ClubRole.MEMBER,
       clubSectionId: params.destSectionId,
       db: tx,
     });
@@ -366,7 +371,11 @@ export class AnnualMembershipService {
     }
 
     const directorRole = await tx.roles.findFirst({
-      where: { role_name: 'director', role_category: 'CLUB', active: true },
+      where: {
+        role_name: ClubRole.DIRECTOR,
+        role_category: 'CLUB',
+        active: true,
+      },
       select: { role_id: true },
     });
     if (directorRole) {
@@ -515,7 +524,11 @@ export class AnnualMembershipService {
     },
   ): Promise<ContinuationUserResult> {
     const memberRole = await tx.roles.findFirst({
-      where: { role_name: 'member', role_category: 'CLUB', active: true },
+      where: {
+        role_name: ClubRole.MEMBER,
+        role_category: 'CLUB',
+        active: true,
+      },
       select: { role_id: true },
     });
 
@@ -524,7 +537,11 @@ export class AnnualMembershipService {
     }
 
     const directorRole = await tx.roles.findFirst({
-      where: { role_name: 'director', role_category: 'CLUB', active: true },
+      where: {
+        role_name: ClubRole.DIRECTOR,
+        role_category: 'CLUB',
+        active: true,
+      },
       select: { role_id: true },
     });
 
@@ -654,7 +671,7 @@ export class AnnualMembershipService {
   ): Promise<void> {
     await this.roleEligibility.assertAssignment({
       userId: params.userId,
-      roleName: 'member',
+      roleName: ClubRole.MEMBER,
       clubSectionId: params.sectionId,
       db: tx,
     });
@@ -961,7 +978,7 @@ export class AnnualMembershipService {
         row.ecclesiastical_year_id === yearId &&
         row.status === 'active' &&
         row.roles?.role_name &&
-        row.roles.role_name !== 'member',
+        row.roles.role_name !== ClubRole.MEMBER,
     );
     return operational?.roles?.role_name ?? null;
   }

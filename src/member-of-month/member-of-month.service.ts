@@ -13,11 +13,12 @@ import { CoordinationService } from '../coordination/coordination.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import { getScoringWeekRangeForMonth } from '../common/clock/scoring-week';
 import { ACHIEVEMENT_EVENTS } from '../achievements/events/achievement-events';
+import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
 const COORDINATOR_ROLES = new Set([
-  'coordinator',
-  'zone-coordinator',
-  'general-coordinator',
+  GlobalRole.COORDINATOR,
+  GlobalRole.ZONE_COORDINATOR,
+  GlobalRole.GENERAL_COORDINATOR,
 ]);
 
 export interface MemberResult {
@@ -587,7 +588,9 @@ export class MemberOfMonthService {
             active: true,
             status: 'active',
             roles: {
-              role_name: { in: ['director', 'sub-director', 'directora'] },
+              role_name: {
+                in: [ClubRole.DIRECTOR, 'sub-director', 'directora'],
+              },
             },
           },
           select: { user_id: true },
@@ -670,7 +673,7 @@ export class MemberOfMonthService {
           active: true,
           status: 'active',
           roles: {
-            role_name: { in: ['director', 'sub-director', 'directora'] },
+            role_name: { in: [ClubRole.DIRECTOR, 'sub-director', 'directora'] },
           },
         },
         select: { assignment_id: true },

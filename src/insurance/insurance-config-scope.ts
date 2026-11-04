@@ -2,10 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
+import { GlobalRole } from '../common/authorization/roles';
 
-const INSURANCE_CONFIG_ROLES = new Set(['director-lf', 'assistant-lf']);
+const INSURANCE_CONFIG_ROLES = new Set([
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+]);
 /** Platform administrators configure any local field (decision 2026-10-30). */
-const INSURANCE_ADMIN_ROLES = new Set(['admin', 'super-admin']);
+const INSURANCE_ADMIN_ROLES = new Set([
+  GlobalRole.ADMIN,
+  GlobalRole.SUPER_ADMIN,
+]);
 
 export type InsuranceConfigScope = {
   localFieldId: number;

@@ -24,6 +24,7 @@ import type {
 import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
 import { classifyLocalFieldTimezone } from '../common/validators/iana-timezone.validator';
 import { ECCLESIASTICAL_YEAR_TIMEZONE } from '../common/services/ecclesiastical-year.service';
+import { ClubRole } from '../common/authorization/roles';
 
 const BOARD_ROLE_NAMES = [
   'director',
@@ -913,7 +914,11 @@ export class YearCutService {
     }
 
     const directorRole = await tx.roles.findFirst({
-      where: { role_name: 'director', role_category: 'CLUB', active: true },
+      where: {
+        role_name: ClubRole.DIRECTOR,
+        role_category: 'CLUB',
+        active: true,
+      },
       select: { role_id: true },
     });
 
@@ -954,7 +959,7 @@ export class YearCutService {
 
       const eligibility = await this.roleEligibility.evaluateAssignment({
         userId: plan.successor_user_id,
-        roleName: 'director',
+        roleName: ClubRole.DIRECTOR,
         clubSectionId: plan.club_section_id,
         db: tx,
       });

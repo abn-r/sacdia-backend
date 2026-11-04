@@ -25,12 +25,13 @@ import {
   isMembershipRequestExpired,
   parsePendingTimeoutDays,
 } from './membership-request-expiry';
+import { ClubRole } from '../common/authorization/roles';
 
 const MEMBERSHIP_REQUEST_REVIEWER_ROLES = [
-  'director',
-  'deputy-director',
-  'secretary',
-  'secretary-treasurer',
+  ClubRole.DIRECTOR,
+  ClubRole.DEPUTY_DIRECTOR,
+  ClubRole.SECRETARY,
+  ClubRole.SECRETARY_TREASURER,
 ] as const;
 
 /** What a pending-request list item carries of the requester and the role. */

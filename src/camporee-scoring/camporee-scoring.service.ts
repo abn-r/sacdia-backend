@@ -40,6 +40,7 @@ import {
   UpdateCamporeeJudgeDto,
   UpdateCamporeeEventJudgeAssignmentDto,
 } from './dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 type CamporeeScope = { type: CamporeeScopeType; camporeeId: number };
 type PrismaLike = Record<string, any>;
@@ -1120,7 +1121,7 @@ export class CamporeeScoringService {
                 roles: {
                   active: true,
                   role_category: role_category.GLOBAL,
-                  role_name: { equals: 'pastor', mode: 'insensitive' },
+                  role_name: { equals: GlobalRole.PASTOR, mode: 'insensitive' },
                 },
               },
             },

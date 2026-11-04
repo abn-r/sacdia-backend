@@ -12,6 +12,7 @@ import {
   ListCamporeeEventTemplatesDto,
   UpdateCamporeeEventTemplateDto,
 } from './dto';
+import { GlobalRole } from '../common/authorization/roles';
 
 type TemplateRubricInput = Pick<
   CamporeeEventTemplateRubricDto,
@@ -40,7 +41,9 @@ export class CamporeeEventTemplatesService {
    */
   private isSuperOrAdmin(authorization: AuthorizationSnapshot): boolean {
     return authorization.grants.global_roles.some((g) =>
-      ['super-admin', 'admin'].includes(g.role_name),
+      ([GlobalRole.SUPER_ADMIN, GlobalRole.ADMIN] as string[]).includes(
+        g.role_name,
+      ),
     );
   }
 
@@ -51,7 +54,9 @@ export class CamporeeEventTemplatesService {
     authorization: AuthorizationSnapshot,
   ): number | null {
     const grant = authorization.grants.global_roles.find((g) =>
-      ['director-union', 'assistant-union'].includes(g.role_name),
+      (
+        [GlobalRole.DIRECTOR_UNION, GlobalRole.ASSISTANT_UNION] as string[]
+      ).includes(g.role_name),
     );
     return (grant as any)?.union_id ?? null;
   }
@@ -63,7 +68,9 @@ export class CamporeeEventTemplatesService {
     authorization: AuthorizationSnapshot,
   ): number | null {
     const grant = authorization.grants.global_roles.find((g) =>
-      ['director-lf', 'assistant-lf'].includes(g.role_name),
+      ([GlobalRole.DIRECTOR_LF, GlobalRole.ASSISTANT_LF] as string[]).includes(
+        g.role_name,
+      ),
     );
     return (grant as any)?.local_field_id ?? null;
   }
@@ -345,7 +352,9 @@ export class CamporeeEventTemplatesService {
           ...(typeof dto.scoring_enabled === 'boolean'
             ? { scoring_enabled: dto.scoring_enabled }
             : {}),
-          ...(dto.min_points !== undefined ? { min_points: dto.min_points } : {}),
+          ...(dto.min_points !== undefined
+            ? { min_points: dto.min_points }
+            : {}),
           ...(dto.penalties !== undefined
             ? { penalties: dto.penalties as any }
             : {}),
@@ -370,7 +379,11 @@ export class CamporeeEventTemplatesService {
       if (dto.rubrics !== undefined || scoringEnabled === false) {
         await tx.camporee_event_template_rubrics.updateMany({
           where: { event_template_id: templateId, active: true },
-          data: { active: false, modified_by: actorId, modified_at: new Date() },
+          data: {
+            active: false,
+            modified_by: actorId,
+            modified_at: new Date(),
+          },
         });
 
         if (scoringEnabled) {

@@ -29,6 +29,7 @@ import {
   DirectorDesignationDto,
   ReplaceDirectorPlanDto,
 } from './dto/role-assignment.dto';
+import { ClubRole } from '../common/authorization/roles';
 
 /** Global roles that can schedule a director plan; the first match is stored as `scheduled_by_role`. */
 const SCHEDULER_ROLE_NAMES = [
@@ -146,7 +147,7 @@ export class DirectorDesignationService {
     await this.sectionRoleMutation.assertCanMutate({
       actorUserId,
       clubSectionId: sectionId,
-      targetRoleName: 'director',
+      targetRoleName: ClubRole.DIRECTOR,
       targetUserId: dto.user_id,
       mutation: 'assign',
     });
@@ -301,7 +302,7 @@ export class DirectorDesignationService {
     await this.sectionRoleMutation.assertCanMutate({
       actorUserId,
       clubSectionId: sectionId,
-      targetRoleName: 'director',
+      targetRoleName: ClubRole.DIRECTOR,
       targetUserId: actorUserId,
       mutation: 'update',
     });
@@ -327,7 +328,7 @@ export class DirectorDesignationService {
     await this.sectionRoleMutation.assertCanMutate({
       actorUserId,
       clubSectionId: sectionId,
-      targetRoleName: 'director',
+      targetRoleName: ClubRole.DIRECTOR,
       targetUserId: dto.successor_user_id,
       mutation: 'update',
     });
@@ -409,7 +410,7 @@ export class DirectorDesignationService {
     await this.sectionRoleMutation.assertCanMutate({
       actorUserId,
       clubSectionId: sectionId,
-      targetRoleName: 'director',
+      targetRoleName: ClubRole.DIRECTOR,
       targetUserId: existing.successor_user_id,
       mutation: 'revoke',
     });
@@ -481,7 +482,7 @@ export class DirectorDesignationService {
   ): Promise<void> {
     await this.roleEligibility.assertAssignment({
       userId,
-      roleName: 'director',
+      roleName: ClubRole.DIRECTOR,
       clubSectionId: sectionId,
       db: tx,
     });
@@ -604,7 +605,7 @@ export class DirectorDesignationService {
   private async resolveDirectorRoleId(): Promise<string> {
     const directorRole = await this.prisma.roles.findFirst({
       where: {
-        role_name: 'director',
+        role_name: ClubRole.DIRECTOR,
         role_category: 'CLUB',
         active: true,
       },

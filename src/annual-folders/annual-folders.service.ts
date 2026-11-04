@@ -37,6 +37,7 @@ import {
   resolveEvidenceFileExtension,
 } from '../common/utils/evidence-file-names';
 import { normalizeRankingComponentKey } from '../rankings/annual-ranking-progress/ranking-component-catalog';
+import { GlobalRole } from '../common/authorization/roles';
 
 // Cap concurrent presign calls for EVIDENCE_FILES bucket. A folder can contain
 // many sections × many files each — without the cap, a single getFolder request
@@ -1433,7 +1434,7 @@ export class AnnualFoldersService {
         roles: {
           active: true,
           role_category: 'GLOBAL',
-          role_name: 'super-admin',
+          role_name: GlobalRole.SUPER_ADMIN,
         },
       },
       select: { user_role_id: true },
@@ -2956,7 +2957,7 @@ export class AnnualFoldersService {
         roles: {
           active: true,
           role_category: 'GLOBAL',
-          role_name: 'super-admin',
+          role_name: GlobalRole.SUPER_ADMIN,
         },
       },
       select: { user_role_id: true },

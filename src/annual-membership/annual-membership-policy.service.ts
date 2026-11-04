@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AppConflictException, AppNotFoundException } from '../common/errors/app.exception';
+import {
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClubRole } from '../common/authorization/roles';
 
 export type AnnualBaseHint = {
   sourceClubId?: number;
@@ -129,7 +133,9 @@ export class AnnualMembershipPolicyService {
     }
 
     if (candidates.size !== 1) {
-      throw new AppConflictException(ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED);
+      throw new AppConflictException(
+        ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
+      );
     }
 
     return candidates.values().next().value as ResolvedAnnualBase;
@@ -142,7 +148,11 @@ export class AnnualMembershipPolicyService {
     year: { year_id: number; start_date: Date },
   ): Promise<EnsureNotEnrolledResult> {
     const directorRole = await tx.roles.findFirst({
-      where: { role_name: 'director', role_category: 'CLUB', active: true },
+      where: {
+        role_name: ClubRole.DIRECTOR,
+        role_category: 'CLUB',
+        active: true,
+      },
       select: { role_id: true },
     });
 
@@ -159,12 +169,19 @@ export class AnnualMembershipPolicyService {
       });
 
       if (operationalDirector) {
-        return { assignment_id: operationalDirector.assignment_id, created: false };
+        return {
+          assignment_id: operationalDirector.assignment_id,
+          created: false,
+        };
       }
     }
 
     const memberRole = await tx.roles.findFirst({
-      where: { role_name: 'member', role_category: 'CLUB', active: true },
+      where: {
+        role_name: ClubRole.MEMBER,
+        role_category: 'CLUB',
+        active: true,
+      },
       select: { role_id: true },
     });
 
@@ -214,7 +231,11 @@ export class AnnualMembershipPolicyService {
     yearId: number,
   ): Promise<NotEnrolledListItem[]> {
     const memberRole = await tx.roles.findFirst({
-      where: { role_name: 'member', role_category: 'CLUB', active: true },
+      where: {
+        role_name: ClubRole.MEMBER,
+        role_category: 'CLUB',
+        active: true,
+      },
       select: { role_id: true },
     });
 
@@ -244,7 +265,11 @@ export class AnnualMembershipPolicyService {
 
     return rows.map((row) => ({
       user_id: row.user_id,
-      name: [row.users?.name, row.users?.paternal_last_name, row.users?.maternal_last_name]
+      name: [
+        row.users?.name,
+        row.users?.paternal_last_name,
+        row.users?.maternal_last_name,
+      ]
         .filter(Boolean)
         .join(' ')
         .trim(),
@@ -253,7 +278,11 @@ export class AnnualMembershipPolicyService {
 
   async reportLegacyConflicts(tx: DbClient): Promise<LegacyConflictReport> {
     const memberRole = await tx.roles.findFirst({
-      where: { role_name: 'member', role_category: 'CLUB', active: true },
+      where: {
+        role_name: ClubRole.MEMBER,
+        role_category: 'CLUB',
+        active: true,
+      },
       select: { role_id: true },
     });
 
@@ -306,7 +335,9 @@ export class AnnualMembershipPolicyService {
   ): Promise<ResolvedAnnualBase> {
     const sourceClubId = hint.sourceClubId;
     if (sourceClubId == null) {
-      throw new AppConflictException(ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED);
+      throw new AppConflictException(
+        ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
+      );
     }
 
     if (hint.sourceSectionId != null) {
@@ -324,7 +355,9 @@ export class AnnualMembershipPolicyService {
         sourceSection?.main_club_id !== sourceClubId ||
         sourceSection.club_type_id == null
       ) {
-        throw new AppConflictException(ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED);
+        throw new AppConflictException(
+          ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
+        );
       }
 
       const clubTypes = await tx.club_types.findMany({
@@ -333,11 +366,15 @@ export class AnnualMembershipPolicyService {
       });
       const avCqTypeIds = new Set(
         clubTypes
-          .filter((type) => (AV_CQ_TYPE_NAMES as readonly string[]).includes(type.name))
+          .filter((type) =>
+            (AV_CQ_TYPE_NAMES as readonly string[]).includes(type.name),
+          )
           .map((type) => type.club_type_id),
       );
       if (!avCqTypeIds.has(sourceSection.club_type_id)) {
-        throw new AppConflictException(ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED);
+        throw new AppConflictException(
+          ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
+        );
       }
     }
 
@@ -347,7 +384,9 @@ export class AnnualMembershipPolicyService {
     });
 
     if (!gmType) {
-      throw new AppConflictException(ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED);
+      throw new AppConflictException(
+        ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
+      );
     }
 
     const gmSection = await tx.club_sections.findFirst({
@@ -359,8 +398,14 @@ export class AnnualMembershipPolicyService {
       },
     });
 
-    if (gmSection == null || gmSection.active !== true || gmSection.main_club_id == null) {
-      throw new AppConflictException(ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED);
+    if (
+      gmSection == null ||
+      gmSection.active !== true ||
+      gmSection.main_club_id == null
+    ) {
+      throw new AppConflictException(
+        ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
+      );
     }
 
     return {
