@@ -7,6 +7,9 @@ import type {
 } from '../services/authorization-context.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { GlobalRole } from './roles';
+import { toTerritoryId } from './territory-id';
+
+export { toTerritoryId };
 
 const SUPER_ADMIN_ROLES = new Set([GlobalRole.SUPER_ADMIN]);
 const DIVISION_ROLES = new Set([
@@ -55,21 +58,6 @@ export type ActorTerritoryInput =
 type GlobalScopeNodes = NonNullable<
   AuthorizationSnapshot['effective']['scope']['global']
 >;
-
-export function toTerritoryId(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return value;
-  }
-
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-
-  return undefined;
-}
 
 export function asAuthorizationSnapshot(
   input: ActorTerritoryInput,

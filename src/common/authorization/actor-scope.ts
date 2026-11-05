@@ -1,3 +1,4 @@
+import { toTerritoryId } from './territory-id';
 import type {
   AuthorizationContextService,
   ResolvedAuthorizationProfile,
@@ -14,7 +15,7 @@ function numericId(node: { id: number | string } | null | undefined) {
 }
 
 function normalizeRole(role: string): string {
-  return role.toLowerCase();
+  return role.trim().toLowerCase();
 }
 
 /**
@@ -162,6 +163,25 @@ export class ActorScope {
    */
   coversLocalField(id: number): boolean {
     return this.localFieldId === id || this.activeLocalFieldId === id;
+  }
+
+  /**
+   * Territory ids of the global scope, read the way `actor-territory-scope`
+   * does: positive numbers or numeric strings, anything else is `undefined`.
+   * (`divisionId`/`unionId`/`localFieldId` above only accept real numbers.)
+   * Empty for role-only actors.
+   */
+  get territory(): {
+    divisionId?: number;
+    unionId?: number;
+    localFieldId?: number;
+  } {
+    const global = this.resolved?.authorization?.effective?.scope?.global;
+    return {
+      divisionId: toTerritoryId(global?.division?.id),
+      unionId: toTerritoryId(global?.union?.id),
+      localFieldId: toTerritoryId(global?.local_field?.id),
+    };
   }
 
   private requireResolved(): ResolvedAuthorizationProfile {

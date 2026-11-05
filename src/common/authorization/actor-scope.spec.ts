@@ -162,4 +162,30 @@ describe('ActorScope', () => {
     await expect(actor.coversClub(5, { canManageClub })).resolves.toBe(true);
     expect(canManageClub).toHaveBeenCalledWith('u-1', 5, territorial);
   });
+  it('reads territory ids like the territory resolver: positive numbers or numeric strings', () => {
+    const actor = ActorScope.from(
+      actorProfile({
+        territory: {
+          division: { id: '2' },
+          union: { id: 0 },
+          local_field: { id: 7 },
+        },
+      }),
+    );
+    expect(actor.territory).toEqual({
+      divisionId: 2,
+      unionId: undefined,
+      localFieldId: 7,
+    });
+    expect(ActorScope.fromRoleNames(['admin']).territory).toEqual({
+      divisionId: undefined,
+      unionId: undefined,
+      localFieldId: undefined,
+    });
+  });
+
+  it('trims role names', () => {
+    const actor = ActorScope.fromRoleNames([' Pastor ']);
+    expect(actor.hasRole('pastor')).toBe(true);
+  });
 });

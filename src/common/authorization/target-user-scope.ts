@@ -4,13 +4,13 @@ import type { ResolvedAuthorizationProfile } from '../services/authorization-con
 import {
   type ActorTerritoryScope,
   resolveActorTerritoryScope,
-  toTerritoryId,
   usersWhereForActor,
 } from './actor-territory-scope';
 import {
   coordinatorRolePermissions,
   coordinatorScopeIncludesSection,
 } from './coordinator-section-scope';
+import { ActorScope } from './actor-scope';
 import type { MemberTerritoryScopeService } from './member-territory-scope.service';
 import { GlobalRole } from './roles';
 
@@ -123,12 +123,9 @@ function territoryForTarget(
     return scope;
   }
 
-  const isPastor = resolved.authorization.grants.global_roles.some(
-    (grant) => grant.role_name.trim().toLowerCase() === GlobalRole.PASTOR,
-  );
-  const localFieldId = toTerritoryId(
-    resolved.authorization.effective.scope.global.local_field?.id,
-  );
+  const actor = ActorScope.from(resolved);
+  const isPastor = actor.hasRole(GlobalRole.PASTOR);
+  const { localFieldId } = actor.territory;
   if (isPastor && localFieldId) {
     return { level: 'local_field', localFieldId };
   }
