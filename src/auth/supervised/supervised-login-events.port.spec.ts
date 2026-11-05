@@ -17,7 +17,8 @@ describe('supervised login events port', () => {
   it('merges a partial binding over the no-op default', () => {
     const onLoginLocked = jest.fn();
     const events = resolveSupervisedLoginEvents({ onLoginLocked });
-    events.onLoginLocked({ identifier: 'x', retryAfterSeconds: 1 });
+    // Sync spy handler; `void` marks the (possibly async) port return as ignored.
+    void events.onLoginLocked({ identifier: 'x', retryAfterSeconds: 1 });
     expect(onLoginLocked).toHaveBeenCalledTimes(1);
     expect(() => events.onTeenSessionStarted({ userId: 'u' })).not.toThrow();
   });

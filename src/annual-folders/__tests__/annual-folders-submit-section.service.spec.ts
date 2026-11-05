@@ -135,11 +135,7 @@ describe('AnnualFoldersService — submitSection', () => {
   // ---------------------------------------------------------------
   describe('happy path (PENDING → SUBMITTED)', () => {
     it('wraps upsert + updateMany in a transaction', async () => {
-      const result = await service.submitSection(
-        FOLDER_ID,
-        SECTION_ID,
-        USER_ID,
-      );
+      await service.submitSection(FOLDER_ID, SECTION_ID, USER_ID);
 
       expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
     });

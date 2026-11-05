@@ -25,7 +25,6 @@ const CURRENT_YEAR = {
   active: true,
 };
 
-const SECTION_ID = 101;
 const GM_SECTION_ID = 301;
 const CQ_SECTION_ID = 101;
 const AV_SECTION_ID = 201;

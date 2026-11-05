@@ -16,10 +16,6 @@ import { BetterAuthService } from '../better-auth/better-auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminListUsersQueryDto, CreateAdminUserDto } from './dto';
 import { AdminUsersService } from './admin-users.service';
-import {
-  AppConflictException,
-  AppForbiddenException,
-} from '../common/errors/app.exception';
 
 describe('AdminUsersService', () => {
   let service: AdminUsersService;

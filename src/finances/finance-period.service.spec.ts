@@ -6,7 +6,6 @@ import {
   utcMonthClosedAt,
 } from './finance-period.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ForbiddenException } from '@nestjs/common';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
 import { ErrorCode } from '../common/errors/error-codes';

@@ -20,7 +20,6 @@ import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 describe('Achievements Integration: emitEvent → evaluate → notify', () => {
   let service: AchievementsService;
   let processor: AchievementsProcessor;
-  let handlerRegistry: HandlerRegistry;
 
   // ---------------------------------------------------------------------------
   // Shared mock state — tracks event log across multiple emitEvent calls
@@ -156,7 +155,6 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
 
     service = module.get<AchievementsService>(AchievementsService);
     processor = module.get<AchievementsProcessor>(AchievementsProcessor);
-    handlerRegistry = module.get<HandlerRegistry>(HandlerRegistry);
 
     // NestJS lifecycle hooks (onModuleInit) are NOT triggered by Test.createTestingModule().compile().
     // Manually invoke onModuleInit on ThresholdHandler so it self-registers with HandlerRegistry,
