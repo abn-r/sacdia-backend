@@ -6,28 +6,15 @@ import type {
   ResolvedAuthorizationProfile,
 } from '../services/authorization-context.service';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { GlobalRole } from './roles';
+import { LOCAL_FIELD_ROLES as LOCAL_FIELD_ROLE_LIST } from './role-sets';
+import { ActorScope } from './actor-scope';
 import { toTerritoryId } from './territory-id';
 
 export { toTerritoryId };
 
-const SUPER_ADMIN_ROLES = new Set([GlobalRole.SUPER_ADMIN]);
-const DIVISION_ROLES = new Set([
-  GlobalRole.DIRECTOR_DIA,
-  GlobalRole.ASSISTANT_DIA,
-]);
-const UNION_ROLES = new Set([
-  GlobalRole.DIRECTOR_UNION,
-  GlobalRole.ASSISTANT_UNION,
-]);
-export const LOCAL_FIELD_ROLES = new Set([
-  GlobalRole.DIRECTOR_LF,
-  GlobalRole.ASSISTANT_LF,
-]);
-const ADMIN_SCOPE_ROLES = new Set([
-  GlobalRole.ADMIN,
-  GlobalRole.ASSISTANT_ADMIN,
-]);
+export const LOCAL_FIELD_ROLES: ReadonlySet<string> = new Set(
+  LOCAL_FIELD_ROLE_LIST,
+);
 
 export type ActorTerritoryScope =
   | { level: 'all' }
@@ -54,10 +41,6 @@ export type ActorTerritoryScope =
 
 export type ActorTerritoryInput =
   AuthorizationSnapshot | ResolvedAuthorizationProfile | null | undefined;
-
-type GlobalScopeNodes = NonNullable<
-  AuthorizationSnapshot['effective']['scope']['global']
->;
 
 export function asAuthorizationSnapshot(
   input: ActorTerritoryInput,
@@ -90,65 +73,12 @@ export function hasTerritorialRecorte(
   );
 }
 
-function roleNamesFromSnapshot(snapshot: AuthorizationSnapshot): Set<string> {
-  return new Set(
-    (snapshot.grants?.global_roles ?? []).map((grant) =>
-      grant.role_name.trim().toLowerCase(),
-    ),
-  );
-}
-
-function hasAnyRole(roles: Set<string>, allowed: Set<string>): boolean {
-  for (const role of allowed) {
-    if (roles.has(role)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function readGlobalScope(
-  snapshot: AuthorizationSnapshot,
-): GlobalScopeNodes | undefined {
-  return snapshot.effective?.scope?.global;
-}
-
-function scopeIds(globalScope: GlobalScopeNodes | undefined): {
-  divisionId?: number;
-  unionId?: number;
-  localFieldId?: number;
-} {
-  return {
-    divisionId: toTerritoryId(globalScope?.division?.id),
-    unionId: toTerritoryId(globalScope?.union?.id),
-    localFieldId: toTerritoryId(globalScope?.local_field?.id),
-  };
-}
-
-function withOptionalIds<T extends ActorTerritoryScope>(
-  scope: T,
-  ids: { divisionId?: number; unionId?: number; localFieldId?: number },
-): T {
-  if (
-    scope.level === 'all' ||
-    scope.level === 'open' ||
-    scope.level === 'unconfigured'
-  ) {
-    return scope;
-  }
-
-  return {
-    ...scope,
-    ...(ids.divisionId ? { divisionId: ids.divisionId } : {}),
-    ...(ids.unionId ? { unionId: ids.unionId } : {}),
-    ...(ids.localFieldId ? { localFieldId: ids.localFieldId } : {}),
-  };
-}
-
 /**
  * Role-first territorial scope. Home `local_field_id` never upgrades or
  * downgrades a union/division actor. Admin/assistant-admin follow dashboard
- * precedence: union, then local field, then division.
+ * precedence: union, then local field, then division. The ladder itself lives
+ * in `ActorScope.territorialTier()`; this adapter only accepts a bare
+ * snapshot or a resolved profile.
  */
 export function resolveActorTerritoryScope(
   input: ActorTerritoryInput,
@@ -158,60 +88,9 @@ export function resolveActorTerritoryScope(
     return { level: 'open' };
   }
 
-  const roles = roleNamesFromSnapshot(snapshot);
-  const ids = scopeIds(readGlobalScope(snapshot));
-
-  if (hasAnyRole(roles, SUPER_ADMIN_ROLES)) {
-    return { level: 'all' };
-  }
-
-  if (hasAnyRole(roles, DIVISION_ROLES)) {
-    if (!ids.divisionId) {
-      return { level: 'unconfigured' };
-    }
-    return withOptionalIds(
-      { level: 'division', divisionId: ids.divisionId },
-      ids,
-    );
-  }
-
-  if (hasAnyRole(roles, UNION_ROLES)) {
-    if (!ids.unionId) {
-      return { level: 'unconfigured' };
-    }
-    return withOptionalIds({ level: 'union', unionId: ids.unionId }, ids);
-  }
-
-  if (hasAnyRole(roles, LOCAL_FIELD_ROLES)) {
-    if (!ids.localFieldId) {
-      return { level: 'unconfigured' };
-    }
-    return withOptionalIds(
-      { level: 'local_field', localFieldId: ids.localFieldId },
-      ids,
-    );
-  }
-
-  if (hasAnyRole(roles, ADMIN_SCOPE_ROLES)) {
-    if (ids.unionId) {
-      return withOptionalIds({ level: 'union', unionId: ids.unionId }, ids);
-    }
-    if (ids.localFieldId) {
-      return withOptionalIds(
-        { level: 'local_field', localFieldId: ids.localFieldId },
-        ids,
-      );
-    }
-    if (ids.divisionId) {
-      return withOptionalIds(
-        { level: 'division', divisionId: ids.divisionId },
-        ids,
-      );
-    }
-    return { level: 'unconfigured' };
-  }
-
-  return { level: 'open' };
+  return ActorScope.from({
+    authorization: snapshot,
+  } as ResolvedAuthorizationProfile).territorialTier();
 }
 
 export function clubsWhereForActor(

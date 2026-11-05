@@ -200,4 +200,53 @@ describe('ActorScope', () => {
       ActorScope.fromRoleNames(['admin', 'director-lf']).isCoordinator(),
     ).toBe(false);
   });
+  describe('territorialTier', () => {
+    const tier = (
+      roles: string[],
+      territory: Record<string, { id: number | string }> = {},
+    ) =>
+      ActorScope.from(
+        actorProfile({
+          globalRoles: roles.map((roleName) => ({ roleName, permissions: [] })),
+          territory,
+        }),
+      ).territorialTier();
+
+    it('is all for super-admin, whatever else the actor holds', () => {
+      expect(tier(['director-lf', 'super-admin'])).toEqual({ level: 'all' });
+    });
+
+    it('needs the id of its own level, otherwise unconfigured', () => {
+      expect(tier(['director-dia'], { union: { id: 3 } })).toEqual({
+        level: 'unconfigured',
+      });
+      expect(tier(['assistant-union'])).toEqual({ level: 'unconfigured' });
+      expect(tier(['assistant-lf'], { local_field: { id: 7 } })).toEqual({
+        level: 'local_field',
+        localFieldId: 7,
+      });
+    });
+
+    it('resolves admin and assistant-admin alike: union, local field, division', () => {
+      for (const role of ['admin', 'assistant-admin']) {
+        expect(
+          tier([role], { union: { id: 3 }, local_field: { id: 7 } }),
+        ).toEqual({ level: 'union', unionId: 3, localFieldId: 7 });
+        expect(tier([role], { division: { id: 1 } })).toEqual({
+          level: 'division',
+          divisionId: 1,
+        });
+        expect(tier([role])).toEqual({ level: 'unconfigured' });
+      }
+    });
+
+    it('is open for coordinators, pastors and role-only actors', () => {
+      expect(tier(['coordinator'], { local_field: { id: 7 } })).toEqual({
+        level: 'open',
+      });
+      expect(ActorScope.fromRoleNames(['pastor']).territorialTier()).toEqual({
+        level: 'open',
+      });
+    });
+  });
 });

@@ -719,3 +719,175 @@ describe('member-centric territory scope', () => {
     expect(count).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('resolveActorTerritoryScope edge cases', () => {
+  const multi = (
+    roles: string[],
+    ids: { localFieldId?: number; unionId?: number; divisionId?: number },
+    clubRoles: Array<{ role_name: string }> = [],
+  ): AuthorizationSnapshot => {
+    const base = snapshot({ role: roles[0], ...ids });
+    return {
+      ...base,
+      grants: {
+        ...base.grants,
+        global_roles: roles.map((role_name) => ({
+          role_name,
+          permissions: [],
+          scope: {},
+        })),
+        club_assignments: clubRoles as never,
+      },
+    };
+  };
+
+  it.each(['admin', 'assistant-admin'])(
+    '%s follows union, then local field, then division, then unconfigured',
+    (role) => {
+      const ids = { unionId: 2, localFieldId: 9, divisionId: 1 };
+      expect(resolveActorTerritoryScope(snapshot({ role, ...ids }))).toEqual({
+        level: 'union',
+        unionId: 2,
+        localFieldId: 9,
+        divisionId: 1,
+      });
+      expect(
+        resolveActorTerritoryScope(
+          snapshot({ role, localFieldId: 9, divisionId: 1 }),
+        ),
+      ).toEqual({ level: 'local_field', localFieldId: 9, divisionId: 1 });
+      expect(
+        resolveActorTerritoryScope(snapshot({ role, divisionId: 1 })),
+      ).toEqual({ level: 'division', divisionId: 1 });
+      expect(resolveActorTerritoryScope(snapshot({ role }))).toEqual({
+        level: 'unconfigured',
+      });
+    },
+  );
+
+  it.each([
+    'director-dia',
+    'assistant-dia',
+    'director-union',
+    'assistant-union',
+    'director-lf',
+    'assistant-lf',
+  ])('%s without its own territory id is unconfigured', (role) => {
+    expect(
+      resolveActorTerritoryScope(
+        // other levels present must not stand in for the missing one
+        snapshot({
+          role,
+          divisionId: role.endsWith('dia') ? undefined : 1,
+          unionId: role.endsWith('union') ? undefined : 2,
+          localFieldId: role.endsWith('lf') ? undefined : 3,
+        }),
+      ),
+    ).toEqual({ level: 'unconfigured' });
+  });
+
+  it('ignores non-positive and non-numeric territory ids', () => {
+    expect(
+      resolveActorTerritoryScope(
+        snapshot({ role: 'director-lf', localFieldId: 0 }),
+      ),
+    ).toEqual({ level: 'unconfigured' });
+    expect(
+      resolveActorTerritoryScope(
+        snapshot({ role: 'director-lf', localFieldId: 'abc' }),
+      ),
+    ).toEqual({ level: 'unconfigured' });
+  });
+
+  it('matches role names case-insensitively and trimmed', () => {
+    expect(
+      resolveActorTerritoryScope(
+        snapshot({ role: ' Director-LF ', localFieldId: 4 }),
+      ),
+    ).toEqual({ level: 'local_field', localFieldId: 4 });
+  });
+
+  it('gives super-admin precedence over every other global role', () => {
+    expect(
+      resolveActorTerritoryScope(
+        multi(['director-lf', 'super-admin', 'admin'], { localFieldId: 4 }),
+      ),
+    ).toEqual({ level: 'all' });
+  });
+
+  it('prefers division over union over local field for an actor holding several', () => {
+    expect(
+      resolveActorTerritoryScope(
+        multi(['director-lf', 'director-union', 'director-dia'], {
+          divisionId: 1,
+          unionId: 2,
+          localFieldId: 3,
+        }),
+      ),
+    ).toMatchObject({ level: 'division', divisionId: 1 });
+    expect(
+      resolveActorTerritoryScope(
+        multi(['director-lf', 'assistant-union'], {
+          unionId: 2,
+          localFieldId: 3,
+        }),
+      ),
+    ).toMatchObject({ level: 'union', unionId: 2 });
+  });
+
+  it('does not let a lower territorial role fall back when the higher one is unconfigured', () => {
+    expect(
+      resolveActorTerritoryScope(
+        multi(['director-dia', 'director-lf'], { localFieldId: 3 }),
+      ),
+    ).toEqual({ level: 'unconfigured' });
+  });
+
+  it('ignores club roles when deciding the territory', () => {
+    expect(
+      resolveActorTerritoryScope(
+        multi(['director-lf'], { localFieldId: 3 }, [
+          { role_name: 'director' },
+        ]),
+      ),
+    ).toMatchObject({ level: 'local_field', localFieldId: 3 });
+    expect(
+      resolveActorTerritoryScope(
+        multi([], { localFieldId: 3 }, [{ role_name: 'director' }]),
+      ),
+    ).toEqual({ level: 'open' });
+  });
+
+  it('reads both a bare snapshot and a resolved profile, and nothing else', () => {
+    const snap = snapshot({ role: 'director-union', unionId: 5 });
+    expect(resolveActorTerritoryScope(snap)).toEqual({
+      level: 'union',
+      unionId: 5,
+    });
+    expect(
+      resolveActorTerritoryScope({ authorization: snap } as never),
+    ).toEqual({ level: 'union', unionId: 5 });
+    expect(resolveActorTerritoryScope(null)).toEqual({ level: 'open' });
+    expect(resolveActorTerritoryScope({} as never)).toEqual({ level: 'open' });
+  });
+
+  it('tolerates a snapshot with no scope or grants', () => {
+    expect(
+      resolveActorTerritoryScope({
+        grants: { global_roles: [{ role_name: 'admin' }] },
+        effective: {},
+      } as never),
+    ).toEqual({ level: 'unconfigured' });
+  });
+
+  it('actorCanAccessHierarchyScope: division reaches any union or local field under it', () => {
+    const actor = resolveActorTerritoryScope(
+      snapshot({ role: 'director-dia', divisionId: 1 }),
+    );
+    expect(actorCanAccessHierarchyScope(actor, { division_id: 1 })).toBe(true);
+    expect(actorCanAccessHierarchyScope(actor, { division_id: 2 })).toBe(false);
+    expect(actorCanAccessHierarchyScope({ level: 'unconfigured' }, {})).toBe(
+      false,
+    );
+  });
+});
