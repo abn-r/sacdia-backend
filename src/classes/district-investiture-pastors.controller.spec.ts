@@ -13,6 +13,7 @@ import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
 import { PrismaService } from '../prisma/prisma.service';
 import { DistrictInvestiturePastorsController } from './district-investiture-pastors.controller';
 import { DistrictInvestiturePastorService } from './district-investiture-pastors.service';
+import { runGlobalRolesGuard } from '../common/guards/global-roles-guard.testing';
 
 const FIELD_ID = 10;
 const DISTRICT_ID = 5;
@@ -264,5 +265,66 @@ describe('investiture pastor HTTP with mocked auth and database', () => {
 
     expect(response.status).toBe(400);
     expect(userSearch).not.toHaveBeenCalled();
+  });
+});
+
+describe('DistrictInvestiturePastorsController route guards', () => {
+  const proto = DistrictInvestiturePastorsController.prototype;
+  const run = (handler: (...args: never[]) => unknown, role: string) =>
+    runGlobalRolesGuard(DistrictInvestiturePastorsController, handler, [role]);
+  const DENIED = 'GUARD_PERMISSION_DENIED';
+
+  describe.each([
+    ['POST districts/:id/investiture-pastors', proto.assign],
+    ['DELETE districts/:id/investiture-pastors/:userId', proto.remove],
+    ['GET investiture-pastor-candidates', proto.candidates],
+  ])('%s', (_label, handler) => {
+    it.each(['super-admin', 'director-lf', 'assistant-lf'])(
+      'lets %s through',
+      async (role) => {
+        await expect(run(handler, role)).resolves.toBe(true);
+      },
+    );
+
+    it.each([
+      'director-union',
+      'assistant-union',
+      'director-dia',
+      'assistant-dia',
+      'admin',
+      'assistant-admin',
+    ])('rejects %s with GUARD_PERMISSION_DENIED', async (role) => {
+      await expect(run(handler, role)).resolves.toBe(DENIED);
+    });
+  });
+
+  describe.each([
+    ['GET investiture-pastor-quota', proto.getQuota],
+    ['GET districts/:id/investiture-pastors', proto.list],
+    ['GET clubs/:id/investiture-authorizers', proto.authorizers],
+  ])('%s', (_label, handler) => {
+    it.each([
+      'super-admin',
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+    ])('keeps reading open to %s', async (role) => {
+      await expect(run(handler, role)).resolves.toBe(true);
+    });
+
+    it.each(['director-dia', 'assistant-dia', 'admin'])(
+      'still rejects %s',
+      async (role) => {
+        await expect(run(handler, role)).resolves.toBe(DENIED);
+      },
+    );
+  });
+
+  it('PATCH investiture-pastor-quota is super-admin only', async () => {
+    await expect(run(proto.updateQuota, 'super-admin')).resolves.toBe(true);
+    for (const role of ['director-lf', 'director-union', 'admin']) {
+      await expect(run(proto.updateQuota, role)).resolves.toBe(DENIED);
+    }
   });
 });

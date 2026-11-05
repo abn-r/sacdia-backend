@@ -346,12 +346,20 @@ describe('DistrictInvestiturePastorService', () => {
       service.assign(field, DISTRICT_ID, PASTOR_B, 'user-1'),
     ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_PASTOR_QUOTA_FULL });
 
-    const union = snapshot({ role: 'assistant-union', unionId: 2 });
+    const otherField = snapshot({
+      role: 'director-lf',
+      localFieldId: OTHER_FIELD_ID,
+    });
     userFields[PASTOR_B] = OTHER_FIELD_ID;
     userFields[PASTOR_C] = OTHER_FIELD_ID;
-    await service.assign(union, SAME_UNION_DISTRICT_ID, PASTOR_C, 'union-1');
+    await service.assign(
+      otherField,
+      SAME_UNION_DISTRICT_ID,
+      PASTOR_C,
+      'user-3',
+    );
     await expect(
-      service.assign(union, SAME_UNION_DISTRICT_ID, PASTOR_B, 'union-1'),
+      service.assign(otherField, SAME_UNION_DISTRICT_ID, PASTOR_B, 'user-3'),
     ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_PASTOR_QUOTA_FULL });
     expect(rows.filter((row) => row.active)).toHaveLength(2);
   });
@@ -384,7 +392,7 @@ describe('DistrictInvestiturePastorService', () => {
     expect(quotaDelegate.upsert).not.toHaveBeenCalled();
   });
 
-  it('assigns inside the field or the union and keeps both pastors able to authorize', async () => {
+  it('assigns inside the field and keeps both pastors able to authorize', async () => {
     const field = snapshot({ role: 'assistant-lf', localFieldId: FIELD_ID });
     const first = await service.assign(field, DISTRICT_ID, PASTOR_A, 'user-1');
     const second = await service.assign(
@@ -453,10 +461,10 @@ describe('DistrictInvestiturePastorService', () => {
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
     await expect(
       service.assign(
-        snapshot({ role: 'director-union', unionId: 2 }),
+        snapshot({ role: 'director-lf', localFieldId: FIELD_ID }),
         OUTSIDE_DISTRICT_ID,
         PASTOR_A,
-        'union-1',
+        'user-1',
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
     await expect(
@@ -485,7 +493,40 @@ describe('DistrictInvestiturePastorService', () => {
     expect(pastors.create).not.toHaveBeenCalled();
   });
 
-  it('lets a union role assign in another field of the same union', async () => {
+  it.each(['director-union', 'assistant-union'])(
+    'does not let %s assign or unassign pastors, inside or outside its union',
+    async (role) => {
+      const union = snapshot({ role, unionId: 2 });
+      for (const districtId of [DISTRICT_ID, SAME_UNION_DISTRICT_ID]) {
+        await expect(
+          service.assign(union, districtId, PASTOR_A, 'union-1'),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+        await expect(
+          service.remove(union, districtId, PASTOR_A),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      }
+      expect(pastors.create).not.toHaveBeenCalled();
+      expect(pastors.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['director-union', 'assistant-union'])(
+    'still lets %s read the pastors of a district in its union',
+    async (role) => {
+      const union = snapshot({ role, unionId: 2 });
+      await expect(
+        service.list(union, SAME_UNION_DISTRICT_ID),
+      ).resolves.toMatchObject({ districlub_type_id: SAME_UNION_DISTRICT_ID });
+      await expect(
+        service.list(union, OUTSIDE_DISTRICT_ID),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      await expect(service.getQuota(union)).resolves.toMatchObject({
+        can_edit: false,
+      });
+    },
+  );
+
+  it('does not let a director-lf who also holds a union role assign in another field of the union', async () => {
     const actor = snapshot({
       role: 'director-lf',
       localFieldId: FIELD_ID,
@@ -498,20 +539,15 @@ describe('DistrictInvestiturePastorService', () => {
     });
 
     userFields[PASTOR_A] = OTHER_FIELD_ID;
-    const saved = await service.assign(
-      actor,
-      SAME_UNION_DISTRICT_ID,
-      PASTOR_A,
-      'user-1',
-    );
-    expect(saved.can_authorize).toBe(true);
-    expect(rows).toHaveLength(1);
+    await expect(
+      service.assign(actor, SAME_UNION_DISTRICT_ID, PASTOR_A, 'user-1'),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+    expect(rows).toHaveLength(0);
   });
 
   describe('same-field rule', () => {
     const field = () =>
       snapshot({ role: 'director-lf', localFieldId: FIELD_ID });
-    const union = () => snapshot({ role: 'director-union', unionId: 2 });
 
     it('rejects a pastor from another Field of the same union', async () => {
       userFields[PASTOR_A] = OTHER_FIELD_ID;
@@ -522,15 +558,6 @@ describe('DistrictInvestiturePastorService', () => {
       });
       expect(rows).toHaveLength(0);
       expect(pastors.create).not.toHaveBeenCalled();
-    });
-
-    it('rejects, even for a union actor, a pastor that is not from the district Field', async () => {
-      await expect(
-        service.assign(union(), SAME_UNION_DISTRICT_ID, PASTOR_A, 'union-1'),
-      ).rejects.toMatchObject({
-        code: ErrorCode.INVESTITURE_PASTOR_FIELD_MISMATCH,
-      });
-      expect(rows).toHaveLength(0);
     });
 
     it('rejects a pastor without a Field', async () => {
@@ -667,8 +694,6 @@ describe('DistrictInvestiturePastorService', () => {
     it.each([
       ['director-lf', { localFieldId: FIELD_ID }],
       ['assistant-lf', { localFieldId: FIELD_ID }],
-      ['director-union', { unionId: 2 }],
-      ['assistant-union', { unionId: 2 }],
     ])('lets %s search and maps the view', async (role, scope) => {
       candidateRows = [candidate(PASTOR_A), candidate(PASTOR_C)];
       const found = await service.searchCandidates(
@@ -727,16 +752,6 @@ describe('DistrictInvestiturePastorService', () => {
       },
     );
 
-    it.each(['director-union', 'assistant-union'])(
-      'R5 limits %s to pastors in the local fields of its union',
-      async (role) => {
-        await service.searchCandidates(snapshot({ role, unionId: 2 }), 'ana');
-        const and = users.findMany.mock.calls[0][0].where.AND;
-        expect(and).toContainEqual({ local_fields: { union_id: 2 } });
-        expect(and).not.toContainEqual({ local_field_id: expect.anything() });
-      },
-    );
-
     it.each(['a b', 'ana b', 'a bc', 'ab c d'])(
       'R5 never scans users when a token of "%s" has fewer than 2 characters',
       async (query) => {
@@ -750,21 +765,6 @@ describe('DistrictInvestiturePastorService', () => {
     );
 
     describe('with districtId', () => {
-      it.each(['director-union', 'assistant-union'])(
-        'limits %s to the Field of that district, not the whole union',
-        async (role) => {
-          await service.searchCandidates(
-            snapshot({ role, unionId: 2 }),
-            'ana',
-            SAME_UNION_DISTRICT_ID,
-          );
-          const and = users.findMany.mock.calls[0][0].where.AND;
-          expect(and).toContainEqual({ local_field_id: OTHER_FIELD_ID });
-          expect(JSON.stringify(and)).not.toContain('union_id');
-          expect(and).toContainEqual(PASTOR_ELIGIBLE_USER_WHERE);
-        },
-      );
-
       it('limits a Field role to the district Field', async () => {
         await service.searchCandidates(
           snapshot({ role: 'director-lf', localFieldId: FIELD_ID }),
@@ -783,20 +783,13 @@ describe('DistrictInvestiturePastorService', () => {
             SAME_UNION_DISTRICT_ID,
           ),
         ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
-        await expect(
-          service.searchCandidates(
-            snapshot({ role: 'director-union', unionId: 2 }),
-            'ana',
-            OUTSIDE_DISTRICT_ID,
-          ),
-        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
         expect(users.findMany).not.toHaveBeenCalled();
       });
 
       it('rejects an unknown district without reading users', async () => {
         await expect(
           service.searchCandidates(
-            snapshot({ role: 'director-union', unionId: 2 }),
+            snapshot({ role: 'director-lf', localFieldId: FIELD_ID }),
             'ana',
             9999,
           ),
@@ -839,12 +832,22 @@ describe('DistrictInvestiturePastorService', () => {
       expect(users.findMany).not.toHaveBeenCalled();
     });
 
-    it('rejects a union role with no union scope', async () => {
-      await expect(
-        service.searchCandidates(snapshot({ role: 'director-union' }), 'ana'),
-      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
-      expect(users.findMany).not.toHaveBeenCalled();
-    });
+    it.each(['director-union', 'assistant-union'])(
+      'rejects %s: searching candidates is part of assigning, which is the Field job',
+      async (role) => {
+        await expect(
+          service.searchCandidates(snapshot({ role, unionId: 2 }), 'ana'),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+        await expect(
+          service.searchCandidates(
+            snapshot({ role, unionId: 2 }),
+            'ana',
+            SAME_UNION_DISTRICT_ID,
+          ),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+        expect(users.findMany).not.toHaveBeenCalled();
+      },
+    );
 
     it('never scans users for a query shorter than 3 characters after trimming', async () => {
       const found = await service.searchCandidates(

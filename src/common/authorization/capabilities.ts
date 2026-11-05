@@ -253,10 +253,7 @@ export const CAPABILITY_DEFINITIONS: Record<
   'folders.evaluate': levelIn(...LEVELS_WITH_TERRITORY),
   'honors.review_instructor_proposals': localFieldReviewer,
   'institutional_certificates.review': globalRoleIn(SUPER_ADMIN_ONLY),
-  'investiture.assign_district_pastors': globalRoleIn([
-    ...UNION_ROLES,
-    ...LOCAL_FIELD_ROLES,
-  ]),
+  'investiture.assign_district_pastors': globalRoleIn(LOCAL_FIELD_ROLES),
   'investiture.authorize_requests': globalRoleIn([
     ...LOCAL_FIELD_ROLES,
     GlobalRole.PASTOR,

@@ -303,7 +303,7 @@ export class DistrictInvestiturePastorService {
 
   /**
    * Candidatos a pastor para quien puede asignar (director y asistente de
-   * Campo o de unión). Usa la misma regla de elegibilidad que decide quién
+   * Campo). Usa la misma regla de elegibilidad que decide quién
    * puede autorizar: cuenta activa y rol global `pastor`. Solo devuelve
    * pastores del territorio de quien busca (ver `candidateScopeWhere`). Con
    * `districtId` solo devuelve pastores del Campo de ese distrito, que es la
@@ -376,16 +376,13 @@ export class DistrictInvestiturePastorService {
   }
 
   /**
-   * Quien busca solo ve pastores de su territorio: su Campo, o los Campos de
-   * su unión. Es la misma frontera que `loadDistrict` aplica al asignar. Un
+   * Quien busca solo ve pastores de su Campo (solo el Campo asigna). Es la
+   * misma frontera que `loadDistrict` aplica al asignar. Un
    * pastor sin Campo (`users.local_field_id` nulo) queda fuera.
    */
   private candidateScopeWhere(actor: AssignerAccess): Prisma.usersWhereInput {
     if (actor.kind === 'field') {
       return { local_field_id: actor.localFieldId };
-    }
-    if (actor.kind === 'union') {
-      return { local_fields: { union_id: actor.unionId } };
     }
     throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
@@ -600,9 +597,12 @@ export class DistrictInvestiturePastorService {
     if (mode === 'read' && roles.has(GlobalRole.SUPER_ADMIN)) {
       return { kind: 'super-admin' };
     }
+    // Unión solo LEE. Asignar es trabajo del Campo: en `assign` un rol de unión
+    // cae al final con `null` y el llamador responde GUARD_PERMISSION_DENIED.
     if (
-      roles.has(GlobalRole.DIRECTOR_UNION) ||
-      roles.has(GlobalRole.ASSISTANT_UNION)
+      mode === 'read' &&
+      (roles.has(GlobalRole.DIRECTOR_UNION) ||
+        roles.has(GlobalRole.ASSISTANT_UNION))
     ) {
       if (!unionId) {
         throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);

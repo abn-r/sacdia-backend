@@ -289,7 +289,6 @@ const ACTORS: Array<{
       'coordination.manage',
       'folders.confirm_union',
       'folders.evaluate',
-      'investiture.assign_district_pastors',
       'investiture.consult_field_window',
       'reports.view_union',
       'scoring_categories.manage',
