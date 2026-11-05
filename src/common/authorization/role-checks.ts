@@ -1,5 +1,7 @@
+import { ActorScope } from './actor-scope';
 import type { ClubRoleName } from './generated/role-names';
-import { ClubRole } from './roles';
+import { ClubRole, GlobalRole } from './roles';
+import type { AuthorizationSnapshot } from '../services/authorization-context.service';
 
 type RoleGrant = { role_name: string };
 
@@ -28,4 +30,19 @@ export function rolesInclude(
     if (names.includes(role)) return true;
   }
   return false;
+}
+
+/**
+ * True when the snapshot carries the global super-admin role. Role names are
+ * trimmed and lower-cased (via `ActorScope`). Null-safe: a missing snapshot or
+ * missing grants is simply "not super-admin". For the by-user-id lookup against
+ * the database use `AuthorizationContextService.isSuperAdmin(userId)` instead.
+ */
+export function isSuperAdminSnapshot(
+  authorization: AuthorizationSnapshot | null | undefined,
+): boolean {
+  const roles = (authorization?.grants?.global_roles ?? []).map(
+    (grant) => grant.role_name,
+  );
+  return ActorScope.fromRoleNames(roles).hasRole(GlobalRole.SUPER_ADMIN);
 }
