@@ -505,7 +505,10 @@ export class HonorValidationWorkflowService {
   ): RequirementEvaluation {
     const children = childrenByParent.get(requirement.requirement_id) ?? [];
 
-    if (requirement.is_choice_group) {
+    // A "choose N" group with no sub-items is a catalog mistake (232 rows
+    // came in that way from the import): treat it as a plain requirement,
+    // completed by its own row, or it could never be satisfied.
+    if (requirement.is_choice_group && children.length > 0) {
       return this.evaluateChoiceGroup(
         requirement,
         children,
