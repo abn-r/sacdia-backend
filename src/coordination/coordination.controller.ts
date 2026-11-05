@@ -23,6 +23,7 @@ import {
 import type { Request } from 'express';
 import {
   AuthorizationResource,
+  ExactGlobalRoles,
   GlobalRoles,
   SkipPermissions,
 } from '../common/decorators';
@@ -48,6 +49,15 @@ import {
 } from './dto';
 import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
+/** Escribir zonas y asignaciones es del Campo local y los admin; sin alias. */
+const COORDINATION_WRITE_ROLES = [
+  GlobalRole.ADMIN,
+  GlobalRole.ASSISTANT_ADMIN,
+  GlobalRole.SUPER_ADMIN,
+  GlobalRole.DIRECTOR_LF,
+  GlobalRole.ASSISTANT_LF,
+] as const;
+
 type AuthenticatedRequest = Request & { user: { sub: string } };
 
 /** What PermissionsGuard leaves on the request after a successful check. */
@@ -60,6 +70,8 @@ type AuthorizedRequest = AuthenticatedRequest & {
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @RequirePermissions('coordination:manage')
 @AuthorizationResource({ type: 'global' })
+// Lecturas: alias amplio (unión y división leen). Escrituras: roles exactos por
+// método, trabajo del Campo local (ver `COORDINATION_WRITE_ROLES`).
 @GlobalRoles(
   GlobalRole.ADMIN,
   GlobalRole.SUPER_ADMIN,
@@ -93,6 +105,7 @@ export class AdminCoordinationController {
   }
 
   @Post('local-fields/:localFieldId/zones')
+  @ExactGlobalRoles(...COORDINATION_WRITE_ROLES)
   @AuthorizationResource({
     type: 'global',
     bind: [{ kind: 'local_field', source: 'param', field: 'localFieldId' }],
@@ -113,6 +126,7 @@ export class AdminCoordinationController {
   }
 
   @Patch('zones/:zoneId')
+  @ExactGlobalRoles(...COORDINATION_WRITE_ROLES)
   @ApiOperation({ summary: 'Actualizar zona de coordinación' })
   @ApiParam({ name: 'zoneId', type: Number })
   async updateZone(
@@ -129,6 +143,7 @@ export class AdminCoordinationController {
   }
 
   @Post('zones/:zoneId/districts/:districtId')
+  @ExactGlobalRoles(...COORDINATION_WRITE_ROLES)
   @ApiOperation({ summary: 'Asignar un distrito a una zona de coordinación' })
   @ApiParam({ name: 'zoneId', type: Number })
   @ApiParam({ name: 'districtId', type: Number })
@@ -146,6 +161,7 @@ export class AdminCoordinationController {
   }
 
   @Delete('zones/:zoneId/districts/:districtId')
+  @ExactGlobalRoles(...COORDINATION_WRITE_ROLES)
   @ApiOperation({ summary: 'Quitar un distrito de una zona de coordinación' })
   @ApiParam({ name: 'zoneId', type: Number })
   @ApiParam({ name: 'districtId', type: Number })
@@ -184,6 +200,7 @@ export class AdminCoordinationController {
   }
 
   @Post('local-fields/:localFieldId/assignments')
+  @ExactGlobalRoles(...COORDINATION_WRITE_ROLES)
   @AuthorizationResource({
     type: 'global',
     bind: [{ kind: 'local_field', source: 'param', field: 'localFieldId' }],
@@ -204,6 +221,7 @@ export class AdminCoordinationController {
   }
 
   @Patch('assignments/:assignmentId')
+  @ExactGlobalRoles(...COORDINATION_WRITE_ROLES)
   @ApiOperation({ summary: 'Actualizar asignación de coordinador' })
   @ApiParam({ name: 'assignmentId', type: String })
   async updateAssignment(
@@ -220,6 +238,7 @@ export class AdminCoordinationController {
   }
 
   @Post('local-fields/:localFieldId/backfill')
+  @ExactGlobalRoles(...COORDINATION_WRITE_ROLES)
   @AuthorizationResource({
     type: 'global',
     bind: [{ kind: 'local_field', source: 'param', field: 'localFieldId' }],

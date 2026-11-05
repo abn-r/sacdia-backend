@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { GlobalRoles } from '../common/decorators';
+import { ExactGlobalRoles } from '../common/decorators';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -31,14 +31,11 @@ type AuthenticatedRequest = {
 @ApiBearerAuth()
 @Controller()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-// El alias de director-lf también admite unión y división. El servicio deja
-// asignar solo a director y asistente de Campo o de unión, dentro de su alcance.
-// super-admin cambia el cupo global y no asigna por ese rol.
-@GlobalRoles(
-  GlobalRole.SUPER_ADMIN,
-  GlobalRole.DIRECTOR_LF,
-  GlobalRole.ASSISTANT_LF,
-)
+// Roles exactos por método, sin alias. Unión LEE (cupo, pastores del distrito,
+// autorizadores) pero no asigna: asignar y quitar pastores es trabajo del
+// Campo (director/asistente). División nunca entró: el servicio la rechaza.
+// super-admin cambia el cupo global (PATCH) y no asigna por ese rol. `admin`
+// queda fuera. El servicio repite estas fronteras y valida el alcance.
 @SkipPermissions()
 export class DistrictInvestiturePastorsController {
   constructor(
@@ -47,6 +44,13 @@ export class DistrictInvestiturePastorsController {
   ) {}
 
   @Get('investiture-pastor-quota')
+  @ExactGlobalRoles(
+    GlobalRole.SUPER_ADMIN,
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
+    GlobalRole.DIRECTOR_UNION,
+    GlobalRole.ASSISTANT_UNION,
+  )
   @ApiOperation({
     summary:
       'Leer el cupo global de pastores por distrito. Sin fila, el valor es 2 y no se inserta.',
@@ -60,6 +64,7 @@ export class DistrictInvestiturePastorsController {
   }
 
   @Patch('investiture-pastor-quota')
+  @ExactGlobalRoles(GlobalRole.SUPER_ADMIN)
   @ApiOperation({
     summary:
       'Cambiar el cupo global. Solo super-admin. El mismo tope vale para todos los distritos.',
@@ -81,6 +86,13 @@ export class DistrictInvestiturePastorsController {
   }
 
   @Get('districts/:districtId/investiture-pastors')
+  @ExactGlobalRoles(
+    GlobalRole.SUPER_ADMIN,
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
+    GlobalRole.DIRECTOR_UNION,
+    GlobalRole.ASSISTANT_UNION,
+  )
   @ApiOperation({
     summary:
       'Listar los pastores asignados al distrito. Cada cupo activo puede autorizar.',
@@ -97,6 +109,11 @@ export class DistrictInvestiturePastorsController {
   }
 
   @Post('districts/:districtId/investiture-pastors')
+  @ExactGlobalRoles(
+    GlobalRole.SUPER_ADMIN,
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
+  )
   @ApiOperation({
     summary:
       'Asignar un pastor al distrito. No autoriza investiduras por sí mismo ni usa el pipeline anterior.',
@@ -120,6 +137,11 @@ export class DistrictInvestiturePastorsController {
   }
 
   @Delete('districts/:districtId/investiture-pastors/:userId')
+  @ExactGlobalRoles(
+    GlobalRole.SUPER_ADMIN,
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
+  )
   @ApiOperation({
     summary:
       'Quitar la asignación de un pastor. Libera el cupo. No inviste ni rechaza.',
@@ -141,9 +163,14 @@ export class DistrictInvestiturePastorsController {
   }
 
   @Get('investiture-pastor-candidates')
+  @ExactGlobalRoles(
+    GlobalRole.SUPER_ADMIN,
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
+  )
   @ApiOperation({
     summary:
-      'Buscar candidatos a pastor por nombre o correo (mínimo 3 caracteres y 2 por palabra, hasta 20). Solo quien puede asignar: director y asistente de Campo o de unión. Devuelve únicamente pastores de su Campo (o de los Campos de su unión). Con `districtId` solo devuelve pastores del Campo de ese distrito.',
+      'Buscar candidatos a pastor por nombre o correo (mínimo 3 caracteres y 2 por palabra, hasta 20). Solo quien puede asignar: director y asistente de Campo. Devuelve únicamente pastores de su Campo. Con `districtId` solo devuelve pastores del Campo de ese distrito.',
   })
   async candidates(
     @Request() req: AuthenticatedRequest,
@@ -161,6 +188,13 @@ export class DistrictInvestiturePastorsController {
   }
 
   @Get('clubs/:clubId/investiture-authorizers')
+  @ExactGlobalRoles(
+    GlobalRole.SUPER_ADMIN,
+    GlobalRole.DIRECTOR_LF,
+    GlobalRole.ASSISTANT_LF,
+    GlobalRole.DIRECTOR_UNION,
+    GlobalRole.ASSISTANT_UNION,
+  )
   @ApiOperation({
     summary:
       'Leer quién puede autorizar por el distrito de la iglesia del club. No usa el distrito guardado en el club ni un dato del usuario.',

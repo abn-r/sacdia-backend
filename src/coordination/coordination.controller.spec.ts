@@ -6,7 +6,11 @@ import { SKIP_PERMISSIONS_KEY } from '../common/decorators/skip-permissions.deco
 import { ACTING_SCOPE_KEY } from '../auth/acting-for/acting-scope.decorator';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { CoordinationController } from './coordination.controller';
+import {
+  AdminCoordinationController,
+  CoordinationController,
+} from './coordination.controller';
+import { runGlobalRolesGuard } from '../common/guards/global-roles-guard.testing';
 import { CoordinatorConsentPendingQueryDto } from './dto';
 
 describe('CoordinationController metadata', () => {
@@ -123,5 +127,63 @@ describe('CoordinatorConsentPendingQueryDto', () => {
     ['a non-numeric offset', { offset: 'abc' }],
   ])('rejects %s', (_label, query) => {
     expect(validate(query).errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('AdminCoordinationController route guards', () => {
+  const proto = AdminCoordinationController.prototype;
+  const run = (handler: (...args: never[]) => unknown, role: string) =>
+    runGlobalRolesGuard(AdminCoordinationController, handler, [role]);
+  const DENIED = 'GUARD_PERMISSION_DENIED';
+
+  describe.each([
+    ['POST local-fields/:id/zones', proto.createZone],
+    ['PATCH zones/:zoneId', proto.updateZone],
+    ['POST zones/:zoneId/districts/:districtId', proto.assignDistrictToZone],
+    [
+      'DELETE zones/:zoneId/districts/:districtId',
+      proto.removeDistrictFromZone,
+    ],
+    ['POST local-fields/:id/assignments', proto.createAssignment],
+    ['PATCH assignments/:assignmentId', proto.updateAssignment],
+    ['POST local-fields/:id/backfill', proto.backfillLegacyAssignments],
+  ])('%s', (_label, handler) => {
+    it.each([
+      'super-admin',
+      'admin',
+      'assistant-admin',
+      'director-lf',
+      'assistant-lf',
+    ])('lets %s write', async (role) => {
+      await expect(run(handler, role)).resolves.toBe(true);
+    });
+
+    it.each([
+      'director-union',
+      'assistant-union',
+      'director-dia',
+      'assistant-dia',
+    ])('rejects %s with GUARD_PERMISSION_DENIED', async (role) => {
+      await expect(run(handler, role)).resolves.toBe(DENIED);
+    });
+  });
+
+  describe.each([
+    ['GET local-fields/:id/zones', proto.listZones],
+    ['GET local-fields/:id/assignments', proto.listAssignments],
+  ])('%s', (_label, handler) => {
+    it.each([
+      'super-admin',
+      'admin',
+      'assistant-admin',
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'director-dia',
+      'assistant-dia',
+    ])('keeps reading open to %s', async (role) => {
+      await expect(run(handler, role)).resolves.toBe(true);
+    });
   });
 });

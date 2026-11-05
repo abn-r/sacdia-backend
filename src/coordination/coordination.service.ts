@@ -26,6 +26,7 @@ import {
   UpdateCoordinatorAssignmentDto,
 } from './dto';
 import { GlobalRole } from '../common/authorization/roles';
+import { ADMIN_SCOPE_ROLES } from '../common/authorization/role-sets';
 
 const COORDINATOR_ROLE_NAMES = [
   GlobalRole.COORDINATOR,
@@ -97,7 +98,7 @@ export class CoordinationService {
   ) {}
 
   async listZones(actorUserId: string, localFieldId: number) {
-    await this.ensureActorCanManageLocalField(actorUserId, localFieldId);
+    await this.ensureActorCanReachLocalField(actorUserId, localFieldId);
 
     return this.prisma.coordination_zones.findMany({
       where: { local_field_id: localFieldId },
@@ -125,7 +126,7 @@ export class CoordinationService {
     localFieldId: number,
     dto: CreateCoordinationZoneDto,
   ) {
-    await this.ensureActorCanManageLocalField(actorUserId, localFieldId);
+    await this.ensureActorCanEditLocalField(actorUserId, localFieldId);
     await this.assertLocalFieldExists(localFieldId);
 
     try {
@@ -149,7 +150,7 @@ export class CoordinationService {
     dto: UpdateCoordinationZoneDto,
   ) {
     const zone = await this.getZoneOrThrow(zoneId);
-    await this.ensureActorCanManageLocalField(actorUserId, zone.local_field_id);
+    await this.ensureActorCanEditLocalField(actorUserId, zone.local_field_id);
 
     try {
       return await this.prisma.coordination_zones.update({
@@ -174,7 +175,7 @@ export class CoordinationService {
     districtId: number,
   ) {
     const zone = await this.getZoneOrThrow(zoneId);
-    await this.ensureActorCanManageLocalField(actorUserId, zone.local_field_id);
+    await this.ensureActorCanEditLocalField(actorUserId, zone.local_field_id);
 
     const district = await this.prisma.districts.findUnique({
       where: { districlub_type_id: districtId },
@@ -232,7 +233,7 @@ export class CoordinationService {
     districtId: number,
   ) {
     const zone = await this.getZoneOrThrow(zoneId);
-    await this.ensureActorCanManageLocalField(actorUserId, zone.local_field_id);
+    await this.ensureActorCanEditLocalField(actorUserId, zone.local_field_id);
 
     const membership = await this.prisma.coordination_zone_districts.findFirst({
       where: { zone_id: zoneId, districlub_type_id: districtId, active: true },
@@ -253,7 +254,7 @@ export class CoordinationService {
     localFieldId: number,
     active?: boolean,
   ) {
-    await this.ensureActorCanManageLocalField(actorUserId, localFieldId);
+    await this.ensureActorCanReachLocalField(actorUserId, localFieldId);
 
     return this.prisma.coordinator_assignments.findMany({
       where: {
@@ -295,7 +296,7 @@ export class CoordinationService {
     localFieldId: number,
     dto: CreateCoordinatorAssignmentDto,
   ) {
-    await this.ensureActorCanManageLocalField(actorUserId, localFieldId);
+    await this.ensureActorCanEditLocalField(actorUserId, localFieldId);
     await this.assertLocalFieldExists(localFieldId);
     this.assertAssignmentShape(dto);
     this.assertValidDateRange(dto.start_date, dto.end_date);
@@ -345,7 +346,7 @@ export class CoordinationService {
       throw new AppNotFoundException(ErrorCode.RECORD_NOT_FOUND);
     }
 
-    await this.ensureActorCanManageLocalField(
+    await this.ensureActorCanEditLocalField(
       actorUserId,
       current.local_field_id,
     );
@@ -516,7 +517,7 @@ export class CoordinationService {
     localFieldId: number,
     dryRun = true,
   ): Promise<CoordinatorBackfillResult> {
-    await this.ensureActorCanManageLocalField(actorUserId, localFieldId);
+    await this.ensureActorCanEditLocalField(actorUserId, localFieldId);
     await this.assertLocalFieldExists(localFieldId);
 
     const existingGeneral = await this.prisma.coordinator_assignments.findFirst(
@@ -681,7 +682,34 @@ export class CoordinationService {
     };
   }
 
-  private async ensureActorCanManageLocalField(
+  /**
+   * Writes (zones, districts, assignments, backfill) are the local field's job:
+   * admin scope (admin, assistant-admin, super-admin) or director/assistant of
+   * the field. Union and division roles only read, even when their territory
+   * covers the field. The role check runs before the hierarchy check.
+   */
+  private async ensureActorCanEditLocalField(
+    actorUserId: string,
+    localFieldId: number,
+  ): Promise<void> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorUserId);
+    const roleNames = new Set(
+      (resolved.authorization?.grants?.global_roles ?? []).map((grant) =>
+        grant.role_name.trim().toLowerCase(),
+      ),
+    );
+    const canWrite =
+      ADMIN_SCOPE_ROLES.some((role) => roleNames.has(role)) ||
+      [...LOCAL_FIELD_ROLES].some((role) => roleNames.has(role));
+    if (!canWrite) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+    await this.ensureActorCanReachLocalField(actorUserId, localFieldId);
+  }
+
+  /** Territorial check shared by reads (union and division included) and writes. */
+  private async ensureActorCanReachLocalField(
     actorUserId: string,
     localFieldId: number,
   ): Promise<void> {

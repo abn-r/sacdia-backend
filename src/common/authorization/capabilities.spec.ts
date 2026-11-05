@@ -187,6 +187,7 @@ const ACTORS: Array<{
       'club_roles.designate_director',
       'club_roles.succeed_director',
       'coordination.hub_view',
+      'coordination.manage',
       'field_payment_orders.review',
       'honors.review_instructor_proposals',
       'investiture.configure_field_window',
@@ -286,10 +287,8 @@ const ACTORS: Array<{
       'admin_panel.access',
       'camporee_orders.configure_offering',
       'camporee_supplies.configure',
-      'coordination.manage',
       'folders.confirm_union',
       'folders.evaluate',
-      'investiture.assign_district_pastors',
       'investiture.consult_field_window',
       'reports.view_union',
       'scoring_categories.manage',
@@ -312,7 +311,6 @@ const ACTORS: Array<{
     assignable: sorted([...T5, ...LF, ...UNION]),
     capabilities: [
       'admin_panel.access',
-      'coordination.manage',
       'folders.evaluate',
       'investiture.consult_field_window',
       'reports.view_all',
@@ -495,7 +493,6 @@ describe('capabilities catalog', () => {
 
     it('territory keys are false for open and unconfigured levels', () => {
       for (const key of [
-        'coordination.manage',
         'folders.evaluate',
         'camporee_orders.configure_offering',
       ] as const) {
@@ -625,11 +622,33 @@ describe('capabilities catalog', () => {
         union_id: null,
         local_field_id: null,
       });
-      expect(caps).not.toContain('coordination.manage');
+      // Role-based since writes became the local field's job: not a territory key.
+      expect(caps).toContain('coordination.manage');
       expect(caps).not.toContain('field_payment_orders.review');
       expect(caps).not.toContain('reports.view_local_field');
       expect(caps).toContain('certificates.review_imports');
       expect(caps).toContain('club_roles.assign_section');
+    });
+
+    it('coordination.manage follows the role, not the territory level', () => {
+      const has = (globalRoles: string[], global?: Record<string, number>) =>
+        computeCapabilities(resolvedFor({ globalRoles, global })).includes(
+          'coordination.manage',
+        );
+      // `admin` anchors in a union (level `union`) and must still manage.
+      expect(has(['admin'], { union: 2 })).toBe(true);
+      expect(has(['assistant-admin'], { local_field: 3 })).toBe(true);
+      expect(has(['super-admin'])).toBe(true);
+      expect(has(['director-lf'], { local_field: 3 })).toBe(true);
+      expect(has(['assistant-lf'], { local_field: 3 })).toBe(true);
+      for (const role of [
+        'director-union',
+        'assistant-union',
+        'director-dia',
+        'assistant-dia',
+      ]) {
+        expect(has([role], { division: 1, union: 2 })).toBe(false);
+      }
     });
 
     it('an admin with a union scope reports the union level', () => {
