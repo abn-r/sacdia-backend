@@ -11,6 +11,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { PrismaService } from '../prisma/prisma.service';
 import { FieldInvestitureWindowConfigService } from './field-investiture-window-config.service';
 import { FieldInvestitureWindowController } from './field-investiture-window.controller';
+import { runGlobalRolesGuard } from '../common/guards/global-roles-guard.testing';
 
 const FIELD_ID = 10;
 const YEAR_ID = 2026;
@@ -186,5 +187,49 @@ describe('GET investiture window without an October–December intersection', ()
         new Date('2026-01-15T18:00:00.000Z'),
       ),
     ).resolves.toBe(false);
+  });
+});
+
+describe('FieldInvestitureWindowController route guards', () => {
+  const read = FieldInvestitureWindowController.prototype.get;
+  const write = FieldInvestitureWindowController.prototype.update;
+  const run = (handler: typeof read | typeof write, role: string) =>
+    runGlobalRolesGuard(FieldInvestitureWindowController, handler, [role]);
+
+  it.each([
+    'super-admin',
+    'admin',
+    'assistant-admin',
+    'director-lf',
+    'assistant-lf',
+  ])('lets %s write the window', async (role) => {
+    await expect(run(write, role)).resolves.toBe(true);
+  });
+
+  it.each([
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  ])('rejects %s on PATCH with GUARD_PERMISSION_DENIED', async (role) => {
+    await expect(run(write, role)).resolves.toBe('GUARD_PERMISSION_DENIED');
+  });
+
+  it.each([
+    'super-admin',
+    'admin',
+    'assistant-admin',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  ])('keeps GET open to %s', async (role) => {
+    await expect(run(read, role)).resolves.toBe(true);
+  });
+
+  it('keeps GET closed to roles that never consulted', async () => {
+    await expect(run(read, 'pastor')).resolves.toBe('GUARD_PERMISSION_DENIED');
   });
 });

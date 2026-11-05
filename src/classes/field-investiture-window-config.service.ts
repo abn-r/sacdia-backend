@@ -25,8 +25,10 @@ import {
   isCivilDate,
 } from './field-investiture-window';
 import { GlobalRole } from '../common/authorization/roles';
+import type { GlobalRoleName } from '../common/authorization/generated/role-names';
 
-const CONSULT_ROLES = new Set<string>([
+/** Roles que pueden consultar la ventana. El controlador reutiliza la lista exacta. */
+export const INVESTITURE_WINDOW_CONSULT_ROLES: readonly GlobalRoleName[] = [
   GlobalRole.SUPER_ADMIN,
   GlobalRole.ADMIN,
   GlobalRole.ASSISTANT_ADMIN,
@@ -36,7 +38,8 @@ const CONSULT_ROLES = new Set<string>([
   GlobalRole.ASSISTANT_UNION,
   GlobalRole.DIRECTOR_DIA,
   GlobalRole.ASSISTANT_DIA,
-]);
+];
+const CONSULT_ROLES = new Set<string>(INVESTITURE_WINDOW_CONSULT_ROLES);
 
 export type InvestitureWindowView = {
   local_field_id: number;
