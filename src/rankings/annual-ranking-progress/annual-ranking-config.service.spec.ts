@@ -2,7 +2,6 @@ import { Test } from '@nestjs/testing';
 import { AnnualRankingConfigService } from './annual-ranking-config.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
-  AppBadRequestException,
   AppConflictException,
   AppNotFoundException,
 } from '../../common/errors/app.exception';

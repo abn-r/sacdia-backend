@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsString, IsUUID } from 'class-validator';
+import { IsIn, IsInt, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class SubmitForReviewDto {

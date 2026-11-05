@@ -106,9 +106,7 @@ function buildRealService(
     annual_reports: { findUnique: jest.fn().mockResolvedValue(report) },
   };
   const i18n = {
-    translate: jest.fn(
-      (key: string, opts?: { args?: Record<string, unknown> }) => key,
-    ),
+    translate: jest.fn((key: string) => key),
   };
   const service = new AnnualReportsPdfService(
     prisma as any,

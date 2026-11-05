@@ -9,7 +9,6 @@ import {
   LoginFailureCounter,
   RECORD_FAILURE_SCRIPT,
 } from './login-failure-counter';
-import type { SupervisedLoginEvents } from './supervised/supervised-login-events.port';
 
 const MIN = 60_000;
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));

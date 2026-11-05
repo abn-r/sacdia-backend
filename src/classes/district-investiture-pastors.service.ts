@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { ActorScope } from '../common/authorization/actor-scope';
 import { toTerritoryId } from '../common/authorization/actor-territory-scope';
+import { isSuperAdminSnapshot } from '../common/authorization/role-checks';
 import { GlobalRole } from '../common/authorization/roles';
 import {
   AppBadRequestException,
@@ -107,7 +107,7 @@ export class DistrictInvestiturePastorService {
     return {
       slots: row?.slots ?? DEFAULT_SLOTS,
       configured: row != null,
-      can_edit: this.isSuperAdmin(authorization),
+      can_edit: isSuperAdminSnapshot(authorization),
     };
   }
 
@@ -116,7 +116,7 @@ export class DistrictInvestiturePastorService {
     slots: number,
     updatedById: string,
   ): Promise<PastorQuotaView> {
-    if (!this.isSuperAdmin(authorization)) {
+    if (!isSuperAdminSnapshot(authorization)) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
     if (!Number.isInteger(slots) || slots < 0) {
@@ -587,12 +587,6 @@ export class DistrictInvestiturePastorService {
     if (!allowed) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
-  }
-
-  private isSuperAdmin(authorization: AuthorizationSnapshot): boolean {
-    return ActorScope.fromRoleNames(roleSet(authorization)).hasRole(
-      GlobalRole.SUPER_ADMIN,
-    );
   }
 
   private access(

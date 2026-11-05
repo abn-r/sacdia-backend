@@ -21,7 +21,6 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
-  S3Client,
 } from '@aws-sdk/client-s3';
 import { R2FileStorageService } from './r2-file-storage.service';
 import { StorageBucketAlias } from './file-storage.service';

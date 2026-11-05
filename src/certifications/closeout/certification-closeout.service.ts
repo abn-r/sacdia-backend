@@ -9,7 +9,6 @@ import {
 import { MemberTerritoryScopeService } from '../../common/authorization/member-territory-scope.service';
 import {
   AppBadRequestException,
-  AppConflictException,
   AppForbiddenException,
   AppNotFoundException,
 } from '../../common/errors/app.exception';

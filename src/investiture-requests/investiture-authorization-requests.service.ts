@@ -4,6 +4,7 @@ import { Prisma, investiture_status_enum } from '@prisma/client';
 import { AchievementsService } from '../achievements/achievements.service';
 import { CLOCK, type Clock } from '../common/clock/clock';
 import { toTerritoryId } from '../common/authorization/actor-territory-scope';
+import { isSuperAdminSnapshot } from '../common/authorization/role-checks';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import {
   AppBadRequestException,
@@ -441,7 +442,7 @@ export class InvestitureAuthorizationRequestService {
       request.club_section_id,
       request.ecclesiastical_year_id,
     );
-    if (!marker && !this.isSuperAdmin(authorization)) {
+    if (!marker && !isSuperAdminSnapshot(authorization)) {
       throw new AppForbiddenException(ErrorCode.INVESTITURE_REQUEST_FORBIDDEN);
     }
     const context = await this.loadContext(
@@ -841,7 +842,7 @@ export class InvestitureAuthorizationRequestService {
       this.prisma,
       { validateTimeZone: false },
     );
-    if (!this.isSuperAdmin(authorization)) {
+    if (!isSuperAdminSnapshot(authorization)) {
       await this.assertAuthorizer(authorization, actorId, context);
     }
     // BCR-7: super-admin gets the authorizer shape (no human rejection reason).
@@ -1952,13 +1953,6 @@ export class InvestitureAuthorizationRequestService {
       }
     }
     return null;
-  }
-
-  private isSuperAdmin(authorization: AuthorizationSnapshot): boolean {
-    return (authorization.grants?.global_roles ?? []).some(
-      (grant) =>
-        grant.role_name.trim().toLowerCase() === GlobalRole.SUPER_ADMIN,
-    );
   }
 
   private assertSelection(

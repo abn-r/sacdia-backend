@@ -19,8 +19,18 @@ import { InstitutionalHierarchyService } from '../../common/services/institution
 describe('RankingsService', () => {
   let service: RankingsService;
 
-  // Forward-declare so we can reference it inside $transaction
-  let mockPrismaService: {
+  const mockHierarchyService: {
+    resolveAsOf: jest.Mock;
+    snapshotForClub: jest.Mock;
+  } = {
+    resolveAsOf: jest.fn(),
+    snapshotForClub: jest.fn(),
+  };
+
+  // $transaction passes the same mock as the transaction client so all
+  // individual table mocks are accessible inside the callback.
+  // Typed up front so $transaction can pass the mock back as its own tx client
+  const mockPrismaService: {
     $transaction: jest.Mock;
     $executeRaw: jest.Mock;
     ecclesiastical_years: { findUnique: jest.Mock; findFirst: jest.Mock };
@@ -45,22 +55,7 @@ describe('RankingsService', () => {
       deleteMany: jest.Mock;
     };
     sectionRanking: { upsert: jest.Mock };
-  };
-
-  let mockMemberCompositeScore: { calculate: jest.Mock };
-  let mockSectionAggregation: { aggregate: jest.Mock };
-  let mockSystemConfig: { get: jest.Mock };
-  const mockHierarchyService: {
-    resolveAsOf: jest.Mock;
-    snapshotForClub: jest.Mock;
   } = {
-    resolveAsOf: jest.fn(),
-    snapshotForClub: jest.fn(),
-  };
-
-  // $transaction passes the same mock as the transaction client so all
-  // individual table mocks are accessible inside the callback.
-  mockPrismaService = {
     $transaction: jest.fn().mockImplementation((cb) => cb(mockPrismaService)),
     $executeRaw: jest.fn().mockResolvedValue(0),
     ecclesiastical_years: {
@@ -111,10 +106,16 @@ describe('RankingsService', () => {
     },
   };
 
-  mockMemberCompositeScore = { calculate: jest.fn() };
-  mockSectionAggregation = { aggregate: jest.fn() };
+  const mockMemberCompositeScore: { calculate: jest.Mock } = {
+    calculate: jest.fn(),
+  };
+  const mockSectionAggregation: { aggregate: jest.Mock } = {
+    aggregate: jest.fn(),
+  };
   // Default: get() returns null → kill-switches disabled (feature ON by default)
-  mockSystemConfig = { get: jest.fn().mockResolvedValue(null) };
+  const mockSystemConfig: { get: jest.Mock } = {
+    get: jest.fn().mockResolvedValue(null),
+  };
 
   // Score calculator mocks — defaults reset in beforeEach after clearAllMocks
   const folderScore = { calc: jest.fn() };
