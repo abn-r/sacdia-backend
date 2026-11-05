@@ -17,7 +17,10 @@ import {
   AUTHORIZATION_RESOURCE_KEY,
   type AuthorizationResourceMetadata,
 } from '../../common/decorators/authorization-resource.decorator';
-import { GLOBAL_ROLES_KEY } from '../../common/decorators/global-roles.decorator';
+import {
+  EXACT_GLOBAL_ROLES_KEY,
+  GLOBAL_ROLES_KEY,
+} from '../../common/decorators/global-roles.decorator';
 import { CLUB_ROLES_KEY } from '../../common/guards/club-roles.guard';
 import { ACTING_SCOPE_KEY } from './acting-scope.decorator';
 import { assertActingScope } from './acting-scope.policy';
@@ -124,7 +127,10 @@ export function memberReach(
   if (readMeta<boolean>(IS_PUBLIC_KEY, route)) return null; // anonymous routes: teens are downgraded
   if (route.key.split(' ')[1].startsWith('/admin')) return null;
 
-  const globalRoles = readMeta<string[]>(GLOBAL_ROLES_KEY, route);
+  // GlobalRolesGuard: @ExactGlobalRoles wins over @GlobalRoles at the same level.
+  const globalRoles =
+    readMeta<string[]>(EXACT_GLOBAL_ROLES_KEY, route) ??
+    readMeta<string[]>(GLOBAL_ROLES_KEY, route);
   if (globalRoles && !globalRoles.includes('user')) return null;
   const clubRoles = readMeta<string[]>(CLUB_ROLES_KEY, route);
   if (clubRoles && !clubRoles.includes('member')) return null;
