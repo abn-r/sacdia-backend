@@ -19,7 +19,10 @@ describe('FieldPaymentOrdersFlagService', () => {
         }),
       },
     };
-    return { prisma, service: new FieldPaymentOrdersFlagService(prisma as any) };
+    return {
+      prisma,
+      service: new FieldPaymentOrdersFlagService(prisma as any),
+    };
   }
 
   describe('isEnabledForLocalField', () => {

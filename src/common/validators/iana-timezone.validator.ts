@@ -7,9 +7,8 @@ import {
   loadCanonicalGeographicIanaTimezoneCatalog,
 } from '../timezone/canonical-geographic-iana-timezone';
 
-let localFieldTimezoneCatalog: ReturnType<
-  typeof loadCanonicalGeographicIanaTimezoneCatalog
-> | undefined;
+let localFieldTimezoneCatalog:
+  ReturnType<typeof loadCanonicalGeographicIanaTimezoneCatalog> | undefined;
 
 export function classifyLocalFieldTimezone(
   value: unknown,

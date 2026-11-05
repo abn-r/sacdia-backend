@@ -13,7 +13,7 @@ import {
 // default when the machine is busy (CI, parallel workers).
 jest.setTimeout(30_000);
 
-const GUARDIAN ='aaaaaaaa-0000-4000-8000-000000000001';
+const GUARDIAN = 'aaaaaaaa-0000-4000-8000-000000000001';
 const GUARDIAN_2 = 'aaaaaaaa-0000-4000-8000-000000000002';
 const DEP = 'dddddddd-0000-4000-8000-000000000001';
 const GS = 'bbbbbbbb-0000-4000-8000-000000000001';

@@ -82,9 +82,11 @@ describe('FieldPaymentOrdersService', () => {
       $transaction: jest.fn((cb: any) => cb(tx)),
     };
     folio = {
-      allocate: jest
-        .fn()
-        .mockResolvedValue({ folio: 1, folio_reference: 'ORD20260001', year: 2026 }),
+      allocate: jest.fn().mockResolvedValue({
+        folio: 1,
+        folio_reference: 'ORD20260001',
+        year: 2026,
+      }),
     };
     flag = {
       isEnabledForLocalField: jest.fn().mockResolvedValue(true),
@@ -113,7 +115,10 @@ describe('FieldPaymentOrdersService', () => {
       tx.field_payment_orders.create.mockResolvedValue({ id: 'o1' });
 
       await service.createInsuranceOrder(
-        { insurance_cycle_config_id: 33, beneficiary_user_ids: ['ben-1', 'ben-2'] },
+        {
+          insurance_cycle_config_id: 33,
+          beneficiary_user_ids: ['ben-1', 'ben-2'],
+        },
         directorActor(),
       );
 
@@ -442,15 +447,15 @@ describe('FieldPaymentOrdersService', () => {
   describe('list scope', () => {
     it('scopes club actors to their sections', async () => {
       await service.list({}, directorActor());
-      const where = prisma.field_payment_orders.findMany.mock.calls.at(-1)[0]
-        .where;
+      const where =
+        prisma.field_payment_orders.findMany.mock.calls.at(-1)[0].where;
       expect(where.club_section_id).toEqual({ in: [11] });
     });
 
     it('scopes LF reviewers to their local field', async () => {
       await service.list({}, reviewerActor());
-      const where = prisma.field_payment_orders.findMany.mock.calls.at(-1)[0]
-        .where;
+      const where =
+        prisma.field_payment_orders.findMany.mock.calls.at(-1)[0].where;
       expect(where.local_field_id).toBe(7);
     });
   });

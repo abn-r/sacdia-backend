@@ -51,7 +51,11 @@ export class AnnualContinuationsController {
       'Fuente: año eclesiástico vigente (no lista exclusiva del año anterior). ' +
       'suggested_class puede quedar pending hasta la política de clase.',
   })
-  @ApiParam({ name: 'sectionId', type: Number, description: 'ID de la sección destino' })
+  @ApiParam({
+    name: 'sectionId',
+    type: Number,
+    description: 'ID de la sección destino',
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({
@@ -103,7 +107,8 @@ export class AnnualContinuationsController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — requires club_members:approve on the destination section',
+    description:
+      'Forbidden — requires club_members:approve on the destination section',
   })
   async continueUsers(
     @Param('sectionId', ParseIntPipe) sectionId: number,

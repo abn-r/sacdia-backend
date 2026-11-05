@@ -159,15 +159,16 @@ export class CertificationsService {
     }
 
     // 3. Bind the currently published version (engine expansion)
-    const publishedVersion =
-      await this.prisma.certification_versions.findFirst({
+    const publishedVersion = await this.prisma.certification_versions.findFirst(
+      {
         where: {
           certification_id: dto.certification_id,
           status: 'PUBLISHED',
           active: true,
         },
         orderBy: { version_number: 'desc' },
-      });
+      },
+    );
 
     if (!publishedVersion) {
       throw new AppBadRequestException(ErrorCode.CERT_VERSION_NOT_PUBLISHED);
@@ -654,7 +655,7 @@ export class CertificationsService {
         throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
       }
 
-      const currentStatus = enrollment.status as CertificationEnrollmentStatus;
+      const currentStatus = enrollment.status;
       assertEnrollmentAbandonable(currentStatus);
 
       const keepsStatus =

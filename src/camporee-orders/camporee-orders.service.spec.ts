@@ -790,7 +790,9 @@ describe('CamporeeOrdersService', () => {
         submittedProof(lfReviewer().userId),
       );
 
-      await expect(service.approve('order-1', lfReviewer())).rejects.toMatchObject({
+      await expect(
+        service.approve('order-1', lfReviewer()),
+      ).rejects.toMatchObject({
         code: ErrorCode.CAMPOREE_ORDER_MAKER_CHECKER,
         status: 403,
       });
@@ -897,11 +899,7 @@ describe('CamporeeOrdersService', () => {
         submittedProof(),
       );
 
-      const result = await service.reject(
-        'order-1',
-        'ilegible',
-        lfReviewer(),
-      );
+      const result = await service.reject('order-1', 'ilegible', lfReviewer());
 
       expect(result.status).toBe('PAID');
       expect(prisma.camporee_order_proofs.update).toHaveBeenCalledWith(

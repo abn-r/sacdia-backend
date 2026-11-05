@@ -100,26 +100,27 @@ export interface AdventurerSpecialtiesPrismaReader {
   };
 }
 
-export type AdventurerSpecialtiesPrismaClient = AdventurerSpecialtiesPrismaReader & {
-  $transaction<T>(
-    fn: (tx: AdventurerSpecialtiesPrismaTransaction) => Promise<T>,
-  ): Promise<T>;
-  honors_categories: {
-    upsert(args: {
-      where: { name: string };
-      create: {
-        name: string;
-        description: string;
-        active: boolean;
-      };
-      update: {
-        description?: string;
-        active?: boolean;
-      };
-      select: { honor_category_id: boolean; name: boolean };
-    }): Promise<{ honor_category_id: number; name: string }>;
+export type AdventurerSpecialtiesPrismaClient =
+  AdventurerSpecialtiesPrismaReader & {
+    $transaction<T>(
+      fn: (tx: AdventurerSpecialtiesPrismaTransaction) => Promise<T>,
+    ): Promise<T>;
+    honors_categories: {
+      upsert(args: {
+        where: { name: string };
+        create: {
+          name: string;
+          description: string;
+          active: boolean;
+        };
+        update: {
+          description?: string;
+          active?: boolean;
+        };
+        select: { honor_category_id: boolean; name: boolean };
+      }): Promise<{ honor_category_id: number; name: string }>;
+    };
   };
-};
 
 export interface AdventurerSpecialtiesPrismaTransaction {
   honors: {
@@ -149,13 +150,11 @@ export interface AdventurerSpecialtiesImportAnalysis {
   errors: AdventurerSpecialtyImportIssue[];
 }
 
-export interface AdventurerSpecialtiesDryRunResult
-  extends AdventurerSpecialtiesImportAnalysis {
+export interface AdventurerSpecialtiesDryRunResult extends AdventurerSpecialtiesImportAnalysis {
   mode: 'dry-run';
 }
 
-export interface AdventurerSpecialtiesApplyResult
-  extends AdventurerSpecialtiesImportAnalysis {
+export interface AdventurerSpecialtiesApplyResult extends AdventurerSpecialtiesImportAnalysis {
   mode: 'apply';
   honorsCreated: number;
   honorsUpdated: number;
@@ -281,7 +280,12 @@ function canonicalClassKey(value: string): string | null {
 
 function classKeyForSpecialty(row: AdventurerSpecialtyCsvRow): string | null {
   const levelOrder = normalizeToken(row.level_order);
-  if (Object.prototype.hasOwnProperty.call(ADVENTURER_LEVEL_ORDER_TO_CLASS_KEY, levelOrder)) {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      ADVENTURER_LEVEL_ORDER_TO_CLASS_KEY,
+      levelOrder,
+    )
+  ) {
     return ADVENTURER_LEVEL_ORDER_TO_CLASS_KEY[levelOrder] ?? null;
   }
 
@@ -355,7 +359,9 @@ export function parseAdventurerSpecialtiesCsv(
   );
 
   if (missingHeaders.length > 0) {
-    throw new Error(`CSV missing required headers: ${missingHeaders.join(', ')}`);
+    throw new Error(
+      `CSV missing required headers: ${missingHeaders.join(', ')}`,
+    );
   }
 
   return records.slice(1).map((record) => {
@@ -377,7 +383,9 @@ export async function readAdventurerSpecialtiesCsvFile(
   return parseAdventurerSpecialtiesCsv(content);
 }
 
-export function buildHonorCode(row: Pick<AdventurerSpecialtyCsvRow, 'slug'>): string {
+export function buildHonorCode(
+  row: Pick<AdventurerSpecialtyCsvRow, 'slug'>,
+): string {
   const slugCode = normalizeCodeToken(row.slug);
 
   if (!slugCode) {
@@ -598,7 +606,9 @@ export function validateAdventurerSpecialtyRows(
   const displayNameCollisions = Array.from(codesByName.entries())
     .filter(([, codes]) => new Set(codes).size > 1)
     .map(([nameKey, codes]) => ({
-      name: rows.find((row) => normalizeToken(row.title) === nameKey)?.title ?? nameKey,
+      name:
+        rows.find((row) => normalizeToken(row.title) === nameKey)?.title ??
+        nameKey,
       codes: Array.from(new Set(codes)).sort(),
     }));
 
@@ -773,23 +783,25 @@ export async function prepareAdventurerSpecialtiesDataset(
   });
 
   const specialties = await Promise.all(
-    rows.map(async (row, index): Promise<PreparedAdventurerSpecialty | null> => {
-      const code = buildHonorCode(row);
-      const markdownPath = resolveDatasetFilePath(row.md, datasetRoot);
+    rows.map(
+      async (row, index): Promise<PreparedAdventurerSpecialty | null> => {
+        const code = buildHonorCode(row);
+        const markdownPath = resolveDatasetFilePath(row.md, datasetRoot);
 
-      if (!existingMarkdownPaths.has(markdownPath)) {
-        return null;
-      }
+        if (!existingMarkdownPaths.has(markdownPath)) {
+          return null;
+        }
 
-      const markdown = await fs.readFile(markdownPath, 'utf8');
-      return {
-        row,
-        rowNumber: index + 2,
-        code,
-        markdownPath,
-        requirements: parseRequirementsFromMarkdown(markdown),
-      };
-    }),
+        const markdown = await fs.readFile(markdownPath, 'utf8');
+        return {
+          row,
+          rowNumber: index + 2,
+          code,
+          markdownPath,
+          requirements: parseRequirementsFromMarkdown(markdown),
+        };
+      },
+    ),
   );
 
   return {
@@ -808,7 +820,9 @@ export async function analyzeAdventurerSpecialtiesImport(
   prisma: AdventurerSpecialtiesPrismaReader,
   options: AnalyzeAdventurerSpecialtiesImportOptions,
 ): Promise<AdventurerSpecialtiesDryRunResult> {
-  const prepared = await prepareAdventurerSpecialtiesDataset(options.datasetPath);
+  const prepared = await prepareAdventurerSpecialtiesDataset(
+    options.datasetPath,
+  );
 
   const result: AdventurerSpecialtiesDryRunResult = {
     mode: 'dry-run',
@@ -873,12 +887,14 @@ export async function analyzeAdventurerSpecialtiesImport(
   });
   const classByKey = new Map(
     adventurerClasses
-      .map((adventurerClass) => [
-        canonicalClassKey(adventurerClass.name),
-        adventurerClass,
-      ] as const)
+      .map(
+        (adventurerClass) =>
+          [canonicalClassKey(adventurerClass.name), adventurerClass] as const,
+      )
       .filter(
-        (entry): entry is readonly [string, { class_id: number; name: string }] =>
+        (
+          entry,
+        ): entry is readonly [string, { class_id: number; name: string }] =>
           entry[0] !== null,
       ),
   );
@@ -937,7 +953,9 @@ export async function applyAdventurerSpecialtiesImport(
     );
   }
 
-  const prepared = await prepareAdventurerSpecialtiesDataset(options.datasetPath);
+  const prepared = await prepareAdventurerSpecialtiesDataset(
+    options.datasetPath,
+  );
   const adventurersClubType = await prisma.club_types.findFirst({
     where: { name: 'Aventureros' },
     select: { club_type_id: true, name: true },
@@ -969,12 +987,14 @@ export async function applyAdventurerSpecialtiesImport(
   });
   const classByKey = new Map(
     adventurerClasses
-      .map((adventurerClass) => [
-        canonicalClassKey(adventurerClass.name),
-        adventurerClass,
-      ] as const)
+      .map(
+        (adventurerClass) =>
+          [canonicalClassKey(adventurerClass.name), adventurerClass] as const,
+      )
       .filter(
-        (entry): entry is readonly [string, { class_id: number; name: string }] =>
+        (
+          entry,
+        ): entry is readonly [string, { class_id: number; name: string }] =>
           entry[0] !== null,
       ),
   );
@@ -1145,8 +1165,7 @@ export async function applyAdventurerSpecialtiesImport(
     result.honorClubTypesUpserted += 1;
     result.classLinksUpserted += transactionResult.classLinkUpserted;
     result.requirementsUpserted += transactionResult.requirementsUpserted;
-    result.requirementsDeactivated +=
-      transactionResult.requirementsDeactivated;
+    result.requirementsDeactivated += transactionResult.requirementsDeactivated;
   }
 
   return result;

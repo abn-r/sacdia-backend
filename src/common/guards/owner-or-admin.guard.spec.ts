@@ -38,7 +38,9 @@ describe('OwnerOrAdminGuard', () => {
 
   it('should throw when userId param is missing', async () => {
     await expect(
-      guard.canActivate(createContext({ user: { sub: 'actor-1' }, params: {} })),
+      guard.canActivate(
+        createContext({ user: { sub: 'actor-1' }, params: {} }),
+      ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_USER_ID_PARAM_MISSING });
   });
 

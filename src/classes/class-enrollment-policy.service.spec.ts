@@ -80,7 +80,11 @@ describe('ClassEnrollmentPolicyService', () => {
     prisma.class_prerequisites.findMany.mockResolvedValue([
       {
         prerequisite_class_id: PREV_CLASS_ID,
-        prerequisite: { class_id: PREV_CLASS_ID, club_type_id: 2, display_order: 3 },
+        prerequisite: {
+          class_id: PREV_CLASS_ID,
+          club_type_id: 2,
+          display_order: 3,
+        },
       },
     ]);
     prisma.enrollments.findMany.mockResolvedValue([]);
@@ -177,12 +181,16 @@ describe('ClassEnrollmentPolicyService', () => {
   it('A13 rejects writes against a non-current ecclesiastical year even for the owner', async () => {
     ecclesiasticalYear.getCurrentYear.mockResolvedValue(YEAR);
 
-    await expect(service.assertOperationalYearWrite(2025)).rejects.toMatchObject({
+    await expect(
+      service.assertOperationalYearWrite(2025),
+    ).rejects.toMatchObject({
       code: ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL,
     });
   });
 
   it('A13 allows writes for the current year', async () => {
-    await expect(service.assertOperationalYearWrite(2026)).resolves.toBeUndefined();
+    await expect(
+      service.assertOperationalYearWrite(2026),
+    ).resolves.toBeUndefined();
   });
 });

@@ -382,9 +382,7 @@ describe('CatalogCacheService', () => {
           categoryId: 2,
           clubTypeId: 1,
         }),
-      ).toBe(
-        'cache:catalogs:honors:grouped:e3:en:cat:2:type:1:skill:all',
-      );
+      ).toBe('cache:catalogs:honors:grouped:e3:en:cat:2:type:1:skill:all');
     });
   });
 });

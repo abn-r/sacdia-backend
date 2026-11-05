@@ -231,11 +231,7 @@ export class CertificateBulkImportsController {
     @Param('batchId') batchId: string,
     @Param('fileId') fileId: string,
   ) {
-    const data = await this.filesService.confirm(
-      req.user.sub,
-      batchId,
-      fileId,
-    );
+    const data = await this.filesService.confirm(req.user.sub, batchId, fileId);
     return { status: 'success', data };
   }
 
@@ -255,7 +251,9 @@ export class CertificateBulkImportsController {
   }
 
   @Delete(':batchId/files/:fileId')
-  @ApiOperation({ summary: 'Retirar un comprobante que todavía no fue enviado' })
+  @ApiOperation({
+    summary: 'Retirar un comprobante que todavía no fue enviado',
+  })
   async removeFile(
     @Request() req: AuthenticatedRequest,
     @Param('batchId') batchId: string,

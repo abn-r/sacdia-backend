@@ -271,7 +271,9 @@ describe('certificate import response mapper', () => {
   describe('page_count and source columns (B4)', () => {
     it('exposes page_count as a number and null for files from before M2', () => {
       expect(toPublicImportFile({ ...row, page_count: 3 }).page_count).toBe(3);
-      expect(toPublicImportFile({ ...row, page_count: null }).page_count).toBeNull();
+      expect(
+        toPublicImportFile({ ...row, page_count: null }).page_count,
+      ).toBeNull();
     });
 
     it('does not invent page_count when the column was not selected', () => {
@@ -299,8 +301,14 @@ describe('certificate import response mapper', () => {
         ],
       });
 
-      expect(batch.items[0]).toMatchObject({ source_file_id: 'file-1', source_page: 3 });
-      expect(batch.items[1]).toMatchObject({ source_file_id: null, source_page: null });
+      expect(batch.items[0]).toMatchObject({
+        source_file_id: 'file-1',
+        source_page: 3,
+      });
+      expect(batch.items[1]).toMatchObject({
+        source_file_id: null,
+        source_page: null,
+      });
     });
   });
 

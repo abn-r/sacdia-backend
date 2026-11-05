@@ -160,8 +160,9 @@ export class InsuranceReassignmentsService {
         );
       }
       return (
-        actor.sectionIds.includes(assignment.coverage_slot.current_section_id) ||
-        request.requested_by_id === actor.userId
+        actor.sectionIds.includes(
+          assignment.coverage_slot.current_section_id,
+        ) || request.requested_by_id === actor.userId
       );
     });
   }
@@ -197,7 +198,7 @@ export class InsuranceReassignmentsService {
         );
       }
       await this.assertSameClubDestination(
-        tx as unknown as PrismaService,
+        tx,
         assignment.coverage_slot.current_section_id,
         request.to_user_id,
       );

@@ -247,7 +247,7 @@ describe('UnitsController', () => {
       const result = await controller.bulkUpsertWeeklyRecords(
         1,
         5,
-        dto as any,
+        dto,
         mockReq as any,
       );
 

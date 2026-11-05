@@ -209,9 +209,18 @@ describe('GoogleVisionCertificateOcrProvider ADC', () => {
         responses: [
           {
             responses: [
-              { context: { pageNumber: 3 }, fullTextAnnotation: { text: 'Honor: Tres' } },
-              { context: { pageNumber: 1 }, fullTextAnnotation: { text: 'Portada' } },
-              { context: { pageNumber: 2 }, fullTextAnnotation: { text: 'Honor: Dos' } },
+              {
+                context: { pageNumber: 3 },
+                fullTextAnnotation: { text: 'Honor: Tres' },
+              },
+              {
+                context: { pageNumber: 1 },
+                fullTextAnnotation: { text: 'Portada' },
+              },
+              {
+                context: { pageNumber: 2 },
+                fullTextAnnotation: { text: 'Honor: Dos' },
+              },
             ],
           },
         ],
@@ -224,12 +233,18 @@ describe('GoogleVisionCertificateOcrProvider ADC', () => {
     const imageResult = await image.ocr.extract([{ ...file, fileId }]);
 
     expect(
-      pdfResult.items.map((i) => [i.detectedName, i.sourceFileId, i.sourcePage]),
+      pdfResult.items.map((i) => [
+        i.detectedName,
+        i.sourceFileId,
+        i.sourcePage,
+      ]),
     ).toEqual([
       ['Dos', fileId, 2],
       ['Tres', fileId, 3],
     ]);
-    expect(pdfResult.files[0].pages.map((p) => p.pageNumber)).toEqual([1, 2, 3]);
+    expect(pdfResult.files[0].pages.map((p) => p.pageNumber)).toEqual([
+      1, 2, 3,
+    ]);
     expect(imageResult.items[0]).toMatchObject({
       detectedName: 'Amigo',
       sourceFileId: fileId,

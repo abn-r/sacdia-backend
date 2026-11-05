@@ -36,9 +36,7 @@ export function assertSafeTestDatabaseUrl(raw: string): URL {
   try {
     parsed = new URL(raw);
   } catch {
-    throw new UnsafeTestDatabaseUrlError(
-      'SACDIA_TEST_DATABASE_URL_INVALID',
-    );
+    throw new UnsafeTestDatabaseUrlError('SACDIA_TEST_DATABASE_URL_INVALID');
   }
 
   if (parsed.protocol !== 'postgresql:' && parsed.protocol !== 'postgres:') {
@@ -68,9 +66,7 @@ export function assertSafeTestDatabaseUrl(raw: string): URL {
 export function applyIsolatedTestDatabaseFromEnv(): string {
   const dedicated = process.env[SACDIA_TEST_DATABASE_URL_ENV];
   if (!dedicated || !dedicated.trim()) {
-    throw new UnsafeTestDatabaseUrlError(
-      'SACDIA_TEST_DATABASE_URL_REQUIRED',
-    );
+    throw new UnsafeTestDatabaseUrlError('SACDIA_TEST_DATABASE_URL_REQUIRED');
   }
 
   const parsed = assertSafeTestDatabaseUrl(dedicated.trim());
@@ -326,7 +322,9 @@ function extractDoBlock(sql: string): string {
 }
 
 function extractTriggerSql(sql: string): string {
-  const fn = sql.indexOf('CREATE OR REPLACE FUNCTION enforce_club_role_slot_limits');
+  const fn = sql.indexOf(
+    'CREATE OR REPLACE FUNCTION enforce_club_role_slot_limits',
+  );
   if (fn < 0) {
     throw new Error('slot-limit trigger missing');
   }
@@ -387,10 +385,12 @@ export async function seedAnnualCycleFixture(
       local_field_id: number;
       abbreviation: string;
     }>(`SELECT local_field_id, abbreviation FROM local_fields`);
-    const localFieldId = fields.rows.find((r) => r.abbreviation === 'CNT')!
-      .local_field_id;
-    const foreignFieldId = fields.rows.find((r) => r.abbreviation === 'CAT')!
-      .local_field_id;
+    const localFieldId = fields.rows.find(
+      (r) => r.abbreviation === 'CNT',
+    )!.local_field_id;
+    const foreignFieldId = fields.rows.find(
+      (r) => r.abbreviation === 'CAT',
+    )!.local_field_id;
 
     await client.query(
       `INSERT INTO districts (name, active, local_field_id)
@@ -401,8 +401,9 @@ export async function seedAnnualCycleFixture(
       districlub_type_id: number;
       name: string;
     }>(`SELECT districlub_type_id, name FROM districts`);
-    const districtId = districts.rows.find((r) => r.name === 'Distrito Test')!
-      .districlub_type_id;
+    const districtId = districts.rows.find(
+      (r) => r.name === 'Distrito Test',
+    )!.districlub_type_id;
     const foreignDistrictId = districts.rows.find(
       (r) => r.name === 'Distrito Ajeno',
     )!.districlub_type_id;
@@ -415,8 +416,9 @@ export async function seedAnnualCycleFixture(
     const churches = await client.query<{ church_id: number; name: string }>(
       `SELECT church_id, name FROM churches`,
     );
-    const churchId = churches.rows.find((r) => r.name === 'Iglesia Test')!
-      .church_id;
+    const churchId = churches.rows.find(
+      (r) => r.name === 'Iglesia Test',
+    )!.church_id;
     const foreignChurchId = churches.rows.find(
       (r) => r.name === 'Iglesia Ajena',
     )!.church_id;
@@ -432,10 +434,12 @@ export async function seedAnnualCycleFixture(
     const types = await client.query<{ club_type_id: number; name: string }>(
       `SELECT club_type_id, name FROM club_types`,
     );
-    const cqType = types.rows.find((r) => r.name === 'Conquistadores')!
-      .club_type_id;
-    const gmType = types.rows.find((r) => r.name === 'Guías Mayores')!
-      .club_type_id;
+    const cqType = types.rows.find(
+      (r) => r.name === 'Conquistadores',
+    )!.club_type_id;
+    const gmType = types.rows.find(
+      (r) => r.name === 'Guías Mayores',
+    )!.club_type_id;
 
     await client.query(
       `INSERT INTO clubs (name, active, local_field_id, church_id, coordinates, districlub_type_id)
@@ -455,8 +459,9 @@ export async function seedAnnualCycleFixture(
       `SELECT club_id, name FROM clubs`,
     );
     const clubId = clubs.rows.find((r) => r.name === 'Club Norte')!.club_id;
-    const foreignClubId = clubs.rows.find((r) => r.name === 'Club Ajeno')!
-      .club_id;
+    const foreignClubId = clubs.rows.find(
+      (r) => r.name === 'Club Ajeno',
+    )!.club_id;
 
     await client.query(
       `INSERT INTO club_sections (active, club_type_id, main_club_id)
@@ -467,9 +472,7 @@ export async function seedAnnualCycleFixture(
       club_section_id: number;
       club_type_id: number;
       main_club_id: number;
-    }>(
-      `SELECT club_section_id, club_type_id, main_club_id FROM club_sections`,
-    );
+    }>(`SELECT club_section_id, club_type_id, main_club_id FROM club_sections`);
     const cqSectionId = sections.rows.find(
       (r) => r.club_type_id === cqType && r.main_club_id === clubId,
     )!.club_section_id;
@@ -500,15 +503,19 @@ export async function seedAnnualCycleFixture(
          ('GM-01', true, $2, 16, 10, 'GM-01')`,
       [cqType, gmType],
     );
-    const classes = await client.query<{ class_id: number; asset_code: string }>(
-      `SELECT class_id, asset_code FROM classes`,
-    );
-    const cqClassId = classes.rows.find((r) => r.asset_code === 'CQ-01')!
-      .class_id;
-    const nextCqClassId = classes.rows.find((r) => r.asset_code === 'CQ-02')!
-      .class_id;
-    const gmClassId = classes.rows.find((r) => r.asset_code === 'GM-01')!
-      .class_id;
+    const classes = await client.query<{
+      class_id: number;
+      asset_code: string;
+    }>(`SELECT class_id, asset_code FROM classes`);
+    const cqClassId = classes.rows.find(
+      (r) => r.asset_code === 'CQ-01',
+    )!.class_id;
+    const nextCqClassId = classes.rows.find(
+      (r) => r.asset_code === 'CQ-02',
+    )!.class_id;
+    const gmClassId = classes.rows.find(
+      (r) => r.asset_code === 'GM-01',
+    )!.class_id;
 
     await insertUser(
       client,
@@ -755,21 +762,26 @@ export type AnnualCycleClock = { now: () => Date };
  * `prepareAnnualCycleDatabase()`. No usar en tests de URL.
  */
 export async function bootstrapAnnualCycleApp(clock?: AnnualCycleClock) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ValidationPipe } = require('@nestjs/common');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+
   const { Test } = require('@nestjs/testing');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+
   const { AppModule } = require('../../src/app.module');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { BetterAuthService } = require('../../src/better-auth/better-auth.service');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { YearCutCronService } = require('../../src/year-cut/year-cut-cron.service');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+
+  const {
+    BetterAuthService,
+  } = require('../../src/better-auth/better-auth.service');
+
+  const {
+    YearCutCronService,
+  } = require('../../src/year-cut/year-cut-cron.service');
+
   const { CLOCK } = require('../../src/common/clock/clock');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { SystemClockService } = require('../../src/common/clock/system-clock.service');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+
+  const {
+    SystemClockService,
+  } = require('../../src/common/clock/system-clock.service');
+
   const { PrismaService } = require('../../src/prisma/prisma.service');
 
   const resolvedClock = clock ?? { now: () => YEAR_CUT_NOW };
@@ -791,9 +803,7 @@ export async function bootstrapAnnualCycleApp(clock?: AnnualCycleClock) {
     .compile();
 
   const app = moduleFixture.createNestApplication();
-  app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, transform: true }),
-  );
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.setGlobalPrefix('api/v1');
   await app.init();
 

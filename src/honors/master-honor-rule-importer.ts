@@ -168,10 +168,7 @@ function enumValue<T extends Record<string, string>>(
     return fallback;
   }
 
-  if (
-    typeof value === 'string' &&
-    Object.values(allowed).includes(value as T[keyof T])
-  ) {
+  if (typeof value === 'string' && Object.values(allowed).includes(value)) {
     return value as T[keyof T];
   }
 
@@ -661,74 +658,71 @@ export async function applyMasterHonorRulesImport(
   let updateCount = 0;
   const affectedMasterHonorIds: number[] = [];
 
-  await prisma.$transaction(
-    async (tx) => {
-      await assertReferencesExist(tx, document);
+  await prisma.$transaction(async (tx) => {
+    await assertReferencesExist(tx, document);
 
-      for (const entry of document.master_honors) {
-        const existing = await findExistingMasterHonor(tx, entry);
-        if (!existing && !options.allowCreate) {
-          throw new Error(
-            `Master honor not found for "${entry.name}". Re-run with --allow-create only after confirming the official source.`,
-          );
-        }
-
-        if (existing) {
-          updateCount += 1;
-          affectedMasterHonorIds.push(existing.master_honor_id);
-        } else {
-          createCount += 1;
-          if (entry.master_honor_id !== undefined) {
-            affectedMasterHonorIds.push(entry.master_honor_id);
-          }
-        }
-
-        if (!options.apply) {
-          continue;
-        }
-
-        const masterHonorId = existing
-          ? existing.master_honor_id
-          : (
-              await tx.master_honors.create({
-                data: {
-                  ...(entry.master_honor_id !== undefined
-                    ? { master_honor_id: entry.master_honor_id }
-                    : {}),
-                  name: entry.name,
-                  master_image: entry.master_image,
-                  active: entry.active,
-                  applicability_scope: entry.applicability_scope,
-                  philosophy: entry.philosophy,
-                  notes: entry.notes,
-                },
-                select: { master_honor_id: true },
-              })
-            ).master_honor_id;
-        if (!existing && !affectedMasterHonorIds.includes(masterHonorId)) {
-          affectedMasterHonorIds.push(masterHonorId);
-        }
-
-        if (existing) {
-          await tx.master_honors.update({
-            where: { master_honor_id: masterHonorId },
-            data: {
-              name: entry.name,
-              master_image: entry.master_image,
-              active: entry.active,
-              applicability_scope: entry.applicability_scope,
-              philosophy: entry.philosophy,
-              notes: entry.notes,
-              modified_at: new Date(),
-            },
-          });
-        }
-
-        await syncMasterHonorRules(tx, masterHonorId, entry);
+    for (const entry of document.master_honors) {
+      const existing = await findExistingMasterHonor(tx, entry);
+      if (!existing && !options.allowCreate) {
+        throw new Error(
+          `Master honor not found for "${entry.name}". Re-run with --allow-create only after confirming the official source.`,
+        );
       }
-    },
-    MASTER_HONOR_RULES_IMPORT_TRANSACTION_OPTIONS,
-  );
+
+      if (existing) {
+        updateCount += 1;
+        affectedMasterHonorIds.push(existing.master_honor_id);
+      } else {
+        createCount += 1;
+        if (entry.master_honor_id !== undefined) {
+          affectedMasterHonorIds.push(entry.master_honor_id);
+        }
+      }
+
+      if (!options.apply) {
+        continue;
+      }
+
+      const masterHonorId = existing
+        ? existing.master_honor_id
+        : (
+            await tx.master_honors.create({
+              data: {
+                ...(entry.master_honor_id !== undefined
+                  ? { master_honor_id: entry.master_honor_id }
+                  : {}),
+                name: entry.name,
+                master_image: entry.master_image,
+                active: entry.active,
+                applicability_scope: entry.applicability_scope,
+                philosophy: entry.philosophy,
+                notes: entry.notes,
+              },
+              select: { master_honor_id: true },
+            })
+          ).master_honor_id;
+      if (!existing && !affectedMasterHonorIds.includes(masterHonorId)) {
+        affectedMasterHonorIds.push(masterHonorId);
+      }
+
+      if (existing) {
+        await tx.master_honors.update({
+          where: { master_honor_id: masterHonorId },
+          data: {
+            name: entry.name,
+            master_image: entry.master_image,
+            active: entry.active,
+            applicability_scope: entry.applicability_scope,
+            philosophy: entry.philosophy,
+            notes: entry.notes,
+            modified_at: new Date(),
+          },
+        });
+      }
+
+      await syncMasterHonorRules(tx, masterHonorId, entry);
+    }
+  }, MASTER_HONOR_RULES_IMPORT_TRANSACTION_OPTIONS);
 
   return {
     ...summary,

@@ -100,10 +100,7 @@ function superAdminActor(): CamporeeOrderActor {
   });
 }
 
-function clubActor(
-  role: string,
-  sectionId = SECTION_11,
-): CamporeeOrderActor {
+function clubActor(role: string, sectionId = SECTION_11): CamporeeOrderActor {
   return baseActor({
     userId: `club-${role}`,
     localFieldId: LF_10,
@@ -238,7 +235,9 @@ function requestFor(
 describe('resolveCamporeeOrderActor', () => {
   it('throws GUARD_USER_NOT_AUTHENTICATED without a user', () => {
     expect(() =>
-      resolveCamporeeOrderActor(requestFor({ userId: null, clubRole: 'director' })),
+      resolveCamporeeOrderActor(
+        requestFor({ userId: null, clubRole: 'director' }),
+      ),
     ).toThrow(
       expect.objectContaining({ code: ErrorCode.GUARD_USER_NOT_AUTHENTICATED }),
     );
@@ -404,9 +403,9 @@ describe('canManageCatalog', () => {
     expect(canManageCatalog(actor, lf10Owner)).toBe(true);
     expect(canManageCatalog(actor, union2Owner)).toBe(true);
     expect(canManageCatalog(actor, lf11Owner)).toBe(false);
-    expect(
-      canManageCatalog(actor, { scope: 'UNION', unionId: UNION_3 }),
-    ).toBe(false);
+    expect(canManageCatalog(actor, { scope: 'UNION', unionId: UNION_3 })).toBe(
+      false,
+    );
   });
 
   it('does not let LF create or mutate union-owned products', () => {
@@ -558,8 +557,11 @@ describe('canReviewPayment / authorize / deliver', () => {
     expect(canReviewPayment(unconfiguredLf, LF_10)).toBe(false);
     expect(canReviewPayment(unconfiguredUnion, LF_10)).toBe(false);
     expect(canReviewPayment(unconfiguredAdmin, LF_10)).toBe(false);
-    expect(canManageCatalog(unconfiguredLf, { scope: 'LOCAL_FIELD', localFieldId: LF_10 })).toBe(
-      false,
-    );
+    expect(
+      canManageCatalog(unconfiguredLf, {
+        scope: 'LOCAL_FIELD',
+        localFieldId: LF_10,
+      }),
+    ).toBe(false);
   });
 });

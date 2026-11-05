@@ -28,9 +28,7 @@ describe('YearCutCronService', () => {
       release: jest.fn().mockResolvedValue(undefined),
     };
     cronLogger = {
-      track: jest.fn(async (_name: string, fn: () => Promise<unknown>) =>
-        fn(),
-      ),
+      track: jest.fn(async (_name: string, fn: () => Promise<unknown>) => fn()),
       trackSkipped: jest.fn().mockResolvedValue(undefined),
     };
 

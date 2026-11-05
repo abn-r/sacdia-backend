@@ -24,7 +24,9 @@ const buildRequest = (overrides: Record<string, unknown> = {}) => ({
   authorizationProfile: {
     authorization: {
       grants: {
-        global_roles: [{ role_name: 'director-lf', permissions: [], scope: {} }],
+        global_roles: [
+          { role_name: 'director-lf', permissions: [], scope: {} },
+        ],
       },
       effective: {
         permissions: ['certifications:review'],
@@ -48,9 +50,7 @@ describe('CertificationReviewController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CertificationReviewController],
-      providers: [
-        { provide: CertificationReviewService, useValue: service },
-      ],
+      providers: [{ provide: CertificationReviewService, useValue: service }],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
@@ -84,7 +84,7 @@ describe('CertificationReviewController', () => {
   describe('actor resolution', () => {
     it('missing authorizationProfile → GUARD_USER_NOT_AUTHENTICATED', async () => {
       await expect(
-        controller.getTray({ user: { sub: REVIEWER_ID } } as any),
+        controller.getTray({ user: { sub: REVIEWER_ID } }),
       ).rejects.toMatchObject({ code: ErrorCode.GUARD_USER_NOT_AUTHENTICATED });
     });
 
@@ -110,7 +110,9 @@ describe('CertificationReviewController', () => {
         authorizationProfile: {
           authorization: {
             grants: {
-              global_roles: [{ role_name: 'admin', permissions: [], scope: {} }],
+              global_roles: [
+                { role_name: 'admin', permissions: [], scope: {} },
+              ],
             },
             effective: {
               permissions: ['certifications:review'],

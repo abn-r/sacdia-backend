@@ -10,17 +10,16 @@ const AWARDED_RECORD_ID = 1000;
 
 const awardApprovedRows = (
   honors: Array<{ honorId: number; categoryId: number | null }>,
-) => honors.map(({ honorId, categoryId }) => ({
-  honors: { honor_id: honorId, honors_category_id: categoryId },
-}));
+) =>
+  honors.map(({ honorId, categoryId }) => ({
+    honors: { honor_id: honorId, honors_category_id: categoryId },
+  }));
 
-const createExplicitGroup = (
-  args: {
-    groupId: number;
-    minimumRequired: number;
-    optionHonors: number[][];
-  },
-) => ({
+const createExplicitGroup = (args: {
+  groupId: number;
+  minimumRequired: number;
+  optionHonors: number[][];
+}) => ({
   group_id: args.groupId,
   group_type: master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS,
   minimum_required: args.minimumRequired,
@@ -57,8 +56,7 @@ const createMasterHonor = (overrides: Record<string, unknown> = {}) => ({
   master_honor_id: 1,
   name: 'Honores de Base',
   active: true,
-  applicability_scope:
-    master_honor_applicability_scope_enum.ALL as const,
+  applicability_scope: master_honor_applicability_scope_enum.ALL as const,
   master_honor_divisions: [],
   requirement_groups: [],
   ...overrides,
@@ -123,7 +121,9 @@ describe('MasterHonorsEvaluatorService', () => {
     tx.master_honors.findMany.mockResolvedValue(rows);
   };
 
-  const mockApprovedHonors = (rows: Array<{ honorId: number; categoryId: number | null }>) => {
+  const mockApprovedHonors = (
+    rows: Array<{ honorId: number; categoryId: number | null }>,
+  ) => {
     tx.users_honors.findMany.mockResolvedValue(awardApprovedRows(rows));
   };
 
@@ -421,13 +421,15 @@ describe('MasterHonorsEvaluatorService', () => {
       });
     });
 
-    tx.master_honor_evaluation_history.create.mockImplementation((payload: any) => {
-      order.push('history');
-      return Promise.resolve({
-        history_id: 10,
-        ...payload.data,
-      });
-    });
+    tx.master_honor_evaluation_history.create.mockImplementation(
+      (payload: any) => {
+        order.push('history');
+        return Promise.resolve({
+          history_id: 10,
+          ...payload.data,
+        });
+      },
+    );
 
     notificationsServiceMock.notifySafe.mockImplementation(async () => {
       order.push('notify');
@@ -523,9 +525,9 @@ describe('MasterHonorsEvaluatorService', () => {
 
     expect(result.snapshot.groups[0].current_count).toBe(7);
     expect(result.status).toBe(user_master_honor_status_enum.AWARDED);
-    expect(result.snapshot.groups[0].matched_options?.[0].matched_honor_ids).toEqual(
-      [1],
-    );
+    expect(
+      result.snapshot.groups[0].matched_options?.[0].matched_honor_ids,
+    ).toEqual([1]);
   });
 
   it('awards from category count when 7 approved honors exist in category', async () => {
@@ -821,7 +823,9 @@ describe('MasterHonorsEvaluatorService', () => {
 
     expect(result.status).toBe(user_master_honor_status_enum.AWARDED);
     expect(result.transition).toBe('RECOVERED');
-    expect(result.status_reason).toBe(user_master_honor_status_reason_enum.RECOVERED);
+    expect(result.status_reason).toBe(
+      user_master_honor_status_reason_enum.RECOVERED,
+    );
     expect(tx.master_honor_evaluation_history.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

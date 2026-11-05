@@ -182,9 +182,9 @@ describe('AnnualRankingConfigService', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(configRow);
 
-    await expect(
-      service.create(axisDto as any, USER_ID),
-    ).rejects.toBeInstanceOf(AppConflictException);
+    await expect(service.create(axisDto, USER_ID)).rejects.toBeInstanceOf(
+      AppConflictException,
+    );
 
     expect(prisma.annual_ranking_configs.create).not.toHaveBeenCalled();
   });
@@ -201,7 +201,7 @@ describe('AnnualRankingConfigService', () => {
       count: 3,
     });
 
-    const result = await service.create(axisDto as any, USER_ID);
+    const result = await service.create(axisDto, USER_ID);
 
     expect(result).toBe(createdConfigWithAxes);
     expect(prisma.annual_ranking_configs.create).toHaveBeenCalledWith({
@@ -269,11 +269,9 @@ describe('AnnualRankingConfigService', () => {
       annual_ranking_config_id: 'union-config-id',
     });
 
-    await expect(service.create(axisDto as any, USER_ID)).rejects.toMatchObject(
-      {
-        code: ErrorCode.ANNUAL_RANKING_UNION_SCOPE_CONFLICT,
-      },
-    );
+    await expect(service.create(axisDto, USER_ID)).rejects.toMatchObject({
+      code: ErrorCode.ANNUAL_RANKING_UNION_SCOPE_CONFLICT,
+    });
 
     expect(prisma.annual_ranking_configs.create).not.toHaveBeenCalled();
   });
@@ -297,7 +295,7 @@ describe('AnnualRankingConfigService', () => {
       count: 3,
     });
 
-    await service.create(unionDto as any, USER_ID);
+    await service.create(unionDto, USER_ID);
 
     expect(prisma.annual_ranking_configs.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -331,7 +329,7 @@ describe('AnnualRankingConfigService', () => {
               ? { ...axis, max_points: 4000 }
               : axis,
           ),
-        } as any,
+        },
         USER_ID,
       ),
     ).rejects.toMatchObject({
@@ -358,7 +356,7 @@ describe('AnnualRankingConfigService', () => {
                 }
               : axis,
           ),
-        } as any,
+        },
         USER_ID,
       ),
     ).rejects.toMatchObject({
@@ -390,7 +388,7 @@ describe('AnnualRankingConfigService', () => {
               sort_order: 2,
             },
           ],
-        } as any,
+        },
         USER_ID,
       ),
     ).rejects.toMatchObject({
@@ -419,7 +417,7 @@ describe('AnnualRankingConfigService', () => {
             },
             axisDto.axes[1],
           ],
-        } as any,
+        },
         USER_ID,
       ),
     ).rejects.toMatchObject({
@@ -445,7 +443,7 @@ describe('AnnualRankingConfigService', () => {
       count: 3,
     });
 
-    await service.create(legacyFlatDto as any, USER_ID);
+    await service.create(legacyFlatDto, USER_ID);
 
     expect(
       prisma.annual_ranking_component_configs.createMany,
@@ -477,7 +475,7 @@ describe('AnnualRankingConfigService', () => {
               ],
             },
           ],
-        } as any,
+        },
         USER_ID,
       ),
     ).rejects.toMatchObject({
@@ -635,7 +633,7 @@ describe('AnnualRankingConfigService', () => {
       })),
     };
 
-    const result = await service.update(CONFIG_ID, updateDto as any, USER_ID);
+    const result = await service.update(CONFIG_ID, updateDto, USER_ID);
 
     expect(result.max_points).toBe(12000);
     expect(
@@ -712,7 +710,7 @@ describe('AnnualRankingConfigService', () => {
     };
 
     await expect(
-      service.update(CONFIG_ID, updateDto as any, USER_ID),
+      service.update(CONFIG_ID, updateDto, USER_ID),
     ).rejects.toMatchObject({
       code: ErrorCode.ANNUAL_RANKING_CONFIG_HAS_FOLDERS,
     });

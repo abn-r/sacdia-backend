@@ -105,9 +105,7 @@ export class CertificationEvidenceService {
       });
 
       if (progress) {
-        assertRequirementEditable(
-          progress.status as CertificationRequirementStatus,
-        );
+        assertRequirementEditable(progress.status);
       } else {
         progress = await tx.certification_section_progress.create({
           data: {
@@ -197,9 +195,7 @@ export class CertificationEvidenceService {
       if (!progress) {
         throw new AppNotFoundException(ErrorCode.RECORD_NOT_FOUND);
       }
-      assertRequirementEditable(
-        progress.status as CertificationRequirementStatus,
-      );
+      assertRequirementEditable(progress.status);
 
       const evidence = await tx.certification_evidences.findFirst({
         where: {
@@ -272,9 +268,7 @@ export class CertificationEvidenceService {
       const progress =
         evidence.certification_component_responses
           .certification_section_progress;
-      assertRequirementEditable(
-        progress.status as CertificationRequirementStatus,
-      );
+      assertRequirementEditable(progress.status);
 
       await tx.certification_evidences.update({
         where: { evidence_id: evidenceId },
@@ -303,9 +297,7 @@ export class CertificationEvidenceService {
       userId,
       enrollmentId,
     );
-    assertEnrollmentEditable(
-      enrollment.status as CertificationEnrollmentStatus,
-    );
+    assertEnrollmentEditable(enrollment.status);
     return enrollment;
   }
 
@@ -331,7 +323,7 @@ export class CertificationEvidenceService {
       });
     }
 
-    return section as SectionRecord;
+    return section;
   }
 
   private getFileEvidenceComponentOrThrow(

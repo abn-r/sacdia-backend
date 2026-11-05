@@ -77,7 +77,11 @@ export class RankingTierCalculatorService {
           normalizedPoints <= range.toPoints,
       ) ?? null;
 
-    const nextTier = this.resolveNextTier(normalizedPoints, ranges, currentTier);
+    const nextTier = this.resolveNextTier(
+      normalizedPoints,
+      ranges,
+      currentTier,
+    );
     const pointsToNextTier = nextTier
       ? Math.max(0, nextTier.fromPoints - normalizedPoints)
       : null;
@@ -103,9 +107,8 @@ export class RankingTierCalculatorService {
     }
 
     return (
-      [...ranges]
-        .reverse()
-        .find((range) => currentPoints < range.fromPoints) ?? null
+      [...ranges].reverse().find((range) => currentPoints < range.fromPoints) ??
+      null
     );
   }
 

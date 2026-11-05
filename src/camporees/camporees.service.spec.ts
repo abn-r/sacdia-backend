@@ -1955,9 +1955,13 @@ describe('CamporeesService', () => {
 
     it('rejects coordinator listing scoped only by users.local_field_id', async () => {
       await expect(
-        service.findAll({}, undefined, coordinatorAuth('coordinator', {
-          localFieldId: 7,
-        })),
+        service.findAll(
+          {},
+          undefined,
+          coordinatorAuth('coordinator', {
+            localFieldId: 7,
+          }),
+        ),
       ).rejects.toMatchObject({
         code: ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
       });

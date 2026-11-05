@@ -63,7 +63,9 @@ describe('InsurancePurchasesService', () => {
         { userId: 'u1', sectionIds: [7], localFieldId: 3 },
       ),
     ).rejects.toMatchObject({ code: 'FIELD_PAYMENT_ORDER_LEGACY_DISABLED' });
-    expect(fieldPaymentOrdersFlag.isEnabledForLocalField).toHaveBeenCalledWith(3);
+    expect(fieldPaymentOrdersFlag.isEnabledForLocalField).toHaveBeenCalledWith(
+      3,
+    );
     expect(tx.insurance_purchases.create).not.toHaveBeenCalled();
   });
 

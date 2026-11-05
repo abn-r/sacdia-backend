@@ -183,7 +183,11 @@ describe('CertificationRequirementsService', () => {
         null,
       );
 
-      const result = await service.getRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID);
+      const result = await service.getRequirement(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+      );
 
       expect(result.status).toBe('DRAFT');
       expect(result.components).toHaveLength(2);
@@ -214,7 +218,11 @@ describe('CertificationRequirementsService', () => {
         ],
       });
 
-      const result = await service.getRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID);
+      const result = await service.getRequirement(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+      );
 
       const textComponent = result.components.find(
         (c) => c.component_id === TEXT_COMPONENT_ID,
@@ -412,7 +420,10 @@ describe('CertificationRequirementsService', () => {
       await expect(
         service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
           responses: [
-            { component_id: HONOR_COMPONENT_ID, linked_user_honor_id: HONOR_ID },
+            {
+              component_id: HONOR_COMPONENT_ID,
+              linked_user_honor_id: HONOR_ID,
+            },
           ],
         }),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE });
@@ -452,11 +463,19 @@ describe('CertificationRequirementsService', () => {
         },
       ]);
 
-      const result = await service.saveDraft(USER_ID, ENROLLMENT_ID, SECTION_ID, {
-        responses: [
-          { component_id: HONOR_COMPONENT_ID, linked_user_honor_id: HONOR_ID },
-        ],
-      });
+      const result = await service.saveDraft(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+        {
+          responses: [
+            {
+              component_id: HONOR_COMPONENT_ID,
+              linked_user_honor_id: HONOR_ID,
+            },
+          ],
+        },
+      );
 
       const honorComponent = result.components.find(
         (c) => c.component_id === HONOR_COMPONENT_ID,
@@ -565,7 +584,12 @@ describe('CertificationRequirementsService', () => {
     it('TC17 - double submit: second call on an already-SUBMITTED requirement is rejected and does not duplicate the review event', async () => {
       wireHappyPath();
 
-      await service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto);
+      await service.submitRequirement(
+        USER_ID,
+        ENROLLMENT_ID,
+        SECTION_ID,
+        submitDto,
+      );
       expect(txMock.certification_review_events.create).toHaveBeenCalledTimes(
         1,
       );
@@ -577,7 +601,12 @@ describe('CertificationRequirementsService', () => {
       });
 
       await expect(
-        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto),
+        service.submitRequirement(
+          USER_ID,
+          ENROLLMENT_ID,
+          SECTION_ID,
+          submitDto,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
       expect(txMock.certification_review_events.create).toHaveBeenCalledTimes(
         1,
@@ -593,7 +622,12 @@ describe('CertificationRequirementsService', () => {
       });
 
       await expect(
-        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto),
+        service.submitRequirement(
+          USER_ID,
+          ENROLLMENT_ID,
+          SECTION_ID,
+          submitDto,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
     });
 
@@ -607,7 +641,12 @@ describe('CertificationRequirementsService', () => {
       });
 
       await expect(
-        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto),
+        service.submitRequirement(
+          USER_ID,
+          ENROLLMENT_ID,
+          SECTION_ID,
+          submitDto,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE });
       expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
     });
@@ -669,7 +708,9 @@ describe('CertificationRequirementsService', () => {
           }),
         });
         expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
-        expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+        expect(
+          txMock.certification_review_events.create,
+        ).not.toHaveBeenCalled();
       });
 
       it('TC19c - evidence relation not loaded at all is treated as incomplete (fail closed)', async () => {
@@ -764,7 +805,12 @@ describe('CertificationRequirementsService', () => {
       txMock.certification_section_progress.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.submitRequirement(USER_ID, ENROLLMENT_ID, SECTION_ID, submitDto),
+        service.submitRequirement(
+          USER_ID,
+          ENROLLMENT_ID,
+          SECTION_ID,
+          submitDto,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_INCOMPLETE });
     });
 
@@ -905,7 +951,9 @@ describe('CertificationRequirementsService', () => {
           }),
         ).rejects.toMatchObject({ code: ErrorCode.CERT_REQUIREMENT_LOCKED });
         expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
-        expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+        expect(
+          txMock.certification_review_events.create,
+        ).not.toHaveBeenCalled();
       },
     );
 

@@ -1,8 +1,5 @@
 export type HonorValidationStatus =
-  | 'IN_PROGRESS'
-  | 'PENDING_REVIEW'
-  | 'APPROVED'
-  | 'REJECTED';
+  'IN_PROGRESS' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
 
 export type HonorReviewAction = 'approved' | 'rejected';
 

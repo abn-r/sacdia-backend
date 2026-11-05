@@ -231,7 +231,9 @@ describe('CamporeeEventTemplatesService', () => {
         ACTOR_ID,
       );
 
-      expect(prisma.camporee_event_template_rubrics.create).toHaveBeenCalledTimes(2);
+      expect(
+        prisma.camporee_event_template_rubrics.create,
+      ).toHaveBeenCalledTimes(2);
       expect(prisma.camporee_event_templates.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ scoring_enabled: true }),

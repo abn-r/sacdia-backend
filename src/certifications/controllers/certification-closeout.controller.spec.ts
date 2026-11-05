@@ -14,8 +14,7 @@ const REVIEWER_ID = 'reviewer-uuid-001';
 const LOCAL_FIELD_ID = 10;
 const ENROLLMENT_ID = 42;
 
-const ENROLLMENT_BASE =
-  'users/:userId/certification-enrollments/:enrollmentId';
+const ENROLLMENT_BASE = 'users/:userId/certification-enrollments/:enrollmentId';
 
 const makeServiceMock = () => ({
   presignCloseoutEvidence: jest.fn(),
@@ -33,7 +32,9 @@ const buildRequest = (overrides: Record<string, unknown> = {}) => ({
   authorizationProfile: {
     authorization: {
       grants: {
-        global_roles: [{ role_name: 'director-lf', permissions: [], scope: {} }],
+        global_roles: [
+          { role_name: 'director-lf', permissions: [], scope: {} },
+        ],
       },
       effective: {
         permissions: ['certifications:review'],
@@ -57,9 +58,7 @@ describe('CertificationCloseoutController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CertificationCloseoutController],
-      providers: [
-        { provide: CertificationCloseoutService, useValue: service },
-      ],
+      providers: [{ provide: CertificationCloseoutService, useValue: service }],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
@@ -160,7 +159,7 @@ describe('CertificationCloseoutController', () => {
       const result = await controller.presignCloseoutEvidence(
         USER_ID,
         ENROLLMENT_ID,
-        dto as any,
+        dto,
       );
 
       expect(service.presignCloseoutEvidence).toHaveBeenCalledWith(
@@ -187,7 +186,7 @@ describe('CertificationCloseoutController', () => {
       const result = await controller.confirmCloseoutEvidence(
         USER_ID,
         ENROLLMENT_ID,
-        dto as any,
+        dto,
       );
 
       expect(service.confirmCloseoutEvidence).toHaveBeenCalledWith(
@@ -220,7 +219,7 @@ describe('CertificationCloseoutController', () => {
   describe('actor resolution', () => {
     it('missing authorizationProfile → GUARD_USER_NOT_AUTHENTICATED', async () => {
       await expect(
-        controller.getFinalTray({ user: { sub: REVIEWER_ID } } as any),
+        controller.getFinalTray({ user: { sub: REVIEWER_ID } }),
       ).rejects.toMatchObject({ code: ErrorCode.GUARD_USER_NOT_AUTHENTICATED });
     });
 
@@ -243,7 +242,9 @@ describe('CertificationCloseoutController', () => {
         authorizationProfile: {
           authorization: {
             grants: {
-              global_roles: [{ role_name: 'super-admin', permissions: [], scope: {} }],
+              global_roles: [
+                { role_name: 'super-admin', permissions: [], scope: {} },
+              ],
             },
             effective: {
               permissions: ['certifications:certify'],
@@ -264,7 +265,9 @@ describe('CertificationCloseoutController', () => {
 
   describe('reviewer endpoints', () => {
     it('getFinalTray delegates to the service', async () => {
-      service.getFinalTray.mockResolvedValue([{ enrollment_id: ENROLLMENT_ID }]);
+      service.getFinalTray.mockResolvedValue([
+        { enrollment_id: ENROLLMENT_ID },
+      ]);
 
       const result = await controller.getFinalTray(buildRequest() as any);
 

@@ -296,8 +296,8 @@ describe('ecclesiasticalYearName', () => {
   });
 
   it('falls back to the start year when end_date is missing', () => {
-    expect(
-      ecclesiasticalYearName({ start_date: new Date('2026-01-01') }),
-    ).toBe('2026');
+    expect(ecclesiasticalYearName({ start_date: new Date('2026-01-01') })).toBe(
+      '2026',
+    );
   });
 });

@@ -141,7 +141,8 @@ describe('CreateMasterHonorDto', () => {
   it('accepts positive division_ids', async () => {
     const dto = plainToInstance(CreateMasterHonorDto, {
       name: 'Maestría de Prueba',
-      applicability_scope: master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
+      applicability_scope:
+        master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
       division_ids: [1, 2],
     });
 
@@ -153,7 +154,8 @@ describe('CreateMasterHonorDto', () => {
   it('rejects zero or negative division_ids', async () => {
     const dto = plainToInstance(CreateMasterHonorDto, {
       name: 'Maestría de Prueba',
-      applicability_scope: master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
+      applicability_scope:
+        master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
       division_ids: [0, -1],
     });
 
@@ -201,9 +203,7 @@ describe('AdminPhaseECatalogsService', () => {
       providers,
     }).compile();
 
-    return module.get<AdminPhaseECatalogsService>(
-      AdminPhaseECatalogsService,
-    );
+    return module.get<AdminPhaseECatalogsService>(AdminPhaseECatalogsService);
   };
 
   beforeEach(async () => {
@@ -247,7 +247,7 @@ describe('AdminPhaseECatalogsService', () => {
           available_until_year_id: null,
           min_duration_years: 1,
           max_duration_years: 2,
-        } as any,
+        },
         ACTOR_ID,
       );
 
@@ -272,7 +272,7 @@ describe('AdminPhaseECatalogsService', () => {
         {
           name: 'Compañero',
           club_type_id: 1,
-        } as any,
+        },
         ACTOR_ID,
       );
 
@@ -302,7 +302,7 @@ describe('AdminPhaseECatalogsService', () => {
           available_until_year_id: 2026,
           min_duration_years: 2,
           max_duration_years: 3,
-        } as any,
+        },
         ACTOR_ID,
       );
 
@@ -345,7 +345,7 @@ describe('AdminPhaseECatalogsService', () => {
             club_type_id: 1,
             min_duration_years: 3,
             max_duration_years: 2,
-          } as any,
+          },
           ACTOR_ID,
         ),
       ).rejects.toThrow(BadRequestException);
@@ -358,20 +358,20 @@ describe('AdminPhaseECatalogsService', () => {
       txMock.master_honors.create.mockResolvedValue({
         master_honor_id: 11,
         name: 'Maestro',
-        applicability_scope:
-          master_honor_applicability_scope_enum.ALL,
+        applicability_scope: master_honor_applicability_scope_enum.ALL,
       });
       txMock.master_honor_divisions.deleteMany.mockResolvedValue({ count: 0 });
-      txMock.master_honor_requirement_groups.create.mockResolvedValue({ group_id: 1 });
+      txMock.master_honor_requirement_groups.create.mockResolvedValue({
+        group_id: 1,
+      });
 
       await service.createMasterHonor(
         {
           name: 'Maestro',
           philosophy: 'Filosofía de servicio',
           notes: 'Notas internas',
-          applicability_scope:
-            master_honor_applicability_scope_enum.ALL,
-        } as any,
+          applicability_scope: master_honor_applicability_scope_enum.ALL,
+        },
         ACTOR_ID,
       );
 
@@ -403,9 +403,8 @@ describe('AdminPhaseECatalogsService', () => {
         {
           philosophy: 'Filosofía actualizada',
           notes: 'Notas actualizadas',
-          applicability_scope:
-            master_honor_applicability_scope_enum.ALL,
-        } as any,
+          applicability_scope: master_honor_applicability_scope_enum.ALL,
+        },
         ACTOR_ID,
       );
 
@@ -475,14 +474,16 @@ describe('AdminPhaseECatalogsService', () => {
         9,
         {
           notes: 'Solo actualizar notas',
-        } as any,
+        },
         ACTOR_ID,
       );
 
       expect(
         txMock.master_honor_requirement_groups.deleteMany,
       ).not.toHaveBeenCalled();
-      expect(txMock.master_honor_requirement_groups.create).not.toHaveBeenCalled();
+      expect(
+        txMock.master_honor_requirement_groups.create,
+      ).not.toHaveBeenCalled();
     });
 
     it('enqueues a recalculation job and returns queued=true when queue is available', async () => {
@@ -537,7 +538,7 @@ describe('AdminPhaseECatalogsService', () => {
             applicability_scope:
               master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
             division_ids: [],
-          } as any,
+          },
           ACTOR_ID,
         ),
       ).rejects.toThrow(BadRequestException);
@@ -558,7 +559,7 @@ describe('AdminPhaseECatalogsService', () => {
           name: 'Maestro',
           applicability_scope: master_honor_applicability_scope_enum.ALL,
           division_ids: [1, 2],
-        } as any,
+        },
         ACTOR_ID,
       );
 
@@ -601,7 +602,7 @@ describe('AdminPhaseECatalogsService', () => {
                 options: [],
               },
             ],
-          } as any,
+          },
           ACTOR_ID,
         ),
       ).rejects.toThrow(BadRequestException);
@@ -622,7 +623,7 @@ describe('AdminPhaseECatalogsService', () => {
                 options: [],
               },
             ],
-          } as any,
+          },
           ACTOR_ID,
         ),
       ).rejects.toThrow(BadRequestException);
@@ -704,7 +705,11 @@ describe('AdminPhaseECatalogsService', () => {
         module_id: 12,
         relation_type: 'RECOMMENDED',
         active: true,
-        honor: { honor_id: 50, name: 'Nudos', material_url: 'https://cdn/nudos.pdf' },
+        honor: {
+          honor_id: 50,
+          name: 'Nudos',
+          material_url: 'https://cdn/nudos.pdf',
+        },
         module: { module_id: 12, name: 'Vida al aire libre' },
       });
 

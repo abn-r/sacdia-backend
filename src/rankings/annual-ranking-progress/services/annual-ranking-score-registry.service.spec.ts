@@ -66,7 +66,10 @@ describe('AnnualRankingScoreRegistryService', () => {
           provide: InstitutionalDataCompletenessScoreService,
           useValue: institutionalDataScore,
         },
-        { provide: ActivitiesRegisteredScoreService, useValue: activitiesScore },
+        {
+          provide: ActivitiesRegisteredScoreService,
+          useValue: activitiesScore,
+        },
         {
           provide: AttendanceParticipationScoreService,
           useValue: attendanceScore,
@@ -163,7 +166,10 @@ describe('AnnualRankingScoreRegistryService', () => {
 
   it('resolves activities_registered to activities score', async () => {
     await expect(
-      service.scoreComponent({ component_key: 'activities_registered' }, context),
+      service.scoreComponent(
+        { component_key: 'activities_registered' },
+        context,
+      ),
     ).resolves.toMatchObject({
       score_pct: 66.67,
       source_status: 'available',

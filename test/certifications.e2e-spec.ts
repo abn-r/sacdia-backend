@@ -294,9 +294,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
         })
         .expect(400);
 
-      expect(
-        prismaMock.users_certifications.findFirst,
-      ).not.toHaveBeenCalled();
+      expect(prismaMock.users_certifications.findFirst).not.toHaveBeenCalled();
     });
 
     it('rejects a declared size over the limit with a stable domain error code', async () => {
@@ -361,9 +359,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
           upload_url: 'https://r2.example.com/signed-put',
         }),
       });
-      expect(
-        prismaMock.certification_evidences.create,
-      ).toHaveBeenCalledWith(
+      expect(prismaMock.certification_evidences.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             response_id: RESPONSE_ID,
@@ -475,9 +471,9 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
 
   describe('Scenario 2 — in-scope reviewer approves a SUBMITTED requirement', () => {
     it('lists the requirement in the review tray for the reviewer local field', async () => {
-      prismaMock.certification_section_progress.findMany.mockResolvedValueOnce(
-        [submittedProgress()],
-      );
+      prismaMock.certification_section_progress.findMany.mockResolvedValueOnce([
+        submittedProgress(),
+      ]);
 
       const response = await request(app.getHttpServer())
         .get('/api/v1/certifications/reviews/requirements')
@@ -502,9 +498,10 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
       prismaMock.users_certifications.updateMany.mockResolvedValueOnce({
         count: 1,
       });
-      prismaMock.certification_section_progress.update.mockResolvedValueOnce(
-        { ...submittedProgress(), status: 'APPROVED' },
-      );
+      prismaMock.certification_section_progress.update.mockResolvedValueOnce({
+        ...submittedProgress(),
+        status: 'APPROVED',
+      });
       prismaMock.certification_review_events.create.mockResolvedValueOnce({});
       prismaMock.users_certifications.findUniqueOrThrow.mockResolvedValueOnce(
         enrollment(),
@@ -512,9 +509,9 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
       prismaMock.certification_sections.findMany.mockResolvedValueOnce([
         { section_id: SECTION_ID, required: true },
       ]);
-      prismaMock.certification_section_progress.findMany.mockResolvedValueOnce(
-        [{ section_id: SECTION_ID, status: 'APPROVED' }],
-      );
+      prismaMock.certification_section_progress.findMany.mockResolvedValueOnce([
+        { section_id: SECTION_ID, status: 'APPROVED' },
+      ]);
       prismaMock.users_certifications.update.mockResolvedValueOnce({
         ...enrollment(),
         status: 'READY_FOR_CLOSEOUT',
@@ -583,7 +580,10 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
   // ==========================================================================
 
   describe('Scenario 4 — full closeout and certification', () => {
-    const readyEnrollment = () => ({ ...enrollment(), status: 'READY_FOR_CLOSEOUT' });
+    const readyEnrollment = () => ({
+      ...enrollment(),
+      status: 'READY_FOR_CLOSEOUT',
+    });
 
     it('presigns closeout (board proof) evidence', async () => {
       prismaMock.users_certifications.findFirst.mockResolvedValueOnce(
@@ -597,9 +597,9 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
         key: `enrollment-${ENROLLMENT_ID}/closeout/fixed-uuid.pdf`,
         expiresInSeconds: 900,
       });
-      prismaMock.certification_closeout_evidences.create.mockResolvedValueOnce(
-        { closeout_evidence_id: CLOSEOUT_EVIDENCE_ID },
-      );
+      prismaMock.certification_closeout_evidences.create.mockResolvedValueOnce({
+        closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
+      });
 
       const response = await request(app.getHttpServer())
         .post(
@@ -634,13 +634,11 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
         size: 102400,
         contentType: 'application/pdf',
       });
-      prismaMock.certification_closeout_evidences.update.mockResolvedValueOnce(
-        {
-          closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
-          upload_status: 'CONFIRMED',
-          review_status: 'PENDING',
-        },
-      );
+      prismaMock.certification_closeout_evidences.update.mockResolvedValueOnce({
+        closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
+        upload_status: 'CONFIRMED',
+        review_status: 'PENDING',
+      });
 
       const response = await request(app.getHttpServer())
         .post(
@@ -660,11 +658,14 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
       prismaMock.certification_sections.findMany.mockResolvedValueOnce([
         { section_id: SECTION_ID, required: true },
       ]);
-      prismaMock.certification_section_progress.findMany.mockResolvedValueOnce(
-        [{ section_id: SECTION_ID, status: 'APPROVED' }],
-      );
+      prismaMock.certification_section_progress.findMany.mockResolvedValueOnce([
+        { section_id: SECTION_ID, status: 'APPROVED' },
+      ]);
       prismaMock.certification_closeout_evidences.findFirst.mockResolvedValueOnce(
-        { closeout_evidence_id: CLOSEOUT_EVIDENCE_ID, upload_status: 'CONFIRMED' },
+        {
+          closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
+          upload_status: 'CONFIRMED',
+        },
       );
       prismaMock.users_certifications.update.mockResolvedValueOnce({});
       prismaMock.certification_closeout_evidences.update.mockResolvedValueOnce(
@@ -693,9 +694,7 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
       });
 
       const response = await request(app.getHttpServer())
-        .post(
-          `/api/v1/certifications/reviews/final/${ENROLLMENT_ID}/certify`,
-        )
+        .post(`/api/v1/certifications/reviews/final/${ENROLLMENT_ID}/certify`)
         .set(authHeaders(REVIEWER_OUT_OF_SCOPE_ID))
         .expect(403);
 
@@ -712,7 +711,10 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
         users: { local_field_id: IN_SCOPE_LOCAL_FIELD_ID },
       });
       prismaMock.certification_closeout_evidences.findFirst.mockResolvedValueOnce(
-        { closeout_evidence_id: CLOSEOUT_EVIDENCE_ID, review_status: 'SUBMITTED' },
+        {
+          closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
+          review_status: 'SUBMITTED',
+        },
       );
       prismaMock.certification_closeout_evidences.update.mockResolvedValueOnce(
         {},
@@ -742,11 +744,14 @@ describe('Certifications E2E — evidence, review tray, and closeout', () => {
       prismaMock.certification_sections.findMany.mockResolvedValueOnce([
         { section_id: SECTION_ID, required: true },
       ]);
-      prismaMock.certification_section_progress.findMany.mockResolvedValueOnce(
-        [{ section_id: SECTION_ID, status: 'APPROVED' }],
-      );
+      prismaMock.certification_section_progress.findMany.mockResolvedValueOnce([
+        { section_id: SECTION_ID, status: 'APPROVED' },
+      ]);
       prismaMock.certification_closeout_evidences.findFirst.mockResolvedValueOnce(
-        { closeout_evidence_id: CLOSEOUT_EVIDENCE_ID, review_status: 'APPROVED' },
+        {
+          closeout_evidence_id: CLOSEOUT_EVIDENCE_ID,
+          review_status: 'APPROVED',
+        },
       );
       prismaMock.users_certifications.update.mockResolvedValueOnce({});
       prismaMock.certification_review_events.create.mockResolvedValueOnce({});

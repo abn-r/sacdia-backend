@@ -15,24 +15,24 @@ const INACTIVE_2004 = {
 
 describe('classifyCertificateImportYear', () => {
   it('reports a missing period without choosing the current year', () => {
-    expect(classifyCertificateImportYear('1999-06-01', [INACTIVE_2004])).toEqual(
-      {
-        status: 'missing',
-        code: 'CERTIFICATE_IMPORT_YEAR_NOT_FOUND',
-        civilDate: '1999-06-01',
-      },
-    );
+    expect(
+      classifyCertificateImportYear('1999-06-01', [INACTIVE_2004]),
+    ).toEqual({
+      status: 'missing',
+      code: 'CERTIFICATE_IMPORT_YEAR_NOT_FOUND',
+      civilDate: '1999-06-01',
+    });
   });
 
   it('accepts one inactive period', () => {
-    expect(classifyCertificateImportYear('2004-06-01', [INACTIVE_2004])).toEqual(
-      {
-        status: 'resolved',
-        yearId: 4,
-        active: false,
-        civilDate: '2004-06-01',
-      },
-    );
+    expect(
+      classifyCertificateImportYear('2004-06-01', [INACTIVE_2004]),
+    ).toEqual({
+      status: 'resolved',
+      yearId: 4,
+      active: false,
+      civilDate: '2004-06-01',
+    });
   });
 
   it('reports two covering periods instead of picking the first', () => {
@@ -41,35 +41,40 @@ describe('classifyCertificateImportYear', () => {
       year_id: 5,
       active: true,
     };
-    expect(classifyCertificateImportYear('2004-06-01', [INACTIVE_2004, other]))
-      .toEqual({
-        status: 'ambiguous',
-        code: 'CERTIFICATE_IMPORT_YEAR_AMBIGUOUS',
-        civilDate: '2004-06-01',
-        yearIds: [4, 5],
-      });
+    expect(
+      classifyCertificateImportYear('2004-06-01', [INACTIVE_2004, other]),
+    ).toEqual({
+      status: 'ambiguous',
+      code: 'CERTIFICATE_IMPORT_YEAR_AMBIGUOUS',
+      civilDate: '2004-06-01',
+      yearIds: [4, 5],
+    });
   });
 
   it('includes both inclusive boundaries and excludes the days outside', () => {
-    expect(classifyCertificateImportYear('2004-01-01', [INACTIVE_2004]).status)
-      .toBe('resolved');
-    expect(classifyCertificateImportYear('2004-12-31', [INACTIVE_2004]).status)
-      .toBe('resolved');
-    expect(classifyCertificateImportYear('2003-12-31', [INACTIVE_2004]).status)
-      .toBe('missing');
-    expect(classifyCertificateImportYear('2005-01-01', [INACTIVE_2004]).status)
-      .toBe('missing');
+    expect(
+      classifyCertificateImportYear('2004-01-01', [INACTIVE_2004]).status,
+    ).toBe('resolved');
+    expect(
+      classifyCertificateImportYear('2004-12-31', [INACTIVE_2004]).status,
+    ).toBe('resolved');
+    expect(
+      classifyCertificateImportYear('2003-12-31', [INACTIVE_2004]).status,
+    ).toBe('missing');
+    expect(
+      classifyCertificateImportYear('2005-01-01', [INACTIVE_2004]).status,
+    ).toBe('missing');
   });
 
   it('keeps the civil date when Mexico City would move UTC midnight to the previous day', () => {
     const zoned = new ZonedBusinessTimeService();
     const utcMidnight = new Date('2004-01-01T00:00:00.000Z');
-    expect(
-      zoned.businessDate(utcMidnight, ECCLESIASTICAL_YEAR_TIMEZONE),
-    ).toBe('2003-12-31');
-    expect(classifyCertificateImportYear('2004-01-01', [INACTIVE_2004])).toMatchObject(
-      { status: 'resolved', yearId: 4 },
+    expect(zoned.businessDate(utcMidnight, ECCLESIASTICAL_YEAR_TIMEZONE)).toBe(
+      '2003-12-31',
     );
+    expect(
+      classifyCertificateImportYear('2004-01-01', [INACTIVE_2004]),
+    ).toMatchObject({ status: 'resolved', yearId: 4 });
   });
 });
 

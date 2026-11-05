@@ -71,8 +71,8 @@ describe('FinancesService', () => {
           provide: CatalogCacheService,
           useValue: {
             getEpoch: jest.fn().mockResolvedValue(0),
-            getOrSet: jest.fn(
-              (_key: string, loader: () => Promise<unknown>) => loader(),
+            getOrSet: jest.fn((_key: string, loader: () => Promise<unknown>) =>
+              loader(),
             ),
           },
         },

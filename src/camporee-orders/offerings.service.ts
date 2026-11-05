@@ -193,9 +193,7 @@ function endOfZonedCalendarDate(date: Date, timeZone: string): Date {
   return new Date(startNext.getTime() - 1);
 }
 
-function settingsFrom(
-  camporee: CamporeeOrderSettings,
-): CamporeeOrderSettings {
+function settingsFrom(camporee: CamporeeOrderSettings): CamporeeOrderSettings {
   return {
     orders_enabled: camporee.orders_enabled,
     orders_opens_at: camporee.orders_opens_at,
@@ -203,7 +201,9 @@ function settingsFrom(
   };
 }
 
-function toNullableDate(value: string | null | undefined): Date | null | undefined {
+function toNullableDate(
+  value: string | null | undefined,
+): Date | null | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -360,8 +360,7 @@ export class OfferingsService {
         if (existing) {
           await tx.camporee_order_offerings.update({
             where: {
-              camporee_order_offering_id:
-                existing.camporee_order_offering_id,
+              camporee_order_offering_id: existing.camporee_order_offering_id,
             },
             data: payload,
           });
@@ -468,7 +467,7 @@ export class OfferingsService {
       if (!camporee) {
         throw new AppNotFoundException(ErrorCode.CAMPOREE_ORDER_NOT_FOUND);
       }
-      return camporee as LocalCamporeeRow;
+      return camporee;
     }
 
     const camporee = await this.prisma.union_camporees.findUnique({
@@ -478,6 +477,6 @@ export class OfferingsService {
     if (!camporee) {
       throw new AppNotFoundException(ErrorCode.CAMPOREE_ORDER_NOT_FOUND);
     }
-    return camporee as UnionCamporeeRow;
+    return camporee;
   }
 }

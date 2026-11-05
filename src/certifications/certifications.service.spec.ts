@@ -451,7 +451,9 @@ describe('CertificationsService', () => {
       );
       mockEligibilityService.evaluateForVersion.mockResolvedValue({
         eligible: false,
-        rules: [{ type: 'MIN_AGE', satisfied: false, reason_code: 'AGE_TOO_LOW' }],
+        rules: [
+          { type: 'MIN_AGE', satisfied: false, reason_code: 'AGE_TOO_LOW' },
+        ],
         reason_code: null,
       });
 
@@ -1017,9 +1019,7 @@ describe('CertificationsService', () => {
         code: ErrorCode.CERT_LEGACY_ENDPOINT_DEPRECATED,
         status: 410,
       });
-      expect(
-        txMock.certification_sections.findFirst,
-      ).not.toHaveBeenCalled();
+      expect(txMock.certification_sections.findFirst).not.toHaveBeenCalled();
     });
 
     it('TC29 - section does not belong to module/certification → BadRequestException', async () => {
@@ -1087,7 +1087,12 @@ describe('CertificationsService', () => {
       });
     });
 
-    it.each(['ENROLLED', 'IN_PROGRESS', 'READY_FOR_CLOSEOUT', 'CHANGES_REQUESTED'])(
+    it.each([
+      'ENROLLED',
+      'IN_PROGRESS',
+      'READY_FOR_CLOSEOUT',
+      'CHANGES_REQUESTED',
+    ])(
       'TC31b - abandonable from %s → WITHDRAWN + active=false',
       async (status) => {
         txMock.users_certifications.findFirst.mockResolvedValue(
@@ -1125,7 +1130,9 @@ describe('CertificationsService', () => {
         });
         expect(txMock.users_certifications.updateMany).not.toHaveBeenCalled();
         expect(txMock.users_certifications.update).not.toHaveBeenCalled();
-        expect(txMock.certification_review_events.create).not.toHaveBeenCalled();
+        expect(
+          txMock.certification_review_events.create,
+        ).not.toHaveBeenCalled();
       },
     );
 

@@ -135,9 +135,7 @@ describe('CertificateBulkImportsService catalog and date range (B1)', () => {
     });
 
     it('translates the name for the request locale', async () => {
-      jest
-        .spyOn(I18nContext, 'current')
-        .mockReturnValue({ lang: 'en' } as never);
+      jest.spyOn(I18nContext, 'current').mockReturnValue({ lang: 'en' });
       prisma.classes.findMany.mockResolvedValue([rows[2]]);
 
       const [instructor] = await service.listClassCatalog();

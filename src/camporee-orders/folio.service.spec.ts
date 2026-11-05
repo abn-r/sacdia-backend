@@ -6,9 +6,7 @@ describe('CamporeeOrderFolioService', () => {
   function buildTx(lastFolio: number) {
     return {
       $executeRawUnsafe: jest.fn().mockResolvedValue(1),
-      $queryRawUnsafe: jest
-        .fn()
-        .mockResolvedValue([{ last_folio: lastFolio }]),
+      $queryRawUnsafe: jest.fn().mockResolvedValue([{ last_folio: lastFolio }]),
     };
   }
 

@@ -19,9 +19,9 @@ describe('request-body-limits', () => {
 
   it('allows large JSON only on explicit admin catalog prefixes', () => {
     expect(pathnameNeedsLargeJsonBody('/api/v1/admin/catalogs')).toBe(true);
-    expect(pathnameNeedsLargeJsonBody('/api/v1/admin/catalogs/countries/1')).toBe(
-      true,
-    );
+    expect(
+      pathnameNeedsLargeJsonBody('/api/v1/admin/catalogs/countries/1'),
+    ).toBe(true);
     expect(jsonBodyLimitForPath('/api/v1/admin/catalogs/unions')).toBe(
       LARGE_JSON_BODY_LIMIT,
     );

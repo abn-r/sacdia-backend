@@ -208,24 +208,27 @@ pgIt('has SQL parity against PostgreSQL', async () => {
   }
 });
 
-pgIt('resolves ambiguous active columns when the fragment is qualified', async () => {
-  const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
-    const fragment = policy.toSql(context('America/Cancun'), 'cra');
-    const query = Prisma.sql`
+pgIt(
+  'resolves ambiguous active columns when the fragment is qualified',
+  async () => {
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const fragment = policy.toSql(context('America/Cancun'), 'cra');
+      const query = Prisma.sql`
       SELECT (${fragment}) AS effective
       FROM (VALUES (
         TRUE::boolean, 'active'::text, '2025-01-01'::date,
         NULL::date, NULL::timestamptz
       )) AS cra(active, status, start_date, end_date, expires_at)
       CROSS JOIN (VALUES (FALSE::boolean)) AS users(active)`;
-    const result = await client.query<{ effective: boolean }>(
-      query.text,
-      query.values,
-    );
-    expect(result.rows[0].effective).toBe(true);
-  } finally {
-    await client.end();
-  }
-});
+      const result = await client.query<{ effective: boolean }>(
+        query.text,
+        query.values,
+      );
+      expect(result.rows[0].effective).toBe(true);
+    } finally {
+      await client.end();
+    }
+  },
+);

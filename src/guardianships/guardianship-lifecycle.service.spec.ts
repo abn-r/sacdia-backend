@@ -66,7 +66,7 @@ function setup() {
     prisma,
     cache as any,
     notifications as any,
-    deviceRevoker as any,
+    deviceRevoker,
   );
   return { service, tx, prisma, cache, notifications, deviceRevoker };
 }

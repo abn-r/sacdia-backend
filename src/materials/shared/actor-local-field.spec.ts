@@ -9,9 +9,7 @@ function snapshot(options: {
 }): AuthorizationSnapshot {
   return {
     grants: {
-      global_roles: [
-        { role_name: options.role, permissions: [], scope: {} },
-      ],
+      global_roles: [{ role_name: options.role, permissions: [], scope: {} }],
       club_assignments: [],
       direct_permissions: [],
     },

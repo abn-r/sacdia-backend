@@ -537,11 +537,7 @@ describe('Camporees E2E Tests', () => {
   // ========================================
   describe('POST /api/v1/camporees/:camporeeId/register', () => {
     type ParticipantLockName =
-      | 'camporee'
-      | 'enrollment'
-      | 'user'
-      | 'assignments'
-      | 'profile';
+      'camporee' | 'enrollment' | 'user' | 'assignments' | 'profile';
 
     type ParticipantGateOptions = {
       camporeeId?: number;

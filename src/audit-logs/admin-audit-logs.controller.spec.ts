@@ -39,18 +39,18 @@ describe('AdminAuditLogsController', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('requires super-admin, audit:read, global resource, and skips HTTP audit', () => {
-    expect(Reflect.getMetadata(GLOBAL_ROLES_KEY, AdminAuditLogsController)).toEqual(
-      ['super-admin'],
-    );
-    expect(Reflect.getMetadata(PERMISSIONS_KEY, AdminAuditLogsController)).toEqual(
-      { permissions: ['audit:read'], mode: 'all' },
-    );
+    expect(
+      Reflect.getMetadata(GLOBAL_ROLES_KEY, AdminAuditLogsController),
+    ).toEqual(['super-admin']);
+    expect(
+      Reflect.getMetadata(PERMISSIONS_KEY, AdminAuditLogsController),
+    ).toEqual({ permissions: ['audit:read'], mode: 'all' });
     expect(
       Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, AdminAuditLogsController),
     ).toEqual({ type: 'global' });
-    expect(Reflect.getMetadata(AUDIT_OPTIONS_KEY, AdminAuditLogsController)).toEqual(
-      { skip: true },
-    );
+    expect(
+      Reflect.getMetadata(AUDIT_OPTIONS_KEY, AdminAuditLogsController),
+    ).toEqual({ skip: true });
   });
 
   it('lists through the service and wraps the page', async () => {
