@@ -1560,6 +1560,42 @@ describe('investiture authorization requests', () => {
     expect(changed.people[0].investiture_date).toBe('2026-11-20');
   });
 
+  it('applies the super-admin bypass only to a real super-admin role', async () => {
+    const view = await present();
+    const personIds = [view.people[0].person_id];
+    const padded = snapshot([], [' Super-Admin ']);
+    const changed = await service.changeDates(
+      padded,
+      ACTOR,
+      view.request_id,
+      '2026-11-20',
+      personIds,
+      OUTSIDE,
+    );
+    expect(changed.people[0].investiture_date).toBe('2026-11-20');
+
+    const admin = snapshot([], ['admin']);
+    await expect(
+      service.changeDates(
+        admin,
+        ACTOR,
+        view.request_id,
+        '2026-11-21',
+        personIds,
+        OUTSIDE,
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN });
+    await expect(
+      service.readForAuthorizer(admin, ACTOR, view.request_id),
+    ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_REQUEST_FORBIDDEN });
+    const read = await service.readForAuthorizer(
+      padded,
+      ACTOR,
+      view.request_id,
+    );
+    expect(read.request_id).toBe(view.request_id);
+  });
+
   it('rejects a date outside the window, the year, or the civil calendar', async () => {
     await expect(present([901], '2026-09-01')).rejects.toMatchObject({
       code: ErrorCode.INVESTITURE_REQUEST_DATE_OUTSIDE_WINDOW,

@@ -309,6 +309,32 @@ describe('DistrictInvestiturePastorService', () => {
     expect(quotaDelegate.upsert).not.toHaveBeenCalled();
   });
 
+  it('reports can_edit only for super-admin, ignoring padding and case', async () => {
+    const field = snapshot({ role: 'director-lf', localFieldId: FIELD_ID });
+    expect((await service.getQuota(field)).can_edit).toBe(false);
+    const root = snapshot({ role: ' Super-Admin ' });
+    expect((await service.getQuota(root)).can_edit).toBe(true);
+  });
+
+  it('refuses updateQuota to roles that are not super-admin', async () => {
+    for (const role of ['director-lf', 'admin']) {
+      await expect(
+        service.updateQuota(
+          snapshot({ role, localFieldId: FIELD_ID }),
+          1,
+          'u-1',
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+    }
+    expect(quotaDelegate.upsert).not.toHaveBeenCalled();
+    const padded = snapshot({ role: ' Super-Admin ' });
+    await expect(service.updateQuota(padded, 1, 'root-1')).resolves.toEqual({
+      slots: 1,
+      configured: true,
+      can_edit: true,
+    });
+  });
+
   it('lets only super-admin change the cap for every district', async () => {
     const root = snapshot({ role: 'super-admin' });
     const saved = await service.updateQuota(root, 1, 'root-1');
