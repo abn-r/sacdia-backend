@@ -377,4 +377,47 @@ describe('HonorRequirementsService change tracking', () => {
 
     expect(requirement.evidences[0].url).toBe('key.jpg');
   });
+
+  describe('requirement trees deeper than two levels', () => {
+    // 3 > a > i, ii (a sub-item with its own options) and 4 as a leaf.
+    const rows = [
+      { requirement_id: 3, requirement_number: 3, parent_id: null },
+      { requirement_id: 4, requirement_number: 4, parent_id: null },
+      { requirement_id: 31, requirement_number: 3001, parent_id: 3 },
+      { requirement_id: 311, requirement_number: 3101, parent_id: 31 },
+      { requirement_id: 312, requirement_number: 3102, parent_id: 31 },
+    ];
+
+    it('getRequirements nests sub-items to any depth', async () => {
+      (mockPrisma as any).honors = {
+        findUnique: jest.fn().mockResolvedValue({ honor_id: 20 }),
+      };
+      mockPrisma.honor_requirements.findMany.mockResolvedValue(rows);
+
+      const tree: any[] = await service.getRequirements(20);
+
+      expect(tree.map((r) => r.requirement_id)).toEqual([3, 4]);
+      expect(tree[0].children.map((r: any) => r.requirement_id)).toEqual([31]);
+      expect(
+        tree[0].children[0].children.map((r: any) => r.requirement_id),
+      ).toEqual([311, 312]);
+      expect(tree[1].children).toEqual([]);
+    });
+
+    it('getUserProgress nests progress to any depth and counts leaves', async () => {
+      mockPrisma.honor_requirements.findMany.mockResolvedValue(rows);
+      mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([
+        { requirement_id: 312, completed: true, requirement_evidence: [] },
+      ]);
+
+      const progress: any = await service.getUserProgress('user-1', 20);
+
+      const option = progress.requirements[0].children[0].children[1];
+      expect(option.requirement_id).toBe(312);
+      expect(option.completed).toBe(true);
+      // Leaves: 311, 312 and 4.
+      expect(progress.total_requirements).toBe(3);
+      expect(progress.completed_count).toBe(1);
+    });
+  });
 });
