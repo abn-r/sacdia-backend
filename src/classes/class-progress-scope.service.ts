@@ -90,13 +90,12 @@ export class ClassProgressScopeService {
 
     const hasGlobalAccess = await this.authorizationContext.hasAnyGlobalRole(
       params.actorUserId,
-      ADMIN_SCOPE_ROLES,
+      [...ADMIN_SCOPE_ROLES],
     );
     const hasCoordinatorSectionAccess =
-      (await this.authorizationContext.hasAnyGlobalRole(
-        params.actorUserId,
-        COORDINATOR_ROLES,
-      )) &&
+      (await this.authorizationContext.hasAnyGlobalRole(params.actorUserId, [
+        ...COORDINATOR_ROLES,
+      ])) &&
       (
         await this.coordinationService.getEffectiveCoordinatorSectionIds(
           params.actorUserId,
