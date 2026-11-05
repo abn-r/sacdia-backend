@@ -490,4 +490,135 @@ describe('OperationsDashboardScopeService', () => {
       });
     },
   );
+  describe('role and territory edge cases', () => {
+    const resolveAs = (auth: any, filters: any = {}) => {
+      authorizationContext.resolveUserAuthorization.mockResolvedValue(auth);
+      return service.resolve('actor-1', filters);
+    };
+
+    it.each(['admin', 'assistant-admin'])(
+      'treats %s as one admin scope: union before local field before division',
+      async (role) => {
+        await expect(
+          resolveAs(
+            resolvedAuth({
+              roles: [role],
+              divisionId: 1,
+              unionId: 10,
+              localFieldId: 100,
+            }),
+          ),
+        ).resolves.toMatchObject({ level: 'union', id: 10 });
+        await expect(
+          resolveAs(
+            resolvedAuth({ roles: [role], divisionId: 1, localFieldId: 100 }),
+          ),
+        ).resolves.toMatchObject({ level: 'local_field', id: 100 });
+        await expect(
+          resolveAs(resolvedAuth({ roles: [role], divisionId: 1 })),
+        ).resolves.toMatchObject({ level: 'division', id: 1 });
+      },
+    );
+
+    it.each(['admin', 'assistant-admin'])(
+      'denies %s without territory as scope missing',
+      async (role) => {
+        await expect(
+          resolveAs(resolvedAuth({ roles: [role] })),
+        ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+      },
+    );
+
+    it.each([
+      ['director-dia', 'divisionId'],
+      ['assistant-dia', 'divisionId'],
+      ['director-union', 'unionId'],
+      ['assistant-union', 'unionId'],
+      ['director-lf', 'localFieldId'],
+      ['assistant-lf', 'localFieldId'],
+    ])('denies %s when its territory id is not configured', async (role) => {
+      await expect(
+        resolveAs(resolvedAuth({ roles: [role] })),
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+    });
+
+    it('denies a territorial role whose id is not a number', async () => {
+      const auth: any = resolvedAuth({ roles: ['director-lf'] });
+      auth.authorization.effective.scope.global.local_field = { id: '100' };
+      await expect(resolveAs(auth)).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_USER_SCOPE_MISSING,
+      });
+    });
+
+    it('denies an actor with no global role (club roles only)', async () => {
+      const auth: any = resolvedAuth({ roles: [] });
+      auth.authorization.grants.club_assignments = [
+        { assignment_id: 'a', role_name: 'director' },
+      ];
+      await expect(resolveAs(auth)).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+    });
+
+    it('gives super-admin precedence over any other global role', async () => {
+      await expect(
+        resolveAs(
+          resolvedAuth({
+            roles: ['director-lf', 'coordinator', 'super-admin'],
+            localFieldId: 100,
+          }),
+        ),
+      ).resolves.toEqual({ level: 'all', id: null, name: 'Todos', path: [] });
+    });
+
+    it('gives a territorial role precedence over the coordinator role', async () => {
+      await expect(
+        resolveAs(
+          resolvedAuth({
+            roles: ['coordinator', 'director-lf'],
+            localFieldId: 100,
+          }),
+        ),
+      ).resolves.toMatchObject({ level: 'local_field', id: 100 });
+      expect(
+        coordinationService.resolveCoordinatorScope,
+      ).not.toHaveBeenCalled();
+    });
+
+    it.each(['coordinator', 'zone-coordinator', 'general-coordinator'])(
+      'routes %s to the coordinator scope and denies territorial filters',
+      async (role) => {
+        coordinationService.resolveCoordinatorScope.mockResolvedValue(
+          coordinatorScope({
+            sectionIds: [3, 1],
+            assignments: [{ assignment_type: 'GENERAL' }],
+          }),
+        );
+        await expect(
+          resolveAs(resolvedAuth({ roles: [role] })),
+        ).resolves.toMatchObject({
+          level: 'coordinator',
+          section_ids: [1, 3],
+        });
+        await expect(
+          resolveAs(resolvedAuth({ roles: [role] }), { unionId: 10 }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+      },
+    );
+
+    it('denies a coordinator with no effective sections', async () => {
+      coordinationService.resolveCoordinatorScope.mockResolvedValue(
+        coordinatorScope({ sectionIds: [], assignments: [] }),
+      );
+      await expect(
+        resolveAs(resolvedAuth({ roles: ['coordinator'] })),
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+    });
+
+    it('matches role names case-insensitively', async () => {
+      await expect(
+        resolveAs(resolvedAuth({ roles: ['Director-LF'], localFieldId: 100 })),
+      ).resolves.toMatchObject({ level: 'local_field', id: 100 });
+    });
+  });
 });

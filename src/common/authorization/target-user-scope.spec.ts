@@ -103,4 +103,91 @@ describe('isTargetUserInActorScope', () => {
     prisma.club_role_assignments.findMany.mockResolvedValue([]);
     await expect(check(resolvedFor(['zone-coordinator']))).resolves.toBe(false);
   });
+  describe('edge cases', () => {
+    it.each(['admin', 'assistant-admin'])(
+      'treats %s as one admin scope: union first',
+      async (role) => {
+        prisma.users.count.mockResolvedValue(1);
+        await expect(
+          check(
+            resolvedFor([role], {
+              union: { id: 20 },
+              local_field: { id: 4 },
+              division: { id: 2 },
+            }),
+          ),
+        ).resolves.toBe(true);
+        expect(memberScope.effectiveAssignmentForScope).toHaveBeenCalledWith(
+          expect.objectContaining({ level: 'union', unionId: 20 }),
+        );
+      },
+    );
+
+    it.each(['admin', 'assistant-admin'])(
+      'denies %s without any territory configured',
+      async (role) => {
+        await expect(check(resolvedFor([role]))).resolves.toBe(false);
+        expect(prisma.users.count).not.toHaveBeenCalled();
+      },
+    );
+
+    it('denies a pastor without a global local field', async () => {
+      await expect(check(resolvedFor(['pastor']))).resolves.toBe(false);
+      expect(prisma.users.count).not.toHaveBeenCalled();
+    });
+
+    it('reads a pastor local field given as numeric string and padded role', async () => {
+      prisma.users.count.mockResolvedValue(1);
+      await expect(
+        check(resolvedFor([' Pastor '], { local_field: { id: '4' as any } })),
+      ).resolves.toBe(true);
+      expect(memberScope.effectiveAssignmentForScope).toHaveBeenCalledWith({
+        level: 'local_field',
+        localFieldId: 4,
+      });
+    });
+
+    it('ignores a pastor local field that is not a positive id', async () => {
+      await expect(
+        check(resolvedFor(['pastor'], { local_field: { id: 0 } })),
+      ).resolves.toBe(false);
+    });
+
+    it('does not treat a coordinator role without permissions as coordinator', async () => {
+      await expect(check(resolvedFor(['coordinator'], {}, []))).resolves.toBe(
+        false,
+      );
+      expect(prisma.club_role_assignments.findMany).not.toHaveBeenCalled();
+    });
+
+    it('gives no territory to an actor with only club roles', async () => {
+      const resolved = resolvedFor([]);
+      resolved.authorization.grants.club_assignments = [
+        { assignment_id: 'a1', role_name: 'director' },
+      ];
+      await expect(check(resolved)).resolves.toBe(false);
+      expect(prisma.users.count).not.toHaveBeenCalled();
+    });
+
+    it('lets super-admin win over any other global role', async () => {
+      await expect(
+        check(resolvedFor(['director-lf', 'super-admin', 'coordinator'])),
+      ).resolves.toBe(true);
+      expect(prisma.users.count).not.toHaveBeenCalled();
+    });
+
+    it('falls through to the coordinator path when territory misses', async () => {
+      prisma.users.count.mockResolvedValue(0);
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+      await expect(
+        check(
+          resolvedFor(['director-lf', 'coordinator'], {
+            local_field: { id: 4 },
+          }),
+        ),
+      ).resolves.toBe(false);
+      expect(prisma.users.count).toHaveBeenCalled();
+      expect(prisma.club_role_assignments.findMany).toHaveBeenCalled();
+    });
+  });
 });

@@ -1,3 +1,13 @@
+import type { ActorTerritoryScope } from './actor-territory-scope';
+import {
+  ADMIN_SCOPE_ROLES,
+  COORDINATOR_ROLES,
+  DIVISION_ROLES,
+  LOCAL_FIELD_ROLES,
+  UNION_ROLES,
+} from './role-sets';
+import { GlobalRole } from './roles';
+import { toTerritoryId } from './territory-id';
 import type {
   AuthorizationContextService,
   ResolvedAuthorizationProfile,
@@ -14,7 +24,7 @@ function numericId(node: { id: number | string } | null | undefined) {
 }
 
 function normalizeRole(role: string): string {
-  return role.toLowerCase();
+  return role.trim().toLowerCase();
 }
 
 /**
@@ -113,6 +123,68 @@ export class ActorScope {
     return false;
   }
 
+  /** True when the actor holds a coordinator / zone / general coordinator role. */
+  isCoordinator(): boolean {
+    return this.hasAnyRole(COORDINATOR_ROLES);
+  }
+
+  /**
+   * Role-first territorial tier of the actor (what `resolveActorTerritoryScope`
+   * returns): super-admin sees `all`; division, union and local-field roles
+   * each need their own territory id or the tier is `unconfigured`;
+   * admin / assistant-admin pick union, then local field, then division;
+   * everyone else is `open` (no territorial cut). The home `local_field_id`
+   * never upgrades or downgrades a union/division actor. Pure: reads only
+   * the already-resolved global scope.
+   */
+  territorialTier(): ActorTerritoryScope {
+    const ids = this.territory;
+    const withIds = <T extends ActorTerritoryScope>(scope: T): T => ({
+      ...scope,
+      ...(ids.divisionId ? { divisionId: ids.divisionId } : {}),
+      ...(ids.unionId ? { unionId: ids.unionId } : {}),
+      ...(ids.localFieldId ? { localFieldId: ids.localFieldId } : {}),
+    });
+
+    if (this.hasRole(GlobalRole.SUPER_ADMIN)) {
+      return { level: 'all' };
+    }
+
+    if (this.hasAnyRole(DIVISION_ROLES)) {
+      if (!ids.divisionId) return { level: 'unconfigured' };
+      return withIds({ level: 'division', divisionId: ids.divisionId });
+    }
+
+    if (this.hasAnyRole(UNION_ROLES)) {
+      if (!ids.unionId) return { level: 'unconfigured' };
+      return withIds({ level: 'union', unionId: ids.unionId });
+    }
+
+    if (this.hasAnyRole(LOCAL_FIELD_ROLES)) {
+      if (!ids.localFieldId) return { level: 'unconfigured' };
+      return withIds({ level: 'local_field', localFieldId: ids.localFieldId });
+    }
+
+    // super-admin already returned above: this is admin / assistant-admin.
+    if (this.hasAnyRole(ADMIN_SCOPE_ROLES)) {
+      if (ids.unionId) {
+        return withIds({ level: 'union', unionId: ids.unionId });
+      }
+      if (ids.localFieldId) {
+        return withIds({
+          level: 'local_field',
+          localFieldId: ids.localFieldId,
+        });
+      }
+      if (ids.divisionId) {
+        return withIds({ level: 'division', divisionId: ids.divisionId });
+      }
+      return { level: 'unconfigured' };
+    }
+
+    return { level: 'open' };
+  }
+
   /**
    * Territory ladder (`canAccessHierarchyScope`). Delegates; synchronous
    * because the service resolves it from the already-loaded profile.
@@ -162,6 +234,25 @@ export class ActorScope {
    */
   coversLocalField(id: number): boolean {
     return this.localFieldId === id || this.activeLocalFieldId === id;
+  }
+
+  /**
+   * Territory ids of the global scope, read the way `actor-territory-scope`
+   * does: positive numbers or numeric strings, anything else is `undefined`.
+   * (`divisionId`/`unionId`/`localFieldId` above only accept real numbers.)
+   * Empty for role-only actors.
+   */
+  get territory(): {
+    divisionId?: number;
+    unionId?: number;
+    localFieldId?: number;
+  } {
+    const global = this.resolved?.authorization?.effective?.scope?.global;
+    return {
+      divisionId: toTerritoryId(global?.division?.id),
+      unionId: toTerritoryId(global?.union?.id),
+      localFieldId: toTerritoryId(global?.local_field?.id),
+    };
   }
 
   private requireResolved(): ResolvedAuthorizationProfile {

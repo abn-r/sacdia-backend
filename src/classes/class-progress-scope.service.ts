@@ -8,7 +8,11 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { CoordinationService } from '../coordination/coordination.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
-import { GlobalRole, ClubRole } from '../common/authorization/roles';
+import { ClubRole } from '../common/authorization/roles';
+import {
+  ADMIN_SCOPE_ROLES,
+  COORDINATOR_ROLES,
+} from '../common/authorization/role-sets';
 
 const SECTION_WIDE_ROLE_NAMES = new Set([
   ClubRole.DIRECTOR,
@@ -16,18 +20,6 @@ const SECTION_WIDE_ROLE_NAMES = new Set([
   ClubRole.SECRETARY,
   ClubRole.SECRETARY_TREASURER,
 ]);
-
-const GLOBAL_PROGRESS_SCOPE_ROLES = [
-  GlobalRole.SUPER_ADMIN,
-  GlobalRole.ADMIN,
-  GlobalRole.ASSISTANT_ADMIN,
-];
-
-const COORDINATOR_PROGRESS_SCOPE_ROLES = [
-  GlobalRole.COORDINATOR,
-  GlobalRole.ZONE_COORDINATOR,
-  GlobalRole.GENERAL_COORDINATOR,
-];
 
 export type ProgressScopeAccessLevel = 'section' | 'assigned';
 
@@ -98,13 +90,12 @@ export class ClassProgressScopeService {
 
     const hasGlobalAccess = await this.authorizationContext.hasAnyGlobalRole(
       params.actorUserId,
-      GLOBAL_PROGRESS_SCOPE_ROLES,
+      [...ADMIN_SCOPE_ROLES],
     );
     const hasCoordinatorSectionAccess =
-      (await this.authorizationContext.hasAnyGlobalRole(
-        params.actorUserId,
-        COORDINATOR_PROGRESS_SCOPE_ROLES,
-      )) &&
+      (await this.authorizationContext.hasAnyGlobalRole(params.actorUserId, [
+        ...COORDINATOR_ROLES,
+      ])) &&
       (
         await this.coordinationService.getEffectiveCoordinatorSectionIds(
           params.actorUserId,
@@ -384,6 +375,11 @@ export class ClassProgressScopeService {
     sectionId: number;
     ecclesiasticalYearId: number;
   }): Promise<boolean> {
+    // Excepción documentada: la decisión se toma por (sección, año
+    // eclesiástico) arbitrarios del request, no por el club activo del perfil
+    // resuelto; ActorScope solo conoce `active_assignment`. Reproducirlo con
+    // ActorScope cambiaría el comportamiento (y la vigencia: este predicado
+    // no filtra `status`). Por eso conserva la consulta local.
     const assignment = await this.prisma.club_role_assignments.findFirst({
       where: {
         user_id: params.actorUserId,

@@ -1,5 +1,7 @@
 import { coordinator_assignment_type } from '@prisma/client';
 import {
+  activeCoordinatorAssignmentWhere,
+  COORDINATOR_GLOBAL_ROLE_NAMES,
   coordinatorRolePermissions,
   coordinatorScopeIncludesSection,
   resolveCoordinatorAssignmentSectionIds,
@@ -405,5 +407,49 @@ describe('coordinatorRolePermissions (what the coordinator ROLES carry)', () => 
       ]).size,
     ).toBe(0);
     expect(coordinatorRolePermissions([]).size).toBe(0);
+  });
+});
+
+describe('coordinator role edge cases', () => {
+  it('names exactly the three coordinator roles', () => {
+    expect([...COORDINATOR_GLOBAL_ROLE_NAMES].sort()).toEqual([
+      'coordinator',
+      'general-coordinator',
+      'zone-coordinator',
+    ]);
+  });
+
+  it('does not treat admin aliases or territorial roles as coordinator roles', () => {
+    const permissions = coordinatorRolePermissions(
+      ['admin', 'assistant-admin', 'super-admin', 'director-lf', 'pastor'].map(
+        (role_name) => ({ role_name, permissions: ['clubs:read'] }),
+      ),
+    );
+    expect(permissions.size).toBe(0);
+  });
+
+  it('keeps a coordinator role without permissions out of the permission set', () => {
+    expect(
+      coordinatorRolePermissions([
+        { role_name: 'coordinator', permissions: [] },
+      ]).size,
+    ).toBe(0);
+  });
+
+  it('only collects coordinator permissions for an actor holding a global and a coordinator role at once', () => {
+    const permissions = coordinatorRolePermissions([
+      { role_name: 'director-lf', permissions: ['clubs:update'] },
+      { role_name: 'zone-coordinator', permissions: ['clubs:read'] },
+    ]);
+    expect([...permissions]).toEqual(['clubs:read']);
+  });
+
+  it('only lets assignments that are active, started and not ended grant scope', () => {
+    const today = new Date('2026-10-20T00:00:00.000Z');
+    expect(activeCoordinatorAssignmentWhere(today)).toEqual({
+      active: true,
+      start_date: { lte: today },
+      OR: [{ end_date: null }, { end_date: { gte: today } }],
+    });
   });
 });

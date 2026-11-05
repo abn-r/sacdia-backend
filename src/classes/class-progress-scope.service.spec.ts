@@ -135,7 +135,9 @@ describe('ClassProgressScopeService', () => {
       },
       orderBy: [{ display_order: 'asc' }, { class_id: 'asc' }],
     });
-    expect(mockPrisma.class_counselor_assignments.findMany).not.toHaveBeenCalled();
+    expect(
+      mockPrisma.class_counselor_assignments.findMany,
+    ).not.toHaveBeenCalled();
   });
 
   it('returns section-wide classes when the coordinator owns that section', async () => {
@@ -164,7 +166,9 @@ describe('ClassProgressScopeService', () => {
     expect(
       mockCoordinationService.getEffectiveCoordinatorSectionIds,
     ).toHaveBeenCalledWith('coordinator-1');
-    expect(mockPrisma.class_counselor_assignments.findMany).not.toHaveBeenCalled();
+    expect(
+      mockPrisma.class_counselor_assignments.findMany,
+    ).not.toHaveBeenCalled();
   });
 
   it('returns only assigned active classes when the actor does not hold section-wide access', async () => {
@@ -221,7 +225,9 @@ describe('ClassProgressScopeService', () => {
       ],
     });
 
-    expect(mockPrisma.class_counselor_assignments.findMany).toHaveBeenCalledWith({
+    expect(
+      mockPrisma.class_counselor_assignments.findMany,
+    ).toHaveBeenCalledWith({
       where: {
         user_id: 'actor-2',
         club_section_id: 10,
@@ -453,7 +459,7 @@ describe('ClassProgressScopeService', () => {
             {
               investiture_progress: { completed: 0, total: 4 },
               overall_progress: 0,
-              },
+            },
           ],
         ]),
       );
@@ -532,9 +538,9 @@ describe('ClassProgressScopeService', () => {
       // Confirm the cross-type branch scopes to clubId 99, not another club
       const call = mockPrisma.enrollments.findMany.mock.calls[0][0];
       const crossTypeBranch = call.where.OR[1];
-      expect(crossTypeBranch.users.club_role_assignments.some.club_sections).toEqual(
-        { main_club_id: 99 },
-      );
+      expect(
+        crossTypeBranch.users.club_role_assignments.some.club_sections,
+      ).toEqual({ main_club_id: 99 });
     });
 
     it('DTO includes cross_type_enrollment on every member', async () => {
@@ -565,6 +571,174 @@ describe('ClassProgressScopeService', () => {
       });
 
       expect(result.members[0]).toHaveProperty('cross_type_enrollment', false);
+    });
+  });
+  describe('role scope edge cases', () => {
+    const rolesAsked = () =>
+      mockAuthorizationContext.hasAnyGlobalRole.mock.calls.map(
+        ([, roles]: [string, string[]]) => [...roles].sort(),
+      );
+
+    it('asks for the whole admin alias family (super-admin, admin, assistant-admin) as global access', async () => {
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      mockPrisma.class_counselor_assignments.findMany.mockResolvedValue([]);
+
+      await service.getProgressScope({
+        actorUserId: 'a',
+        clubId: 99,
+        sectionId: 10,
+      });
+
+      expect(rolesAsked()).toContainEqual([
+        'admin',
+        'assistant-admin',
+        'super-admin',
+      ]);
+    });
+
+    it.each(['super-admin', 'admin', 'assistant-admin'])(
+      'gives %s section-wide access without touching assignments',
+      async (role) => {
+        mockAuthorizationContext.hasAnyGlobalRole.mockImplementation(
+          (_userId: string, roles: string[]) =>
+            Promise.resolve(roles.includes(role)),
+        );
+        mockPrisma.classes.findMany.mockResolvedValue([]);
+
+        await expect(
+          service.getProgressScope({
+            actorUserId: 'a',
+            clubId: 99,
+            sectionId: 10,
+          }),
+        ).resolves.toMatchObject({ access_level: 'section' });
+        expect(
+          mockPrisma.club_role_assignments.findFirst,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it('asks for the three coordinator roles', async () => {
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      mockPrisma.class_counselor_assignments.findMany.mockResolvedValue([]);
+
+      await service.getProgressScope({
+        actorUserId: 'a',
+        clubId: 99,
+        sectionId: 10,
+      });
+
+      expect(rolesAsked()).toContainEqual([
+        'coordinator',
+        'general-coordinator',
+        'zone-coordinator',
+      ]);
+    });
+
+    it('does not expand coordinator sections for an actor without coordinator role', async () => {
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      mockPrisma.class_counselor_assignments.findMany.mockResolvedValue([]);
+      mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+        [10],
+      );
+
+      await expect(
+        service.getProgressScope({
+          actorUserId: 'a',
+          clubId: 99,
+          sectionId: 10,
+        }),
+      ).resolves.toMatchObject({ access_level: 'assigned', classes: [] });
+      expect(
+        mockCoordinationService.getEffectiveCoordinatorSectionIds,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('falls back to assigned access for a coordinator whose sections do not include the requested one', async () => {
+      mockAuthorizationContext.hasAnyGlobalRole.mockImplementation(
+        (_userId: string, roles: string[]) =>
+          Promise.resolve(roles.includes('coordinator')),
+      );
+      mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+        [11, 12],
+      );
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      mockPrisma.class_counselor_assignments.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.getProgressScope({
+          actorUserId: 'a',
+          clubId: 99,
+          sectionId: 10,
+        }),
+      ).resolves.toMatchObject({ access_level: 'assigned' });
+    });
+
+    it('treats a coordinator with no effective sections (not yet active, expired or designated) as non-coordinator for the section', async () => {
+      mockAuthorizationContext.hasAnyGlobalRole.mockImplementation(
+        (_userId: string, roles: string[]) =>
+          Promise.resolve(roles.includes('zone-coordinator')),
+      );
+      mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+        [],
+      );
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      mockPrisma.class_counselor_assignments.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.getProgressScope({
+          actorUserId: 'a',
+          clubId: 99,
+          sectionId: 10,
+        }),
+      ).resolves.toMatchObject({ access_level: 'assigned' });
+    });
+
+    it('lets a coordinator who is also a global admin keep section-wide access', async () => {
+      mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValue(true);
+      mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+        [],
+      );
+      mockPrisma.classes.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.getProgressScope({
+          actorUserId: 'a',
+          clubId: 99,
+          sectionId: 10,
+        }),
+      ).resolves.toMatchObject({ access_level: 'section' });
+    });
+
+    it('decides club section-wide access by the section roles of the requested year', async () => {
+      mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'x',
+      });
+      mockPrisma.classes.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.getProgressScope({
+          actorUserId: 'a',
+          clubId: 99,
+          sectionId: 10,
+          ecclesiasticalYearId: 2025,
+        }),
+      ).resolves.toMatchObject({ access_level: 'section' });
+
+      const { where } = mockPrisma.club_role_assignments.findFirst.mock
+        .calls[0][0] as any;
+      expect(where).toMatchObject({
+        user_id: 'a',
+        club_section_id: 10,
+        ecclesiastical_year_id: 2025,
+        active: true,
+      });
+      expect([...where.roles.role_name.in].sort()).toEqual([
+        'deputy-director',
+        'director',
+        'secretary',
+        'secretary-treasurer',
+      ]);
     });
   });
 });
