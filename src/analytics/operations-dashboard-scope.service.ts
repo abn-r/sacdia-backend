@@ -17,30 +17,16 @@ import type {
   OperationsDashboardScopePathNode,
   ResolvedOperationsDashboardScope,
 } from './operations-dashboard.types';
+import { ActorScope } from '../common/authorization/actor-scope';
 import { GlobalRole } from '../common/authorization/roles';
+import {
+  ADMIN_SCOPE_ROLES,
+  COORDINATOR_ROLES,
+  DIVISION_ROLES,
+  LOCAL_FIELD_ROLES,
+  UNION_ROLES,
+} from '../common/authorization/role-sets';
 
-const GLOBAL_ROLES = new Set([GlobalRole.SUPER_ADMIN]);
-const DIVISION_ROLES = new Set([
-  GlobalRole.DIRECTOR_DIA,
-  GlobalRole.ASSISTANT_DIA,
-]);
-const UNION_ROLES = new Set([
-  GlobalRole.DIRECTOR_UNION,
-  GlobalRole.ASSISTANT_UNION,
-]);
-const LOCAL_FIELD_ROLES = new Set([
-  GlobalRole.DIRECTOR_LF,
-  GlobalRole.ASSISTANT_LF,
-]);
-const ADMIN_SCOPE_ROLES = new Set([
-  GlobalRole.ADMIN,
-  GlobalRole.ASSISTANT_ADMIN,
-]);
-const COORDINATOR_ROLES = new Set([
-  GlobalRole.COORDINATOR,
-  GlobalRole.ZONE_COORDINATOR,
-  GlobalRole.GENERAL_COORDINATOR,
-]);
 const COORDINATOR_SCOPE_NAME = 'Secciones asignadas';
 
 type ActorBaseScope = {
@@ -95,52 +81,48 @@ export class OperationsDashboardScopeService {
   private resolveActorBaseScope(
     resolved: ResolvedAuthorizationProfile,
   ): ActorBaseScope {
-    const roles = new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
-    const globalScope = resolved.authorization.effective.scope.global;
+    const actor = ActorScope.from(resolved);
 
-    if (hasAnyRole(roles, GLOBAL_ROLES)) {
+    if (actor.hasRole(GlobalRole.SUPER_ADMIN)) {
       return { level: 'all', id: null };
     }
 
-    if (hasAnyRole(roles, DIVISION_ROLES)) {
+    if (actor.hasAnyRole(DIVISION_ROLES)) {
       return {
         level: 'division',
-        id: this.requireNumericScopeId(globalScope.division?.id),
+        id: this.requireNumericScopeId(actor.divisionId),
       };
     }
 
-    if (hasAnyRole(roles, UNION_ROLES)) {
+    if (actor.hasAnyRole(UNION_ROLES)) {
       return {
         level: 'union',
-        id: this.requireNumericScopeId(globalScope.union?.id),
+        id: this.requireNumericScopeId(actor.unionId),
       };
     }
 
-    if (hasAnyRole(roles, LOCAL_FIELD_ROLES)) {
+    if (actor.hasAnyRole(LOCAL_FIELD_ROLES)) {
       return {
         level: 'local_field',
-        id: this.requireNumericScopeId(globalScope.local_field?.id),
+        id: this.requireNumericScopeId(actor.localFieldId),
       };
     }
 
-    if (hasAnyRole(roles, ADMIN_SCOPE_ROLES)) {
-      if (typeof globalScope.union?.id === 'number') {
-        return { level: 'union', id: globalScope.union.id };
+    // super-admin already returned above, so this is admin / assistant-admin.
+    if (actor.hasAnyRole(ADMIN_SCOPE_ROLES)) {
+      if (actor.unionId !== undefined) {
+        return { level: 'union', id: actor.unionId };
       }
-      if (typeof globalScope.local_field?.id === 'number') {
-        return { level: 'local_field', id: globalScope.local_field.id };
+      if (actor.localFieldId !== undefined) {
+        return { level: 'local_field', id: actor.localFieldId };
       }
-      if (typeof globalScope.division?.id === 'number') {
-        return { level: 'division', id: globalScope.division.id };
+      if (actor.divisionId !== undefined) {
+        return { level: 'division', id: actor.divisionId };
       }
       throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
     }
 
-    if (hasAnyRole(roles, COORDINATOR_ROLES)) {
+    if (actor.hasAnyRole(COORDINATOR_ROLES)) {
       return { level: 'coordinator', id: null };
     }
 
@@ -201,8 +183,8 @@ export class OperationsDashboardScopeService {
     return zone?.active ? zone.name : COORDINATOR_SCOPE_NAME;
   }
 
-  private requireNumericScopeId(value: number | string | undefined): number {
-    if (typeof value !== 'number') {
+  private requireNumericScopeId(value: number | undefined): number {
+    if (value === undefined) {
       throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
     }
     return value;
@@ -215,14 +197,14 @@ export class OperationsDashboardScopeService {
   ): void {
     if (base.level === 'all') return;
 
-    const globalScope = resolved.authorization.effective.scope.global;
-    const expectedDivisionId = globalScope.division?.id;
-    const expectedUnionId = globalScope.union?.id;
-    const expectedLocalFieldId = globalScope.local_field?.id;
+    const actor = ActorScope.from(resolved);
+    const expectedDivisionId = actor.divisionId;
+    const expectedUnionId = actor.unionId;
+    const expectedLocalFieldId = actor.localFieldId;
 
     if (
       filters.divisionId !== undefined &&
-      typeof expectedDivisionId === 'number' &&
+      expectedDivisionId !== undefined &&
       filters.divisionId !== expectedDivisionId
     ) {
       this.denyOutsideScope();
@@ -231,7 +213,7 @@ export class OperationsDashboardScopeService {
     if (
       (base.level === 'union' || base.level === 'local_field') &&
       filters.unionId !== undefined &&
-      typeof expectedUnionId === 'number' &&
+      expectedUnionId !== undefined &&
       filters.unionId !== expectedUnionId
     ) {
       this.denyOutsideScope();
@@ -240,7 +222,7 @@ export class OperationsDashboardScopeService {
     if (
       base.level === 'local_field' &&
       filters.localFieldId !== undefined &&
-      typeof expectedLocalFieldId === 'number' &&
+      expectedLocalFieldId !== undefined &&
       filters.localFieldId !== expectedLocalFieldId
     ) {
       this.denyOutsideScope();
@@ -414,11 +396,4 @@ export class OperationsDashboardScopeService {
   private denyOutsideScope(): never {
     throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
-}
-
-function hasAnyRole(roleNames: Set<string>, allowed: Set<string>): boolean {
-  for (const roleName of allowed) {
-    if (roleNames.has(roleName)) return true;
-  }
-  return false;
 }
