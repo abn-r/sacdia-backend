@@ -25,13 +25,9 @@ import {
   CAMPOREE_FULFILLMENT_PORT,
   INSURANCE_FULFILLMENT_PORT,
 } from './fulfillment/ports';
-import type {
-  OrderForFulfillment,
-  PreparedOrder,
-  PurposeFulfillment,
-} from './fulfillment/ports';
+import type { PreparedOrder, PurposeFulfillment } from './fulfillment/ports';
 import type { OrderActor } from './order-actor';
-import { assertTransition, FieldPaymentOrderStatus } from './state-machine';
+import { assertTransition } from './state-machine';
 
 type OrderPurpose = 'INSURANCE' | 'CAMPOREE';
 

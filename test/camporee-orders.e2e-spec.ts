@@ -97,11 +97,6 @@ const REVIEWER_PERMISSIONS = [
   'camporee-orders:deliver',
 ];
 
-const PDF_BUFFER = Buffer.concat([
-  Buffer.from('%PDF-1.4\n'),
-  Buffer.alloc(64, 0x20),
-]);
-
 function isThenLike(prop: string | symbol): boolean {
   return (
     typeof prop === 'symbol' ||

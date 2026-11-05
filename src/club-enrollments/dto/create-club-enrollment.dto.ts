@@ -9,7 +9,6 @@ import {
   Min,
   Max,
   ArrayMaxSize,
-  IsObject,
   ValidateNested,
   IsNotEmpty,
 } from 'class-validator';

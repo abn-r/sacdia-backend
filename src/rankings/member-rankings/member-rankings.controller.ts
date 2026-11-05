@@ -26,7 +26,6 @@ import {
   RequirePermissions,
 } from '../../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
-import { MemberRankingResponseDto } from './dto/member-ranking-response.dto';
 import { MemberBreakdownDto } from './dto/member-breakdown.dto';
 import { MemberMyRankingDto } from './dto/member-my-ranking.dto';
 import { namedThrottle } from '../../config/throttler.helpers';

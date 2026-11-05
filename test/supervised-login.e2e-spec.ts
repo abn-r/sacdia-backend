@@ -372,7 +372,7 @@ describe('Supervised login E2E', () => {
         const where = args?.where ?? {};
         // The teen's own view: the guardians linked to them.
         if (where.dependent_user_id) {
-          return liveLinks(where.dependent_user_id as string).map((link) => ({
+          return liveLinks(where.dependent_user_id as string).map(() => ({
             guardian: { name: 'Marta', paternal_last_name: 'Gómez' },
             relationship_type: { name: 'Madre' },
           }));

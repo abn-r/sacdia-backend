@@ -54,20 +54,7 @@ const superAdminRole = {
   modified_at: new Date('2025-01-01'),
 };
 
-const coordinatorRole = {
-  ...baseRole,
-  role_id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-  role_name: 'coordinator',
-};
-const assistantAdminRole = {
-  ...baseRole,
-  role_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
-  role_name: 'assistant-admin',
-};
-
 const USER_ID = '11111111-1111-1111-1111-111111111111';
-const ACTOR_ADMIN_ID = '22222222-2222-2222-2222-222222222222';
-const ACTOR_SUPER_ADMIN_ID = '33333333-3333-3333-3333-333333333333';
 
 const baseRoleWithPermissions = {
   ...baseRole,

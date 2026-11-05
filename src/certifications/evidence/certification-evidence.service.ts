@@ -16,10 +16,6 @@ import {
   assertEnrollmentEditable,
   assertRequirementEditable,
 } from '../domain/certification-state-machine';
-import type {
-  CertificationEnrollmentStatus,
-  CertificationRequirementStatus,
-} from '../domain/certification-definition.types';
 import { getOwnedEnrollmentOrThrow } from '../shared/owned-enrollment';
 import {
   assertAllowedEvidenceFile,

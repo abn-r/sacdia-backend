@@ -6,7 +6,6 @@ import { AppModule } from '../src/app.module';
 import { PermissionsGuard } from '../src/common/guards';
 import { BetterAuthService } from '../src/better-auth/better-auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
 import {
   createBearerToken,
   createTestJwtService,

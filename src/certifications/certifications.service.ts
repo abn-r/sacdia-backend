@@ -21,7 +21,6 @@ import {
   ENROLLMENT_NOT_ABANDONABLE_STATUSES,
   transitionEnrollment,
 } from './domain/certification-state-machine';
-import type { CertificationEnrollmentStatus } from './domain/certification-definition.types';
 
 @Injectable()
 export class CertificationsService {

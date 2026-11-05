@@ -98,7 +98,6 @@ import {
 // ---------------------------------------------------------------------------
 
 const YEAR_ID = 1;
-const LOCAL_FIELD_ID = 4;
 const UNION_ID = 20;
 const CLUB_TYPE_ID = 3; // Guías Mayores
 
@@ -144,8 +143,6 @@ let assistantUnionUserId: string;
 let directorLfUserId: string;
 let assistantLfUserId: string;
 let clubDirectorUserId: string;
-/** Non-assigned user: a fresh user with no roles, created in beforeAll */
-let nonAssignedUserId: string;
 
 // ---------------------------------------------------------------------------
 // NestJS TestingModule for EvaluationService
@@ -272,7 +269,8 @@ beforeAll(async () => {
 
   // --- Create a non-assigned test user (no roles, no assignments) ---
   // Use a stable email so this is idempotent across test runs.
-  const nonAssignedUser = await rawPrisma.users.upsert({
+  // Non-assigned user: a fresh user with no roles (only seeded, never referenced)
+  await rawPrisma.users.upsert({
     where: { email: 'no-role-confirm-union@sacdia.test' },
     create: {
       email: 'no-role-confirm-union@sacdia.test',
@@ -290,7 +288,6 @@ beforeAll(async () => {
       active: true,
     },
   });
-  nonAssignedUserId = nonAssignedUser.user_id;
 
   // --- Create isolated club_section (main_club_id=null avoids @@unique clash) ---
   const section = await rawPrisma.club_sections.create({

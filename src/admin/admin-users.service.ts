@@ -1853,7 +1853,7 @@ export class AdminUsersService {
   async bulkCreateAdminUsers(
     actorId: string,
     fileBuffer: Buffer,
-    mimeType: string,
+    _mimeType: string,
   ): Promise<BulkUsersResult> {
     const EXPECTED_HEADERS = [
       'email',
