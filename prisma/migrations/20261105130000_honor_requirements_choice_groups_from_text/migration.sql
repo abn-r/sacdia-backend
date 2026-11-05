@@ -19,8 +19,55 @@
 --    - Evangelismo Personal, req 3 (2140): its i–x options were flattened
 --      next to a/b/c; it needs restructuring, not a number.
 --
--- Idempotent: each row is matched by id and only changed when it still
--- differs from the target.
+-- Rows are found by natural key, not by id (see below).
+
+-- Requirement ids differ between databases (the import inserted sub-items
+-- in a different order in each Neon branch), so rows are found by their
+-- natural key as it was before this migration: honor, parent requirement
+-- number, label and, where given, the exact text. The migration aborts if
+-- any row is missing or ambiguous.
+DROP TABLE IF EXISTS _idmap;
+CREATE TEMP TABLE _idmap AS
+SELECT k.dev_id, r.requirement_id AS real_id
+FROM (VALUES
+    (1245, 487, NULL, '10', NULL),
+    (1349, 253, NULL, '6', NULL),
+    (1797, 497, NULL, '12', NULL),
+    (2007, 267, NULL, '4', NULL),
+    (2017, 502, NULL, '10', NULL),
+    (2308, 507, NULL, '6', NULL),
+    (2560, 71, NULL, '4', NULL),
+    (2826, 517, NULL, '8', NULL),
+    (2982, 523, NULL, '6', NULL),
+    (3096, 80, NULL, '2', NULL),
+    (3115, 81, NULL, '12', NULL),
+    (3129, 83, NULL, '4', NULL),
+    (3351, 535, NULL, '9', NULL),
+    (3780, 419, NULL, '10', NULL),
+    (4083, 101, NULL, '11', NULL),
+    (4344, 600, NULL, '5', NULL),
+    (4732, 313, NULL, '5', NULL),
+    (4893, 571, NULL, '16', NULL),
+    (5025, 125, NULL, '6', NULL),
+    (5069, 573, NULL, '12', NULL)
+) AS k(dev_id, honor_id, parent_number, display_label, text_md5)
+LEFT JOIN honor_requirements r
+  ON r.honor_id = k.honor_id
+ AND r.display_label IS NOT DISTINCT FROM k.display_label
+ AND (k.text_md5 IS NULL OR md5(r.requirement_text) = k.text_md5::text)
+ AND ((k.parent_number IS NULL AND r.parent_id IS NULL)
+      OR EXISTS (SELECT 1 FROM honor_requirements p
+                 WHERE p.requirement_id = r.parent_id
+                   AND p.requirement_number = k.parent_number::int));
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM _idmap WHERE real_id IS NULL)
+     OR (SELECT count(*) FROM _idmap) <> (SELECT count(DISTINCT dev_id) FROM _idmap) THEN
+    RAISE EXCEPTION 'honor requirement id map: missing or ambiguous rows';
+  END IF;
+END $$;
+CREATE OR REPLACE FUNCTION pg_temp.rid(integer) RETURNS integer
+LANGUAGE sql STABLE AS $f$ SELECT real_id FROM pg_temp._idmap WHERE dev_id = $1 $f$;
 
 UPDATE honor_requirements AS r
 SET is_choice_group = t.is_choice_group,
@@ -49,6 +96,9 @@ FROM (
     (4893, true, 2),     -- Taiga 16 (2 de 8)
     (5069, true, 2)      -- Tiburones 12 (2 de 5)
 ) AS t(requirement_id, is_choice_group, choice_min)
-WHERE r.requirement_id = t.requirement_id
+WHERE r.requirement_id = pg_temp.rid(t.requirement_id)
   AND (r.is_choice_group IS DISTINCT FROM t.is_choice_group
        OR r.choice_min IS DISTINCT FROM t.choice_min);
+
+DROP FUNCTION pg_temp.rid(integer);
+DROP TABLE _idmap;
