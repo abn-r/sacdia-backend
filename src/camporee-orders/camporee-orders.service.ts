@@ -313,7 +313,7 @@ export class CamporeeOrdersService {
       {
         camporee_order_id: order.camporee_order_id,
         local_field_id: order.local_field_id,
-        status: order.status as CamporeeOrderStatus,
+        status: order.status,
         authorized_without_proof: order.authorized_without_proof,
       },
       file,
@@ -342,7 +342,7 @@ export class CamporeeOrdersService {
       this.assertCanAccess(found, actor);
     }
     const order = await this.expireIfDue(found);
-    assertTransition(order.status as CamporeeOrderStatus, 'CANCELLED');
+    assertTransition(order.status, 'CANCELLED');
 
     await this.prisma.camporee_orders.update({
       where: { camporee_order_id: orderId },
@@ -393,7 +393,7 @@ export class CamporeeOrdersService {
       return this.toDto(await this.loadOrder(orderId));
     }
 
-    assertTransition(order.status as CamporeeOrderStatus, 'PAID');
+    assertTransition(order.status, 'PAID');
     await this.prisma.$transaction(async (tx) => {
       const moved = await tx.camporee_orders.updateMany({
         where: {
@@ -465,7 +465,7 @@ export class CamporeeOrdersService {
       return this.toDto(await this.loadOrder(orderId));
     }
 
-    assertTransition(order.status as CamporeeOrderStatus, 'PROOF_REJECTED');
+    assertTransition(order.status, 'PROOF_REJECTED');
     await this.prisma.$transaction(async (tx) => {
       await tx.camporee_order_proofs.update({
         where: { camporee_order_proof_id: proof.camporee_order_proof_id },
@@ -505,7 +505,7 @@ export class CamporeeOrdersService {
       );
     }
     const order = await this.expireIfDue(found);
-    assertTransition(order.status as CamporeeOrderStatus, 'PAID');
+    assertTransition(order.status, 'PAID');
     const now = new Date();
     await this.prisma.camporee_orders.update({
       where: { camporee_order_id: orderId },
@@ -534,7 +534,7 @@ export class CamporeeOrdersService {
     if (!canDeliverToSection(actor, order.local_field_id)) {
       throw new AppForbiddenException(ErrorCode.CAMPOREE_ORDER_FORBIDDEN);
     }
-    assertTransition(order.status as CamporeeOrderStatus, 'DELIVERED');
+    assertTransition(order.status, 'DELIVERED');
     await this.prisma.camporee_orders.update({
       where: { camporee_order_id: orderId },
       data: {
@@ -788,7 +788,7 @@ export class CamporeeOrdersService {
         order_id: order.camporee_order_id,
       }),
     );
-    return { ...order, status: 'EXPIRED', expired_at: now } as T;
+    return { ...order, status: 'EXPIRED', expired_at: now };
   }
 
   /** Lazy expiry for scoped listings. Does not expire PAID. */

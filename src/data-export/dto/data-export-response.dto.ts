@@ -1,11 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export type DataExportStatus =
-  | 'pending'
-  | 'processing'
-  | 'ready'
-  | 'failed'
-  | 'expired';
+  'pending' | 'processing' | 'ready' | 'failed' | 'expired';
 
 export class DataExportItemDto {
   @ApiProperty({ example: 'uuid-v4' })

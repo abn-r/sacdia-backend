@@ -1021,7 +1021,7 @@ describe('CertificateBulkImportsService', () => {
         events: [],
       });
 
-      const result = await svc.createDraft('user-1', {} as never);
+      const result = await svc.createDraft('user-1', {});
 
       expect(result).toHaveProperty('ocr_state', null);
       expect(queue.getJob).not.toHaveBeenCalled();
@@ -1091,7 +1091,11 @@ describe('CertificateBulkImportsService', () => {
 
     it('records OCR_QUEUED before add(), so a worker finishing inside add() ends done, not pending', async () => {
       const { svc, queue } = withQueue(undefined);
-      const stored: Array<{ action: string; created_at: Date; payload?: unknown }> = [];
+      const stored: Array<{
+        action: string;
+        created_at: Date;
+        payload?: unknown;
+      }> = [];
       let clock = Date.now();
       tx.certificate_bulk_import_item_events.create.mockImplementation(
         async ({ data }: any) => {
@@ -1225,13 +1229,18 @@ describe('CertificateBulkImportsService', () => {
     });
 
     it.each([
-      ['CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES', 'CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES'],
+      [
+        'CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES',
+        'CERTIFICATE_IMPORT_PDF_TOO_MANY_PAGES',
+      ],
       ['SOMETHING_NEW', 'CERTIFICATE_IMPORT_OCR_FAILED'],
       ['boom redis://:secret@host', 'CERTIFICATE_IMPORT_OCR_FAILED'],
     ])('recordOcrFailure(%s) stores only %s', async (input, stored) => {
       await service.recordOcrFailure('user-1', 'batch-1', input);
 
-      expect(tx.certificate_bulk_import_item_events.create).toHaveBeenCalledWith({
+      expect(
+        tx.certificate_bulk_import_item_events.create,
+      ).toHaveBeenCalledWith({
         data: expect.objectContaining({
           batch_id: 'batch-1',
           action: 'OCR_FAILED',
@@ -1239,7 +1248,9 @@ describe('CertificateBulkImportsService', () => {
         }),
       });
       expect(
-        JSON.stringify(tx.certificate_bulk_import_item_events.create.mock.calls),
+        JSON.stringify(
+          tx.certificate_bulk_import_item_events.create.mock.calls,
+        ),
       ).not.toContain('secret');
     });
 

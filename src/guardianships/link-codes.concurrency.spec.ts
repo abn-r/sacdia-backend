@@ -184,7 +184,7 @@ function build(db: FakeDb) {
     {
       revokeAllForDependent: jest.fn().mockResolvedValue(0),
       revokeByGuardianship: jest.fn().mockResolvedValue(0),
-    } as any,
+    },
   );
 }
 

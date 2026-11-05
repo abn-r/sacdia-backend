@@ -88,7 +88,7 @@ export class InventoryController {
     const localFieldId = await resolveMaterialsListLocalFieldId(
       this.prisma,
       req.authorization,
-      Number.isFinite(override) ? (override as number) : undefined,
+      Number.isFinite(override) ? override : undefined,
     );
     return this.inventoryService.list(query, localFieldId);
   }

@@ -25,7 +25,8 @@ export class AnnualContinuationBodyDto {
 
 export class AnnualEnrollBodyDto {
   @ApiProperty({
-    description: 'Optional target club section ID (must be in the same club as the ghost assignment)',
+    description:
+      'Optional target club section ID (must be in the same club as the ghost assignment)',
     required: false,
     type: Number,
   })

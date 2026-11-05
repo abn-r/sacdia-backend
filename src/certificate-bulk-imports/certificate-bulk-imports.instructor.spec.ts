@@ -66,7 +66,7 @@ describe('CertificateBulkImportsService instructor (B2)', () => {
     instructors.photoUrlsFor.mockResolvedValue(new Map());
     service = new CertificateBulkImportsService(
       prisma as never,
-      ocrProvider as never,
+      ocrProvider,
       null,
       instructors as never,
     );
@@ -443,7 +443,7 @@ describe('CertificateBulkImportsService instructor (B2)', () => {
             instructor_user_id: OWNER,
           },
         ],
-      } as never);
+      });
 
       const rows =
         tx.certificate_bulk_import_items.createMany.mock.calls[0][0].data;

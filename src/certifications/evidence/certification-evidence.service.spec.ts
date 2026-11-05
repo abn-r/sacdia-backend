@@ -237,9 +237,7 @@ describe('CertificationEvidenceService', () => {
 
       await service.presign(USER_ID, ENROLLMENT_ID, SECTION_ID, presignDto);
 
-      expect(
-        txMock.certification_section_progress.create,
-      ).toHaveBeenCalledWith(
+      expect(txMock.certification_section_progress.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             user_id: USER_ID,

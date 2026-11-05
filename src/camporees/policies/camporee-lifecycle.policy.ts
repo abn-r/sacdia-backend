@@ -8,10 +8,7 @@ export type CamporeePhase =
   | 'finished';
 
 export type ClubRegistrationDisposition =
-  | 'not_open_yet'
-  | 'open'
-  | 'late_approval_required'
-  | 'manually_frozen';
+  'not_open_yet' | 'open' | 'late_approval_required' | 'manually_frozen';
 
 export interface CamporeeLifecycleContext {
   startDate: string;

@@ -30,7 +30,10 @@ const ALLOWED_PAIRS: Array<[CamporeeOrderStatus, CamporeeOrderStatus]> = [
   ['PAID', 'DELIVERED'],
 ];
 
-function isAllowed(from: CamporeeOrderStatus, to: CamporeeOrderStatus): boolean {
+function isAllowed(
+  from: CamporeeOrderStatus,
+  to: CamporeeOrderStatus,
+): boolean {
   return ALLOWED_PAIRS.some(([a, b]) => a === from && b === to);
 }
 

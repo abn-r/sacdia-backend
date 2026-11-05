@@ -1,18 +1,8 @@
 export type InstitutionalEntityType =
-  | 'division'
-  | 'union'
-  | 'local_field'
-  | 'district'
-  | 'church'
-  | 'club';
+  'division' | 'union' | 'local_field' | 'district' | 'church' | 'club';
 
 export type HistoricalPrecision =
-  | 'exact'
-  | 'day'
-  | 'month'
-  | 'year'
-  | 'system_backfill'
-  | 'unknown';
+  'exact' | 'day' | 'month' | 'year' | 'system_backfill' | 'unknown';
 
 export type TemporalRevision = {
   revisionId: string;

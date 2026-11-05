@@ -250,7 +250,10 @@ describe('CatalogService', () => {
     it('lets a union create a UNION product for its own union', async () => {
       prisma.camporee_order_products.create.mockResolvedValue(unionProduct());
 
-      await service.create(createDto({ title: 'Gorra unión' }), unionActor(UNION_2));
+      await service.create(
+        createDto({ title: 'Gorra unión' }),
+        unionActor(UNION_2),
+      );
 
       expect(prisma.camporee_order_products.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -407,14 +410,16 @@ describe('CatalogService', () => {
         lfActor(LF_10),
       );
 
-      expect(prisma.camporee_order_product_options.create).toHaveBeenCalledWith({
-        data: {
-          product_id: PRODUCT_ID,
-          label: 'XL',
-          sort_order: 3,
-          active: true,
+      expect(prisma.camporee_order_product_options.create).toHaveBeenCalledWith(
+        {
+          data: {
+            product_id: PRODUCT_ID,
+            label: 'XL',
+            sort_order: 3,
+            active: true,
+          },
         },
-      });
+      );
     });
 
     it('accepts NUMERIC labels that are digits only', async () => {
@@ -496,8 +501,12 @@ describe('CatalogService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.CAMPOREE_ORDER_OPTION_FORBIDDEN,
       });
-      expect(prisma.camporee_order_product_options.update).not.toHaveBeenCalled();
-      expect(prisma.camporee_order_product_options.delete).not.toHaveBeenCalled();
+      expect(
+        prisma.camporee_order_product_options.update,
+      ).not.toHaveBeenCalled();
+      expect(
+        prisma.camporee_order_product_options.delete,
+      ).not.toHaveBeenCalled();
     });
 
     it('allows deactivating a referenced option (soft-delete, no hard delete)', async () => {
@@ -509,18 +518,18 @@ describe('CatalogService', () => {
         active: false,
       });
 
-      await service.updateOption(
-        OPTION_ID,
-        { active: false },
-        lfActor(LF_10),
-      );
+      await service.updateOption(OPTION_ID, { active: false }, lfActor(LF_10));
 
-      expect(prisma.camporee_order_product_options.update).toHaveBeenCalledWith({
-        where: { camporee_order_product_option_id: OPTION_ID },
-        data: { active: false },
-      });
+      expect(prisma.camporee_order_product_options.update).toHaveBeenCalledWith(
+        {
+          where: { camporee_order_product_option_id: OPTION_ID },
+          data: { active: false },
+        },
+      );
       expect(prisma.camporee_order_lines.count).not.toHaveBeenCalled();
-      expect(prisma.camporee_order_product_options.delete).not.toHaveBeenCalled();
+      expect(
+        prisma.camporee_order_product_options.delete,
+      ).not.toHaveBeenCalled();
     });
   });
 

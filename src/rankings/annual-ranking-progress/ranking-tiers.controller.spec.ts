@@ -48,7 +48,7 @@ describe('RankingTiersController', () => {
   });
 
   it('updates a tier in a success envelope', async () => {
-    service.update.mockResolvedValueOnce(tierRow as never);
+    service.update.mockResolvedValueOnce(tierRow);
 
     const result = await controller.update(tierRow.ranking_tier_id, {
       band_percentage: 7,

@@ -160,9 +160,7 @@ describe('configurable certifications schema', () => {
     expect(sql).toMatch(
       /UPDATE\s+"?users_certifications"?[\s\S]*certification_version_id/i,
     );
-    expect(sql).not.toMatch(
-      /DROP TABLE\s+"?certification_module_progress"?/i,
-    );
+    expect(sql).not.toMatch(/DROP TABLE\s+"?certification_module_progress"?/i);
     expect(sql).not.toMatch(/DROP COLUMN\s+"?completion_status"?/i);
   });
 

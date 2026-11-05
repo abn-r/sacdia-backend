@@ -884,8 +884,7 @@ describe('ClubsService', () => {
       {
         name: 'POST roles',
         serviceMethod: 'assignRole',
-        call: (c, s) =>
-          controller.assignRole(c, s, { sub: actor }, assignDto as never),
+        call: (c, s) => controller.assignRole(c, s, { sub: actor }, assignDto),
       },
       {
         name: 'POST director-assignment',
@@ -895,19 +894,14 @@ describe('ClubsService', () => {
             c,
             s,
             { sub: actor },
-            initialDirectorDto as never,
+            initialDirectorDto,
           ),
       },
       {
         name: 'POST director-succession',
         serviceMethod: 'succeedSectionDirector',
         call: (c, s) =>
-          controller.succeedDirector(
-            c,
-            s,
-            { sub: actor },
-            successionDto as never,
-          ),
+          controller.succeedDirector(c, s, { sub: actor }, successionDto),
       },
     ];
 
@@ -982,7 +976,7 @@ describe('ClubsService', () => {
         });
         const delegate = jest
           .spyOn(service, serviceMethod)
-          .mockResolvedValue('delegated' as never);
+          .mockResolvedValue('delegated');
 
         await expect(call(10, 7)).resolves.toBe('delegated');
 

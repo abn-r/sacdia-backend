@@ -325,7 +325,7 @@ export class FieldPaymentOrdersService {
       {
         field_payment_order_id: order.field_payment_order_id,
         local_field_id: order.local_field_id,
-        status: order.status as FieldPaymentOrderStatus,
+        status: order.status,
       },
       file,
       { userId: actor.userId },
@@ -341,7 +341,7 @@ export class FieldPaymentOrdersService {
     const found = await this.findOrder(orderId);
     this.assertSectionScope(found, actor);
     const order = await this.expireIfDue(found);
-    assertTransition(order.status as FieldPaymentOrderStatus, 'CANCELLED');
+    assertTransition(order.status, 'CANCELLED');
 
     return this.prisma
       .$transaction(async (tx) => {
@@ -394,7 +394,7 @@ export class FieldPaymentOrdersService {
     this.requireReviewer(actor);
     const order = await this.findOrder(orderId, { lines: true });
     this.assertReviewerScope(order, actor);
-    assertTransition(order.status as FieldPaymentOrderStatus, 'APPROVED');
+    assertTransition(order.status, 'APPROVED');
 
     const proof = await this.prisma.field_payment_order_proofs.findFirst({
       where: { field_payment_order_id: orderId, status: 'SUBMITTED' },
@@ -411,7 +411,7 @@ export class FieldPaymentOrdersService {
       );
     }
 
-    const port = this.portFor(order.purpose as OrderPurpose);
+    const port = this.portFor(order.purpose);
     const now = new Date();
     let fulfillStarted = false;
 
@@ -433,11 +433,7 @@ export class FieldPaymentOrdersService {
           });
 
           fulfillStarted = true;
-          await port.fulfill(
-            tx,
-            fresh as unknown as OrderForFulfillment,
-            actor,
-          );
+          await port.fulfill(tx, fresh, actor);
 
           await tx.field_payment_order_proofs.update({
             where: {
@@ -494,7 +490,7 @@ export class FieldPaymentOrdersService {
     }
     const order = await this.findOrder(orderId);
     this.assertReviewerScope(order, actor);
-    assertTransition(order.status as FieldPaymentOrderStatus, 'PROOF_REJECTED');
+    assertTransition(order.status, 'PROOF_REJECTED');
 
     const proof = await this.prisma.field_payment_order_proofs.findFirst({
       where: { field_payment_order_id: orderId, status: 'SUBMITTED' },
@@ -643,7 +639,7 @@ export class FieldPaymentOrdersService {
       });
     });
     this.logEvent('expired', { order_id: order.field_payment_order_id });
-    return { ...order, status: 'EXPIRED', expired_at: now } as T;
+    return { ...order, status: 'EXPIRED', expired_at: now };
   }
 
   /** Lazy expiry for scoped listings. */

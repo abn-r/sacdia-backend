@@ -19,9 +19,7 @@ import {
 } from '../../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import { AnnualRankingsService } from './annual-rankings.service';
-import type {
-  AnnualRankingLeaderboardRowDto,
-} from './dto/annual-ranking-leaderboard-response.dto';
+import type { AnnualRankingLeaderboardRowDto } from './dto/annual-ranking-leaderboard-response.dto';
 
 @ApiTags('Annual Rankings')
 @ApiBearerAuth()

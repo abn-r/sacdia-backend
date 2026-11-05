@@ -5,12 +5,7 @@ import { AppNotFoundException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 
 export type HierarchyEntityType =
-  | 'division'
-  | 'union'
-  | 'local_field'
-  | 'district'
-  | 'church'
-  | 'club';
+  'division' | 'union' | 'local_field' | 'district' | 'church' | 'club';
 
 export type HierarchyEntityRef = {
   type: HierarchyEntityType;
@@ -27,10 +22,7 @@ export type ResolveCurrentInput = {
 };
 
 export type HierarchyContextSource =
-  | 'current'
-  | 'as_of'
-  | 'snapshot'
-  | 'system_backfill';
+  'current' | 'as_of' | 'snapshot' | 'system_backfill';
 
 export type HierarchyContext = {
   hierarchy_context_id?: string;

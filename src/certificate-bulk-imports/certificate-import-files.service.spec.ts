@@ -237,18 +237,21 @@ describe('CertificateImportFilesService', () => {
     const claimedData = () =>
       prisma.certificate_bulk_import_files.updateMany.mock.calls[0][0].data;
 
-    it.each([1, 5])('stores the PDF page count (%i) in the same claim that seals it', async (pages) => {
-      await preparePdf(pages);
+    it.each([1, 5])(
+      'stores the PDF page count (%i) in the same claim that seals it',
+      async (pages) => {
+        await preparePdf(pages);
 
-      const sealed = await service.confirm('owner-1', 'batch-1', 'file-1');
+        const sealed = await service.confirm('owner-1', 'batch-1', 'file-1');
 
-      expect(claimedData()).toMatchObject({
-        upload_status: 'CONFIRMED',
-        page_count: pages,
-      });
-      expect(sealed.page_count).toBe(pages);
-      await waitForIdleValidationWorkers();
-    });
+        expect(claimedData()).toMatchObject({
+          upload_status: 'CONFIRMED',
+          page_count: pages,
+        });
+        expect(sealed.page_count).toBe(pages);
+        await waitForIdleValidationWorkers();
+      },
+    );
 
     it('stores 1 for an image', async () => {
       prisma.certificate_bulk_import_files.findFirst.mockResolvedValueOnce({
@@ -298,7 +301,9 @@ describe('CertificateImportFilesService', () => {
       await expect(
         service.confirm('owner-1', 'batch-1', 'file-1'),
       ).resolves.toMatchObject({ page_count: null });
-      expect(prisma.certificate_bulk_import_files.updateMany).not.toHaveBeenCalled();
+      expect(
+        prisma.certificate_bulk_import_files.updateMany,
+      ).not.toHaveBeenCalled();
     });
   });
 

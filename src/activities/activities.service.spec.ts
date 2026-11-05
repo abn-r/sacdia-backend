@@ -1236,11 +1236,7 @@ describe('ActivitiesService', () => {
     });
 
     it('preview expands weekly Sundays inside the ecclesiastical year', async () => {
-      const result = await service.previewActivitySeries(
-        1,
-        baseDto as any,
-        now,
-      );
+      const result = await service.previewActivitySeries(1, baseDto, now);
 
       expect(result.count).toBe(4);
       expect(result.dates).toEqual([
@@ -1256,7 +1252,7 @@ describe('ActivitiesService', () => {
       await expect(
         service.previewActivitySeries(
           1,
-          { ...baseDto, activity_date: '2026-03-07' } as any,
+          { ...baseDto, activity_date: '2026-03-07' },
           now,
         ),
       ).rejects.toMatchObject({
@@ -1274,7 +1270,7 @@ describe('ActivitiesService', () => {
               ...baseDto.recurrence,
               until: '2026-12-13',
             },
-          } as any,
+          },
           now,
         ),
       ).rejects.toMatchObject({
@@ -1322,7 +1318,7 @@ describe('ActivitiesService', () => {
 
       const result = await service.createActivitySeries(
         1,
-        baseDto as any,
+        baseDto,
         'user-1',
         now,
       );

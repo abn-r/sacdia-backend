@@ -24,8 +24,7 @@ function normalizePathname(pathname: string): string {
 export function pathnameNeedsLargeJsonBody(pathname: string): boolean {
   const normalized = normalizePathname(pathname);
   return LARGE_JSON_PATH_PREFIXES.some(
-    (prefix) =>
-      normalized === prefix || normalized.startsWith(`${prefix}/`),
+    (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`),
   );
 }
 

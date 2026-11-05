@@ -1,11 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import {
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from 'pg';
@@ -379,8 +374,7 @@ describe('local field timezone backfill apply primitive', () => {
       // Overlap can serialize as winner+conflict, or as apply+idempotent
       // replay if the second CLI starts after commit. Both converge.
       const applied = results.filter(
-        (result) =>
-          result.exitCode === 0 && result.report.status === 'applied',
+        (result) => result.exitCode === 0 && result.report.status === 'applied',
       );
       const conflicts = results.filter((result) => {
         const error = result.report.error;

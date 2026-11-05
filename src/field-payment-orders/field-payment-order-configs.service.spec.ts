@@ -70,9 +70,9 @@ describe('FieldPaymentOrderConfigsService', () => {
     });
 
     it('requires an explicit local field for global admins', async () => {
-      await expect(service.get(undefined, GLOBAL_ADMIN)).rejects.toMatchObject(
-        { code: ErrorCode.FIELD_PAYMENT_ORDER_CONFIG_INVALID },
-      );
+      await expect(service.get(undefined, GLOBAL_ADMIN)).rejects.toMatchObject({
+        code: ErrorCode.FIELD_PAYMENT_ORDER_CONFIG_INVALID,
+      });
     });
   });
 

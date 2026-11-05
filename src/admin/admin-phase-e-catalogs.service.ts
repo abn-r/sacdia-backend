@@ -559,12 +559,7 @@ export class AdminPhaseECatalogsService {
       data: { active: false, modified_at: new Date() },
     });
 
-    this.logMutation(
-      'delete',
-      'class_prerequisites',
-      prerequisiteId,
-      actorId,
-    );
+    this.logMutation('delete', 'class_prerequisites', prerequisiteId, actorId);
     return record;
   }
 
@@ -881,9 +876,9 @@ export class AdminPhaseECatalogsService {
     if (!touchesRequirementConfig) return {};
 
     const requirementTrack =
-      (dto.requirement_track ??
-        existing?.requirement_track ??
-        class_requirement_track_enum.BASIC) as class_requirement_track_enum;
+      dto.requirement_track ??
+      existing?.requirement_track ??
+      class_requirement_track_enum.BASIC;
     const requiredForInvestiture =
       requirementTrack === class_requirement_track_enum.ADVANCED
         ? false
@@ -1200,9 +1195,7 @@ export class AdminPhaseECatalogsService {
       record.inventory_category_id,
       actorId,
     );
-    await this.catalogCache.invalidate(
-      CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES,
-    );
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES);
     return record;
   }
 
@@ -1248,9 +1241,7 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('update', 'inventory_categories', id, actorId);
-    await this.catalogCache.invalidate(
-      CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES,
-    );
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES);
     return record;
   }
 
@@ -1263,9 +1254,7 @@ export class AdminPhaseECatalogsService {
     });
 
     this.logMutation('delete', 'inventory_categories', id, actorId);
-    await this.catalogCache.invalidate(
-      CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES,
-    );
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.INVENTORY_CATEGORIES);
     return record;
   }
 
@@ -1737,9 +1726,7 @@ export class AdminPhaseECatalogsService {
 
   private validateMasterHonorConfig(
     applicabilityScope:
-      | master_honor_applicability_scope_enum
-      | undefined
-      | null,
+      master_honor_applicability_scope_enum | undefined | null,
     divisionIds: number[],
     requirementGroups: Array<{
       group_type: master_honor_requirement_group_type_enum;
@@ -1808,9 +1795,7 @@ export class AdminPhaseECatalogsService {
 
   private async validateMasterHonorReferences(
     applicabilityScope:
-      | master_honor_applicability_scope_enum
-      | undefined
-      | null,
+      master_honor_applicability_scope_enum | undefined | null,
     divisionIds: number[],
     requirementGroups: Array<{
       group_type: master_honor_requirement_group_type_enum;
@@ -1903,9 +1888,7 @@ export class AdminPhaseECatalogsService {
     tx: any,
     masterHonorId: number,
     applicabilityScope:
-      | master_honor_applicability_scope_enum
-      | undefined
-      | null,
+      master_honor_applicability_scope_enum | undefined | null,
     divisionIds?: number[],
   ) {
     await tx.master_honor_divisions.deleteMany({

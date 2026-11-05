@@ -5,11 +5,7 @@
 import { UnprocessableEntityException } from '@nestjs/common';
 
 export type MaterialOrderEstado =
-  | 'en_revision'
-  | 'aprobada'
-  | 'pagada'
-  | 'entregada'
-  | 'cancelada';
+  'en_revision' | 'aprobada' | 'pagada' | 'entregada' | 'cancelada';
 
 /**
  * Allowed state transitions.

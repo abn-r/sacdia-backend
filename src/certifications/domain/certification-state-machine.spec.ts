@@ -38,9 +38,9 @@ describe('certification state machine', () => {
   describe('enrollment transitions', () => {
     it('allows the happy-path lifecycle', () => {
       expect(canTransitionEnrollment('ENROLLED', 'IN_PROGRESS')).toBe(true);
-      expect(
-        canTransitionEnrollment('IN_PROGRESS', 'READY_FOR_CLOSEOUT'),
-      ).toBe(true);
+      expect(canTransitionEnrollment('IN_PROGRESS', 'READY_FOR_CLOSEOUT')).toBe(
+        true,
+      );
       expect(
         canTransitionEnrollment(
           'READY_FOR_CLOSEOUT',
@@ -105,7 +105,9 @@ describe('certification state machine', () => {
 
     it('locks response edits while SUBMITTED or APPROVED', () => {
       expect(() => assertRequirementEditable('DRAFT')).not.toThrow();
-      expect(() => assertRequirementEditable('CHANGES_REQUESTED')).not.toThrow();
+      expect(() =>
+        assertRequirementEditable('CHANGES_REQUESTED'),
+      ).not.toThrow();
       expect(() => assertRequirementEditable('SUBMITTED')).toThrow(
         expect.objectContaining({ code: ErrorCode.CERT_REQUIREMENT_LOCKED }),
       );

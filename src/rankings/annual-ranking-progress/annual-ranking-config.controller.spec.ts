@@ -44,7 +44,10 @@ const dto = {
 describe('AnnualRankingConfigController', () => {
   let controller: AnnualRankingConfigController;
   let service: jest.Mocked<
-    Pick<AnnualRankingConfigService, 'list' | 'create' | 'update' | 'deactivate'>
+    Pick<
+      AnnualRankingConfigService,
+      'list' | 'create' | 'update' | 'deactivate'
+    >
   >;
 
   beforeEach(async () => {
@@ -84,7 +87,7 @@ describe('AnnualRankingConfigController', () => {
   });
 
   it('creates an annual ranking config using the authenticated user id', async () => {
-    service.create.mockResolvedValueOnce(configRow as never);
+    service.create.mockResolvedValueOnce(configRow);
 
     const result = await controller.create(dto, { user: { userId: USER_ID } });
 
@@ -93,7 +96,7 @@ describe('AnnualRankingConfigController', () => {
   });
 
   it('updates an annual ranking config using the authenticated user id', async () => {
-    service.update.mockResolvedValueOnce(configRow as never);
+    service.update.mockResolvedValueOnce(configRow);
 
     const result = await controller.update(
       configRow.annual_ranking_config_id,
@@ -113,7 +116,7 @@ describe('AnnualRankingConfigController', () => {
     service.deactivate.mockResolvedValueOnce({
       ...configRow,
       active: false,
-    } as never);
+    });
 
     const result = await controller.deactivate(
       configRow.annual_ranking_config_id,

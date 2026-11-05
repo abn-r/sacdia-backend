@@ -60,9 +60,7 @@ function treasurer(): CamporeeOrderActor {
   });
 }
 
-function orderRow(
-  overrides: Record<string, unknown> = {},
-): {
+function orderRow(overrides: Record<string, unknown> = {}): {
   camporee_order_id: string;
   club_section_id: number;
   status: string;

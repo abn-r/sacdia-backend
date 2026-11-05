@@ -200,27 +200,37 @@ describe('InsuranceFulfillmentService.fulfill', () => {
       },
       insurance_assignments: {
         findMany: jest.fn().mockResolvedValue([]),
-        createManyAndReturn: jest.fn().mockImplementation(({ data }: { data: Array<{ insurance_coverage_slot_id: number }> }) =>
-          Promise.resolve(
-            data.map((row) => ({
-              insurance_assignment_id: ++assignmentSeq,
-              insurance_coverage_slot_id: row.insurance_coverage_slot_id,
-            })),
+        createManyAndReturn: jest
+          .fn()
+          .mockImplementation(
+            ({
+              data,
+            }: {
+              data: Array<{ insurance_coverage_slot_id: number }>;
+            }) =>
+              Promise.resolve(
+                data.map((row) => ({
+                  insurance_assignment_id: ++assignmentSeq,
+                  insurance_coverage_slot_id: row.insurance_coverage_slot_id,
+                })),
+              ),
           ),
-        ),
       },
       insurance_purchases: {
         create: jest.fn().mockResolvedValue({ insurance_purchase_id: 900 }),
       },
       insurance_coverage_slots: {
-        createManyAndReturn: jest.fn().mockImplementation(({ data }: { data: Array<{ sequence_number: number }> }) =>
-          Promise.resolve(
-            data.map((row) => ({
-              insurance_coverage_slot_id: ++slotSeq,
-              sequence_number: row.sequence_number,
-            })),
+        createManyAndReturn: jest
+          .fn()
+          .mockImplementation(
+            ({ data }: { data: Array<{ sequence_number: number }> }) =>
+              Promise.resolve(
+                data.map((row) => ({
+                  insurance_coverage_slot_id: ++slotSeq,
+                  sequence_number: row.sequence_number,
+                })),
+              ),
           ),
-        ),
       },
       insurance_slot_movements: { createMany: jest.fn() },
       member_insurances: {
@@ -246,14 +256,20 @@ describe('InsuranceFulfillmentService.fulfill', () => {
         reviewed_by_id: 'lf-reviewer-1',
       }),
     });
-    expect(tx.insurance_coverage_slots.createManyAndReturn).toHaveBeenCalledTimes(1);
-    expect(tx.insurance_coverage_slots.createManyAndReturn).toHaveBeenCalledWith({
+    expect(
+      tx.insurance_coverage_slots.createManyAndReturn,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      tx.insurance_coverage_slots.createManyAndReturn,
+    ).toHaveBeenCalledWith({
       data: expect.arrayContaining([
         expect.objectContaining({ status: 'ASSIGNED', sequence_number: 1 }),
         expect.objectContaining({ status: 'ASSIGNED', sequence_number: 2 }),
       ]),
     });
-    expect(tx.insurance_assignments.createManyAndReturn).toHaveBeenCalledTimes(1);
+    expect(tx.insurance_assignments.createManyAndReturn).toHaveBeenCalledTimes(
+      1,
+    );
     expect(tx.insurance_assignments.createManyAndReturn).toHaveBeenCalledWith({
       data: expect.arrayContaining([
         expect.objectContaining({
@@ -303,9 +319,7 @@ describe('InsuranceFulfillmentService.fulfill', () => {
   });
 
   it('fails with 409 and no side effects when membership broke before approve', async () => {
-    tx.club_role_assignments.findMany.mockResolvedValue([
-      { user_id: 'ben-1' },
-    ]);
+    tx.club_role_assignments.findMany.mockResolvedValue([{ user_id: 'ben-1' }]);
     await expect(service.fulfill(tx, order, reviewer)).rejects.toMatchObject({
       code: ErrorCode.FIELD_PAYMENT_ORDER_ELIGIBILITY_FAILED,
     });
@@ -313,9 +327,7 @@ describe('InsuranceFulfillmentService.fulfill', () => {
   });
 
   it('fails when a beneficiary got covered between issue and approve', async () => {
-    tx.insurance_assignments.findMany.mockResolvedValue([
-      { user_id: 'ben-2' },
-    ]);
+    tx.insurance_assignments.findMany.mockResolvedValue([{ user_id: 'ben-2' }]);
     await expect(service.fulfill(tx, order, reviewer)).rejects.toMatchObject({
       code: ErrorCode.FIELD_PAYMENT_ORDER_DUPLICATE_BENEFICIARY,
     });

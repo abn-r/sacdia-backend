@@ -113,10 +113,7 @@ describe.each([
     const built = build();
     redis = built.redis;
     events = { onLoginLocked: jest.fn() };
-    counter = new LoginFailureCounter(
-      built.cache,
-      events as SupervisedLoginEvents,
-    );
+    counter = new LoginFailureCounter(built.cache, events);
   });
 
   afterEach(() => {

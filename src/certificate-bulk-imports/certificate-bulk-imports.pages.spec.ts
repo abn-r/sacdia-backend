@@ -64,7 +64,7 @@ describe('CertificateBulkImportsService source file and page (B4)', () => {
     instructors.photoUrlsFor.mockResolvedValue(new Map());
     service = new CertificateBulkImportsService(
       prisma as never,
-      ocrProvider as never,
+      ocrProvider,
       null,
       instructors as never,
     );

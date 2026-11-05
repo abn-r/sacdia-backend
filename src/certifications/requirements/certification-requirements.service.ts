@@ -175,9 +175,7 @@ export class CertificationRequirementsService {
       });
 
       if (progress) {
-        assertRequirementEditable(
-          progress.status as CertificationRequirementStatus,
-        );
+        assertRequirementEditable(progress.status);
       } else {
         progress = await tx.certification_section_progress.create({
           data: {
@@ -250,7 +248,10 @@ export class CertificationRequirementsService {
     enrollmentId: number,
     sectionId: number,
     dto: SubmitRequirementDto,
-  ): Promise<{ requirement: RequirementView; progress_summary: ProgressSummary }> {
+  ): Promise<{
+    requirement: RequirementView;
+    progress_summary: ProgressSummary;
+  }> {
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await this.getEditableEnrollmentOrThrow(
         userId,
@@ -272,12 +273,15 @@ export class CertificationRequirementsService {
       });
 
       if (!progress) {
-        throw new AppBadRequestException(ErrorCode.CERT_REQUIREMENT_INCOMPLETE, {
-          reason: 'no_draft_saved',
-        });
+        throw new AppBadRequestException(
+          ErrorCode.CERT_REQUIREMENT_INCOMPLETE,
+          {
+            reason: 'no_draft_saved',
+          },
+        );
       }
 
-      const currentStatus = progress.status as CertificationRequirementStatus;
+      const currentStatus = progress.status;
       assertRequirementEditable(currentStatus);
 
       const nextStatus = transitionRequirement(currentStatus, 'SUBMITTED');
@@ -389,7 +393,7 @@ export class CertificationRequirementsService {
       });
     }
 
-    return section as SectionRecord;
+    return section;
   }
 
   private async assertLinkedHonorApproved(
@@ -517,8 +521,7 @@ export class CertificationRequirementsService {
     const snapshots: RequirementProgressSnapshot[] = sections.map((s) => ({
       requirementId: s.section_id,
       required: s.required,
-      status: (progressBySection.get(s.section_id) ??
-        'DRAFT') as CertificationRequirementStatus,
+      status: progressBySection.get(s.section_id) ?? 'DRAFT',
     }));
 
     const summary = computeProgressSummary(snapshots);

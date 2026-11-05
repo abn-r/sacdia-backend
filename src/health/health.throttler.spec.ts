@@ -80,7 +80,7 @@ describe('GET /health under a failing Redis throttler', () => {
 
   it('answers 200 and never calls the throttler storage', async () => {
     const increment = jest.fn().mockRejectedValue(quotaError);
-    app = await createApp({ increment } as unknown as ThrottlerStorage);
+    app = await createApp({ increment });
 
     const res = await request(app.getHttpServer()).get('/health');
 
@@ -91,7 +91,7 @@ describe('GET /health under a failing Redis throttler', () => {
 
   it('control: a non-exempt route is a 500 when the storage throws and fail-open is not in place', async () => {
     const increment = jest.fn().mockRejectedValue(quotaError);
-    app = await createApp({ increment } as unknown as ThrottlerStorage);
+    app = await createApp({ increment });
 
     const res = await request(app.getHttpServer()).get('/probe');
 
@@ -111,7 +111,7 @@ describe('GET /health under a failing Redis throttler', () => {
     };
     mockCreateClient.mockReturnValue(client);
     const storage = new RedisThrottlerStorage('redis://localhost:6379');
-    app = await createApp(storage as unknown as ThrottlerStorage);
+    app = await createApp(storage);
 
     const probe = await request(app.getHttpServer()).get('/probe');
     const health = await request(app.getHttpServer()).get('/health');
@@ -134,7 +134,7 @@ describe('GET /health under a failing Redis throttler', () => {
     const storage = new RedisThrottlerStorage('redis://localhost:6379', {
       failOpen: true,
     });
-    app = await createApp(storage as unknown as ThrottlerStorage);
+    app = await createApp(storage);
 
     const probe = await request(app.getHttpServer()).get('/probe');
     const health = await request(app.getHttpServer()).get('/health');
@@ -157,7 +157,7 @@ describe('GET /health under a failing Redis throttler', () => {
     };
     mockCreateClient.mockReturnValue(client);
     const storage = new RedisThrottlerStorage('redis://localhost:6379');
-    app = await createApp(storage as unknown as ThrottlerStorage);
+    app = await createApp(storage);
 
     const res = await request(app.getHttpServer()).get('/probe');
 

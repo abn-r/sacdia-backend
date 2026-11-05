@@ -146,7 +146,11 @@ export class MasterHonorsRecalculationProcessor
   ) {
     let processed = 0;
 
-    for (let i = 0; i < users.length; i += MASTER_HONOR_RECALCULATION_BATCH_SIZE) {
+    for (
+      let i = 0;
+      i < users.length;
+      i += MASTER_HONOR_RECALCULATION_BATCH_SIZE
+    ) {
       const batch = users.slice(i, i + MASTER_HONOR_RECALCULATION_BATCH_SIZE);
       const jobId = this.generateJobId();
 
@@ -181,7 +185,9 @@ export class MasterHonorsRecalculationProcessor
     };
   }
 
-  private async getUsersAffectedByMasterHonor(masterHonorId: number): Promise<string[]> {
+  private async getUsersAffectedByMasterHonor(
+    masterHonorId: number,
+  ): Promise<string[]> {
     const [existingRecordRows, masterHonor] = await Promise.all([
       this.prisma.users_master_honors.findMany({
         where: {
@@ -230,7 +236,10 @@ export class MasterHonorsRecalculationProcessor
     const relatedCategoryIds = new Set<number>();
 
     for (const group of masterHonor.requirement_groups) {
-      if (group.group_type === master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS) {
+      if (
+        group.group_type ===
+        master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS
+      ) {
         for (const option of group.options) {
           for (const honor of option.honors) {
             explicitHonorIds.add(honor.honor_id);
@@ -239,7 +248,8 @@ export class MasterHonorsRecalculationProcessor
       }
 
       if (
-        group.group_type === master_honor_requirement_group_type_enum.CATEGORY_COUNT &&
+        group.group_type ===
+          master_honor_requirement_group_type_enum.CATEGORY_COUNT &&
         group.honors_category_id !== null
       ) {
         relatedCategoryIds.add(group.honors_category_id);
@@ -247,7 +257,7 @@ export class MasterHonorsRecalculationProcessor
     }
 
     const affectedRows = [
-      ...explicitHonorIds.size
+      ...(explicitHonorIds.size
         ? [
             await this.prisma.users_honors.findMany({
               where: {
@@ -261,8 +271,8 @@ export class MasterHonorsRecalculationProcessor
               distinct: ['user_id'],
             }),
           ]
-        : [],
-      ...relatedCategoryIds.size
+        : []),
+      ...(relatedCategoryIds.size
         ? [
             await this.prisma.users_honors.findMany({
               where: {
@@ -278,7 +288,7 @@ export class MasterHonorsRecalculationProcessor
               distinct: ['user_id'],
             }),
           ]
-        : [],
+        : []),
     ];
 
     for (const row of affectedRows.flat()) {
