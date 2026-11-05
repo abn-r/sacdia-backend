@@ -21,6 +21,32 @@ import {
 } from '../common/utils/evidence-file-names';
 import { GuardianNotificationsService } from '../guardianships/guardian-notifications.service';
 
+type RequirementTreeRow = { requirement_id: number; parent_id: number | null };
+
+/**
+ * Nests requirements to any depth (a sub-item can have its own options, as
+ * in "a. … i. … ii. …"). Rows keep their order, which callers sort by
+ * requirement_number. [map] shapes each row; every node gets `children`
+ * (empty for a leaf).
+ */
+export function buildRequirementTree<R extends RequirementTreeRow, T>(
+  rows: R[],
+  map: (row: R) => T,
+): Array<T & { children: unknown[] }> {
+  const childrenByParent = new Map<number, R[]>();
+  for (const row of rows) {
+    if (row.parent_id === null) continue;
+    const siblings = childrenByParent.get(row.parent_id) ?? [];
+    siblings.push(row);
+    childrenByParent.set(row.parent_id, siblings);
+  }
+  const build = (row: R): T & { children: unknown[] } => ({
+    ...map(row),
+    children: (childrenByParent.get(row.requirement_id) ?? []).map(build),
+  });
+  return rows.filter((row) => row.parent_id === null).map(build);
+}
+
 @Injectable()
 export class HonorRequirementsService {
   private static readonly MAX_EVIDENCE_PER_TYPE = 3;
@@ -59,20 +85,7 @@ export class HonorRequirementsService {
       orderBy: { requirement_number: 'asc' },
     });
 
-    const topLevel = allRequirements.filter((r) => r.parent_id === null);
-    const childrenByParent = new Map<number, typeof allRequirements>();
-    for (const req of allRequirements) {
-      if (req.parent_id !== null) {
-        const siblings = childrenByParent.get(req.parent_id) ?? [];
-        siblings.push(req);
-        childrenByParent.set(req.parent_id, siblings);
-      }
-    }
-
-    return topLevel.map((req) => ({
-      ...req,
-      children: childrenByParent.get(req.requirement_id) ?? [],
-    }));
+    return buildRequirementTree(allRequirements, (req) => req);
   }
 
   // ========================================
@@ -152,7 +165,6 @@ export class HonorRequirementsService {
       };
     };
 
-    const topLevel = requirements.filter((r) => r.parent_id === null);
     const childrenByParent = new Map<number, typeof requirements>();
     for (const req of requirements) {
       if (req.parent_id !== null) {
@@ -162,12 +174,7 @@ export class HonorRequirementsService {
       }
     }
 
-    const mergedTree = topLevel.map((req) => ({
-      ...mergeRequirement(req),
-      children: (childrenByParent.get(req.requirement_id) ?? []).map(
-        mergeRequirement,
-      ),
-    }));
+    const mergedTree = buildRequirementTree(requirements, mergeRequirement);
 
     const leafRequirements = requirements.filter(
       (r) => !childrenByParent.has(r.requirement_id),
