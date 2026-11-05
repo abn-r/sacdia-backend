@@ -2041,6 +2041,40 @@ describe('HonorsService', () => {
         ...extra,
       });
 
+      it('getUserHonors: exposes the validator as validated_by_name only', async () => {
+        mockPrismaService.users_honors.findMany.mockResolvedValue([
+          withInstructor({
+            validation_status: 'APPROVED',
+            validated_by_id: 'validator-1',
+            validator: {
+              name: 'Luis',
+              paternal_last_name: 'Gómez',
+              maternal_last_name: ' ',
+            },
+          }),
+          withInstructor({ user_honor_id: 71, validator: null }),
+        ]);
+        mockPrismaService.honor_instructor_proposals.findMany.mockResolvedValue(
+          [],
+        );
+
+        const [validated, pending] = await service.getUserHonors('owner-1');
+
+        expect(validated.validated_by_name).toBe('Luis Gómez');
+        expect(validated).not.toHaveProperty('validator');
+        expect(pending.validated_by_name).toBeNull();
+        expect(pending).not.toHaveProperty('validator');
+        const include =
+          mockPrismaService.users_honors.findMany.mock.calls[0][0].include;
+        expect(include.validator).toEqual({
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        });
+      });
+
       it('getUserHonors: instructor block without email nor photo, completed_at kept, no photo signing', async () => {
         mockPrismaService.users_honors.findMany.mockResolvedValue([
           withInstructor(),
