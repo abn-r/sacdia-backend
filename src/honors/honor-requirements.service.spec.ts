@@ -25,6 +25,7 @@ describe('HonorRequirementsService change tracking', () => {
 
   const fileStorage = {
     upload: jest.fn(),
+    getSignedDownloadUrl: jest.fn(),
   };
 
   const guardianNotifications = {
@@ -307,5 +308,73 @@ describe('HonorRequirementsService change tracking', () => {
         }),
       }),
     );
+  });
+
+  it('getUserProgress returns signed URLs for stored evidence, links as is', async () => {
+    mockPrisma.honor_requirements.findMany.mockResolvedValue([
+      {
+        requirement_id: 7,
+        requirement_number: 1,
+        parent_id: null,
+        requires_evidence: true,
+      },
+    ]);
+    mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([
+      {
+        requirement_id: 7,
+        completed: true,
+        requirement_evidence: [
+          {
+            evidence_id: 1,
+            evidence_type: 'IMAGE',
+            url: 'requirement_evidence/u/20/7/1.jpg',
+          },
+          {
+            evidence_id: 2,
+            evidence_type: 'LINK',
+            url: 'https://example.com/video',
+          },
+        ],
+      },
+    ]);
+    fileStorage.getSignedDownloadUrl.mockResolvedValue(
+      'https://r2.example.com/signed?sig=abc',
+    );
+
+    const {
+      requirements: [requirement],
+    } = await service.getUserProgress('user-1', 20);
+
+    expect(requirement.evidences.map((e) => e.url)).toEqual([
+      'https://r2.example.com/signed?sig=abc',
+      'https://example.com/video',
+    ]);
+    expect(fileStorage.getSignedDownloadUrl).toHaveBeenCalledTimes(1);
+    expect(fileStorage.getSignedDownloadUrl).toHaveBeenCalledWith(
+      expect.anything(),
+      'requirement_evidence/u/20/7/1.jpg',
+      { expiresInSeconds: 300 },
+    );
+  });
+
+  it('getUserProgress keeps the stored value when signing fails', async () => {
+    mockPrisma.honor_requirements.findMany.mockResolvedValue([
+      { requirement_id: 7, requirement_number: 1, parent_id: null },
+    ]);
+    mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([
+      {
+        requirement_id: 7,
+        requirement_evidence: [
+          { evidence_id: 1, evidence_type: 'IMAGE', url: 'key.jpg' },
+        ],
+      },
+    ]);
+    fileStorage.getSignedDownloadUrl.mockRejectedValue(new Error('r2 down'));
+
+    const {
+      requirements: [requirement],
+    } = await service.getUserProgress('user-1', 20);
+
+    expect(requirement.evidences[0].url).toBe('key.jpg');
   });
 });

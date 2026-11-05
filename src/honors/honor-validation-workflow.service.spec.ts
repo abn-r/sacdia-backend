@@ -352,6 +352,47 @@ describe('HonorValidationWorkflowService', () => {
     });
   });
 
+  describe('a "choose N" group with no sub-items (catalog mistake)', () => {
+    beforeEach(() => {
+      mockPrisma.users_honors.findUnique.mockResolvedValue(
+        honorRecord({
+          validation_status: 'IN_PROGRESS',
+          completion_mode: 'IN_APP',
+        }),
+      );
+      mockPrisma.honor_requirements.findMany.mockResolvedValue([
+        {
+          requirement_id: 1,
+          parent_id: null,
+          is_choice_group: true,
+          choice_min: 3,
+          requires_evidence: false,
+        },
+      ]);
+    });
+
+    it('is satisfied by its own completed row', async () => {
+      mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([
+        { requirement_id: 1, requirement_evidence: [] },
+      ]);
+      mockPrisma.users_honors.update.mockResolvedValue(
+        honorRecord({ validation_status: 'PENDING_REVIEW', submitted_at: now }),
+      );
+
+      await expect(
+        service.submitForReview(10, 'user-1'),
+      ).resolves.toMatchObject({ validation_status: 'PENDING_REVIEW' });
+    });
+
+    it('is still pending without a completed row', async () => {
+      mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([]);
+
+      await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject(
+        { code: ErrorCode.VALIDATION_HONOR_REQUIREMENTS_INCOMPLETE },
+      );
+    });
+  });
+
   it('requires active requirement evidence for in-app requirements that require evidence', async () => {
     mockPrisma.users_honors.findUnique.mockResolvedValue(
       honorRecord({

@@ -1,4 +1,5 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
+import pLimit from 'p-limit';
 import {
   AppBadRequestException,
   AppNotFoundException,
@@ -27,6 +28,10 @@ export class HonorRequirementsService {
     'PENDING_REVIEW',
     'APPROVED',
   ] as const;
+
+  /** Same TTL as the signed URLs of `getEvidences`. */
+  private static readonly EVIDENCE_URL_TTL_SECONDS = 300;
+  private readonly logger = new Logger(HonorRequirementsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -103,6 +108,22 @@ export class HonorRequirementsService {
       progressRows.map((p) => [p.requirement_id, p]),
     );
 
+    // The evidence bucket is private: return signed URLs, like
+    // `getEvidences`, or the client cannot load the files.
+    const limit = pLimit(20);
+    const signedUrlById = new Map<number, string>(
+      await Promise.all(
+        progressRows
+          .flatMap((p) => p.requirement_evidence ?? [])
+          .map((e) =>
+            limit(
+              async () =>
+                [e.evidence_id, await this.signEvidenceUrl(e)] as const,
+            ),
+          ),
+      ),
+    );
+
     const mergeRequirement = (req: (typeof requirements)[0]) => {
       const progress = progressByRequirement.get(req.requirement_id);
       return {
@@ -123,7 +144,7 @@ export class HonorRequirementsService {
         evidences: (progress?.requirement_evidence ?? []).map((e) => ({
           evidence_id: e.evidence_id,
           evidence_type: e.evidence_type,
-          url: e.url,
+          url: signedUrlById.get(e.evidence_id) ?? e.url,
           filename: e.filename,
           mime_type: e.mime_type,
           file_size: e.file_size,
@@ -411,6 +432,29 @@ export class HonorRequirementsService {
     });
 
     return evidence;
+  }
+
+  /** A link stays as is; a stored file gets a short-lived signed URL. */
+  private async signEvidenceUrl(evidence: {
+    evidence_type: string;
+    url: string;
+  }): Promise<string> {
+    if (evidence.evidence_type === 'LINK') return evidence.url;
+    try {
+      return await this.fileStorageService.getSignedDownloadUrl(
+        StorageBucketAlias.EVIDENCE_FILES,
+        evidence.url,
+        {
+          expiresInSeconds: HonorRequirementsService.EVIDENCE_URL_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to sign a requirement evidence URL. Returning the stored value.',
+        error,
+      );
+      return evidence.url;
+    }
   }
 
   async getEvidences(userId: string, honorId: number, requirementId: number) {
