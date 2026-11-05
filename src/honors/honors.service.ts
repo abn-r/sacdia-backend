@@ -62,12 +62,19 @@ export const HONOR_DETAIL_URL_LIMITER = pLimit(20);
 const HONOR_MUTATION_BLOCKED_STATUSES = ['PENDING_REVIEW', 'APPROVED'] as const;
 // Instructor (M1) con el que se arma el bloque `instructor` de las respuestas.
 // Una sola fila trae la foto para firmarla; los listados no (hasta 500 filas).
+// Only the validator's name parts: `mapUserHonorPrivateUrls` turns them into
+// `validated_by_name` and drops the relation, so no other user data leaks.
+const USER_HONOR_VALIDATOR_SELECT = {
+  select: { name: true, paternal_last_name: true, maternal_last_name: true },
+} as const;
 const USER_HONOR_INSTRUCTOR_INCLUDE = {
   instructor: { select: instructorUserSelect },
+  validator: USER_HONOR_VALIDATOR_SELECT,
 } satisfies Prisma.users_honorsInclude;
 const SINGLE_ROW = { instructorPhoto: true } as const;
 const USER_HONOR_INSTRUCTOR_LIST_INCLUDE = {
   instructor: { select: instructorUserSelectNoPhoto },
+  validator: USER_HONOR_VALIDATOR_SELECT,
 } satisfies Prisma.users_honorsInclude;
 const INITIAL_HONOR_COMPLETION_MODE = HonorCompletionModeDto.UNDECIDED;
 const ADVENTURERS_CLUB_TYPE_ID = 1;
@@ -1786,6 +1793,28 @@ export class HonorsService {
           ? await this.instructors.photoUrlsFor([userHonor.instructor])
           : undefined;
       mapped.instructor = toInstructorView(userHonor, photoUrls);
+    }
+
+    // Who validated the honor, as a display name only (the app shows it in the
+    // validation history). Only when the row carries the relation.
+    if ('validator' in userHonor) {
+      const validator = userHonor.validator as {
+        name?: string | null;
+        paternal_last_name?: string | null;
+        maternal_last_name?: string | null;
+      } | null;
+      const name = validator
+        ? [
+            validator.name,
+            validator.paternal_last_name,
+            validator.maternal_last_name,
+          ]
+            .map((part) => part?.trim())
+            .filter((part): part is string => Boolean(part))
+            .join(' ')
+        : '';
+      mapped.validated_by_name = name || null;
+      delete mapped.validator;
     }
 
     return mapped as T;
