@@ -7,7 +7,6 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import { loadPdfKit } from '../common/utils/pdfkit-loader';

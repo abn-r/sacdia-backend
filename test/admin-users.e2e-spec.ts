@@ -30,15 +30,6 @@ describe('Admin Users Detail E2E', () => {
     data: Awaited<ReturnType<AdminUsersService['getUserById']>>;
   };
 
-  type UsersFindUniqueResult = Awaited<
-    ReturnType<PrismaService['users']['findUnique']>
-  >;
-  type UsersFindFirstResult = Awaited<
-    ReturnType<PrismaService['users']['findFirst']>
-  >;
-  type EcclesiasticalYearFindFirstResult = Awaited<
-    ReturnType<PrismaService['ecclesiastical_years']['findFirst']>
-  >;
   type EnrollmentsFindManyResult = Awaited<
     ReturnType<PrismaService['enrollments']['findMany']>
   >;

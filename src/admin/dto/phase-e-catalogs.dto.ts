@@ -40,17 +40,6 @@ export enum ClassRequirementTrackDto {
   EXTRA = 'EXTRA',
 }
 
-// ─── SHARED: translation field mixin ─────────────────────────────────────────
-
-const translationsField = () => {
-  return (target: object, propertyKey: string) => {
-    IsOptional()(target, propertyKey);
-    ValidateNested({ each: true })(target, propertyKey);
-    Type(() => CatalogTranslationDto)(target, propertyKey);
-    ArrayMaxSize(3)(target, propertyKey);
-  };
-};
-
 // ─── CLASSES ──────────────────────────────────────────────────────────────────
 
 export class CreateClassDto {

@@ -37,7 +37,7 @@ import {
   type CamporeeOrderPdfModel,
 } from './pdf.service';
 import { CamporeeOrderProofService } from './proof.service';
-import { assertTransition, type CamporeeOrderStatus } from './state-machine';
+import { assertTransition } from './state-machine';
 
 export const CAMPOREE_ORDERS_EXPIRY_DAYS_KEY = 'camporee_orders.expiry_days';
 export const DEFAULT_CAMPOREE_ORDER_EXPIRY_DAYS = 15;

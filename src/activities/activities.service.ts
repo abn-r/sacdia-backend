@@ -2278,15 +2278,12 @@ export class ActivitiesService {
 
     // Verify all requested sections were found
     if (sections.length !== sectionIds.length) {
-      const foundIds = new Set(sections.map((s) => s.club_section_id));
-      const missing = sectionIds.filter((id) => !foundIds.has(id));
       throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_NOT_FOUND);
     }
 
     // Verify all sections belong to the given club
     const wrongSections = sections.filter((s) => s.main_club_id !== clubId);
     if (wrongSections.length > 0) {
-      const wrongIds = wrongSections.map((s) => s.club_section_id).join(', ');
       throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_WRONG_CLUB);
     }
 
