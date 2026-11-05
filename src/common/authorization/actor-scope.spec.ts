@@ -188,4 +188,16 @@ describe('ActorScope', () => {
     const actor = ActorScope.fromRoleNames([' Pastor ']);
     expect(actor.hasRole('pastor')).toBe(true);
   });
+  it('isCoordinator covers the three coordinator roles and nothing else', () => {
+    for (const role of [
+      'coordinator',
+      'zone-coordinator',
+      'general-coordinator',
+    ]) {
+      expect(ActorScope.fromRoleNames([role]).isCoordinator()).toBe(true);
+    }
+    expect(
+      ActorScope.fromRoleNames(['admin', 'director-lf']).isCoordinator(),
+    ).toBe(false);
+  });
 });

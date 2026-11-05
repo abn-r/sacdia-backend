@@ -1,3 +1,4 @@
+import { COORDINATOR_ROLES } from './role-sets';
 import { toTerritoryId } from './territory-id';
 import type {
   AuthorizationContextService,
@@ -112,6 +113,11 @@ export class ActorScope {
       if (this.globalRoles.has(normalizeRole(name))) return true;
     }
     return false;
+  }
+
+  /** True when the actor holds a coordinator / zone / general coordinator role. */
+  isCoordinator(): boolean {
+    return this.hasAnyRole(COORDINATOR_ROLES);
   }
 
   /**

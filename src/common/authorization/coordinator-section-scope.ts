@@ -1,6 +1,7 @@
 import { coordinator_assignment_type, type Prisma } from '@prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { GlobalRole } from './roles';
+import { ActorScope } from './actor-scope';
+import { COORDINATOR_ROLES } from './role-sets';
 
 /**
  * Canonical coordinator territory (docs/canon/runtime-coordination.md):
@@ -24,11 +25,9 @@ import { GlobalRole } from './roles';
  * CoordinationService delegates here: one expansion, not two.
  */
 /** GLOBAL roles whose territory is the coordinator scope below. */
-export const COORDINATOR_GLOBAL_ROLE_NAMES: ReadonlySet<string> = new Set([
-  GlobalRole.COORDINATOR,
-  GlobalRole.ZONE_COORDINATOR,
-  GlobalRole.GENERAL_COORDINATOR,
-]);
+export const COORDINATOR_GLOBAL_ROLE_NAMES: ReadonlySet<string> = new Set(
+  COORDINATOR_ROLES,
+);
 
 /**
  * The permissions the user's coordinator ROLES carry (direct grants, club
@@ -45,7 +44,7 @@ export function coordinatorRolePermissions(
   return new Set(
     globalRoles
       .filter((grant) =>
-        COORDINATOR_GLOBAL_ROLE_NAMES.has(grant.role_name.toLowerCase()),
+        ActorScope.fromRoleNames([grant.role_name]).isCoordinator(),
       )
       .flatMap((grant) => grant.permissions),
   );
