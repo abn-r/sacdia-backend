@@ -40,13 +40,16 @@ jobs:
         run: pnpm exec prisma validate
 
       # Type-aware ESLint rules must see the generated client; without it the
-      # stub types every model as `any` and `--fix` strips assertions the
+      # stub types every model as `any` and an autofix would strip assertions the
       # build later needs.
       - name: Generate Prisma Client
         run: pnpm exec prisma generate
 
       - name: Run ESLint
-        run: pnpm run lint
+        run: pnpm run lint:ci
+
+      - name: Verify lint did not modify the tree
+        run: git diff --exit-code
 
       - name: Verify generated authorization catalog (backend outputs)
         run: pnpm authz:check

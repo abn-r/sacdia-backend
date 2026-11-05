@@ -65,7 +65,8 @@ pnpm run test:e2e
 pnpm run test:cov
 
 # Lint y seguridad
-pnpm run lint
+pnpm run lint       # con --fix (local)
+pnpm run lint:ci    # sin --fix, como el CI
 pnpm run audit:security
 
 # Prisma
