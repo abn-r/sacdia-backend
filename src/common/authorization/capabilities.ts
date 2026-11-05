@@ -247,7 +247,9 @@ export const CAPABILITY_DEFINITIONS: Record<
     ...COORDINATOR_ROLES,
     ...LOCAL_FIELD_ROLES,
   ]),
-  'coordination.manage': levelIn(...LEVELS_WITH_TERRITORY),
+  // Writing zones and assignments is the local field's job; union and division
+  // only read. Not `levelIn`: `admin` anchors in a union and would get `union`.
+  'coordination.manage': globalRoleIn(ADMIN_SCOPE_AND_LOCAL_FIELD),
   'field_payment_orders.review': fieldPaymentOrderReviewer,
   'folders.confirm_union': globalRoleIn(UNION_ROLES),
   'folders.evaluate': levelIn(...LEVELS_WITH_TERRITORY),

@@ -20,6 +20,18 @@ describe('CoordinationService', () => {
     resolveCurrent: jest.fn(),
   };
 
+  const actorWith = (...roles: string[]) => ({
+    authorization: {
+      grants: {
+        global_roles: roles.map((role_name) => ({
+          role_name,
+          permissions: [],
+          scope: {},
+        })),
+      },
+    },
+  });
+
   let service: CoordinationService;
 
   beforeEach(() => {
@@ -32,7 +44,9 @@ describe('CoordinationService', () => {
   });
 
   it('rejects an assignment when the user is director of the same club_section', async () => {
-    authorizationContext.resolveUserAuthorization.mockResolvedValue({});
+    authorizationContext.resolveUserAuthorization.mockResolvedValue(
+      actorWith('director-lf'),
+    );
     authorizationContext.canAccessHierarchyScope.mockReturnValue(true);
     hierarchy.resolveCurrent.mockResolvedValue({ local_field_id: 10 });
     prisma.local_fields.findUnique.mockResolvedValue({ local_field_id: 10 });
@@ -61,7 +75,9 @@ describe('CoordinationService', () => {
   });
 
   function stubManageAccess() {
-    authorizationContext.resolveUserAuthorization.mockResolvedValue({});
+    authorizationContext.resolveUserAuthorization.mockResolvedValue(
+      actorWith('director-lf'),
+    );
     authorizationContext.canAccessHierarchyScope.mockReturnValue(true);
     hierarchy.resolveCurrent.mockResolvedValue({ local_field_id: 10 });
     prisma.local_fields.findUnique.mockResolvedValue({ local_field_id: 10 });
@@ -194,5 +210,100 @@ describe('CoordinationService', () => {
     expect(result.created).toHaveLength(0);
     expect(result.skipped[0]?.reason).toBe('general_slot_taken');
     expect(prisma.coordinator_assignments.create).not.toHaveBeenCalled();
+  });
+
+  describe('writes are the local field job', () => {
+    const calls: Array<[string, () => Promise<unknown>]> = [
+      ['createZone', () => service.createZone('actor', 10, { name: 'Z' })],
+      ['updateZone', () => service.updateZone('actor', 1, { name: 'Z' })],
+      [
+        'assignDistrictToZone',
+        () => service.assignDistrictToZone('actor', 1, 2),
+      ],
+      [
+        'removeDistrictFromZone',
+        () => service.removeDistrictFromZone('actor', 1, 2),
+      ],
+      [
+        'createAssignment',
+        () =>
+          service.createAssignment('actor', 10, {
+            user_id: '11111111-1111-1111-1111-111111111111',
+            assignment_type: coordinator_assignment_type.GENERAL,
+          }),
+      ],
+      ['updateAssignment', () => service.updateAssignment('actor', 'a-1', {})],
+      [
+        'backfillLegacyAssignments',
+        () => service.backfillLegacyAssignments('actor', 10),
+      ],
+    ];
+
+    beforeEach(() => {
+      authorizationContext.canAccessHierarchyScope.mockReturnValue(true);
+      hierarchy.resolveCurrent.mockResolvedValue({ local_field_id: 10 });
+      (prisma as any).coordination_zones = {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ zone_id: 1, local_field_id: 10 }),
+      };
+      (prisma.coordinator_assignments as any).findUnique = jest
+        .fn()
+        .mockResolvedValue({ assignment_id: 'a-1', local_field_id: 10 });
+    });
+
+    it.each(calls)(
+      '%s rejects union and division roles with GUARD_PERMISSION_DENIED even when their territory covers the field',
+      async (_name, call) => {
+        for (const role of [
+          'director-union',
+          'assistant-union',
+          'director-dia',
+          'assistant-dia',
+        ]) {
+          authorizationContext.resolveUserAuthorization.mockResolvedValue(
+            actorWith(role),
+          );
+          await expect(call()).rejects.toMatchObject({
+            code: ErrorCode.GUARD_PERMISSION_DENIED,
+          });
+        }
+        expect(hierarchy.resolveCurrent).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      'admin',
+      'assistant-admin',
+      'super-admin',
+      'director-lf',
+      'assistant-lf',
+    ])(
+      'lets %s past the role check and on to the hierarchy check',
+      async (role) => {
+        authorizationContext.resolveUserAuthorization.mockResolvedValue(
+          actorWith(role),
+        );
+        authorizationContext.canAccessHierarchyScope.mockReturnValue(false);
+        await expect(
+          service.createZone('actor', 10, { name: 'Z' }),
+        ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+        expect(hierarchy.resolveCurrent).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('keeps reads open to a union role whose territory covers the field', async () => {
+      authorizationContext.resolveUserAuthorization.mockResolvedValue(
+        actorWith('director-union'),
+      );
+      (prisma as any).coordination_zones.findMany = jest
+        .fn()
+        .mockResolvedValue([]);
+      (prisma.coordinator_assignments as any).findMany = jest
+        .fn()
+        .mockResolvedValue([]);
+      await expect(service.listZones('actor', 10)).resolves.toEqual([]);
+      await expect(service.listAssignments('actor', 10)).resolves.toEqual([]);
+    });
   });
 });
