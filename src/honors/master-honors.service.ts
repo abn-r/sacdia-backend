@@ -200,10 +200,7 @@ export class MasterHonorsService {
 
     const approvedHonors = this.buildApprovedHonorSet(approvedRows);
     const statusByMasterHonorId = new Map(
-      existingStatuses.map((row) => [
-        row.master_honor_id,
-        row.status as UserMasterHonorStatus,
-      ]),
+      existingStatuses.map((row) => [row.master_honor_id, row.status]),
     );
 
     return masterHonors
@@ -251,7 +248,7 @@ export class MasterHonorsService {
       master_honor_id: record.master_honor_id,
       name: record.master_honor.name,
       master_image: record.master_honor.master_image,
-      status: record.status as UserMasterHonorStatus,
+      status: record.status,
       is_current: isCurrent,
       display_status_label: this.getDisplayStatusLabel(isCurrent),
       awarded_at: this.toIsoString(record.awarded_at),

@@ -173,7 +173,7 @@ describe('resolveOcrState', () => {
   it('reads the job by its deterministic id', async () => {
     const queue = queueWith('active');
     const state = await resolveOcrState(
-      queue as never,
+      queue,
       'batch-1',
       [queued(ago(1_000))],
       logger,
@@ -185,12 +185,13 @@ describe('resolveOcrState', () => {
 
   it('does not touch Redis when the events already decide the state', async () => {
     const queue = queueWith('active');
-    expect(
-      await resolveOcrState(queue as never, 'b', [], logger, NOW),
-    ).toEqual({ ocr_state: null, ocr_error_code: null });
+    expect(await resolveOcrState(queue, 'b', [], logger, NOW)).toEqual({
+      ocr_state: null,
+      ocr_error_code: null,
+    });
     expect(
       await resolveOcrState(
-        queue as never,
+        queue,
         'b',
         [queued(ago(9_000)), processed(ago(1_000), 2)],
         logger,
@@ -221,7 +222,7 @@ describe('resolveOcrState', () => {
         ),
     };
     const state = await resolveOcrState(
-      queue as never,
+      queue,
       'batch-1',
       [queued(ago(1_000))],
       logger,
@@ -239,7 +240,7 @@ describe('resolveOcrState', () => {
     const queue = { getJob: jest.fn().mockRejectedValue(new Error('down')) };
     expect(
       await resolveOcrState(
-        queue as never,
+        queue,
         'b',
         [queued(ago(9_000)), processed(ago(1_000), 0)],
         logger,
@@ -287,7 +288,7 @@ describe('ocr_error_code (failure event)', () => {
   it('answers from the events alone, without asking Redis', async () => {
     const queue = { getJob: jest.fn() };
     const status = await resolveOcrState(
-      queue as never,
+      queue,
       'b',
       [
         queued(ago(9_000)),

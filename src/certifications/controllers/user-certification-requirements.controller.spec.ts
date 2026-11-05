@@ -14,8 +14,7 @@ const ENROLLMENT_ID = 42;
 const SECTION_ID = 100;
 const EVIDENCE_ID = 5000;
 
-const ENROLLMENT_BASE =
-  'users/:userId/certification-enrollments/:enrollmentId';
+const ENROLLMENT_BASE = 'users/:userId/certification-enrollments/:enrollmentId';
 
 const makeServiceMock = () => ({
   getRequirement: jest.fn(),

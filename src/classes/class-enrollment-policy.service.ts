@@ -12,7 +12,10 @@ export type ClassPolicyDecision =
   | { kind: 'policy_blocked'; code: ErrorCode }
   | { kind: 'configuration_error'; code: ErrorCode };
 
-const GUIDE_MAJOR_NAME_FILTER = { contains: 'uía', mode: 'insensitive' as const };
+const GUIDE_MAJOR_NAME_FILTER = {
+  contains: 'uía',
+  mode: 'insensitive' as const,
+};
 
 type DbClient = Prisma.TransactionClient | PrismaService;
 
@@ -140,7 +143,9 @@ export class ClassEnrollmentPolicyService {
   async assertOperationalYearWrite(enrollmentYearId: number): Promise<void> {
     const current = await this.ecclesiasticalYear.getCurrentYear();
     if (current.year_id !== enrollmentYearId) {
-      throw new AppForbiddenException(ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL);
+      throw new AppForbiddenException(
+        ErrorCode.CLASS_PROGRESS_YEAR_NOT_OPERATIONAL,
+      );
     }
   }
 }

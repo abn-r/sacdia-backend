@@ -1,10 +1,7 @@
 import { ErrorCode } from '../common/errors/error-codes';
 import type { ActorTerritoryScope } from '../common/authorization/actor-territory-scope';
 import type { CamporeeOrderActor } from './camporee-order-actor';
-import {
-  assertOrdersWindow,
-  OfferingsService,
-} from './offerings.service';
+import { assertOrdersWindow, OfferingsService } from './offerings.service';
 
 const LF_10 = 10;
 const LF_11 = 11;

@@ -80,7 +80,10 @@ export function assertConfirmedObjectMatches(
   ) {
     throw new AppBadRequestException(ErrorCode.CERT_EVIDENCE_INVALID_TYPE);
   }
-  const tolerance = Math.max(1024, declaredSizeBytes * FILE_SIZE_TOLERANCE_RATIO);
+  const tolerance = Math.max(
+    1024,
+    declaredSizeBytes * FILE_SIZE_TOLERANCE_RATIO,
+  );
   if (
     Math.abs(stored.size - declaredSizeBytes) > tolerance ||
     stored.size > CERTIFICATION_EVIDENCE_MAX_SIZE_BYTES

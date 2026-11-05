@@ -7,7 +7,6 @@ import {
   listCertificationMigrationCheckNames,
 } from '../../scripts/verify-certifications-migration';
 
-
 describe('verify-certifications-migration', () => {
   it('exports integrity checks for backfill anomalies', () => {
     expect(listCertificationMigrationCheckNames()).toEqual(
@@ -31,7 +30,9 @@ describe('verify-certifications-migration', () => {
       /evidence without owning response/i.test(c.name),
     );
     expect(evidenceCheck?.sql).toMatch(/certification_evidences/i);
-    expect(evidenceCheck?.sql).toMatch(/LEFT JOIN certification_component_responses/i);
+    expect(evidenceCheck?.sql).toMatch(
+      /LEFT JOIN certification_component_responses/i,
+    );
   });
 
   it('refuses Neon hosts without explicit opt-in helper', () => {

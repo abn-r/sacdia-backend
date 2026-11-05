@@ -11,11 +11,7 @@ import {
 } from '@prisma/client';
 
 export type MasterHonorTransition =
-  | 'NONE'
-  | 'AWARDED'
-  | 'RECOVERED'
-  | 'REVOKED'
-  | 'RETIRED';
+  'NONE' | 'AWARDED' | 'RECOVERED' | 'REVOKED' | 'RETIRED';
 
 export interface MasterHonorEvaluationOptionSnapshot {
   option_id: number;
@@ -50,7 +46,8 @@ export interface MasterHonorEvaluationResult {
   snapshot: MasterHonorEvaluationSnapshot;
 }
 
-type MasterHonorNotificationTransition = 'awarded' | 'recovered' | 'not_current';
+type MasterHonorNotificationTransition =
+  'awarded' | 'recovered' | 'not_current';
 
 type MasterHonorNotificationData = {
   title: string;
@@ -122,9 +119,13 @@ export class MasterHonorsEvaluatorService {
     opts?: { masterHonorId?: number; jobId?: string },
   ): Promise<MasterHonorEvaluationResult[]> {
     if (opts?.masterHonorId) {
-      const result = await this.evaluateUserForMasterHonor(userId, opts.masterHonorId, {
-        jobId: opts.jobId,
-      });
+      const result = await this.evaluateUserForMasterHonor(
+        userId,
+        opts.masterHonorId,
+        {
+          jobId: opts.jobId,
+        },
+      );
       return [result];
     }
 
@@ -227,15 +228,14 @@ export class MasterHonorsEvaluatorService {
         this.resolveActiveClubDivision(tx, userId),
       ]);
 
-      const approvedHonors = this.buildApprovedHonorSet(approvedRows as ApprovedHonorRow[]);
+      const approvedHonors = this.buildApprovedHonorSet(approvedRows);
 
       const now = new Date();
       const results: MasterHonorEvaluationResult[] = [];
 
       for (const masterHonor of masterHonors) {
-        const existingRecord = existingByMasterHonorId.get(
-          masterHonor.master_honor_id,
-        ) ?? null;
+        const existingRecord =
+          existingByMasterHonorId.get(masterHonor.master_honor_id) ?? null;
 
         const applicableDivisionId =
           existingRecord?.awarded_division_id ?? activeDivision;
@@ -276,13 +276,18 @@ export class MasterHonorsEvaluatorService {
     userId: string,
     transitions: MasterHonorEvaluationResult[],
   ) {
-    const byType = new Map<MasterHonorNotificationTransition, Array<{
-      id: number;
-      name: string;
-    }>>();
+    const byType = new Map<
+      MasterHonorNotificationTransition,
+      Array<{
+        id: number;
+        name: string;
+      }>
+    >();
 
     for (const transition of transitions) {
-      const mappedTransition = this.mapToNotificationTransition(transition.transition);
+      const mappedTransition = this.mapToNotificationTransition(
+        transition.transition,
+      );
       if (!mappedTransition) {
         continue;
       }
@@ -300,9 +305,8 @@ export class MasterHonorsEvaluatorService {
     }
 
     await Promise.all(
-      Array.from(byType.entries()).map(
-        ([transition, groupedHonors]) =>
-          this.sendNotification(userId, transition, groupedHonors),
+      Array.from(byType.entries()).map(([transition, groupedHonors]) =>
+        this.sendNotification(userId, transition, groupedHonors),
       ),
     );
   }
@@ -402,7 +406,10 @@ export class MasterHonorsEvaluatorService {
     let allGroupsPass = true;
 
     for (const group of masterHonor.requirement_groups) {
-      if (group.group_type === master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS) {
+      if (
+        group.group_type ===
+        master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS
+      ) {
         const matchedOptions: MasterHonorEvaluationOptionSnapshot[] = [];
         const matchedHonorIds = new Set<number>();
 
@@ -450,7 +457,8 @@ export class MasterHonorsEvaluatorService {
 
       const matchedIds =
         group.honors_category_id != null
-          ? approvedHonors.byCategory.get(group.honors_category_id) ?? new Set<number>()
+          ? (approvedHonors.byCategory.get(group.honors_category_id) ??
+            new Set<number>())
           : new Set<number>();
       const currentCount = matchedIds.size;
       const passed = currentCount >= group.minimum_required;
@@ -534,7 +542,10 @@ export class MasterHonorsEvaluatorService {
       return false;
     }
 
-    if (masterHonor.applicability_scope === master_honor_applicability_scope_enum.ALL) {
+    if (
+      masterHonor.applicability_scope ===
+      master_honor_applicability_scope_enum.ALL
+    ) {
       return true;
     }
 
@@ -574,7 +585,8 @@ export class MasterHonorsEvaluatorService {
           awarded_at: now,
           evaluated_at: now,
           status_reason: null,
-          evaluation_snapshot: evaluation.snapshot as unknown as Prisma.JsonObject,
+          evaluation_snapshot:
+            evaluation.snapshot as unknown as Prisma.JsonObject,
           active: true,
           modified_at: now,
         },
@@ -588,7 +600,8 @@ export class MasterHonorsEvaluatorService {
           from_status: null,
           to_status: evaluation.status,
           reason: null,
-          evaluation_snapshot: evaluation.snapshot as unknown as Prisma.JsonObject,
+          evaluation_snapshot:
+            evaluation.snapshot as unknown as Prisma.JsonObject,
           created_by_job_id: jobId,
         },
       });
@@ -613,7 +626,8 @@ export class MasterHonorsEvaluatorService {
         status: nextStatus,
         status_reason: reason,
         evaluated_at: now,
-        evaluation_snapshot: evaluation.snapshot as unknown as Prisma.JsonObject,
+        evaluation_snapshot:
+          evaluation.snapshot as unknown as Prisma.JsonObject,
         modified_at: now,
         ...(existingRecord.status !== nextStatus &&
         nextStatus === user_master_honor_status_enum.AWARDED
@@ -624,8 +638,7 @@ export class MasterHonorsEvaluatorService {
           ? { revoked_at: now }
           : {}),
         ...(existingRecord.status !== nextStatus &&
-        existingRecord.status ===
-          user_master_honor_status_enum.REVOKED &&
+        existingRecord.status === user_master_honor_status_enum.REVOKED &&
         nextStatus === user_master_honor_status_enum.AWARDED
           ? { recovered_at: now }
           : {}),
@@ -641,7 +654,8 @@ export class MasterHonorsEvaluatorService {
           from_status: existingRecord.status,
           to_status: nextStatus,
           reason,
-          evaluation_snapshot: evaluation.snapshot as unknown as Prisma.JsonObject,
+          evaluation_snapshot:
+            evaluation.snapshot as unknown as Prisma.JsonObject,
           created_by_job_id: jobId,
         },
       });
@@ -689,7 +703,10 @@ export class MasterHonorsEvaluatorService {
       };
     }
 
-    if (!evaluation.status && existingRecord.status === user_master_honor_status_enum.AWARDED) {
+    if (
+      !evaluation.status &&
+      existingRecord.status === user_master_honor_status_enum.AWARDED
+    ) {
       return {
         nextStatus: user_master_honor_status_enum.REVOKED,
         reason: user_master_honor_status_reason_enum.USER_NO_LONGER_QUALIFIES,
@@ -697,7 +714,10 @@ export class MasterHonorsEvaluatorService {
       };
     }
 
-    if (evaluation.status && existingRecord.status === user_master_honor_status_enum.REVOKED) {
+    if (
+      evaluation.status &&
+      existingRecord.status === user_master_honor_status_enum.REVOKED
+    ) {
       return {
         nextStatus: user_master_honor_status_enum.AWARDED,
         reason: user_master_honor_status_reason_enum.RECOVERED,
@@ -733,7 +753,8 @@ export class MasterHonorsEvaluatorService {
         continue;
       }
 
-      const categorySet = byCategory.get(honor.honors_category_id) ?? new Set<number>();
+      const categorySet =
+        byCategory.get(honor.honors_category_id) ?? new Set<number>();
       categorySet.add(honor.honor_id);
       byCategory.set(honor.honors_category_id, categorySet);
     }
@@ -835,7 +856,8 @@ export class MasterHonorsEvaluatorService {
         })
       : null;
 
-    const assignment = explicit ??
+    const assignment =
+      explicit ??
       (await tx.club_role_assignments.findFirst({
         where: { user_id: userId, active: true, status: 'active' },
         orderBy: { start_date: 'desc' },
@@ -860,6 +882,9 @@ export class MasterHonorsEvaluatorService {
         },
       }));
 
-    return assignment?.club_sections?.clubs?.local_fields?.unions?.division_id ?? null;
+    return (
+      assignment?.club_sections?.clubs?.local_fields?.unions?.division_id ??
+      null
+    );
   }
 }

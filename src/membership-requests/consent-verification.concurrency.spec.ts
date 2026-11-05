@@ -330,7 +330,7 @@ function build(lockingEnabled: boolean) {
     {
       revokeAllForDependent: jest.fn().mockResolvedValue(0),
       revokeByGuardianship: jest.fn().mockResolvedValue(0),
-    } as any,
+    },
   );
   const membershipRequests = { approve: jest.fn().mockResolvedValue({}) };
   const guardianNotifications = {

@@ -45,27 +45,29 @@ describe('local field timezone backfill', () => {
     });
   });
 
-  dbIt('validates the complete mapping and GM-01 without writing', async () => {
-    if (!databaseUrl) throw new Error('integration URL required');
-    const schema = `be04a_${randomBytes(6).toString('hex')}`;
-    const client = new Client({ connectionString: databaseUrl });
-    await client.connect();
-    try {
-      await client.query(`CREATE SCHEMA ${schema}; SET search_path=${schema},public;
+  dbIt(
+    'validates the complete mapping and GM-01 without writing',
+    async () => {
+      if (!databaseUrl) throw new Error('integration URL required');
+      const schema = `be04a_${randomBytes(6).toString('hex')}`;
+      const client = new Client({ connectionString: databaseUrl });
+      await client.connect();
+      try {
+        await client.query(`CREATE SCHEMA ${schema}; SET search_path=${schema},public;
         CREATE TABLE local_fields (local_field_id int PRIMARY KEY, name text, union_id int, active boolean, timezone text);
         CREATE TABLE classes (class_id int PRIMARY KEY, asset_code text);
         INSERT INTO local_fields VALUES (1,'Norte',1,true,NULL),(2,'Sur',1,true,'America/Cancun');
         INSERT INTO classes VALUES (1,'GM-01');`);
-      const mapping = new Map([
-        [1, 'America/Tijuana'],
-        [2, 'America/Cancun'],
-      ]);
-      await expect(
-        planLocalFieldTimezoneBackfill(client, mapping),
-      ).rejects.toMatchObject({
-        code: 'BACKFILL_SCHEMA_NOT_READY',
-      });
-      await client.query(`CREATE TABLE authorization_context_versions (user_id uuid PRIMARY KEY, version bigint, modified_at timestamptz);
+        const mapping = new Map([
+          [1, 'America/Tijuana'],
+          [2, 'America/Cancun'],
+        ]);
+        await expect(
+          planLocalFieldTimezoneBackfill(client, mapping),
+        ).rejects.toMatchObject({
+          code: 'BACKFILL_SCHEMA_NOT_READY',
+        });
+        await client.query(`CREATE TABLE authorization_context_versions (user_id uuid PRIMARY KEY, version bigint, modified_at timestamptz);
         CREATE TABLE director_succession_plans (club_section_id int, status text);
         CREATE TABLE clubs (club_id int, local_field_id int);
         CREATE TABLE club_sections (club_section_id int, main_club_id int);
@@ -74,66 +76,73 @@ describe('local field timezone backfill', () => {
         CREATE TABLE ecclesiastical_years (year_id int, start_date date, end_date date);
         CREATE TABLE users_pr (user_id uuid, active_club_assignment_id uuid);
         CREATE TABLE audit_logs (audit_log_id bigint, action text);`);
-      await expect(
-        planLocalFieldTimezoneBackfill(
-          client,
-          new Map([[1, 'America/Tijuana']]),
-        ),
-      ).rejects.toMatchObject({ code: 'BACKFILL_MAPPING_INCOMPLETE' });
-      await expect(
-        planLocalFieldTimezoneBackfill(
-          client,
-          new Map([
-            [1, 'America/Tijuana'],
-            [2, 'America/Cancun'],
-            [7, 'America/Mazatlan'],
-          ]),
-        ),
-      ).rejects.toMatchObject({ code: 'BACKFILL_MAPPING_UNKNOWN_LOCAL_FIELD' });
-      await expect(
-        planLocalFieldTimezoneBackfill(client, mapping),
-      ).resolves.toMatchObject({
-        fields: [
-          { local_field_id: 1, operation: 'update' },
-          { local_field_id: 2, operation: 'unchanged' },
-        ],
-      });
-      await expect(
-        client.query(
-          'SELECT timezone FROM local_fields WHERE local_field_id=1',
-        ),
-      ).resolves.toMatchObject({ rows: [{ timezone: null }] });
-      await expect(
-        verifyBackfillPreflight(
-          client,
-          loadCanonicalGeographicIanaTimezoneCatalog(),
-        ),
-      ).resolves.toMatchObject({
-        schema: {
-          local_fields_timezone: 'ready',
-          director_succession_plans: 'ready',
-        },
-        checks: [
-          expect.objectContaining({
-            id: 'local_field_timezones',
-            total_count: 1,
-            rows: [
-              expect.objectContaining({ local_field_id: 1, reason: 'MISSING' }),
-            ],
-          }),
-        ],
-      });
-      await client.query(
-        `DELETE FROM classes WHERE asset_code = 'GM-01'; INSERT INTO classes VALUES(2,'GM-01'),(3,'GM-01');`,
-      );
-      await expect(
-        planLocalFieldTimezoneBackfill(client, mapping),
-      ).rejects.toMatchObject({
-        code: 'BACKFILL_GM_01_CARDINALITY_INVALID',
-      });
-    } finally {
-      await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-      await client.end();
-    }
-  }, 30_000);
+        await expect(
+          planLocalFieldTimezoneBackfill(
+            client,
+            new Map([[1, 'America/Tijuana']]),
+          ),
+        ).rejects.toMatchObject({ code: 'BACKFILL_MAPPING_INCOMPLETE' });
+        await expect(
+          planLocalFieldTimezoneBackfill(
+            client,
+            new Map([
+              [1, 'America/Tijuana'],
+              [2, 'America/Cancun'],
+              [7, 'America/Mazatlan'],
+            ]),
+          ),
+        ).rejects.toMatchObject({
+          code: 'BACKFILL_MAPPING_UNKNOWN_LOCAL_FIELD',
+        });
+        await expect(
+          planLocalFieldTimezoneBackfill(client, mapping),
+        ).resolves.toMatchObject({
+          fields: [
+            { local_field_id: 1, operation: 'update' },
+            { local_field_id: 2, operation: 'unchanged' },
+          ],
+        });
+        await expect(
+          client.query(
+            'SELECT timezone FROM local_fields WHERE local_field_id=1',
+          ),
+        ).resolves.toMatchObject({ rows: [{ timezone: null }] });
+        await expect(
+          verifyBackfillPreflight(
+            client,
+            loadCanonicalGeographicIanaTimezoneCatalog(),
+          ),
+        ).resolves.toMatchObject({
+          schema: {
+            local_fields_timezone: 'ready',
+            director_succession_plans: 'ready',
+          },
+          checks: [
+            expect.objectContaining({
+              id: 'local_field_timezones',
+              total_count: 1,
+              rows: [
+                expect.objectContaining({
+                  local_field_id: 1,
+                  reason: 'MISSING',
+                }),
+              ],
+            }),
+          ],
+        });
+        await client.query(
+          `DELETE FROM classes WHERE asset_code = 'GM-01'; INSERT INTO classes VALUES(2,'GM-01'),(3,'GM-01');`,
+        );
+        await expect(
+          planLocalFieldTimezoneBackfill(client, mapping),
+        ).rejects.toMatchObject({
+          code: 'BACKFILL_GM_01_CARDINALITY_INVALID',
+        });
+      } finally {
+        await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+        await client.end();
+      }
+    },
+    30_000,
+  );
 });

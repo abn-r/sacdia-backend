@@ -501,7 +501,7 @@ describe('FinancePeriodService', () => {
       );
       jest.spyOn(service, 'closeMonthForClub').mockResolvedValue({
         finance_period_closing_id: 1,
-      } as Awaited<ReturnType<FinancePeriodService['closeMonthForClub']>>);
+      });
 
       const result = await service.rebuildCompletedClosings(
         new Date('2026-09-19T21:00:00.000Z'),

@@ -31,7 +31,11 @@ import { ClassesModule } from '../../classes/classes.module';
  * This module is imported from AnnualFoldersModule.imports[] (Task 12 Q2.a).
  */
 @Module({
-  imports: [SystemConfigModule, forwardRef(() => AnnualFoldersModule), ClassesModule],
+  imports: [
+    SystemConfigModule,
+    forwardRef(() => AnnualFoldersModule),
+    ClassesModule,
+  ],
   controllers: [MemberRankingsController],
   providers: [
     MemberRankingsService,

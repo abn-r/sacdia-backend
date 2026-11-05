@@ -263,9 +263,9 @@ describe('T8 annual-cycle PostgreSQL', () => {
           grant.operational,
       );
     expect(successorGrant).toBeTruthy();
-    expect(
-      JSON.stringify(successorMe.body.data).includes('gm-2026-plan'),
-    ).toBe(false);
+    expect(JSON.stringify(successorMe.body.data).includes('gm-2026-plan')).toBe(
+      false,
+    );
   });
 
   it('A07: concurrent applyCut completes one transition and stays idempotent', async () => {
@@ -464,9 +464,9 @@ describe('T8 annual-cycle PostgreSQL', () => {
         active: true,
       },
     });
-    await expect(ecclesiasticalYear.getCurrentYear(YEAR_CUT_NOW)).rejects.toMatchObject(
-      { code: 'ECCLESIASTICAL_YEAR_AMBIGUOUS' },
-    );
+    await expect(
+      ecclesiasticalYear.getCurrentYear(YEAR_CUT_NOW),
+    ).rejects.toMatchObject({ code: 'ECCLESIASTICAL_YEAR_AMBIGUOUS' });
     await prisma.ecclesiastical_years.deleteMany({
       where: {
         start_date: new Date('2026-01-01'),

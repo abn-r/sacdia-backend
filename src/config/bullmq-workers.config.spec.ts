@@ -235,7 +235,6 @@ describe('processor providers honour the worker switch', () => {
   function providersOf(modulePath: string, exportName: string): unknown[] {
     let providers: unknown[] = [];
     jest.isolateModules(() => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mod = require(modulePath) as Record<string, object>;
       providers = Reflect.getMetadata('providers', mod[exportName]) ?? [];
     });

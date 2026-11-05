@@ -82,15 +82,17 @@ describe('AnnualMembershipPolicyService', () => {
       club_type_id: GM_TYPE_ID,
       name: 'Guías Mayores',
     });
-    prisma.roles.findFirst.mockImplementation(async (args: { where?: { role_name?: string } }) => {
-      if (args?.where?.role_name === 'member') {
-        return { role_id: MEMBER_ROLE_ID };
-      }
-      if (args?.where?.role_name === 'director') {
-        return { role_id: DIRECTOR_ROLE_ID };
-      }
-      return null;
-    });
+    prisma.roles.findFirst.mockImplementation(
+      async (args: { where?: { role_name?: string } }) => {
+        if (args?.where?.role_name === 'member') {
+          return { role_id: MEMBER_ROLE_ID };
+        }
+        if (args?.where?.role_name === 'director') {
+          return { role_id: DIRECTOR_ROLE_ID };
+        }
+        return null;
+      },
+    );
     prisma.classes.findMany.mockResolvedValue([{ class_id: GM_CLASS_ID }]);
   });
 
@@ -164,7 +166,11 @@ describe('AnnualMembershipPolicyService', () => {
       prisma.club_role_assignments.findMany.mockResolvedValue([
         {
           user_id: USER_ID,
-          users: { name: 'Luis', paternal_last_name: 'Pérez', maternal_last_name: 'Soto' },
+          users: {
+            name: 'Luis',
+            paternal_last_name: 'Pérez',
+            maternal_last_name: 'Soto',
+          },
           roles: { role_name: 'member' },
         },
       ]);
@@ -196,9 +202,7 @@ describe('AnnualMembershipPolicyService', () => {
         YEAR_ID_CURRENT,
       );
       expect(listed).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ user_id: USER_ID }),
-        ]),
+        expect.arrayContaining([expect.objectContaining({ user_id: USER_ID })]),
       );
     });
   });

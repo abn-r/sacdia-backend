@@ -141,13 +141,9 @@ export class InsuranceFulfillmentService implements PurposeFulfillment {
     }
 
     const userIds = order.lines.map((line) => line.beneficiary_user_id);
-    await this.assertSectionMembership(
-      tx as unknown as Pick<PrismaService, 'club_role_assignments'>,
-      order.club_section_id,
-      userIds,
-    );
+    await this.assertSectionMembership(tx, order.club_section_id, userIds);
     await this.assertNotAlreadyCovered(
-      tx as unknown as Pick<PrismaService, 'insurance_assignments'>,
+      tx,
       order.insurance_cycle_config_id,
       userIds,
     );

@@ -60,13 +60,16 @@ describe('certificate import HTTP', () => {
         [ownerId],
       );
       batchId = batch.rows[0].batch_id;
-      const fields = await client.query<{ local_field_id: number; abbreviation: string }>(
-        `SELECT local_field_id, abbreviation FROM local_fields`,
-      );
+      const fields = await client.query<{
+        local_field_id: number;
+        abbreviation: string;
+      }>(`SELECT local_field_id, abbreviation FROM local_fields`);
       const homeField = fields.rows.find((row) => row.abbreviation === 'CNT');
       const otherField = fields.rows.find((row) => row.abbreviation === 'CAT');
       if (!homeField || !otherField) {
-        throw new Error('certificate import HTTP fixture is missing local fields');
+        throw new Error(
+          'certificate import HTTP fixture is missing local fields',
+        );
       }
       await client.query(
         `UPDATE certificate_bulk_import_batches
@@ -81,7 +84,11 @@ describe('certificate import HTTP', () => {
           ('director-union', 'Union', 'GLOBAL', true)
         ON CONFLICT (role_name) DO NOTHING
       `);
-      const insertReviewer = async (email: string, roleName: string, fieldId: number | null) => {
+      const insertReviewer = async (
+        email: string,
+        roleName: string,
+        fieldId: number | null,
+      ) => {
         const user = await client.query<{ user_id: string }>(
           `INSERT INTO users (email, name, active, approval_status, local_field_id)
            VALUES ($1, $2, true, 'approved', $3)
@@ -202,7 +209,9 @@ describe('certificate import HTTP', () => {
         .set(bearer(userId))
         .send({ expected_revision: 0 })
         .expect(403);
-      expect(JSON.stringify(decision.body)).toContain('GUARD_PERMISSION_DENIED');
+      expect(JSON.stringify(decision.body)).toContain(
+        'GUARD_PERMISSION_DENIED',
+      );
     }
 
     const commonInbox = await request(app.getHttpServer())

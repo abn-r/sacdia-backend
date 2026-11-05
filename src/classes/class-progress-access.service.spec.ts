@@ -83,7 +83,9 @@ describe('ClassProgressAccessService', () => {
     ).resolves.toBeUndefined();
 
     expect(mockPrisma.enrollments.findFirst).not.toHaveBeenCalled();
-    expect(mockPrisma.class_counselor_assignments.findFirst).not.toHaveBeenCalled();
+    expect(
+      mockPrisma.class_counselor_assignments.findFirst,
+    ).not.toHaveBeenCalled();
     expect(mockPrisma.club_role_assignments.findMany).not.toHaveBeenCalled();
     expect(mockAuthorizationContext.hasAnyGlobalRole).not.toHaveBeenCalled();
   });
@@ -124,7 +126,9 @@ describe('ClassProgressAccessService', () => {
     expect(
       mockCoordinationService.getEffectiveCoordinatorSectionIds,
     ).toHaveBeenCalledWith(baseParams.actorUserId);
-    expect(mockPrisma.class_counselor_assignments.findFirst).not.toHaveBeenCalled();
+    expect(
+      mockPrisma.class_counselor_assignments.findFirst,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects a coordinator outside assigned club section scope', async () => {
@@ -159,9 +163,9 @@ describe('ClassProgressAccessService', () => {
       },
     );
 
-    await expect(
-      service.canAccessClassProgress(baseParams),
-    ).resolves.toBe(true);
+    await expect(service.canAccessClassProgress(baseParams)).resolves.toBe(
+      true,
+    );
 
     expect(mockPrisma.enrollments.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -173,7 +177,9 @@ describe('ClassProgressAccessService', () => {
         }),
       }),
     );
-    expect(mockPrisma.class_counselor_assignments.findFirst).toHaveBeenCalledWith(
+    expect(
+      mockPrisma.class_counselor_assignments.findFirst,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           user_id: baseParams.actorUserId,
@@ -223,7 +229,9 @@ describe('ClassProgressAccessService', () => {
       false,
     );
 
-    expect(mockPrisma.class_counselor_assignments.findFirst).toHaveBeenCalledWith(
+    expect(
+      mockPrisma.class_counselor_assignments.findFirst,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           user_id: baseParams.actorUserId,
@@ -272,7 +280,12 @@ describe('ClassProgressAccessService', () => {
           active: true,
           roles: {
             role_name: {
-              in: ['director', 'deputy-director', 'secretary', 'secretary-treasurer'],
+              in: [
+                'director',
+                'deputy-director',
+                'secretary',
+                'secretary-treasurer',
+              ],
             },
           },
         }),

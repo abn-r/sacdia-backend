@@ -67,8 +67,7 @@ export class ClubAssignmentEffectivityPolicy {
         `Unsafe SQL assignment alias: ${JSON.stringify(assignmentAlias)}`,
       );
     }
-    const col = (name: string) =>
-      Prisma.raw(`${assignmentAlias}.${name}`);
+    const col = (name: string) => Prisma.raw(`${assignmentAlias}.${name}`);
     return Prisma.sql`
       ${col('active')} = TRUE
       AND ${col('status')} = 'active'

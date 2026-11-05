@@ -1,7 +1,8 @@
 // Must run before `../src/app.module` is required (see certifications spec).
 process.env.REDIS_URL = '';
 process.env.DATABASE_URL =
-  process.env.DATABASE_URL || 'postgresql://sacdia:sacdia@localhost:5432/sacdia_test';
+  process.env.DATABASE_URL ||
+  'postgresql://sacdia:sacdia@localhost:5432/sacdia_test';
 process.env.BETTER_AUTH_SECRET =
   process.env.BETTER_AUTH_SECRET || 'test-secret-test-secret-test-secret';
 process.env.R2_BUCKET_HONORS_PDF =
@@ -503,7 +504,9 @@ describe('Camporee Orders E2E — proof and two-level delivery', () => {
 
   it('lets the Campo Local authorize without proof and then deliver', async () => {
     let current = orderRow();
-    prismaMock.camporee_orders.findUnique.mockImplementation(async () => current);
+    prismaMock.camporee_orders.findUnique.mockImplementation(
+      async () => current,
+    );
     prismaMock.camporee_orders.update.mockImplementation(async (args: any) => {
       current = { ...current, ...args.data };
       return current;

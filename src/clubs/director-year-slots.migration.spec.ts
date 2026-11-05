@@ -33,9 +33,7 @@ describe('director-year-slots migration (20260908180000)', () => {
   });
 
   it('trigger UPDATE OF clause includes ecclesiastical_year_id', () => {
-    expect(migration).toMatch(
-      /UPDATE\s+OF\s+[^;]*ecclesiastical_year_id/,
-    );
+    expect(migration).toMatch(/UPDATE\s+OF\s+[^;]*ecclesiastical_year_id/);
   });
 
   it('CREATE OR REPLACE FUNCTION enforce_club_role_slot_limits is present', () => {
@@ -45,8 +43,12 @@ describe('director-year-slots migration (20260908180000)', () => {
   });
 
   it('trigger is recreated with DROP TRIGGER before CREATE TRIGGER', () => {
-    const dropIdx = migration.indexOf('DROP TRIGGER IF EXISTS trg_enforce_club_role_slot_limits');
-    const createIdx = migration.indexOf('CREATE TRIGGER trg_enforce_club_role_slot_limits');
+    const dropIdx = migration.indexOf(
+      'DROP TRIGGER IF EXISTS trg_enforce_club_role_slot_limits',
+    );
+    const createIdx = migration.indexOf(
+      'CREATE TRIGGER trg_enforce_club_role_slot_limits',
+    );
     expect(dropIdx).toBeGreaterThan(-1);
     expect(createIdx).toBeGreaterThan(dropIdx);
   });

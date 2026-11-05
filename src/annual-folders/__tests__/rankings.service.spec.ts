@@ -1476,7 +1476,9 @@ describe('RankingsService', () => {
         mockPrismaService.enrollments.findMany.mock.calls[0][0];
       expect(findManyCall.where).not.toHaveProperty('last_progress_change');
       expect(findManyCall.where.record_kind).toBe('OPERATIONAL');
-      expect(mockPrismaService.enrollmentRanking.deleteMany).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.enrollmentRanking.deleteMany,
+      ).toHaveBeenCalledWith({
         where: {
           ecclesiastical_year_id: 2026,
           enrollment: { record_kind: 'HISTORICAL_CERTIFICATE' },

@@ -161,9 +161,7 @@ describe('CamporeeFulfillmentService.prepareOrder', () => {
   });
 
   it('rejects beneficiaries without valid insurance', async () => {
-    db.insurance_assignments.findMany.mockResolvedValue([
-      { user_id: 'ben-1' },
-    ]);
+    db.insurance_assignments.findMany.mockResolvedValue([{ user_id: 'ben-1' }]);
     await expect(
       service.prepareOrder(dto, actorWithSection()),
     ).rejects.toMatchObject({

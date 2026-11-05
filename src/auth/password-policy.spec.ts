@@ -38,9 +38,9 @@ describe('new password policy', () => {
       password: COMPLEX_12,
     });
     const errors = await validate(dto);
-    expect(errors.filter((error) => error.property === 'password')).toHaveLength(
-      0,
-    );
+    expect(
+      errors.filter((error) => error.property === 'password'),
+    ).toHaveLength(0);
   });
 
   it('rejects a 12-char password without a special character', async () => {
@@ -81,8 +81,9 @@ describe('new password policy', () => {
     expect(updateErrors.some((error) => error.property === 'password')).toBe(
       true,
     );
-    expect(updateErrors.some((error) => error.property === 'currentPassword'))
-      .toBe(false);
+    expect(
+      updateErrors.some((error) => error.property === 'currentPassword'),
+    ).toBe(false);
     expect(adminErrors.some((error) => error.property === 'newPassword')).toBe(
       true,
     );

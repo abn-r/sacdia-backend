@@ -122,8 +122,8 @@ function setup() {
     actingForCache as any,
     guardianships as any,
     agePolicy as any,
-    deviceRevoker as any,
-    events as any,
+    deviceRevoker,
+    events,
   );
   return {
     service,

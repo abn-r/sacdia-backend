@@ -3,10 +3,7 @@ import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 export type TimezoneReason =
-  | 'MISSING'
-  | 'UNKNOWN'
-  | 'NON_CANONICAL'
-  | 'DISALLOWED_NAMESPACE';
+  'MISSING' | 'UNKNOWN' | 'NON_CANONICAL' | 'DISALLOWED_NAMESPACE';
 declare const canonicalGeographicIanaTimezoneBrand: unique symbol;
 export type CanonicalGeographicIanaTimezone = string & {
   readonly [canonicalGeographicIanaTimezoneBrand]: true;

@@ -70,8 +70,7 @@ describe('monthly report download filename', () => {
   });
 
   it('publishes an ASCII Content-Disposition with filename*', () => {
-    const filename =
-      'informe-mensual-Senderos-Conquistadores-agosto-2026.pdf';
+    const filename = 'informe-mensual-Senderos-Conquistadores-agosto-2026.pdf';
 
     expect(monthlyReportContentDisposition(filename)).toBe(
       `attachment; filename="${filename}"; filename*=UTF-8''${filename}`,

@@ -129,7 +129,9 @@ describe('ClubEnrollmentsController section binding', () => {
         });
 
         await expect(
-          guard.canActivate(contextFor(handler, paramsFor(handler, '10', '44'))),
+          guard.canActivate(
+            contextFor(handler, paramsFor(handler, '10', '44')),
+          ),
         ).rejects.toMatchObject({ code: ErrorCode.CLUB_SECTION_NOT_FOUND });
       },
     );
@@ -157,7 +159,9 @@ describe('ClubEnrollmentsController section binding', () => {
         });
 
         await expect(
-          guard.canActivate(contextFor(handler, paramsFor(handler, '10', '23'))),
+          guard.canActivate(
+            contextFor(handler, paramsFor(handler, '10', '23')),
+          ),
         ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
       },
     );
@@ -172,7 +176,9 @@ describe('ClubEnrollmentsController section binding', () => {
         });
 
         await expect(
-          guard.canActivate(contextFor(handler, paramsFor(handler, '10', '22'))),
+          guard.canActivate(
+            contextFor(handler, paramsFor(handler, '10', '22')),
+          ),
         ).resolves.toBe(true);
       },
     );

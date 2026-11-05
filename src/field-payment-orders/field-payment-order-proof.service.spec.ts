@@ -138,15 +138,15 @@ describe('ProofFileValidationPipe', () => {
   });
 
   it('rejects oversized file', () => {
-    expect(() =>
-      pipe.transform(pdfFile({ size: 11 * 1024 * 1024 })),
-    ).toThrow(AppException);
+    expect(() => pipe.transform(pdfFile({ size: 11 * 1024 * 1024 }))).toThrow(
+      AppException,
+    );
   });
 
   it('rejects unsupported mime', () => {
-    expect(() =>
-      pipe.transform(pdfFile({ mimetype: 'image/gif' })),
-    ).toThrow(AppException);
+    expect(() => pipe.transform(pdfFile({ mimetype: 'image/gif' }))).toThrow(
+      AppException,
+    );
   });
 
   it('rejects mime spoofing via magic bytes', () => {

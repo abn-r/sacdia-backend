@@ -149,8 +149,7 @@ describe('T8 annual-membership HTTP', () => {
     ];
     expect(
       outcomes.every(
-        (outcome) =>
-          outcome === 'enrolled' || outcome === 'already_enrolled',
+        (outcome) => outcome === 'enrolled' || outcome === 'already_enrolled',
       ),
     ).toBe(true);
     expect(outcomes).toContain('enrolled');
@@ -288,9 +287,10 @@ describe('T8 annual-membership HTTP', () => {
       });
 
     if (enroll.status === 201 || enroll.status === 200) {
-      expect(enroll.body.cross_type_enrollment ?? enroll.body.data?.cross_type_enrollment).toBe(
-        true,
-      );
+      expect(
+        enroll.body.cross_type_enrollment ??
+          enroll.body.data?.cross_type_enrollment,
+      ).toBe(true);
       const cqMember = await prisma.club_role_assignments.findFirst({
         where: {
           user_id: ANNUAL_CYCLE_IDS.returnedMember,

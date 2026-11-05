@@ -15,16 +15,8 @@ const ENROLLMENT_TRANSITIONS: Record<
   CertificationEnrollmentStatus,
   ReadonlySet<CertificationEnrollmentStatus>
 > = {
-  ENROLLED: new Set([
-    'IN_PROGRESS',
-    'WITHDRAWN',
-    'EXPIRED',
-  ]),
-  IN_PROGRESS: new Set([
-    'READY_FOR_CLOSEOUT',
-    'WITHDRAWN',
-    'EXPIRED',
-  ]),
+  ENROLLED: new Set(['IN_PROGRESS', 'WITHDRAWN', 'EXPIRED']),
+  IN_PROGRESS: new Set(['READY_FOR_CLOSEOUT', 'WITHDRAWN', 'EXPIRED']),
   READY_FOR_CLOSEOUT: new Set([
     'SUBMITTED_FOR_FINAL_REVIEW',
     'IN_PROGRESS',
@@ -36,11 +28,7 @@ const ENROLLMENT_TRANSITIONS: Record<
     'CHANGES_REQUESTED',
     'EXPIRED',
   ]),
-  CHANGES_REQUESTED: new Set([
-    'IN_PROGRESS',
-    'WITHDRAWN',
-    'EXPIRED',
-  ]),
+  CHANGES_REQUESTED: new Set(['IN_PROGRESS', 'WITHDRAWN', 'EXPIRED']),
   APPROVED: new Set(['CERTIFIED', 'EXPIRED']),
   CERTIFIED: new Set(),
   WITHDRAWN: new Set(),
@@ -87,9 +75,7 @@ const ENROLLMENT_EDITABLE: ReadonlySet<CertificationEnrollmentStatus> = new Set(
 const REQUIREMENT_EDIT_LOCKED: ReadonlySet<CertificationRequirementStatus> =
   new Set(['SUBMITTED', 'APPROVED']);
 
-export function assertVersionMutable(
-  status: CertificationVersionStatus,
-): void {
+export function assertVersionMutable(status: CertificationVersionStatus): void {
   if (status !== 'DRAFT') {
     throw new AppConflictException(ErrorCode.CERT_VERSION_IMMUTABLE);
   }

@@ -9,10 +9,7 @@ export type SectionRegistrationStatus =
   | 'cancelled';
 
 export type SectionRegistrationDisposition =
-  | 'not_open_yet'
-  | 'open'
-  | 'late_approval_required'
-  | 'manually_frozen';
+  'not_open_yet' | 'open' | 'late_approval_required' | 'manually_frozen';
 
 export class SectionRegistrationActorDto {
   @ApiProperty({ description: 'ID del usuario que realizó la inscripción' })

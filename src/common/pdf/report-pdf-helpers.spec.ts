@@ -50,7 +50,7 @@ describe('report pdf helpers', () => {
           text,
           page: bufferedPages.indexOf((doc as any).page),
         });
-        return (originalText as any)(text, ...rest);
+        return originalText(text, ...rest);
       }) as any);
 
       drawPageFooters(doc, (c, n) => `Página ${c} de ${n}`, {

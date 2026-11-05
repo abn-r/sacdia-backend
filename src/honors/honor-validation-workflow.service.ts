@@ -104,7 +104,7 @@ export class HonorValidationWorkflowService {
 
     if (
       ![HONOR_STATUS_IN_PROGRESS, HONOR_STATUS_REJECTED].includes(
-        userHonor.validation_status as typeof HONOR_STATUS_IN_PROGRESS,
+        userHonor.validation_status,
       )
     ) {
       throw new AppBadRequestException(
@@ -333,11 +333,10 @@ export class HonorValidationWorkflowService {
   private async assertInAppSubmitEligibility(
     userHonor: Pick<UserHonorRecord, 'user_honor_id' | 'honor_id'>,
   ) {
-    const requirementEvaluation =
-      await this.evaluateInAppRequirementCompletion(
-        userHonor.user_honor_id,
-        userHonor.honor_id,
-      );
+    const requirementEvaluation = await this.evaluateInAppRequirementCompletion(
+      userHonor.user_honor_id,
+      userHonor.honor_id,
+    );
 
     if (!requirementEvaluation.satisfied) {
       throw new AppBadRequestException(
@@ -359,10 +358,7 @@ export class HonorValidationWorkflowService {
   }
 
   private async assertExternalSubmitEligibility(
-    userHonor: Pick<
-      UserHonorRecord,
-      'user_honor_id' | 'images' | 'document'
-    >,
+    userHonor: Pick<UserHonorRecord, 'user_honor_id' | 'images' | 'document'>,
   ) {
     if (!this.hasCompletedExternalFormat(userHonor)) {
       throw new AppBadRequestException(
@@ -450,9 +446,7 @@ export class HonorValidationWorkflowService {
     );
     const evidenceByRequirementId = new Set(
       progressRows
-        .filter(
-          (progress) => (progress.requirement_evidence ?? []).length > 0,
-        )
+        .filter((progress) => (progress.requirement_evidence ?? []).length > 0)
         .map((progress) => progress.requirement_id),
     );
 
@@ -467,9 +461,7 @@ export class HonorValidationWorkflowService {
     );
 
     return {
-      satisfied: topLevelEvaluation.every(
-        (evaluation) => evaluation.satisfied,
-      ),
+      satisfied: topLevelEvaluation.every((evaluation) => evaluation.satisfied),
       selectedLeafRequirementIds: [
         ...new Set(
           topLevelEvaluation.flatMap(
@@ -553,9 +545,7 @@ export class HonorValidationWorkflowService {
 
     return {
       satisfied,
-      selectedLeafRequirementIds: satisfied
-        ? [requirement.requirement_id]
-        : [],
+      selectedLeafRequirementIds: satisfied ? [requirement.requirement_id] : [],
       evidenceRequirementIds:
         satisfied && requirement.requires_evidence
           ? [requirement.requirement_id]

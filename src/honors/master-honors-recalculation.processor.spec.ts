@@ -2,12 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Job } from 'bullmq';
 import { MasterHonorsRecalculationProcessor } from './master-honors-recalculation.processor';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  MasterHonorJob,
-} from './master-honors.constants';
-import {
-  master_honor_requirement_group_type_enum,
-} from '@prisma/client';
+import { MasterHonorJob } from './master-honors.constants';
+import { master_honor_requirement_group_type_enum } from '@prisma/client';
 
 const mockPrismaService: any = {
   master_honors: {
@@ -92,10 +88,7 @@ describe('MasterHonorsRecalculationProcessor', () => {
           honors_category_id: null,
           options: [
             {
-              honors: [
-                { honor_id: 11 },
-                { honor_id: 12 },
-              ],
+              honors: [{ honor_id: 11 }, { honor_id: 12 }],
             },
           ],
         },
@@ -160,10 +153,22 @@ describe('MasterHonorsRecalculationProcessor', () => {
     const result = await processor.process(job);
 
     expect(mockEvaluator.evaluateUser).toHaveBeenCalledTimes(4);
-    expect(mockEvaluator.evaluateUser).toHaveBeenCalledWith('user-1', expect.any(Object));
-    expect(mockEvaluator.evaluateUser).toHaveBeenCalledWith('user-2', expect.any(Object));
-    expect(mockEvaluator.evaluateUser).toHaveBeenCalledWith('user-3', expect.any(Object));
-    expect(mockEvaluator.evaluateUser).toHaveBeenCalledWith('user-4', expect.any(Object));
+    expect(mockEvaluator.evaluateUser).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(Object),
+    );
+    expect(mockEvaluator.evaluateUser).toHaveBeenCalledWith(
+      'user-2',
+      expect.any(Object),
+    );
+    expect(mockEvaluator.evaluateUser).toHaveBeenCalledWith(
+      'user-3',
+      expect.any(Object),
+    );
+    expect(mockEvaluator.evaluateUser).toHaveBeenCalledWith(
+      'user-4',
+      expect.any(Object),
+    );
     expect(result).toEqual({
       processed: 4,
       users: 4,

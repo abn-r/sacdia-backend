@@ -45,9 +45,7 @@ describe('InsuranceReassignmentsService', () => {
       insurance_assignments: {
         findUnique: jest.fn().mockResolvedValue(ACTIVE_ASSIGNMENT),
         update: jest.fn(),
-        create: jest
-          .fn()
-          .mockResolvedValue({ insurance_assignment_id: 51 }),
+        create: jest.fn().mockResolvedValue({ insurance_assignment_id: 51 }),
       },
       insurance_slot_movements: { createMany: jest.fn() },
       insurance_reassignment_requests: {
@@ -175,9 +173,7 @@ describe('InsuranceReassignmentsService', () => {
       expect(tx.insurance_slot_movements.createMany).toHaveBeenCalledWith({
         data: [expect.objectContaining({ movement_type: 'REASSIGNED' })],
       });
-      expect(
-        tx.insurance_reassignment_requests.update,
-      ).toHaveBeenCalledWith(
+      expect(tx.insurance_reassignment_requests.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: 'APPROVED' }),
         }),

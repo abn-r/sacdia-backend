@@ -38,7 +38,10 @@ describe('AcceptLegalDocumentsDto', () => {
   it('rejects blank, non-string and over-long versions', async () => {
     for (const bad of ['', '   ', 123, null, { a: 1 }, 'x'.repeat(33)]) {
       expect(
-        await errorsFor({ terms_version: bad, privacy_version: '2.0.0-family' }),
+        await errorsFor({
+          terms_version: bad,
+          privacy_version: '2.0.0-family',
+        }),
       ).not.toHaveLength(0);
     }
   });

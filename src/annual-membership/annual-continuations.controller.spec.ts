@@ -18,7 +18,9 @@ describe('AnnualContinuationsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AnnualContinuationsController],
-      providers: [{ provide: AnnualMembershipService, useValue: annualMembership }],
+      providers: [
+        { provide: AnnualMembershipService, useValue: annualMembership },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: jest.fn().mockReturnValue(true) })
@@ -32,19 +34,30 @@ describe('AnnualContinuationsController', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('GET and POST require club_members:approve on the destination club_section', () => {
-    expect(Reflect.getMetadata(PERMISSIONS_KEY, controller.listContinuations)).toEqual({
+    expect(
+      Reflect.getMetadata(PERMISSIONS_KEY, controller.listContinuations),
+    ).toEqual({
       permissions: ['club_members:approve'],
       mode: 'all',
     });
-    expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, controller.listContinuations)).toEqual({
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        controller.listContinuations,
+      ),
+    ).toEqual({
       type: 'club_section',
       idParam: 'sectionId',
     });
-    expect(Reflect.getMetadata(PERMISSIONS_KEY, controller.continueUsers)).toEqual({
+    expect(
+      Reflect.getMetadata(PERMISSIONS_KEY, controller.continueUsers),
+    ).toEqual({
       permissions: ['club_members:approve'],
       mode: 'all',
     });
-    expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, controller.continueUsers)).toEqual({
+    expect(
+      Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, controller.continueUsers),
+    ).toEqual({
       type: 'club_section',
       idParam: 'sectionId',
     });
@@ -53,7 +66,14 @@ describe('AnnualContinuationsController', () => {
   it('GET passes current-year pagination and search, not originYearId', async () => {
     const page = {
       data: [],
-      meta: { page: 1, limit: 20, total: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false },
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 0,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
     };
     annualMembership.listContinuations.mockResolvedValue(page);
     const pagination = new PaginationDto();
@@ -62,7 +82,11 @@ describe('AnnualContinuationsController', () => {
 
     const result = await controller.listContinuations(301, pagination, 'luis');
 
-    expect(annualMembership.listContinuations).toHaveBeenCalledWith(301, pagination, 'luis');
+    expect(annualMembership.listContinuations).toHaveBeenCalledWith(
+      301,
+      pagination,
+      'luis',
+    );
     expect(result).toEqual({ status: 'success', data: page });
   });
 
@@ -94,7 +118,9 @@ describe('AnnualEnrollController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AnnualEnrollController],
-      providers: [{ provide: AnnualMembershipService, useValue: annualMembership }],
+      providers: [
+        { provide: AnnualMembershipService, useValue: annualMembership },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: jest.fn().mockReturnValue(true) })
@@ -108,19 +134,26 @@ describe('AnnualEnrollController', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('keeps user owner resource metadata but still delegates to the blocked service', async () => {
-    expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, controller.annualEnroll)).toEqual({
+    expect(
+      Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, controller.annualEnroll),
+    ).toEqual({
       type: 'user',
       ownerParam: 'userId',
     });
 
     annualMembership.annualEnroll.mockRejectedValue(
-      Object.assign(new Error('blocked'), { code: 'ANNUAL_ENROLL_REQUIRES_DIRECTIVE' }),
+      Object.assign(new Error('blocked'), {
+        code: 'ANNUAL_ENROLL_REQUIRES_DIRECTIVE',
+      }),
     );
 
     await expect(
       controller.annualEnroll('user-a-uuid', { club_section_id: 301 }),
     ).rejects.toMatchObject({ code: 'ANNUAL_ENROLL_REQUIRES_DIRECTIVE' });
 
-    expect(annualMembership.annualEnroll).toHaveBeenCalledWith('user-a-uuid', 301);
+    expect(annualMembership.annualEnroll).toHaveBeenCalledWith(
+      'user-a-uuid',
+      301,
+    );
   });
 });

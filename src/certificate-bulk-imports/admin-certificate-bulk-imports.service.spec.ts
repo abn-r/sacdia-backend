@@ -103,8 +103,12 @@ describe('AdminCertificateBulkImportsService', () => {
     ).rejects.toThrow('CERTIFICATE_IMPORT_ITEM_DECISION_REQUIRED');
 
     expect(application.approveItemInTransaction).not.toHaveBeenCalled();
-    expect(prisma.certificate_bulk_import_items.updateMany).not.toHaveBeenCalled();
-    expect(prisma.certificate_bulk_import_batches.update).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_items.updateMany,
+    ).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_batches.update,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects one item and leaves the batch open while another row is pending', async () => {
@@ -130,7 +134,9 @@ describe('AdminCertificateBulkImportsService', () => {
       reason: 'Fecha ilegible',
     });
 
-    expect(prisma.certificate_bulk_import_items.updateMany).toHaveBeenCalledWith(
+    expect(
+      prisma.certificate_bulk_import_items.updateMany,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ item_id: 'item-1' }),
       }),
@@ -197,7 +203,9 @@ describe('AdminCertificateBulkImportsService', () => {
       }),
     ).rejects.toThrow('CERTIFICATE_IMPORT_ITEM_NOT_REVIEWABLE');
 
-    expect(prisma.certificate_bulk_import_batches.update).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_batches.update,
+    ).not.toHaveBeenCalled();
   });
 
   it('does not reject an item that does not belong to the selected batch', async () => {
@@ -218,7 +226,9 @@ describe('AdminCertificateBulkImportsService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(prisma.certificate_bulk_import_items.update).not.toHaveBeenCalled();
-    expect(prisma.certificate_bulk_import_items.updateMany).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_items.updateMany,
+    ).not.toHaveBeenCalled();
     expect(prisma.certificate_bulk_import_items.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -250,7 +260,9 @@ describe('AdminCertificateBulkImportsService', () => {
       }),
     ).rejects.toThrow('CERTIFICATE_IMPORT_ITEM_NOT_FOUND');
 
-    expect(prisma.certificate_bulk_import_items.updateMany).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_items.updateMany,
+    ).not.toHaveBeenCalled();
   });
 
   it('shows a missing period on the row and leaves the batch submitted', async () => {
@@ -282,7 +294,9 @@ describe('AdminCertificateBulkImportsService', () => {
     expect(detail.items[0].approval_blockers).toEqual([
       { code: 'CERTIFICATE_IMPORT_YEAR_NOT_FOUND' },
     ]);
-    expect(prisma.certificate_bulk_import_batches.update).not.toHaveBeenCalled();
+    expect(
+      prisma.certificate_bulk_import_batches.update,
+    ).not.toHaveBeenCalled();
   });
 
   it('clears the period blocker after the catalog year exists without a new file', async () => {
@@ -303,9 +317,7 @@ describe('AdminCertificateBulkImportsService', () => {
         },
       ],
     });
-    yearResolver.blockersForItems.mockResolvedValue(
-      new Map([['item-1', []]]),
-    );
+    yearResolver.blockersForItems.mockResolvedValue(new Map([['item-1', []]]));
 
     const detail = await service.getDetail('reviewer-1', 'batch-1');
 
@@ -364,7 +376,12 @@ describe('AdminCertificateBulkImportsService', () => {
           item_id: 'item-2',
           honor_id: 11,
           instructor_user_id: 'ana',
-          instructor: { user_id: 'ana', name: 'Ana', paternal_last_name: 'Pérez', maternal_last_name: null },
+          instructor: {
+            user_id: 'ana',
+            name: 'Ana',
+            paternal_last_name: 'Pérez',
+            maternal_last_name: null,
+          },
         }),
       ]);
 
@@ -387,16 +404,43 @@ describe('AdminCertificateBulkImportsService', () => {
 
     it('does not flag a conflict when the dates differ, nothing was approved or the instructor matches', async () => {
       prisma.users_honors.findMany.mockResolvedValue([
-        { honor_id: 10, date: new Date('2025-01-01T00:00:00.000Z'), instructor_user_id: 'luis', instructor_name: null },
-        { honor_id: 11, date: DATE, instructor_user_id: 'ana', instructor_name: null },
-        { honor_id: 12, date: DATE, instructor_user_id: null, instructor_name: null },
+        {
+          honor_id: 10,
+          date: new Date('2025-01-01T00:00:00.000Z'),
+          instructor_user_id: 'luis',
+          instructor_name: null,
+        },
+        {
+          honor_id: 11,
+          date: DATE,
+          instructor_user_id: 'ana',
+          instructor_name: null,
+        },
+        {
+          honor_id: 12,
+          date: DATE,
+          instructor_user_id: null,
+          instructor_name: null,
+        },
       ]);
 
       const detail = await detailFor([
         honorItem({ instructor_name: 'Juan López Ruiz' }),
-        honorItem({ item_id: 'item-2', honor_id: 11, instructor_user_id: 'ana' }),
-        honorItem({ item_id: 'item-3', honor_id: 12, instructor_user_id: 'ana' }),
-        honorItem({ item_id: 'item-4', honor_id: 13, instructor_user_id: 'ana' }),
+        honorItem({
+          item_id: 'item-2',
+          honor_id: 11,
+          instructor_user_id: 'ana',
+        }),
+        honorItem({
+          item_id: 'item-3',
+          honor_id: 12,
+          instructor_user_id: 'ana',
+        }),
+        honorItem({
+          item_id: 'item-4',
+          honor_id: 13,
+          instructor_user_id: 'ana',
+        }),
       ]);
 
       expect(detail.items.map((item) => item.instructor_conflict)).toEqual([
@@ -411,17 +455,43 @@ describe('AdminCertificateBulkImportsService', () => {
       const START = new Date('2026-04-01T00:00:00.000Z');
       prisma.users_honors.findMany.mockResolvedValue([
         // Inicio distinto, finalización igual: hay conflicto de instructor.
-        { honor_id: 10, date: START, completed_at: DATE, instructor_user_id: 'luis', instructor_name: null },
+        {
+          honor_id: 10,
+          date: START,
+          completed_at: DATE,
+          instructor_user_id: 'luis',
+          instructor_name: null,
+        },
         // `date` coincide pero la finalización aprobada es otra: sin conflicto.
-        { honor_id: 11, date: DATE, completed_at: new Date('2026-04-20T00:00:00.000Z'), instructor_user_id: 'luis', instructor_name: null },
+        {
+          honor_id: 11,
+          date: DATE,
+          completed_at: new Date('2026-04-20T00:00:00.000Z'),
+          instructor_user_id: 'luis',
+          instructor_name: null,
+        },
         // Fila vieja sin completed_at: se usa date.
-        { honor_id: 12, date: DATE, completed_at: null, instructor_user_id: 'luis', instructor_name: null },
+        {
+          honor_id: 12,
+          date: DATE,
+          completed_at: null,
+          instructor_user_id: 'luis',
+          instructor_name: null,
+        },
       ]);
 
       const detail = await detailFor([
         honorItem({ instructor_name: 'Juan López Ruiz' }),
-        honorItem({ item_id: 'item-2', honor_id: 11, instructor_name: 'Juan López Ruiz' }),
-        honorItem({ item_id: 'item-3', honor_id: 12, instructor_name: 'Juan López Ruiz' }),
+        honorItem({
+          item_id: 'item-2',
+          honor_id: 11,
+          instructor_name: 'Juan López Ruiz',
+        }),
+        honorItem({
+          item_id: 'item-3',
+          honor_id: 12,
+          instructor_name: 'Juan López Ruiz',
+        }),
       ]);
 
       expect(detail.items.map((item) => item.instructor_conflict)).toEqual([
@@ -433,10 +503,21 @@ describe('AdminCertificateBulkImportsService', () => {
 
     it('reads the conflict of an approved row from its ITEM_APPROVED event', async () => {
       const detail = await detailFor(
-        [honorItem({ status: 'APPROVED' }), honorItem({ item_id: 'item-2', status: 'APPROVED' })],
         [
-          { item_id: 'item-1', action: 'ITEM_APPROVED', payload: { instructor_conflict: true } },
-          { item_id: 'item-2', action: 'ITEM_APPROVED', payload: { instructor_kind: 'NONE' } },
+          honorItem({ status: 'APPROVED' }),
+          honorItem({ item_id: 'item-2', status: 'APPROVED' }),
+        ],
+        [
+          {
+            item_id: 'item-1',
+            action: 'ITEM_APPROVED',
+            payload: { instructor_conflict: true },
+          },
+          {
+            item_id: 'item-2',
+            action: 'ITEM_APPROVED',
+            payload: { instructor_kind: 'NONE' },
+          },
         ],
       );
 
@@ -460,12 +541,32 @@ describe('AdminCertificateBulkImportsService', () => {
         local_field_id: 7,
         status: 'SUBMITTED',
         files: [
-          { file_id: 'file-1', jurisdiction: 'CAMPO_LOCAL', size_bytes: 10n, page_count: 5 },
-          { file_id: 'file-2', jurisdiction: 'CAMPO_LOCAL', size_bytes: 10n, page_count: null },
+          {
+            file_id: 'file-1',
+            jurisdiction: 'CAMPO_LOCAL',
+            size_bytes: 10n,
+            page_count: 5,
+          },
+          {
+            file_id: 'file-2',
+            jurisdiction: 'CAMPO_LOCAL',
+            size_bytes: 10n,
+            page_count: null,
+          },
         ],
         items: [
-          { item_id: 'item-1', item_type: 'CLASS', source_file_id: 'file-1', source_page: 3 },
-          { item_id: 'item-2', item_type: 'CLASS', source_file_id: null, source_page: null },
+          {
+            item_id: 'item-1',
+            item_type: 'CLASS',
+            source_file_id: 'file-1',
+            source_page: 3,
+          },
+          {
+            item_id: 'item-2',
+            item_type: 'CLASS',
+            source_file_id: null,
+            source_page: null,
+          },
         ],
         events: [],
       });
@@ -473,7 +574,9 @@ describe('AdminCertificateBulkImportsService', () => {
       const detail = await service.getDetail('reviewer-1', 'batch-1');
 
       expect(detail.files.map((file) => file.page_count)).toEqual([5, null]);
-      expect(detail.items.map((item) => [item.source_file_id, item.source_page])).toEqual([
+      expect(
+        detail.items.map((item) => [item.source_file_id, item.source_page]),
+      ).toEqual([
         ['file-1', 3],
         [null, null],
       ]);
