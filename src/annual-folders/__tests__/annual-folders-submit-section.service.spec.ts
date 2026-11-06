@@ -10,7 +10,8 @@ import { ErrorCode } from '../../common/errors/error-codes';
  *
  * Covers (C2-R-C2-1 / design §4.9):
  *  1. Happy path — PENDING → SUBMITTED: upsert + updateMany called correctly
- *  2. Idempotency — already-SUBMITTED section: upsert still called, updateMany called with PENDING guard (matches 0 rows; no error)
+ *  2. Idempotency — already-SUBMITTED section: upsert still called, both guarded updateMany calls match 0 rows; no error
+ *  3. REJECTED → SUBMITTED on re-submission, clearing the previous decision
  *  3. Folder not found → NotFoundException
  *  4. Folder not open → BadRequestException
  *  5. Section not in template → NotFoundException
@@ -158,9 +159,10 @@ describe('AnnualFoldersService — submitSection', () => {
     it('transitions evaluation status PENDING → SUBMITTED with enum values', async () => {
       await service.submitSection(FOLDER_ID, SECTION_ID, USER_ID);
 
+      // One guarded update for PENDING, one for REJECTED.
       expect(
         mockTx.annual_folder_section_evaluations.updateMany,
-      ).toHaveBeenCalledTimes(1);
+      ).toHaveBeenCalledTimes(2);
       const updateManyCall =
         mockTx.annual_folder_section_evaluations.updateMany.mock.calls[0][0];
       expect(updateManyCall.where).toEqual({
@@ -204,16 +206,60 @@ describe('AnnualFoldersService — submitSection', () => {
         service.submitSection(FOLDER_ID, SECTION_ID, USER_ID),
       ).resolves.toBeDefined();
 
-      // updateMany must still be called — guard is idempotent, not a throw.
+      // Both guarded updates still run — they are idempotent, not a throw.
       expect(
         mockTx.annual_folder_section_evaluations.updateMany,
-      ).toHaveBeenCalledTimes(1);
+      ).toHaveBeenCalledTimes(2);
     });
   });
 
   // ---------------------------------------------------------------
   // 3. Folder not found → NotFoundException
   // ---------------------------------------------------------------
+  describe('re-submitting a REJECTED section', () => {
+    it('moves it back to SUBMITTED and clears the previous decision', async () => {
+      await service.submitSection(FOLDER_ID, SECTION_ID, USER_ID);
+
+      const calls =
+        mockTx.annual_folder_section_evaluations.updateMany.mock.calls;
+      const rejectedCall = calls.find(
+        ([arg]) =>
+          arg.where.status === annual_folder_section_status_enum.REJECTED,
+      );
+      expect(rejectedCall).toBeDefined();
+      expect(rejectedCall![0].where).toEqual({
+        annual_folder_id: FOLDER_ID,
+        section_id: SECTION_ID,
+        status: annual_folder_section_status_enum.REJECTED,
+      });
+      expect(rejectedCall![0].data).toEqual(
+        expect.objectContaining({
+          status: annual_folder_section_status_enum.SUBMITTED,
+          lf_approved_by: null,
+          lf_approved_at: null,
+          union_approved_by: null,
+          union_approved_at: null,
+          union_decision: null,
+          earned_points: 0,
+          notes: null,
+        }),
+      );
+    });
+
+    it('leaves PREAPPROVED_LF and VALIDATED rows alone (only PENDING and REJECTED are matched)', async () => {
+      await service.submitSection(FOLDER_ID, SECTION_ID, USER_ID);
+
+      const statuses =
+        mockTx.annual_folder_section_evaluations.updateMany.mock.calls.map(
+          ([arg]) => arg.where.status,
+        );
+      expect(statuses).toEqual([
+        annual_folder_section_status_enum.PENDING,
+        annual_folder_section_status_enum.REJECTED,
+      ]);
+    });
+  });
+
   describe('when the folder does not exist', () => {
     it('throws NotFoundException before entering the transaction', async () => {
       mockPrismaService.annual_folders.findUnique.mockResolvedValue(null);

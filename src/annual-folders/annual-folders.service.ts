@@ -1938,11 +1938,14 @@ export class AnnualFoldersService {
 
     const now = new Date();
 
-    // Atomically upsert the submission record and transition the evaluation
-    // row from PENDING → SUBMITTED. The updateMany is idempotent: if the
-    // status is already SUBMITTED or has advanced further (e.g. PREAPPROVED_LF,
-    // VALIDATED, REJECTED from a re-submission after reopen), the WHERE clause
-    // matches 0 rows and no change is made.
+    // Atomically upsert the submission record and move the evaluation row to
+    // SUBMITTED:
+    //   - PENDING → SUBMITTED (first submission).
+    //   - REJECTED → SUBMITTED (the club fixed the evidence and sends it
+    //     again). The previous decision is cleared, like reopenSection does,
+    //     so the section goes back to the reviewers' queue as a fresh one.
+    // Both updates are guarded by status, so re-submitting a section that is
+    // already SUBMITTED, PREAPPROVED_LF or VALIDATED changes nothing.
     const submission = await this.prisma.$transaction(async (tx) => {
       const sub = await tx.annual_folder_section_submissions.upsert({
         where: {
@@ -1972,6 +1975,25 @@ export class AnnualFoldersService {
         },
         data: {
           status: annual_folder_section_status_enum.SUBMITTED,
+        },
+      });
+
+      await tx.annual_folder_section_evaluations.updateMany({
+        where: {
+          annual_folder_id: folderId,
+          section_id: sectionId,
+          status: annual_folder_section_status_enum.REJECTED,
+        },
+        data: {
+          status: annual_folder_section_status_enum.SUBMITTED,
+          lf_approved_by: null,
+          lf_approved_at: null,
+          union_approved_by: null,
+          union_approved_at: null,
+          union_decision: null,
+          earned_points: 0,
+          notes: null,
+          modified_at: now,
         },
       });
 
