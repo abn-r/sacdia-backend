@@ -2,10 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CamporeeEventsService } from './camporee-events.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
 import { CamporeeStaffService } from '../camporee-staff/camporee-staff.service';
 import {
   AppNotFoundException,
   AppBadRequestException,
+  AppConflictException,
   AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -54,6 +59,13 @@ const makePrismaMock = () => {
       findMany: jest.fn(),
       deleteMany: jest.fn(),
       createMany: jest.fn(),
+    },
+    camporee_event_attachments: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn(),
+      aggregate: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
     },
     honors: {
       findMany: jest.fn(),
@@ -164,6 +176,7 @@ const baseEvent = {
 describe('CamporeeEventsService', () => {
   let service: CamporeeEventsService;
   let prisma: ReturnType<typeof makePrismaMock>;
+  let fileStorage: any;
 
   beforeEach(async () => {
     prisma = makePrismaMock();
@@ -171,6 +184,16 @@ describe('CamporeeEventsService', () => {
     prisma.camporee_event_staff_assignments.findMany.mockResolvedValue([]);
     prisma.camporee_event_honors.findMany.mockResolvedValue([]);
     prisma.honors.findMany.mockResolvedValue([]);
+    prisma.camporee_event_attachments.findMany.mockResolvedValue([]);
+    fileStorage = {
+      upload: jest
+        .fn()
+        .mockResolvedValue({ key: 'camporee-events/1/k.pdf', url: 'u' }),
+      deleteMany: jest.fn().mockResolvedValue(undefined),
+      getSignedDownloadUrl: jest
+        .fn()
+        .mockImplementation(async (_a: string, key: string) => `signed:${key}`),
+    };
     prisma.camporee_event_staff_assignments.findFirst.mockResolvedValue({
       camporee_event_staff_assignment_id: 'staff-assignment-id',
     });
@@ -179,6 +202,7 @@ describe('CamporeeEventsService', () => {
       providers: [
         CamporeeEventsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: FILE_STORAGE_SERVICE, useValue: fileStorage },
         {
           provide: CamporeeStaffService,
           useValue: { assertStaffBelongsToEventCamporee: jest.fn() },
@@ -221,6 +245,7 @@ describe('CamporeeEventsService', () => {
           schedule_blocks: [],
           staff_assignments: [],
           honors: [],
+          attachments: [],
         },
       ]);
       expect(result.total).toBe(1);
@@ -330,6 +355,7 @@ describe('CamporeeEventsService', () => {
         schedule_blocks: [],
         staff_assignments: [],
         honors: [],
+        attachments: [],
       });
       expect(prisma.camporee_events.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1082,6 +1108,216 @@ describe('CamporeeEventsService', () => {
       expect(result.data[0].starts_at).toBeNull();
       expect(result.data[0].honors).toHaveLength(1);
       expect(result.data[0].honors[0].name).toBe('Nudos');
+    });
+  });
+  describe('attachments', () => {
+    const pdf = (over: Partial<Express.Multer.File> = {}) =>
+      ({
+        originalname: 'reglamento.pdf',
+        mimetype: 'application/pdf',
+        size: 1234,
+        buffer: Buffer.from('%PDF-1.4 test'),
+        ...over,
+      }) as Express.Multer.File;
+    const row = {
+      camporee_event_attachment_id: 'att-1',
+      camporee_event_id: 1,
+      file_key: 'camporee-events/1/k.pdf',
+      file_name: 'reglamento.pdf',
+      mime_type: 'application/pdf',
+      size_bytes: 1234,
+      display_order: 3,
+      created_at: new Date('2026-07-01T10:00:00.000Z'),
+    };
+
+    it('rejects a missing file', async () => {
+      await expect(
+        service.uploadAttachment(1, undefined, ACTOR_ID),
+      ).rejects.toMatchObject({
+        response: { code: ErrorCode.CAMPOREE_EVENT_ATTACHMENT_REQUIRED },
+      });
+    });
+
+    it('rejects files over 10MB', async () => {
+      await expect(
+        service.uploadAttachment(
+          1,
+          pdf({ size: 10 * 1024 * 1024 + 1 }),
+          ACTOR_ID,
+        ),
+      ).rejects.toBeInstanceOf(AppBadRequestException);
+      expect(fileStorage.upload).not.toHaveBeenCalled();
+    });
+
+    it('rejects disallowed MIME and magic-byte mismatch', async () => {
+      await expect(
+        service.uploadAttachment(1, pdf({ mimetype: 'text/plain' }), ACTOR_ID),
+      ).rejects.toBeInstanceOf(AppBadRequestException);
+      await expect(
+        service.uploadAttachment(
+          1,
+          pdf({ buffer: Buffer.from('not a pdf') }),
+          ACTOR_ID,
+        ),
+      ).rejects.toBeInstanceOf(AppBadRequestException);
+      expect(fileStorage.upload).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 when the event is missing or inactive', async () => {
+      prisma.camporee_events.findFirst.mockResolvedValue(null);
+      await expect(
+        service.uploadAttachment(9, pdf(), ACTOR_ID),
+      ).rejects.toBeInstanceOf(AppNotFoundException);
+    });
+
+    it('throws 409 when the event already has 10 active attachments', async () => {
+      prisma.camporee_events.findFirst.mockResolvedValue({
+        camporee_event_id: 1,
+      });
+      prisma.camporee_event_attachments.aggregate.mockResolvedValue({
+        _count: { _all: 10 },
+        _max: { display_order: 9 },
+      });
+      await expect(
+        service.uploadAttachment(1, pdf(), ACTOR_ID),
+      ).rejects.toBeInstanceOf(AppConflictException);
+      expect(fileStorage.upload).not.toHaveBeenCalled();
+    });
+
+    it('uploads, stores the row with next display_order and returns a signed url', async () => {
+      prisma.camporee_events.findFirst.mockResolvedValue({
+        camporee_event_id: 1,
+      });
+      prisma.camporee_event_attachments.aggregate.mockResolvedValue({
+        _count: { _all: 3 },
+        _max: { display_order: 2 },
+      });
+      prisma.camporee_event_attachments.create.mockResolvedValue(row);
+
+      const result = await service.uploadAttachment(1, pdf(), ACTOR_ID);
+
+      const [alias, key, , opts] = fileStorage.upload.mock.calls[0];
+      expect(alias).toBe(StorageBucketAlias.CAMPOREE_EVENT_ATTACHMENTS);
+      expect(key).toMatch(/^1\/\d+-[0-9a-f-]{36}\.pdf$/);
+      expect(opts).toEqual({
+        contentType: 'application/pdf',
+        overwrite: false,
+      });
+      expect(prisma.camporee_event_attachments.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          camporee_event_id: 1,
+          created_by: ACTOR_ID,
+          display_order: 3,
+          size_bytes: 1234,
+          mime_type: 'application/pdf',
+        }),
+      });
+      expect(result).toEqual({
+        attachment_id: 'att-1',
+        file_name: 'reglamento.pdf',
+        mime_type: 'application/pdf',
+        size_bytes: 1234,
+        url: 'signed:camporee-events/1/k.pdf',
+        created_at: '2026-07-01T10:00:00.000Z',
+      });
+    });
+
+    it('removes the uploaded object when the DB insert fails', async () => {
+      prisma.camporee_events.findFirst.mockResolvedValue({
+        camporee_event_id: 1,
+      });
+      prisma.camporee_event_attachments.aggregate.mockResolvedValue({
+        _count: { _all: 0 },
+        _max: { display_order: null },
+      });
+      prisma.camporee_event_attachments.create.mockRejectedValue(
+        new Error('db'),
+      );
+      await expect(
+        service.uploadAttachment(1, pdf(), ACTOR_ID),
+      ).rejects.toThrow('db');
+      expect(fileStorage.deleteMany).toHaveBeenCalledWith(
+        StorageBucketAlias.CAMPOREE_EVENT_ATTACHMENTS,
+        ['camporee-events/1/k.pdf'],
+      );
+    });
+
+    it('lists active attachments with signed urls', async () => {
+      prisma.camporee_events.findFirst.mockResolvedValue({
+        camporee_event_id: 1,
+      });
+      prisma.camporee_event_attachments.findMany.mockResolvedValue([row]);
+      const result = await service.listAttachments(1);
+      expect(prisma.camporee_event_attachments.findMany).toHaveBeenCalledWith({
+        where: { camporee_event_id: { in: [1] }, active: true },
+        orderBy: [{ display_order: 'asc' }, { created_at: 'asc' }],
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0].url).toBe('signed:camporee-events/1/k.pdf');
+      expect(fileStorage.getSignedDownloadUrl).toHaveBeenCalledWith(
+        StorageBucketAlias.CAMPOREE_EVENT_ATTACHMENTS,
+        'camporee-events/1/k.pdf',
+        { expiresInSeconds: 900 },
+      );
+    });
+
+    it('soft deletes and removes the R2 object', async () => {
+      prisma.camporee_event_attachments.findFirst.mockResolvedValue(row);
+      await service.deleteAttachment(1, 'att-1', ACTOR_ID);
+      expect(prisma.camporee_event_attachments.findFirst).toHaveBeenCalledWith({
+        where: {
+          camporee_event_attachment_id: 'att-1',
+          camporee_event_id: 1,
+          active: true,
+        },
+      });
+      expect(prisma.camporee_event_attachments.update).toHaveBeenCalledWith({
+        where: { camporee_event_attachment_id: 'att-1' },
+        data: { active: false, modified_at: expect.any(Date) },
+      });
+      expect(fileStorage.deleteMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not throw when the R2 delete fails', async () => {
+      prisma.camporee_event_attachments.findFirst.mockResolvedValue(row);
+      fileStorage.deleteMany.mockRejectedValue(new Error('r2 down'));
+      await expect(
+        service.deleteAttachment(1, 'att-1', ACTOR_ID),
+      ).resolves.toBeDefined();
+    });
+
+    it('throws 404 when the attachment does not belong to the event', async () => {
+      prisma.camporee_event_attachments.findFirst.mockResolvedValue(null);
+      await expect(
+        service.deleteAttachment(1, 'nope', ACTOR_ID),
+      ).rejects.toBeInstanceOf(AppNotFoundException);
+      expect(prisma.camporee_event_attachments.update).not.toHaveBeenCalled();
+    });
+
+    it('includes attachments in list and detail, batch-loaded once, even when agenda is masked', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+      prisma.camporee_events.findMany.mockResolvedValue([
+        baseEvent,
+        { ...baseEvent, camporee_event_id: 2 },
+      ]);
+      prisma.camporee_events.count.mockResolvedValue(2);
+      prisma.camporee_event_attachments.findMany.mockResolvedValue([row]);
+
+      const list = await service.listEvents(1, 'local');
+      expect(prisma.camporee_event_attachments.findMany).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(list.data[0].attachments).toHaveLength(1);
+      expect(list.data[1].attachments).toEqual([]);
+
+      prisma.camporee_events.findFirst.mockResolvedValue({
+        ...baseEvent,
+        event_type: baseEventType,
+        leader: null,
+        venue: null,
+      });
+      const detail = await service.getEvent(1);
+      expect((detail as any).attachments[0].attachment_id).toBe('att-1');
     });
   });
 });

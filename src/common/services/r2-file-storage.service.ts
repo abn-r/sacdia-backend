@@ -782,6 +782,20 @@ export class R2FileStorageService implements FileStorageService {
           ),
           isPublic: false,
         };
+      case StorageBucketAlias.CAMPOREE_EVENT_ATTACHMENTS:
+        return {
+          bucket:
+            this.getOptionalEnv('R2_BUCKET_CAMPOREE_EVENT_ATTACHMENTS') ||
+            this.getRequiredEnv('R2_BUCKET_RESOURCES_FILES'),
+          publicBaseUrl:
+            this.getOptionalEnv('R2_PUBLIC_URL_CAMPOREE_EVENT_ATTACHMENTS') ||
+            this.getRequiredEnv('R2_PUBLIC_URL_RESOURCES_FILES'),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_CAMPOREE_EVENT_ATTACHMENTS',
+            'camporee-events',
+          ),
+          isPublic: false,
+        };
       case StorageBucketAlias.GUARDIANSHIP_EVIDENCE:
         return {
           bucket: this.getRequiredEnv('R2_BUCKET_GUARDIANSHIP_EVIDENCE'),

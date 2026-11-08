@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import {
   AppBadRequestException,
+  AppConflictException,
   AppNotFoundException,
   AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
@@ -10,6 +12,12 @@ import {
   type ResolvedAuthorizationProfile,
 } from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
+import { fileBufferMatchesDeclaredMime } from '../common/pipes/file-validation.pipe';
 import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { CamporeeStaffService } from '../camporee-staff/camporee-staff.service';
 import {
@@ -59,6 +67,15 @@ const STATUS_TRANSITIONS: Record<
 };
 
 const MAX_EVENT_HONORS = 20;
+const MAX_EVENT_ATTACHMENTS = 10;
+const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+const ATTACHMENT_URL_TTL_SECONDS = 900; // 15 min
+const ATTACHMENT_EXTENSIONS: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
 
 @Injectable()
 export class CamporeeEventsService {
@@ -68,6 +85,8 @@ export class CamporeeEventsService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly camporeeStaffService: CamporeeStaffService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
   ) {}
 
   private logMutation(action: string, resourceId: number, actorId: string) {
@@ -517,6 +536,197 @@ export class CamporeeEventsService {
     }));
   }
 
+  // ─── Attachments (images / PDFs) ─────────────────────────────────────────
+
+  private async mapAttachment(row: {
+    camporee_event_attachment_id: string;
+    file_key: string;
+    file_name: string;
+    mime_type: string;
+    size_bytes: number;
+    created_at: Date;
+  }) {
+    const url = await this.fileStorage.getSignedDownloadUrl(
+      StorageBucketAlias.CAMPOREE_EVENT_ATTACHMENTS,
+      row.file_key,
+      { expiresInSeconds: ATTACHMENT_URL_TTL_SECONDS },
+    );
+    return {
+      attachment_id: row.camporee_event_attachment_id,
+      file_name: row.file_name,
+      mime_type: row.mime_type,
+      size_bytes: row.size_bytes,
+      url,
+      created_at: row.created_at.toISOString(),
+    };
+  }
+
+  private async loadEventAttachments(eventIds: number[]) {
+    const byEvent = new Map<number, any[]>();
+    if (!eventIds.length) return byEvent;
+
+    const rows = await this.prisma.camporee_event_attachments.findMany({
+      where: { camporee_event_id: { in: eventIds }, active: true },
+      orderBy: [{ display_order: 'asc' }, { created_at: 'asc' }],
+    });
+
+    const mapped = await Promise.all(
+      rows.map((row) => this.mapAttachment(row)),
+    );
+    rows.forEach((row, index) => {
+      const list = byEvent.get(row.camporee_event_id) ?? [];
+      list.push(mapped[index]);
+      byEvent.set(row.camporee_event_id, list);
+    });
+    return byEvent;
+  }
+
+  private attachEventAttachments<T extends Record<string, any>>(
+    events: T[],
+    attachmentsByEvent: Map<number, any[]>,
+  ): T[] {
+    return events.map((event) => ({
+      ...event,
+      attachments: attachmentsByEvent.get(event.camporee_event_id) ?? [],
+    }));
+  }
+
+  private async ensureActiveEvent(eventId: number) {
+    const event = await this.prisma.camporee_events.findFirst({
+      where: { camporee_event_id: eventId, active: true },
+      select: { camporee_event_id: true },
+    });
+    if (!event) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_EVENT_NOT_FOUND, {
+        id: eventId,
+      });
+    }
+    return event;
+  }
+
+  async listAttachments(eventId: number) {
+    await this.ensureActiveEvent(eventId);
+    const byEvent = await this.loadEventAttachments([eventId]);
+    return byEvent.get(eventId) ?? [];
+  }
+
+  async uploadAttachment(
+    eventId: number,
+    file: Express.Multer.File | undefined,
+    actorId: string,
+  ) {
+    if (!file) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_ATTACHMENT_REQUIRED,
+      );
+    }
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_ATTACHMENT_TOO_LARGE,
+      );
+    }
+    if (
+      !ATTACHMENT_EXTENSIONS[file.mimetype] ||
+      !fileBufferMatchesDeclaredMime(file)
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_ATTACHMENT_MIME_INVALID,
+      );
+    }
+
+    await this.ensureActiveEvent(eventId);
+
+    const aggregate = await this.prisma.camporee_event_attachments.aggregate({
+      where: { camporee_event_id: eventId, active: true },
+      _count: { _all: true },
+      _max: { display_order: true },
+    });
+    if (aggregate._count._all >= MAX_EVENT_ATTACHMENTS) {
+      throw new AppConflictException(
+        ErrorCode.CAMPOREE_EVENT_ATTACHMENT_LIMIT_REACHED,
+        { limit: MAX_EVENT_ATTACHMENTS },
+      );
+    }
+
+    const objectKey = `${eventId}/${Date.now()}-${randomUUID()}.${ATTACHMENT_EXTENSIONS[file.mimetype]}`;
+    const uploaded = await this.fileStorage.upload(
+      StorageBucketAlias.CAMPOREE_EVENT_ATTACHMENTS,
+      objectKey,
+      file.buffer,
+      { contentType: file.mimetype, overwrite: false },
+    );
+
+    let row;
+    try {
+      row = await this.prisma.camporee_event_attachments.create({
+        data: {
+          camporee_event_id: eventId,
+          file_key: uploaded.key,
+          file_name: (file.originalname || 'file').slice(0, 255),
+          mime_type: file.mimetype,
+          size_bytes: file.size,
+          display_order: (aggregate._max.display_order ?? -1) + 1,
+          created_by: actorId,
+        },
+      });
+    } catch (error) {
+      await this.fileStorage
+        .deleteMany(StorageBucketAlias.CAMPOREE_EVENT_ATTACHMENTS, [
+          uploaded.key,
+        ])
+        .catch((cleanupError) =>
+          this.logger.warn(
+            `Failed to clean up orphan attachment object ${uploaded.key}`,
+            cleanupError,
+          ),
+        );
+      throw error;
+    }
+
+    this.logMutation('attachment_uploaded', eventId, actorId);
+    return this.mapAttachment(row);
+  }
+
+  async deleteAttachment(
+    eventId: number,
+    attachmentId: string,
+    actorId: string,
+  ) {
+    const attachment = await this.prisma.camporee_event_attachments.findFirst({
+      where: {
+        camporee_event_attachment_id: attachmentId,
+        camporee_event_id: eventId,
+        active: true,
+      },
+    });
+    if (!attachment) {
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_EVENT_ATTACHMENT_NOT_FOUND,
+        { id: attachmentId },
+      );
+    }
+
+    await this.prisma.camporee_event_attachments.update({
+      where: { camporee_event_attachment_id: attachmentId },
+      data: { active: false, modified_at: new Date() },
+    });
+
+    try {
+      await this.fileStorage.deleteMany(
+        StorageBucketAlias.CAMPOREE_EVENT_ATTACHMENTS,
+        [attachment.file_key],
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to delete R2 object ${attachment.file_key} for attachment ${attachmentId}`,
+        error,
+      );
+    }
+
+    this.logMutation('attachment_deleted', eventId, actorId);
+    return { deleted: true };
+  }
+
   private async assertHonorIds(honorIds: number[]): Promise<void> {
     if (honorIds.length > MAX_EVENT_HONORS) {
       throw new AppBadRequestException(ErrorCode.CAMPOREE_EVENT_HONOR_LIMIT, {
@@ -780,8 +990,15 @@ export class CamporeeEventsService {
       data.map((event) => event.camporee_event_id),
     );
 
+    const attachmentsByEvent = await this.loadEventAttachments(
+      data.map((event) => event.camporee_event_id),
+    );
+
     return {
-      data: this.attachEventHonors(eventsWithStaff, honorsByEvent),
+      data: this.attachEventAttachments(
+        this.attachEventHonors(eventsWithStaff, honorsByEvent),
+        attachmentsByEvent,
+      ),
       total,
       agenda_visible: shouldShowAgenda,
       agenda_visible_from: agenda.visibleFrom,
@@ -815,12 +1032,18 @@ export class CamporeeEventsService {
       event.camporee_event_id,
     ]);
     const honorsByEvent = await this.loadEventHonors([event.camporee_event_id]);
-    return this.attachEventHonors(
-      this.attachEventStaffAssignments(
-        this.attachScheduleBlocks([event], blocksByEvent),
-        staffByEvent,
+    const attachmentsByEvent = await this.loadEventAttachments([
+      event.camporee_event_id,
+    ]);
+    return this.attachEventAttachments(
+      this.attachEventHonors(
+        this.attachEventStaffAssignments(
+          this.attachScheduleBlocks([event], blocksByEvent),
+          staffByEvent,
+        ),
+        honorsByEvent,
       ),
-      honorsByEvent,
+      attachmentsByEvent,
     )[0];
   }
 
