@@ -290,11 +290,14 @@ export type CamporeeOfficialScoreResponseDto = {
     title: string;
     awarded_points: number;
     max_points: number;
+    /** Judge comment on this rubric line, if any. */
+    notes: string | null;
   }>;
 };
 
 export type CamporeeLeaderboardRowDto = {
-  rank: number;
+  /** Position in the visible ranking; null in the `own` view. */
+  rank: number | null;
   camporee_club_id: number | null;
   club_section_id: number;
   club_name: string | null;
@@ -308,5 +311,45 @@ export type CamporeeLeaderboardRowDto = {
 
 export type CamporeeLeaderboardResponseDto = {
   scope: { type: CamporeeScopeType; camporeeId: number };
+  /**
+   * `full`: every enrolled section with its position (administrative roles).
+   * `district`: a pastor's districts (plus own sections), ranked among
+   * themselves.
+   * `own`: only the caller's own sections, without positions (club roles).
+   */
+  visibility: 'full' | 'district' | 'own';
   rows: CamporeeLeaderboardRowDto[];
+};
+
+export type CamporeeScoreBreakdownEventDto = {
+  camporee_event_id: number;
+  title: string;
+  max_points: number;
+  day_number: number;
+  starts_at: string | null;
+};
+
+/** One section's official result on one event (same shape as the official score). */
+export type CamporeeScoreBreakdownResultDto =
+  CamporeeOfficialScoreResponseDto & {
+    camporee_event_id: number;
+  };
+
+export type CamporeeScoreBreakdownSectionDto = CamporeeLeaderboardRowDto & {
+  results: CamporeeScoreBreakdownResultDto[];
+};
+
+/**
+ * Points per section and per event, with the judge comments. Same visibility
+ * rules as the leaderboard: `full` (administrative roles), `district`
+ * (pastor's districts + own sections), `own` (club roles: own sections only,
+ * no position).
+ */
+export type CamporeeScoreBreakdownResponseDto = {
+  scope: { type: CamporeeScopeType; camporeeId: number };
+  visibility: CamporeeLeaderboardResponseDto['visibility'];
+  /** Active scoring-enabled events, in agenda order. */
+  events: CamporeeScoreBreakdownEventDto[];
+  /** Visible sections, in leaderboard order. */
+  sections: CamporeeScoreBreakdownSectionDto[];
 };

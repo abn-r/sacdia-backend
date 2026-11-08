@@ -10,10 +10,15 @@ import {
   Put,
   Query,
   Request,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiParam,
   ApiTags,
@@ -23,6 +28,12 @@ import {
   AuthorizationResource,
   RequirePermissions,
 } from '../common/decorators';
+import { DEFAULT_UPLOAD_OPTIONS } from '../common/constants/upload-limits.constants';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
+import {
+  ALLOWED_MIME_TYPES,
+  FileValidationPipe,
+} from '../common/pipes/file-validation.pipe';
 import { CamporeeEventsService } from './camporee-events.service';
 import {
   CloneFromTemplateDto,
@@ -290,6 +301,72 @@ export class CamporeeEventsController {
     const data = await this.service.replaceScheduleBlocks(
       eventId,
       dto,
+      req.user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('camporee-events/:eventId/attachments')
+  @RequirePermissions('camporee_events:read')
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @ApiOperation({
+    summary: 'List attachments (images/PDFs) of a camporee event',
+  })
+  @ApiParam({ name: 'eventId', type: Number })
+  async listEventAttachments(@Param('eventId', ParseIntPipe) eventId: number) {
+    const data = await this.service.listAttachments(eventId);
+    return { status: 'success', data };
+  }
+
+  @Post('camporee-events/:eventId/attachments')
+  @RequirePermissions('camporee_events:update')
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @UseInterceptors(FileInterceptor('file', DEFAULT_UPLOAD_OPTIONS))
+  @ApiOperation({
+    summary:
+      'Upload an attachment (JPG, PNG, WebP or PDF, max 10MB) to a camporee event',
+  })
+  @ApiParam({ name: 'eventId', type: Number })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  async uploadEventAttachment(
+    @Param('eventId', ParseIntPipe) eventId: number,
+    @UploadedFile(
+      new FileValidationPipe({
+        maxSize: 10 * 1024 * 1024,
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
+      }),
+    )
+    file: Express.Multer.File,
+    @Request() req: any,
+  ) {
+    const data = await this.service.uploadAttachment(
+      eventId,
+      file,
+      req.user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('camporee-events/:eventId/attachments/:attachmentId')
+  @RequirePermissions('camporee_events:update')
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @ApiOperation({ summary: 'Soft delete an attachment of a camporee event' })
+  @ApiParam({ name: 'eventId', type: Number })
+  @ApiParam({ name: 'attachmentId', type: String })
+  async deleteEventAttachment(
+    @Param('eventId', ParseIntPipe) eventId: number,
+    @Param('attachmentId', ParseUuidParamPipe) attachmentId: string,
+    @Request() req: any,
+  ) {
+    const data = await this.service.deleteAttachment(
+      eventId,
+      attachmentId,
       req.user.sub,
     );
     return { status: 'success', data };

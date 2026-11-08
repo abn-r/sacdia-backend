@@ -353,6 +353,9 @@ export const envValidationSchema = Joi.object({
   R2_BUCKET_GUARDIANSHIP_EVIDENCE: Joi.string().optional(),
   R2_PUBLIC_URL_GUARDIANSHIP_EVIDENCE: Joi.string().uri().optional(),
   R2_KEY_PREFIX_GUARDIANSHIP_EVIDENCE: Joi.string().allow('').optional(),
+  R2_BUCKET_CAMPOREE_EVENT_ATTACHMENTS: Joi.string().optional(),
+  R2_PUBLIC_URL_CAMPOREE_EVENT_ATTACHMENTS: Joi.string().uri().optional(),
+  R2_KEY_PREFIX_CAMPOREE_EVENT_ATTACHMENTS: Joi.string().allow('').optional(),
 
   // Extra https hosts for certificate-bulk-import file_url (comma-separated).
   // Hosts from R2_PUBLIC_URL_* are always included. Loopback/private IPs

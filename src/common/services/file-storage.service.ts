@@ -68,6 +68,17 @@ export enum StorageBucketAlias {
    * Optional at boot: the evidence endpoints fail closed while the bucket is unset.
    */
   GUARDIANSHIP_EVIDENCE = 'GUARDIANSHIP_EVIDENCE',
+  /**
+   * PRIVATE attachments (image/PDF) of camporee events: rules, maps, forms.
+   * Reuses the resources bucket, so no new infra is needed. Never public:
+   * objects are served only through signed URLs (TTL 900 s).
+   * Key format: {prefix}/{eventId}/{Date.now()}-{uuid}.{ext}
+   * Optional env vars: R2_BUCKET_CAMPOREE_EVENT_ATTACHMENTS (falls back to
+   * R2_BUCKET_RESOURCES_FILES), R2_PUBLIC_URL_CAMPOREE_EVENT_ATTACHMENTS
+   * (falls back to R2_PUBLIC_URL_RESOURCES_FILES; never used to serve files),
+   * R2_KEY_PREFIX_CAMPOREE_EVENT_ATTACHMENTS (default camporee-events).
+   */
+  CAMPOREE_EVENT_ATTACHMENTS = 'CAMPOREE_EVENT_ATTACHMENTS',
 }
 
 export type UploadFileOptions = {
