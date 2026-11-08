@@ -322,11 +322,13 @@ export class CamporeeScoringController {
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   async getLocalLeaderboard(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Request() req: any,
   ) {
-    const data = await this.service.getCamporeeLeaderboard({
-      type: 'local',
-      camporeeId,
-    });
+    const data = await this.service.getCamporeeLeaderboard(
+      { type: 'local', camporeeId },
+      req.authorization,
+      req.user.sub,
+    );
     return { status: 'success', data };
   }
 
@@ -335,11 +337,51 @@ export class CamporeeScoringController {
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   async getUnionLeaderboard(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Request() req: any,
   ) {
-    const data = await this.service.getCamporeeLeaderboard({
-      type: 'union',
-      camporeeId,
-    });
+    const data = await this.service.getCamporeeLeaderboard(
+      { type: 'union', camporeeId },
+      req.authorization,
+      req.user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('local-camporees/:camporeeId/score-breakdown')
+  @RequirePermissions('camporee_events:read')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary:
+      'Points per section and event with judge comments, filtered by role',
+  })
+  async getLocalScoreBreakdown(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Request() req: any,
+  ) {
+    const data = await this.service.getScoreBreakdown(
+      { type: 'local', camporeeId },
+      req.authorization,
+      req.user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('union-camporees/:camporeeId/score-breakdown')
+  @RequirePermissions('camporee_events:read')
+  @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary:
+      'Points per section and event with judge comments, filtered by role',
+  })
+  async getUnionScoreBreakdown(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Request() req: any,
+  ) {
+    const data = await this.service.getScoreBreakdown(
+      { type: 'union', camporeeId },
+      req.authorization,
+      req.user.sub,
+    );
     return { status: 'success', data };
   }
 

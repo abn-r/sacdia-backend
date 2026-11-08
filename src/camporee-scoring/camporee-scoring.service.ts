@@ -11,6 +11,7 @@ import { Prisma, role_category } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import {
   AuthorizationContextService,
+  type AuthorizationSnapshot,
   type ResolvedAuthorizationProfile,
 } from '../common/services/authorization-context.service';
 import {
@@ -33,6 +34,7 @@ import {
   CamporeeJudgeResponseDto,
   CamporeeLeaderboardResponseDto,
   CamporeeOfficialScoreResponseDto,
+  CamporeeScoreBreakdownResponseDto,
   CamporeeScoreSource,
   CamporeeScopeType,
   ReplaceCamporeeEventRubricsDto,
@@ -41,6 +43,10 @@ import {
   UpdateCamporeeEventJudgeAssignmentDto,
 } from './dto';
 import { GlobalRole } from '../common/authorization/roles';
+import {
+  ADMIN_SCOPE_ROLES,
+  FIELD_ADMIN_ROLES,
+} from '../common/authorization/role-sets';
 
 type CamporeeScope = { type: CamporeeScopeType; camporeeId: number };
 type PrismaLike = Record<string, any>;
@@ -195,6 +201,44 @@ type CamporeeJudgeRecord = {
     user_image: string | null;
   };
 };
+
+const OFFICIAL_RESULT_INCLUDE = {
+  source_submission: {
+    include: {
+      submitter: {
+        select: {
+          name: true,
+          paternal_last_name: true,
+          maternal_last_name: true,
+        },
+      },
+      items: {
+        include: {
+          rubric: {
+            select: { title: true, max_points: true, display_order: true },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+/**
+ * Who reads camporee scores and how much of them:
+ * - `full`: every section (platform admins, field/union/division roles).
+ * - `district`: a pastor; clubs of their assigned districts + own sections.
+ * - `own`: club roles and members; their own sections only.
+ */
+type ScoreViewer =
+  | { kind: 'full' }
+  | { kind: 'district'; districtIds: Set<number>; ownSectionIds: Set<number> }
+  | { kind: 'own'; ownSectionIds: Set<number> };
+
+/** Global roles that see the full camporee leaderboard (with positions). */
+const LEADERBOARD_FULL_VIEW_ROLES = [
+  ...ADMIN_SCOPE_ROLES,
+  ...FIELD_ADMIN_ROLES,
+] as const;
 
 @Injectable()
 export class CamporeeScoringService {
@@ -933,40 +977,42 @@ export class CamporeeScoringService {
       throw new AppForbiddenException(ErrorCode.CAMPOREE_SCORING_FORBIDDEN);
     }
 
+    // A judge reads the sections it scores. Anyone else follows the
+    // leaderboard rules: admins everything, a pastor their districts, a club
+    // role only its own sections.
+    if (!assignedJudge) {
+      const resolved =
+        await this.authorizationContext.resolveUserAuthorization(actorUserId);
+      const viewer = await this.resolveScoreViewer(
+        resolved.authorization,
+        actorUserId,
+      );
+      if (viewer.kind !== 'full') {
+        const section = await this.db().club_sections.findUnique({
+          where: { club_section_id: clubSectionId },
+          select: { clubs: { select: { districlub_type_id: true } } },
+        });
+        const districtId = section?.clubs?.districlub_type_id ?? null;
+        if (!this.viewerSeesSection(viewer, clubSectionId, districtId)) {
+          throw new AppForbiddenException(ErrorCode.CAMPOREE_SCORING_FORBIDDEN);
+        }
+      }
+    }
+
     const result = await this.db().camporee_event_section_results.findFirst({
       where: {
         camporee_event_id: eventId,
         club_section_id: clubSectionId,
         active: true,
       },
-      include: {
-        source_submission: {
-          include: {
-            submitter: {
-              select: {
-                name: true,
-                paternal_last_name: true,
-                maternal_last_name: true,
-              },
-            },
-            items: {
-              include: {
-                rubric: {
-                  select: {
-                    title: true,
-                    max_points: true,
-                    display_order: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      include: OFFICIAL_RESULT_INCLUDE,
     });
 
     if (!result) return null;
+    return this.mapOfficialScore(result);
+  }
 
+  private mapOfficialScore(result: any): CamporeeOfficialScoreResponseDto {
     const submission = result.source_submission;
     const submitter = submission?.submitter;
     const items = [...(submission?.items ?? [])].sort(
@@ -1003,6 +1049,7 @@ export class CamporeeScoringService {
         title: item.rubric?.title ?? '',
         awarded_points: this.round2(this.toNumber(item.awarded_points)),
         max_points: this.round2(this.toNumber(item.rubric?.max_points ?? 0)),
+        notes: item.notes ?? null,
       })),
     };
   }
@@ -1852,8 +1899,22 @@ export class CamporeeScoringService {
     }));
   }
 
+  /**
+   * Official standings, by who asks:
+   * - `full`: platform admins and field/union/division roles see every
+   *   section with its position.
+   * - `district`: a pastor sees the sections of the clubs in the districts
+   *   assigned to them (`district_investiture_pastors`, active rows) plus
+   *   their own club sections, ranked among themselves.
+   * - `own`: everyone else (club roles, members) gets only their own
+   *   sections without a position, so clubs do not compete over the table.
+   * Fails closed: without an authorization snapshot the caller gets its
+   * (empty) own view.
+   */
   async getCamporeeLeaderboard(
     scope: CamporeeScope,
+    authorization?: AuthorizationSnapshot,
+    actorUserId?: string,
   ): Promise<CamporeeLeaderboardResponseDto> {
     await this.ensureCamporeeExists(scope);
 
@@ -1864,6 +1925,7 @@ export class CamporeeScoringService {
               r.camporee_club_id,
               r.club_section_id,
               c.name AS club_name,
+              c.districlub_type_id AS district_id,
               ct.name AS section_name,
               SUM(r.total_awarded_points)::numeric(10,2) AS total_awarded_points,
               SUM(r.total_max_points)::numeric(10,2) AS total_max_points,
@@ -1881,7 +1943,7 @@ export class CamporeeScoringService {
               AND e.active = TRUE
               AND e.scoring_enabled = TRUE
               AND e.local_camporee_id = ${scope.camporeeId}
-            GROUP BY r.camporee_club_id, r.club_section_id, c.name, ct.name
+            GROUP BY r.camporee_club_id, r.club_section_id, c.name, c.districlub_type_id, ct.name
             ORDER BY percentage DESC, total_awarded_points DESC, section_name ASC
           `
         : await this.prisma.$queryRaw<any[]>`
@@ -1889,6 +1951,7 @@ export class CamporeeScoringService {
               r.camporee_club_id,
               r.club_section_id,
               c.name AS club_name,
+              c.districlub_type_id AS district_id,
               ct.name AS section_name,
               SUM(r.total_awarded_points)::numeric(10,2) AS total_awarded_points,
               SUM(r.total_max_points)::numeric(10,2) AS total_max_points,
@@ -1906,24 +1969,213 @@ export class CamporeeScoringService {
               AND e.active = TRUE
               AND e.scoring_enabled = TRUE
               AND e.union_camporee_id = ${scope.camporeeId}
-            GROUP BY r.camporee_club_id, r.club_section_id, c.name, ct.name
+            GROUP BY r.camporee_club_id, r.club_section_id, c.name, c.districlub_type_id, ct.name
             ORDER BY percentage DESC, total_awarded_points DESC, section_name ASC
           `;
 
+    const ranked = rows.map((row, index) => ({
+      rank: index + 1,
+      district_id: row.district_id == null ? null : Number(row.district_id),
+      camporee_club_id: row.camporee_club_id ?? null,
+      club_section_id: Number(row.club_section_id),
+      club_name: row.club_name ?? null,
+      section_name: row.section_name ?? null,
+      total_awarded_points: this.toNumber(row.total_awarded_points),
+      total_max_points: this.toNumber(row.total_max_points),
+      scored_events_count: Number(row.scored_events_count ?? 0),
+      percentage: this.toNumber(row.percentage),
+    }));
+
+    const toRow = ({
+      district_id: _district,
+      ...row
+    }: (typeof ranked)[number]) => row;
+
+    const viewer = await this.resolveScoreViewer(authorization, actorUserId);
+
+    if (viewer.kind === 'full') {
+      return { scope, visibility: 'full', rows: ranked.map(toRow) };
+    }
+
+    const visible = ranked.filter((row) =>
+      this.viewerSeesSection(viewer, row.club_section_id, row.district_id),
+    );
+
+    if (viewer.kind === 'district') {
+      return {
+        scope,
+        visibility: 'district',
+        rows: visible.map((row, index) => ({
+          ...toRow(row),
+          rank: index + 1,
+        })),
+      };
+    }
+
     return {
       scope,
-      rows: rows.map((row, index) => ({
-        rank: index + 1,
-        camporee_club_id: row.camporee_club_id ?? null,
-        club_section_id: Number(row.club_section_id),
-        club_name: row.club_name ?? null,
-        section_name: row.section_name ?? null,
-        total_awarded_points: this.toNumber(row.total_awarded_points),
-        total_max_points: this.toNumber(row.total_max_points),
-        scored_events_count: Number(row.scored_events_count ?? 0),
-        percentage: this.toNumber(row.percentage),
+      visibility: 'own',
+      rows: visible.map((row) => ({ ...toRow(row), rank: null })),
+    };
+  }
+
+  /**
+   * Points per section and per event, with the judge comments, for the
+   * sections the caller may see (same rules as the leaderboard).
+   */
+  async getScoreBreakdown(
+    scope: CamporeeScope,
+    authorization?: AuthorizationSnapshot,
+    actorUserId?: string,
+  ): Promise<CamporeeScoreBreakdownResponseDto> {
+    const leaderboard = await this.getCamporeeLeaderboard(
+      scope,
+      authorization,
+      actorUserId,
+    );
+
+    const events = await this.db().camporee_events.findMany({
+      where: {
+        active: true,
+        scoring_enabled: true,
+        ...(scope.type === 'local'
+          ? { local_camporee_id: scope.camporeeId }
+          : { union_camporee_id: scope.camporeeId }),
+      },
+      select: {
+        camporee_event_id: true,
+        title: true,
+        max_points: true,
+        day_number: true,
+        starts_at: true,
+      },
+      orderBy: [
+        { day_number: 'asc' },
+        { starts_at: 'asc' },
+        { display_order: 'asc' },
+        { camporee_event_id: 'asc' },
+      ],
+    });
+
+    const sectionIds = leaderboard.rows.map((row) => row.club_section_id);
+    const results =
+      sectionIds.length === 0 || events.length === 0
+        ? []
+        : await this.db().camporee_event_section_results.findMany({
+            where: {
+              active: true,
+              club_section_id: { in: sectionIds },
+              camporee_event_id: {
+                in: events.map(
+                  (event: { camporee_event_id: number }) =>
+                    event.camporee_event_id,
+                ),
+              },
+            },
+            include: OFFICIAL_RESULT_INCLUDE,
+          });
+
+    const eventOrder = new Map<number, number>(
+      events.map((event: { camporee_event_id: number }, index: number) => [
+        event.camporee_event_id,
+        index,
+      ]),
+    );
+    const resultsBySection = new Map<
+      number,
+      CamporeeScoreBreakdownResponseDto['sections'][number]['results']
+    >();
+    for (const result of results as any[]) {
+      const list = resultsBySection.get(result.club_section_id) ?? [];
+      list.push({
+        camporee_event_id: result.camporee_event_id,
+        ...this.mapOfficialScore(result),
+      });
+      resultsBySection.set(result.club_section_id, list);
+    }
+
+    return {
+      scope,
+      visibility: leaderboard.visibility,
+      events: events.map((event: any) => ({
+        camporee_event_id: event.camporee_event_id,
+        title: event.title,
+        max_points: event.max_points,
+        day_number: event.day_number,
+        starts_at: event.starts_at ?? null,
+      })),
+      sections: leaderboard.rows.map((row) => ({
+        ...row,
+        results: (resultsBySection.get(row.club_section_id) ?? []).sort(
+          (left, right) =>
+            (eventOrder.get(left.camporee_event_id) ?? 0) -
+            (eventOrder.get(right.camporee_event_id) ?? 0),
+        ),
       })),
     };
+  }
+
+  private async resolveScoreViewer(
+    authorization: AuthorizationSnapshot | undefined,
+    actorUserId: string | undefined,
+  ): Promise<ScoreViewer> {
+    if (this.canViewFullLeaderboard(authorization)) {
+      return { kind: 'full' };
+    }
+
+    const ownSectionIds = new Set(
+      (authorization?.grants.club_assignments ?? []).map(
+        (assignment) => assignment.section.club_section_id,
+      ),
+    );
+
+    if (this.hasLeaderboardGlobalRole(authorization, [GlobalRole.PASTOR])) {
+      const rows = actorUserId
+        ? await this.prisma.district_investiture_pastors.findMany({
+            where: { user_id: actorUserId, active: true },
+            select: { districlub_type_id: true },
+          })
+        : [];
+      return {
+        kind: 'district',
+        districtIds: new Set(rows.map((row) => row.districlub_type_id)),
+        ownSectionIds,
+      };
+    }
+
+    return { kind: 'own', ownSectionIds };
+  }
+
+  private viewerSeesSection(
+    viewer: ScoreViewer,
+    clubSectionId: number,
+    districtId: number | null,
+  ): boolean {
+    if (viewer.kind === 'full') return true;
+    if (viewer.ownSectionIds.has(clubSectionId)) return true;
+    return (
+      viewer.kind === 'district' &&
+      districtId !== null &&
+      viewer.districtIds.has(districtId)
+    );
+  }
+
+  private hasLeaderboardGlobalRole(
+    authorization: AuthorizationSnapshot | undefined,
+    roles: readonly string[],
+  ): boolean {
+    return (authorization?.grants.global_roles ?? []).some((grant) =>
+      roles.includes(grant.role_name.toLowerCase()),
+    );
+  }
+
+  private canViewFullLeaderboard(
+    authorization: AuthorizationSnapshot | undefined,
+  ): boolean {
+    return this.hasLeaderboardGlobalRole(
+      authorization,
+      LEADERBOARD_FULL_VIEW_ROLES,
+    );
   }
 
   async getMyJudgeAssignments(actorUserId: string) {

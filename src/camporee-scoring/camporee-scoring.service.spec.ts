@@ -1,4 +1,5 @@
 import { ErrorCode } from '../common/errors/error-codes';
+import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import { CamporeeScoringService } from './camporee-scoring.service';
 
 describe('CamporeeScoringService', () => {
@@ -1672,11 +1673,12 @@ describe('CamporeeScoringService', () => {
       },
     ]);
 
-    const result = await service.getCamporeeLeaderboard({
-      type: 'local',
-      camporeeId: 10,
-    });
+    const result = await service.getCamporeeLeaderboard(
+      { type: 'local', camporeeId: 10 },
+      leaderboardSnapshot({ globalRoles: ['director-lf'] }),
+    );
 
+    expect(result.visibility).toBe('full');
     expect(result.rows).toEqual([
       expect.objectContaining({
         rank: 1,
@@ -1691,6 +1693,361 @@ describe('CamporeeScoringService', () => {
         scored_events_count: 0,
       }),
     ]);
+  });
+
+  describe('leaderboard visibility', () => {
+    const twoSections = () =>
+      prisma.$queryRaw.mockResolvedValue([
+        {
+          camporee_club_id: 99,
+          club_section_id: 7,
+          club_name: 'Club A',
+          district_id: 1,
+          section_name: 'Conquistadores',
+          total_awarded_points: '180.00',
+          total_max_points: '200.00',
+          scored_events_count: 2,
+          percentage: '90.00',
+        },
+        {
+          camporee_club_id: 100,
+          club_section_id: 8,
+          club_name: 'Club B',
+          district_id: 2,
+          section_name: 'Conquistadores',
+          total_awarded_points: '150.00',
+          total_max_points: '200.00',
+          scored_events_count: 2,
+          percentage: '75.00',
+        },
+        {
+          camporee_club_id: 101,
+          club_section_id: 9,
+          club_name: 'Club C',
+          district_id: 3,
+          section_name: 'Conquistadores',
+          total_awarded_points: '120.00',
+          total_max_points: '200.00',
+          scored_events_count: 2,
+          percentage: '60.00',
+        },
+      ]);
+
+    it.each([
+      'super-admin',
+      'admin',
+      'assistant-admin',
+      'assistant-lf',
+      'director-union',
+    ])('%s sees the full ranking with positions', async (role) => {
+      twoSections();
+      const result = await service.getCamporeeLeaderboard(
+        { type: 'local', camporeeId: 10 },
+        leaderboardSnapshot({ globalRoles: [role], clubSectionIds: [8] }),
+      );
+      expect(result.visibility).toBe('full');
+      expect(result.rows.map((row) => row.rank)).toEqual([1, 2, 3]);
+      expect(result.rows[0]).not.toHaveProperty('district_id');
+    });
+
+    it('a pastor sees only the clubs of their districts, ranked among themselves', async () => {
+      twoSections();
+      prisma.district_investiture_pastors = {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { districlub_type_id: 2 },
+            { districlub_type_id: 3 },
+          ]),
+      };
+      const result = await service.getCamporeeLeaderboard(
+        { type: 'local', camporeeId: 10 },
+        leaderboardSnapshot({ globalRoles: ['pastor'] }),
+        'pastor-user',
+      );
+      expect(prisma.district_investiture_pastors.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { user_id: 'pastor-user', active: true },
+        }),
+      );
+      expect(result.visibility).toBe('district');
+      expect(result.rows.map((row) => [row.club_section_id, row.rank])).toEqual(
+        [
+          [8, 1],
+          [9, 2],
+        ],
+      );
+    });
+
+    it('a pastor without districts only keeps their own club sections', async () => {
+      twoSections();
+      prisma.district_investiture_pastors = {
+        findMany: jest.fn().mockResolvedValue([]),
+      };
+      const result = await service.getCamporeeLeaderboard(
+        { type: 'local', camporeeId: 10 },
+        leaderboardSnapshot({ globalRoles: ['pastor'], clubSectionIds: [7] }),
+        'pastor-user',
+      );
+      expect(result.visibility).toBe('district');
+      expect(result.rows.map((row) => [row.club_section_id, row.rank])).toEqual(
+        [[7, 1]],
+      );
+    });
+
+    it('a club director only sees its own section, without position', async () => {
+      twoSections();
+      const result = await service.getCamporeeLeaderboard(
+        { type: 'local', camporeeId: 10 },
+        leaderboardSnapshot({ globalRoles: ['user'], clubSectionIds: [8] }),
+      );
+      expect(result.visibility).toBe('own');
+      expect(result.rows).toEqual([
+        expect.objectContaining({
+          club_section_id: 8,
+          rank: null,
+          total_awarded_points: 150,
+          percentage: 75,
+        }),
+      ]);
+    });
+
+    it('a coordinator is not part of the administrative view', async () => {
+      twoSections();
+      const result = await service.getCamporeeLeaderboard(
+        { type: 'local', camporeeId: 10 },
+        leaderboardSnapshot({ globalRoles: ['coordinator'] }),
+      );
+      expect(result).toEqual(
+        expect.objectContaining({ visibility: 'own', rows: [] }),
+      );
+    });
+
+    it('fails closed without an authorization snapshot', async () => {
+      twoSections();
+      const result = await service.getCamporeeLeaderboard({
+        type: 'local',
+        camporeeId: 10,
+      });
+      expect(result).toEqual(
+        expect.objectContaining({ visibility: 'own', rows: [] }),
+      );
+    });
+  });
+
+  describe('score detail visibility', () => {
+    const officialResult = (overrides: Record<string, unknown> = {}) => ({
+      camporee_event_section_result_id: 'res-1',
+      camporee_event_id: 1,
+      club_section_id: 8,
+      score_status: 'scored',
+      is_no_show: false,
+      total_awarded_points: '430.00',
+      total_max_points: '500.00',
+      finalized_at: new Date('2026-11-01T10:00:00.000Z'),
+      source_submission: {
+        notes: 'Buena formación',
+        raw_awarded_points: '430.00',
+        minimum_adjustment_points: '0',
+        created_at: new Date('2026-11-01T10:00:00.000Z'),
+        submitter: { name: 'Ana', paternal_last_name: 'Ruiz' },
+        items: [
+          {
+            camporee_event_rubric_id: 2,
+            awarded_points: '180.00',
+            notes: 'Faltó un giro',
+            rubric: { title: 'Giros', max_points: 200, display_order: 2 },
+          },
+          {
+            camporee_event_rubric_id: 1,
+            awarded_points: '250.00',
+            notes: null,
+            rubric: { title: 'Uniforme', max_points: 300, display_order: 1 },
+          },
+        ],
+      },
+      ...overrides,
+    });
+
+    const readerProfile = (globalRoles: string[], clubSectionIds: number[]) => {
+      const snapshot = leaderboardSnapshot({ globalRoles, clubSectionIds });
+      return {
+        authorization: {
+          ...snapshot,
+          effective: {
+            permissions: ['camporee_events:read'],
+            scope: { global: { local_field: { id: 5 } }, club: null },
+          },
+        },
+      };
+    };
+
+    beforeEach(() => {
+      auth.canAccessHierarchyScope.mockReturnValue(true);
+      prisma.club_sections = {
+        findUnique: jest.fn(async ({ where }: any) => ({
+          clubs: { districlub_type_id: where.club_section_id === 8 ? 22 : 20 },
+        })),
+      };
+      prisma.district_investiture_pastors = {
+        findMany: jest.fn().mockResolvedValue([{ districlub_type_id: 22 }]),
+      };
+    });
+
+    it('a club role reads its own section score with the judge comments', async () => {
+      auth.resolveUserAuthorization.mockResolvedValue(
+        readerProfile(['user'], [8]),
+      );
+      prisma.camporee_event_section_results.findFirst.mockResolvedValue(
+        officialResult(),
+      );
+
+      const result = await service.getOfficialScore(1, 8, 'director-user');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          total_awarded_points: 430,
+          notes: 'Buena formación',
+          evaluator_name: 'Ana Ruiz',
+        }),
+      );
+      expect(result?.items).toEqual([
+        expect.objectContaining({ title: 'Uniforme', notes: null }),
+        expect.objectContaining({ title: 'Giros', notes: 'Faltó un giro' }),
+      ]);
+    });
+
+    it("a club role cannot read another club's score", async () => {
+      auth.resolveUserAuthorization.mockResolvedValue(
+        readerProfile(['user'], [8]),
+      );
+
+      await expect(
+        service.getOfficialScore(1, 9, 'director-user'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: ErrorCode.CAMPOREE_SCORING_FORBIDDEN,
+        }),
+      });
+      expect(
+        prisma.camporee_event_section_results.findFirst,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('a pastor reads clubs of their districts but not others', async () => {
+      auth.resolveUserAuthorization.mockResolvedValue(
+        readerProfile(['pastor'], []),
+      );
+      prisma.camporee_event_section_results.findFirst.mockResolvedValue(
+        officialResult(),
+      );
+
+      await expect(
+        service.getOfficialScore(1, 8, 'pastor-user'),
+      ).resolves.toEqual(
+        expect.objectContaining({ total_awarded_points: 430 }),
+      );
+      await expect(
+        service.getOfficialScore(1, 9, 'pastor-user'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: ErrorCode.CAMPOREE_SCORING_FORBIDDEN,
+        }),
+      });
+    });
+
+    it('an assigned judge reads any section it scores', async () => {
+      auth.resolveUserAuthorization.mockResolvedValue(noAuthProfile);
+      prisma.camporee_event_judge_assignments.findFirst.mockResolvedValue({
+        camporee_event_judge_assignment_id: 'assignment-1',
+      });
+      prisma.camporee_event_section_results.findFirst.mockResolvedValue(
+        officialResult({ club_section_id: 9 }),
+      );
+
+      await expect(
+        service.getOfficialScore(1, 9, 'judge-user'),
+      ).resolves.toEqual(
+        expect.objectContaining({ total_awarded_points: 430 }),
+      );
+    });
+
+    it('the breakdown lists only visible sections with results in agenda order', async () => {
+      prisma.$queryRaw.mockResolvedValue([
+        {
+          camporee_club_id: 99,
+          club_section_id: 7,
+          club_name: 'Club A',
+          district_id: 20,
+          section_name: 'Conquistadores',
+          total_awarded_points: '900.00',
+          total_max_points: '1000.00',
+          scored_events_count: 2,
+          percentage: '90.00',
+        },
+        {
+          camporee_club_id: 100,
+          club_section_id: 8,
+          club_name: 'Club B',
+          district_id: 22,
+          section_name: 'Conquistadores',
+          total_awarded_points: '830.00',
+          total_max_points: '1000.00',
+          scored_events_count: 2,
+          percentage: '83.00',
+        },
+      ]);
+      prisma.camporee_events.findMany = jest.fn().mockResolvedValue([
+        {
+          camporee_event_id: 1,
+          title: 'Marcha',
+          max_points: 500,
+          day_number: 1,
+          starts_at: '08:00',
+        },
+        {
+          camporee_event_id: 2,
+          title: 'Nudos',
+          max_points: 500,
+          day_number: 2,
+          starts_at: null,
+        },
+      ]);
+      prisma.camporee_event_section_results.findMany.mockResolvedValue([
+        officialResult({
+          camporee_event_id: 2,
+          camporee_event_section_result_id: 'res-2',
+        }),
+        officialResult(),
+      ]);
+
+      const result = await service.getScoreBreakdown(
+        { type: 'local', camporeeId: 10 },
+        leaderboardSnapshot({ globalRoles: ['user'], clubSectionIds: [8] }),
+        'director-user',
+      );
+
+      expect(
+        prisma.camporee_event_section_results.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ club_section_id: { in: [8] } }),
+        }),
+      );
+      expect(result.visibility).toBe('own');
+      expect(result.events.map((event) => event.title)).toEqual([
+        'Marcha',
+        'Nudos',
+      ]);
+      expect(result.sections).toHaveLength(1);
+      expect(result.sections[0]).toEqual(
+        expect.objectContaining({ club_section_id: 8, rank: null }),
+      );
+      expect(
+        result.sections[0].results.map((r) => r.camporee_event_id),
+      ).toEqual([1, 2]);
+      expect(result.sections[0].results[0].notes).toBe('Buena formación');
+    });
   });
 
   it('exposes the active result id on scoring targets for manual override', async () => {
@@ -1773,3 +2130,38 @@ describe('CamporeeScoringService', () => {
     ]);
   });
 });
+
+function leaderboardSnapshot({
+  globalRoles,
+  clubSectionIds = [],
+}: {
+  globalRoles: string[];
+  clubSectionIds?: number[];
+}): AuthorizationSnapshot {
+  return {
+    grants: {
+      global_roles: globalRoles.map((role_name) => ({
+        role_name,
+        permissions: [],
+        scope: { type: 'global' },
+      })),
+      club_assignments: clubSectionIds.map((club_section_id, index) => ({
+        assignment_id: `a${index}`,
+        role_name: 'director',
+        permissions: [],
+        operational: true,
+        ecclesiastical_year_id: 1,
+        club: { club_id: 1, club_name: 'Club' },
+        section: { club_section_id, club_type_id: 1 },
+        scope: { type: 'global' },
+        status: 'active',
+      })),
+      direct_permissions: [],
+    },
+    active_assignment: { assignment_id: null },
+    effective: {
+      permissions: [],
+      scope: { global: { type: 'global' }, club: null },
+    },
+  } as unknown as AuthorizationSnapshot;
+}
