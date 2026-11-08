@@ -678,7 +678,10 @@ export class AuthService {
     }
 
     // The "refresh token" sent by clients IS the BA opaque session token.
-    // BA does not have a separate refresh token — the session slides on each getSession call.
+    // BA does not have a separate refresh token. Each refresh ROTATES the opaque
+    // session token (new token out, old one kept 30 s for concurrent refreshes,
+    // replay after that revokes the session) and slides the expiry, never past
+    // created_at + 30 days for user sessions.
     let baResult: Awaited<
       ReturnType<typeof this.betterAuthService.refreshSession>
     >;
@@ -738,7 +741,7 @@ export class AuthService {
       status: 'success',
       data: buildAuthTokenResponse({
         accessToken: baResult.accessToken,
-        // Return the same opaque session token — it is still valid and slides
+        // The NEW opaque session token: clients must store it, the presented one is retired
         refreshToken: baResult.session.token,
         expiresAt: expiresAtSeconds,
         tokenType: 'bearer',

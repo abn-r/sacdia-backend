@@ -4102,6 +4102,9 @@ model session {
   id        String   @id
   expiresAt DateTime @map("expires_at")
   token     String   @unique
+  // Refresh rotation: the token a refresh replaced, kept for the grace window and replay detection
+  previousToken String?   @unique @map("previous_token")
+  rotatedAt     DateTime? @map("rotated_at") @db.Timestamptz(6)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   ipAddress String?  @map("ip_address")
