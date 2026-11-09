@@ -1,6 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ErrorCode } from '../errors/error-codes';
 import { MfaService } from './mfa.service';
+import { MfaFailureCounter } from './mfa-failure-counter';
 
 /**
  * MfaService unit tests.
@@ -31,7 +32,11 @@ describe('MfaService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new MfaService(mockBetterAuthService as any);
+    // Real counter on the in-process path (no Redis store).
+    service = new MfaService(
+      mockBetterAuthService as any,
+      new MfaFailureCounter({ stores: [] } as never),
+    );
   });
 
   const USER_ID = 'test-user-uuid-1234';
@@ -203,6 +208,80 @@ describe('MfaService', () => {
 
       const result = await service.getMfaStatus(USER_ID);
       expect(result).toEqual({ enabled: false });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // verifyMfa lockout
+  // ---------------------------------------------------------------------------
+
+  describe('verifyMfa lockout', () => {
+    const wrong = async (userId = USER_ID, code = '000000') =>
+      service.verifyMfa(userId, 'a@b.c', code, null);
+
+    beforeEach(() => {
+      mockHasTotpEnabled.mockResolvedValue({ enabled: true });
+      mockVerifyTotp.mockResolvedValue({ verified: false });
+    });
+
+    it('locks after 5 wrong codes: 6th attempt is 429 AUTH_MFA_LOCKED even with a correct code, verifier not called', async () => {
+      for (let i = 0; i < 5; i += 1) {
+        expect(await wrong()).toEqual({ verified: false });
+      }
+      mockVerifyTotp.mockClear();
+      mockVerifyTotp.mockResolvedValue({ verified: true });
+
+      await expect(wrong(USER_ID, '123456')).rejects.toMatchObject({
+        code: ErrorCode.AUTH_MFA_LOCKED,
+        response: expect.anything(),
+      });
+      const err = await wrong(USER_ID, '123456').catch((e) => e);
+      expect(err.getStatus()).toBe(429);
+      expect(err.namedArgs ?? err.getResponse()).toBeDefined();
+      expect(mockVerifyTotp).not.toHaveBeenCalled();
+      expect(mockSignJwt).not.toHaveBeenCalled();
+    });
+
+    it('a backup-code-shaped (8 char) wrong code counts against the same lock', async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await wrong(USER_ID, 'AB3XYZ12');
+      }
+      await expect(wrong(USER_ID, 'AB3XYZ12')).rejects.toMatchObject({
+        code: ErrorCode.AUTH_MFA_LOCKED,
+      });
+    });
+
+    it('a correct code before the threshold clears the counter', async () => {
+      for (let i = 0; i < 4; i += 1) await wrong();
+      mockVerifyTotp.mockResolvedValue({ verified: true });
+      expect((await wrong(USER_ID, '123456')).verified).toBe(true);
+
+      mockVerifyTotp.mockResolvedValue({ verified: false });
+      for (let i = 0; i < 4; i += 1) {
+        expect(await wrong()).toEqual({ verified: false });
+      }
+      // 5th wrong after the reset locks; the 4 before the success did not carry over.
+      expect(await wrong()).toEqual({ verified: false });
+      await expect(wrong()).rejects.toMatchObject({
+        code: ErrorCode.AUTH_MFA_LOCKED,
+      });
+    });
+
+    it('the lock is per user: another user is unaffected', async () => {
+      for (let i = 0; i < 5; i += 1) await wrong();
+      await expect(wrong()).rejects.toMatchObject({
+        code: ErrorCode.AUTH_MFA_LOCKED,
+      });
+      expect(await wrong('other-user')).toEqual({ verified: false });
+    });
+
+    it('not-enrolled attempts are not counted as guesses', async () => {
+      mockHasTotpEnabled.mockResolvedValue({ enabled: false });
+      for (let i = 0; i < 6; i += 1) {
+        await expect(wrong()).rejects.toMatchObject({
+          code: ErrorCode.MFA_CODE_INVALID,
+        });
+      }
     });
   });
 });
