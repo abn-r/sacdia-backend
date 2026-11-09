@@ -85,6 +85,13 @@ export class ClubsController {
   @ApiQuery({ name: 'churchId', required: false, type: Number })
   @ApiQuery({ name: 'active', required: false, type: Boolean })
   @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description:
+      'Texto a buscar (sin distinguir mayúsculas) en el nombre del club, su iglesia, distrito o campo local. Se usan los primeros 100 caracteres.',
+  })
+  @ApiQuery({
     name: 'page',
     required: false,
     type: Number,
@@ -104,6 +111,7 @@ export class ClubsController {
     districtId?: number,
     @Query('churchId', new ParseIntPipe({ optional: true })) churchId?: number,
     @Query('active') active?: string,
+    @Query('search') search?: string,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
     @CurrentUser() user?: { sub: string },
@@ -119,6 +127,7 @@ export class ClubsController {
         churchId,
         active:
           active === 'true' ? true : active === 'false' ? false : undefined,
+        search: typeof search === 'string' ? search.slice(0, 100) : undefined,
       },
       pagination,
       user?.sub,
