@@ -146,6 +146,12 @@ export class MfaController {
     status: 401,
     description: 'TOTP no enrolado o código inválido',
   })
+  @ApiResponse({
+    status: 429,
+    description:
+      'Throttled, o AUTH_MFA_LOCKED: demasiados códigos incorrectos para el usuario ' +
+      '(bloqueo progresivo 15 min, se duplica hasta 24 h; `retry_after_seconds`)',
+  })
   async verifyMfa(@Req() req: Request, @Body() dto: VerifyMfaDto) {
     const userId = (req.user as any).userId as string;
     const email = (req.user as any).email as string | null;

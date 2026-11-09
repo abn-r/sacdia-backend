@@ -4,6 +4,7 @@ const validBaseEnv = {
   DATABASE_URL: 'postgresql://user:password@example.com:5432/sacdia',
   BETTER_AUTH_SECRET: 'a-secure-test-secret-that-is-32-chars',
   QR_JWT_SECRET: 'a-distinct-qr-secret-that-is-32ch',
+  TOTP_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
   R2_BUCKET_HONORS_PDF: 'honors-pdf',
   R2_PUBLIC_URL_HONORS_PDF: 'https://storage.example.com/honors',
   R2_BUCKET_EVIDENCE_FILES: 'evidence-files',
@@ -697,5 +698,51 @@ describe('family profiles phase 3 flags', () => {
 
   it.each(FLAGS)('rejects %s=maybe', (flag) => {
     expect(validate({ [flag]: 'maybe' }).error).toBeDefined();
+  });
+});
+
+describe('TOTP_ENCRYPTION_KEY validation', () => {
+  const goodKey = Buffer.alloc(32, 7).toString('base64');
+  const prod = {
+    NODE_ENV: 'production',
+    ALLOWED_ORIGINS: 'https://admin.example.com',
+    OCR_MODE: 'direct',
+  };
+
+  it('is required in production', () => {
+    expect(
+      validate({ ...prod, TOTP_ENCRYPTION_KEY: undefined }).error?.message,
+    ).toContain('TOTP_ENCRYPTION_KEY');
+    expect(
+      validate({ ...prod, TOTP_ENCRYPTION_KEY: '' }).error?.message,
+    ).toContain('TOTP_ENCRYPTION_KEY');
+  });
+
+  it('accepts a valid key in production', () => {
+    expect(
+      validate({ ...prod, TOTP_ENCRYPTION_KEY: goodKey }).error,
+    ).toBeUndefined();
+  });
+
+  it('is optional outside production', () => {
+    expect(
+      validate({ NODE_ENV: 'development', TOTP_ENCRYPTION_KEY: undefined })
+        .error,
+    ).toBeUndefined();
+    expect(validate({ TOTP_ENCRYPTION_KEY: '' }).error).toBeUndefined();
+  });
+
+  it.each([
+    ['too short', Buffer.alloc(16, 1).toString('base64')],
+    ['too long', Buffer.alloc(33, 1).toString('base64')],
+    ['not base64', 'not-a-base64-key!!'],
+  ])('rejects a key that is %s', (_label, value) => {
+    expect(
+      validate({ NODE_ENV: 'development', TOTP_ENCRYPTION_KEY: value }).error
+        ?.message,
+    ).toContain('TOTP_ENCRYPTION_KEY');
+    expect(
+      validate({ ...prod, TOTP_ENCRYPTION_KEY: value }).error?.message,
+    ).toContain('TOTP_ENCRYPTION_KEY');
   });
 });

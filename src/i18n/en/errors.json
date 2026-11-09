@@ -864,6 +864,7 @@
   "AUTH_SUPERVISED_LOGIN_DISABLED": "Your guardian disabled sign-in for this account",
   "AUTH_ACCOUNT_FROZEN": "This account was removed because no guardian was linked",
   "AUTH_LOGIN_LOCKED": "Too many attempts. Try again later",
+  "AUTH_MFA_LOCKED": "Too many incorrect verification codes. Try again later",
   "USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN": "Changing the date of birth requires your guardian",
   "SUPERVISED_LOGIN_NOT_ELIGIBLE": "This minor cannot have their own sign-in",
   "SUPERVISED_LOGIN_ALREADY_ENABLED": "Own sign-in is already enabled",

@@ -111,6 +111,8 @@ export class LoginFailureCounter {
   private readonly memory = new Map<string, MemoryEntry>();
   private lastFallbackWarnAt = 0;
   private readonly events: SupervisedLoginEvents;
+  /** Redis / in-process key namespace; subclasses use their own (see MfaFailureCounter). */
+  protected readonly keyPrefix: string = 'login';
 
   constructor(
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
@@ -136,7 +138,7 @@ export class LoginFailureCounter {
   }
 
   private keys(scope: Scope, subject: string) {
-    const base = `login:%s:${scope}:${subject}`;
+    const base = `${this.keyPrefix}:%s:${scope}:${subject}`;
     return {
       failures: base.replace('%s', 'fail'),
       lock: base.replace('%s', 'lock'),

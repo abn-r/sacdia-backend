@@ -18,6 +18,12 @@ import { randomUUID, randomBytes } from 'crypto';
 import { generateSecret, generateURI, verifySync } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import { maskEmail } from '../common/utils/mask-email.util';
+import { getTotpEncryptionKey } from '../common/crypto/totp-secret-cipher';
+import {
+  parseTotpRecord,
+  serializeTotpRecord,
+  type TotpRecord,
+} from '../common/crypto/totp-record';
 import { EmailService } from '../common/email/email.service';
 import {
   accessJwtClaims,
@@ -332,6 +338,7 @@ function mapDbSessionToBaSession(dbSession: {
 @Injectable()
 export class BetterAuthService implements IBetterAuthService {
   private readonly logger = new Logger(BetterAuthService.name);
+  private warnedTotpKeyMissing = false;
 
   constructor(
     private readonly jwtService: JwtService,
@@ -1079,14 +1086,76 @@ export class BetterAuthService implements IBetterAuthService {
    * TOTP is implemented directly with Prisma + otplib (no BA twoFactor plugin).
    *
    * Storage: verification table with identifier = `totp:{userId}`.
-   *   value: JSON string — { secret: string, backupCodes: string[] }
-   *   where backupCodes is an array of bcrypt-hashed 8-char codes.
+   *   value: JSON string — { secretEnc: string, backupCodes: string[] }
+   *   secretEnc is the AES-256-GCM `v1:<iv>:<tag>:<ct>` of the TOTP secret,
+   *   keyed by TOTP_ENCRYPTION_KEY with the identifier as AAD (see
+   *   common/crypto). backupCodes is an array of bcrypt-hashed 8-char codes.
+   *   Legacy rows `{ secret, backupCodes }` (plaintext) are still read and are
+   *   re-written encrypted after the next successful verification. Without a
+   *   key (dev/test only) the legacy shape is written, with a warning.
+   *   Only parseTotpRecord/serializeTotpRecord touch this shape.
    *   expiresAt: 2099-01-01 (effectively permanent).
    *
    * Password verification uses the credential account row (bcrypt.compare).
    */
 
   // -- Private TOTP helpers --------------------------------------------------
+
+  /** Row value for a TOTP record; warns once when no key is configured. */
+  private serializeTotp(
+    record: { secret: string; backupCodes: string[] },
+    identifier: string,
+  ): string {
+    const key = getTotpEncryptionKey();
+    if (!key && !this.warnedTotpKeyMissing) {
+      this.warnedTotpKeyMissing = true;
+      this.logger.warn(
+        'TOTP_ENCRYPTION_KEY is not set: TOTP secrets are stored in plaintext (dev/test only)',
+      );
+    }
+    return serializeTotpRecord(record, identifier, key);
+  }
+
+  /** Reads a TOTP row. Fails closed (500) when it cannot be decrypted. */
+  private readTotp(
+    userId: string,
+    identifier: string,
+    value: string,
+  ): TotpRecord {
+    try {
+      return parseTotpRecord(value, identifier, getTotpEncryptionKey());
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? 'UNKNOWN';
+      this.logger.error(
+        `TOTP record unreadable for user ${userId} (${code}); failing closed`,
+      );
+      throw new AppInternalServerErrorException(
+        ErrorCode.AUTH_TOTP_ENROLLMENT_FAILED,
+      );
+    }
+  }
+
+  /** Lazy migration: re-writes a plaintext row encrypted. Best effort. */
+  private async upgradeLegacyTotp(
+    userId: string,
+    identifier: string,
+    row: { id: string; value: string },
+    record: TotpRecord,
+  ): Promise<void> {
+    if (!getTotpEncryptionKey()) return;
+    try {
+      // Guarded on the old value so a concurrent re-enroll is not overwritten
+      await this.prisma.verification.updateMany({
+        where: { id: row.id, value: row.value },
+        data: {
+          value: this.serializeTotp(record, identifier),
+          updatedAt: new Date(),
+        },
+      });
+    } catch {
+      this.logger.warn(`Could not encrypt legacy TOTP row for user ${userId}`);
+    }
+  }
 
   private mfaSessionIdentifier(sessionId: string): string {
     return `mfa-session:${sessionId}`;
@@ -1147,7 +1216,7 @@ export class BetterAuthService implements IBetterAuthService {
    *   2. Check not already enrolled (upsert is fine, but we warn)
    *   3. Generate TOTP secret via otplib.authenticator
    *   4. Generate 10 backup codes (plain + hashed)
-   *   5. Store { secret, backupCodes: hashed[] } in verification table
+   *   5. Store { secretEnc, backupCodes: hashed[] } in verification table
    *   6. Return { totpURI, backupCodes: plain[] }
    */
   async enrollTotp(
@@ -1178,7 +1247,10 @@ export class BetterAuthService implements IBetterAuthService {
       await this.generateBackupCodes();
 
     const identifier = totpIdentifier(userId);
-    const value = JSON.stringify({ secret, backupCodes: hashedCodes });
+    const value = this.serializeTotp(
+      { secret, backupCodes: hashedCodes },
+      identifier,
+    );
     const expiresAt = new Date('2099-01-01T00:00:00.000Z');
     const now = new Date();
 
@@ -1223,14 +1295,7 @@ export class BetterAuthService implements IBetterAuthService {
       return { verified: false };
     }
 
-    let parsed: { secret: string; backupCodes: string[] };
-    try {
-      parsed = JSON.parse(record.value);
-    } catch {
-      throw new AppInternalServerErrorException(
-        ErrorCode.AUTH_TOTP_ENROLLMENT_FAILED,
-      );
-    }
+    const parsed = this.readTotp(userId, identifier, record.value);
 
     const result = verifySync({
       token: code,
@@ -1240,6 +1305,9 @@ export class BetterAuthService implements IBetterAuthService {
 
     if (verified) {
       this.logger.log(`TOTP verified for user: ${userId}`);
+      if (parsed.legacy) {
+        await this.upgradeLegacyTotp(userId, identifier, record, parsed);
+      }
     }
 
     return { verified };

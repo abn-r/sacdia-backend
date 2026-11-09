@@ -7,6 +7,7 @@ import {
   parseQueueList,
 } from './bullmq-workers.config';
 import { decodeOcrProxySecret } from './ocr-proxy-secret';
+import { decodeTotpEncryptionKey } from '../common/crypto/totp-secret-cipher';
 
 const OCR_PROXY_ENV_PATTERN = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
 const OCR_PROXY_KID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -33,6 +34,11 @@ function assertRemoteOcrProxyUrl(value: string, helpers: Joi.CustomHelpers) {
 
 function assertOcrProxySecret(value: string, helpers: Joi.CustomHelpers) {
   if (!decodeOcrProxySecret(value)) return helpers.error('any.invalid');
+  return value.trim();
+}
+
+function assertTotpEncryptionKey(value: string, helpers: Joi.CustomHelpers) {
+  if (!decodeTotpEncryptionKey(value)) return helpers.error('any.invalid');
   return value.trim();
 }
 
@@ -103,6 +109,23 @@ export const envValidationSchema = Joi.object({
   // Better Auth (required)
   BETTER_AUTH_SECRET: Joi.string().min(32).required(),
   BETTER_AUTH_BASE_URL: Joi.string().uri().optional(),
+  // AES-256-GCM key for TOTP secrets at rest: base64 of 32 random bytes
+  // (openssl rand -base64 32). Required in production. Losing or changing it
+  // locks every MFA user out.
+  TOTP_ENCRYPTION_KEY: Joi.string()
+    .trim()
+    .custom(assertTotpEncryptionKey)
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required(),
+      otherwise: Joi.optional().allow(''),
+    })
+    .messages({
+      'any.required': 'TOTP_ENCRYPTION_KEY is required in production',
+      'string.empty': 'TOTP_ENCRYPTION_KEY is required in production',
+      'any.invalid':
+        'TOTP_ENCRYPTION_KEY must be base64 of exactly 32 bytes (openssl rand -base64 32)',
+    }),
   // QR member JWTs. Must not reuse BETTER_AUTH_SECRET — same key would
   // make a photographed card a valid API Bearer token.
   QR_JWT_SECRET: Joi.string()
@@ -429,6 +452,10 @@ export const envValidationSchema = Joi.object({
   // Bootstrap admin (one-time setup secret)
   // If not set, POST /api/v1/admin/rbac/bootstrap-admin returns 403 (disabled).
   BOOTSTRAP_SECRET: Joi.string().trim().min(32).optional(),
+
+  // Shared secret the admin panel server sends (x-sacdia-proxy-secret) so the
+  // real client IP in x-sacdia-client-ip is trusted. Unset = headers ignored.
+  ADMIN_PROXY_SECRET: Joi.string().min(32).optional(),
 });
 
 const validateEnvSchema =

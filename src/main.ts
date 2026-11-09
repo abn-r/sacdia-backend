@@ -61,6 +61,7 @@ async function bootstrap() {
       'x-session-token',
       'x-refresh-token',
       'x-bootstrap-secret',
+      'x-sacdia-proxy-secret',
     ]);
     const SENSITIVE_BODY_FIELDS = new Set([
       'password',
