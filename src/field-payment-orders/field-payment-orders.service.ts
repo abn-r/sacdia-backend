@@ -291,6 +291,18 @@ export class FieldPaymentOrdersService {
     return this.expireIfDue(order);
   }
 
+  async getDetail(orderId: string, actor: OrderActor) {
+    const order = await this.get(orderId, actor);
+    const names = await this.resolveOrderNames(order);
+    return {
+      ...order,
+      club_name: names.club_name,
+      section_name: names.section_name,
+      camporee_name: names.camporee_name,
+      local_field_name: names.local_field_name,
+    };
+  }
+
   async getDocument(orderId: string, actor: OrderActor) {
     const order = await this.get(orderId, actor);
     const model = await this.buildPdfModel(order);
@@ -662,6 +674,64 @@ export class FieldPaymentOrdersService {
     this.logEvent('expired', { count: ids.length, order_ids: ids });
   }
 
+  private async resolveOrderNames(order: {
+    purpose: string;
+    local_field_id: number;
+    club_id: number;
+    club_section_id: number;
+    insurance_cycle_config_id: number | null;
+    local_camporee_id: number | null;
+    union_camporee_id: number | null;
+  }) {
+    const [localField, club, section] = await Promise.all([
+      this.prisma.local_fields.findUnique({
+        where: { local_field_id: order.local_field_id },
+        select: { name: true },
+      }),
+      this.prisma.clubs.findUnique({
+        where: { club_id: order.club_id },
+        select: { name: true },
+      }),
+      this.prisma.club_sections.findUnique({
+        where: { club_section_id: order.club_section_id },
+        select: { club_types: { select: { name: true } } },
+      }),
+    ]);
+
+    let concept = '';
+    if (order.purpose === 'INSURANCE' && order.insurance_cycle_config_id) {
+      const cycle = await this.prisma.insurance_cycle_configs.findUnique({
+        where: {
+          insurance_cycle_config_id: order.insurance_cycle_config_id,
+        },
+        select: { product: { select: { name: true } } },
+      });
+      concept = cycle?.product?.name ?? 'Seguro institucional';
+    } else if (order.purpose === 'CAMPOREE' && order.local_camporee_id) {
+      const camporee = await this.prisma.local_camporees.findUnique({
+        where: { local_camporee_id: order.local_camporee_id },
+        select: { name: true },
+      });
+      concept = camporee?.name ?? 'Camporee';
+    } else if (order.purpose === 'CAMPOREE' && order.union_camporee_id) {
+      const camporee = await this.prisma.union_camporees.findUnique({
+        where: { union_camporee_id: order.union_camporee_id },
+        select: { name: true },
+      });
+      concept = camporee?.name ?? 'Camporee de unión';
+    }
+
+    return {
+      concept,
+      local_field_name:
+        localField?.name ?? `Campo Local ${order.local_field_id}`,
+      club_name: club?.name ?? `Club ${order.club_id}`,
+      section_name:
+        section?.club_types?.name ?? `Sección ${order.club_section_id}`,
+      camporee_name: order.purpose === 'CAMPOREE' ? concept || null : null,
+    };
+  }
+
   private async buildPdfModel(order: {
     field_payment_order_id: string;
     status: string;
@@ -695,7 +765,7 @@ export class FieldPaymentOrdersService {
       order.issued_by_id,
       ...lines.map((line) => line.beneficiary_user_id),
     ];
-    const [users, localField, club, section] = await Promise.all([
+    const [users, names] = await Promise.all([
       this.prisma.users.findMany({
         where: { user_id: { in: userIds } },
         select: {
@@ -705,18 +775,7 @@ export class FieldPaymentOrdersService {
           maternal_last_name: true,
         },
       }),
-      this.prisma.local_fields.findUnique({
-        where: { local_field_id: order.local_field_id },
-        select: { name: true },
-      }),
-      this.prisma.clubs.findUnique({
-        where: { club_id: order.club_id },
-        select: { name: true },
-      }),
-      this.prisma.club_sections.findUnique({
-        where: { club_section_id: order.club_section_id },
-        select: { club_types: { select: { name: true } } },
-      }),
+      this.resolveOrderNames(order),
     ]);
 
     const nameOf = (userId: string) => {
@@ -729,39 +788,14 @@ export class FieldPaymentOrdersService {
         .join(' ');
     };
 
-    let concept = '';
-    if (order.purpose === 'INSURANCE' && order.insurance_cycle_config_id) {
-      const cycle = await this.prisma.insurance_cycle_configs.findUnique({
-        where: {
-          insurance_cycle_config_id: order.insurance_cycle_config_id,
-        },
-        select: { product: { select: { name: true } } },
-      });
-      concept = cycle?.product?.name ?? 'Seguro institucional';
-    } else if (order.purpose === 'CAMPOREE' && order.local_camporee_id) {
-      const camporee = await this.prisma.local_camporees.findUnique({
-        where: { local_camporee_id: order.local_camporee_id },
-        select: { name: true },
-      });
-      concept = camporee?.name ?? 'Camporee';
-    } else if (order.purpose === 'CAMPOREE' && order.union_camporee_id) {
-      const camporee = await this.prisma.union_camporees.findUnique({
-        where: { union_camporee_id: order.union_camporee_id },
-        select: { name: true },
-      });
-      concept = camporee?.name ?? 'Camporee de unión';
-    }
-
     return {
       folio_reference: order.folio_reference,
       status: order.status,
       purpose_label: PURPOSE_LABELS[order.purpose as OrderPurpose],
-      concept,
-      local_field_name:
-        localField?.name ?? `Campo Local ${order.local_field_id}`,
-      club_name: club?.name ?? `Club ${order.club_id}`,
-      section_name:
-        section?.club_types?.name ?? `Sección ${order.club_section_id}`,
+      concept: names.concept,
+      local_field_name: names.local_field_name,
+      club_name: names.club_name,
+      section_name: names.section_name,
       issued_by_name: nameOf(order.issued_by_id),
       issued_at: order.created_at,
       expires_at: order.expires_at,

@@ -146,6 +146,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
           paths: [
             'req.headers.authorization',
             'req.headers.cookie',
+            'req.headers["x-sacdia-proxy-secret"]',
             'req.body.password',
             'req.body.refreshToken',
             // Login identifier: an email or a supervised login handle.
