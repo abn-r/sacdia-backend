@@ -250,6 +250,58 @@ describe('ClubsService', () => {
       );
     });
 
+    it('searches club, church, district and local field names case-insensitively', async () => {
+      mockPrismaService.clubs.findMany.mockResolvedValue([]);
+      mockPrismaService.clubs.count.mockResolvedValue(0);
+
+      await service.findAll({ search: '  Orión  ', active: true });
+
+      const match = { contains: 'Orión', mode: 'insensitive' };
+      const expectedWhere = {
+        active: true,
+        OR: [
+          { name: match },
+          { churches: { name: match } },
+          { districts: { name: match } },
+          { local_fields: { name: match } },
+        ],
+      };
+      expect(mockPrismaService.clubs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expectedWhere }),
+      );
+      expect(mockPrismaService.clubs.count).toHaveBeenCalledWith({
+        where: expectedWhere,
+      });
+    });
+
+    it('escapes LIKE wildcards in the search text', async () => {
+      mockPrismaService.clubs.findMany.mockResolvedValue([]);
+      mockPrismaService.clubs.count.mockResolvedValue(0);
+
+      await service.findAll({ search: '50%_a' });
+
+      expect(mockPrismaService.clubs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              { name: { contains: '50\\%\\_a', mode: 'insensitive' } },
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('ignores a blank search', async () => {
+      mockPrismaService.clubs.findMany.mockResolvedValue([]);
+      mockPrismaService.clubs.count.mockResolvedValue(0);
+
+      await service.findAll({ search: '   ' });
+
+      expect(mockPrismaService.clubs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} }),
+      );
+    });
+
     it('intersects GET /clubs with director-union scope even if home local_field is set', async () => {
       mockPrismaService.clubs.findMany.mockResolvedValue([]);
       mockPrismaService.clubs.count.mockResolvedValue(0);

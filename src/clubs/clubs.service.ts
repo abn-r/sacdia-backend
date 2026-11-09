@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { escapeLikeWildcards } from '../common/utils/escape-like';
 import {
   CreateClubDto,
   UpdateClubDto,
@@ -102,6 +103,7 @@ export class ClubsService {
       districtId?: number;
       churchId?: number;
       active?: boolean;
+      search?: string;
     },
     pagination?: PaginationDto,
     actorUserId?: string,
@@ -113,6 +115,7 @@ export class ClubsService {
       }),
       ...(filters?.churchId && { church_id: filters.churchId }),
       ...(filters?.active !== undefined && { active: filters.active }),
+      ...this.buildClubListSearchWhere(filters?.search),
     };
 
     let where: Prisma.clubsWhereInput = clientWhere;
@@ -157,6 +160,28 @@ export class ClubsService {
       total,
       pagination ?? new PaginationDto(),
     );
+  }
+
+  // Matches the club name or the name of its church, district or local
+  // field, so the admin list search keeps working across every page.
+  private buildClubListSearchWhere(
+    search: string | undefined,
+  ): Prisma.clubsWhereInput {
+    const trimmed = search?.trim();
+    if (!trimmed) return {};
+    const match = {
+      contains: escapeLikeWildcards(trimmed),
+      mode: 'insensitive' as const,
+    };
+
+    return {
+      OR: [
+        { name: match },
+        { churches: { name: match } },
+        { districts: { name: match } },
+        { local_fields: { name: match } },
+      ],
+    };
   }
 
   async findOne(clubId: number) {
