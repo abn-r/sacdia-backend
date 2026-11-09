@@ -1,5 +1,5 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject, Injectable } from '@nestjs/common';
+import type { FactoryProvider } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 import { LoginFailureCounter } from '../../auth/login-failure-counter';
 import { NOOP_SUPERVISED_LOGIN_EVENTS } from '../../auth/supervised/supervised-login-events.port';
@@ -12,12 +12,22 @@ import { NOOP_SUPERVISED_LOGIN_EVENTS } from '../../auth/supervised/supervised-l
  *  - the supervised-login events are bound to the no-op: a lock here must not
  *    look the id up as an email/handle nor notify guardians as a login lock;
  *  - callers pass the user id as the identifier and NO ip (one bucket per user).
+ *
+ * Register it with `mfaFailureCounterProvider`, never as a class provider:
+ * Nest reads the constructor metadata LoginFailureCounter declares (its
+ * @Inject(SUPERVISED_LOGIN_EVENTS) second argument), so a class provider asks
+ * for that token and fails at boot.
  */
-@Injectable()
 export class MfaFailureCounter extends LoginFailureCounter {
   protected override readonly keyPrefix: string = 'mfa';
 
-  constructor(@Inject(CACHE_MANAGER) cache: Cache) {
+  constructor(cache: Cache) {
     super(cache, NOOP_SUPERVISED_LOGIN_EVENTS);
   }
 }
+
+export const mfaFailureCounterProvider: FactoryProvider<MfaFailureCounter> = {
+  provide: MfaFailureCounter,
+  useFactory: (cache: Cache) => new MfaFailureCounter(cache),
+  inject: [CACHE_MANAGER],
+};
