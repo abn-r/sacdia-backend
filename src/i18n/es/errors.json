@@ -864,6 +864,7 @@
   "AUTH_SUPERVISED_LOGIN_DISABLED": "Tu tutor desactivó el inicio de sesión de esta cuenta",
   "AUTH_ACCOUNT_FROZEN": "Esta cuenta fue eliminada por no tener un tutor vinculado",
   "AUTH_LOGIN_LOCKED": "Demasiados intentos. Inténtalo de nuevo más tarde",
+  "AUTH_MFA_LOCKED": "Demasiados códigos de verificación incorrectos. Inténtalo de nuevo más tarde",
   "USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN": "Para cambiar la fecha de nacimiento debe intervenir tu tutor",
   "SUPERVISED_LOGIN_NOT_ELIGIBLE": "Este menor no puede tener inicio de sesión propio",
   "SUPERVISED_LOGIN_ALREADY_ENABLED": "El inicio de sesión propio ya está activado",

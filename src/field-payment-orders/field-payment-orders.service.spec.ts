@@ -299,6 +299,72 @@ describe('FieldPaymentOrdersService', () => {
       });
     });
 
+    it('getDetail adds club, section, camporee and local field names', async () => {
+      prisma.field_payment_orders.findUnique.mockResolvedValue({
+        field_payment_order_id: 'o1',
+        club_section_id: 11,
+        club_id: 5,
+        local_field_id: 7,
+        purpose: 'CAMPOREE',
+        local_camporee_id: 3,
+        union_camporee_id: null,
+        insurance_cycle_config_id: null,
+        status: 'ISSUED',
+        expires_at: FUTURE,
+      });
+      prisma.local_fields = {
+        findUnique: jest.fn().mockResolvedValue({ name: 'Campo Norte' }),
+      };
+      prisma.clubs = {
+        findUnique: jest.fn().mockResolvedValue({ name: 'Club Aguilas' }),
+      };
+      prisma.club_sections = {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ club_types: { name: 'Conquistadores' } }),
+      };
+      prisma.local_camporees = {
+        findUnique: jest.fn().mockResolvedValue({ name: 'Camporee 2026' }),
+      };
+
+      const result = await service.getDetail('o1', directorActor());
+
+      expect(result).toMatchObject({
+        field_payment_order_id: 'o1',
+        club_name: 'Club Aguilas',
+        section_name: 'Conquistadores',
+        camporee_name: 'Camporee 2026',
+        local_field_name: 'Campo Norte',
+      });
+    });
+
+    it('getDetail uses fallbacks and null camporee_name for insurance', async () => {
+      prisma.field_payment_orders.findUnique.mockResolvedValue({
+        field_payment_order_id: 'o1',
+        club_section_id: 11,
+        club_id: 5,
+        local_field_id: 7,
+        purpose: 'INSURANCE',
+        local_camporee_id: null,
+        union_camporee_id: null,
+        insurance_cycle_config_id: null,
+        status: 'ISSUED',
+        expires_at: FUTURE,
+      });
+      prisma.local_fields = { findUnique: jest.fn().mockResolvedValue(null) };
+      prisma.clubs = { findUnique: jest.fn().mockResolvedValue(null) };
+      prisma.club_sections = {
+        findUnique: jest.fn().mockResolvedValue(null),
+      };
+
+      const result = await service.getDetail('o1', directorActor());
+
+      expect(result.camporee_name).toBeNull();
+      expect(result.club_name).toBe('Club 5');
+      expect(result.section_name).toBe('Sección 11');
+      expect(result.local_field_name).toBe('Campo Local 7');
+    });
+
     it('blocks proof upload on an expired order', async () => {
       prisma.field_payment_orders.findUnique.mockResolvedValue({
         field_payment_order_id: 'o1',

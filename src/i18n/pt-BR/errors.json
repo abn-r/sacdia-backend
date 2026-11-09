@@ -851,6 +851,7 @@
   "AUTH_SUPERVISED_LOGIN_DISABLED": "Seu responsável desativou o login desta conta",
   "AUTH_ACCOUNT_FROZEN": "Esta conta foi removida por não ter um responsável vinculado",
   "AUTH_LOGIN_LOCKED": "Muitas tentativas. Tente novamente mais tarde",
+  "AUTH_MFA_LOCKED": "Muitos códigos de verificação incorretos. Tente novamente mais tarde",
   "USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN": "Para alterar a data de nascimento é necessária a intervenção do seu responsável",
   "SUPERVISED_LOGIN_NOT_ELIGIBLE": "Este menor não pode ter login próprio",
   "SUPERVISED_LOGIN_ALREADY_ENABLED": "O login próprio já está ativado",

@@ -47,6 +47,8 @@ services:
         sync: false
       - key: QR_JWT_SECRET
         sync: false
+      - key: ADMIN_PROXY_SECRET
+        sync: false
       - key: TOTP_ENCRYPTION_KEY
         sync: false
       - key: REDIS_URL

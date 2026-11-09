@@ -851,6 +851,7 @@
   "AUTH_SUPERVISED_LOGIN_DISABLED": "Votre tuteur a désactivé la connexion à ce compte",
   "AUTH_ACCOUNT_FROZEN": "Ce compte a été supprimé faute de tuteur lié",
   "AUTH_LOGIN_LOCKED": "Trop de tentatives. Réessayez plus tard",
+  "AUTH_MFA_LOCKED": "Trop de codes de vérification incorrects. Réessayez plus tard",
   "USER_BIRTHDAY_CHANGE_REQUIRES_GUARDIAN": "Pour modifier la date de naissance, votre tuteur doit intervenir",
   "SUPERVISED_LOGIN_NOT_ELIGIBLE": "Ce mineur ne peut pas avoir sa propre connexion",
   "SUPERVISED_LOGIN_ALREADY_ENABLED": "La connexion propre est déjà activée",

@@ -1,7 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { AppUnauthorizedException } from '../errors/app.exception';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import {
+  AppException,
+  AppUnauthorizedException,
+} from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { BetterAuthService } from '../../better-auth/better-auth.service';
+import { MfaFailureCounter } from './mfa-failure-counter';
 
 // ---------------------------------------------------------------------------
 // Response types
@@ -43,7 +47,10 @@ export interface MfaStatus {
 export class MfaService {
   private readonly logger = new Logger(MfaService.name);
 
-  constructor(private readonly betterAuthService: BetterAuthService) {}
+  constructor(
+    private readonly betterAuthService: BetterAuthService,
+    private readonly mfaFailures: MfaFailureCounter,
+  ) {}
 
   // ---------------------------------------------------------------------------
   // Enroll
@@ -95,6 +102,17 @@ export class MfaService {
     code: string,
     sessionId?: string | null,
   ): Promise<{ verified: boolean; accessToken?: string }> {
+    // Progressive lockout per user, checked BEFORE the code: a lock applies to
+    // the correct code too and the verifier is not reached.
+    const lock = await this.mfaFailures.check(userId);
+    if (lock.locked) {
+      throw new AppException(
+        ErrorCode.AUTH_MFA_LOCKED,
+        HttpStatus.TOO_MANY_REQUESTS,
+        { retry_after_seconds: lock.retryAfterSeconds },
+      );
+    }
+
     const { enabled } = await this.betterAuthService.hasTotpEnabled(userId);
     if (!enabled) {
       throw new AppUnauthorizedException(ErrorCode.MFA_CODE_INVALID);
@@ -104,8 +122,15 @@ export class MfaService {
     this.logger.log(`TOTP verification for user ${userId}: ${result.verified}`);
 
     if (!result.verified) {
+      await this.recordCodeFailure(userId);
       return { verified: false };
     }
+
+    await this.mfaFailures.recordSuccess(userId).catch((error: unknown) => {
+      this.logger.warn(
+        `Could not reset the MFA counter: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
 
     if (sessionId) {
       await this.betterAuthService.markMfaSessionAssured(userId, sessionId);
@@ -125,6 +150,22 @@ export class MfaService {
     );
 
     return { verified: true, accessToken };
+  }
+
+  /** Counts a wrong code; logs (user id only, never the code) when a lock starts. */
+  private async recordCodeFailure(userId: string): Promise<void> {
+    try {
+      const outcome = await this.mfaFailures.recordFailure(userId);
+      if (outcome.lockStarted) {
+        this.logger.warn(
+          `MFA locked for user ${userId} for ${outcome.retryAfterSeconds}s after repeated wrong codes`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Could not record the MFA failure: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------

@@ -452,6 +452,10 @@ export const envValidationSchema = Joi.object({
   // Bootstrap admin (one-time setup secret)
   // If not set, POST /api/v1/admin/rbac/bootstrap-admin returns 403 (disabled).
   BOOTSTRAP_SECRET: Joi.string().trim().min(32).optional(),
+
+  // Shared secret the admin panel server sends (x-sacdia-proxy-secret) so the
+  // real client IP in x-sacdia-client-ip is trusted. Unset = headers ignored.
+  ADMIN_PROXY_SECRET: Joi.string().min(32).optional(),
 });
 
 const validateEnvSchema =

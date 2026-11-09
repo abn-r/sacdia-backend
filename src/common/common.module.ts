@@ -6,6 +6,7 @@ import { AuthorizationContextService } from './services/authorization-context.se
 import { TokenBlacklistService } from './services/token-blacklist.service';
 import { SessionManagementService } from './services/session-management.service';
 import { MfaService } from './services/mfa.service';
+import { mfaFailureCounterProvider } from './services/mfa-failure-counter';
 import { CleanupService } from './services/cleanup.service';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { R2FileStorageService } from './services/r2-file-storage.service';
@@ -63,6 +64,7 @@ import { PostRegistrationRowService } from './services/post-registration-row.ser
     TokenBlacklistService,
     SessionManagementService,
     MfaService,
+    mfaFailureCounterProvider,
     AuthorizationContextService,
     InstitutionalHierarchyService,
     PermissionsGuard,

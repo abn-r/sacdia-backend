@@ -221,7 +221,7 @@ export class FieldPaymentOrdersController {
   ) {
     return {
       status: 'success',
-      data: await this.service.get(orderId, resolveOrderActor(request)),
+      data: await this.service.getDetail(orderId, resolveOrderActor(request)),
     };
   }
 
