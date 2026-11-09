@@ -34,6 +34,9 @@ const PHASE_3B_CODES: ErrorCode[] = [
 /** Codes introduced by family profiles phase 3c (each needs the 4 locales). */
 const PHASE_3C_CODES: ErrorCode[] = [ErrorCode.MR_APPROVE_PERMISSION_REQUIRED];
 
+/** Second-factor lockout (each needs the 4 locales). */
+const MFA_LOCK_CODES: ErrorCode[] = [ErrorCode.AUTH_MFA_LOCKED];
+
 const load = (locale: string): Record<string, string> =>
   JSON.parse(
     readFileSync(join(__dirname, `../../i18n/${locale}/errors.json`), 'utf8'),
@@ -90,4 +93,12 @@ describe('admin bulk upload error codes i18n parity', () => {
       expect(message).toContain('{expected}');
     },
   );
+});
+
+describe('MFA lockout error codes i18n parity', () => {
+  it.each(LOCALES)('every MFA lock code has a message in %s', (locale) => {
+    const catalog = load(locale);
+    const missing = MFA_LOCK_CODES.filter((code) => !catalog[code]?.trim());
+    expect(missing).toEqual([]);
+  });
 });
