@@ -10,7 +10,7 @@
 # compatible with the code currently running (expand/contract, no destructive
 # change in the same release). Never replace it with `prisma db push`.
 #
-# Secrets (DATABASE_URL, DATABASE_DIRECT_URL, BETTER_AUTH_SECRET, QR_JWT_SECRET, REDIS_URL, R2_*, etc.) are
+# Secrets (DATABASE_URL, DATABASE_DIRECT_URL, BETTER_AUTH_SECRET, QR_JWT_SECRET, TOTP_ENCRYPTION_KEY, REDIS_URL, R2_*, etc.) are
 # managed in the Render dashboard — sync: false keeps them out of this file.
 # See .env.example for the full catalog.
 
@@ -46,6 +46,8 @@ services:
       - key: BETTER_AUTH_SECRET
         sync: false
       - key: QR_JWT_SECRET
+        sync: false
+      - key: TOTP_ENCRYPTION_KEY
         sync: false
       - key: REDIS_URL
         sync: false
