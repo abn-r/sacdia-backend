@@ -52,6 +52,10 @@ const familyDevices = readFileSync(
   join(MIGRATIONS, '20261021120000_family_linked_devices', 'migration.sql'),
   'utf8',
 );
+const sessionRotation = readFileSync(
+  join(MIGRATIONS, '20261108150000_session_refresh_rotation', 'migration.sql'),
+  'utf8',
+);
 const sessionsDdl = wave3.match(/CREATE TABLE "sessions" \([\s\S]*?\n\);/)?.[0];
 const sessionsFk = wave3.match(
   /ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_fkey"[^;]*;/,
@@ -105,6 +109,7 @@ pgDescribe('device session refresh against real PostgreSQL', () => {
   const seed = async (opts: {
     dependent?: string;
     sessionExpiresAt?: Date;
+    sessionCreatedAt?: Date;
     device?: {
       absoluteExpiresAt: Date;
       revokedAt?: Date;
@@ -115,13 +120,15 @@ pgDescribe('device session refresh against real PostgreSQL', () => {
     const deviceId = randomUUID();
     const dependent = opts.dependent ?? CHILD;
     await admin.query(
-      `INSERT INTO sessions (id, expires_at, token, updated_at, user_id)
-       VALUES ($1, $2::timestamptz AT TIME ZONE 'UTC', $3, now(), $4)`,
+      `INSERT INTO sessions (id, expires_at, token, updated_at, user_id, created_at)
+       VALUES ($1, $2::timestamptz AT TIME ZONE 'UTC', $3, now(), $4,
+               COALESCE($5::timestamptz, now()))`,
       [
         sessionId,
         (opts.sessionExpiresAt ?? new Date(Date.now() + DAY_MS)).toISOString(),
         token,
         dependent,
+        opts.sessionCreatedAt?.toISOString() ?? null,
       ],
     );
     if (opts.device) {
@@ -185,6 +192,7 @@ pgDescribe('device session refresh against real PostgreSQL', () => {
     `);
     await admin.query(sessionsDdl);
     await admin.query(sessionsFk);
+    await admin.query(sessionRotation);
     await admin.query(linkedDevicesDdl);
 
     pool = new Pool({
@@ -451,6 +459,187 @@ pgDescribe('device session refresh against real PostgreSQL', () => {
       }
       expect(remaining).toBeNull();
       expect(expiry.getTime()).toBeLessThan(Date.now());
+    });
+  });
+
+  describe('refreshSession token rotation and absolute cap', () => {
+    // The user path also asks about MFA, whose table this schema does not
+    // carry; the SQL under test is the session UPDATE and its fallback lookup.
+    beforeEach(() => {
+      jest
+        .spyOn(service, 'hasTotpEnabled')
+        .mockResolvedValue({ enabled: false });
+    });
+
+    const sessionRow = async (sessionId: string) =>
+      (
+        await admin.query(
+          `SELECT token, previous_token, rotated_at FROM sessions WHERE id = $1`,
+          [sessionId],
+        )
+      ).rows[0] as
+        | {
+            token: string;
+            previous_token: string | null;
+            rotated_at: Date | null;
+          }
+        | undefined;
+
+    const userSession = (opts: { createdDaysAgo?: number } = {}) =>
+      seed({
+        dependent: GUARDIAN,
+        device: null,
+        sessionCreatedAt:
+          opts.createdDaysAgo === undefined
+            ? undefined
+            : new Date(Date.now() - opts.createdDaysAgo * DAY_MS),
+      });
+
+    it('returns a new token and keeps the old one as previous_token', async () => {
+      const s = await userSession();
+
+      const result = await service.refreshSession(s.token);
+
+      expect(result.session.id).toBe(s.sessionId);
+      expect(result.session.token).not.toBe(s.token);
+      const row = await sessionRow(s.sessionId);
+      expect(row?.token).toBe(result.session.token);
+      expect(row?.previous_token).toBe(s.token);
+      expect(row?.rotated_at).toBeInstanceOf(Date);
+    });
+
+    it('slides a fresh user session 7 days', async () => {
+      const s = await userSession();
+
+      const before = Date.now();
+      await service.refreshSession(s.token);
+
+      const stored = (await sessionExpiry(s.sessionId))!.getTime();
+      expect(stored).toBeGreaterThanOrEqual(before + 7 * DAY_MS - 1);
+      expect(stored).toBeLessThanOrEqual(Date.now() + 7 * DAY_MS);
+    });
+
+    it('never slides a user session past created_at + 30 days', async () => {
+      const createdAt = new Date(Date.now() - 29 * DAY_MS);
+      const s = await seed({
+        dependent: GUARDIAN,
+        device: null,
+        sessionCreatedAt: createdAt,
+      });
+
+      const result = await service.refreshSession(s.token);
+
+      const stored = (await sessionExpiry(s.sessionId))!.getTime();
+      expect(
+        Math.abs(stored - (createdAt.getTime() + 30 * DAY_MS)),
+      ).toBeLessThanOrEqual(1);
+      expect(result.session.expiresAt.getTime()).toBe(stored);
+    });
+
+    it('refuses a user session older than 30 days and deletes it', async () => {
+      const s = await userSession({ createdDaysAgo: 31 });
+
+      const error = await refreshError(service.refreshSession(s.token));
+
+      expect(JSON.stringify(error.getResponse?.())).toContain(
+        ErrorCode.AUTH_SESSION_EXPIRED,
+      );
+      let remaining = await sessionRow(s.sessionId);
+      for (let i = 0; i < 40 && remaining !== undefined; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        remaining = await sessionRow(s.sessionId);
+      }
+      expect(remaining).toBeUndefined();
+    });
+
+    it('the previous token inside the grace window returns the current token without rotating again', async () => {
+      const s = await userSession();
+      const first = await service.refreshSession(s.token);
+
+      const again = await service.refreshSession(s.token);
+
+      expect(again.session.token).toBe(first.session.token);
+      const row = await sessionRow(s.sessionId);
+      expect(row?.token).toBe(first.session.token);
+      expect(row?.previous_token).toBe(s.token);
+    });
+
+    it('two simultaneous refreshes with the same token both succeed with the same new token', async () => {
+      const s = await userSession();
+
+      const [a, b] = await Promise.all([
+        service.refreshSession(s.token),
+        service.refreshSession(s.token),
+      ]);
+
+      expect(a.session.token).toBe(b.session.token);
+      expect(a.session.token).not.toBe(s.token);
+      expect((await sessionRow(s.sessionId))?.token).toBe(a.session.token);
+    });
+
+    it('the previous token after the grace window revokes the session', async () => {
+      const s = await userSession();
+      const first = await service.refreshSession(s.token);
+      await admin.query(
+        `UPDATE sessions SET rotated_at = now() - interval '31 seconds' WHERE id = $1`,
+        [s.sessionId],
+      );
+
+      const error = await refreshError(service.refreshSession(s.token));
+
+      expect(JSON.stringify(error.getResponse?.())).toContain(
+        ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
+      );
+      expect(await sessionRow(s.sessionId)).toBeUndefined();
+      // The legitimate holder lost the session too.
+      const lost = await refreshError(
+        service.refreshSession(first.session.token),
+      );
+      expect(JSON.stringify(lost.getResponse?.())).toContain(
+        ErrorCode.AUTH_SESSION_EXPIRED,
+      );
+    });
+
+    it('the current token keeps working after the grace window', async () => {
+      const s = await userSession();
+      const first = await service.refreshSession(s.token);
+      await admin.query(
+        `UPDATE sessions SET rotated_at = now() - interval '31 seconds' WHERE id = $1`,
+        [s.sessionId],
+      );
+
+      const next = await service.refreshSession(first.session.token);
+
+      expect(next.session.token).not.toBe(first.session.token);
+      expect((await sessionRow(s.sessionId))?.previous_token).toBe(
+        first.session.token,
+      );
+    });
+
+    it('resolves the owner of a token in grace and signs out with it', async () => {
+      const s = await userSession();
+      await service.refreshSession(s.token);
+
+      await expect(service.getSessionOwnerId(s.token)).resolves.toBe(GUARDIAN);
+      await service.signOut(s.token);
+
+      expect(await sessionRow(s.sessionId)).toBeUndefined();
+    });
+
+    it('rotates a device session too and still finds its device by the previous token', async () => {
+      const device = await seed({
+        device: { absoluteExpiresAt: new Date(Date.now() + 90 * DAY_MS) },
+      });
+
+      const result = await service.refreshSession(device.token);
+
+      expect(result.session.token).not.toBe(device.token);
+      await expect(
+        service.findLinkedDeviceOfSession(result.session.token),
+      ).resolves.toMatchObject({ linkedDeviceId: device.deviceId });
+      await expect(
+        service.findLinkedDeviceOfSession(device.token),
+      ).resolves.toMatchObject({ linkedDeviceId: device.deviceId });
     });
   });
 });

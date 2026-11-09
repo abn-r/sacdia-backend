@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ErrorCode } from '../common/errors/error-codes';
 import { JwtService } from '@nestjs/jwt';
 import { BetterAuthService, DUMMY_BCRYPT_HASH } from './better-auth.service';
@@ -852,8 +852,23 @@ describe('BetterAuthService', () => {
         svc.signOut('raw-opaque-session-token'),
       ).resolves.toBeUndefined();
       expect(mockSessionDeleteMany).toHaveBeenCalledWith({
-        where: { token: 'raw-opaque-session-token' },
+        where: {
+          OR: [
+            { token: 'raw-opaque-session-token' },
+            { previousToken: 'raw-opaque-session-token' },
+          ],
+        },
       });
+    });
+
+    it('deletes the session when the presented token is the previous (grace) one', async () => {
+      const { svc } = buildService();
+      mockSessionDeleteMany.mockResolvedValue({ count: 1 });
+
+      await svc.signOut('rotated-token');
+
+      const where = mockSessionDeleteMany.mock.calls[0][0].where;
+      expect(where.OR).toContainEqual({ previousToken: 'rotated-token' });
     });
 
     it('should NOT throw when session deletion fails (best-effort)', async () => {
@@ -918,6 +933,29 @@ describe('BetterAuthService', () => {
       mockQueryRaw.mock.calls.filter(([strings]: [TemplateStringsArray]) =>
         strings.join('?').includes('linked_devices'),
       );
+    // Answers each $queryRaw by its SQL: device lookup, rotating UPDATE, or the
+    // follow-up lookup of the error / grace path.
+    const mockRefreshSeq = (rows: {
+      update?: unknown[];
+      lookup?: unknown[];
+      device?: unknown[];
+    }) => {
+      mockQueryRaw.mockImplementation((strings: TemplateStringsArray) => {
+        const sql = strings.join('?');
+        if (sql.includes('linked_devices'))
+          return Promise.resolve(rows.device ?? []);
+        if (sql.includes('UPDATE sessions'))
+          return Promise.resolve(rows.update ?? []);
+        return Promise.resolve(rows.lookup ?? []);
+      });
+    };
+    const lookupRow = (over: Record<string, unknown> = {}) => ({
+      ...mockRefreshRow,
+      matched_previous: false,
+      in_grace: false,
+      live: true,
+      ...over,
+    });
 
     it('should return a new BaAuthResult with a fresh SACDIA JWT on success', async () => {
       const { svc } = buildService();
@@ -1001,29 +1039,23 @@ describe('BetterAuthService', () => {
     it('should throw UnauthorizedException when session token is not found', async () => {
       const { svc } = buildService();
 
-      // $queryRaw returns no rows — token does not exist in DB at all
+      // UPDATE and the follow-up lookup both return no rows: unknown token
       mockRefresh([]);
-      mockSessionFindFirst.mockResolvedValue(null);
 
       await expect(
         svc.refreshSession('non-existent-token'),
       ).rejects.toMatchObject({
         code: ErrorCode.AUTH_SESSION_EXPIRED,
       });
-      expect(refreshCalls()).toHaveLength(1);
-      // Secondary lookup to distinguish not-found vs expired
-      expect(mockSessionFindFirst).toHaveBeenCalledWith({
-        where: { token: 'non-existent-token' },
-        select: { id: true },
-      });
+      // UPDATE + the single lookup that tells not-found / expired / grace / reuse
+      expect(refreshCalls()).toHaveLength(2);
+      expect(mockSessionDeleteMany).not.toHaveBeenCalled();
     });
 
     it('should throw UnauthorizedException and fire-and-forget delete when session is expired', async () => {
       const { svc } = buildService();
 
-      // $queryRaw returns no rows — token exists but is expired (WHERE expires_at > NOW() failed)
-      mockRefresh([]);
-      mockSessionFindFirst.mockResolvedValue({ id: 'session-id-abc' }); // token exists
+      mockRefreshSeq({ lookup: [lookupRow({ live: false })] });
       mockSessionDeleteMany.mockResolvedValue({ count: 1 });
 
       await expect(
@@ -1031,15 +1063,132 @@ describe('BetterAuthService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.AUTH_SESSION_EXPIRED,
       });
-      expect(refreshCalls()).toHaveLength(1);
-      expect(mockSessionFindFirst).toHaveBeenCalledWith({
-        where: { token: 'expired-session-token' },
-        select: { id: true },
-      });
-      // deleteMany is fire-and-forget — it must have been called (the promise is not awaited
-      // but Jest's mock records the call synchronously at invocation time)
       expect(mockSessionDeleteMany).toHaveBeenCalledWith({
-        where: { token: 'expired-session-token' },
+        where: { id: 'session-id-abc' },
+      });
+    });
+
+    describe('token rotation', () => {
+      const updateCall = () =>
+        mockQueryRaw.mock.calls.find(([strings]: [TemplateStringsArray]) =>
+          strings.join('?').includes('UPDATE sessions'),
+        ) as [TemplateStringsArray, ...unknown[]];
+
+      it('rotates: new token differs from the presented one and the UPDATE stores previous_token and rotated_at', async () => {
+        const { svc } = buildService();
+        mockRefreshSeq({
+          update: [{ ...mockRefreshRow, token: 'rotated-new-token' }],
+        });
+
+        const result = await svc.refreshSession('old-token');
+
+        const [strings, ...values] = updateCall();
+        const sql = strings.join('?');
+        expect(sql).toContain('previous_token = s.token');
+        expect(sql).toContain('rotated_at     = NOW()');
+        expect(sql).toMatch(/token\s+= \?,/);
+        // first bind is the freshly generated token, never the presented one
+        expect(typeof values[0]).toBe('string');
+        expect(values[0]).not.toBe('old-token');
+        expect(values).toContain('old-token');
+        expect(result.session.token).toBe('rotated-new-token');
+      });
+
+      it('caps a user session at created_at + 30 days inside the same atomic UPDATE', async () => {
+        const { svc } = buildService();
+        mockRefreshSeq({ update: [mockRefreshRow] });
+
+        await svc.refreshSession('old-token');
+
+        const [strings, ...values] = updateCall();
+        const sql = strings.join('?');
+        expect(sql).toContain('LEAST(');
+        expect(sql).toContain('s.created_at +');
+        expect(values).toContain(30 * 86_400);
+        // user session: isDevice = false
+        expect(values).toContain(false);
+      });
+
+      it('device session skips the 30 day created_at cap (its own absolute cap applies)', async () => {
+        const { svc } = buildService();
+        mockRefreshSeq({
+          update: [mockRefreshRow],
+          device: [
+            {
+              session_id: 'session-id-abc',
+              linked_device_id: 'device-uuid-1',
+              dependent_user_id: 'user-uuid-123',
+              revoked_at: null,
+              absolute_expires_at: new Date(Date.now() + 100 * 86_400_000),
+            },
+          ],
+        });
+
+        await svc.refreshSession('old-token');
+
+        const [, ...values] = updateCall();
+        expect(values).toContain(true);
+      });
+
+      it('created 31 days ago: UPDATE misses, lookup says not live, session is deleted and fails as expired', async () => {
+        const { svc } = buildService();
+        mockRefreshSeq({ lookup: [lookupRow({ live: false })] });
+        mockSessionDeleteMany.mockResolvedValue({ count: 1 });
+
+        await expect(svc.refreshSession('old-token')).rejects.toMatchObject({
+          code: ErrorCode.AUTH_SESSION_EXPIRED,
+        });
+        expect(mockSessionDeleteMany).toHaveBeenCalledWith({
+          where: { id: 'session-id-abc' },
+        });
+      });
+
+      it('previous token inside the grace window returns the CURRENT session without rotating again', async () => {
+        const { svc } = buildService();
+        mockRefreshSeq({
+          lookup: [
+            lookupRow({
+              matched_previous: true,
+              in_grace: true,
+              token: 'current-token',
+            }),
+          ],
+        });
+
+        const result = await svc.refreshSession('previous-token');
+
+        expect(result.session.token).toBe('current-token');
+        expect(result.accessToken).toBe('mocked-sacdia-jwt');
+        // exactly one UPDATE attempt (it missed) and one lookup; no second UPDATE
+        const updates = mockQueryRaw.mock.calls.filter(
+          ([strings]: [TemplateStringsArray]) =>
+            strings.join('?').includes('UPDATE sessions'),
+        );
+        expect(updates).toHaveLength(1);
+        expect(mockSessionDeleteMany).not.toHaveBeenCalled();
+      });
+
+      it('previous token outside the grace window deletes the session and fails with the invalid-refresh 401', async () => {
+        const { svc } = buildService();
+        mockRefreshSeq({
+          lookup: [lookupRow({ matched_previous: true, in_grace: false })],
+        });
+        mockSessionDeleteMany.mockResolvedValue({ count: 1 });
+        const warn = jest.spyOn(Logger.prototype, 'warn');
+
+        await expect(svc.refreshSession('stolen-token')).rejects.toMatchObject({
+          code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
+          status: 401,
+        });
+        expect(mockSessionDeleteMany).toHaveBeenCalledWith({
+          where: { id: 'session-id-abc' },
+        });
+        const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(logged).toContain('auth_refresh_token_reuse');
+        expect(logged).toContain('session-id-abc');
+        expect(logged).toContain('user-uuid-123');
+        expect(logged).not.toContain('stolen-token');
+        warn.mockRestore();
       });
     });
 
@@ -1284,7 +1433,10 @@ describe('BetterAuthService', () => {
 
       expect(mockSessionFindFirst).toHaveBeenCalledWith({
         where: {
-          token: 'raw-opaque-session-token',
+          OR: [
+            { token: 'raw-opaque-session-token' },
+            { previousToken: 'raw-opaque-session-token' },
+          ],
           expiresAt: { gt: expect.any(Date) },
         },
         select: { userId: true },

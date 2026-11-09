@@ -205,6 +205,15 @@ export interface IBetterAuthService {
 /** Session duration: 7 days in ms */
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Absolute lifetime of a user session, counted from created_at: 30 days in ms */
+const SESSION_ABSOLUTE_MAX_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * After a refresh rotates the token, the previous one still works this long.
+ * It covers concurrent refreshes (several tabs, app races) with the same token.
+ */
+const REFRESH_REUSE_GRACE_MS = 30 * 1000;
+
 /** Bcrypt cost factor */
 const BCRYPT_ROUNDS = 12;
 
@@ -578,7 +587,7 @@ export class BetterAuthService implements IBetterAuthService {
              ld.absolute_expires_at
         FROM sessions s
         JOIN linked_devices ld ON ld.session_id = s.id
-       WHERE s.token = ${sessionToken}
+       WHERE (s.token = ${sessionToken} OR s.previous_token = ${sessionToken})
        LIMIT 1
     `;
     const row = rows[0];
@@ -594,21 +603,32 @@ export class BetterAuthService implements IBetterAuthService {
 
   async getSessionOwnerId(sessionToken: string): Promise<string | null> {
     const session = await this.prisma.session.findFirst({
-      where: { token: sessionToken, expiresAt: { gt: new Date() } },
+      where: {
+        OR: [{ token: sessionToken }, { previousToken: sessionToken }],
+        expiresAt: { gt: new Date() },
+      },
       select: { userId: true },
     });
     return session?.userId ?? null;
   }
 
   /**
-   * Refreshes a session by looking it up via the opaque session token.
+   * Refreshes a session by looking it up via the opaque session token, and
+   * ROTATES that token: the response carries a new one and the old one moves to
+   * previous_token.
    *
    * Flow (single round-trip for the happy path):
    *   1. UPDATE sessions JOIN users WHERE token=$1 AND expires_at > NOW() RETURNING *
-   *      — slides expiry and fetches user data in one query.
-   *   2. If no rows returned: check whether the token exists at all to emit the
-   *      correct error (not found vs expired). Expired sessions are deleted
-   *      fire-and-forget so the error path adds no latency to the caller.
+   *      — sets the new token, slides expiry and fetches user data in one query.
+   *      A user session never outlives created_at + 30 days (device sessions
+   *      keep their own cap, absolute_expires_at).
+   *   2. If no rows returned: one lookup by token OR previous_token decides:
+   *        - previous token within the 30 s grace window: concurrent refresh,
+   *          return the CURRENT session without rotating again;
+   *        - previous token outside the window: replay of a rotated token, the
+   *          session is deleted (both holders lose it) and the refresh fails;
+   *        - expired or past the cap: deleted fire-and-forget, session expired;
+   *        - unknown: session expired.
    *   3. Map raw result → BaSession + BaUser → sign SACDIA JWT.
    */
   async refreshSession(
@@ -642,8 +662,9 @@ export class BetterAuthService implements IBetterAuthService {
       );
     }
 
-    // Single round-trip: UPDATE + JOIN users, slide expiry, return all needed fields.
-    // The WHERE clause enforces both token match and non-expiry atomically.
+    // Single round-trip: UPDATE + JOIN users, rotate token, slide expiry, return
+    // all needed fields. The WHERE clause enforces token match, non-expiry and
+    // the absolute cap atomically.
     type RefreshRow = {
       // session fields
       id: string;
@@ -664,13 +685,32 @@ export class BetterAuthService implements IBetterAuthService {
       u_modified_at: Date;
     };
 
-    const rows = await this.prisma.$queryRaw<RefreshRow[]>`
+    const isDevice = device !== null && device !== undefined;
+    const newToken = generateToken();
+    const absoluteMaxSecs = SESSION_ABSOLUTE_MAX_MS / 1000;
+    const graceSecs = REFRESH_REUSE_GRACE_MS / 1000;
+
+    // Atomic: token match, liveness, absolute cap, rotation and sliding expiry
+    // happen in one statement. Only one of two simultaneous requests with the
+    // same token matches; the other falls to the grace path below.
+    let rows = await this.prisma.$queryRaw<RefreshRow[]>`
       UPDATE sessions s
-         SET expires_at = ${newExpiresAt},
-             updated_at = NOW()
+         SET token          = ${newToken},
+             previous_token = s.token,
+             rotated_at     = NOW(),
+             expires_at     = CASE
+               WHEN ${isDevice}::boolean THEN ${newExpiresAt}::timestamp
+               ELSE LEAST(
+                 ${newExpiresAt}::timestamp,
+                 (s.created_at + ${absoluteMaxSecs}::double precision * INTERVAL '1 second') AT TIME ZONE 'UTC'
+               )
+             END,
+             updated_at     = NOW()
         FROM users u
        WHERE s.token      = ${sessionToken}
          AND s.expires_at > NOW()
+         AND (${isDevice}::boolean
+              OR s.created_at + ${absoluteMaxSecs}::double precision * INTERVAL '1 second' > NOW())
          AND u.user_id    = s.user_id
    RETURNING s.id,
              s.token,
@@ -690,27 +730,86 @@ export class BetterAuthService implements IBetterAuthService {
     `;
 
     if (rows.length === 0) {
-      // Distinguish "token not found" from "token expired" for correct error message.
-      // This secondary query only runs on the error path — no impact on happy-path latency.
-      const existing = await this.prisma.session.findFirst({
-        where: { token: sessionToken },
-        select: { id: true },
-      });
+      // Error / grace path: runs only when the UPDATE matched nothing, so the
+      // happy path pays nothing. One read by current OR previous token; the
+      // clock checks run in SQL, the same clock that stamped rotated_at.
+      const found = await this.prisma.$queryRaw<
+        Array<
+          RefreshRow & {
+            matched_previous: boolean;
+            in_grace: boolean;
+            live: boolean;
+          }
+        >
+      >`
+        SELECT s.id,
+               s.token,
+               s.expires_at,
+               s.created_at,
+               s.updated_at,
+               s.ip_address,
+               s.user_agent,
+               s.user_id,
+               (s.previous_token = ${sessionToken}) AS matched_previous,
+               (s.rotated_at IS NOT NULL
+                AND s.rotated_at > NOW() - ${graceSecs}::double precision * INTERVAL '1 second') AS in_grace,
+               (s.expires_at > NOW()
+                AND (${isDevice}::boolean
+                     OR s.created_at + ${absoluteMaxSecs}::double precision * INTERVAL '1 second' > NOW())) AS live,
+               u.user_id    AS u_user_id,
+               u.email      AS u_email,
+               u.name       AS u_name,
+               u.email_verified  AS u_email_verified,
+               u.user_image AS u_user_image,
+               u.created_at AS u_created_at,
+               u.modified_at AS u_modified_at
+          FROM sessions s
+          JOIN users u ON u.user_id = s.user_id
+         WHERE s.token = ${sessionToken} OR s.previous_token = ${sessionToken}
+         LIMIT 1
+      `;
+      const hit = found[0];
 
-      if (!existing) {
+      if (!hit) {
         throw new AppUnauthorizedException(ErrorCode.AUTH_SESSION_EXPIRED);
       }
 
-      // Token exists but is expired — clean it up fire-and-forget.
-      this.prisma.session
-        .deleteMany({ where: { token: sessionToken } })
-        .catch((err: unknown) =>
-          this.logger.warn(
-            `refreshSession: failed to delete expired session — ${err instanceof Error ? err.message : String(err)}`,
-          ),
-        );
+      if (!hit.live) {
+        // Expired or past the absolute cap — clean it up fire-and-forget.
+        this.prisma.session
+          .deleteMany({ where: { id: hit.id } })
+          .catch((err: unknown) =>
+            this.logger.warn(
+              `refreshSession: failed to delete expired session — ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+        throw new AppUnauthorizedException(ErrorCode.AUTH_SESSION_EXPIRED);
+      }
 
-      throw new AppUnauthorizedException(ErrorCode.AUTH_SESSION_EXPIRED);
+      if (!hit.matched_previous) {
+        // Current token, live, yet the UPDATE missed it: not a state we expect.
+        throw new AppUnauthorizedException(ErrorCode.AUTH_SESSION_EXPIRED);
+      }
+
+      if (!hit.in_grace) {
+        // A rotated token came back after the window: likely stolen. Revoke the
+        // session for both holders. Never log the token.
+        await this.prisma.session.deleteMany({ where: { id: hit.id } });
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth_refresh_token_reuse',
+            sessionId: hit.id,
+            userId: hit.user_id,
+          }),
+        );
+        throw new AppUnauthorizedException(
+          ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
+        );
+      }
+
+      // Concurrent refresh with the token that was just rotated: hand back the
+      // current session (current token and expiry) without rotating again.
+      rows = [hit];
     }
 
     const row = rows[0];
@@ -774,7 +873,11 @@ export class BetterAuthService implements IBetterAuthService {
    */
   async signOut(sessionToken: string): Promise<void> {
     try {
-      await this.prisma.session.deleteMany({ where: { token: sessionToken } });
+      await this.prisma.session.deleteMany({
+        where: {
+          OR: [{ token: sessionToken }, { previousToken: sessionToken }],
+        },
+      });
       this.logger.log('Session revoked');
     } catch (error) {
       this.logger.warn(

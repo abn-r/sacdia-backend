@@ -131,7 +131,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Refrescar sesión con refresh token',
     description:
-      'Body: `refreshToken` (sesión opaca BA). `Authorization: Bearer` opcional con el access JWT actual; si es de este usuario se revoca. Sin Bearer el JWT anterior vive hasta 8h.',
+      'Body: `refreshToken` (sesión opaca BA). Cada refresh ROTA el token: la respuesta trae un `refreshToken` nuevo que el cliente debe guardar. El anterior sigue valiendo 30 s (refrescos concurrentes); usado después, la sesión se revoca (401). Las sesiones de usuario no superan 30 días desde su creación. `Authorization: Bearer` opcional con el access JWT actual; si es de este usuario se revoca. Sin Bearer el JWT anterior vive hasta 8h.',
   })
   @ApiHeader({
     name: 'Authorization',
