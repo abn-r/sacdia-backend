@@ -320,6 +320,27 @@ const STAFF: StaffSpec[] = [
   },
 ];
 
+/**
+ * Guías Mayores of the club without a role, for the «Agregar directivo» sheet:
+ * one enrolled in GM this year (available) and one with an inactive GM row
+ * (listed under «Sin inscripción», no action).
+ */
+interface GmPoolSpec {
+  person: PersonSpec;
+  gmStatus: 'active' | 'inactive';
+}
+
+const GM_POOL: GmPoolSpec[] = [
+  {
+    person: adult('gm-sofia', 'Sofía', 'Castro', 'Rivera', 'Femenino', 1993, 8, 14, womanPhoto(21)),
+    gmStatus: 'active',
+  },
+  {
+    person: adult('gm-ruben', 'Rubén', 'Torres', 'Méndez', 'Masculino', 1989, 2, 27, manPhoto(41)),
+    gmStatus: 'inactive',
+  },
+];
+
 // B) applicants
 const ADULT_APPLICANT = adult('req1-jorge', 'Jorge Luis', 'Benítez', 'Arce', 'Masculino', 1991, 4, 2, manPhoto(52));
 
@@ -372,7 +393,7 @@ interface PlanAssignment {
   userId: string;
   userLabel: string;
   role: string;
-  status: 'active' | 'pending';
+  status: 'active' | 'pending' | 'inactive';
   createdAt: Date;
   expiresAt: Date | null;
   note: string;
@@ -505,6 +526,26 @@ function buildPlan(directorId: string, yearStart: Date): Plan {
       createdAt: daysAgo(90),
       expiresAt: null,
       note: 'Miembro de Guías Mayores (staff elegible a GM)',
+      section: 'gm',
+    });
+    enrollments.push({
+      userId: u.id,
+      userLabel: u.label,
+      className: GM_CLASS_ASSET_CODE,
+      gm: true,
+    });
+  }
+  for (const g of GM_POOL) {
+    const u = addUser(g.person);
+    assignments.push({
+      id: uuidFor(`assign:${g.person.key}:member:gm`),
+      userId: u.id,
+      userLabel: u.label,
+      role: 'member',
+      status: g.gmStatus,
+      createdAt: daysAgo(120),
+      expiresAt: null,
+      note: `Guía Mayor sin cargo (GM ${g.gmStatus})`,
       section: 'gm',
     });
     enrollments.push({
@@ -745,6 +786,7 @@ function allDemoUserIds(): string[] {
   const specs: PersonSpec[] = [
     ...MEMBER_KIDS.map((m) => m.person),
     ...STAFF.map((s) => s.person),
+    ...GM_POOL.map((g) => g.person),
     ADULT_APPLICANT,
     KID2,
     GUARD2,
@@ -1331,6 +1373,8 @@ async function runDemo(prisma: Prisma_, apply: boolean): Promise<void> {
             club_section_id: a.section === 'gm' ? (ctx.gmSectionId as number) : ctx.sectionId,
             ecclesiastical_year_id: ctx.year.year_id,
             start_date: ctx.year.start_date,
+            // An 'inactive' member row stays active=true, like the annual
+            // membership policy writes it after the year cut.
             active: true,
             status: a.status,
             expires_at: a.expiresAt,
