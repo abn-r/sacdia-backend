@@ -72,6 +72,7 @@ import { RankingWeightsModule } from './ranking-weights/ranking-weights.module';
 import { AnnualRankingProgressModule } from './rankings/annual-ranking-progress/annual-ranking-progress.module';
 import { MaterialsModule } from './materials/materials.module';
 import { CertificateBulkImportsModule } from './certificate-bulk-imports/certificate-bulk-imports.module';
+import { ServiceCredentialsModule } from './service-credentials/service-credentials.module';
 import { InstructorsModule } from './instructors/instructors.module';
 import { CamporeeEventTemplatesModule } from './camporee-event-templates/camporee-event-templates.module';
 import { CamporeeEventsModule } from './camporee-events/camporee-events.module';
@@ -279,6 +280,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     AnnualRankingProgressModule,
     MaterialsModule,
     CertificateBulkImportsModule,
+    ServiceCredentialsModule,
     InstructorsModule,
     CamporeeEventTemplatesModule,
     CamporeeEventsModule,

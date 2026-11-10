@@ -54,11 +54,15 @@ const baseline = {
     'effectiveWhere|T08|1|1f2269db063f',
   'certifications/eligibility/eligibility-rule-handlers.ts':
     'effectiveWhere|T08|2|9841f0b29dc2',
+  'clubs/club-role-candidates.queries.ts':
+    'workflowWhere|allowlist|5|d208ae353703',
   'clubs/clubs.service.ts': 'effectiveWhere|T08|10|5406fd2f027c',
   'clubs/director-designation.service.ts':
     'workflowWhere|allowlist|2|b32d443733e9',
   'common/authorization/actor-section-scope.ts':
     'effectiveWhere|T09|1|38b239a32e23',
+  'common/authorization/service-credential-review-scope.service.ts':
+    'effectiveWhere|T09|3|d8ff585b0651',
   'common/authorization/target-user-scope.ts':
     'effectiveWhere|T08|1|40ea0dbf5bcf',
   'common/authorization/member-territory-scope.service.ts':

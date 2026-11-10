@@ -787,6 +787,7 @@ model club_types {
   club_annual_rankings       club_annual_rankings[]
   achievements               achievements[]
   ranking_weight_configs     ranking_weight_configs?
+  role_requirements          role_requirements[]
   enrollment_ranking_weights EnrollmentRankingWeight[]
   translations               club_types_translations[]
   material_products               MaterialProduct[]
@@ -2089,6 +2090,7 @@ model roles {
   role_slot_limits                role_slot_limits?
   role_assignment_requests        role_assignment_requests[]
   certification_eligibility_rules certification_eligibility_rules[]
+  role_requirements               role_requirements[]
 }
 
 model union_camporee_local_fields {
@@ -2764,6 +2766,8 @@ model users {
   camporee_supply_payments_paid             camporee_supply_payment_docs[]            @relation("camporee_supply_payment_payer")
   camporee_supply_deliveries                camporee_supply_deliveries[]              @relation("camporee_supply_deliverer")
   camporee_supply_plan_audits               camporee_supply_plan_audits[]             @relation("camporee_supply_plan_auditor")
+  service_credentials                       service_credentials[]                     @relation("service_credential_owner")
+  service_credentials_reviewed              service_credentials[]                     @relation("service_credential_reviewer")
 }
 
 model authorization_context_versions {
@@ -2974,6 +2978,7 @@ model certifications {
   certification_modules          certification_modules[]
   certification_section_progress certification_section_progress[]
   users_certifications           users_certifications[]
+  role_requirements              role_requirements[]
 }
 
 model certification_versions {
@@ -6821,4 +6826,76 @@ model device_pairing_tokens {
   guardianship guardianships   @relation("pairing_token_guardianship", fields: [guardianship_id], references: [guardianship_id], onDelete: NoAction, onUpdate: NoAction, map: "device_pairing_tokens_guardianship_id_fkey")
   creator      users           @relation("pairing_token_creator", fields: [created_by_user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "device_pairing_tokens_created_by_user_id_fkey")
   device       linked_devices? @relation("pairing_token_device", fields: [consumed_device_id], references: [linked_device_id], onDelete: NoAction, onUpdate: NoAction, map: "device_pairing_tokens_consumed_device_id_fkey")
+}
+
+enum role_requirement_type_enum {
+  COUNSELOR_TRAINING
+}
+
+enum role_requirement_mode_enum {
+  INFO
+  WARN
+  BLOCK
+}
+
+enum service_credential_status_enum {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum service_credential_upload_status_enum {
+  PENDING_UPLOAD
+  CONFIRMED
+}
+
+/// Requisito de un rol de club (hoy: constancia de consejería). Con `mode` INFO
+/// solo se muestra; WARN avisa; BLOCK impide asignar desde `effective_from`.
+/// SQL-only: unique parcial uq_role_requirements_active
+/// (role_id, requirement_type, COALESCE(club_type_id, 0)) WHERE active.
+model role_requirements {
+  requirement_id              Int                        @id @default(autoincrement())
+  role_id                     String                     @db.Uuid
+  club_type_id                Int?
+  requirement_type            role_requirement_type_enum
+  mode                        role_requirement_mode_enum @default(INFO)
+  effective_from              DateTime?                  @db.Date
+  equivalent_certification_id Int?
+  active                      Boolean                    @default(true)
+  created_at                  DateTime                   @default(now()) @db.Timestamptz(6)
+  modified_at                 DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  roles          roles           @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction)
+  club_types     club_types?     @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  certifications certifications? @relation(fields: [equivalent_certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([role_id, active], map: "idx_role_requirements_role_active")
+}
+
+/// Constancia de consejería (el curso de consejeros son las 10 horas) subida por quien
+/// ocupa un cargo de servicio. La revisión la hace F6.
+model service_credentials {
+  credential_id     String                                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id           String                                @db.Uuid
+  credential_type   role_requirement_type_enum
+  completed_at      DateTime?                             @db.Date
+  object_key        String?                               @db.VarChar(512)
+  original_filename String?                               @db.VarChar(255)
+  mime_type         String?                               @db.VarChar(100)
+  size_bytes        BigInt?
+  upload_status     service_credential_upload_status_enum
+  status            service_credential_status_enum        @default(PENDING_REVIEW)
+  reviewed_by_id    String?                               @db.Uuid
+  reviewer_role     String?                               @db.VarChar(50)
+  reviewed_at       DateTime?                             @db.Timestamptz(6)
+  decision_reason   String?
+  expires_at        DateTime?                             @db.Date
+  active            Boolean                               @default(true)
+  created_at        DateTime                              @default(now()) @db.Timestamptz(6)
+  modified_at       DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
+
+  owner    users  @relation("service_credential_owner", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewer users? @relation("service_credential_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([user_id, credential_type, status], map: "idx_service_credentials_user_type_status")
 }

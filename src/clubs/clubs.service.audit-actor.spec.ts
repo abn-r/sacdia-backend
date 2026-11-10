@@ -6,6 +6,7 @@ import {
 } from '../audit-logs/critical-audit-writer.service';
 import { SectionRoleMutationPolicy } from '../common/authorization/section-role-mutation.policy';
 import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { RoleRequirementService } from '../role-requirements/role-requirement.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { EcclesiasticalYearService } from '../common/services/ecclesiastical-year.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
@@ -13,6 +14,12 @@ import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-e
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClubsService } from './clubs.service';
+
+// D1/D4 are covered in club-role-candidates.queries.spec.ts; this spec only
+// checks the audit trail, so its fake transaction has no section tables.
+jest.mock('./club-role-candidates.queries', () => ({
+  assertServiceRoleAssignable: jest.fn().mockResolvedValue(undefined),
+}));
 
 jest.mock('../membership-requests/assignment-activation-gate', () => ({
   assertAssignmentActivationAllowed: jest.fn().mockResolvedValue(undefined),
@@ -135,6 +142,10 @@ describe('ClubsService role mutations: durable audit with the real actor', () =>
         },
         { provide: CriticalAuditWriterService, useValue: { write: writeImpl } },
         { provide: SectionRoleMutationPolicy, useValue: { assertCanMutate } },
+        {
+          provide: RoleRequirementService,
+          useValue: { assertMet: jest.fn().mockResolvedValue(undefined) },
+        },
         {
           provide: TemporalContextFactory,
           useValue: {

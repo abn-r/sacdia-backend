@@ -27,6 +27,8 @@ import {
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 import { ClubsService } from './clubs.service';
 import { DirectorDesignationService } from './director-designation.service';
+import { ClubRoleCandidatesService } from './club-role-candidates.service';
+import { RoleCandidatesQueryDto } from './dto/role-candidates-query.dto';
 import {
   CreateClubDto,
   UpdateClubDto,
@@ -63,6 +65,7 @@ export class ClubsController {
   constructor(
     private readonly clubsService: ClubsService,
     private readonly directorDesignationService: DirectorDesignationService,
+    private readonly roleCandidates: ClubRoleCandidatesService,
   ) {}
 
   // ========================================
@@ -426,6 +429,73 @@ export class ClubsController {
     return this.clubsService.getAssignableRoles(clubId, sectionId, userId);
   }
 
+  @Get(':clubId/sections/:sectionId/role-candidates')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club_section', idParam: 'sectionId' })
+  @ApiOperation({
+    summary: 'Candidatos Guía Mayor para roles de servicio de la sección',
+    description:
+      'Solo secciones Aventureros o Conquistadores. Lista Guías Mayores del club con su estado, roles actuales y los roles que se les pueden asignar. Nunca expone correo ni teléfono. Filtros: available | with_role | not_enrolled | all.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Sección, cupos, candidatos y meta',
+  })
+  @ApiResponse({ status: 404, description: 'Sección no encontrada en el club' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'CLUB_ROLE_CANDIDATES_SECTION_NOT_SERVICE: la sección no es Aventureros ni Conquistadores',
+  })
+  async listRoleCandidates(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() user: { sub: string },
+    @Query() query: RoleCandidatesQueryDto,
+  ) {
+    const data = await this.roleCandidates.list(
+      clubId,
+      sectionId,
+      user.sub,
+      query,
+    );
+    const { meta, ...rest } = data;
+    return { status: 'success', data: rest, meta };
+  }
+
+  @Get(':clubId/sections/:sectionId/role-candidates/:userId')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club_section', idParam: 'sectionId' })
+  @ApiOperation({
+    summary: 'Detalle de un candidato Guía Mayor',
+    description:
+      'Mismo item que la lista más historial de roles, certificaciones, seguro y conteo de especialidades. 404 si la persona no es candidata de la sección.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiResponse({ status: 200, description: 'Detalle del candidato' })
+  @ApiResponse({
+    status: 404,
+    description: 'Sección o candidato no encontrado',
+  })
+  async getRoleCandidate(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Param('userId', ParseUuidParamPipe) userId: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    const data = await this.roleCandidates.detail(
+      clubId,
+      sectionId,
+      userId,
+      user.sub,
+    );
+    return { status: 'success', data };
+  }
+
   @Post(':clubId/sections/:sectionId/roles')
   @RequirePermissions('club_roles:assign')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
@@ -442,7 +512,7 @@ export class ClubsController {
   @ApiResponse({
     status: 409,
     description:
-      'MR_CONSENT_NOT_VERIFIED: el usuario es un menor sin consentimiento del tutor verificado',
+      'MR_CONSENT_NOT_VERIFIED: el usuario es un menor sin consentimiento del tutor verificado. CLUB_ROLE_GM_MEMBERSHIP_REQUIRED: rol de servicio en Aventureros/Conquistadores sin ser miembro activo o pendiente de la sección GM este año. CLUB_ROLE_ALREADY_HELD: ya tiene un rol de servicio activo en la sección este año',
   })
   async assignRole(
     @Param('clubId', ParseIntPipe) clubId: number,

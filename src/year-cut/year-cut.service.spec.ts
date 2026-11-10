@@ -959,7 +959,7 @@ describe('YearCutService', () => {
       expect(summary.returnedNotEnrolled).toBe(1);
     });
 
-    it('ends an expired counselor without transferring pedagogical authority', async () => {
+    it('ends an expired counselor without transferring pedagogical authority and returns them to GM as not enrolled (D6)', async () => {
       prisma.club_role_assignments.findMany.mockResolvedValue([
         {
           assignment_id: ASSIGN_COUNSELOR_2025,
@@ -1004,11 +1004,22 @@ describe('YearCutService', () => {
           }),
         }),
       );
+      expect(policy.resolveBase).toHaveBeenCalledWith(
+        prisma,
+        USER_COUNSELOR,
+        expect.objectContaining({ sourceSectionId: CQ_SECTION_ID }),
+      );
       expect(policy.ensureNotEnrolled).toHaveBeenCalledWith(
         prisma,
         USER_COUNSELOR,
-        CQ_SECTION_ID,
+        GM_SECTION_ID,
         expect.objectContaining({ year_id: YEAR_ID_CURRENT }),
+      );
+      expect(policy.ensureNotEnrolled).not.toHaveBeenCalledWith(
+        prisma,
+        USER_COUNSELOR,
+        CQ_SECTION_ID,
+        expect.anything(),
       );
       expect(summary.ended).toBe(1);
     });

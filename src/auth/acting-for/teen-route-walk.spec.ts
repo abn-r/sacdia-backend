@@ -305,6 +305,7 @@ const NEVER_SCOPE_FAMILIES: RegExp[] = [
   /^DELETE \/auth\/me$/,
   /^[A-Z]+ \/auth\/(sessions|mfa|oauth)(\/|$)/,
   /^[A-Z]+ \/users\/me\/data-export/,
+  /^[A-Z]+ \/users\/me\/service-credentials(\/|$)/,
   /^[A-Z]+ \/fcm-tokens(\/|$)/,
   /^[A-Z]+ \/notifications\/preferences/,
   /^[A-Z]+ \/guardianships(\/|$)/,

@@ -463,6 +463,12 @@ const NEVER_SCOPE: Array<{
     pattern: /^(?!GET \/auth\/oauth\/providers$)[A-Z]+ \/auth\/oauth(\/|$)/,
   },
   { label: 'data export', pattern: /^[A-Z]+ \/users\/me\/data-export/ },
+  {
+    // Adult-only self-service of the counselor credential: no scope for any
+    // restricted principal (guardian, teen, device, unknown age).
+    label: 'service credentials',
+    pattern: /^[A-Z]+ \/users\/me\/service-credentials(\/|$)/,
+  },
   { label: 'fcm tokens', pattern: /^[A-Z]+ \/fcm-tokens(\/|$)/ },
   {
     label: 'notification preferences (notifications)',
