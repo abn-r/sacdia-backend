@@ -231,8 +231,9 @@ export class GlobalUserRoleWriteService {
     );
   }
   private lock(tx: Tx, key: string): Promise<unknown> {
+    // `::text`: Prisma 7.10 can't deserialize the `void` the lock returns.
     return tx.$queryRaw(
-      Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`,
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text`,
     );
   }
 }
