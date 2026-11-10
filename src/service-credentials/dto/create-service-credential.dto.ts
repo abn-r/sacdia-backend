@@ -8,9 +8,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import {
-  SERVICE_CREDENTIAL_TYPE_COUNSELOR_TRAINING,
-} from '../service-credentials.constants';
+import { SERVICE_CREDENTIAL_TYPE_COUNSELOR_TRAINING } from '../service-credentials.constants';
 
 export class CreateServiceCredentialDto {
   @ApiProperty({ enum: [SERVICE_CREDENTIAL_TYPE_COUNSELOR_TRAINING] })
