@@ -581,6 +581,7 @@
   "ANNUAL_ENROLL_SECTION_INVALID": "La section de club indiquée n'appartient pas au même club que l'affectation inactive de l'utilisateur",
   "ANNUAL_MEMBERSHIP_BASE_UNRESOLVED": "Impossible de résoudre une section de base unique et active pour l'inscription annuelle",
   "ANNUAL_CLASS_POLICY_UNRESOLVED": "La politique de classe ne peut pas être résolue pour ce cas. Elle nécessite une décision administrative (D02)",
+  "ANNUAL_AGE_ABOVE_CLUB_TYPE": "Cette personne dépasse l'âge de cette section et ne peut pas y être inscrite. Inscris-la dans la section de son âge",
   "ECCLESIASTICAL_YEAR_AMBIGUOUS": "Plus d'une année ecclésiastique couvre la date institutionnelle actuelle",
   "CLUB_CYCLE_NOT_READY": "La transition annuelle du club n'est pas encore terminée. Réessayez dans un instant",
   "FINANCE_CLUB_NOT_FOUND": "Club introuvable",

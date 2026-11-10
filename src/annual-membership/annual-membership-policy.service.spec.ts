@@ -271,6 +271,25 @@ describe('AnnualMembershipPolicyService', () => {
       });
     });
 
+    it('only considers member rows when inferring the base (staff roles never anchor it)', async () => {
+      prisma.club_transfer_requests.findFirst.mockResolvedValue(null);
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.resolveBase(prisma as never, USER_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_MEMBERSHIP_BASE_UNRESOLVED,
+      });
+
+      expect(prisma.club_role_assignments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            roles: { role_name: 'member' },
+          }),
+        }),
+      );
+    });
+
     it('does not invent a club from GM-01 investiture alone', async () => {
       prisma.club_transfer_requests.findFirst.mockResolvedValue(null);
       prisma.club_role_assignments.findMany.mockResolvedValue([]);

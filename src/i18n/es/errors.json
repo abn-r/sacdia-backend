@@ -586,6 +586,7 @@
   "ANNUAL_ENROLL_REQUIRES_DIRECTIVE": "La inscripción anual la realiza la directiva. Este trámite no está disponible para el titular del perfil",
   "ANNUAL_MEMBERSHIP_BASE_UNRESOLVED": "No se pudo resolver una sección base única y habilitada para la inscripción anual",
   "ANNUAL_CLASS_POLICY_UNRESOLVED": "La política de clase no puede resolverse para este caso. Requiere definición administrativa (D02)",
+  "ANNUAL_AGE_ABOVE_CLUB_TYPE": "Esta persona supera la edad de esta sección y no puede inscribirse en ella. Inscríbela en la sección que le corresponde por edad",
   "ECCLESIASTICAL_YEAR_AMBIGUOUS": "Hay más de un año eclesiástico que cubre la fecha institucional actual",
   "CLUB_CYCLE_NOT_READY": "La transición anual del club aún no terminó. Reintenta en unos momentos",
   "FINANCE_CLUB_NOT_FOUND": "Club no encontrado",

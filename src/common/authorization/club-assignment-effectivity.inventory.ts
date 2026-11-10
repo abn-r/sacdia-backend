@@ -33,9 +33,9 @@ const baseline = {
   'annual-folders/score-calculators/sacdia-operational-usage-score.ts':
     'effectiveWhere|T09|1|bbabd16a2b24',
   'annual-membership/annual-membership-policy.service.ts':
-    'workflowWhere|allowlist|6|fa7e3eebce24',
+    'workflowWhere|allowlist|6|59d5afe638ee',
   'annual-membership/annual-membership.service.ts':
-    'workflowWhere|allowlist|6|daf4122904fa',
+    'workflowWhere|allowlist|6|1f3112215c08',
   'annual-reports/annual-reports.service.ts':
     'effectiveWhere|T09|3|45560f10e5fd',
   'auth/auth.service.ts': 'workflowWhere|allowlist|1|b009730e67d9',
@@ -106,8 +106,10 @@ const baseline = {
     'historicalWhere|allowlist|2|aaf0b4f4e058',
   'member-of-month/member-of-month.service.ts':
     'effectiveWhere|T09|2|618beda01bbe',
+  'membership-requests/membership-request-cancellation.ts':
+    'workflowWhere|allowlist|2|fa70b81836f8',
   'membership-requests/membership-requests.service.ts':
-    'workflowWhere|allowlist|11|d7eb2512556b',
+    'workflowWhere|allowlist|11|2a2f06af9f00',
   'monthly-reports/monthly-reports.service.ts':
     'effectiveWhere|T09|3|eb81d3c23f25',
   'notifications/notifications.processor.ts':

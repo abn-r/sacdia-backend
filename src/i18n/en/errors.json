@@ -586,6 +586,7 @@
   "ANNUAL_ENROLL_REQUIRES_DIRECTIVE": "Annual enrollment is completed by club leadership. This action is not available to the profile owner",
   "ANNUAL_MEMBERSHIP_BASE_UNRESOLVED": "Could not resolve a single enabled base section for annual membership",
   "ANNUAL_CLASS_POLICY_UNRESOLVED": "Class policy cannot be resolved for this case. It needs an administrative decision (D02)",
+  "ANNUAL_AGE_ABOVE_CLUB_TYPE": "This person is older than this section allows and cannot be enrolled in it. Enroll them in the section for their age",
   "ECCLESIASTICAL_YEAR_AMBIGUOUS": "More than one ecclesiastical year covers the current institutional date",
   "CLUB_CYCLE_NOT_READY": "The club year transition is not complete yet. Retry shortly",
   "FINANCE_CLUB_NOT_FOUND": "Club not found",
