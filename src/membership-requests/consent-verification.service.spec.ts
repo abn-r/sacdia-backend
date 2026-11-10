@@ -427,6 +427,33 @@ describe('ConsentVerificationService.verify', () => {
       untouched(s);
     });
 
+    it.each([
+      ['frozen', { frozen_at: new Date('2026-10-20'), purged_at: null }],
+      [
+        'purged',
+        {
+          frozen_at: new Date('2026-10-20'),
+          purged_at: new Date('2026-10-27'),
+        },
+      ],
+    ])(
+      'a %s dependent is dead data: 404 MR_NOT_FOUND, nothing written',
+      async (_label, profile) => {
+        const s = setup();
+        s.tx.dependent_profiles.findUnique.mockResolvedValue({
+          user_id: DEPENDENT,
+          ...profile,
+        });
+
+        const error = await rejection(
+          s.service.verify(SECTION, ASSIGNMENT, DIRECTOR, dto()),
+        );
+
+        expect(error.code).toBe(ErrorCode.MR_NOT_FOUND);
+        untouched(s);
+      },
+    );
+
     it('an adult has no guardian consent to verify: 404 GUARDIANSHIP_NOT_FOUND', async () => {
       const s = setup();
       s.tx.dependent_profiles.findUnique.mockResolvedValue(null);

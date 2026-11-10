@@ -368,8 +368,12 @@ export class GuardianEvidenceService {
     }
     const profile = await this.prisma.dependent_profiles.findUnique({
       where: { user_id: assignment.user_id },
-      select: { user_id: true },
+      select: { user_id: true, frozen_at: true, purged_at: true },
     });
+    if (profile?.frozen_at || profile?.purged_at) {
+      // Dead data: hidden from the lists, nothing to attach a form to.
+      throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+    }
     if (!profile) {
       throw new AppNotFoundException(ErrorCode.GUARDIANSHIP_NOT_FOUND);
     }

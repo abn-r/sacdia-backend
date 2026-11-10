@@ -1194,6 +1194,7 @@ describe('ClubsService', () => {
         active: true,
         status: 'active',
         ecclesiastical_year_id: 2026,
+        users: expect.any(Object),
       };
       expect(
         mockPrismaService.club_role_assignments.findMany,
@@ -1251,6 +1252,44 @@ describe('ClubsService', () => {
       expect(mockRoleEligibility.evaluateUsersMatching).toHaveBeenCalledTimes(
         1,
       );
+    });
+
+    it('hides frozen and purged dependents but keeps users with no dependent profile', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_type_id: 2,
+      });
+      mockEcclesiasticalYearService.getCurrentYear.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+        end_date: new Date('2026-12-31'),
+        active: true,
+      });
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+      mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+      mockRoleEligibility.evaluateUsersMatching.mockResolvedValue(new Map());
+
+      await service.getMembers(7);
+
+      // Adults and teens have no dependent profile (`is: null`) and stay; a
+      // dependent stays only while neither frozen_at nor purged_at is set.
+      const visibleUsers = {
+        OR: [
+          { dependent_profile: { is: null } },
+          { dependent_profile: { is: { frozen_at: null, purged_at: null } } },
+        ],
+      };
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ users: visibleUsers }),
+        }),
+      );
+      expect(mockRoleEligibility.evaluateUsersMatching).toHaveBeenCalledWith({
+        club_role_assignments: {
+          some: expect.objectContaining({ users: visibleUsers }),
+        },
+      });
     });
 
     it('reuses the section type already read by the ownership check', async () => {

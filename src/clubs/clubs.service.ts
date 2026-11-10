@@ -61,6 +61,7 @@ import {
   EcclesiasticalYearService,
 } from '../common/services/ecclesiastical-year.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { VISIBLE_DEPENDENT } from '../guardianships/guardianship-queries';
 import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
 import { GlobalRole, ClubRole } from '../common/authorization/roles';
 
@@ -631,6 +632,9 @@ export class ClubsService {
       active: true,
       status: 'active',
       ecclesiastical_year_id: activeYear.year_id,
+      // Frozen and purged dependents are not members anymore (the purge ends
+      // their assignments later); adults and teens have no profile and stay.
+      users: { OR: [{ dependent_profile: { is: null } }, VISIBLE_DEPENDENT] },
     };
     // Users holding a current assignment in this section. The current class
     // and the Guía Mayor eligibility are loaded through this relation filter

@@ -737,6 +737,22 @@ describe('GuardianEvidenceService', () => {
       expect(codeOf(error)).toBe(ErrorCode.MR_NOT_FOUND);
     });
 
+    it('a request of a purged dependent is dead data: 404 MR_NOT_FOUND', async () => {
+      const { service, prisma, asDirector } = setup();
+      asDirector();
+      prisma.dependent_profiles.findUnique.mockResolvedValue({
+        user_id: DEPENDENT,
+        frozen_at: new Date('2026-10-20'),
+        purged_at: new Date('2026-10-27'),
+      });
+
+      const error = await rejection(
+        service.uploadForDirector(DIRECTOR, SECTION, ASSIGNMENT, pdf()),
+      );
+
+      expect(codeOf(error)).toBe(ErrorCode.MR_NOT_FOUND);
+    });
+
     it('a request of a non-dependent has no consent form: 404 GUARDIANSHIP_NOT_FOUND', async () => {
       const { service, prisma, asDirector } = setup();
       asDirector();

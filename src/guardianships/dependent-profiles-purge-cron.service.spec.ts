@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { StorageBucketAlias } from '../common/services/file-storage.service';
 import {
   DEPENDENT_PROFILES_PURGE_JOB,
@@ -28,6 +29,9 @@ function setup() {
     notification_deliveries: { deleteMany: jest.fn().mockResolvedValue({}) },
     guardianships: { updateMany: jest.fn().mockResolvedValue({}) },
     dependent_profiles: { update: jest.fn().mockResolvedValue({}) },
+    club_role_assignments: {
+      updateManyAndReturn: jest.fn().mockResolvedValue([]),
+    },
     account: { deleteMany: jest.fn().mockResolvedValue({}) },
     session: { deleteMany: jest.fn().mockResolvedValue({}) },
     verification: { deleteMany: jest.fn().mockResolvedValue({}) },
@@ -343,6 +347,93 @@ describe('DependentProfilesPurgeCronService purge action (ruling A9)', () => {
       expect.stringContaining('dependent_purge_storage_cleanup_failed'),
     );
     expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('k1'));
+    errorLog.mockRestore();
+  });
+
+  it('cancels the pending membership requests of the purged minor in the same transaction', async () => {
+    const { service, prisma, tx } = setup();
+    const now = new Date('2027-01-15T04:20:00.000Z');
+    prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+    tx.club_role_assignments.updateManyAndReturn.mockResolvedValue([
+      { assignment_id: 'as-1', user_id: D1, club_section_id: 163 },
+    ]);
+
+    await service.purgeDue(now);
+
+    // Same write as MembershipRequestsService.cancelPendingForUser.
+    expect(tx.club_role_assignments.updateManyAndReturn).toHaveBeenCalledWith({
+      where: { user_id: { in: [D1] }, status: 'pending', active: true },
+      data: {
+        status: 'cancelled',
+        active: false,
+        expires_at: null,
+        end_date: now,
+        modified_at: now,
+      },
+      select: { assignment_id: true, user_id: true, club_section_id: true },
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // ...and before purged_at is set (both inside the one transaction).
+    expect(
+      tx.club_role_assignments.updateManyAndReturn.mock.invocationCallOrder[0],
+    ).toBeLessThan(tx.dependent_profiles.update.mock.invocationCallOrder[0]);
+  });
+
+  it('ends every live assignment of the purged minor in the same transaction', async () => {
+    const { service, prisma, tx } = setup();
+    const now = new Date('2027-01-15T04:20:00.000Z');
+    prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+    tx.club_role_assignments.updateManyAndReturn
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { assignment_id: 'as-9', user_id: D1, club_section_id: 163 },
+      ]);
+
+    await service.purgeDue(now);
+
+    expect(tx.club_role_assignments.updateManyAndReturn).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(
+      tx.club_role_assignments.updateManyAndReturn,
+    ).toHaveBeenLastCalledWith({
+      where: {
+        user_id: { in: [D1] },
+        status: { in: ['active', 'inactive'] },
+        active: true,
+      },
+      data: {
+        status: 'ended',
+        active: false,
+        end_date: now,
+        modified_at: now,
+      },
+      select: { assignment_id: true, user_id: true, club_section_id: true },
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(
+      tx.club_role_assignments.updateManyAndReturn.mock.invocationCallOrder[1],
+    ).toBeLessThan(tx.dependent_profiles.update.mock.invocationCallOrder[0]);
+  });
+
+  it('a failing cancel rolls the purge back (purged_at stays unset, run counts it failed)', async () => {
+    const { service, prisma, tx } = setup();
+    prisma.dependent_profiles.findMany
+      .mockResolvedValueOnce([{ user_id: D1 }])
+      .mockResolvedValue([]);
+    tx.club_role_assignments.updateManyAndReturn.mockRejectedValue(
+      new Error('boom'),
+    );
+    const errorLog = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    expect(await service.purgeDue()).toEqual({ purged: 0, failed: 1 });
+    expect(tx.dependent_profiles.update).not.toHaveBeenCalled();
     errorLog.mockRestore();
   });
 

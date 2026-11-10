@@ -14,7 +14,10 @@ import { ConsentGateService } from './consent-gate.service';
 import { verdictHasVerifyWork } from './consent-four-eyes';
 import { ActingForCache } from '../auth/acting-for/acting-for.cache';
 import { FROZEN_PURGE_AFTER_DAYS } from '../guardianships/guardianships.constants';
-import { lockDependentsAscending } from '../guardianships/guardianship-queries';
+import {
+  VISIBLE_DEPENDENT,
+  lockDependentsAscending,
+} from '../guardianships/guardianship-queries';
 import {
   LINKED_DEVICE_REVOKER,
   type LinkedDeviceRevoker,
@@ -53,6 +56,18 @@ const PENDING_REQUEST_INCLUDE = {
     },
   },
 } satisfies Prisma.club_role_assignmentsInclude;
+
+/**
+ * The requester of a pending request must not be a frozen or purged dependent:
+ * those rows are dead data (a purged one has no name left) that nobody can
+ * approve, verify or hand to a family. Adults and teens have no dependent
+ * profile and pass.
+ */
+const LIVE_REQUESTER_WHERE = {
+  users: {
+    OR: [{ dependent_profile: { is: null } }, VISIBLE_DEPENDENT],
+  },
+} satisfies Prisma.club_role_assignmentsWhereInput;
 
 export type PendingMembershipRequestNotificationInput = {
   userId: string;
@@ -106,6 +121,7 @@ export class MembershipRequestsService {
         club_section_id: clubSectionId,
         status: 'pending',
         active: true,
+        ...LIVE_REQUESTER_WHERE,
       },
       include: PENDING_REQUEST_INCLUDE,
       orderBy: { created_at: 'asc' },
@@ -150,6 +166,7 @@ export class MembershipRequestsService {
         club_section_id: { in: clubSectionIds },
         status: 'pending',
         active: true,
+        ...LIVE_REQUESTER_WHERE,
       },
       select: {
         assignment_id: true,
@@ -203,6 +220,7 @@ export class MembershipRequestsService {
         },
         status: 'pending',
         active: true,
+        ...LIVE_REQUESTER_WHERE,
       },
       include: PENDING_REQUEST_INCLUDE,
     });
@@ -273,7 +291,8 @@ export class MembershipRequestsService {
    *
    * Dependents (users with a dependent_profiles row) can only be approved once
    * a guardian's consent is verified (409 MR_CONSENT_NOT_VERIFIED); the check
-   * runs inside the transaction.
+   * runs inside the transaction. A FROZEN or PURGED dependent is refused with
+   * 404 MR_NOT_FOUND before any of that.
    *
    * Audit trail: the schema has no approved_by_id / approved_at columns on
    * club_role_assignments, so the reviewer is recorded in audit_logs as
@@ -304,6 +323,15 @@ export class MembershipRequestsService {
             where: { assignment_id: assignmentId },
           });
           return { result: { count: 0 }, assignment: current };
+        }
+        // A frozen or purged dependent is gone as far as the club is
+        // concerned: nothing to approve, and no consent to look at.
+        const requester = await tx.dependent_profiles.findUnique({
+          where: { user_id: pending.user_id },
+          select: { frozen_at: true, purged_at: true },
+        });
+        if (requester?.frozen_at || requester?.purged_at) {
+          throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
         }
         await this.consentGate.assertApprovable(tx, pending.user_id);
         await this.roleEligibility.assertAssignment({
