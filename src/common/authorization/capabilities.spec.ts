@@ -380,6 +380,7 @@ const ACTORS: Array<{
       'camporee_orders.issue',
       'camporee_supplies.plan',
       'club.active_director',
+      'club.administrative_staff',
       'club.operational_staff',
       'club.staff_mode',
       'club_roles.assign_section',
@@ -407,6 +408,7 @@ const ACTORS: Array<{
     capabilities: [
       'camporee_orders.issue',
       'camporee_supplies.plan',
+      'club.administrative_staff',
       'club.operational_staff',
       'club.staff_mode',
       'clubs.manage_active',
@@ -461,7 +463,7 @@ describe('capabilities catalog', () => {
       ...CAPABILITY_KEYS,
     ]);
     expect([...CAPABILITY_KEYS]).toEqual(sorted([...CAPABILITY_KEYS]));
-    expect(CAPABILITY_KEYS).toHaveLength(49);
+    expect(CAPABILITY_KEYS).toHaveLength(50);
   });
 
   describe.each(ACTORS)(

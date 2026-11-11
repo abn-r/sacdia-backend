@@ -15,6 +15,7 @@ export const CAPABILITY_KEYS = [
   'catalogs.manage_protected',
   'certificates.review_imports',
   'club.active_director',
+  'club.administrative_staff',
   'club.operational_staff',
   'club.staff_mode',
   'club_enrollments.validate',
