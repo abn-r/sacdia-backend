@@ -614,6 +614,7 @@
   "FINANCE_CATEGORY_INACTIVE": "The finance category is inactive",
   "FINANCE_CATEGORY_TYPE_INVALID": "The finance category has an invalid type",
   "FINANCE_PERIOD_CLOSED": "Finance period is closed",
+  "FINANCE_CLOSED_PERIOD_NOTE_REQUIRED": "A closing note (5 to 500 characters) is required to change a closed month",
   "ANALYTICS_QUEUE_NOT_FOUND": "Queue not found",
   "ANALYTICS_JOB_NOT_FOUND": "Job not found",
   "ANALYTICS_JOB_ACTIVE": "Job is currently active and cannot be retried",

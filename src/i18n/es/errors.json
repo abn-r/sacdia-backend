@@ -614,6 +614,7 @@
   "FINANCE_CATEGORY_INACTIVE": "La categoría financiera está inactiva",
   "FINANCE_CATEGORY_TYPE_INVALID": "La categoría financiera tiene un tipo no válido",
   "FINANCE_PERIOD_CLOSED": "El período financiero está cerrado",
+  "FINANCE_CLOSED_PERIOD_NOTE_REQUIRED": "La nota de cierre es obligatoria (5 a 500 caracteres) para modificar un mes cerrado",
   "ANALYTICS_QUEUE_NOT_FOUND": "Cola no encontrada",
   "ANALYTICS_JOB_NOT_FOUND": "Job no encontrado",
   "ANALYTICS_JOB_ACTIVE": "El job está activo y no se puede reintentar",

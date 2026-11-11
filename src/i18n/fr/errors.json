@@ -609,6 +609,7 @@
   "FINANCE_CATEGORY_INACTIVE": "La catégorie financière est inactive",
   "FINANCE_CATEGORY_TYPE_INVALID": "La catégorie financière a un type non valide",
   "FINANCE_PERIOD_CLOSED": "La période financière est clôturée",
+  "FINANCE_CLOSED_PERIOD_NOTE_REQUIRED": "Une note de clôture (5 à 500 caractères) est obligatoire pour modifier un mois clôturé",
   "ANALYTICS_QUEUE_NOT_FOUND": "File d'attente introuvable",
   "ANALYTICS_JOB_NOT_FOUND": "Job introuvable",
   "ANALYTICS_JOB_ACTIVE": "Le job est actuellement actif et ne peut pas être relancé",

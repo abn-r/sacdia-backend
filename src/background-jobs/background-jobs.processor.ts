@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
 import { MonthlyReportsService } from '../monthly-reports/monthly-reports.service';
 import { FinancePeriodService } from '../finances/finance-period.service';
+import { FinanceReminderService } from '../finances/finance-reminder.service';
 import { RankingsService } from '../annual-folders/rankings.service';
 import { DataExportService } from '../data-export/data-export.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
@@ -42,6 +43,7 @@ export class BackgroundJobsProcessor
   constructor(
     private readonly monthlyReportsService: MonthlyReportsService,
     private readonly financePeriodService: FinancePeriodService,
+    private readonly financeReminderService: FinanceReminderService,
     private readonly rankingsService: RankingsService,
     private readonly dataExportService: DataExportService,
     private readonly cronLogger: CronRunLogger,
@@ -123,6 +125,17 @@ export class BackgroundJobsProcessor
           job.data as BackgroundJobPayloadMap[typeof BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH];
         return runWithManualTriggerFromPayload(data, () =>
           this.financePeriodService.runMonthlyClosing(data.year, data.month),
+        );
+      }
+
+      case BackgroundJobName.FINANCE_REMINDER: {
+        const data =
+          job.data as BackgroundJobPayloadMap[typeof BackgroundJobName.FINANCE_REMINDER];
+        return runWithManualTriggerFromPayload(data, () =>
+          this.financeReminderService.runMonthEndReminders(
+            data.year,
+            data.month,
+          ),
         );
       }
 

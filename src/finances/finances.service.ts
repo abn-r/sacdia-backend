@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import 'multer';
 import {
   AppBadRequestException,
+  AppForbiddenException,
   AppInternalServerErrorException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
@@ -20,7 +21,14 @@ import {
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
-import { FinancePeriodService } from './finance-period.service';
+import {
+  FinancePeriodService,
+  closedPeriodKey,
+} from './finance-period.service';
+import {
+  FinanceAggregationService,
+  type FinanceRange,
+} from './finance-aggregation.service';
 import { TranslationService } from '../common/services/translation.service';
 import {
   FILE_STORAGE_SERVICE,
@@ -36,18 +44,6 @@ import { decodeMultipartFileName } from '../common/utils/multipart-file-name';
 
 type FinanceSectionFilter =
   { club_section_id: { in: number[] } } | { club_section_id: number };
-
-type FinancePeriodTotals = {
-  totalIncome: number;
-  totalExpense: number;
-  balance: number;
-  movementCount: number;
-};
-
-type FinancePeriod = {
-  year: number;
-  month: number;
-};
 
 type FinanceEvidenceRow = {
   finance_evidence_file_id: number;
@@ -82,6 +78,7 @@ export class FinancesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly financePeriodService: FinancePeriodService,
+    private readonly aggregation: FinanceAggregationService,
     private readonly translationService: TranslationService,
     private readonly catalogCache: CatalogCacheService,
     @Inject(FILE_STORAGE_SERVICE)
@@ -183,10 +180,26 @@ export class FinancesService {
     //   Filtered through the section relation so the club's section ids need
     //   no separate round trip first.
     // - Regular member (userSectionId is a number): strict filter to their section only.
+    // - `clubSectionId` filter: one exact section. A section-scoped member may
+    //   only ask for their own (403 otherwise); for everyone else the section
+    //   must belong to the club, so another club's section returns nothing.
+    const requestedSectionId = filters?.clubSectionId ?? null;
+    if (
+      userSectionId != null &&
+      requestedSectionId != null &&
+      requestedSectionId !== userSectionId
+    ) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
     const sectionFilter: Prisma.financesWhereInput =
-      userSectionId == null
-        ? { club_sections: { main_club_id: clubId } }
-        : { club_section_id: userSectionId };
+      userSectionId != null
+        ? { club_section_id: userSectionId }
+        : requestedSectionId != null
+          ? {
+              club_section_id: requestedSectionId,
+              club_sections: { main_club_id: clubId },
+            }
+          : { club_sections: { main_club_id: clubId } };
 
     const where: Prisma.financesWhereInput = {
       active: true,
@@ -227,10 +240,13 @@ export class FinancesService {
     const evidencesByFinanceId = await this.getEvidenceMap(
       data.map((record) => record.finance_id),
     );
-    const dataWithEvidences = data.map((record) => ({
-      ...record,
-      evidences: evidencesByFinanceId.get(record.finance_id) ?? [],
-    }));
+    const dataWithEvidences = await this.withPeriodClosed(
+      clubId,
+      data.map((record) => ({
+        ...record,
+        evidences: evidencesByFinanceId.get(record.finance_id) ?? [],
+      })),
+    );
 
     return createPaginatedResult(
       dataWithEvidences,
@@ -377,6 +393,11 @@ export class FinancesService {
       data.map((record) => record.finance_id),
     );
 
+    const closedKeys = await this.financePeriodService.getClosedPeriodKeys(
+      clubId,
+      data.map((r) => ({ year: r.year, month: r.month })),
+    );
+
     // Map to response shape defined in spec
     const mapped = data.map((record) => ({
       id: record.finance_id,
@@ -387,6 +408,7 @@ export class FinancesService {
       date: record.finance_date,
       year: record.year,
       month: record.month,
+      period_closed: closedKeys.has(closedPeriodKey(record.year, record.month)),
       category: {
         id: record.finances_categories.finance_category_id,
         name: record.finances_categories.name,
@@ -417,6 +439,23 @@ export class FinancesService {
     };
   }
 
+  /**
+   * Financial summary of a club (or one section).
+   *
+   * - `total_income` / `total_expense` / `net` / `movement_count`: the requested
+   *   period only (year+month = that month, year = that calendar year, none =
+   *   everything).
+   * - `balance`: cash on hand = all-time cumulative net up to the end of the
+   *   period. It does NOT reset with the ecclesiastical year.
+   * - `year_income` / `year_expenses`: ecclesiastical-year-to-date through the
+   *   requested month (what `total_*` used to mean when year+month were sent).
+   *   Without year+month they equal the period totals.
+   * - `period_closed`: whether the requested month is closed (null without
+   *   year+month).
+   *
+   * Everything is computed live from active movements (see
+   * FinanceAggregationService); closing snapshots are never read.
+   */
   async getSummary(
     clubId: number,
     year?: number,
@@ -427,326 +466,146 @@ export class FinancesService {
      * Pass `null` to skip section filtering (admin / club-manager bypass).
      */
     userSectionId?: number | null,
+    /** Optional narrowing to one section of the club (admin view). */
+    requestedSectionId?: number | null,
   ) {
-    // Obtener las secciones del club
-    const club = await this.prisma.clubs.findUnique({
-      where: { club_id: clubId },
-      select: {
-        club_sections: { select: { club_section_id: true } },
-      },
-    });
+    const scope = await this.aggregation.resolveClubScope(
+      clubId,
+      requestedSectionId,
+      userSectionId,
+    );
 
-    if (!club) {
-      throw new AppNotFoundException(ErrorCode.FINANCE_CLUB_NOT_FOUND);
-    }
+    const range = this.buildSummaryRange(year, month);
+    const totals = await this.aggregation.aggregate(scope.sectionIds, range);
 
-    // Build section filter.
-    // - Admin bypass (userSectionId === null): show all sections — original behaviour.
-    // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter: FinanceSectionFilter;
-
-    if (userSectionId == null) {
-      const sectionIds = club.club_sections.map((s) => s.club_section_id);
-      sectionFilter = {
-        club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
-      };
-    } else {
-      sectionFilter = { club_section_id: userSectionId };
-    }
+    let yearIncome = totals.income;
+    let yearExpenses = totals.expenses;
+    let periodClosed: boolean | null = null;
 
     if (year && month) {
-      return this.getEcclesiasticalYearToDateSummary(
-        clubId,
+      const ytd = await this.getEcclesiasticalYearToDate(
+        scope.sectionIds,
         year,
         month,
-        sectionFilter,
-        userSectionId,
       );
+      yearIncome = ytd.income;
+      yearExpenses = ytd.expenses;
+      const closed = await this.financePeriodService.getClosedPeriodKeys(
+        clubId,
+        [{ year, month }],
+      );
+      periodClosed = closed.has(closedPeriodKey(year, month));
     }
-
-    const where = {
-      active: true,
-      ...sectionFilter,
-      ...(year && { year }),
-      ...(month && { month }),
-    };
-
-    // Obtener todos los movimientos
-    const movements = await this.prisma.finances.findMany({
-      where,
-      include: {
-        finances_categories: { select: { type: true } },
-      },
-    });
-
-    // Calcular totales
-    let totalIncome = 0;
-    let totalExpense = 0;
-
-    movements.forEach((mov) => {
-      if (mov.finances_categories.type === 0) {
-        totalIncome += mov.amount;
-      } else {
-        totalExpense += mov.amount;
-      }
-    });
 
     return {
       club_id: clubId,
       period: year
         ? `${year}${month ? `-${String(month).padStart(2, '0')}` : ''}`
         : 'all',
-      total_income: totalIncome,
-      total_expense: totalExpense,
-      balance: totalIncome - totalExpense,
-      movement_count: movements.length,
+      total_income: totals.income,
+      total_expense: totals.expenses,
+      net: totals.net,
+      balance: totals.balance,
+      movement_count: totals.movements,
+      year_income: yearIncome,
+      year_expenses: yearExpenses,
+      period_closed: periodClosed,
     };
   }
 
-  /**
-   * Returns the carried balance for the ecclesiastical year containing
-   * [year]/[month], from the ecclesiastical-year start through the selected
-   * month. Closed months use the immutable FinancePeriodClosing snapshot; open
-   * months are computed from live movements.
-   */
-  private async getEcclesiasticalYearToDateSummary(
-    clubId: number,
+  private buildSummaryRange(year?: number, month?: number): FinanceRange {
+    if (year && month) {
+      return { from: { year, month }, to: { year, month } };
+    }
+    if (year) {
+      return { from: { year, month: 1 }, to: { year, month: 12 } };
+    }
+    return {};
+  }
+
+  /** Income and expenses from the start of the ecclesiastical year through [year]/[month]. */
+  private async getEcclesiasticalYearToDate(
+    sectionIds: number[],
     year: number,
     month: number,
-    sectionFilter: FinanceSectionFilter,
-    userSectionId?: number | null,
   ) {
-    const targetMonthStart = this.startOfMonthUtc(year, month);
-    const targetMonthEnd = this.endOfMonthUtc(year, month);
-
+    const monthStart = new Date(Date.UTC(year, month - 1, 1));
     const ecclesiasticalYear = await this.prisma.ecclesiastical_years.findFirst(
       {
         where: {
-          start_date: { lte: targetMonthStart },
-          end_date: { gte: targetMonthStart },
+          start_date: { lte: monthStart },
+          end_date: { gte: monthStart },
         },
-        select: {
-          start_date: true,
-          end_date: true,
-        },
+        select: { start_date: true },
         orderBy: { start_date: 'desc' },
       },
     );
 
-    const rangeStart =
-      ecclesiasticalYear?.start_date ?? this.startOfMonthUtc(year, 1);
-    const rangeEnd = ecclesiasticalYear
-      ? this.minDate(targetMonthEnd, ecclesiasticalYear.end_date)
-      : targetMonthEnd;
+    const from = ecclesiasticalYear
+      ? {
+          year: ecclesiasticalYear.start_date.getUTCFullYear(),
+          month: ecclesiasticalYear.start_date.getUTCMonth() + 1,
+        }
+      : { year, month: 1 };
 
-    const periods = this.buildMonthRange(rangeStart, rangeEnd);
-    const closedTotals = await this.getClosedPeriodTotals(
-      clubId,
-      periods,
-      userSectionId,
-    );
-
-    const closedKeys = new Set(
-      closedTotals.closedPeriods.map((p) => this.periodKey(p.year, p.month)),
-    );
-    const openPeriods = periods.filter(
-      (p) => !closedKeys.has(this.periodKey(p.year, p.month)),
-    );
-    const liveTotals = await this.getLivePeriodTotals(
-      openPeriods,
-      sectionFilter,
-    );
-
-    const totalIncome =
-      closedTotals.totals.totalIncome + liveTotals.totalIncome;
-    const totalExpense =
-      closedTotals.totals.totalExpense + liveTotals.totalExpense;
-
-    return {
-      club_id: clubId,
-      period: `${year}-${String(month).padStart(2, '0')}`,
-      total_income: totalIncome,
-      total_expense: totalExpense,
-      balance: totalIncome - totalExpense,
-      movement_count:
-        closedTotals.totals.movementCount + liveTotals.movementCount,
-    };
+    return this.aggregation.aggregate(sectionIds, {
+      from,
+      to: { year, month },
+    });
   }
 
-  private async getClosedPeriodTotals(
+  /** Marks each movement with `period_closed` using one closings query. */
+  private async withPeriodClosed<T extends { year: number; month: number }>(
     clubId: number,
-    periods: FinancePeriod[],
-    userSectionId?: number | null,
-  ): Promise<{ totals: FinancePeriodTotals; closedPeriods: FinancePeriod[] }> {
-    const totals: FinancePeriodTotals = {
-      totalIncome: 0,
-      totalExpense: 0,
-      balance: 0,
-      movementCount: 0,
-    };
-
-    if (periods.length === 0) {
-      return { totals, closedPeriods: [] };
-    }
-
-    const closings = await this.prisma.financePeriodClosing.findMany({
-      where: {
-        club_id: clubId,
-        OR: periods.map((p) => ({ year: p.year, month: p.month })),
-      },
-      select: {
-        year: true,
-        month: true,
-        total_income: true,
-        total_expense: true,
-        balance: true,
-        movement_count: true,
-        breakdown: true,
-      },
-    });
-
-    for (const closing of closings) {
-      if (userSectionId == null) {
-        totals.totalIncome += closing.total_income;
-        totals.totalExpense += closing.total_expense;
-        totals.balance += closing.balance;
-        totals.movementCount += closing.movement_count;
-        continue;
-      }
-
-      const sectionTotals = this.getSectionTotalsFromClosing(
-        closing.breakdown,
-        userSectionId,
-      );
-      totals.totalIncome += sectionTotals.totalIncome;
-      totals.totalExpense += sectionTotals.totalExpense;
-      totals.balance += sectionTotals.balance;
-    }
-
-    return {
-      totals,
-      closedPeriods: closings.map((c) => ({ year: c.year, month: c.month })),
-    };
-  }
-
-  private async getLivePeriodTotals(
-    periods: FinancePeriod[],
-    sectionFilter: FinanceSectionFilter,
-  ): Promise<FinancePeriodTotals> {
-    const totals: FinancePeriodTotals = {
-      totalIncome: 0,
-      totalExpense: 0,
-      balance: 0,
-      movementCount: 0,
-    };
-
-    if (periods.length === 0) return totals;
-
-    const movements = await this.prisma.finances.findMany({
-      where: {
-        active: true,
-        ...sectionFilter,
-        OR: periods.map((p) => ({ year: p.year, month: p.month })),
-      },
-      include: {
-        finances_categories: { select: { type: true } },
-      },
-    });
-
-    for (const movement of movements) {
-      if (movement.finances_categories.type === 0) {
-        totals.totalIncome += movement.amount;
-      } else {
-        totals.totalExpense += movement.amount;
-      }
-    }
-
-    totals.balance = totals.totalIncome - totals.totalExpense;
-    totals.movementCount = movements.length;
-    return totals;
-  }
-
-  private getSectionTotalsFromClosing(
-    breakdown: unknown,
-    sectionId: number,
-  ): FinancePeriodTotals {
-    const empty: FinancePeriodTotals = {
-      totalIncome: 0,
-      totalExpense: 0,
-      balance: 0,
-      movementCount: 0,
-    };
-
-    if (!breakdown || typeof breakdown !== 'object') return empty;
-
-    const bySection = (breakdown as { by_section?: unknown }).by_section;
-    if (!Array.isArray(bySection)) return empty;
-
-    const section = bySection.find((item) => {
-      if (!item || typeof item !== 'object') return false;
-      return (
-        (item as { club_section_id?: unknown }).club_section_id === sectionId
-      );
-    });
-
-    if (!section || typeof section !== 'object') return empty;
-
-    const data = section as {
-      income?: unknown;
-      expense?: unknown;
-      balance?: unknown;
-    };
-
-    return {
-      totalIncome: this.toNumber(data.income),
-      totalExpense: this.toNumber(data.expense),
-      balance: this.toNumber(data.balance),
-      movementCount: 0,
-    };
-  }
-
-  private buildMonthRange(startDate: Date, endDate: Date): FinancePeriod[] {
-    const periods: FinancePeriod[] = [];
-    const cursor = this.startOfMonthUtc(
-      startDate.getUTCFullYear(),
-      startDate.getUTCMonth() + 1,
+    rows: T[],
+  ): Promise<Array<T & { period_closed: boolean }>> {
+    const closed = await this.financePeriodService.getClosedPeriodKeys(
+      clubId,
+      rows.map((r) => ({ year: r.year, month: r.month })),
     );
-    const end = this.startOfMonthUtc(
-      endDate.getUTCFullYear(),
-      endDate.getUTCMonth() + 1,
-    );
+    return rows.map((r) => ({
+      ...r,
+      period_closed: closed.has(closedPeriodKey(r.year, r.month)),
+    }));
+  }
 
-    while (cursor <= end) {
-      periods.push({
-        year: cursor.getUTCFullYear(),
-        month: cursor.getUTCMonth() + 1,
-      });
-      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  /**
+   * Club that owns a movement, through its section. Null for legacy movements
+   * without a section (their club cannot be known).
+   */
+  private async resolveMovementClubId(
+    clubSectionId: number | null,
+  ): Promise<number | null> {
+    if (clubSectionId == null) return null;
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: clubSectionId },
+      select: { main_club_id: true },
+    });
+    return section?.main_club_id ?? null;
+  }
+
+  /**
+   * Closed-month guard for an existing movement. Unknown club (legacy movement
+   * without section, or a section without club) is treated as closed: admin
+   * only and note required.
+   */
+  private async guardExistingMovement(
+    existing: { club_section_id: number | null; year: number; month: number },
+    userId: string | undefined,
+    note: string | null | undefined,
+  ): Promise<{ closed: boolean; note: string | null }> {
+    if (!userId) return { closed: false, note: null };
+    const clubId = await this.resolveMovementClubId(existing.club_section_id);
+    if (clubId == null) {
+      return this.financePeriodService.validateUnscopedMovement(userId, note);
     }
-
-    return periods;
-  }
-
-  private startOfMonthUtc(year: number, month: number): Date {
-    return new Date(Date.UTC(year, month - 1, 1));
-  }
-
-  private endOfMonthUtc(year: number, month: number): Date {
-    return new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-  }
-
-  private minDate(a: Date, b: Date): Date {
-    return a.getTime() <= b.getTime() ? a : b;
-  }
-
-  private periodKey(year: number, month: number): string {
-    return `${year}-${month}`;
-  }
-
-  private toNumber(value: unknown): number {
-    if (typeof value === 'number') return value;
-    if (typeof value === 'string') return Number(value) || 0;
-    return 0;
+    return this.financePeriodService.validatePeriodOpen(
+      clubId,
+      existing.year,
+      existing.month,
+      userId,
+      note,
+    );
   }
 
   async uploadEvidence(
@@ -922,20 +781,38 @@ export class FinancesService {
       throw new AppNotFoundException(ErrorCode.FINANCE_TRANSACTION_NOT_FOUND);
     }
 
+    // Unknown club (legacy movement without section) counts as closed: changing
+    // it needs an admin and a note.
+    const clubId = await this.resolveMovementClubId(finance.club_section_id);
+    const periodClosed =
+      clubId == null
+        ? true
+        : (
+            await this.financePeriodService.getClosedPeriodKeys(clubId, [
+              { year: finance.year, month: finance.month },
+            ])
+          ).has(closedPeriodKey(finance.year, finance.month));
+
     return {
       ...finance,
+      period_closed: periodClosed,
       evidences: await this.getEvidenceForFinance(financeId),
     };
   }
 
   async create(dto: CreateFinanceDto, createdBy: string, clubId?: number) {
+    let closingNote: string | null = null;
+    let periodClosed = false;
     if (clubId != null) {
-      await this.financePeriodService.validatePeriodOpen(
+      const guard = await this.financePeriodService.validatePeriodOpen(
         clubId,
         dto.year,
         dto.month,
         createdBy,
+        dto.post_closing_note,
       );
+      periodClosed = guard.closed;
+      closingNote = guard.note;
     }
 
     await this.assertUsableFinanceCategory(dto.finance_category_id);
@@ -954,7 +831,7 @@ export class FinancesService {
         active: true,
         created_at: new Date(),
         modified_at: new Date(),
-        post_closing_note: dto.post_closing_note ?? null,
+        post_closing_note: closingNote ?? dto.post_closing_note?.trim() ?? null,
       },
       include: {
         finances_categories: { select: { name: true, type: true } },
@@ -963,6 +840,7 @@ export class FinancesService {
 
     return {
       ...created,
+      period_closed: periodClosed,
       evidences: [],
     };
   }
@@ -970,21 +848,11 @@ export class FinancesService {
   async update(financeId: number, dto: UpdateFinanceDto, modifiedBy?: string) {
     const existing = await this.findOne(financeId);
 
-    // Period validation: resolve clubId from movement's club_section
-    if (existing.club_section_id && modifiedBy) {
-      const section = await this.prisma.club_sections.findUnique({
-        where: { club_section_id: existing.club_section_id },
-        select: { main_club_id: true },
-      });
-      if (section?.main_club_id) {
-        await this.financePeriodService.validatePeriodOpen(
-          section.main_club_id,
-          existing.year,
-          existing.month,
-          modifiedBy,
-        );
-      }
-    }
+    const guard = await this.guardExistingMovement(
+      existing,
+      modifiedBy,
+      dto.post_closing_note,
+    );
 
     if (dto.finance_category_id !== undefined) {
       await this.assertUsableFinanceCategory(dto.finance_category_id);
@@ -1001,8 +869,11 @@ export class FinancesService {
       updateData.finance_category_id = dto.finance_category_id;
     if (dto.finance_date !== undefined)
       updateData.finance_date = new Date(dto.finance_date);
-    if (dto.post_closing_note !== undefined)
-      updateData.post_closing_note = dto.post_closing_note;
+    if (guard.closed) {
+      updateData.post_closing_note = guard.note;
+    } else if (dto.post_closing_note !== undefined) {
+      updateData.post_closing_note = dto.post_closing_note.trim() || null;
+    }
 
     const updated = await this.prisma.finances.update({
       where: { finance_id: financeId },
@@ -1014,28 +885,26 @@ export class FinancesService {
 
     return {
       ...updated,
+      period_closed: existing.period_closed,
       evidences: await this.getEvidenceForFinance(financeId),
     };
   }
 
+  /**
+   * Deactivates a movement. In a closed month (admin only) `reason` is the
+   * required closing note (5 to 500 characters).
+   */
   async remove(financeId: number, modifiedBy?: string, reason?: string) {
     const existing = await this.findOne(financeId);
 
-    // Period validation: resolve clubId from movement's club_section
-    if (existing.club_section_id && modifiedBy) {
-      const section = await this.prisma.club_sections.findUnique({
-        where: { club_section_id: existing.club_section_id },
-        select: { main_club_id: true },
-      });
-      if (section?.main_club_id) {
-        await this.financePeriodService.validatePeriodOpen(
-          section.main_club_id,
-          existing.year,
-          existing.month,
-          modifiedBy,
-        );
-      }
-    }
+    const guard = await this.guardExistingMovement(
+      existing,
+      modifiedBy,
+      reason,
+    );
+    const note = guard.closed
+      ? guard.note
+      : reason?.trim().slice(0, 500) || null;
 
     return this.prisma.finances.update({
       where: { finance_id: financeId },
@@ -1043,7 +912,7 @@ export class FinancesService {
         active: false,
         modified_at: new Date(),
         ...(modifiedBy && { modified_by_id: modifiedBy }),
-        ...(reason && { post_closing_note: reason }),
+        ...(note && { post_closing_note: note }),
       },
     });
   }

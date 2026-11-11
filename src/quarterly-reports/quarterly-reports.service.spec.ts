@@ -73,7 +73,7 @@ describe('QuarterlyReportsService member count', () => {
     club_role_assignments: { findMany: findAssignments },
     users_honors: { findMany: jest.fn().mockResolvedValue([]) },
     activities: { count: jest.fn().mockResolvedValue(0) },
-    finances: { findMany: jest.fn().mockResolvedValue([]) },
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
   const service = new QuarterlyReportsService(
     mockPrisma as any,
@@ -103,6 +103,51 @@ describe('QuarterlyReportsService member count', () => {
     });
     expect(where).not.toHaveProperty('active');
     expect(where).not.toHaveProperty('ecclesiastical_year_id');
+  });
+});
+
+describe('QuarterlyReportsService finances block', () => {
+  const buildPrisma = () => ({
+    clubs: { findUnique: jest.fn().mockResolvedValue({ club_id: 10 }) },
+    club_sections: {
+      findMany: jest.fn().mockResolvedValue([{ club_section_id: 7 }]),
+    },
+    ecclesiastical_years: { findFirst: jest.fn().mockResolvedValue(null) },
+    club_role_assignments: { findMany: jest.fn().mockResolvedValue([]) },
+    users_honors: { findMany: jest.fn().mockResolvedValue([]) },
+    activities: { count: jest.fn().mockResolvedValue(0) },
+  });
+
+  it('takes income, expenses, net and the all-time balance from the shared aggregation over the quarter months', async () => {
+    const aggregation = {
+      aggregate: jest.fn().mockResolvedValue({
+        income: 900,
+        expenses: 400,
+        net: 500,
+        movements: 6,
+        balance: 4200,
+      }),
+    };
+    const service = new QuarterlyReportsService(
+      buildPrisma() as any,
+      {} as any,
+      {} as any,
+      aggregation as any,
+    );
+
+    const data = await service.computeData(10, 2026, 2);
+
+    expect(aggregation.aggregate).toHaveBeenCalledWith([7], {
+      from: { year: 2026, month: 4 },
+      to: { year: 2026, month: 6 },
+    });
+    expect(data.finances).toEqual({
+      income: 900,
+      expenses: 400,
+      balance: 500,
+      total_balance: 4200,
+      transactions: 6,
+    });
   });
 });
 

@@ -60,6 +60,7 @@ describe('BackgroundJobsProcessor — rankings', () => {
     processor = new BackgroundJobsProcessor(
       module.get(MonthlyReportsService),
       module.get(FinancePeriodService),
+      { runMonthEndReminders: jest.fn() } as never,
       module.get(RankingsService),
       module.get(DataExportService),
       module.get(CronRunLogger),

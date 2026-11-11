@@ -248,14 +248,9 @@ describe('MonthlyReportsService auto-calculated finances', () => {
     service = new MonthlyReportsService(mockPrisma as any, {} as any);
   });
 
-  it('includes both monthly movement balance and accumulated club total balance', async () => {
+  it('includes the monthly net and the all-time balance of the section, from the shared aggregation', async () => {
     mockPrisma.$queryRaw.mockResolvedValueOnce([
-      {
-        income: 1000n,
-        expenses: 250n,
-        total_balance: 3500n,
-        transactions: 2n,
-      },
+      { income: 1000n, expenses: 250n, movements: 2n, balance: 3500n },
     ]);
 
     const result = await (service as any).getFinancesData(2, 4, 2026);
@@ -263,14 +258,49 @@ describe('MonthlyReportsService auto-calculated finances', () => {
     expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
     const [sqlParts, ...params] = mockPrisma.$queryRaw.mock.calls[0];
     const sql = Array.from(sqlParts as TemplateStringsArray).join(' ');
-    expect(sql).toContain('SUM(CASE WHEN fc.type = 0');
-    expect(sql).toContain('total_balance');
-    expect(params).toEqual([2026, 4, 2026, 4, 2026, 4, 2, 2026, 2026, 4]);
+    expect(sql).toContain('f.active = true');
+    expect(sql).not.toContain('finance_period_closings');
+    // from = to = 2026-04 (202604), section 2 inside the IN list.
+    expect(params).toContain(202604);
+    expect(JSON.stringify(params)).toContain('2');
     expect(result).toEqual({
       income: 1000,
       expenses: 250,
       balance: 750,
       total_balance: 3500,
+      transactions: 2,
+    });
+  });
+
+  it('uses the injected aggregation for one month of one section', async () => {
+    const aggregation = {
+      aggregateMonth: jest.fn().mockResolvedValue({
+        income: 10,
+        expenses: 4,
+        net: 6,
+        movements: 2,
+        balance: 60,
+      }),
+    };
+    const injected = new MonthlyReportsService(
+      mockPrisma as any,
+      {} as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      aggregation as any,
+    );
+
+    const result = await (injected as any).getFinancesData(2, 4, 2026);
+
+    expect(aggregation.aggregateMonth).toHaveBeenCalledWith([2], 2026, 4);
+    expect(result).toEqual({
+      income: 10,
+      expenses: 4,
+      balance: 6,
+      total_balance: 60,
       transactions: 2,
     });
   });

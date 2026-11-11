@@ -1,3 +1,4 @@
+import { FinanceAggregationModule } from '../finances/finance-aggregation.module';
 import { Module } from '@nestjs/common';
 import { QuarterlyReportsController } from './quarterly-reports.controller';
 import { QuarterlyReportsService } from './quarterly-reports.service';
@@ -8,7 +9,12 @@ import { CommonModule } from '../common/common.module';
 import { CoordinationModule } from '../coordination/coordination.module';
 
 @Module({
-  imports: [PrismaModule, CommonModule, CoordinationModule],
+  imports: [
+    PrismaModule,
+    CommonModule,
+    CoordinationModule,
+    FinanceAggregationModule,
+  ],
   controllers: [QuarterlyReportsController],
   providers: [
     QuarterlyReportsService,

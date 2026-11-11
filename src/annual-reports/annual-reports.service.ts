@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { FinanceAggregationService } from '../finances/finance-aggregation.service';
 import {
   AppBadRequestException,
   AppForbiddenException,
@@ -42,7 +43,10 @@ export interface AnnualComputedData {
   finances: {
     income: number;
     expenses: number;
+    /** Net of the year (income - expenses). */
     balance: number;
+    /** Cash on hand: all-time cumulative net up to the end of the year. */
+    total_balance: number;
     transactions: number;
   };
   missionary: {
@@ -60,7 +64,14 @@ export class AnnualReportsService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
-  ) {}
+    @Optional()
+    financeAggregation?: FinanceAggregationService,
+  ) {
+    this.financeAggregation =
+      financeAggregation ?? new FinanceAggregationService(prisma);
+  }
+
+  private readonly financeAggregation: FinanceAggregationService;
 
   // ========================================
   // GET OR CREATE DRAFT
@@ -283,40 +294,18 @@ export class AnnualReportsService {
       });
     }
 
-    // ── Finances ──
-    let totalIncome = 0;
-    let totalExpenses = 0;
-    let financesTransactions = 0;
-
-    if (allSectionIds.length > 0) {
-      // Aggregate all finance records in the year range by iterating months
-      const startYear = startDate.getUTCFullYear();
-      const endYear = endDate.getUTCFullYear();
-      const startMonth = startDate.getUTCMonth() + 1;
-      const endMonth = endDate.getUTCMonth() + 1;
-
-      for (let y = startYear; y <= endYear; y++) {
-        const monthStart = y === startYear ? startMonth : 1;
-        const monthEnd = y === endYear ? endMonth : 12;
-
-        for (let m = monthStart; m <= monthEnd; m++) {
-          const finances = await this.prisma.finances.findMany({
-            where: {
-              club_section_id: { in: allSectionIds },
-              month: m,
-              year: y,
-              active: true,
-            },
-            include: { finances_categories: { select: { type: true } } },
-          });
-          for (const f of finances) {
-            if (f.finances_categories.type === 0) totalIncome += f.amount;
-            else totalExpenses += f.amount;
-            financesTransactions++;
-          }
-        }
-      }
-    }
+    // ── Finances: live totals from the shared aggregation (same numbers as
+    // the club summary, monthly and quarterly reports). ──
+    const finance = await this.financeAggregation.aggregate(allSectionIds, {
+      from: {
+        year: startDate.getUTCFullYear(),
+        month: startDate.getUTCMonth() + 1,
+      },
+      to: {
+        year: endDate.getUTCFullYear(),
+        month: endDate.getUTCMonth() + 1,
+      },
+    });
 
     // ── Months reported: distinct months with at least one non-draft monthly
     // report across the club's enrollments (one enrollment per section), so a
@@ -372,10 +361,11 @@ export class AnnualReportsService {
       honors: { started: honorsStarted, completed: honorsCompleted },
       activities: { total: activitiesTotal },
       finances: {
-        income: totalIncome,
-        expenses: totalExpenses,
-        balance: totalIncome - totalExpenses,
-        transactions: financesTransactions,
+        income: finance.income,
+        expenses: finance.expenses,
+        balance: finance.net,
+        total_balance: finance.balance,
+        transactions: finance.movements,
       },
       missionary: { baptized_total: 0 },
       ranking_percentile: rankingPercentile,

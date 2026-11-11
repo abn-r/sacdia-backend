@@ -60,6 +60,7 @@ describe('BackgroundJobsProcessor — manual trigger hand-off', () => {
     processor = new BackgroundJobsProcessor(
       monthlyReports as unknown as MonthlyReportsService,
       financePeriod as unknown as FinancePeriodService,
+      { runMonthEndReminders: jest.fn() } as never,
       rankings as unknown as RankingsService,
       {} as unknown as DataExportService,
       cronLogger as unknown as CronRunLogger,

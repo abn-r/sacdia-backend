@@ -77,6 +77,7 @@ describe('FinancePeriodService', () => {
     finances: { findMany: jest.fn(), groupBy: jest.fn() },
     financePeriodClosing: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -381,48 +382,156 @@ describe('FinancePeriodService', () => {
   });
 
   describe('validatePeriodOpen', () => {
-    it('should allow when period is not closed', async () => {
+    const closing = {
+      finance_period_closing_id: 1,
+      club_id: 1,
+      year: 2026,
+      month: 2,
+    };
+
+    it('allows an open month without checking the role or the note', async () => {
       mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue(null);
 
       await expect(
         service.validatePeriodOpen(1, 2026, 2, 'user-123'),
-      ).resolves.not.toThrow();
+      ).resolves.toEqual({ closed: false, note: null });
 
       expect(
         mockAuthorizationContextService.hasAnyGlobalRole,
       ).not.toHaveBeenCalled();
     });
 
-    it('should throw ForbiddenException when period is closed and user is not admin', async () => {
-      mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue({
-        finance_period_closing_id: 1,
-        club_id: 1,
-        year: 2026,
-        month: 2,
-      });
+    it('rejects a closed month for a non-admin, even with a note', async () => {
+      mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue(
+        closing,
+      );
       mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
 
       await expect(
-        service.validatePeriodOpen(1, 2026, 2, 'user-123'),
+        service.validatePeriodOpen(1, 2026, 2, 'user-123', 'Nota válida'),
       ).rejects.toMatchObject({ code: ErrorCode.FINANCE_PERIOD_CLOSED });
     });
 
-    it('should allow when period is closed and user is admin', async () => {
-      mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue({
-        finance_period_closing_id: 1,
-        club_id: 1,
-        year: 2026,
-        month: 2,
-      });
+    it('allows a closed month for an admin with a valid note and returns it trimmed', async () => {
+      mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue(
+        closing,
+      );
       mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
 
       await expect(
-        service.validatePeriodOpen(1, 2026, 2, 'admin-user-456'),
-      ).resolves.not.toThrow();
+        service.validatePeriodOpen(
+          1,
+          2026,
+          2,
+          'admin-user-456',
+          '  Ajuste autorizado  ',
+        ),
+      ).resolves.toEqual({ closed: true, note: 'Ajuste autorizado' });
 
       expect(
         mockAuthorizationContextService.hasAnyGlobalRole,
       ).toHaveBeenCalledWith('admin-user-456', ['admin', 'super-admin']);
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['null', null],
+      ['blank', '     '],
+      ['too short', 'abcd'],
+      ['too long', 'x'.repeat(501)],
+    ])(
+      'requires a 5-500 char note in a closed month (%s)',
+      async (_n, note) => {
+        mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue(
+          closing,
+        );
+        mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(
+          true,
+        );
+
+        await expect(
+          service.validatePeriodOpen(1, 2026, 2, 'admin-user', note),
+        ).rejects.toMatchObject({
+          code: ErrorCode.FINANCE_CLOSED_PERIOD_NOTE_REQUIRED,
+        });
+      },
+    );
+
+    it('accepts the boundary lengths 5 and 500', async () => {
+      mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue(
+        closing,
+      );
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+
+      await expect(
+        service.validatePeriodOpen(1, 2026, 2, 'a', 'abcde'),
+      ).resolves.toMatchObject({ closed: true });
+      await expect(
+        service.validatePeriodOpen(1, 2026, 2, 'a', 'x'.repeat(500)),
+      ).resolves.toMatchObject({ closed: true });
+    });
+  });
+
+  describe('validateUnscopedMovement (legacy movement without section)', () => {
+    it('rejects a non-admin', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
+
+      await expect(
+        service.validateUnscopedMovement('user-1', 'Nota válida'),
+      ).rejects.toMatchObject({ code: ErrorCode.FINANCE_PERIOD_CLOSED });
+    });
+
+    it('requires a note from an admin', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+
+      await expect(
+        service.validateUnscopedMovement('admin-1', ''),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FINANCE_CLOSED_PERIOD_NOTE_REQUIRED,
+      });
+      await expect(
+        service.validateUnscopedMovement('admin-1', 'Nota válida'),
+      ).resolves.toEqual({ closed: true, note: 'Nota válida' });
+    });
+  });
+
+  describe('getClosedPeriodKeys', () => {
+    it('returns the closed months of the club in one query', async () => {
+      mockPrismaService.financePeriodClosing.findMany.mockResolvedValue([
+        { year: 2026, month: 2 },
+      ]);
+
+      const keys = await service.getClosedPeriodKeys(1, [
+        { year: 2026, month: 2 },
+        { year: 2026, month: 2 },
+        { year: 2026, month: 3 },
+      ]);
+
+      expect(keys).toEqual(new Set(['2026-2']));
+      expect(
+        mockPrismaService.financePeriodClosing.findMany,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        mockPrismaService.financePeriodClosing.findMany,
+      ).toHaveBeenCalledWith({
+        where: {
+          club_id: 1,
+          OR: [
+            { year: 2026, month: 2 },
+            { year: 2026, month: 3 },
+          ],
+        },
+        select: { year: true, month: true },
+      });
+    });
+
+    it('skips the query when there is nothing to check', async () => {
+      await expect(service.getClosedPeriodKeys(1, [])).resolves.toEqual(
+        new Set(),
+      );
+      expect(
+        mockPrismaService.financePeriodClosing.findMany,
+      ).not.toHaveBeenCalled();
     });
   });
 
