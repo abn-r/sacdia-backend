@@ -146,6 +146,7 @@ const ACTORS: Array<{
       'catalogs.edit',
       'catalogs.manage_protected',
       'certificates.review_imports',
+      'club_enrollments.validate',
       'club_roles.assign_section',
       'club_roles.designate_director',
       'club_roles.succeed_director',
@@ -184,6 +185,7 @@ const ACTORS: Array<{
       'admin_panel.access',
       'catalogs.edit',
       'certificates.review_imports',
+      'club_enrollments.validate',
       'club_roles.assign_section',
       'club_roles.designate_director',
       'club_roles.succeed_director',
@@ -221,6 +223,7 @@ const ACTORS: Array<{
       'camporee_orders.configure_offering',
       'catalogs.edit',
       'certificates.review_imports',
+      'club_enrollments.validate',
       'coordination.hub_view',
       'coordination.manage',
       'folders.evaluate',
@@ -254,6 +257,7 @@ const ACTORS: Array<{
       'camporee_supplies.deliver',
       'camporee_supplies.review_payment',
       'certificates.review_imports',
+      'club_enrollments.validate',
       'club_roles.assign_section',
       'club_roles.designate_director',
       'club_roles.succeed_director',
@@ -290,6 +294,7 @@ const ACTORS: Array<{
       'admin_panel.access',
       'camporee_orders.configure_offering',
       'camporee_supplies.configure',
+      'club_enrollments.validate',
       'folders.confirm_union',
       'folders.evaluate',
       'investiture.consult_field_window',
@@ -314,6 +319,7 @@ const ACTORS: Array<{
     assignable: sorted([...T5, ...LF, ...UNION]),
     capabilities: [
       'admin_panel.access',
+      'club_enrollments.validate',
       'folders.evaluate',
       'investiture.consult_field_window',
       'reports.view_all',
@@ -335,6 +341,7 @@ const ACTORS: Array<{
     capabilities: [
       'admin_panel.access',
       'admin_panel.pastor_only',
+      'club_enrollments.validate',
       'investiture.authorize_requests',
       'service_credentials.review',
     ],
@@ -351,6 +358,7 @@ const ACTORS: Array<{
     assignable: [],
     capabilities: [
       'admin_panel.access',
+      'club_enrollments.validate',
       'coordination.hub_view',
       'service_credentials.review',
     ],
@@ -453,7 +461,7 @@ describe('capabilities catalog', () => {
       ...CAPABILITY_KEYS,
     ]);
     expect([...CAPABILITY_KEYS]).toEqual(sorted([...CAPABILITY_KEYS]));
-    expect(CAPABILITY_KEYS).toHaveLength(48);
+    expect(CAPABILITY_KEYS).toHaveLength(49);
   });
 
   describe.each(ACTORS)(

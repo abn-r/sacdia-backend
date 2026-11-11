@@ -81,6 +81,8 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   'requests:assignment_rejected': 'approvals',
   // Membership requests
   'membership_requests:new_request': 'approvals',
+  // Annual club enrollment approved / rejected (to the director and the submitter)
+  'club-enrollments:reviewed': 'approvals',
   // Family profiles (guardian-facing; never re-fanned-out by the dependent
   // push router, which skips the whole `family:` prefix)
   'family:custody_transferred': 'approvals',

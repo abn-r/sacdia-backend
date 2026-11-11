@@ -2640,6 +2640,7 @@ model users {
   club_enrollments_as_secretary        club_enrollments[]                    @relation("enrollment_secretary")
   club_enrollments_as_treasurer        club_enrollments[]                    @relation("enrollment_treasurer")
   club_enrollments_as_sec_treasurer    club_enrollments[]                    @relation("enrollment_secretary_treasurer")
+  club_enrollments_reviewed            club_enrollments[]                    @relation("enrollment_reviewer")
   camporee_clubs_registered            camporee_clubs[]                      @relation("camporee_clubs_registered_by")
   camporee_payments_registered         camporee_payments[]                   @relation("camporee_payments_registered_by")
   annual_folder_evidences              annual_folder_evidences[]             @relation("annual_folder_evidences_uploader")
@@ -4175,6 +4176,13 @@ model club_enrollments {
   secretary_treasurer_id String?   @db.Uuid
   created_by             String    @db.Uuid
   closed_at              DateTime?
+  // Review of the annual enrollment (approve / reject)
+  reviewed_by_id         String?   @db.Uuid
+  reviewer_role          String?   @db.VarChar(50)
+  reviewed_at            DateTime? @db.Timestamptz(6)
+  decision_reason        String?
+  // When the registration was (re)submitted for validation
+  submitted_at           DateTime? @db.Timestamptz(6)
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
   modified_at            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
@@ -4185,6 +4193,7 @@ model club_enrollments {
   secretary            users?                 @relation("enrollment_secretary", fields: [secretary_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   treasurer            users?                 @relation("enrollment_treasurer", fields: [treasurer_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   secretary_treasurer  users?                 @relation("enrollment_secretary_treasurer", fields: [secretary_treasurer_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewer             users?                 @relation("enrollment_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   annual_folder        annual_folders?
   monthly_reports      monthly_reports[]
   club_annual_rankings club_annual_rankings[]

@@ -5,10 +5,8 @@ import {
   IsInt,
   IsBoolean,
   IsArray,
-  IsUUID,
   Min,
   Max,
-  ArrayMaxSize,
   ValidateNested,
   IsNotEmpty,
 } from 'class-validator';
@@ -119,55 +117,4 @@ export class CreateClubEnrollmentDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   fee_amount?: number;
-
-  // ─── Leadership ──────────────────────────────────────────────────────
-
-  @ApiPropertyOptional({
-    example: '550e8400-e29b-41d4-a716-446655440000',
-    description: 'UUID del usuario asignado como Director del club',
-  })
-  @IsOptional()
-  @IsUUID()
-  director_id?: string;
-
-  @ApiPropertyOptional({
-    type: [String],
-    example: [
-      '550e8400-e29b-41d4-a716-446655440001',
-      '550e8400-e29b-41d4-a716-446655440002',
-    ],
-    description: 'UUIDs de hasta 2 usuarios asignados como Subdirectores',
-  })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(2)
-  @IsUUID('4', { each: true })
-  deputy_director_ids?: string[];
-
-  @ApiPropertyOptional({
-    example: '550e8400-e29b-41d4-a716-446655440003',
-    description:
-      'UUID del usuario asignado como Secretario. Mutuamente exclusivo con secretary_treasurer_id.',
-  })
-  @IsOptional()
-  @IsUUID()
-  secretary_id?: string;
-
-  @ApiPropertyOptional({
-    example: '550e8400-e29b-41d4-a716-446655440004',
-    description:
-      'UUID del usuario asignado como Tesorero. Mutuamente exclusivo con secretary_treasurer_id.',
-  })
-  @IsOptional()
-  @IsUUID()
-  treasurer_id?: string;
-
-  @ApiPropertyOptional({
-    example: '550e8400-e29b-41d4-a716-446655440005',
-    description:
-      'UUID del usuario que actúa como Secretario-Tesorero. Mutuamente exclusivo con secretary_id y treasurer_id.',
-  })
-  @IsOptional()
-  @IsUUID()
-  secretary_treasurer_id?: string;
 }

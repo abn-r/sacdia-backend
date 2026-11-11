@@ -1,11 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ActorScope } from '../common/authorization/actor-scope';
-import { GlobalRole } from '../common/authorization/roles';
 import { ModuleRef } from '@nestjs/core';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { escapeLikeWildcards } from '../common/utils/escape-like';
 import { CatalogsService } from '../catalogs/catalogs.service';
+import { SectionBoardSnapshotService } from '../common/authorization/section-board-snapshot.service';
 import { CreateClubEnrollmentDto, UpdateClubEnrollmentDto } from './dto';
 import { AnnualFoldersService } from '../annual-folders/annual-folders.service';
 import {
@@ -14,27 +12,20 @@ import {
   AppConflictException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
+import {
+  CLUB_ENROLLMENT_STATUS,
+  type ClubEnrollmentStatus,
+} from './club-enrollments.constants';
 
-export const CLUB_ENROLLMENT_STATUS = {
-  PENDING_VALIDATION: 'pending_validation',
-  ACTIVE: 'active',
-  REJECTED: 'rejected',
-  INACTIVE: 'inactive',
+export { CLUB_ENROLLMENT_STATUS, type ClubEnrollmentStatus };
+
+/** Review fields a resubmitted enrollment starts without. */
+const CLEARED_REVIEW = {
+  reviewed_by_id: null,
+  reviewer_role: null,
+  reviewed_at: null,
+  decision_reason: null,
 } as const;
-
-export type ClubEnrollmentStatus =
-  (typeof CLUB_ENROLLMENT_STATUS)[keyof typeof CLUB_ENROLLMENT_STATUS];
-
-type ValidationQueueFilters = {
-  status?: ClubEnrollmentStatus | 'all';
-  search?: string;
-  ecclesiastical_year_id?: number;
-  local_field_id?: number;
-  club_type_id?: number;
-  page?: number;
-  limit?: number;
-};
 
 @Injectable()
 export class ClubEnrollmentsService {
@@ -107,6 +98,7 @@ export class ClubEnrollmentsService {
     private readonly prisma: PrismaService,
     private readonly catalogsService: CatalogsService,
     private readonly moduleRef: ModuleRef,
+    private readonly boardSnapshot: SectionBoardSnapshotService,
   ) {}
 
   // ========================================
@@ -155,7 +147,11 @@ export class ClubEnrollmentsService {
         throw new AppConflictException(ErrorCode.CE_ALREADY_ENROLLED);
       }
 
-      this.validateSecretaryTreasurerConstraint(dto);
+      const now = new Date();
+      const board = await this.boardSnapshot.snapshot(
+        sectionId,
+        currentYear.ecclesiastical_year_id,
+      );
 
       const enrollmentData = {
         club_section_id: sectionId,
@@ -174,11 +170,8 @@ export class ClubEnrollmentsService {
         souls_target: dto.souls_target,
         fee: dto.fee ?? false,
         fee_amount: dto.fee_amount ?? null,
-        director_id: dto.director_id,
-        deputy_director_ids: dto.deputy_director_ids ?? [],
-        secretary_id: dto.secretary_id,
-        treasurer_id: dto.treasurer_id,
-        secretary_treasurer_id: dto.secretary_treasurer_id,
+        ...board,
+        submitted_at: now,
         created_by: userId,
       };
 
@@ -187,7 +180,9 @@ export class ClubEnrollmentsService {
           where: { club_enrollment_id: existing.club_enrollment_id },
           data: {
             ...enrollmentData,
-            modified_at: new Date(),
+            // Resubmitting after a rejection starts a new review.
+            ...CLEARED_REVIEW,
+            modified_at: now,
           },
           include: this.enrollmentInclude,
         });
@@ -271,45 +266,6 @@ export class ClubEnrollmentsService {
     });
   }
 
-  async findValidationQueue(
-    filters: ValidationQueueFilters = {},
-    authorizationProfile?: ResolvedAuthorizationProfile,
-  ) {
-    const page = Math.max(filters.page ?? 1, 1);
-    const limit = Math.min(Math.max(filters.limit ?? 20, 1), 100);
-    const skip = (page - 1) * limit;
-
-    const where: Prisma.club_enrollmentsWhereInput = {
-      ...(filters.status && filters.status !== 'all'
-        ? { status: filters.status }
-        : { status: CLUB_ENROLLMENT_STATUS.PENDING_VALIDATION }),
-      ...this.buildValidationQueueCatalogWhere(filters),
-      ...this.buildValidationQueueSearchWhere(filters.search),
-      ...this.buildValidationQueueScopeWhere(authorizationProfile),
-    };
-
-    const [data, total] = await Promise.all([
-      this.prisma.club_enrollments.findMany({
-        where,
-        include: this.enrollmentInclude,
-        orderBy: { created_at: 'desc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.club_enrollments.count({ where }),
-    ]);
-
-    return {
-      data,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
-      },
-    };
-  }
-
   // ========================================
   // UPDATE
   // ========================================
@@ -337,17 +293,18 @@ export class ClubEnrollmentsService {
       throw new AppNotFoundException(ErrorCode.CE_ENROLLMENT_NOT_FOUND);
     }
 
-    this.validateSecretaryTreasurerConstraint(dto);
-
     // Build a clean data object — avoid passing `undefined` properties to Prisma
     // so that omitted fields are not accidentally nulled out.
-    const data: Record<string, unknown> = { modified_at: new Date() };
+    const now = new Date();
+    const data: Record<string, unknown> = { modified_at: now };
 
     if (
       enrollment.status === CLUB_ENROLLMENT_STATUS.REJECTED ||
       enrollment.status === CLUB_ENROLLMENT_STATUS.INACTIVE
     ) {
       data.status = CLUB_ENROLLMENT_STATUS.PENDING_VALIDATION;
+      data.submitted_at = now;
+      Object.assign(data, CLEARED_REVIEW);
     }
 
     if (dto.address !== undefined) data.address = dto.address;
@@ -362,75 +319,20 @@ export class ClubEnrollmentsService {
     if (dto.souls_target !== undefined) data.souls_target = dto.souls_target;
     if (dto.fee !== undefined) data.fee = dto.fee;
     if (dto.fee_amount !== undefined) data.fee_amount = dto.fee_amount;
-    if (dto.director_id !== undefined) data.director_id = dto.director_id;
-    if (dto.deputy_director_ids !== undefined)
-      data.deputy_director_ids = dto.deputy_director_ids;
-    if (dto.secretary_id !== undefined) data.secretary_id = dto.secretary_id;
-    if (dto.treasurer_id !== undefined) data.treasurer_id = dto.treasurer_id;
-    if (dto.secretary_treasurer_id !== undefined)
-      data.secretary_treasurer_id = dto.secretary_treasurer_id;
+    // The board is a snapshot of the section's active club roles, never client input.
+    Object.assign(
+      data,
+      await this.boardSnapshot.snapshot(
+        enrollment.club_section_id,
+        enrollment.ecclesiastical_year_id,
+      ),
+    );
 
     return this.prisma.club_enrollments.update({
       where: { club_enrollment_id: enrollmentId },
       data,
       include: this.enrollmentInclude,
     });
-  }
-
-  async approve(enrollmentId: string, reviewerId: string) {
-    const enrollment = await this.findEnrollmentForReview(enrollmentId);
-
-    if (enrollment.status === CLUB_ENROLLMENT_STATUS.ACTIVE) {
-      return enrollment;
-    }
-
-    if (enrollment.status !== CLUB_ENROLLMENT_STATUS.PENDING_VALIDATION) {
-      throw new AppConflictException(ErrorCode.RECORD_CONFLICT, {
-        status: enrollment.status,
-      });
-    }
-
-    const updated = await this.prisma.club_enrollments.update({
-      where: { club_enrollment_id: enrollmentId },
-      data: {
-        status: CLUB_ENROLLMENT_STATUS.ACTIVE,
-        modified_at: new Date(),
-      },
-      include: this.enrollmentInclude,
-    });
-
-    this.logger.log(
-      `Annual club enrollment ${enrollmentId} approved by ${reviewerId}`,
-    );
-
-    await this.createAnnualFolderForEnrollmentIfTemplateExists(enrollmentId);
-
-    return updated;
-  }
-
-  async reject(enrollmentId: string, reviewerId: string) {
-    const enrollment = await this.findEnrollmentForReview(enrollmentId);
-
-    if (enrollment.status !== CLUB_ENROLLMENT_STATUS.PENDING_VALIDATION) {
-      throw new AppConflictException(ErrorCode.RECORD_CONFLICT, {
-        status: enrollment.status,
-      });
-    }
-
-    const updated = await this.prisma.club_enrollments.update({
-      where: { club_enrollment_id: enrollmentId },
-      data: {
-        status: CLUB_ENROLLMENT_STATUS.REJECTED,
-        modified_at: new Date(),
-      },
-      include: this.enrollmentInclude,
-    });
-
-    this.logger.log(
-      `Annual club enrollment ${enrollmentId} rejected by ${reviewerId}`,
-    );
-
-    return updated;
   }
 
   // ========================================
@@ -454,148 +356,8 @@ export class ClubEnrollmentsService {
     return !!enrollment;
   }
 
-  /**
-   * A club can have either a secretary + treasurer OR a combined secretary-treasurer,
-   * never both configurations at the same time.
-   */
-  private validateSecretaryTreasurerConstraint(
-    dto: CreateClubEnrollmentDto | UpdateClubEnrollmentDto,
-  ): void {
-    const hasIndividualRoles = dto.secretary_id || dto.treasurer_id;
-    const hasCombinedRole = dto.secretary_treasurer_id;
-
-    if (hasIndividualRoles && hasCombinedRole) {
-      throw new AppBadRequestException(
-        ErrorCode.CE_ECCLESIASTICAL_YEAR_REQUIRED,
-      );
-    }
-  }
-
-  private async findEnrollmentForReview(enrollmentId: string) {
-    const enrollment = await this.prisma.club_enrollments.findUnique({
-      where: { club_enrollment_id: enrollmentId },
-      include: this.enrollmentInclude,
-    });
-
-    if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.CE_ENROLLMENT_NOT_FOUND);
-    }
-
-    return enrollment;
-  }
-
-  private buildValidationQueueSearchWhere(
-    search: string | undefined,
-  ): Prisma.club_enrollmentsWhereInput {
-    const trimmed = search?.trim();
-    if (!trimmed) return {};
-    const value = escapeLikeWildcards(trimmed);
-
-    const match = { contains: value, mode: 'insensitive' as const };
-
-    return {
-      OR: [
-        { club_section: { clubs: { name: match } } },
-        { club_section: { club_types: { name: match } } },
-        { creator: { name: match } },
-        { creator: { paternal_last_name: match } },
-        { creator: { maternal_last_name: match } },
-        { creator: { email: match } },
-      ],
-    };
-  }
-
-  private buildValidationQueueCatalogWhere(
-    filters: ValidationQueueFilters,
-  ): Prisma.club_enrollmentsWhereInput {
-    const and: Prisma.club_enrollmentsWhereInput[] = [];
-
-    if (filters.ecclesiastical_year_id !== undefined) {
-      and.push({ ecclesiastical_year_id: filters.ecclesiastical_year_id });
-    }
-
-    if (filters.club_type_id !== undefined) {
-      and.push({
-        club_section: { club_type_id: filters.club_type_id },
-      });
-    }
-
-    if (filters.local_field_id !== undefined) {
-      and.push({
-        club_section: {
-          clubs: { local_field_id: filters.local_field_id },
-        },
-      });
-    }
-
-    return and.length > 0 ? { AND: and } : {};
-  }
-
-  private buildValidationQueueScopeWhere(
-    authorizationProfile?: ResolvedAuthorizationProfile,
-  ): Prisma.club_enrollmentsWhereInput {
-    if (!authorizationProfile) return {};
-
-    if (
-      ActorScope.from(authorizationProfile).hasRole(GlobalRole.SUPER_ADMIN) ||
-      ActorScope.from(authorizationProfile).hasRole(GlobalRole.ADMIN)
-    ) {
-      return {};
-    }
-
-    const localFieldId =
-      this.toNumericScopeId(
-        authorizationProfile.authorization.effective.scope.global.local_field
-          ?.id,
-      ) ?? authorizationProfile.profile.local_field_id;
-
-    if (typeof localFieldId === 'number') {
-      return {
-        club_section: { clubs: { local_field_id: localFieldId } },
-      };
-    }
-
-    const unionId =
-      this.toNumericScopeId(
-        authorizationProfile.authorization.effective.scope.global.union?.id,
-      ) ?? authorizationProfile.profile.union_id;
-
-    if (typeof unionId === 'number') {
-      return {
-        club_section: {
-          clubs: { local_fields: { union_id: unionId } },
-        },
-      };
-    }
-
-    const activeAssignmentId =
-      authorizationProfile.authorization.active_assignment.assignment_id;
-
-    if (activeAssignmentId) {
-      return {
-        club_section: {
-          club_role_assignments: {
-            some: {
-              assignment_id: activeAssignmentId,
-              active: true,
-              status: 'active',
-            },
-          },
-        },
-      };
-    }
-
-    return { club_enrollment_id: '00000000-0000-0000-0000-000000000000' };
-  }
-
-  private toNumericScopeId(value: number | string | undefined): number | null {
-    if (typeof value === 'number') return value;
-    if (typeof value !== 'string') return null;
-    const parsed = parseInt(value, 10);
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-
-  private async createAnnualFolderForEnrollmentIfTemplateExists(
+  /** Approval effect: create the annual folder when a published template matches. Never throws. */
+  async createAnnualFolderForEnrollmentIfTemplateExists(
     enrollmentId: string,
   ): Promise<void> {
     let annualFoldersService: AnnualFoldersService;

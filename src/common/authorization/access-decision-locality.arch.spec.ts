@@ -28,7 +28,6 @@ export const KNOWN_ACCESS_DECISION_FILES: readonly string[] = [
   'classes/class-progress-scope.service.ts',
   'classes/class-requirement-eligibility.service.ts',
   'classes/district-investiture-pastors.service.ts',
-  'club-enrollments/club-enrollments.service.ts',
   'clubs/clubs.service.ts',
   'common/services/authorization-context.service.ts',
   'coordination/actor-section-scope.service.ts',
