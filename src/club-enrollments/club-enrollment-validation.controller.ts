@@ -1,162 +1,142 @@
 import {
+  Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
-import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
-  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import {
-  ClubEnrollmentsService,
-  type ClubEnrollmentStatus,
-} from './club-enrollments.service';
+import { Throttle } from '@nestjs/throttler';
 import {
   AuthorizationResource,
   CurrentUser,
   RequirePermissions,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
-import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
+import { ParseUuidParamPipe } from '../common/pipes/parse-uuid-param.pipe';
+import { namedThrottle } from '../config/throttler.helpers';
+import { ClubEnrollmentReviewService } from './club-enrollment-review.service';
+import { ClubEnrollmentQueueQueryDto, RejectClubEnrollmentDto } from './dto';
 
 type CurrentUserPayload = {
   sub?: string;
   user_id?: string;
 };
 
+/**
+ * Validation of annual enrollments. The permission `club_enrollments:validate`
+ * opens the door; the scope (admin, Local Field, Union, Division, coordinator
+ * territory, district pastor) is enforced in the service, and an out-of-scope
+ * id answers 404.
+ */
 @ApiTags('club-enrollments')
 @Controller('club-enrollments')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class ClubEnrollmentValidationController {
-  constructor(
-    private readonly clubEnrollmentsService: ClubEnrollmentsService,
-  ) {}
+  constructor(private readonly review: ClubEnrollmentReviewService) {}
 
   @Get('validation/queue')
-  @RequirePermissions('club_instances:update')
+  @RequirePermissions('club_enrollments:validate')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({
-    summary: 'Listar inscripciones anuales pendientes de Campo Local',
+    summary: 'Cola de validación de inscripciones anuales en mi alcance',
     description:
-      'Lista matrículas anuales de club pendientes de aprobación/rechazo por Campo Local, filtradas por alcance territorial del usuario.',
+      'Inscripciones anuales de las secciones que el revisor cubre (admin, Campo Local, Unión, División, coordinación o pastor de distrito). Filtra por estado (pendientes por defecto), año (vigente por defecto), campo local, tipo de club y texto. `meta.counts` cubre todo el alcance del año sin el filtro de estado.',
   })
-  @ApiQuery({ name: 'search', required: false })
-  @ApiQuery({ name: 'status', required: false })
-  @ApiQuery({ name: 'ecclesiastical_year_id', required: false, type: Number })
-  @ApiQuery({ name: 'local_field_id', required: false, type: Number })
-  @ApiQuery({ name: 'club_type_id', required: false, type: Number })
-  @ApiQuery({ name: 'page', required: false, type: Number })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Cola de validación anual' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — requires club_instances:update',
+    description: 'Forbidden — requires club_enrollments:validate',
   })
   async findValidationQueue(
-    @Query('search') search?: string,
-    @Query('status') status?: ClubEnrollmentStatus | 'all',
-    @Query('ecclesiastical_year_id') ecclesiasticalYearIdRaw?: string,
-    @Query('local_field_id') localFieldIdRaw?: string,
-    @Query('club_type_id') clubTypeIdRaw?: string,
-    @Query('page') pageRaw?: string,
-    @Query('limit') limitRaw?: string,
-    @Req()
-    request?: { authorizationProfile?: ResolvedAuthorizationProfile },
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: ClubEnrollmentQueueQueryDto,
   ) {
-    const data = await this.clubEnrollmentsService.findValidationQueue(
-      {
-        search,
-        status,
-        ecclesiastical_year_id: this.parseOptionalInt(ecclesiasticalYearIdRaw),
-        local_field_id: this.parseOptionalInt(localFieldIdRaw),
-        club_type_id: this.parseOptionalInt(clubTypeIdRaw),
-        page: this.parseOptionalInt(pageRaw),
-        limit: this.parseOptionalInt(limitRaw),
-      },
-      request?.authorizationProfile,
-    );
-
+    const data = await this.review.findQueue(this.actorId(user), query);
     return { status: 'success', data };
   }
 
   @Post(':enrollmentId/approve')
-  @RequirePermissions('club_instances:update')
-  @AuthorizationResource({
-    type: 'global',
-    bind: [
-      {
-        kind: 'club_enrollment_territory',
-        source: 'param',
-        field: 'enrollmentId',
-      },
-    ],
-  })
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: 60000, limit: 30 }))
+  @RequirePermissions('club_enrollments:validate')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
-    summary: 'Aprobar inscripción anual del club',
+    summary: 'Aprobar inscripción anual de la sección',
     description:
-      'Campo Local aprueba la inscripción anual. Al aprobarse queda activa y se intenta crear la Carpeta Anual de Evidencias.',
+      'Aprobar deja la inscripción activa, registra quién la revisó e intenta crear la Carpeta Anual de Evidencias. Avisa a la dirección y a quien la envió. Aprobar una inscripción ya activa responde 200 sin cambios.',
   })
   @ApiParam({ name: 'enrollmentId', description: 'UUID de inscripción anual' })
-  @ApiResponse({ status: 201, description: 'Inscripción aprobada' })
-  @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
+  @ApiResponse({ status: 200, description: 'Inscripción aprobada' })
+  @ApiResponse({
+    status: 403,
+    description: 'CE_SELF_REVIEW — el revisor tiene un cargo en la sección',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Inscripción no encontrada o fuera del alcance del revisor',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'CE_ENROLLMENT_NOT_PENDING — ya no está pendiente',
+  })
   async approve(
     @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    const actorId = user.user_id ?? user.sub ?? 'unknown';
-    const data = await this.clubEnrollmentsService.approve(
-      enrollmentId,
-      actorId,
-    );
+    const data = await this.review.approve(this.actorId(user), enrollmentId);
     return { status: 'success', data };
   }
 
   @Post(':enrollmentId/reject')
-  @RequirePermissions('club_instances:update')
-  @AuthorizationResource({
-    type: 'global',
-    bind: [
-      {
-        kind: 'club_enrollment_territory',
-        source: 'param',
-        field: 'enrollmentId',
-      },
-    ],
-  })
+  @HttpCode(200)
+  @Throttle(namedThrottle({ ttl: 60000, limit: 30 }))
+  @RequirePermissions('club_enrollments:validate')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
-    summary: 'Rechazar inscripción anual del club',
+    summary: 'Rechazar inscripción anual de la sección',
     description:
-      'Campo Local rechaza la inscripción anual para que el club corrija datos y vuelva a enviarla.',
+      'Rechazar exige un motivo (5 a 500 caracteres). La sección corrige y vuelve a enviar. Avisa a la dirección y a quien la envió.',
   })
   @ApiParam({ name: 'enrollmentId', description: 'UUID de inscripción anual' })
-  @ApiResponse({ status: 201, description: 'Inscripción rechazada' })
-  @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
+  @ApiResponse({ status: 200, description: 'Inscripción rechazada' })
+  @ApiResponse({
+    status: 403,
+    description: 'CE_SELF_REVIEW — el revisor tiene un cargo en la sección',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Inscripción no encontrada o fuera del alcance del revisor',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'CE_ENROLLMENT_NOT_PENDING — ya no está pendiente',
+  })
   async reject(
     @Param('enrollmentId', ParseUuidParamPipe) enrollmentId: string,
+    @Body() dto: RejectClubEnrollmentDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    const actorId = user.user_id ?? user.sub ?? 'unknown';
-    const data = await this.clubEnrollmentsService.reject(
+    const data = await this.review.reject(
+      this.actorId(user),
       enrollmentId,
-      actorId,
+      dto,
     );
     return { status: 'success', data };
   }
 
-  private parseOptionalInt(value: string | undefined): number | undefined {
-    if (value === undefined || value.trim() === '') return undefined;
-    const parsed = parseInt(value, 10);
-    return Number.isNaN(parsed) ? undefined : parsed;
+  private actorId(user: CurrentUserPayload): string {
+    return user.user_id ?? user.sub ?? 'unknown';
   }
 }

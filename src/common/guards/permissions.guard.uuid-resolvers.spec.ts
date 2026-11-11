@@ -21,9 +21,6 @@ import { CamporeesController } from '../../camporees/camporees.controller';
  * resolver/bind declaration fails these tests.
  */
 describe('PermissionsGuard entity UUID resolvers', () => {
-  const ENROLLMENT_CLUB1_S10 = '11111111-1111-4111-8111-111111111111';
-  const ENROLLMENT_CLUB1_S11 = '11111111-1111-4111-8111-111111111112';
-  const ENROLLMENT_CLUB2_S20 = '22222222-2222-4222-8222-222222222222';
   const PAYMENT_LOCAL_LF50 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa50';
   const PAYMENT_LOCAL_LF60 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa60';
   const PAYMENT_UNION_1 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb100';
@@ -32,12 +29,6 @@ describe('PermissionsGuard entity UUID resolvers', () => {
   const MISSING_UUID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
   const CLUB_LOCAL_FIELD: Record<number, number> = { 1: 50, 2: 60 };
-  const SECTION_CLUB: Record<number, number> = { 10: 1, 11: 1, 20: 2 };
-  const ENROLLMENT_SECTION: Record<string, number> = {
-    [ENROLLMENT_CLUB1_S10]: 10,
-    [ENROLLMENT_CLUB1_S11]: 11,
-    [ENROLLMENT_CLUB2_S20]: 20,
-  };
   const PAYMENT_MEMBER: Record<
     string,
     { camporee_id: number | null; union_camporee_id: number | null }
@@ -206,17 +197,6 @@ describe('PermissionsGuard entity UUID resolvers', () => {
         source: 'current',
       }),
     );
-    mockPrisma.club_enrollments.findUnique.mockImplementation(
-      async ({ where }: { where: { club_enrollment_id: string } }) => {
-        const sectionId = ENROLLMENT_SECTION[where.club_enrollment_id];
-        return sectionId
-          ? {
-              club_section_id: sectionId,
-              club_section: { main_club_id: SECTION_CLUB[sectionId] },
-            }
-          : null;
-      },
-    );
     mockPrisma.camporee_payments.findUnique.mockImplementation(
       async ({ where }: { where: { camporee_payment_id: string } }) => {
         const member = PAYMENT_MEMBER[where.camporee_payment_id];
@@ -269,66 +249,43 @@ describe('PermissionsGuard entity UUID resolvers', () => {
         }),
       );
 
-    beforeEach(() => {
+    // The territory check moved into the review service (404 for an id out of
+    // scope), so the route no longer binds the enrollment: the guard only
+    // asks for the permission and never reads the enrollment.
+    it.each(['approve', 'reject', 'findValidationQueue'] as const)(
+      '%s declares club_enrollments:validate on a global resource without binds',
+      (handler) => {
+        const target = ClubEnrollmentValidationController.prototype[handler];
+        expect(Reflect.getMetadata('permissions', target)).toEqual({
+          mode: 'all',
+          permissions: ['club_enrollments:validate'],
+        });
+        expect(Reflect.getMetadata('authorization_resource', target)).toEqual({
+          type: 'global',
+        });
+      },
+    );
+
+    it('lets a reviewer holding the permission reach the service, whatever the club', async () => {
+      currentActor = territorialActor(
+        'director-lf',
+        ['club_enrollments:validate'],
+        { local_field: { id: 50 } },
+      );
+
+      await expect(run('approve', MISSING_UUID)).resolves.toBe(true);
+      await expect(run('reject', MISSING_UUID)).resolves.toBe(true);
+      expect(mockPrisma.club_enrollments.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('keeps out a reviewer that only holds the old club_instances:update', async () => {
       currentActor = territorialActor(
         'director-lf',
         ['club_instances:update'],
-        {
-          local_field: { id: 50 },
-        },
-      );
-    });
-
-    it('allows a reviewer whose local field covers the enrollment club', async () => {
-      await expect(run('approve', ENROLLMENT_CLUB1_S10)).resolves.toBe(true);
-      await expect(run('reject', ENROLLMENT_CLUB1_S11)).resolves.toBe(true);
-      expect(mockAuthorizationContext.canManageClub).toHaveBeenCalledWith(
-        'reviewer-1',
-        1,
-      );
-    });
-
-    it('rejects an enrollment of a club outside the reviewer territory', async () => {
-      await expect(run('approve', ENROLLMENT_CLUB2_S20)).rejects.toMatchObject({
-        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
-      });
-      await expect(run('reject', ENROLLMENT_CLUB2_S20)).rejects.toMatchObject({
-        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
-      });
-    });
-
-    it('allows a union reviewer over every club of the union', async () => {
-      currentActor = territorialActor(
-        'director-union',
-        ['club_instances:update'],
-        { union: { id: 2 } },
+        { local_field: { id: 50 } },
       );
 
-      await expect(run('approve', ENROLLMENT_CLUB2_S20)).resolves.toBe(true);
-      await expect(run('approve', ENROLLMENT_CLUB1_S10)).rejects.toMatchObject({
-        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
-      });
-    });
-
-    it('does not let a club actor approve its own club enrollment', async () => {
-      currentActor = clubDirector([], ['club_instances:update']);
-
-      await expect(run('approve', ENROLLMENT_CLUB1_S10)).rejects.toMatchObject({
-        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
-      });
-    });
-
-    it('returns not found for an unknown enrollment', async () => {
-      await expect(run('approve', MISSING_UUID)).rejects.toMatchObject({
-        code: ErrorCode.CE_ENROLLMENT_NOT_FOUND,
-      });
-    });
-
-    it('rejects a malformed enrollment id before querying', async () => {
-      await expect(run('approve', '1')).rejects.toMatchObject({
-        code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED,
-      });
-      expect(mockPrisma.club_enrollments.findUnique).not.toHaveBeenCalled();
+      await expect(run('approve', MISSING_UUID)).rejects.toBeDefined();
     });
   });
 

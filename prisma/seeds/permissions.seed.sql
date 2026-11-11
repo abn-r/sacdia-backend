@@ -824,6 +824,17 @@ ON CONFLICT (permission_name) DO UPDATE SET
   active = EXCLUDED.active,
   modified_at = now();
 
+-- ============================
+-- Club enrollments (validación de la inscripción anual de sección)
+-- ============================
+-- Same row as migration 20261111130000_club_enrollments_validate_permission.
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('club_enrollments:validate', 'Approve or reject the annual enrollment of club sections inside own scope (Local Field, Union, Division, coordinators, district pastors, admins)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================

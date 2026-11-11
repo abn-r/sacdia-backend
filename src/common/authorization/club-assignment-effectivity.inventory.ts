@@ -50,8 +50,6 @@ const baseline = {
     'effectiveWhere|T08|3|4213f4a7f3ae',
   'classes/class-requirement-eligibility.service.ts':
     'effectiveWhere|T08|2|a3be28c9e1b2',
-  'club-enrollments/club-enrollments.service.ts':
-    'effectiveWhere|T08|1|1f2269db063f',
   'certifications/eligibility/eligibility-rule-handlers.ts':
     'effectiveWhere|T08|2|9841f0b29dc2',
   'clubs/club-role-candidates.queries.ts':
@@ -61,6 +59,10 @@ const baseline = {
     'workflowWhere|allowlist|2|b32d443733e9',
   'common/authorization/actor-section-scope.ts':
     'effectiveWhere|T09|1|38b239a32e23',
+  'common/authorization/reviewer-scope.service.ts':
+    'effectiveWhere|T08|1|abb390052cb4',
+  'common/authorization/section-board-snapshot.service.ts':
+    'effectiveWhere|T08|1|b99ebbdc1863',
   'common/authorization/service-credential-review-scope.service.ts':
     'effectiveWhere|T09|3|d8ff585b0651',
   'common/authorization/target-user-scope.ts':

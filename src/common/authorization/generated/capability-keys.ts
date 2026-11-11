@@ -17,6 +17,7 @@ export const CAPABILITY_KEYS = [
   'club.active_director',
   'club.operational_staff',
   'club.staff_mode',
+  'club_enrollments.validate',
   'club_roles.assign_section',
   'club_roles.designate_director',
   'club_roles.succeed_director',

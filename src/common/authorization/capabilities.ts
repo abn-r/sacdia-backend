@@ -235,6 +235,17 @@ export const CAPABILITY_DEFINITIONS: Record<
   'club.operational_staff': clubRoleIn(CLUB_OPERATIONAL_STAFF),
   'club.staff_mode': ({ activeClubRole }) =>
     activeClubRole !== undefined && activeClubRole !== ClubRole.MEMBER,
+  // Platform admins (assistant-admin included), Local Field, Union, Division,
+  // coordinators and pastors approve or reject the annual enrollment of the
+  // sections in their scope; the service decides which sections.
+  'club_enrollments.validate': globalRoleIn([
+    ...ADMIN_SCOPE_ROLES,
+    ...LOCAL_FIELD_ROLES,
+    ...UNION_ROLES,
+    ...DIVISION_ROLES,
+    ...COORDINATOR_ROLES,
+    GlobalRole.PASTOR,
+  ]),
   'club_roles.assign_section': sectionRoleAssigner,
   // The October–December window is still enforced by the server.
   'club_roles.designate_director': sectionRoleManager,
