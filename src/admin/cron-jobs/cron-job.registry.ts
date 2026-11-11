@@ -7,6 +7,7 @@ import { CleanupService } from '../../common/services/cleanup.service';
 import { CronAlertService } from '../../common/services/cron-alert.service';
 import { DataExportService } from '../../data-export/data-export.service';
 import { FinancePeriodService } from '../../finances/finance-period.service';
+import { FinanceReminderService } from '../../finances/finance-reminder.service';
 import { DependentProfilesPurgeCronService } from '../../guardianships/dependent-profiles-purge-cron.service';
 import { FamilyAgeTransitionsCronService } from '../../guardianships/family-age-transitions-cron.service';
 import { PendingTeenCronService } from '../../guardianships/pending-teen-cron.service';
@@ -113,6 +114,15 @@ export const CRON_JOB_DEFINITIONS: readonly CronJobDefinition[] = [
     method: 'handleMonthlyClosing',
     source: 'finances/finance-period.service.ts#handleMonthlyClosing',
     description: 'Cierra el periodo financiero del mes anterior en cada club.',
+    queueBacked: true,
+  },
+  {
+    jobName: 'finance-month-end-reminder',
+    target: FinanceReminderService,
+    method: 'handleMonthEndReminder',
+    source: 'finances/finance-reminder.service.ts#handleMonthEndReminder',
+    description:
+      'El día 25 avisa a tesorería y dirección de las secciones que aún no tienen movimientos del mes.',
     queueBacked: true,
   },
   {

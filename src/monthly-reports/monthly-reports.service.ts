@@ -36,6 +36,7 @@ import {
   directivaRoleOrder,
 } from '../common/constants/club-directiva-roles';
 import { ClubRole } from '../common/authorization/roles';
+import { FinanceAggregationService } from '../finances/finance-aggregation.service';
 
 const MONTHLY_REPORT_REMINDER_SOURCE = 'monthly_reports:reminder';
 const AUTO_GENERATION_STATUS_BATCH_SIZE = 500;
@@ -140,7 +141,14 @@ export class MonthlyReportsService {
     @Optional()
     @InjectQueue(BACKGROUND_JOBS_QUEUE)
     private readonly jobsQueue?: Queue,
-  ) {}
+    @Optional()
+    financeAggregation?: FinanceAggregationService,
+  ) {
+    this.financeAggregation =
+      financeAggregation ?? new FinanceAggregationService(prisma);
+  }
+
+  private readonly financeAggregation: FinanceAggregationService;
 
   // ========================================
   // GET OR CREATE DRAFT
@@ -1555,38 +1563,20 @@ export class MonthlyReportsService {
     month: number,
     year: number,
   ) {
-    const [summary] = await this.prisma.$queryRaw<
-      {
-        income: bigint | number | null;
-        expenses: bigint | number | null;
-        transactions: bigint | number | null;
-        total_balance: bigint | number | null;
-      }[]
-    >`
-      SELECT
-        COALESCE(SUM(CASE WHEN fc.type = 0 AND f.year = ${year} AND f.month = ${month} THEN f.amount ELSE 0 END), 0)::bigint AS income,
-        COALESCE(SUM(CASE WHEN fc.type <> 0 AND f.year = ${year} AND f.month = ${month} THEN f.amount ELSE 0 END), 0)::bigint AS expenses,
-        COUNT(*) FILTER (WHERE f.year = ${year} AND f.month = ${month})::bigint AS transactions,
-        COALESCE(SUM(CASE WHEN fc.type = 0 THEN f.amount ELSE -f.amount END), 0)::bigint AS total_balance
-      FROM finances f
-      JOIN finances_categories fc
-        ON fc.finance_category_id = f.finance_category_id
-      WHERE f.club_section_id = ${clubSectionId}
-        AND f.active = true
-        AND (f.year < ${year} OR (f.year = ${year} AND f.month <= ${month}))
-    `;
-
-    const totalIncome = Number(summary?.income ?? 0);
-    const totalExpenses = Number(summary?.expenses ?? 0);
-    const totalBalance = Number(summary?.total_balance ?? 0);
-    const transactions = Number(summary?.transactions ?? 0);
+    const totals = await this.financeAggregation.aggregateMonth(
+      [clubSectionId],
+      year,
+      month,
+    );
 
     return {
-      income: totalIncome,
-      expenses: totalExpenses,
-      balance: totalIncome - totalExpenses,
-      total_balance: totalBalance,
-      transactions,
+      income: totals.income,
+      expenses: totals.expenses,
+      /** Net of the month (income - expenses). */
+      balance: totals.net,
+      /** Cash on hand: all-time cumulative net up to the end of the month. */
+      total_balance: totals.balance,
+      transactions: totals.movements,
     };
   }
 

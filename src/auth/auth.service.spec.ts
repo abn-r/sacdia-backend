@@ -2318,6 +2318,7 @@ describe('AuthService', () => {
           'camporee_orders.issue',
           'camporee_supplies.plan',
           'club.active_director',
+          'club.administrative_staff',
           'club.operational_staff',
           'club.staff_mode',
           'club_roles.assign_section',

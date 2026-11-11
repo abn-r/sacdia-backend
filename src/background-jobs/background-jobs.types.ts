@@ -19,6 +19,7 @@ export const BackgroundJobName = {
   MONTHLY_REPORTS_AUTO_GENERATE: 'monthly-reports.auto-generate',
   MONTHLY_REPORT_PDF: 'monthly-reports.pdf',
   FINANCE_PERIOD_CLOSE_MONTH: 'finance-period.close-month',
+  FINANCE_REMINDER: 'finance-reminder.month-end',
   RANKINGS_RECALCULATE: 'rankings.recalculate',
   DATA_EXPORT_GENERATE: 'data-export.generate',
 } as const;
@@ -47,6 +48,12 @@ export interface FinancePeriodCloseMonthPayload extends ManualTriggerPayload {
   month: number;
 }
 
+export interface FinanceReminderPayload extends ManualTriggerPayload {
+  triggeredAt: string; // ISO 8601
+  year: number;
+  month: number;
+}
+
 export interface RankingsRecalculatePayload extends ManualTriggerPayload {
   triggeredAt: string; // ISO 8601
   yearId?: number;
@@ -67,6 +74,7 @@ export type BackgroundJobPayloadMap = {
   [BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE]: MonthlyReportsAutoGeneratePayload;
   [BackgroundJobName.MONTHLY_REPORT_PDF]: MonthlyReportPdfPayload;
   [BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH]: FinancePeriodCloseMonthPayload;
+  [BackgroundJobName.FINANCE_REMINDER]: FinanceReminderPayload;
   [BackgroundJobName.RANKINGS_RECALCULATE]: RankingsRecalculatePayload;
   [BackgroundJobName.DATA_EXPORT_GENERATE]: DataExportGeneratePayload;
 };
@@ -80,5 +88,6 @@ export const MAP_JOB_TO_CRON_KEY: Partial<Record<BackgroundJobName, string>> = {
   [BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE]:
     'monthly-reports-auto-generate',
   [BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH]: 'finance-period-closing',
+  [BackgroundJobName.FINANCE_REMINDER]: 'finance-month-end-reminder',
   [BackgroundJobName.RANKINGS_RECALCULATE]: 'rankings-recalculate',
 };

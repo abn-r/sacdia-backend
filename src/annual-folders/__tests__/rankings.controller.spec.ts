@@ -245,9 +245,8 @@ describe('RankingsController', () => {
           },
           finance: {
             score_pct: 100,
-            months_closed_on_time: 12,
+            months_with_movements: 12,
             months_total: 12,
-            deadline_day: 5,
             missed_months: [],
           },
           camporee: {

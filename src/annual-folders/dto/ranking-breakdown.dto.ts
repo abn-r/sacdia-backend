@@ -13,10 +13,9 @@ export interface FolderComponent {
 
 export interface FinanceComponent {
   score_pct: number;
-  months_closed_on_time: number;
+  months_with_movements: number; // months with >=1 movement registered before the automatic closing
   months_total: number; // always 12
-  deadline_day: number;
-  missed_months: number[]; // months 1..12 that were NOT closed on time
+  missed_months: number[]; // months closed without any movement registered before the closing
 }
 
 export interface CamporeeEvent {

@@ -117,4 +117,10 @@ export class FinanceFiltersDto {
   @Type(() => Number)
   @IsInt()
   categoryId?: number;
+
+  @ApiPropertyOptional({ description: 'Filtrar por sección del club' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  clubSectionId?: number;
 }

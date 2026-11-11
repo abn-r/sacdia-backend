@@ -232,6 +232,9 @@ export const CAPABILITY_DEFINITIONS: Record<
   'catalogs.manage_protected': globalRoleIn(SUPER_ADMIN_ONLY),
   'certificates.review_imports': localFieldReviewer,
   'club.active_director': clubRoleIn([ClubRole.DIRECTOR]),
+  // Club board (directiva): director, deputy director, secretary, treasurer
+  // and secretary-treasurer. Counselors, instructors and members are out.
+  'club.administrative_staff': clubRoleIn(CLUB_ADMINISTRATIVE_STAFF),
   'club.operational_staff': clubRoleIn(CLUB_OPERATIONAL_STAFF),
   'club.staff_mode': ({ activeClubRole }) =>
     activeClubRole !== undefined && activeClubRole !== ClubRole.MEMBER,

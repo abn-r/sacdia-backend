@@ -8,6 +8,7 @@ import { MonthlyReportsReminderCronService } from './monthly-reports-reminder-cr
 import { PrismaModule } from '../prisma/prisma.module';
 import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { FinanceAggregationModule } from '../finances/finance-aggregation.module';
 import { CoordinationModule } from '../coordination/coordination.module';
 
 @Module({
@@ -16,6 +17,7 @@ import { CoordinationModule } from '../coordination/coordination.module';
     BackgroundJobsQueueModule,
     NotificationsModule,
     CoordinationModule,
+    FinanceAggregationModule,
   ],
   controllers: [MonthlyReportsController],
   providers: [

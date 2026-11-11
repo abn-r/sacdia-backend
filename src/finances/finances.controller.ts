@@ -10,9 +10,11 @@ import {
   ParseIntPipe,
   UseGuards,
   Request,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -26,10 +28,15 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import 'multer';
 import { FinancesService } from './finances.service';
+import { FinanceReportsService } from './finance-reports.service';
 import {
   CreateFinanceDto,
   UpdateFinanceDto,
   GetAllTransactionsDto,
+  FinanceExportQueryDto,
+  FinanceOverviewQueryDto,
+  FinanceReportQueryDto,
+  RemoveFinanceDto,
 } from './dto';
 import {
   JwtAuthGuard,
@@ -53,7 +60,10 @@ import { ClubRole } from '../common/authorization/roles';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class FinancesController {
-  constructor(private readonly financesService: FinancesService) {}
+  constructor(
+    private readonly financesService: FinancesService,
+    private readonly financeReportsService: FinanceReportsService,
+  ) {}
 
   // ========================================
   // CATEGORÍAS
@@ -82,6 +92,39 @@ export class FinancesController {
     @Query('type', new ParseIntPipe({ optional: true })) type?: number,
   ) {
     return this.financesService.getCategories(type);
+  }
+
+  @Get('finances/overview')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({
+    type: 'global',
+    bind: [
+      {
+        kind: 'local_field',
+        source: 'query',
+        field: 'local_field_id',
+        optional: true,
+      },
+    ],
+  })
+  @ApiOperation({
+    summary:
+      'Vista consolidada de finanzas por club (campo local / unión / división)',
+    description:
+      'Por cada club del territorio del solicitante: ingresos, egresos, neto, saldo acumulado, movimientos, meses sin movimientos y último movimiento. Requiere un rol global con finances:read (admin, campo local, unión, división); el servicio filtra por el territorio del rol.',
+  })
+  @ApiQuery({ name: 'local_field_id', required: false, type: Number })
+  @ApiQuery({ name: 'year', required: false, type: Number })
+  @ApiQuery({ name: 'month', required: false, type: Number })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Resumen por club y totales' })
+  @ApiResponse({ status: 403, description: 'Sin rol global con finances:read' })
+  async getOverview(
+    @Query() query: FinanceOverviewQueryDto,
+    @Request() req: any,
+  ) {
+    return this.financeReportsService.getOverview(req.user.sub, query);
   }
 
   // ========================================
@@ -174,6 +217,7 @@ export class FinancesController {
   @ApiQuery({ name: 'month', required: false, type: Number })
   @ApiQuery({ name: 'clubTypeId', required: false, type: Number })
   @ApiQuery({ name: 'categoryId', required: false, type: Number })
+  @ApiQuery({ name: 'club_section_id', required: false, type: Number })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Lista paginada de movimientos' })
@@ -190,6 +234,8 @@ export class FinancesController {
     clubTypeId?: number,
     @Query('categoryId', new ParseIntPipe({ optional: true }))
     categoryId?: number,
+    @Query('club_section_id', new ParseIntPipe({ optional: true }))
+    clubSectionId?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
     @Request() req?: any,
@@ -204,7 +250,7 @@ export class FinancesController {
 
     return this.financesService.findByClub(
       clubId,
-      { year, month, clubTypeId, categoryId },
+      { year, month, clubTypeId, categoryId, clubSectionId },
       pagination,
       userSectionId,
     );
@@ -216,11 +262,12 @@ export class FinancesController {
   @ApiOperation({
     summary: 'Resumen financiero del club',
     description:
-      'Obtiene ingresos, egresos y balance. Con year + month, balance es acumulado del año eclesiástico hasta ese mes.',
+      'Ingresos y egresos del periodo pedido (mes, año o todo) y balance acumulado de toda la historia hasta el fin del periodo. year_income/year_expenses son el acumulado del año eclesiástico hasta el mes. period_closed indica si el mes está cerrado.',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiQuery({ name: 'year', required: false, type: Number })
   @ApiQuery({ name: 'month', required: false, type: Number })
+  @ApiQuery({ name: 'club_section_id', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Resumen financiero' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
@@ -231,13 +278,101 @@ export class FinancesController {
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
     @Query('month', new ParseIntPipe({ optional: true })) month?: number,
+    @Query('club_section_id', new ParseIntPipe({ optional: true }))
+    clubSectionId?: number,
     @Request() req?: any,
   ) {
     const userSectionId: number | null =
       (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
         number | undefined) ?? null;
 
-    return this.financesService.getSummary(clubId, year, month, userSectionId);
+    return this.financesService.getSummary(
+      clubId,
+      year,
+      month,
+      userSectionId,
+      clubSectionId ?? null,
+    );
+  }
+
+  @Get('clubs/:clubId/finances/by-category')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Totales por categoría',
+    description:
+      'Ingresos y egresos agrupados por categoría (nombres traducidos), de mayor a menor total.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiQuery({ name: 'year', required: true, type: Number })
+  @ApiQuery({ name: 'month', required: false, type: Number })
+  @ApiQuery({ name: 'club_section_id', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Totales por categoría' })
+  @ApiResponse({ status: 403, description: 'Sección fuera de tu alcance' })
+  @ApiResponse({ status: 404, description: 'Club o sección no encontrados' })
+  async getByCategory(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Query() query: FinanceReportQueryDto,
+    @Request() req?: any,
+  ) {
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        number | undefined) ?? null;
+
+    return this.financeReportsService.getByCategory(
+      clubId,
+      query,
+      userSectionId,
+    );
+  }
+
+  @Get('clubs/:clubId/finances/export')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Exportar movimientos a Excel o PDF',
+    description:
+      'Descarga un .xlsx (hojas Movimientos y Resumen) o, con format=pdf, un PDF carta con resumen, totales por categoría y movimientos. Sin month se exporta el año completo.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiQuery({ name: 'year', required: true, type: Number })
+  @ApiQuery({ name: 'month', required: false, type: Number })
+  @ApiQuery({ name: 'club_section_id', required: false, type: Number })
+  @ApiQuery({
+    name: 'format',
+    required: false,
+    enum: ['xlsx', 'pdf'],
+    description: 'Formato del archivo (por defecto xlsx)',
+  })
+  @ApiResponse({ status: 200, description: 'Archivo .xlsx o .pdf' })
+  @ApiResponse({ status: 403, description: 'Sección fuera de tu alcance' })
+  @ApiResponse({ status: 404, description: 'Club o sección no encontrados' })
+  async exportMovements(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Query() query: FinanceExportQueryDto,
+    @Res() res: Response,
+    @Request() req?: any,
+  ) {
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        number | undefined) ?? null;
+
+    const file = await this.financeReportsService.buildExport(
+      clubId,
+      query,
+      userSectionId,
+      req?.user?.sub
+        ? { userId: req.user.sub, authorization: req.authorization }
+        : undefined,
+    );
+
+    res.set({
+      'Content-Type': file.contentType,
+      'Content-Disposition': file.contentDisposition,
+      'Content-Length': file.buffer.length,
+      ...(file.cacheControl ? { 'Cache-Control': file.cacheControl } : {}),
+    });
+    res.end(file.buffer);
   }
 
   @Post('clubs/:clubId/finances')
@@ -370,14 +505,20 @@ export class FinancesController {
     required: false,
     type: String,
     description:
-      'Justificación para eliminación en período cerrado (solo admin)',
+      'Nota de cierre (5 a 500 caracteres), obligatoria en mes cerrado (solo admin). También se acepta en el body como { reason }.',
   })
   @ApiResponse({ status: 200, description: 'Movimiento desactivado' })
   async remove(
     @Param('financeId', ParseIntPipe) financeId: number,
     @Request() req: any,
-    @Query('reason') reason?: string,
+    @Body() body?: RemoveFinanceDto,
+    @Query('reason') reasonQuery?: string,
   ) {
-    return this.financesService.remove(financeId, req.user.sub, reason);
+    // Body wins; `?reason=` stays supported for old clients.
+    return this.financesService.remove(
+      financeId,
+      req.user.sub,
+      body?.reason ?? reasonQuery,
+    );
   }
 }

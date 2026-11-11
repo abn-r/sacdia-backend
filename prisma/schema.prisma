@@ -1297,7 +1297,7 @@ model finances {
   club_type_id        Int
   finance_category_id Int
   finance_date        DateTime                 @db.Date
-  active              Boolean                  @default(false)
+  active              Boolean                  @default(true)
   created_by          String                   @db.Uuid
   modified_by_id      String?                  @db.Uuid
   created_at          DateTime?                @default(now()) @db.Timestamptz(6)

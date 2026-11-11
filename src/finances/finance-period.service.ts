@@ -1,5 +1,8 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { AppForbiddenException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { Cron } from '@nestjs/schedule';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -37,6 +40,10 @@ export type CloseMonthOptions = {
   replace?: boolean;
   closedAt?: Date;
 };
+
+export function closedPeriodKey(year: number, month: number): string {
+  return `${year}-${month}`;
+}
 
 export function previousUtcMonth(date: Date): { month: number; year: number } {
   const currentMonth = date.getUTCMonth() + 1;
@@ -177,18 +184,69 @@ export class FinancePeriodService {
     });
   }
 
+  /**
+   * Guards a write (create / update / delete) against a closed month.
+   *
+   * - Open month: nothing to check, returns `{ closed: false }`.
+   * - Closed month: only a global admin / super-admin may write (403
+   *   FINANCE_PERIOD_CLOSED otherwise) and the write must carry a closing note
+   *   of 5 to 500 characters (400 FINANCE_CLOSED_PERIOD_NOTE_REQUIRED).
+   *
+   * Returns the trimmed note that the caller must store in `post_closing_note`.
+   */
   async validatePeriodOpen(
     clubId: number,
     year: number,
     month: number,
     userId: string,
-  ): Promise<void> {
+    note?: string | null,
+  ): Promise<{ closed: boolean; note: string | null }> {
     const closing = await this.prisma.financePeriodClosing.findUnique({
       where: { club_id_year_month: { club_id: clubId, year, month } },
     });
 
-    if (!closing) return;
+    if (!closing) return { closed: false, note: null };
 
+    await this.assertGlobalAdmin(userId);
+    return { closed: true, note: this.requireClosingNote(note) };
+  }
+
+  /**
+   * Legacy movements without `club_section_id` cannot be tied to a club, so
+   * we cannot tell whether their month is closed. They are treated as closed:
+   * admin only and a closing note is required.
+   */
+  async validateUnscopedMovement(
+    userId: string,
+    note?: string | null,
+  ): Promise<{ closed: boolean; note: string | null }> {
+    await this.assertGlobalAdmin(userId);
+    return { closed: true, note: this.requireClosingNote(note) };
+  }
+
+  /**
+   * Which of the given months are closed for the club. Keys are `year-month`
+   * (see {@link closedPeriodKey}).
+   */
+  async getClosedPeriodKeys(
+    clubId: number,
+    periods: Array<{ year: number; month: number }>,
+  ): Promise<Set<string>> {
+    const unique = new Map<string, { year: number; month: number }>();
+    for (const p of periods) unique.set(closedPeriodKey(p.year, p.month), p);
+    if (unique.size === 0) return new Set();
+
+    const closings = await this.prisma.financePeriodClosing.findMany({
+      where: {
+        club_id: clubId,
+        OR: [...unique.values()].map((p) => ({ year: p.year, month: p.month })),
+      },
+      select: { year: true, month: true },
+    });
+    return new Set(closings.map((c) => closedPeriodKey(c.year, c.month)));
+  }
+
+  private async assertGlobalAdmin(userId: string): Promise<void> {
     const isAdmin = await this.authorizationContext.hasAnyGlobalRole(userId, [
       GlobalRole.ADMIN,
       GlobalRole.SUPER_ADMIN,
@@ -197,6 +255,16 @@ export class FinancePeriodService {
     if (!isAdmin) {
       throw new AppForbiddenException(ErrorCode.FINANCE_PERIOD_CLOSED);
     }
+  }
+
+  private requireClosingNote(note?: string | null): string {
+    const clean = typeof note === 'string' ? note.trim() : '';
+    if (clean.length < 5 || clean.length > 500) {
+      throw new AppBadRequestException(
+        ErrorCode.FINANCE_CLOSED_PERIOD_NOTE_REQUIRED,
+      );
+    }
+    return clean;
   }
 
   @Cron('0 0 1 * *', { name: 'finance-period-closing', timeZone: 'UTC' })

@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { FinanceAggregationService } from '../finances/finance-aggregation.service';
 import {
   AppBadRequestException,
   AppForbiddenException,
@@ -42,7 +43,10 @@ export interface QuarterlyComputedData {
   finances: {
     income: number;
     expenses: number;
+    /** Net of the quarter (income - expenses). */
     balance: number;
+    /** Cash on hand: all-time cumulative net up to the end of the quarter. */
+    total_balance: number;
     transactions: number;
   };
   missionary: {
@@ -58,7 +62,14 @@ export class QuarterlyReportsService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
-  ) {}
+    @Optional()
+    financeAggregation?: FinanceAggregationService,
+  ) {
+    this.financeAggregation =
+      financeAggregation ?? new FinanceAggregationService(prisma);
+  }
+
+  private readonly financeAggregation: FinanceAggregationService;
 
   // ========================================
   // GET OR CREATE DRAFT
@@ -247,29 +258,12 @@ export class QuarterlyReportsService {
       });
     }
 
-    // ── Finances aggregation across the 3 months ──
-    let totalIncome = 0;
-    let totalExpenses = 0;
-    let financesTransactions = 0;
-
-    if (allSectionIds.length > 0) {
-      for (const month of months) {
-        const finances = await this.prisma.finances.findMany({
-          where: {
-            club_section_id: { in: allSectionIds },
-            month,
-            year,
-            active: true,
-          },
-          include: { finances_categories: { select: { type: true } } },
-        });
-        for (const f of finances) {
-          if (f.finances_categories.type === 0) totalIncome += f.amount;
-          else totalExpenses += f.amount;
-          financesTransactions++;
-        }
-      }
-    }
+    // ── Finances: live totals from the shared aggregation (same numbers as
+    // the club summary, monthly and annual reports). ──
+    const finance = await this.financeAggregation.aggregate(allSectionIds, {
+      from: { year, month: months[0] },
+      to: { year, month: months[months.length - 1] },
+    });
 
     const quarterLabel = `Q${quarter} ${year}`;
 
@@ -283,10 +277,11 @@ export class QuarterlyReportsService {
       honors: { started: honorsStarted, completed: honorsCompleted },
       activities: { total: activitiesTotal },
       finances: {
-        income: totalIncome,
-        expenses: totalExpenses,
-        balance: totalIncome - totalExpenses,
-        transactions: financesTransactions,
+        income: finance.income,
+        expenses: finance.expenses,
+        balance: finance.net,
+        total_balance: finance.balance,
+        transactions: finance.movements,
       },
       missionary: { baptized_this_quarter: 0 },
     };

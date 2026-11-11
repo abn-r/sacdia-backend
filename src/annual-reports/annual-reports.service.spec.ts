@@ -82,7 +82,7 @@ describe('AnnualReportsService computeData year boundaries', () => {
       findMany: jest.fn().mockResolvedValue([]),
     },
     activities: { count: jest.fn().mockResolvedValue(0) },
-    finances: { findMany: jest.fn().mockResolvedValue([]) },
+    $queryRaw: jest.fn().mockResolvedValue([]),
     club_enrollments: { findMany: jest.fn().mockResolvedValue([]) },
     club_annual_rankings: { findFirst: jest.fn().mockResolvedValue(null) },
   });
@@ -168,23 +168,60 @@ describe('AnnualReportsService computeData year boundaries', () => {
     expect(data.months_reported).toBe(2);
   });
 
-  it('aggregates finances for the twelve months of the calendar year, whatever the server timezone', async () => {
+  it('takes the finance block from the shared aggregation over the whole calendar year, whatever the server timezone', async () => {
     await withServerTimezone('America/Mexico_City', async () => {
       const prisma = buildPrisma([10]);
+      const aggregation = {
+        aggregate: jest.fn().mockResolvedValue({
+          income: 5000,
+          expenses: 1200,
+          net: 3800,
+          movements: 14,
+          balance: 9100,
+        }),
+      };
       const service = new AnnualReportsService(
         prisma as any,
         {} as any,
         {} as any,
+        aggregation as any,
       );
 
-      await service.computeData(1, calendarYear.year_id);
+      const data = await service.computeData(1, calendarYear.year_id);
 
-      const periods = prisma.finances.findMany.mock.calls.map(
-        ([args]) => `${args.where.year}-${args.where.month}`,
-      );
-      expect(periods).toEqual(
-        Array.from({ length: 12 }, (_, i) => `2026-${i + 1}`),
-      );
+      expect(aggregation.aggregate).toHaveBeenCalledWith([10], {
+        from: { year: 2026, month: 1 },
+        to: { year: 2026, month: 12 },
+      });
+      expect(data.finances).toEqual({
+        income: 5000,
+        expenses: 1200,
+        balance: 3800,
+        total_balance: 9100,
+        transactions: 14,
+      });
+    });
+  });
+
+  it('builds its own aggregation over live movements when none is injected', async () => {
+    const prisma = buildPrisma([10]);
+    prisma.$queryRaw.mockResolvedValue([
+      { income: 700n, expenses: 200n, movements: 3n, balance: 1500n },
+    ]);
+    const service = new AnnualReportsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+    );
+
+    const data = await service.computeData(1, calendarYear.year_id);
+
+    expect(data.finances).toEqual({
+      income: 700,
+      expenses: 200,
+      balance: 500,
+      total_balance: 1500,
+      transactions: 3,
     });
   });
 });
