@@ -61,24 +61,17 @@ import {
   EcclesiasticalYearService,
 } from '../common/services/ecclesiastical-year.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
+import { VISIBLE_DEPENDENT } from '../guardianships/guardianship-queries';
 import { assertAssignmentActivationAllowed } from '../membership-requests/assignment-activation-gate';
 import { GlobalRole, ClubRole } from '../common/authorization/roles';
+import { effectiveMaxPerSection } from './club-role-rules';
+import { assertServiceRoleAssignable } from './club-role-candidates.queries';
+import { RoleRequirementService } from '../role-requirements/role-requirement.service';
 
 @Injectable()
 export class ClubsService {
   private readonly logger = new Logger(ClubsService.name);
   private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
-  private static readonly CANONICAL_ROLE_SLOT_LIMITS_BY_NAME: Record<
-    string,
-    number
-  > = {
-    director: 1,
-    [ClubRole.DEPUTY_DIRECTOR]: 2,
-    secretary: 1,
-    treasurer: 1,
-    [ClubRole.SECRETARY_TREASURER]: 1,
-  };
-
   constructor(
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
@@ -91,6 +84,7 @@ export class ClubsService {
     private readonly criticalAudit: CriticalAuditWriterService,
     private readonly sectionRoleMutation: SectionRoleMutationPolicy,
     private readonly temporalContexts: TemporalContextFactory,
+    private readonly roleRequirements: RoleRequirementService,
   ) {}
 
   // ========================================
@@ -631,6 +625,9 @@ export class ClubsService {
       active: true,
       status: 'active',
       ecclesiastical_year_id: activeYear.year_id,
+      // Frozen and purged dependents are not members anymore (the purge ends
+      // their assignments later); adults and teens have no profile and stay.
+      users: { OR: [{ dependent_profile: { is: null } }, VISIBLE_DEPENDENT] },
     };
     // Users holding a current assignment in this section. The current class
     // and the Guía Mayor eligibility are loaded through this relation filter
@@ -820,6 +817,21 @@ export class ClubsService {
         clubSectionId: dto.club_section_id as number,
         db: tx,
       });
+      // D1 / D4: a service role in AV/CQ needs an active or pending GM
+      // `member` row this year, and nobody holds two service roles in a section.
+      await assertServiceRoleAssignable(tx, {
+        userId: dto.user_id,
+        roleName: targetRoleName,
+        clubSectionId: dto.club_section_id as number,
+        assignmentYearId: ecclesiasticalYearId,
+        currentYearId: await this.getActiveEcclesiasticalYearId(),
+      });
+      // D5: an enforced counselor «constancia» requirement (BLOCK and in force).
+      await this.roleRequirements.assertMet(tx, {
+        userId: dto.user_id,
+        roleName: targetRoleName,
+        clubSectionId: dto.club_section_id as number,
+      });
       // A dependent needs verified guardian consent before any active role.
       await assertAssignmentActivationAllowed(tx, dto.user_id);
       const created = await tx.club_role_assignments.create({
@@ -989,6 +1001,24 @@ export class ClubsService {
           roleName: eligibilityRoleName,
           clubSectionId: existing.club_section_id,
           db: tx,
+        });
+      }
+      if (eligibilityRoleName !== null && existing.club_section_id != null) {
+        // D1 / D4 / D5, same rules as the POST: a PATCH that changes the role
+        // or reactivates the assignment must not bypass them. The row being
+        // edited is excluded from the duplicate check.
+        await assertServiceRoleAssignable(tx, {
+          userId: existing.user_id,
+          roleName: eligibilityRoleName,
+          clubSectionId: existing.club_section_id,
+          assignmentYearId: slotYear,
+          currentYearId: await this.getActiveEcclesiasticalYearId(),
+          excludeAssignmentId: existing.assignment_id,
+        });
+        await this.roleRequirements.assertMet(tx, {
+          userId: existing.user_id,
+          roleName: eligibilityRoleName,
+          clubSectionId: existing.club_section_id,
         });
       }
       if (becomesActive || dto.status === 'active') {
@@ -1221,6 +1251,11 @@ export class ClubsService {
       });
       // Checked before the outgoing director is ended: nothing is written.
       await assertAssignmentActivationAllowed(tx, dto.successor_user_id);
+      await this.roleRequirements.assertMet(tx, {
+        userId: dto.successor_user_id,
+        roleName: ClubRole.DIRECTOR,
+        clubSectionId: sectionId,
+      });
 
       const ended = await tx.club_role_assignments.update({
         where: { assignment_id: dto.current_assignment_id },
@@ -1381,6 +1416,11 @@ export class ClubsService {
       }
 
       await assertAssignmentActivationAllowed(tx, dto.user_id);
+      await this.roleRequirements.assertMet(tx, {
+        userId: dto.user_id,
+        roleName: ClubRole.DIRECTOR,
+        clubSectionId: sectionId,
+      });
       const created = await tx.club_role_assignments.create({
         data: {
           user_id: dto.user_id,
@@ -2212,11 +2252,7 @@ export class ClubsService {
     roleName: string,
     configuredMax: number | null | undefined,
   ): number | null {
-    return (
-      configuredMax ??
-      ClubsService.CANONICAL_ROLE_SLOT_LIMITS_BY_NAME[roleName] ??
-      null
-    );
+    return effectiveMaxPerSection(roleName, configuredMax);
   }
 
   private async getActiveEcclesiasticalYearId(): Promise<number> {

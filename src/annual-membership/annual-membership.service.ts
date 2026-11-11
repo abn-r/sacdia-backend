@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { VISIBLE_DEPENDENT } from '../guardianships/guardianship-queries';
 import {
   EcclesiasticalYearService,
   ecclesiasticalYearName,
@@ -12,6 +13,7 @@ import { ClassEnrollmentPolicyService } from '../classes/class-enrollment-policy
 import { ClassEnrollmentWriter } from '../classes/class-enrollment-writer.service';
 import {
   AppConflictException,
+  AppBadRequestException,
   AppException,
   AppForbiddenException,
   AppNotFoundException,
@@ -29,6 +31,11 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { ClubRole } from '../common/authorization/roles';
+import {
+  ClassAssignmentResolverService,
+  exceedsClubTypeMaxAge,
+} from '../common/services/class-assignment-resolver.service';
+import { clubTypeSectionKind } from '../clubs/section-display';
 
 export type SuggestedClass = {
   status: 'pending' | 'blocked' | 'resolved' | 'complete';
@@ -79,6 +86,8 @@ const CLASS_POLICY_BLOCKED_CODES = new Set<string>([
   ErrorCode.CLASS_NOT_AVAILABLE_FOR_YEAR,
   ErrorCode.CLASS_NOT_FOUND,
   ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+  // An adult cannot be enrolled as an AV/CQ child.
+  ErrorCode.ANNUAL_AGE_ABOVE_CLUB_TYPE,
   // A dependent without verified guardian consent cannot become active.
   ErrorCode.MR_CONSENT_NOT_VERIFIED,
 ]);
@@ -117,6 +126,7 @@ export class AnnualMembershipService {
     private readonly classEnrollmentPolicy: ClassEnrollmentPolicyService,
     private readonly classEnrollmentWriter: ClassEnrollmentWriter,
     private readonly roleEligibility: ClubRoleEligibilityService,
+    private readonly classAssignmentResolver: ClassAssignmentResolverService,
   ) {}
 
   async listContinuations(
@@ -150,6 +160,8 @@ export class AnnualMembershipService {
       where: {
         club_section_id: sectionId,
         status: { in: ['active', 'inactive', 'ended'] },
+        // A frozen or purged minor is gone for the club: never a candidate.
+        users: { OR: [{ dependent_profile: { is: null } }, VISIBLE_DEPENDENT] },
       },
       select: {
         user_id: true,
@@ -216,7 +228,14 @@ export class AnnualMembershipService {
       );
     }
 
-    const extraIds = [...new Set(historical.map((row) => row.user_id))].filter(
+    // Candidates come only from `member` rows (current or historical). Someone
+    // who only ever held a service role here is staff, not a member to enroll.
+    const memberHistorical = destHistorical.filter(
+      (row) => row.roles?.role_name === ClubRole.MEMBER,
+    );
+    const extraIds = [
+      ...new Set(memberHistorical.map((row) => row.user_id)),
+    ].filter(
       (userId) =>
         !byUser.has(userId) &&
         !enrolledHere.has(userId) &&
@@ -236,7 +255,7 @@ export class AnnualMembershipService {
         continue;
       }
 
-      const hist = historical.find((row) => row.user_id === userId);
+      const hist = memberHistorical.find((row) => row.user_id === userId);
       byUser.set(
         userId,
         this._toListItem({
@@ -277,15 +296,24 @@ export class AnnualMembershipService {
     const limit = pagination.limit ?? 20;
     const start = (page - 1) * limit;
     const pageItems = items.slice(start, start + limit);
+    const blocks = await this._resolveBlocks(pageItems, section, currentYear);
     const withSuggestions = await Promise.all(
-      pageItems.map(async (item) => ({
-        ...item,
-        suggested_class: await this._suggestedClass(
+      pageItems.map(async (item) => {
+        const suggested = await this._suggestedClass(
           item.user_id,
           sectionId,
           currentYear.year_id,
-        ),
-      })),
+        );
+        const blockedReason =
+          blocks.get(item.user_id) ??
+          (suggested.status === 'blocked' ? (suggested.code ?? null) : null);
+        return {
+          ...item,
+          eligibility: blockedReason ? ('blocked' as const) : item.eligibility,
+          blocked_reason: blockedReason,
+          suggested_class: suggested,
+        };
+      }),
     );
     return createPaginatedResult(withSuggestions, total, pagination);
   }
@@ -667,7 +695,7 @@ export class AnnualMembershipService {
    */
   private async _assertMemberPlacement(
     tx: Prisma.TransactionClient,
-    params: { userId: string; sectionId: number },
+    params: { userId: string; sectionId: number; year: CurrentYear },
   ): Promise<void> {
     await this.roleEligibility.assertAssignment({
       userId: params.userId,
@@ -675,6 +703,47 @@ export class AnnualMembershipService {
       clubSectionId: params.sectionId,
       db: tx,
     });
+    await this._assertAgeWithinSectionType(tx, params);
+  }
+
+  /** An adult is never enrolled as an AV/CQ member (decision 2026-11-02). */
+  private async _assertAgeWithinSectionType(
+    tx: Prisma.TransactionClient,
+    params: { userId: string; sectionId: number; year: CurrentYear },
+  ): Promise<void> {
+    const section = await tx.club_sections.findUnique({
+      where: { club_section_id: params.sectionId },
+      select: { club_type_id: true },
+    });
+    if (section?.club_type_id == null) {
+      return;
+    }
+    const maxAge = await this.classAssignmentResolver.resolveClubTypeMaxAge(
+      tx,
+      {
+        clubTypeId: section.club_type_id,
+        yearStartDate: params.year.start_date,
+      },
+    );
+    if (maxAge == null) {
+      return;
+    }
+    const user = await tx.users.findUnique({
+      where: { user_id: params.userId },
+      select: { birthday: true },
+    });
+    const excess = exceedsClubTypeMaxAge(
+      user?.birthday,
+      params.year.start_date,
+      maxAge,
+    );
+    if (excess) {
+      throw new AppBadRequestException(ErrorCode.ANNUAL_AGE_ABOVE_CLUB_TYPE, {
+        age: excess.age,
+        maxAge: excess.maxAge,
+        clubSectionId: params.sectionId,
+      });
+    }
   }
 
   private async _afterClass(
@@ -905,6 +974,61 @@ export class AnnualMembershipService {
       ifExists: 'return',
     });
     return written.enrollment_id;
+  }
+
+  /**
+   * Per-user hard blocks for the list, mirroring what the POST refuses:
+   * GM-eligible people cannot be AV/CQ members, and nobody older than the
+   * section's club type can be enrolled in it.
+   */
+  private async _resolveBlocks(
+    items: ContinuationListItem[],
+    section: {
+      club_type_id?: number | null;
+      club_types?: { name: string } | null;
+    },
+    year: CurrentYear,
+  ): Promise<Map<string, ErrorCode>> {
+    const blocks = new Map<string, ErrorCode>();
+    if (items.length === 0) {
+      return blocks;
+    }
+    const userIds = items.map((item) => item.user_id);
+
+    const kind = clubTypeSectionKind(section.club_types?.name);
+    if (kind === 'AV' || kind === 'CQ') {
+      const eligibility = await this.roleEligibility.evaluateMany(userIds);
+      for (const userId of userIds) {
+        if (eligibility.get(userId)?.eligible) {
+          blocks.set(
+            userId,
+            ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+          );
+        }
+      }
+    }
+
+    if (section.club_type_id != null) {
+      const maxAge = await this.classAssignmentResolver.resolveClubTypeMaxAge(
+        this.prisma,
+        { clubTypeId: section.club_type_id, yearStartDate: year.start_date },
+      );
+      if (maxAge != null) {
+        const users = await this.prisma.users.findMany({
+          where: { user_id: { in: userIds } },
+          select: { user_id: true, birthday: true },
+        });
+        for (const user of users) {
+          if (
+            !blocks.has(user.user_id) &&
+            exceedsClubTypeMaxAge(user.birthday, year.start_date, maxAge)
+          ) {
+            blocks.set(user.user_id, ErrorCode.ANNUAL_AGE_ABOVE_CLUB_TYPE);
+          }
+        }
+      }
+    }
+    return blocks;
   }
 
   private async _suggestedClass(

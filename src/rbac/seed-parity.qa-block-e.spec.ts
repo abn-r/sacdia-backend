@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -12,6 +12,26 @@ const stripComments = (sql: string) => sql.replace(/--[^\n]*/g, '');
 const collapse = (sql: string) => stripComments(sql).replace(/\s+/g, ' ');
 
 const SEED = stripComments(read('seeds/role-permissions.seed.sql'));
+
+/**
+ * The 2026-11-02 migrations below are frozen snapshots of the seeds (applied,
+ * checksummed). A permission created by a LATER migration (and mirrored in the
+ * seeds) is outside what those snapshots can contain, so those checks skip it.
+ * Each such permission has its own migration and spec.
+ */
+const SNAPSHOT_MIGRATION = '20261102130000_align_role_permissions_with_seed';
+const permissionsOfLaterMigrations: ReadonlySet<string> = new Set(
+  readdirSync(join(PRISMA_DIR, 'migrations'))
+    .filter((dir) => /^\d{14}_/.test(dir) && dir > SNAPSHOT_MIGRATION)
+    .flatMap((dir) => {
+      const sql = stripComments(read(`migrations/${dir}/migration.sql`));
+      return /INSERT INTO permissions/i.test(sql)
+        ? [...sql.matchAll(/\('([a-z_-]+:[a-z_-]+)',\s*'/g)].map((m) => m[1])
+        : [];
+    }),
+);
+const mentionsLaterPermission = (sql: string) =>
+  [...permissionsOfLaterMigrations].some((name) => sql.includes(`'${name}'`));
 
 /**
  * Offset where the seed last wipes every row of a role. Grants written
@@ -233,7 +253,8 @@ describe('seed-only permissions and seed cleanups (2026-11-02)', () => {
       .filter(
         (statement) =>
           statement.startsWith('DELETE FROM role_permissions rp') &&
-          statement.includes('AND NOT ('),
+          statement.includes('AND NOT (') &&
+          !mentionsLaterPermission(statement),
       );
     expect(cleanups.length).toBeGreaterThanOrEqual(16);
     for (const cleanup of cleanups) {
@@ -288,7 +309,11 @@ describe('assistant-admin role migration', () => {
     for (const statement of SEED.split(';')) {
       if (!statement.includes('DELETE FROM role_permissions rp')) continue;
       const [target, allowed] = statement.split('AND NOT');
-      if (allowed === undefined || allowed.includes("'assistant-admin'")) {
+      if (
+        allowed === undefined ||
+        allowed.includes("'assistant-admin'") ||
+        mentionsLaterPermission(target)
+      ) {
         continue;
       }
       for (const match of target.matchAll(/'([a-z_-]+:[a-z_-]+)'/g)) {
@@ -395,6 +420,7 @@ describe('role permissions aligned with the seeds (2026-11-02)', () => {
     ].map((match) => match[1]);
     expect(names.length).toBeGreaterThan(200);
     for (const name of names) {
+      if (permissionsOfLaterMigrations.has(name)) continue;
       expect(migration).toContain(`('${name}',`);
     }
   });

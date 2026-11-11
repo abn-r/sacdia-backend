@@ -233,8 +233,13 @@ export class ConsentVerificationService {
     const dependentId = probe.user_id;
     const profile = await tx.dependent_profiles.findUnique({
       where: { user_id: dependentId },
-      select: { user_id: true },
+      select: { user_id: true, frozen_at: true, purged_at: true },
     });
+    if (profile?.frozen_at || profile?.purged_at) {
+      // Frozen or purged: the request is dead data, hidden from every list.
+      // The same 404 as an unknown request, for every kind of reviewer.
+      throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+    }
     if (!profile) {
       // Adults have no guardian consent to verify.
       throw new AppNotFoundException(

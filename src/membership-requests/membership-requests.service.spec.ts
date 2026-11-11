@@ -56,6 +56,7 @@ describe('MembershipRequestsService', () => {
     },
     // Expiry of a custodial minor's request freezes the profile (P3-A18).
     dependent_profiles: {
+      findUnique: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
@@ -209,6 +210,34 @@ describe('MembershipRequestsService', () => {
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['frozen', { frozen_at: new Date('2026-10-20'), purged_at: null }],
+      [
+        'purged',
+        {
+          frozen_at: new Date('2026-10-20'),
+          purged_at: new Date('2026-10-27'),
+        },
+      ],
+    ])(
+      'refuses a %s dependent with 404 MR_NOT_FOUND and activates nothing',
+      async (_label, profile) => {
+        transactionMock.dependent_profiles.findUnique.mockResolvedValue(
+          profile,
+        );
+
+        await expect(
+          service.approve(10, pendingAssignment.assignment_id, actorId),
+        ).rejects.toMatchObject({ code: ErrorCode.MR_NOT_FOUND });
+
+        expect(
+          transactionMock.club_role_assignments.updateMany,
+        ).not.toHaveBeenCalled();
+        expect(mockRoleEligibility.assertAssignment).not.toHaveBeenCalled();
+        expect(mockAuditLogs.recordEvent).not.toHaveBeenCalled();
+      },
+    );
 
     it('rejects path/assignment section mismatches as not found', async () => {
       transactionMock.club_role_assignments.updateMany.mockResolvedValue({
@@ -1622,6 +1651,33 @@ describe('MembershipRequestsService', () => {
       });
     });
 
+    it('hides frozen and purged dependents from the list (and so from the dashboard count)', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+
+      await service.listPending(10, VIEWER);
+      await service.listPending(10, VIEWER, { verifyOnly: true });
+
+      // The dashboard pending count is listPending(...).length: one filter
+      // covers both. Adults/teens (no profile) stay; a frozen or purged
+      // profile is excluded.
+      for (const [{ where }] of mockPrismaService.club_role_assignments.findMany
+        .mock.calls) {
+        expect(where).toMatchObject({
+          club_section_id: 10,
+          status: 'pending',
+          active: true,
+          users: {
+            OR: [
+              { dependent_profile: { is: null } },
+              {
+                dependent_profile: { is: { frozen_at: null, purged_at: null } },
+              },
+            ],
+          },
+        });
+      }
+    });
+
     it('does not read guardianships when nobody in the page is a dependent', async () => {
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
         request('a1', 'a1@x.org'),
@@ -1757,6 +1813,13 @@ describe('MembershipRequestsService', () => {
         club_section_id: { in: [10, 20, 30] },
         status: 'pending',
         active: true,
+        // frozen / purged dependents are dead data
+        users: {
+          OR: [
+            { dependent_profile: { is: null } },
+            { dependent_profile: { is: { frozen_at: null, purged_at: null } } },
+          ],
+        },
       });
       // candidates + one page read, whatever the number of sections
       expect(
@@ -1867,6 +1930,12 @@ describe('MembershipRequestsService', () => {
         assignment_id: { in: [`as-${second}`, `as-${first}`] },
         status: 'pending',
         active: true,
+        users: {
+          OR: [
+            { dependent_profile: { is: null } },
+            { dependent_profile: { is: { frozen_at: null, purged_at: null } } },
+          ],
+        },
       });
     });
   });

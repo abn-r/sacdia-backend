@@ -32,6 +32,8 @@ const BOARD_ROLE_NAMES = [
   ClubRole.SECRETARY,
   ClubRole.TREASURER,
   ClubRole.SECRETARY_TREASURER,
+  // D6: a Guia Mayor counselor in AV/CQ returns to GM like the board roles.
+  ClubRole.COUNSELOR,
 ] as const;
 
 const AV_CQ_TYPE_NAMES = ['Aventureros', 'Conquistadores'] as const;

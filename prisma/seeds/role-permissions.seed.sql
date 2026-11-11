@@ -2996,3 +2996,67 @@ WHERE r.role_name IN ('director-union', 'assistant-union')
     'camporee_event_types:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- service_credentials:review + role_requirements:manage
+-- ============================
+-- The counselor «constancia» review is scoped in the service (Local Field:
+-- clubs of its field; coordinators: their territory; pastors: districts they
+-- are assigned to). Never club roles, union/division roles or assistant-admin,
+-- even though the wildcard grants above hand it to assistant-admin: the
+-- cleanup below takes it back. Migration 20261110130000_service_credentials_permissions.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'service_credentials:review'
+  AND NOT (
+    r.role_name IN (
+      'director-lf', 'assistant-lf',
+      'coordinator', 'zone-coordinator', 'general-coordinator',
+      'pastor',
+      'admin', 'super-admin'
+    )
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director-lf', 'assistant-lf',
+    'coordinator', 'zone-coordinator', 'general-coordinator',
+    'pastor',
+    'admin', 'super-admin'
+  )
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'service_credentials:review'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'role_requirements:manage'
+  AND NOT (
+    r.role_name IN ('admin', 'super-admin')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('admin', 'super-admin')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'role_requirements:manage'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();

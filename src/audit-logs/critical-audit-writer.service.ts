@@ -78,9 +78,10 @@ export class CriticalAuditWriterService {
     markExplicitAuditRecorded();
     const data = this.data(event);
     const expected = this.canonical(this.comparable(data));
+    // `::text`: Prisma 7.10 can't deserialize the `void` the lock returns.
     await this.persistence(
       tx.$queryRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`critical-audit:${event.eventKey}`}, 0))`,
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`critical-audit:${event.eventKey}`}, 0))::text`,
       ),
     );
     const existing = await this.persistence(

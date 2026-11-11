@@ -285,6 +285,15 @@ export const CAPABILITY_DEFINITIONS: Record<
     levelIn(...LEVELS_WITH_TERRITORY),
     ({ hasOperationalClubGrant }) => hasOperationalClubGrant,
   ),
+  // Platform admins, Local Field, coordinators and pastors review the
+  // counselor «constancia» of the people in their scope; the service decides
+  // which people (assistant-admin does not hold the permission).
+  'service_credentials.review': globalRoleIn([
+    ...PLATFORM_ADMINS,
+    ...LOCAL_FIELD_ROLES,
+    ...COORDINATOR_ROLES,
+    GlobalRole.PASTOR,
+  ]),
   'system.config.read': globalRoleIn(ADMIN_SCOPE_ROLES),
   'system.jobs.run': globalRoleIn(SUPER_ADMIN_ONLY),
   'units.manage': clubRoleIn(CLUB_ADMINISTRATIVE_STAFF),

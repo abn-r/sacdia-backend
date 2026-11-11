@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { VISIBLE_DEPENDENT } from '../../guardianships/guardianship-queries';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -119,6 +120,8 @@ export class SectionRankingsService {
       where: {
         club_section_id: sectionId,
         ecclesiastical_year_id: yearId,
+        // Frozen and purged dependents are not listed (no profile = stays).
+        user: { OR: [{ dependent_profile: { is: null } }, VISIBLE_DEPENDENT] },
       },
       orderBy: [{ rank_position: { sort: 'asc', nulls: 'last' } }],
       include: {

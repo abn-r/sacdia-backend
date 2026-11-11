@@ -881,6 +881,9 @@ const EXPECTED_WRITE_SITES = [
   'clubs/clubs.service.ts | ClubsService.succeedSectionDirector | update | no-activation | gated',
   // PATCH /club-roles/:assignmentId: dynamic data (dto.status / role change)
   'clubs/clubs.service.ts | ClubsService.updateRoleAssignment | update | ACTIVATES | gated',
+  // Closes the pending requests of a purged dependent (purge cron, cleanup script).
+  'membership-requests/membership-request-cancellation.ts | cancelPendingRequestsOfUsers | updateManyAndReturn | no-activation | ungated',
+  'membership-requests/membership-request-cancellation.ts | endLiveAssignmentsOfUsers | updateManyAndReturn | no-activation | ungated',
   'membership-requests/membership-requests.service.ts | MembershipRequestsService.approve | updateMany | ACTIVATES | gated',
   'membership-requests/membership-requests.service.ts | MembershipRequestsService.cancelPendingForUser | updateMany | no-activation | ungated',
   'membership-requests/membership-requests.service.ts | MembershipRequestsService.expireStaleRequests | updateManyAndReturn | no-activation | ungated',

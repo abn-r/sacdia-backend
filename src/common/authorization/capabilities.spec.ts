@@ -162,6 +162,7 @@ const ACTORS: Array<{
       'rbac.view_user_roles',
       'reports.view_all',
       'scoring_categories.manage',
+      'service_credentials.review',
       'system.config.read',
       'system.jobs.run',
       'users.create_in_scope',
@@ -194,6 +195,7 @@ const ACTORS: Array<{
       'investiture.consult_field_window',
       'rbac.view_user_roles',
       'reports.view_all',
+      'service_credentials.review',
       'system.config.read',
       'users.create_in_scope',
       'users.manage_in_scope',
@@ -266,6 +268,7 @@ const ACTORS: Array<{
       'investiture.consult_field_window',
       'reports.view_local_field',
       'scoring_categories.manage',
+      'service_credentials.review',
       'users.create_in_scope',
       'users.manage_in_scope',
     ],
@@ -333,6 +336,7 @@ const ACTORS: Array<{
       'admin_panel.access',
       'admin_panel.pastor_only',
       'investiture.authorize_requests',
+      'service_credentials.review',
     ],
   },
   {
@@ -345,7 +349,11 @@ const ACTORS: Array<{
       local_field_id: null,
     },
     assignable: [],
-    capabilities: ['admin_panel.access', 'coordination.hub_view'],
+    capabilities: [
+      'admin_panel.access',
+      'coordination.hub_view',
+      'service_credentials.review',
+    ],
   },
   {
     name: 'active club director',
@@ -445,7 +453,7 @@ describe('capabilities catalog', () => {
       ...CAPABILITY_KEYS,
     ]);
     expect([...CAPABILITY_KEYS]).toEqual(sorted([...CAPABILITY_KEYS]));
-    expect(CAPABILITY_KEYS).toHaveLength(47);
+    expect(CAPABILITY_KEYS).toHaveLength(48);
   });
 
   describe.each(ACTORS)(

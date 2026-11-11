@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { VISIBLE_DEPENDENT } from '../guardianships/guardianship-queries';
 import {
   AppConflictException,
   AppNotFoundException,
@@ -85,11 +86,15 @@ export class AnnualMembershipPolicyService {
       };
     }
 
+    // Only `member` rows are an annual membership. Staff roles (director,
+    // secretary, counselor...) never anchor the base section: a GM-eligible
+    // person holds them in AV/CQ while their membership lives in GM.
     const assignments = await tx.club_role_assignments.findMany({
       where: {
         user_id: userId,
         active: true,
         club_section_id: { not: null },
+        roles: { role_name: ClubRole.MEMBER },
       },
       select: {
         assignment_id: true,
@@ -250,6 +255,8 @@ export class AnnualMembershipPolicyService {
         role_id: memberRole.role_id,
         status: 'inactive',
         active: true,
+        // A frozen or purged minor is gone for the club: never listed.
+        users: { OR: [{ dependent_profile: { is: null } }, VISIBLE_DEPENDENT] },
       },
       select: {
         user_id: true,

@@ -812,6 +812,18 @@ ON CONFLICT (permission_name) DO UPDATE SET
   active = EXCLUDED.active,
   modified_at = now();
 
+-- ============================
+-- Service credentials (constancia de consejería: revisión y requisitos por cargo)
+-- ============================
+-- Same rows as migration 20261110130000_service_credentials_permissions.
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('service_credentials:review', 'Review counselor credentials of people in own scope (Local Field, coordinators, district pastors)', true),
+  ('role_requirements:manage', 'Change the mode, start date and equivalent certification of a club role requirement', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================

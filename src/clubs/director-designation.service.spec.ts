@@ -8,12 +8,16 @@ import { EcclesiasticalYearService } from '../common/services/ecclesiastical-yea
 import { ErrorCode } from '../common/errors/error-codes';
 import { SectionRoleMutationPolicy } from '../common/authorization/section-role-mutation.policy';
 import { TemporalContextFactory } from '../common/clock/temporal-context.factory';
+import { RoleRequirementService } from '../role-requirements/role-requirement.service';
 import { ZonedBusinessTimeService } from '../common/clock/zoned-business-time.service';
 import { TestingClock } from '../common/clock/testing-clock';
 import { CLOCK } from '../common/clock/clock';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { CriticalAuditWriterService } from '../audit-logs/critical-audit-writer.service';
-import { AppForbiddenException } from '../common/errors/app.exception';
+import {
+  AppConflictException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
 
 function hashDirectorDesignationRequest(input: {
   clubId: number;
@@ -35,6 +39,8 @@ function hashDirectorDesignationRequest(input: {
 
 describe('DirectorDesignationService', () => {
   let service: DirectorDesignationService;
+
+  const mockRoleRequirements = { assertMet: jest.fn() };
 
   const mockPrismaService = {
     club_sections: {
@@ -134,6 +140,7 @@ describe('DirectorDesignationService', () => {
         SectionRoleMutationPolicy,
         { provide: ClubRoleEligibilityService, useValue: mockRoleEligibility },
         { provide: CriticalAuditWriterService, useValue: mockCriticalAudit },
+        { provide: RoleRequirementService, useValue: mockRoleRequirements },
         { provide: CLOCK, useValue: clock },
         ZonedBusinessTimeService,
         TemporalContextFactory,
@@ -147,6 +154,7 @@ describe('DirectorDesignationService', () => {
       Promise.resolve(gateAdultUser()),
     );
     mockRoleEligibility.assertAssignment.mockResolvedValue(undefined);
+    mockRoleRequirements.assertMet.mockReset().mockResolvedValue(undefined);
     mockCriticalAudit.write.mockResolvedValue({
       auditLogId: 1n,
       replayed: false,
@@ -433,6 +441,29 @@ describe('DirectorDesignationService', () => {
           mockPrismaService.director_succession_plans.create,
         ).not.toHaveBeenCalled();
         expect(mockCriticalAudit.write).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('counselor requirement (D8)', () => {
+      it('rejects a successor without the enforced constancia before writing', async () => {
+        setupHappyPath();
+        mockRoleRequirements.assertMet.mockRejectedValue(
+          new AppConflictException(ErrorCode.CLUB_ROLE_REQUIREMENT_MISSING),
+        );
+        await expect(designate()).rejects.toMatchObject({
+          code: ErrorCode.CLUB_ROLE_REQUIREMENT_MISSING,
+        });
+        expect(mockRoleRequirements.assertMet).toHaveBeenCalledWith(
+          mockPrismaService,
+          expect.objectContaining({
+            userId: DESIGNATEE_USER_ID,
+            roleName: 'director',
+            clubSectionId: SECTION_ID,
+          }),
+        );
+        expect(
+          mockPrismaService.director_succession_plans.create,
+        ).not.toHaveBeenCalled();
       });
     });
 

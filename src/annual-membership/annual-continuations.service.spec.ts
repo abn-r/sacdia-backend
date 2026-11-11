@@ -14,6 +14,7 @@ import { ClassEnrollmentWriter } from '../classes/class-enrollment-writer.servic
 import { AnnualMembershipPolicyService } from './annual-membership-policy.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
 import { ClubRoleEligibilityService } from '../club-role-eligibility/club-role-eligibility.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
@@ -75,6 +76,7 @@ function makePrismaMock() {
     // Consent gate: adults by default (the gate reads the users row).
     users: {
       findUnique: jest.fn().mockResolvedValue(gateAdultUser()),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     guardianships: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -149,6 +151,7 @@ describe('AnnualMembershipService', () => {
         { provide: AnnualMembershipPolicyService, useValue: membershipPolicy },
         { provide: AuditLogsService, useValue: auditLogs },
         ClubRoleEligibilityService,
+        ClassAssignmentResolverService,
       ],
     }).compile();
 
@@ -775,16 +778,23 @@ describe('AnnualMembershipService', () => {
       stubCqDestination();
       membershipPolicy.listNotEnrolled.mockResolvedValue([]);
       prisma.club_role_assignments.findMany.mockResolvedValue([]);
-      prisma.enrollments.findMany.mockResolvedValue([
-        {
-          user_id: USER_AV_GRADUATE,
-          users: {
-            name: 'Eva',
-            paternal_last_name: 'Ávila',
-            maternal_last_name: 'Cruz',
-          },
-        },
-      ]);
+      // The GM-01 eligibility query (asset_code filter) finds nothing: the
+      // graduate is only an AV graduate.
+      prisma.enrollments.findMany.mockImplementation(
+        async (args: { where?: { classes?: { asset_code?: string } } }) =>
+          args?.where?.classes?.asset_code
+            ? []
+            : [
+                {
+                  user_id: USER_AV_GRADUATE,
+                  users: {
+                    name: 'Eva',
+                    paternal_last_name: 'Ávila',
+                    maternal_last_name: 'Cruz',
+                  },
+                },
+              ],
+      );
       nextClassResolver.resolve.mockImplementation(jumpResolve);
 
       const result = await service.listContinuations(
@@ -1493,6 +1503,259 @@ describe('AnnualMembershipService', () => {
         expect(outcome).toBe('enrolled');
         expect(prisma.club_role_assignments.create).toHaveBeenCalledTimes(1);
       });
+    });
+  });
+
+  describe('members only, age range and GET/POST parity', () => {
+    const USER_STAFF = 'user-staff-only-uuid';
+    const USER_GM_COUNSELOR = 'user-gm-counselor-uuid';
+    const USER_ADULT = 'user-over-age-uuid';
+    const USER_CHILD = 'user-child-uuid';
+    const GM_TYPE_ID = 3;
+
+    function stubSection(
+      sectionId: number,
+      typeId: number,
+      typeName: string,
+    ): void {
+      prisma.club_sections.findUnique.mockResolvedValue({
+        club_section_id: sectionId,
+        main_club_id: MAIN_CLUB_ID,
+        active: true,
+        club_type_id: typeId,
+        club_types: { name: typeName },
+      });
+    }
+
+    // Catalog: Aventureros starts at 4, the next older club type at 10 =>
+    // Aventureros max age 9. Guías Mayores has no older type (no limit).
+    function stubClassCatalog(): void {
+      prisma.classes.findFirst.mockImplementation(
+        async (args: {
+          where?: { club_type_id?: number | { not: number } };
+        }) => {
+          const typeFilter = args?.where?.club_type_id;
+          if (typeFilter === AV_TYPE_ID) return { minimum_age: 4 };
+          if (typeFilter === GM_TYPE_ID) return { minimum_age: 16 };
+          if (typeof typeFilter === 'object') {
+            return typeFilter.not === AV_TYPE_ID ? { minimum_age: 10 } : null;
+          }
+          return null;
+        },
+      );
+    }
+
+    function staffRow(userId: string, roleName: string, sectionId: number) {
+      return {
+        user_id: userId,
+        status: 'active',
+        active: true,
+        ecclesiastical_year_id: YEAR_ID_CURRENT,
+        club_section_id: sectionId,
+        users: {
+          name: 'Staff',
+          paternal_last_name: 'Adulto',
+          maternal_last_name: 'Prueba',
+        },
+        roles: { role_name: roleName },
+      };
+    }
+
+    function stubGmEligible(userIds: string[]): void {
+      prisma.enrollments.findMany.mockImplementation(
+        async (args: { where?: { user_id?: { in: string[] } } }) =>
+          (args?.where?.user_id?.in ?? [])
+            .filter((id) => userIds.includes(id))
+            .map((id) => ({
+              enrollment_id: 7,
+              user_id: id,
+              investiture_status: 'INVESTIDO',
+            })),
+      );
+    }
+
+    it('does not list a staff-only adult of an Aventureros section and never resolves their base', async () => {
+      stubSection(AV_SECTION_ID, AV_TYPE_ID, 'Aventureros');
+      stubClassCatalog();
+      membershipPolicy.listNotEnrolled.mockResolvedValue([]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        staffRow(USER_STAFF, 'deputy-director', AV_SECTION_ID),
+        staffRow('user-secretary', 'secretary', AV_SECTION_ID),
+        staffRow('user-counselor', 'counselor', AV_SECTION_ID),
+      ]);
+
+      const result = await service.listContinuations(
+        AV_SECTION_ID,
+        pagination(),
+      );
+
+      expect(result.data).toEqual([]);
+      expect(membershipPolicy.resolveBase).not.toHaveBeenCalled();
+    });
+
+    it('does not list a GM member who is counselor in AV there, and still lists them in GM', async () => {
+      stubClassCatalog();
+      membershipPolicy.listNotEnrolled.mockResolvedValue([]);
+
+      stubSection(AV_SECTION_ID, AV_TYPE_ID, 'Aventureros');
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        staffRow(USER_GM_COUNSELOR, 'counselor', AV_SECTION_ID),
+      ]);
+      const inAv = await service.listContinuations(AV_SECTION_ID, pagination());
+      expect(inAv.data).toEqual([]);
+
+      stubSection(GM_SECTION_ID, GM_TYPE_ID, 'Guías Mayores');
+      membershipPolicy.listNotEnrolled.mockResolvedValue([
+        { user_id: USER_GM_COUNSELOR, name: 'Laura Gómez' },
+      ]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([
+        {
+          ...staffRow(USER_GM_COUNSELOR, 'member', GM_SECTION_ID),
+          status: 'inactive',
+        },
+      ]);
+      stubGmEligible([USER_GM_COUNSELOR]);
+
+      const inGm = await service.listContinuations(GM_SECTION_ID, pagination());
+
+      expect(inGm.data).toEqual([
+        expect.objectContaining({
+          user_id: USER_GM_COUNSELOR,
+          base_section_id: GM_SECTION_ID,
+          eligibility: 'eligible',
+          blocked_reason: null,
+        }),
+      ]);
+    });
+
+    it('lists an over-age member inactive of AV as blocked with ANNUAL_AGE_ABOVE_CLUB_TYPE', async () => {
+      stubSection(AV_SECTION_ID, AV_TYPE_ID, 'Aventureros');
+      stubClassCatalog();
+      membershipPolicy.listNotEnrolled.mockResolvedValue([
+        { user_id: USER_ADULT, name: 'Adulto Mayor' },
+        { user_id: USER_CHILD, name: 'Niño Pequeño' },
+      ]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+      prisma.users.findMany.mockResolvedValue([
+        { user_id: USER_ADULT, birthday: new Date('1985-05-05') },
+        { user_id: USER_CHILD, birthday: new Date('2019-05-05') },
+      ]);
+
+      const result = await service.listContinuations(
+        AV_SECTION_ID,
+        pagination(),
+      );
+
+      const adult = result.data.find((row) => row.user_id === USER_ADULT);
+      const child = result.data.find((row) => row.user_id === USER_CHILD);
+      expect(adult).toMatchObject({
+        eligibility: 'blocked',
+        blocked_reason: ErrorCode.ANNUAL_AGE_ABOVE_CLUB_TYPE,
+      });
+      expect(child).toMatchObject({
+        eligibility: 'eligible',
+        blocked_reason: null,
+      });
+    });
+
+    it('lists a GM-eligible person found in an AV section as blocked with CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION', async () => {
+      stubSection(AV_SECTION_ID, AV_TYPE_ID, 'Aventureros');
+      stubClassCatalog();
+      membershipPolicy.listNotEnrolled.mockResolvedValue([
+        { user_id: USER_ADULT, name: 'Guía Mayor' },
+      ]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+      prisma.users.findMany.mockResolvedValue([
+        { user_id: USER_ADULT, birthday: new Date('1985-05-05') },
+      ]);
+      stubGmEligible([USER_ADULT]);
+
+      const result = await service.listContinuations(
+        AV_SECTION_ID,
+        pagination(),
+      );
+
+      expect(result.data[0]).toMatchObject({
+        user_id: USER_ADULT,
+        eligibility: 'blocked',
+        blocked_reason: ErrorCode.CLUB_ROLE_MEMBER_REQUIRES_GUIDE_MAJOR_SECTION,
+      });
+    });
+
+    it('surfaces a blocked suggested class as eligibility blocked with its code', async () => {
+      stubSection(GM_SECTION_ID, GM_TYPE_ID, 'Guías Mayores');
+      stubClassCatalog();
+      membershipPolicy.listNotEnrolled.mockResolvedValue([
+        { user_id: USER_A, name: 'Ana López' },
+      ]);
+      prisma.club_role_assignments.findMany.mockResolvedValue([]);
+      nextClassResolver.resolve.mockResolvedValue({
+        kind: 'policy_blocked',
+        code: ErrorCode.CLASS_PREREQUISITE_NOT_MET,
+      });
+
+      const result = await service.listContinuations(
+        GM_SECTION_ID,
+        pagination(),
+      );
+
+      expect(result.data[0]).toMatchObject({
+        eligibility: 'blocked',
+        blocked_reason: ErrorCode.CLASS_PREREQUISITE_NOT_MET,
+        suggested_class: {
+          status: 'blocked',
+          code: ErrorCode.CLASS_PREREQUISITE_NOT_MET,
+        },
+      });
+    });
+
+    it('POST refuses an over-age person for an AV section (inactive row) and writes nothing', async () => {
+      stubSection(AV_SECTION_ID, AV_TYPE_ID, 'Aventureros');
+      stubClassCatalog();
+      // Default users.findUnique is an adult born in 1990.
+      prisma.club_role_assignments.findFirst.mockResolvedValueOnce({
+        assignment_id: 'av-inactive',
+        status: 'inactive',
+        role_id: MEMBER_ROLE_ID,
+      });
+
+      const result = await service.continueUsers(
+        AV_SECTION_ID,
+        [USER_ADULT],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        outcome: 'blocked',
+        error_code: ErrorCode.ANNUAL_AGE_ABOVE_CLUB_TYPE,
+      });
+      expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
+      expect(auditLogs.recordEvent).not.toHaveBeenCalled();
+    });
+
+    it('POST refuses an over-age person with no member row yet and writes nothing', async () => {
+      stubSection(AV_SECTION_ID, AV_TYPE_ID, 'Aventureros');
+      stubClassCatalog();
+      prisma.club_role_assignments.findFirst.mockResolvedValue(null);
+      membershipPolicy.resolveBase.mockResolvedValue({
+        clubId: MAIN_CLUB_ID,
+        baseSectionId: AV_SECTION_ID,
+        clubTypeName: 'Aventureros',
+      });
+
+      const result = await service.continueUsers(
+        AV_SECTION_ID,
+        [USER_ADULT],
+        ACTOR_ID,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        outcome: 'blocked',
+        error_code: ErrorCode.ANNUAL_AGE_ABOVE_CLUB_TYPE,
+      });
+      expect(prisma.club_role_assignments.update).not.toHaveBeenCalled();
+      expect(prisma.club_role_assignments.create).not.toHaveBeenCalled();
     });
   });
 });

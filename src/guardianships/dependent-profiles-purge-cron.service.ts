@@ -10,6 +10,10 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import {
+  cancelPendingRequestsOfUsers,
+  endLiveAssignmentsOfUsers,
+} from '../membership-requests/membership-request-cancellation';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   PURGED_DEVICE_LABEL,
@@ -47,7 +51,10 @@ export interface PurgeSummary {
  *      columns, null the external holder's phone on the guardianship rows and
  *      overwrite the external holder's name with a placeholder (the
  *      `guardianships_holder_ck` CHECK needs a name), null IP/user agent on the legal acceptances, set
- *      `dependent_profiles.purged_at`. The device pairing tokens are deleted and the
+ *      `dependent_profiles.purged_at`, and cancel the minor's PENDING membership
+ *      requests (`status='cancelled'`, `active=false`: the same write as the
+ *      user's own cancel) and end every live club assignment (`status='ended'`,
+ *      `active=false`, `end_date=now`; enrollments are left as they are). The device pairing tokens are deleted and the
  *      linked device rows are scrubbed (label overwritten, app version and push
  *      token pointer cleared); the revoked rows stay as the audit. If the
  *      transaction fails nothing changed and the next run retries it (the
@@ -270,6 +277,37 @@ export class DependentProfilesPurgeCronService {
       });
       if (holdsAccount) {
         await this.deleteCredentials(tx, dependentId, email);
+      }
+      // A purged minor can no longer be approved, verified or handed over:
+      // its pending membership requests are cancelled the same way the user's
+      // own cancel does it (they would otherwise sit in the director's list as
+      // nameless applicants).
+      const cancelled = await cancelPendingRequestsOfUsers(
+        tx,
+        [dependentId],
+        now,
+      );
+      if (cancelled.length > 0) {
+        this.logger.log(
+          JSON.stringify({
+            event: 'dependent_purge_requests_cancelled',
+            dependent: dependentId,
+            assignments: cancelled.map((row) => row.assignment_id),
+          }),
+        );
+      }
+      // Accepted memberships (and any other live role row) end too, or the
+      // purged child would stay in the section's member list, enrollments and
+      // counts as a nameless member.
+      const ended = await endLiveAssignmentsOfUsers(tx, [dependentId], now);
+      if (ended.length > 0) {
+        this.logger.log(
+          JSON.stringify({
+            event: 'dependent_purge_assignments_ended',
+            dependent: dependentId,
+            assignments: ended.map((row) => row.assignment_id),
+          }),
+        );
       }
       await tx.dependent_profiles.update({
         where: { user_id: dependentId },

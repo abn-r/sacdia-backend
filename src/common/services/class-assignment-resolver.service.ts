@@ -9,6 +9,23 @@ export type ClassResolutionYear = {
   start_date: Date;
 };
 
+/**
+ * Pure age-range check shared by post-registration and the annual
+ * continuations list/enroll. Returns the age and limit when the person is
+ * older than the club type allows at `yearStartDate`, otherwise null.
+ */
+export function exceedsClubTypeMaxAge(
+  birthday: Date | string | null | undefined,
+  yearStartDate: Date,
+  maxAge: number | null,
+): { age: number; maxAge: number } | null {
+  if (!birthday || maxAge == null) {
+    return null;
+  }
+  const age = ageAt(birthday, yearStartDate);
+  return age > maxAge ? { age, maxAge } : null;
+}
+
 @Injectable()
 export class ClassAssignmentResolverService {
   async resolveClassIdForUserClubType(
@@ -131,16 +148,40 @@ export class ClassAssignmentResolverService {
       return;
     }
 
-    const availability = this.buildClassAvailabilityWhere(
+    const maxAge = await this.resolveClubTypeMaxAge(tx, {
+      clubTypeId: params.clubTypeId,
+      yearStartDate: params.currentYear.start_date,
+    });
+    const excess = exceedsClubTypeMaxAge(
+      user.birthday,
       params.currentYear.start_date,
+      maxAge,
     );
+    if (excess) {
+      throw new AppBadRequestException(ErrorCode.POST_REG_AGE_ABOVE_CLUB_TYPE, {
+        age: excess.age,
+        maxAge: excess.maxAge,
+        clubTypeId: params.clubTypeId,
+      });
+    }
+  }
+
+  /**
+   * Highest age a member of `clubTypeId` may have at `yearStartDate`, or null
+   * when the club type has no upper limit (no classes, or no older club type).
+   */
+  async resolveClubTypeMaxAge(
+    tx: Pick<Prisma.TransactionClient, 'classes'>,
+    params: { clubTypeId: number; yearStartDate: Date },
+  ): Promise<number | null> {
+    const availability = this.buildClassAvailabilityWhere(params.yearStartDate);
     const oldestClass = await tx.classes.findFirst({
       where: { active: true, club_type_id: params.clubTypeId, ...availability },
       orderBy: { minimum_age: 'desc' },
       select: { minimum_age: true },
     });
     if (!oldestClass) {
-      return;
+      return null;
     }
 
     const nextClubTypeClass = await tx.classes.findFirst({
@@ -154,18 +195,9 @@ export class ClassAssignmentResolverService {
       select: { minimum_age: true },
     });
     if (!nextClubTypeClass) {
-      return;
+      return null;
     }
-
-    const ageAtYearStart = ageAt(user.birthday, params.currentYear.start_date);
-    const maxAge = nextClubTypeClass.minimum_age - 1;
-    if (ageAtYearStart > maxAge) {
-      throw new AppBadRequestException(ErrorCode.POST_REG_AGE_ABOVE_CLUB_TYPE, {
-        age: ageAtYearStart,
-        maxAge,
-        clubTypeId: params.clubTypeId,
-      });
-    }
+    return nextClubTypeClass.minimum_age - 1;
   }
 
   private buildClassAvailabilityWhere(

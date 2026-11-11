@@ -29,6 +29,7 @@ import {
   DirectorDesignationDto,
   ReplaceDirectorPlanDto,
 } from './dto/role-assignment.dto';
+import { RoleRequirementService } from '../role-requirements/role-requirement.service';
 import { ClubRole, GlobalRole } from '../common/authorization/roles';
 
 /** Global roles that can schedule a director plan; the first match is stored as `scheduled_by_role`. */
@@ -127,6 +128,7 @@ export class DirectorDesignationService {
     private readonly roleEligibility: ClubRoleEligibilityService,
     private readonly criticalAudit: CriticalAuditWriterService,
     private readonly temporalContexts: TemporalContextFactory,
+    private readonly roleRequirements: RoleRequirementService,
   ) {}
 
   async designate(
@@ -487,6 +489,12 @@ export class DirectorDesignationService {
       db: tx,
     });
     await assertAssignmentActivationAllowed(tx, userId);
+    // D8: the director also needs the counselor «constancia» once it is enforced.
+    await this.roleRequirements.assertMet(tx, {
+      userId,
+      roleName: ClubRole.DIRECTOR,
+      clubSectionId: sectionId,
+    });
   }
 
   /**
