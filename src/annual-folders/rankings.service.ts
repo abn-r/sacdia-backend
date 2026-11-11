@@ -1225,16 +1225,10 @@ export class RankingsService {
       weights,
     );
 
-    // 4a. Resolve finance deadline day first — needed as a SQL parameter
-    const deadlineRow = await this.prisma.system_config.findUnique({
-      where: { config_key: 'ranking.finance_closing_deadline_day' },
-    });
-    const deadlineDay = parseInt(deadlineRow?.config_value ?? '5', 10);
-
     // 4. Auxiliary detail queries — run in parallel
     const [
       folderDetailRows,
-      closedMonthsRows,
+      financeMonths,
       localScopeRows,
       unionScopeRows,
       evRows,
@@ -1254,14 +1248,8 @@ export class RankingsService {
             AND e.status = 'VALIDATED'::annual_folder_section_status_enum
         `,
 
-      // 4c. Finance: list of months closed on time
-      this.prisma.$queryRaw<{ month: number }[]>`
-          SELECT month FROM finance_period_closings
-          WHERE club_id = ${clubId}
-            AND year = ${calendarYear}
-            AND closed_at IS NOT NULL
-            AND closed_at <= (make_timestamptz(year, month + 1, ${deadlineDay}, 23, 59, 59, 'UTC') AT TIME ZONE 'UTC')
-        `,
+      // 4c. Finance: same rule as the score (shared helper)
+      this.financeScore.getMonthsStatus(clubId, calendarYear),
 
       // 4d. Camporee: local events in scope for club's local field
       this.prisma.$queryRaw<{ id: number; name: string; attended: boolean }[]>`
@@ -1315,12 +1303,6 @@ export class RankingsService {
         `,
     ]);
 
-    // Build closed months set from the raw query result
-    const closedSet = new Set(closedMonthsRows.map((r) => r.month));
-    const missedMonths = Array.from({ length: 12 }, (_, i) => i + 1).filter(
-      (m) => !closedSet.has(m),
-    );
-
     // Build camporee events list
     const events = [...localScopeRows, ...unionScopeRows].map((e) => ({
       id: String(e.id),
@@ -1353,10 +1335,9 @@ export class RankingsService {
         },
         finance: {
           score_pct: financePct,
-          months_closed_on_time: closedSet.size,
+          months_with_movements: financeMonths.monthsWithMovements.length,
           months_total: 12,
-          deadline_day: deadlineDay,
-          missed_months: missedMonths,
+          missed_months: financeMonths.missedMonths,
         },
         camporee: {
           score_pct: camporeePct,
