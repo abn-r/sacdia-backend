@@ -4,10 +4,8 @@ import { getMetadataStorage, validate } from 'class-validator';
 
 import { INT4_MAX } from './int4.constants';
 import { GenerateAnnualReportDto } from '../../annual-reports/dto/generate-annual-report.dto';
-import { UpdateAnnualManualDataDto } from '../../annual-reports/dto/update-manual-data.dto';
 import { UpdateManualDataDto as UpdateMonthlyManualDataDto } from '../../monthly-reports/dto/update-manual-data.dto';
 import { GenerateQuarterlyReportDto } from '../../quarterly-reports/dto/generate-quarterly-report.dto';
-import { UpdateQuarterlyManualDataDto } from '../../quarterly-reports/dto/update-manual-data.dto';
 
 const OVERFLOW = 99999999999;
 
@@ -93,18 +91,6 @@ describe('int4 range validation on report DTOs', () => {
         'booklet_requirements_signed',
       ],
       ['club_participation_description', 'community_service_description'],
-    ],
-    [
-      'quarterly',
-      UpdateQuarterlyManualDataDto,
-      ['certificates_delivered'],
-      ['club_participation_description', 'community_service_description'],
-    ],
-    [
-      'annual',
-      UpdateAnnualManualDataDto,
-      ['all_investitures_completed'],
-      ['annual_achievements_description', 'community_service_description'],
     ],
   ] as Array<[string, Ctor<object>, string[], string[]]>)(
     '%s manual-data DTO',

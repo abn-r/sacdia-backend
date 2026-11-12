@@ -4,6 +4,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AnnualReportsService } from './annual-reports.service';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import {
+  FREEZE_GRACE_CONFIG_KEY,
+  parseFreezeGraceDays,
+} from '../reports/periodic-report-data.service';
+
+const CRON_NAME = 'annual-reports-auto-generate';
+const LOCK_KEY = `cron:${CRON_NAME}`;
 
 @Injectable()
 export class AnnualReportsCronService {
@@ -17,35 +24,29 @@ export class AnnualReportsCronService {
   ) {}
 
   /**
-   * Runs at 02:00 UTC on January 1st.
-   * Generates annual reports for the just-completed ecclesiastical year for all active clubs.
+   * Runs daily at 03:30 UTC as an idempotent catch-up: freezes (finalizes) the
+   * annual report of every active club for every ecclesiastical year
+   * that ended more than `reports.periodic_freeze_grace_days` days ago and is not frozen yet,
+   * so the last monthly report of the year can still be submitted.
    * Feature flag: reports.annual_auto_generate_enabled must be 'true'.
    */
-  @Cron('0 2 1 1 *', { name: 'annual-reports-auto-generate', timeZone: 'UTC' })
+  @Cron('30 3 * * *', { name: CRON_NAME, timeZone: 'UTC' })
   async handleAutoGenerate(): Promise<void> {
     const acquired = await this.lockService.tryAcquire(
-      'cron:annual-reports-auto-generate',
+      LOCK_KEY,
       23 * 60 * 60 * 1000,
     );
 
     if (!acquired) {
       this.logger.debug(
-        'Another instance is handling annual reports auto-generation — skipping',
+        'Another instance is handling the annual reports freeze — skipping',
       );
-      await this.cronLogger.trackSkipped(
-        'annual-reports-auto-generate',
-        'lock_not_acquired',
-      );
+      await this.cronLogger.trackSkipped(CRON_NAME, 'lock_not_acquired');
       return;
     }
 
-    this.logger.log(
-      'Annual reports cron triggered — checking configuration...',
-    );
-
     try {
-      await this.cronLogger.track('annual-reports-auto-generate', async () => {
-        // 1. Feature flag check
+      await this.cronLogger.track(CRON_NAME, async () => {
         const enabledConfig = await this.prisma.system_config.findUnique({
           where: { config_key: 'reports.annual_auto_generate_enabled' },
         });
@@ -55,48 +56,26 @@ export class AnnualReportsCronService {
           return { itemsProcessed: 0 };
         }
 
-        // 2. Find the ecclesiastical year that just ended (most recently inactive/ended)
-        const today = new Date();
-        const justEndedYear = await this.prisma.ecclesiastical_years.findFirst({
-          where: {
-            end_date: {
-              lt: today,
-            },
-          },
-          orderBy: { end_date: 'desc' },
+        const graceConfig = await this.prisma.system_config.findUnique({
+          where: { config_key: FREEZE_GRACE_CONFIG_KEY },
         });
+        const graceDays = parseFreezeGraceDays(graceConfig?.config_value);
 
-        if (!justEndedYear) {
-          this.logger.warn(
-            'No completed ecclesiastical year found. Skipping annual report generation.',
-          );
-          return { itemsProcessed: 0 };
-        }
+        const result =
+          await this.annualReportsService.freezeDueReports(graceDays);
 
         this.logger.log(
-          `Generating annual reports for ecclesiastical year ${justEndedYear.year_id} ` +
-            `(${justEndedYear.start_date.toISOString().split('T')[0]} – ${justEndedYear.end_date.toISOString().split('T')[0]})`,
-        );
-
-        // 3. Run for all active clubs
-        const result = await this.annualReportsService.autoGenerateForAllClubs(
-          justEndedYear.year_id,
-        );
-
-        this.logger.log(
-          `Annual auto-generation complete for year ${justEndedYear.year_id}: ` +
-            `${result.success} generated, ${result.skipped} skipped, ${result.errors} errors`,
+          `Annual freeze complete (grace ${graceDays}d): ` +
+            `${result.success} frozen, ${result.skipped} skipped, ${result.errors} errors`,
         );
 
         return { itemsProcessed: result.success };
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(
-        `Fatal error in annual reports auto-generation: ${msg}`,
-      );
+      this.logger.error(`Fatal error in annual reports freeze: ${msg}`);
     } finally {
-      await this.lockService.release('cron:annual-reports-auto-generate');
+      await this.lockService.release(LOCK_KEY);
     }
   }
 }

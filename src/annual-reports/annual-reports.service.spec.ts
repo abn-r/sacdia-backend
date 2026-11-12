@@ -1,445 +1,387 @@
 import { AnnualReportsService } from './annual-reports.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { createFakeReportStore } from '../reports/fake-report-store.testing';
+import type { PeriodicBaseData } from '../reports/periodic-report-data.service';
+import { aggregateMonthlyData } from '../reports/periodic-monthly-data';
 
-describe('AnnualReportsService admin visibility', () => {
-  const mockPrisma = {
-    annual_reports: {
-      count: jest.fn(),
-      findMany: jest.fn(),
-    },
-  };
-  const mockAuthorizationContext = {
-    resolveUserAuthorization: jest.fn(),
-  };
+const utc = (iso: string) => new Date(`${iso}T00:00:00Z`);
 
-  const resolvedAuth = () =>
-    ({
-      authorization: {
-        grants: {
-          global_roles: [
-            { role_name: 'director-lf', permissions: ['reports:read'] },
-          ],
-          club_assignments: [],
-        },
-        active_assignment: { assignment_id: null },
-        effective: {
-          scope: {
-            global: { local_field: { id: 7, name: 'Campo' } },
-          },
-        },
-      },
-    }) as any;
+// Ecclesiastical years that do NOT match calendar years (Oct-Sep).
+const YEARS = [
+  { year_id: 1, start_date: utc('2023-10-01'), end_date: utc('2024-09-30') },
+  { year_id: 2, start_date: utc('2024-10-01'), end_date: utc('2025-09-30') },
+  { year_id: 3, start_date: utc('2025-10-01'), end_date: utc('2026-09-30') },
+];
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockPrisma.annual_reports.count.mockResolvedValue(0);
-    mockPrisma.annual_reports.findMany.mockResolvedValue([]);
-  });
-
-  it('forces local-field actors to their own field when listing admin annual reports', async () => {
-    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
-      resolvedAuth(),
-    );
-    const service = new AnnualReportsService(
-      mockPrisma as any,
-      mockAuthorizationContext as any,
-      { getEffectiveCoordinatorSectionIds: jest.fn() } as any,
-    );
-
-    await service.listForAdmin('director-lf-user', { localFieldId: 99 });
-
-    expect(mockPrisma.annual_reports.count).toHaveBeenCalledWith({
-      where: {
-        club: {
-          local_field_id: 7,
-        },
-      },
-    });
-  });
+const honor = (user: string, name: string, validate: boolean) => ({
+  user_id: user,
+  validate,
+  users: { user_id: user, name, paternal_last_name: 'P' },
 });
 
-describe('AnnualReportsService computeData year boundaries', () => {
-  const calendarYear = {
-    year_id: 3,
-    start_date: new Date('2026-01-01T00:00:00.000Z'),
-    end_date: new Date('2026-12-31T00:00:00.000Z'),
-  };
+const baseData = (over: Partial<PeriodicBaseData> = {}): PeriodicBaseData => ({
+  sectionIds: [7],
+  memberCount: 5,
+  directiva: [{ role: 'director', user_id: 'u1', name: 'Ana' }],
+  honors: [
+    honor('u1', 'Ana', true),
+    honor('u1', 'Ana', true),
+    honor('u2', 'Beto', true),
+    honor('u3', 'Carla', false),
+  ],
+  activitiesTotal: 9,
+  finance: {
+    income: 1699,
+    expenses: 170,
+    net: 1529,
+    movements: 4,
+    balance: 2529,
+  },
+  monthly: aggregateMonthlyData([]),
+  camporeesAttended: 2,
+  ...over,
+});
 
-  const buildPrisma = (sectionIds: number[]) => ({
-    clubs: { findUnique: jest.fn().mockResolvedValue({ club_id: 1 }) },
-    ecclesiastical_years: {
-      findUnique: jest.fn().mockResolvedValue(calendarYear),
-    },
-    club_sections: {
-      findMany: jest
-        .fn()
-        .mockResolvedValue(
-          sectionIds.map((club_section_id) => ({ club_section_id })),
-        ),
-    },
-    club_role_assignments: {
-      count: jest.fn().mockResolvedValue(0),
-      findMany: jest.fn().mockResolvedValue([]),
-    },
-    activities: { count: jest.fn().mockResolvedValue(0) },
-    $queryRaw: jest.fn().mockResolvedValue([]),
-    club_enrollments: { findMany: jest.fn().mockResolvedValue([]) },
-    club_annual_rankings: { findFirst: jest.fn().mockResolvedValue(null) },
+function build(opts: { grace?: number; base?: PeriodicBaseData } = {}) {
+  const store = createFakeReportStore({
+    idField: 'annual_report_id',
+    keyFields: ['club_id', 'ecclesiastical_year_id'],
+    compoundName: 'club_id_ecclesiastical_year_id',
   });
-
-  const withServerTimezone = async (tz: string, run: () => Promise<void>) => {
-    const originalTz = process.env.TZ;
-    process.env.TZ = tz;
-    try {
-      await run();
-    } finally {
-      process.env.TZ = originalTz;
-    }
-  };
-
-  it('labels a calendar year by its UTC dates, whatever the server timezone', async () => {
-    await withServerTimezone('America/Mexico_City', async () => {
-      const service = new AnnualReportsService(
-        buildPrisma([]) as any,
-        {} as any,
-        {} as any,
-      );
-
-      const data = await service.computeData(1, calendarYear.year_id);
-
-      expect(data.year_label).toBe('2026');
-    });
-  });
-
-  it('counts each month once even when several sections reported it', async () => {
-    const prisma = buildPrisma([10, 11, 12]);
-    prisma.club_enrollments.findMany.mockResolvedValue([
-      { club_enrollment_id: 'e1' },
-      { club_enrollment_id: 'e2' },
-      { club_enrollment_id: 'e3' },
-    ]);
-    const months = [1, 2, 3, 4, 5, 6];
-    const monthly_reports = {
-      findMany: jest
-        .fn()
-        .mockResolvedValue(
-          ['e1', 'e2', 'e3'].flatMap(() =>
-            months.map((month) => ({ month, year: 2026 })),
-          ),
-        ),
-    };
-    const service = new AnnualReportsService(
-      { ...prisma, monthly_reports } as any,
-      {} as any,
-      {} as any,
-    );
-
-    const data = await service.computeData(1, calendarYear.year_id);
-
-    expect(data.months_reported).toBe(6);
-    expect(monthly_reports.findMany).toHaveBeenCalledWith({
-      where: {
-        club_enrollment_id: { in: ['e1', 'e2', 'e3'] },
-        status: { not: 'draft' },
-      },
-      select: { month: true, year: true },
-    });
-  });
-
-  it('keeps the same month of different calendar years apart', async () => {
-    const prisma = buildPrisma([10]);
-    prisma.club_enrollments.findMany.mockResolvedValue([
-      { club_enrollment_id: 'e1' },
-    ]);
-    const monthly_reports = {
+  const prisma: any = {
+    annual_reports: store.delegate,
+    clubs: {
+      findUnique: jest.fn().mockResolvedValue({ club_id: 10, active: true }),
+      findFirst: jest.fn().mockResolvedValue({ club_id: 10 }),
       findMany: jest.fn().mockResolvedValue([
-        { month: 12, year: 2025 },
-        { month: 12, year: 2026 },
+        { club_id: 10, name: 'A', created_at: utc('2020-01-01') },
+        { club_id: 11, name: 'B', created_at: utc('2020-01-01') },
       ]),
-    };
-    const service = new AnnualReportsService(
-      { ...prisma, monthly_reports } as any,
-      {} as any,
-      {} as any,
-    );
+    },
+    ecclesiastical_years: {
+      findUnique: jest.fn(
+        async ({ where }: any) =>
+          YEARS.find((y) => y.year_id === where.year_id) ?? null,
+      ),
+      findFirst: jest.fn(
+        async ({ where }: any) =>
+          where.start_date?.lte ? YEARS[2] : YEARS[1] /* previous of current */,
+      ),
+      findMany: jest.fn(async ({ where }: any) =>
+        YEARS.filter(
+          (y) =>
+            y.start_date >= where.start_date.gte &&
+            y.end_date < where.end_date.lt,
+        ),
+      ),
+    },
+  };
+  const data: any = {
+    compute: jest.fn().mockResolvedValue(opts.base ?? baseData()),
+    countReportedMonths: jest.fn().mockResolvedValue(6),
+    getFreezeGraceDays: jest.fn().mockResolvedValue(opts.grace ?? 15),
+  };
+  const service = new AnnualReportsService(prisma, {} as any, undefined, data);
+  return { service, store, prisma, data };
+}
 
-    const data = await service.computeData(1, calendarYear.year_id);
+const at = (iso: string) => jest.useFakeTimers({ now: new Date(iso) });
+afterEach(() => jest.useRealTimers());
 
-    expect(data.months_reported).toBe(2);
+describe('AnnualReportsService.computeData', () => {
+  it('computes over the ecclesiastical year months, not the calendar year', async () => {
+    const { service, data } = build();
+
+    await service.computeData(10, 3);
+
+    const period = data.compute.mock.calls[0][1];
+    expect(period.months).toHaveLength(12);
+    expect(period.months[0]).toEqual({ year: 2025, month: 10 });
+    expect(period.months[11]).toEqual({ year: 2026, month: 9 });
+    expect(period.endExclusiveDate).toEqual(utc('2026-10-01'));
   });
 
-  it('takes the finance block from the shared aggregation over the whole calendar year, whatever the server timezone', async () => {
-    await withServerTimezone('America/Mexico_City', async () => {
-      const prisma = buildPrisma([10]);
-      const aggregation = {
-        aggregate: jest.fn().mockResolvedValue({
-          income: 5000,
-          expenses: 1200,
-          net: 3800,
-          movements: 14,
-          balance: 9100,
-        }),
-      };
-      const service = new AnnualReportsService(
-        prisma as any,
-        {} as any,
-        {} as any,
-        aggregation as any,
-      );
+  it('keeps the structure and renders both the net and the cumulative balance', async () => {
+    const { service } = build();
 
-      const data = await service.computeData(1, calendarYear.year_id);
+    const computed = await service.computeData(10, 3);
 
-      expect(aggregation.aggregate).toHaveBeenCalledWith([10], {
-        from: { year: 2026, month: 1 },
-        to: { year: 2026, month: 12 },
-      });
-      expect(data.finances).toEqual({
-        income: 5000,
-        expenses: 1200,
-        balance: 3800,
-        total_balance: 9100,
-        transactions: 14,
-      });
+    expect(computed).toMatchObject({
+      ecclesiastical_year_id: 3,
+      year_label: '2025–2026',
+      member_count: 5,
+      months_reported: 6,
+      directiva: [{ role: 'director', user_id: 'u1', name: 'Ana' }],
+      honors: { started: 4, completed: 3 },
+      activities: { total: 9 },
+      finances: {
+        income: 1699,
+        expenses: 170,
+        balance: 1529,
+        total_balance: 2529,
+        transactions: 4,
+      },
     });
+    expect(computed).not.toHaveProperty('ranking_percentile');
   });
 
-  it('builds its own aggregation over live movements when none is injected', async () => {
-    const prisma = buildPrisma([10]);
-    prisma.$queryRaw.mockResolvedValue([
-      { income: 700n, expenses: 200n, movements: 3n, balance: 1500n },
+  it('lists the top achievers by validated honors', async () => {
+    const { service } = build();
+
+    const { top_achievers } = await service.computeData(10, 3);
+
+    expect(top_achievers).toEqual([
+      { user_id: 'u1', name: 'Ana P', honors_count: 2 },
+      { user_id: 'u2', name: 'Beto P', honors_count: 1 },
     ]);
-    const service = new AnnualReportsService(
-      prisma as any,
-      {} as any,
-      {} as any,
-    );
+  });
 
-    const data = await service.computeData(1, calendarYear.year_id);
+  it('maps the monthly data: sums, latest and null without submitted months', async () => {
+    const withData = aggregateMonthlyData([
+      {
+        year: 2025,
+        month: 11,
+        manual_data: {
+          planning_meetings: 2,
+          parent_meetings: 1,
+          youth_council_attendance: 0,
+          church_board_attendance: 0,
+          soul_target: 3,
+          baptized_this_month: 2,
+          total_baptized: 8,
+          club_participation_description: null,
+          community_service_description: 'Visita',
+          certificates_delivered: false,
+        },
+      },
+      {
+        year: 2026,
+        month: 2,
+        manual_data: {
+          planning_meetings: 1,
+          parent_meetings: 1,
+          youth_council_attendance: 0,
+          church_board_attendance: 0,
+          soul_target: 6,
+          baptized_this_month: 1,
+          total_baptized: 11,
+          club_participation_description: null,
+          community_service_description: null,
+          certificates_delivered: false,
+        },
+      },
+    ]);
+    const a = await build({
+      base: baseData({ monthly: withData }),
+    }).service.computeData(10, 3);
 
-    expect(data.finances).toEqual({
-      income: 700,
-      expenses: 200,
-      balance: 500,
-      total_balance: 1500,
-      transactions: 3,
+    expect(a.monthly_data).toEqual({
+      months_submitted: 2,
+      months_covered: [
+        { year: 2025, month: 11 },
+        { year: 2026, month: 2 },
+      ],
+      planning_meetings: 3,
+      parent_meetings: 2,
+      baptized_this_year: 3,
+      total_baptized: 11,
+      annual_achievements_description: null,
+      community_service_description: [
+        { year: 2025, month: 11, text: 'Visita' },
+      ],
+      all_investitures_completed: null,
+      camporees_attended: 2,
+    });
+    expect(a.missionary.baptized_total).toBe(3);
+
+    const empty = await build().service.computeData(10, 3);
+    expect(empty.monthly_data).toMatchObject({
+      months_submitted: 0,
+      planning_meetings: null,
+      parent_meetings: null,
+      baptized_this_year: null,
+      total_baptized: null,
+      community_service_description: null,
+    });
+    expect(empty.missionary.baptized_total).toBeNull();
+  });
+
+  it('404s for an unknown ecclesiastical year', async () => {
+    await expect(build().service.computeData(10, 99)).rejects.toMatchObject({
+      code: ErrorCode.ANNUAL_REPORT_YEAR_NOT_FOUND,
     });
   });
 });
 
-describe('AnnualReportsService generate on demand', () => {
-  const mockPrisma = {
-    clubs: { findUnique: jest.fn(), findFirst: jest.fn() },
-    ecclesiastical_years: { findUnique: jest.fn() },
-    annual_reports: {
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-    },
-  };
-  const mockAuthorizationContext = { resolveUserAuthorization: jest.fn() };
+describe('AnnualReportsService lifecycle', () => {
+  it('a draft is recomputed on read, conditionally on still being a draft', async () => {
+    const { service, store } = build();
+    await service.getOrCreateDraft(10, 3);
 
-  const resolvedAuth = () =>
-    ({
-      authorization: {
-        grants: {
-          global_roles: [
-            { role_name: 'director-lf', permissions: ['reports:update'] },
-          ],
-          club_assignments: [],
-        },
-        active_assignment: { assignment_id: null },
-        effective: {
-          scope: { global: { local_field: { id: 7, name: 'Campo' } } },
-        },
-      },
-    }) as any;
+    await service.getReport(1);
 
-  const makeService = () =>
-    new AnnualReportsService(
-      mockPrisma as any,
-      mockAuthorizationContext as any,
-      { getEffectiveCoordinatorSectionIds: jest.fn() } as any,
+    expect(store.delegate.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { annual_report_id: 1, status: 'draft' },
+      }),
     );
-
-  const COMPUTED = { year_label: '2026–2026' } as any;
-  const reportRow = (status: string) =>
-    ({
-      annual_report_id: 5,
-      club_id: 10,
+    expect(store.rows[0].computed_data).toMatchObject({
       ecclesiastical_year_id: 3,
-      status,
-    }) as any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    jest.useFakeTimers().setSystemTime(new Date('2026-10-29T18:00:00Z'));
-    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
-      resolvedAuth(),
-    );
-    mockPrisma.clubs.findUnique.mockResolvedValue({
-      club_id: 10,
-      active: true,
-    });
-    mockPrisma.clubs.findFirst.mockResolvedValue({ club_id: 10 });
-    mockPrisma.ecclesiastical_years.findUnique.mockResolvedValue({
-      year_id: 3,
-      start_date: new Date('2026-01-01T00:00:00.000Z'),
-      end_date: new Date('2026-12-31T00:00:00.000Z'),
     });
   });
 
-  afterEach(() => {
-    jest.useRealTimers();
+  it('freeze finalizes with no finalizer, only once, only from draft', async () => {
+    const { service, store, data } = build();
+    await service.getOrCreateDraft(10, 2);
+
+    await expect(service.freezeReport(1)).resolves.toBe(true);
+    expect(store.rows[0]).toMatchObject({
+      status: 'finalized',
+      finalized_by: null,
+    });
+    data.compute.mockClear();
+    await expect(service.freezeReport(1)).resolves.toBe(false);
+    expect(data.compute).not.toHaveBeenCalled();
   });
 
-  describe('regenerate', () => {
-    it('refuses to recompute a finalized report', async () => {
-      const service = makeService();
-      const computeSpy = jest.spyOn(service, 'computeData');
-      mockPrisma.annual_reports.findUnique.mockResolvedValue({
-        annual_report_id: 5,
+  it('a concurrent freeze is not overwritten by a stale refresh', async () => {
+    const { service, store, data } = build();
+    await service.getOrCreateDraft(10, 3);
+    data.compute.mockImplementationOnce(async () => {
+      Object.assign(store.rows[0], {
         status: 'finalized',
+        computed_data: { frozen: true },
       });
+      return baseData();
+    });
 
-      await expect(service.regenerate(5)).rejects.toMatchObject({
-        response: expect.objectContaining({ code: 'ANNUAL_REPORT_NOT_DRAFT' }),
-      });
-      expect(computeSpy).not.toHaveBeenCalled();
+    await service.refreshDraft(1);
+
+    expect(store.rows[0].computed_data).toEqual({ frozen: true });
+  });
+
+  it('regenerate recomputes a finalized report and keeps it finalized', async () => {
+    const { service, store } = build();
+    store.rows.push({
+      annual_report_id: 1,
+      club_id: 10,
+      ecclesiastical_year_id: 2,
+      status: 'finalized',
+      finalized_by: null,
+      computed_data: { old: true },
+    });
+
+    await service.regenerate(1);
+
+    expect(store.rows[0].status).toBe('finalized');
+    expect(store.rows[0].computed_data).toMatchObject({
+      ecclesiastical_year_id: 2,
     });
   });
 
   describe('generateOnDemand', () => {
-    it('creates the draft when missing and computes its data', async () => {
-      const service = makeService();
-      const computeSpy = jest
-        .spyOn(service, 'computeData')
-        .mockResolvedValue(COMPUTED);
-      mockPrisma.annual_reports.findUnique.mockImplementation(
-        ({ where }: any) =>
-          Promise.resolve(
-            where.annual_report_id === 5 ? reportRow('draft') : null,
-          ),
-      );
-      mockPrisma.annual_reports.create.mockResolvedValue(reportRow('draft'));
-      mockPrisma.annual_reports.update.mockResolvedValue({});
-
-      const result = await service.generateOnDemand(10, 3);
-
-      expect(mockPrisma.annual_reports.create).toHaveBeenCalledWith({
-        data: { club_id: 10, ecclesiastical_year_id: 3, status: 'draft' },
-      });
-      expect(computeSpy).toHaveBeenCalledWith(10, 3);
-      expect(mockPrisma.annual_reports.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { annual_report_id: 5 },
-          data: expect.objectContaining({ computed_data: COMPUTED }),
-        }),
-      );
-      expect(result).toEqual(reportRow('draft'));
+    it('live draft while the year is open', async () => {
+      at('2026-03-01T12:00:00Z');
+      const report = await build().service.generateOnDemand(10, 3);
+      expect(report.status).toBe('draft');
     });
 
-    it('recomputes an existing draft', async () => {
-      const service = makeService();
-      const computeSpy = jest
-        .spyOn(service, 'computeData')
-        .mockResolvedValue(COMPUTED);
-      mockPrisma.annual_reports.findUnique.mockResolvedValue(
-        reportRow('draft'),
-      );
-      mockPrisma.annual_reports.update.mockResolvedValue({});
-
-      await service.generateOnDemand(10, 3);
-
-      expect(mockPrisma.annual_reports.create).not.toHaveBeenCalled();
-      expect(computeSpy).toHaveBeenCalledTimes(1);
+    it('draft inside the grace window after the year ended', async () => {
+      at('2026-10-10T12:00:00Z');
+      const report = await build({ grace: 15 }).service.generateOnDemand(10, 3);
+      expect(report.status).toBe('draft');
     });
 
-    it('returns a finalized report without recomputing', async () => {
-      const service = makeService();
-      const computeSpy = jest.spyOn(service, 'computeData');
-      mockPrisma.annual_reports.findUnique.mockResolvedValue(
-        reportRow('finalized'),
-      );
-
-      const result = await service.generateOnDemand(10, 3);
-
-      expect(computeSpy).not.toHaveBeenCalled();
-      expect(mockPrisma.annual_reports.create).not.toHaveBeenCalled();
-      expect(mockPrisma.annual_reports.update).not.toHaveBeenCalled();
-      expect(result).toEqual(expect.objectContaining({ status: 'finalized' }));
+    it('created frozen once past grace', async () => {
+      at('2026-10-20T12:00:00Z');
+      const report = await build({ grace: 15 }).service.generateOnDemand(10, 3);
+      expect(report.status).toBe('finalized');
+      expect(report.finalized_by).toBeNull();
     });
 
-    it('rejects an ecclesiastical year that starts after today', async () => {
-      mockPrisma.ecclesiastical_years.findUnique.mockResolvedValue({
-        year_id: 4,
-        start_date: new Date('2027-01-01T00:00:00.000Z'),
-        end_date: new Date('2027-12-31T00:00:00.000Z'),
-      });
-
-      await expect(makeService().generateOnDemand(10, 4)).rejects.toMatchObject(
-        { code: ErrorCode.REPORT_PERIOD_IN_FUTURE, status: 400 },
-      );
-      expect(mockPrisma.annual_reports.create).not.toHaveBeenCalled();
-    });
-
-    it('answers 404 when the ecclesiastical year does not exist', async () => {
-      mockPrisma.ecclesiastical_years.findUnique.mockResolvedValue(null);
-
+    it('rejects a year that has not started', async () => {
+      at('2025-09-01T12:00:00Z');
       await expect(
-        makeService().generateOnDemand(10, 999),
+        build().service.generateOnDemand(10, 3),
       ).rejects.toMatchObject({
-        code: ErrorCode.ANNUAL_REPORT_YEAR_NOT_FOUND,
-        status: 404,
+        code: ErrorCode.REPORT_PERIOD_IN_FUTURE,
       });
     });
   });
+});
 
-  describe('assertClubVisibleToActor', () => {
-    it('passes when the club is inside the actor scope', async () => {
-      await expect(
-        makeService().assertClubVisibleToActor('u1', 10),
-      ).resolves.toBeUndefined();
-      expect(mockPrisma.clubs.findFirst).toHaveBeenCalledWith({
-        where: { club_id: 10, local_field_id: 7 },
-        select: { club_id: true },
-      });
+describe('AnnualReportsService.freezeDueReports (daily catch-up)', () => {
+  it('freezes the ecclesiastical year (Oct-Sep) once past grace, for every active club', async () => {
+    const { service, store } = build();
+
+    // 2025-10-20: year 2 ended 2025-09-30 (20 days ago > 15).
+    const result = await service.freezeDueReports(
+      15,
+      new Date('2025-10-20T12:00:00Z'),
+    );
+
+    const frozen = store.rows
+      .filter((r) => r.status === 'finalized')
+      .map((r) => `${r.club_id}:${r.ecclesiastical_year_id}`)
+      .sort();
+    expect(frozen).toEqual(['10:2', '11:2']);
+    expect(result).toEqual({ success: 2, skipped: 0, errors: 0 });
+  });
+
+  it('does not freeze inside the grace window', async () => {
+    const { service, store } = build();
+
+    await service.freezeDueReports(15, new Date('2025-10-10T12:00:00Z'));
+
+    expect(store.rows).toHaveLength(0);
+  });
+
+  it('a calendar-year end (Dec 31) is irrelevant: nothing freezes in January', async () => {
+    const { service, store } = build();
+
+    await service.freezeDueReports(15, new Date('2026-01-20T12:00:00Z'));
+
+    expect(store.rows.some((r) => r.ecclesiastical_year_id === 3)).toBe(false);
+  });
+
+  it('catches up every past year lacking a finalized report, within the history bound', async () => {
+    const { service, store } = build();
+    // Today is after year 3 ended; lower bound is the start of the previous year (2).
+    // findFirst: current=YEARS[2] (lte), previous=YEARS[1] -> bound 2024-10-01.
+    await service.freezeDueReports(15, new Date('2026-11-01T12:00:00Z'));
+
+    const years = [
+      ...new Set(store.rows.map((r) => r.ecclesiastical_year_id)),
+    ].sort();
+    expect(years).toEqual([2, 3]); // year 1 is older than the previous year: not regenerated
+  });
+
+  it('is idempotent and never recomputes a finalized year', async () => {
+    const { service, store, data } = build();
+    const now = new Date('2026-11-01T12:00:00Z');
+    await service.freezeDueReports(15, now);
+    const snapshot = JSON.stringify(store.rows);
+    data.compute.mockClear();
+
+    const second = await service.freezeDueReports(15, now);
+
+    expect(second.success).toBe(0);
+    expect(data.compute).not.toHaveBeenCalled();
+    expect(JSON.stringify(store.rows)).toBe(snapshot);
+  });
+
+  it('keeps going when one club fails', async () => {
+    const { service, data } = build();
+    data.compute.mockImplementation(async (clubId: number) => {
+      if (clubId === 10) throw new Error('boom');
+      return baseData();
     });
 
-    it('answers 403 when the club is outside the actor scope', async () => {
-      mockPrisma.clubs.findFirst.mockResolvedValue(null);
+    const result = await service.freezeDueReports(
+      15,
+      new Date('2025-10-20T12:00:00Z'),
+    );
 
-      await expect(
-        makeService().assertClubVisibleToActor('u1', 10),
-      ).rejects.toMatchObject({
-        code: ErrorCode.GUARD_PERMISSION_DENIED,
-        status: 403,
-      });
-    });
-
-    it('answers 404 when the club does not exist', async () => {
-      mockPrisma.clubs.findUnique.mockResolvedValue(null);
-
-      await expect(
-        makeService().assertClubVisibleToActor('u1', 999),
-      ).rejects.toMatchObject({
-        code: ErrorCode.ANNUAL_REPORT_CLUB_NOT_FOUND,
-        status: 404,
-      });
-    });
-
-    it('answers 404 when the club is inactive', async () => {
-      mockPrisma.clubs.findUnique.mockResolvedValue({
-        club_id: 10,
-        active: false,
-      });
-
-      await expect(
-        makeService().assertClubVisibleToActor('u1', 10),
-      ).rejects.toMatchObject({
-        code: ErrorCode.ANNUAL_REPORT_CLUB_NOT_FOUND,
-        status: 404,
-      });
-      expect(mockPrisma.clubs.findFirst).not.toHaveBeenCalled();
-    });
+    expect(result).toEqual({ success: 1, skipped: 0, errors: 1 });
   });
 });

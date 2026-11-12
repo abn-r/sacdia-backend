@@ -36,8 +36,6 @@ const baseline = {
     'workflowWhere|allowlist|6|59d5afe638ee',
   'annual-membership/annual-membership.service.ts':
     'workflowWhere|allowlist|6|1f3112215c08',
-  'annual-reports/annual-reports.service.ts':
-    'effectiveWhere|T09|3|45560f10e5fd',
   'auth/auth.service.ts': 'workflowWhere|allowlist|1|b009730e67d9',
   'camporee-scoring/camporee-scoring.service.ts':
     'effectiveWhere|T09|1|7e83a87c1703',
@@ -59,6 +57,8 @@ const baseline = {
     'workflowWhere|allowlist|2|b32d443733e9',
   'common/authorization/actor-section-scope.ts':
     'effectiveWhere|T09|1|38b239a32e23',
+  'common/authorization/periodic-report-people.ts':
+    'historicalWhere|allowlist|2|5875ae734ebf',
   'common/authorization/reviewer-scope.service.ts':
     'effectiveWhere|T08|1|abb390052cb4',
   'common/authorization/section-board-snapshot.service.ts':
@@ -124,8 +124,6 @@ const baseline = {
   'post-registration/post-registration.service.ts':
     'workflowWhere|allowlist|4|4744c04f28ac',
   'qr/qr.service.ts': 'effectiveWhere|T08|3|fb413b5f37eb',
-  'quarterly-reports/quarterly-reports.service.ts':
-    'effectiveWhere|T09|2|4a4c80f60feb',
   'rankings/member-rankings/services/enrollment-club-resolver.service.ts':
     'effectiveWhere|T08|1|11a310c43604',
   'rbac/rbac.service.ts': 'effectiveWhere|T08|1|68c2f63166fd',

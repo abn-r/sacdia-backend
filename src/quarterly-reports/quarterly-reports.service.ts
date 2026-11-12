@@ -7,31 +7,66 @@ import {
   AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
-import { DEFAULT_AGE_TIMEZONE, calendarDateIn } from '../common/age/age.util';
 import { ErrorCode } from '../common/errors/error-codes';
-import { UpdateQuarterlyManualDataDto } from './dto';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { CoordinationService } from '../coordination/coordination.service';
+import { isCoordinatorOnlyForPeriodicReports } from '../common/authorization/periodic-reports-access';
 import {
   buildReportClubWhere,
-  resolveReportVisibilityScopeForActor,
+  resolvePeriodicReportVisibilityScopeForActor,
   type ReportVisibilityFilters,
 } from '../reports/report-visibility-scope';
+import { PeriodicReportDataService } from '../reports/periodic-report-data.service';
+import { resolveHistoryLowerBound } from '../reports/periodic-report-history';
+import type { MonthlyTextEntry } from '../reports/periodic-monthly-data';
 import {
-  CLUB_DIRECTIVA_ROLES,
-  directivaRoleOrder,
-} from '../common/constants/club-directiva-roles';
+  isPastGrace,
+  quarterOf,
+  quarterPeriod,
+  reportsToday,
+  type YearMonth,
+} from '../reports/periodic-report-period';
 
 // ============================================================
 // Shape of the computed_data JSON column
 // ============================================================
+
+/**
+ * Figures that used to be typed by hand, now computed from the SUBMITTED
+ * monthly reports of the quarter (all sections of the club). Everything but
+ * `camporees_attended` is null when no monthly report of the quarter was
+ * submitted (the PDF prints "—").
+ */
+export interface QuarterlyMonthlyData {
+  /** Distinct months of the quarter with a submitted monthly report. */
+  months_submitted: number;
+  /** Those months, oldest first. */
+  months_covered: YearMonth[];
+  /** Sum over the submitted months. */
+  planning_meetings: number | null;
+  parent_meetings: number | null;
+  youth_council_attendance: number | null;
+  church_board_attendance: number | null;
+  /** Value of the latest submitted month. */
+  soul_target: number | null;
+  /** Sum of `baptized_this_month`. */
+  baptized_this_quarter: number | null;
+  /** One entry per submitted month with text, oldest first. */
+  club_participation_description: MonthlyTextEntry[] | null;
+  community_service_description: MonthlyTextEntry[] | null;
+  /** true if any submitted month has true; false if none; null without months. */
+  certificates_delivered: boolean | null;
+  /** Distinct camporees (registered/approved, starting in the quarter); not monthly data. */
+  camporees_attended: number;
+}
 
 export interface QuarterlyComputedData {
   quarter_label: string;
   year: number;
   quarter: number;
   months_in_quarter: number[];
+  /** Distinct people with a club assignment that overlapped the quarter. */
   member_count: number;
+  /** Board roles held at any time during the quarter. */
   directiva: { role: string; user_id: string; name: string }[];
   honors: {
     started: number;
@@ -50,26 +85,33 @@ export interface QuarterlyComputedData {
     transactions: number;
   };
   missionary: {
-    baptized_this_quarter: number;
+    /** Same value as `monthly_data.baptized_this_quarter`. */
+    baptized_this_quarter: number | null;
   };
+  monthly_data: QuarterlyMonthlyData;
 }
+
+export type PeriodicReportStatus = 'draft' | 'finalized';
 
 @Injectable()
 export class QuarterlyReportsService {
   private readonly logger = new Logger(QuarterlyReportsService.name);
+  private readonly financeAggregation: FinanceAggregationService;
+  private readonly data: PeriodicReportDataService;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
-    private readonly coordinationService: CoordinationService,
     @Optional()
     financeAggregation?: FinanceAggregationService,
+    @Optional()
+    data?: PeriodicReportDataService,
   ) {
     this.financeAggregation =
       financeAggregation ?? new FinanceAggregationService(prisma);
+    this.data =
+      data ?? new PeriodicReportDataService(prisma, this.financeAggregation);
   }
-
-  private readonly financeAggregation: FinanceAggregationService;
 
   // ========================================
   // GET OR CREATE DRAFT
@@ -99,14 +141,15 @@ export class QuarterlyReportsService {
   }
 
   // ========================================
-  // GENERATE ON DEMAND (admin: create the row if missing, compute if draft)
+  // GENERATE ON DEMAND
   // ========================================
 
   /**
-   * Creates the quarterly report for the club/period when it does not exist and
-   * recomputes its data while it is a draft. A finalized or archived report is
-   * returned untouched (its snapshot is frozen). Returns the same shape as
-   * `getReport`. Callers must have checked club visibility first.
+   * Creates the quarterly report for the club/period when it does not exist.
+   * A draft is recomputed live; when the quarter ended more than the grace
+   * period ago the draft is frozen (finalized, `finalized_by` null). A
+   * finalized report is returned untouched. Same shape as `getReport`.
+   * Callers must have checked club visibility first.
    */
   async generateOnDemand(clubId: number, year: number, quarter: number) {
     this.validateQuarterYear(quarter, year);
@@ -115,14 +158,20 @@ export class QuarterlyReportsService {
     const report = await this.getOrCreateDraft(clubId, year, quarter);
 
     if (report.status === 'draft') {
-      await this.regenerate(report.quarterly_report_id);
+      const graceDays = await this.data.getFreezeGraceDays();
+      const { endDate } = quarterPeriod(year, quarter);
+      if (isPastGrace(endDate, reportsToday(), graceDays)) {
+        await this.freezeReport(report.quarterly_report_id);
+      } else {
+        await this.refreshDraft(report.quarterly_report_id);
+      }
     }
 
-    return this.getReport(report.quarterly_report_id);
+    return this.loadReport(report.quarterly_report_id);
   }
 
   // ========================================
-  // COMPUTE (build computed_data from monthly data)
+  // COMPUTE (build computed_data)
   // ========================================
 
   async computeData(
@@ -133,251 +182,249 @@ export class QuarterlyReportsService {
     this.validateQuarterYear(quarter, year);
     await this.validateClubExists(clubId);
 
-    const months = this.getMonthsForQuarter(quarter);
-
-    // Find club sections for this club
-    const sections = await this.prisma.club_sections.findMany({
-      where: { main_club_id: clubId, active: true },
-      select: { club_section_id: true },
-    });
-
-    // Also try direct sections where club owns them (via clubs relation)
-    const sectionsFromClub = await this.prisma.club_sections.findMany({
-      where: {
-        clubs: { club_id: clubId },
-        active: true,
-      },
-      select: { club_section_id: true },
-    });
-
-    const allSectionIds = [
-      ...new Set([
-        ...sections.map((s) => s.club_section_id),
-        ...sectionsFromClub.map((s) => s.club_section_id),
-      ]),
-    ];
-
-    // Find active ecclesiastical year for this calendar year range
-    const ecclesiasticalYear = await this.prisma.ecclesiastical_years.findFirst(
-      {
-        where: { active: true },
-      },
-    );
-
-    const yearId = ecclesiasticalYear?.year_id;
-
-    // ── Members of the quarter ──
-    // Distinct people with a club assignment that overlaps the quarter, active
-    // or already ended. Not the assignments active today: a past quarter keeps
-    // the members it had, and someone with two roles counts once.
-    const memberIds =
-      allSectionIds.length > 0
-        ? await this.getQuarterMemberIds(allSectionIds, year, months)
-        : [];
-    const memberCount = memberIds.length;
-
-    // ── Directiva ──
-    const directiva: { role: string; user_id: string; name: string }[] = [];
-    if (allSectionIds.length > 0 && yearId) {
-      const directivaRoles = [...CLUB_DIRECTIVA_ROLES];
-      const assignments = await this.prisma.club_role_assignments.findMany({
-        where: {
-          club_section_id: { in: allSectionIds },
-          ecclesiastical_year_id: yearId,
-          active: true,
-          roles: { role_name: { in: directivaRoles } },
-        },
-        include: {
-          users: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-              maternal_last_name: true,
-            },
-          },
-          roles: { select: { role_name: true } },
-        },
-        distinct: ['user_id'],
-      });
-
-      for (const a of assignments) {
-        directiva.push({
-          role: a.roles.role_name,
-          user_id: a.users.user_id,
-          name: [
-            a.users.name,
-            a.users.paternal_last_name,
-            a.users.maternal_last_name,
-          ]
-            .filter(Boolean)
-            .join(' '),
-        });
-      }
-      directiva.sort(
-        (a, b) => directivaRoleOrder(a.role) - directivaRoleOrder(b.role),
-      );
-    }
-
-    // ── Honors aggregation across the 3 months ──
-    const startDate = new Date(year, months[0] - 1, 1);
-    const endDate = new Date(
-      year,
-      months[months.length - 1],
-      0,
-      23,
-      59,
-      59,
-      999,
-    );
-
-    let honorsStarted = 0;
-    let honorsCompleted = 0;
-
-    if (memberIds.length > 0) {
-      const honors = await this.prisma.users_honors.findMany({
-        where: {
-          user_id: { in: memberIds },
-          active: true,
-          date: { gte: startDate, lte: endDate },
-        },
-        select: { validate: true },
-      });
-      honorsStarted = honors.length;
-      honorsCompleted = honors.filter((h) => h.validate).length;
-    }
-
-    // ── Activities aggregation ──
-    let activitiesTotal = 0;
-    if (allSectionIds.length > 0) {
-      activitiesTotal = await this.prisma.activities.count({
-        where: {
-          club_section_id: { in: allSectionIds },
-          created_at: { gte: startDate, lte: endDate },
-        },
-      });
-    }
-
-    // ── Finances: live totals from the shared aggregation (same numbers as
-    // the club summary, monthly and annual reports). ──
-    const finance = await this.financeAggregation.aggregate(allSectionIds, {
-      from: { year, month: months[0] },
-      to: { year, month: months[months.length - 1] },
-    });
-
-    const quarterLabel = `Q${quarter} ${year}`;
+    const period = quarterPeriod(year, quarter);
+    const base = await this.data.compute(clubId, period);
+    const monthly = base.monthly;
 
     return {
-      quarter_label: quarterLabel,
+      quarter_label: `Q${quarter} ${year}`,
       year,
       quarter,
-      months_in_quarter: months,
-      member_count: memberCount,
-      directiva,
-      honors: { started: honorsStarted, completed: honorsCompleted },
-      activities: { total: activitiesTotal },
-      finances: {
-        income: finance.income,
-        expenses: finance.expenses,
-        balance: finance.net,
-        total_balance: finance.balance,
-        transactions: finance.movements,
+      months_in_quarter: period.months.map((m) => m.month),
+      member_count: base.memberCount,
+      directiva: base.directiva,
+      honors: {
+        started: base.honors.length,
+        completed: base.honors.filter((h) => h.validate).length,
       },
-      missionary: { baptized_this_quarter: 0 },
+      activities: { total: base.activitiesTotal },
+      finances: {
+        income: base.finance.income,
+        expenses: base.finance.expenses,
+        balance: base.finance.net,
+        total_balance: base.finance.balance,
+        transactions: base.finance.movements,
+      },
+      missionary: { baptized_this_quarter: monthly.baptized },
+      monthly_data: {
+        months_submitted: monthly.months_submitted,
+        months_covered: monthly.months_covered,
+        planning_meetings: monthly.planning_meetings,
+        parent_meetings: monthly.parent_meetings,
+        youth_council_attendance: monthly.youth_council_attendance,
+        church_board_attendance: monthly.church_board_attendance,
+        soul_target: monthly.soul_target,
+        baptized_this_quarter: monthly.baptized,
+        club_participation_description: monthly.club_participation_description,
+        community_service_description: monthly.community_service_description,
+        certificates_delivered: monthly.certificates_delivered,
+        camporees_attended: base.camporeesAttended,
+      },
     };
   }
 
   // ========================================
-  // GENERATE (freeze computed_data)
+  // LIFECYCLE: refresh (draft), freeze, regenerate
   // ========================================
 
-  async generate(reportId: number, _triggeredBy: string) {
+  /**
+   * Recomputes a draft and stores the result. The write is conditional on the
+   * row still being a draft, so a concurrent freeze is never overwritten.
+   * Non-drafts are left alone.
+   */
+  async refreshDraft(reportId: number): Promise<void> {
     const report = await this.prisma.quarterly_reports.findUnique({
       where: { quarterly_report_id: reportId },
+      select: { club_id: true, year: true, quarter: true, status: true },
     });
-
     if (!report) {
       throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_NOT_FOUND);
     }
-
-    if (report.status !== 'draft') {
-      throw new AppBadRequestException(ErrorCode.QUARTERLY_REPORT_NOT_DRAFT);
-    }
+    if (report.status !== 'draft') return;
 
     const computed = await this.computeData(
       report.club_id,
       report.year,
       report.quarter,
     );
-
-    return this.prisma.quarterly_reports.update({
-      where: { quarterly_report_id: reportId },
+    await this.prisma.quarterly_reports.updateMany({
+      where: { quarterly_report_id: reportId, status: 'draft' },
       data: {
-        computed_data: computed as any,
+        computed_data: computed as unknown as Prisma.InputJsonValue,
         auto_generated_at: new Date(),
-        status: 'draft', // remains draft until explicitly finalized
       },
     });
   }
 
-  // ========================================
-  // UPDATE MANUAL DATA
-  // ========================================
-
-  async updateManualData(reportId: number, dto: UpdateQuarterlyManualDataDto) {
+  /**
+   * Freezes a draft: computes the snapshot and marks it finalized with
+   * `finalized_by` null (automatic). Idempotent and conditional on
+   * `status = 'draft'`: a report that is already finalized, or frozen by a
+   * concurrent run, is not touched. Returns whether this call froze it.
+   */
+  async freezeReport(reportId: number): Promise<boolean> {
     const report = await this.prisma.quarterly_reports.findUnique({
       where: { quarterly_report_id: reportId },
+      select: { club_id: true, year: true, quarter: true, status: true },
     });
-
     if (!report) {
       throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_NOT_FOUND);
     }
+    if (report.status !== 'draft') return false;
 
-    if (report.status !== 'draft') {
-      throw new AppBadRequestException(ErrorCode.QUARTERLY_REPORT_NOT_DRAFT);
-    }
-
-    const existing = (report.manual_data as Record<string, unknown>) ?? {};
-    const merged = { ...existing, ...this.buildManualPayload(dto) };
-
-    return this.prisma.quarterly_reports.update({
-      where: { quarterly_report_id: reportId },
-      data: { manual_data: merged as any },
-    });
-  }
-
-  // ========================================
-  // FINALIZE
-  // ========================================
-
-  async finalize(reportId: number, userId: string) {
-    const report = await this.prisma.quarterly_reports.findUnique({
-      where: { quarterly_report_id: reportId },
-    });
-
-    if (!report) {
-      throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_NOT_FOUND);
-    }
-
-    if (report.status !== 'draft') {
-      throw new AppBadRequestException(ErrorCode.QUARTERLY_REPORT_NOT_DRAFT);
-    }
-
-    return this.prisma.quarterly_reports.update({
-      where: { quarterly_report_id: reportId },
+    const computed = await this.computeData(
+      report.club_id,
+      report.year,
+      report.quarter,
+    );
+    const now = new Date();
+    const result = await this.prisma.quarterly_reports.updateMany({
+      where: { quarterly_report_id: reportId, status: 'draft' },
       data: {
+        computed_data: computed as unknown as Prisma.InputJsonValue,
+        auto_generated_at: now,
         status: 'finalized',
-        finalized_at: new Date(),
-        finalized_by: userId,
+        finalized_at: now,
+        finalized_by: null,
       },
     });
+    return result.count > 0;
+  }
+
+  /**
+   * Support escape hatch (global admins only, enforced by the controller):
+   * recomputes the report and keeps its status, finalized included. The write
+   * is conditional on the status read, with one retry when it changed
+   * concurrently (draft frozen meanwhile).
+   */
+  async regenerate(reportId: number) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const report = await this.prisma.quarterly_reports.findUnique({
+        where: { quarterly_report_id: reportId },
+      });
+      if (!report) {
+        throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_NOT_FOUND);
+      }
+
+      const computed = await this.computeData(
+        report.club_id,
+        report.year,
+        report.quarter,
+      );
+      const result = await this.prisma.quarterly_reports.updateMany({
+        where: { quarterly_report_id: reportId, status: report.status },
+        data: {
+          computed_data: computed as unknown as Prisma.InputJsonValue,
+          auto_generated_at: new Date(),
+        },
+      });
+      if (result.count > 0) break;
+    }
+    return this.loadReport(reportId);
+  }
+
+  // ========================================
+  // CATCH-UP FREEZE (called daily by the cron)
+  // ========================================
+
+  /**
+   * Freezes every quarterly report whose quarter ended more than `graceDays`
+   * days ago and is not finalized yet, for every active club. Covers the
+   * quarters from the start of the previous ecclesiastical year up to the
+   * latest one past grace. Idempotent: finalized reports are skipped.
+   */
+  async freezeDueReports(
+    graceDays: number,
+    now: Date = new Date(),
+  ): Promise<{ success: number; skipped: number; errors: number }> {
+    const result = { success: 0, skipped: 0, errors: 0 };
+    const today = reportsToday(now);
+
+    const lowerBound = await resolveHistoryLowerBound(this.prisma, today);
+    if (!lowerBound) return result;
+
+    const quarters: { year: number; quarter: number }[] = [];
+    let { year, quarter } = quarterOf(lowerBound);
+    for (;;) {
+      if (
+        !isPastGrace(quarterPeriod(year, quarter).endDate, today, graceDays)
+      ) {
+        break;
+      }
+      quarters.push({ year, quarter });
+      quarter += 1;
+      if (quarter > 4) {
+        quarter = 1;
+        year += 1;
+      }
+    }
+    if (quarters.length === 0) return result;
+
+    const clubs = await this.prisma.clubs.findMany({
+      where: { active: true },
+      select: { club_id: true, name: true, created_at: true },
+    });
+    const finalized = await this.prisma.quarterly_reports.findMany({
+      where: { status: 'finalized', OR: quarters },
+      select: { club_id: true, year: true, quarter: true },
+    });
+    const done = new Set(
+      finalized.map((r) => `${r.club_id}:${r.year}:${r.quarter}`),
+    );
+
+    for (const target of quarters) {
+      const period = quarterPeriod(target.year, target.quarter);
+      for (const club of clubs) {
+        if (done.has(`${club.club_id}:${target.year}:${target.quarter}`)) {
+          result.skipped += 1;
+          continue;
+        }
+        // A club created after the quarter has nothing to report for it.
+        if (
+          club.created_at &&
+          club.created_at.getTime() >= period.endExclusiveInstant.getTime()
+        ) {
+          result.skipped += 1;
+          continue;
+        }
+        try {
+          const report = await this.getOrCreateDraft(
+            club.club_id,
+            target.year,
+            target.quarter,
+          );
+          const frozen = await this.freezeReport(report.quarterly_report_id);
+          if (frozen) {
+            result.success += 1;
+            this.logger.log(
+              `Froze quarterly report for club ${club.name} (${target.year} Q${target.quarter})`,
+            );
+          } else {
+            result.skipped += 1;
+          }
+        } catch (err) {
+          result.errors += 1;
+          this.logger.error(
+            `Failed to freeze quarterly report for club ${club.club_id} (${target.year} Q${target.quarter}): ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
+
+    return result;
   }
 
   // ========================================
   // GET SINGLE
   // ========================================
 
+  /** A draft is recomputed first, so the answer is live; a finalized one is the snapshot. */
   async getReport(reportId: number) {
+    await this.refreshDraft(reportId);
+    return this.loadReport(reportId);
+  }
+
+  private async loadReport(reportId: number) {
     const report = await this.prisma.quarterly_reports.findUnique({
       where: { quarterly_report_id: reportId },
       include: {
@@ -413,7 +460,7 @@ export class QuarterlyReportsService {
       clubId?: number;
       year?: number;
       quarter?: number;
-      status?: string;
+      status?: PeriodicReportStatus;
       page?: number;
       limit?: number;
     },
@@ -428,7 +475,7 @@ export class QuarterlyReportsService {
     const limit = Math.min(filters.limit ?? 25, 100);
     const skip = (page - 1) * limit;
 
-    const where: any = {
+    const where: Prisma.quarterly_reportsWhereInput = {
       ...(filters.clubId !== undefined && { club_id: filters.clubId }),
       ...(filters.year !== undefined && { year: filters.year }),
       ...(filters.quarter !== undefined && { quarter: filters.quarter }),
@@ -456,14 +503,13 @@ export class QuarterlyReportsService {
   }
 
   // ========================================
-  // ACTOR VISIBILITY (admin routes)
+  // ACTOR VISIBILITY
   // ========================================
 
   /**
-   * Same visibility as the admin list: territory for territorial roles, the
-   * coordinator's assigned sections (coordinator_assignments) for coordinators,
-   * the active club section otherwise. A club is visible to a coordinator when
-   * one of its sections is in their scope.
+   * Territory for territorial roles, the active club section otherwise.
+   * Coordinators (coordinator-only actors) are denied with
+   * PERIODIC_REPORTS_FORBIDDEN: quarterly and annual reports are not for them.
    */
   private async actorReportClubWhere(
     userId: string,
@@ -471,12 +517,20 @@ export class QuarterlyReportsService {
   ): Promise<Prisma.clubsWhereInput> {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
-    const reportScope = await resolveReportVisibilityScopeForActor(
+    const reportScope = resolvePeriodicReportVisibilityScopeForActor(
       resolved,
       filters,
-      () => this.coordinationService.getEffectiveCoordinatorSectionIds(userId),
     );
     return buildReportClubWhere(reportScope);
+  }
+
+  /** Club routes: coordinators are denied like on the admin routes. */
+  async assertPeriodicReportsAccess(userId: string): Promise<void> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    if (isCoordinatorOnlyForPeriodicReports(resolved)) {
+      throw new AppForbiddenException(ErrorCode.PERIODIC_REPORTS_FORBIDDEN);
+    }
   }
 
   /**
@@ -503,14 +557,16 @@ export class QuarterlyReportsService {
   }
 
   /**
-   * Admin routes that act on a club (no report id yet) call this first. Uses
-   * the same territorial scope as the list and the by-id routes. A missing or
-   * inactive club answers 404; an existing club outside the actor's scope 403.
+   * Admin routes that act on a club (no report id yet) call this first. A
+   * missing or inactive club answers 404; an existing club outside the
+   * actor's scope 403.
    */
   async assertClubVisibleToActor(
     userId: string,
     clubId: number,
   ): Promise<void> {
+    const clubWhere = await this.actorReportClubWhere(userId);
+
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: { club_id: true, active: true },
@@ -520,7 +576,6 @@ export class QuarterlyReportsService {
       throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_CLUB_NOT_FOUND);
     }
 
-    const clubWhere = await this.actorReportClubWhere(userId);
     if (Object.keys(clubWhere).length === 0) return;
 
     const visible = await this.prisma.clubs.findFirst({
@@ -570,143 +625,13 @@ export class QuarterlyReportsService {
   }
 
   // ========================================
-  // REGENERATE (re-run compute, admin only)
-  // ========================================
-
-  async regenerate(reportId: number) {
-    const report = await this.prisma.quarterly_reports.findUnique({
-      where: { quarterly_report_id: reportId },
-    });
-
-    if (!report) {
-      throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_NOT_FOUND);
-    }
-    // A finalized report is frozen: recomputing would change what was signed off.
-    if (report.status !== 'draft') {
-      throw new AppBadRequestException(ErrorCode.QUARTERLY_REPORT_NOT_DRAFT);
-    }
-
-    const computed = await this.computeData(
-      report.club_id,
-      report.year,
-      report.quarter,
-    );
-
-    return this.prisma.quarterly_reports.update({
-      where: { quarterly_report_id: reportId },
-      data: {
-        computed_data: computed as any,
-        auto_generated_at: new Date(),
-        // Keep existing status — regenerate only refreshes data
-      },
-    });
-  }
-
-  // ========================================
-  // AUTO-GENERATE (called by cron)
-  // ========================================
-
-  async autoGenerateForAllClubs(
-    year: number,
-    quarter: number,
-  ): Promise<{ success: number; skipped: number; errors: number }> {
-    const clubs = await this.prisma.clubs.findMany({
-      where: { active: true },
-      select: { club_id: true, name: true },
-    });
-
-    let success = 0;
-    let skipped = 0;
-    let errors = 0;
-
-    for (const club of clubs) {
-      try {
-        const existing = await this.prisma.quarterly_reports.findUnique({
-          where: {
-            club_id_year_quarter: { club_id: club.club_id, year, quarter },
-          },
-        });
-
-        if (existing && existing.status !== 'draft') {
-          skipped++;
-          continue;
-        }
-
-        let report = existing;
-        if (!report) {
-          report = await this.prisma.quarterly_reports.create({
-            data: { club_id: club.club_id, year, quarter, status: 'draft' },
-          });
-        }
-
-        const computed = await this.computeData(club.club_id, year, quarter);
-
-        await this.prisma.quarterly_reports.update({
-          where: { quarterly_report_id: report.quarterly_report_id },
-          data: {
-            computed_data: computed as any,
-            auto_generated_at: new Date(),
-          },
-        });
-
-        success++;
-        this.logger.log(
-          `Auto-generated quarterly report for club ${club.name} (${year} Q${quarter})`,
-        );
-      } catch (err) {
-        errors++;
-        this.logger.error(
-          `Failed to auto-generate quarterly report for club ${club.club_id}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-
-    return { success, skipped, errors };
-  }
-
-  // ========================================
   // PRIVATE HELPERS
   // ========================================
-
-  private getMonthsForQuarter(quarter: number): number[] {
-    return [quarter * 3 - 2, quarter * 3 - 1, quarter * 3];
-  }
-
-  /**
-   * User ids with a club assignment in the sections that overlaps the
-   * quarter: it started on or before the last day and had not ended before
-   * the first day. Ended assignments count (status 'ended'); pending or
-   * rejected requests do not.
-   */
-  private async getQuarterMemberIds(
-    sectionIds: number[],
-    year: number,
-    months: number[],
-  ): Promise<string[]> {
-    // start_date / end_date are DATE columns: compare against UTC midnights.
-    const firstDay = new Date(Date.UTC(year, months[0] - 1, 1));
-    const lastDay = new Date(Date.UTC(year, months[months.length - 1], 0));
-    const rows = await this.prisma.club_role_assignments.findMany({
-      where: {
-        club_section_id: { in: sectionIds },
-        start_date: { lte: lastDay },
-        AND: [
-          // status is nullable; legacy rows without one are active members.
-          { OR: [{ status: { in: ['active', 'ended'] } }, { status: null }] },
-          { OR: [{ end_date: null }, { end_date: { gte: firstDay } }] },
-        ],
-      },
-      select: { user_id: true },
-      distinct: ['user_id'],
-    });
-    return rows.map((r) => r.user_id);
-  }
 
   /** A quarter that starts after today (Mexico City civil day) has no data yet. */
   private assertQuarterStarted(year: number, quarter: number) {
     const quarterStart = new Date(Date.UTC(year, (quarter - 1) * 3, 1));
-    const today = calendarDateIn(DEFAULT_AGE_TIMEZONE);
-    if (quarterStart.getTime() > today.getTime()) {
+    if (quarterStart.getTime() > reportsToday().getTime()) {
       throw new AppBadRequestException(ErrorCode.REPORT_PERIOD_IN_FUTURE);
     }
   }
@@ -730,30 +655,5 @@ export class QuarterlyReportsService {
       throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_CLUB_NOT_FOUND);
     }
     return club;
-  }
-
-  private buildManualPayload(
-    dto: UpdateQuarterlyManualDataDto,
-  ): Record<string, unknown> {
-    const fields: (keyof UpdateQuarterlyManualDataDto)[] = [
-      'planning_meetings',
-      'parent_meetings',
-      'youth_council_attendance',
-      'church_board_attendance',
-      'soul_target',
-      'baptized_this_quarter',
-      'club_participation_description',
-      'community_service_description',
-      'camporees_attended',
-      'certificates_delivered',
-    ];
-
-    const payload: Record<string, unknown> = {};
-    for (const field of fields) {
-      if (dto[field] !== undefined) {
-        payload[field] = dto[field];
-      }
-    }
-    return payload;
   }
 }

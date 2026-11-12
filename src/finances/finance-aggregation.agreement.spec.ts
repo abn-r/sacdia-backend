@@ -100,7 +100,8 @@ describe('finance totals agree across summary and reports', () => {
     users_honors: { findMany: jest.fn().mockResolvedValue([]) },
     activities: { count: jest.fn().mockResolvedValue(0) },
     club_enrollments: { findMany: jest.fn().mockResolvedValue([]) },
-    club_annual_rankings: { findFirst: jest.fn().mockResolvedValue(null) },
+    monthly_reports: { findMany: jest.fn().mockResolvedValue([]) },
+    camporee_clubs: { findMany: jest.fn().mockResolvedValue([]) },
   };
 
   const aggregation = new FinanceAggregationService(prisma as any);
@@ -129,12 +130,10 @@ describe('finance totals agree across summary and reports', () => {
   const quarterly = new QuarterlyReportsService(
     prisma as any,
     {} as any,
-    {} as any,
     aggregation,
   );
   const annual = new AnnualReportsService(
     prisma as any,
-    {} as any,
     {} as any,
     aggregation,
   );

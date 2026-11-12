@@ -161,6 +161,7 @@ const ACTORS: Array<{
       'rbac.manage',
       'rbac.mutate_global_roles',
       'rbac.view_user_roles',
+      'reports.regenerate_periodic',
       'reports.view_all',
       'scoring_categories.manage',
       'service_credentials.review',
@@ -196,6 +197,7 @@ const ACTORS: Array<{
       'investiture.configure_field_window',
       'investiture.consult_field_window',
       'rbac.view_user_roles',
+      'reports.regenerate_periodic',
       'reports.view_all',
       'service_credentials.review',
       'system.config.read',
@@ -463,7 +465,7 @@ describe('capabilities catalog', () => {
       ...CAPABILITY_KEYS,
     ]);
     expect([...CAPABILITY_KEYS]).toEqual(sorted([...CAPABILITY_KEYS]));
-    expect(CAPABILITY_KEYS).toHaveLength(50);
+    expect(CAPABILITY_KEYS).toHaveLength(52);
   });
 
   describe.each(ACTORS)(
@@ -719,5 +721,93 @@ describe('capabilities catalog', () => {
       computeActorAuthorizationSummary(fixture);
       expect(JSON.stringify(fixture)).toBe(snapshot);
     });
+  });
+});
+
+describe('reports.view_periodic', () => {
+  const withPermissions = (
+    fixture: ResolvedAuthorizationProfile,
+    permissions: string[],
+  ): ResolvedAuthorizationProfile => ({
+    ...fixture,
+    authorization: {
+      ...fixture.authorization,
+      effective: { ...fixture.authorization.effective, permissions },
+    },
+  });
+  const READ = ['reports:read', 'reports:download'];
+  const has = (fixture: ResolvedAuthorizationProfile) =>
+    computeCapabilities(fixture).includes('reports.view_periodic');
+
+  it.each([
+    'super-admin',
+    'admin',
+    'assistant-admin',
+    'director-lf',
+    'director-union',
+    'director-dia',
+  ])('%s with reports:read can see quarterly and annual reports', (role) => {
+    expect(
+      has(withPermissions(resolvedFor({ globalRoles: [role] }), READ)),
+    ).toBe(true);
+  });
+
+  it.each(['coordinator', 'zone-coordinator', 'general-coordinator'])(
+    '%s only (reports:read kept for monthly reports) cannot',
+    (role) => {
+      expect(
+        has(withPermissions(resolvedFor({ globalRoles: [role] }), READ)),
+      ).toBe(false);
+    },
+  );
+
+  it('a coordinator that also holds a club section keeps it', () => {
+    const fixture = resolvedFor({
+      globalRoles: ['coordinator'],
+      club: { role: 'director' },
+    });
+    expect(has(withPermissions(fixture, READ))).toBe(true);
+  });
+
+  it('a club director with reports:read can', () => {
+    const fixture = resolvedFor({ club: { role: 'director' } });
+    expect(has(withPermissions(fixture, READ))).toBe(true);
+  });
+
+  it('without reports:read nobody can', () => {
+    expect(
+      has(withPermissions(resolvedFor({ globalRoles: ['admin'] }), [])),
+    ).toBe(false);
+  });
+
+  it('a user with no role and no club cannot', () => {
+    expect(has(withPermissions(resolvedFor({}), READ))).toBe(false);
+  });
+});
+
+describe('reports.regenerate_periodic', () => {
+  const has = (fixture: ResolvedAuthorizationProfile) =>
+    computeCapabilities(fixture).includes('reports.regenerate_periodic');
+
+  it.each(['super-admin', 'admin'])(
+    '%s can recompute a closed report',
+    (role) => {
+      expect(has(resolvedFor({ globalRoles: [role] }))).toBe(true);
+    },
+  );
+
+  it.each([
+    'assistant-admin',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'director-dia',
+    'coordinator',
+  ])('%s cannot', (role) => {
+    expect(has(resolvedFor({ globalRoles: [role] }))).toBe(false);
+  });
+
+  it('a club director cannot', () => {
+    expect(has(resolvedFor({ club: { role: 'director' } }))).toBe(false);
   });
 });

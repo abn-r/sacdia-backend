@@ -15,15 +15,15 @@ import { MonthlyReportsController } from '../monthly-reports/monthly-reports.con
 import { QuarterlyReportsController } from '../quarterly-reports/quarterly-reports.controller';
 
 /**
- * reports:update guards the quarterly / annual report mutations (PATCH :id,
- * POST :id/regenerate, POST :id/finalize). Until migration
+ * reports:update guards the quarterly / annual report mutations (POST generate and
+ * POST :id/regenerate; the PATCH and finalize routes no longer exist). Until migration
  * 20261026120000_reports_update_permission the permission did not exist, so
  * the fail-closed PermissionsGuard answered 403 to every role. Platform admins
  * and territorial roles hold it now; coordinators, pastor and CLUB roles never
  * do. Report visibility (territory) is still checked by the service first.
  */
 
-const MUTATIONS = ['updateManualData', 'regenerate', 'finalize'] as const;
+const MUTATIONS = ['generate', 'regenerate'] as const;
 type Mutation = (typeof MUTATIONS)[number];
 
 const CONTROLLERS = [
@@ -244,48 +244,6 @@ describe.each(CONTROLLERS)(
           ),
         ).toEqual({ allowed: false, code: ErrorCode.GUARD_PERMISSION_DENIED });
       });
-    });
-  },
-);
-
-describe.each(CONTROLLERS)(
-  '%s report mutations: controller',
-  (_name, Controller) => {
-    const req = { user: { sub: 'admin-user' } };
-    const build = () => {
-      const service = {
-        assertReportVisibleToActor: jest.fn().mockResolvedValue(undefined),
-        updateManualData: jest.fn().mockResolvedValue({ id: 5 }),
-        regenerate: jest.fn().mockResolvedValue({ id: 5 }),
-        finalize: jest.fn().mockResolvedValue({ id: 5, status: 'finalized' }),
-      };
-      const controller = new Controller(service, {});
-      return { service, controller };
-    };
-
-    it('finalize checks visibility, then finalizes as the actor', async () => {
-      const { service, controller } = build();
-
-      await expect(controller.finalize(5, req)).resolves.toEqual({
-        status: 'success',
-        data: { id: 5, status: 'finalized' },
-      });
-      expect(service.assertReportVisibleToActor).toHaveBeenCalledWith(
-        'admin-user',
-        5,
-      );
-      expect(service.finalize).toHaveBeenCalledWith(5, 'admin-user');
-    });
-
-    it('regenerate and PATCH run after the visibility check', async () => {
-      const { service, controller } = build();
-
-      await controller.regenerate(5, req);
-      await controller.updateManualData(5, {}, req);
-
-      expect(service.assertReportVisibleToActor).toHaveBeenCalledTimes(2);
-      expect(service.regenerate).toHaveBeenCalledWith(5);
-      expect(service.updateManualData).toHaveBeenCalledWith(5, {});
     });
   },
 );

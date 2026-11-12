@@ -25,13 +25,25 @@
     "months_covered": "Months covered",
     "total_activities": "Total activities",
     "honors_completed": "Honors completed",
-    "honors_started": "Honors started"
+    "honors_started": "Honors started",
+    "directiva": "Board",
+    "meetings_header": "Meetings and attendance",
+    "planning_meetings": "Planning meetings",
+    "parent_meetings": "Parent meetings",
+    "monthly_basis_label": "Data source",
+    "monthly_basis": "Based on {count} months with a submitted monthly report",
+    "monthly_basis_one": "Based on 1 month with a submitted monthly report",
+    "monthly_basis_none": "No monthly reports submitted in the period",
+    "youth_council_attendance": "Youth council attendance",
+    "church_board_attendance": "Church board attendance",
+    "participation": "Participation"
   },
   "finances": {
     "total_income": "Total income",
     "total_expenses": "Total expenses",
-    "quarter_balance": "Quarter balance",
-    "transaction_count": "Total transactions"
+    "quarter_balance": "Net balance of the quarter",
+    "transaction_count": "Total transactions",
+    "total_balance": "Cumulative balance at quarter end"
   },
   "status": {
     "draft": "Draft",
@@ -47,5 +59,21 @@
     "true": "Yes",
     "false": "No",
     "null": "N/A"
+  },
+  "roles": {
+    "director": "Director",
+    "deputy-director": "Deputy director",
+    "secretary": "Secretary",
+    "secretary-treasurer": "Secretary-treasurer",
+    "treasurer": "Treasurer"
+  },
+  "teachings": {
+    "certificates_delivered": "Certificates delivered"
+  },
+  "missionary": {
+    "soul_target": "Soul target",
+    "baptized_this_quarter": "Baptized this quarter",
+    "camporees_attended": "Camporees attended",
+    "community_service": "Community service"
   }
 }

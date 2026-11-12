@@ -604,6 +604,7 @@ export enum ErrorCode {
 
   // ── Reports (shared by quarterly and annual) ───────────────────────────────
   REPORT_PERIOD_IN_FUTURE = 'REPORT_PERIOD_IN_FUTURE',
+  PERIODIC_REPORTS_FORBIDDEN = 'PERIODIC_REPORTS_FORBIDDEN',
 
   // ── Validation ─────────────────────────────────────────────────────────────
   VALIDATION_ENROLLMENT_NOT_FOUND = 'VALIDATION_ENROLLMENT_NOT_FOUND',

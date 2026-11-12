@@ -7,12 +7,16 @@ import {
   AppBadRequestException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import { directivaRoleLabel } from '../common/constants/club-directiva-roles';
+import { CLUB_DIRECTIVA_ROLES } from '../common/constants/club-directiva-roles';
 import { loadPdfKit } from '../common/utils/pdfkit-loader';
 import {
+  EMPTY_FIELD,
   drawPageFooters,
   ensureSpace,
-  formatManualValue,
+  formatFigure,
+  formatFlag,
+  monthlyTextLines,
+  type PdfTranslate,
 } from '../common/pdf/report-pdf-helpers';
 import { collapseYearLabel } from './year-label';
 import { AnnualComputedData } from './annual-reports.service';
@@ -101,7 +105,6 @@ export class AnnualReportsPdfService {
 
     const reportData = report as any;
     const computed = reportData.computed_data as AnnualComputedData;
-    const manual = (reportData.manual_data ?? {}) as Record<string, unknown>;
     const club = reportData.club;
     const churchName = (club?.churches?.name as string) ?? 'N/A';
     const districtName = (club?.districts?.name as string) ?? 'N/A';
@@ -142,7 +145,7 @@ export class AnnualReportsPdfService {
 
     // ── Section 1: Annual Summary ──
     this.drawSectionTitle(doc, t('section_titles.summary'));
-    this.drawSummary(doc, computed, manual, t);
+    this.drawSummary(doc, computed, intlLocale, t);
 
     // ── Section 2: Teachings ──
     this.drawSectionTitle(doc, t('section_titles.teachings'));
@@ -158,11 +161,11 @@ export class AnnualReportsPdfService {
 
     // ── Section 5: Missionary ──
     this.drawSectionTitle(doc, t('section_titles.missionary'));
-    this.drawMissionary(doc, computed, manual);
+    this.drawMissionary(doc, computed, intlLocale, t);
 
-    // ── Section 6: Ranking ──
-    this.drawSectionTitle(doc, t('section_titles.ranking'));
-    this.drawRanking(doc, computed, t);
+    // ── Section 6: Top achievers ──
+    this.drawSectionTitle(doc, t('section_titles.top_achievers'));
+    this.drawTopAchievers(doc, computed, t);
 
     this.drawDirectorInfo(doc, computed.directiva, t);
     this.drawFooter(doc, t);
@@ -213,7 +216,7 @@ export class AnnualReportsPdfService {
     districtName: string,
     churchName: string,
     yearLabel: string,
-    t: (key: string, args?: Record<string, unknown>) => string,
+    t: PdfTranslate,
   ) {
     doc
       .fontSize(16)
@@ -284,13 +287,20 @@ export class AnnualReportsPdfService {
     doc.moveDown(0.3);
   }
 
+  private roleLabel(role: string, t: PdfTranslate): string {
+    return (CLUB_DIRECTIVA_ROLES as readonly string[]).includes(role)
+      ? t(`roles.${role}`)
+      : role;
+  }
+
   private drawSummary(
     doc: PDFKit.PDFDocument,
     computed: AnnualComputedData,
-    manual: Record<string, unknown>,
-    t: (key: string, args?: Record<string, unknown>) => string,
+    intlLocale: string,
+    t: PdfTranslate,
   ) {
     doc.fontSize(9).font('Helvetica');
+    const monthly = computed.monthly_data;
 
     this.drawKeyValue(
       doc,
@@ -302,14 +312,27 @@ export class AnnualReportsPdfService {
       t('summary.months_reported'),
       String(computed.months_reported ?? 0),
     );
+    if (monthly) {
+      this.drawKeyValue(
+        doc,
+        t('summary.monthly_basis_label'),
+        monthly.months_submitted > 0
+          ? monthly.months_submitted === 1
+            ? t('summary.monthly_basis_one')
+            : t('summary.monthly_basis', { count: monthly.months_submitted })
+          : t('summary.monthly_basis_none'),
+      );
+    }
 
     if (computed.directiva && computed.directiva.length > 0) {
       doc.moveDown(0.3);
-      doc.font('Helvetica-Bold').text('Directiva:', PAGE_MARGIN, doc.y);
+      doc
+        .font('Helvetica-Bold')
+        .text(`${t('summary.directiva')}:`, PAGE_MARGIN, doc.y);
       doc.font('Helvetica');
       for (const m of computed.directiva) {
         doc.text(
-          `  ${directivaRoleLabel(m.role)}: ${m.name}`,
+          `  ${this.roleLabel(m.role, t)}: ${m.name}`,
           PAGE_MARGIN + 10,
           doc.y,
         );
@@ -317,30 +340,32 @@ export class AnnualReportsPdfService {
     }
 
     doc.moveDown(0.3);
-    doc.font('Helvetica-Bold').text('Reuniones:', PAGE_MARGIN, doc.y);
+    doc
+      .font('Helvetica-Bold')
+      .text(`${t('summary.meetings_header')}:`, PAGE_MARGIN, doc.y);
     doc.font('Helvetica');
     this.drawKeyValue(
       doc,
-      'Reuniones de planificación',
-      formatManualValue(manual['planning_meetings']),
+      t('summary.planning_meetings'),
+      formatFigure(monthly?.planning_meetings),
     );
     this.drawKeyValue(
       doc,
-      'Reuniones de padres',
-      formatManualValue(manual['parent_meetings']),
+      t('summary.parent_meetings'),
+      formatFigure(monthly?.parent_meetings),
     );
 
-    this.drawTextBlock(
+    this.drawTextLines(
       doc,
-      'Logros del año:',
-      manual['annual_achievements_description'],
+      `${t('summary.annual_achievements')}:`,
+      monthlyTextLines(monthly?.annual_achievements_description, intlLocale),
     );
   }
 
   private drawTeachings(
     doc: PDFKit.PDFDocument,
     computed: AnnualComputedData,
-    t: (key: string, args?: Record<string, unknown>) => string,
+    t: PdfTranslate,
   ) {
     doc.fontSize(9).font('Helvetica');
     this.drawKeyValue(
@@ -358,7 +383,7 @@ export class AnnualReportsPdfService {
   private drawActivities(
     doc: PDFKit.PDFDocument,
     computed: AnnualComputedData,
-    t: (key: string, args?: Record<string, unknown>) => string,
+    t: PdfTranslate,
   ) {
     doc.fontSize(9).font('Helvetica');
     this.drawKeyValue(
@@ -372,7 +397,7 @@ export class AnnualReportsPdfService {
     doc: PDFKit.PDFDocument,
     computed: AnnualComputedData,
     intlLocale: string,
-    t: (key: string, args?: Record<string, unknown>) => string,
+    t: PdfTranslate,
   ) {
     doc.fontSize(9).font('Helvetica');
 
@@ -380,6 +405,7 @@ export class AnnualReportsPdfService {
       income: 0,
       expenses: 0,
       balance: 0,
+      total_balance: 0,
       transactions: 0,
     };
     const fmt = (n: number) =>
@@ -402,6 +428,11 @@ export class AnnualReportsPdfService {
       {
         label: t('finances.annual_balance'),
         value: fmt(finances.balance),
+        bold: true,
+      },
+      {
+        label: t('finances.total_balance'),
+        value: fmt(finances.total_balance ?? 0),
         bold: true,
       },
       {
@@ -428,55 +459,47 @@ export class AnnualReportsPdfService {
   private drawMissionary(
     doc: PDFKit.PDFDocument,
     computed: AnnualComputedData,
-    manual: Record<string, unknown>,
+    intlLocale: string,
+    t: PdfTranslate,
   ) {
     doc.fontSize(9).font('Helvetica');
+    const monthly = computed.monthly_data;
 
-    const baptized =
-      (manual['baptized_this_year'] as number | undefined) ??
-      computed.missionary?.baptized_total ??
-      0;
-
-    this.drawKeyValue(doc, 'Bautizados en el año', String(baptized));
     this.drawKeyValue(
       doc,
-      'Total bautizados acumulado',
-      formatManualValue(manual['total_baptized']),
+      t('missionary.baptized_this_year'),
+      formatFigure(
+        monthly?.baptized_this_year ?? computed.missionary?.baptized_total,
+      ),
     );
     this.drawKeyValue(
       doc,
-      'Campamentos asistidos',
-      formatManualValue(manual['camporees_attended']),
+      t('missionary.total_baptized'),
+      formatFigure(monthly?.total_baptized),
     );
     this.drawKeyValue(
       doc,
-      'Todas las investiduras completadas',
-      formatManualValue(manual['all_investitures_completed']),
+      t('missionary.camporees_attended'),
+      formatFigure(monthly?.camporees_attended),
     );
-    this.drawTextBlock(
+    this.drawKeyValue(
       doc,
-      'Servicio comunitario:',
-      manual['community_service_description'],
+      t('missionary.all_investitures_completed'),
+      formatFlag(monthly?.all_investitures_completed, t),
+    );
+    this.drawTextLines(
+      doc,
+      `${t('missionary.community_service')}:`,
+      monthlyTextLines(monthly?.community_service_description, intlLocale),
     );
   }
 
-  private drawRanking(
+  private drawTopAchievers(
     doc: PDFKit.PDFDocument,
     computed: AnnualComputedData,
-    t: (key: string, args?: Record<string, unknown>) => string,
+    t: PdfTranslate,
   ) {
     doc.fontSize(9).font('Helvetica');
-
-    if (
-      computed.ranking_percentile !== null &&
-      computed.ranking_percentile !== undefined
-    ) {
-      this.drawKeyValue(
-        doc,
-        t('ranking.percentile'),
-        `${computed.ranking_percentile}%`,
-      );
-    }
 
     if (computed.top_achievers && computed.top_achievers.length > 0) {
       doc.moveDown(0.3);
@@ -490,8 +513,8 @@ export class AnnualReportsPdfService {
       const colX = [PAGE_MARGIN, PAGE_MARGIN + colWidths[0]];
 
       doc.font('Helvetica-Bold').fontSize(8);
-      doc.text('Miembro', colX[0], tableY);
-      doc.text('Especialidades', colX[1], tableY);
+      doc.text(t('ranking.member'), colX[0], tableY);
+      doc.text(t('ranking.honors'), colX[1], tableY);
       doc.font('Helvetica').fontSize(8);
 
       let rowY = tableY + 12;
@@ -523,7 +546,7 @@ export class AnnualReportsPdfService {
   private drawDirectorInfo(
     doc: PDFKit.PDFDocument,
     directiva: { role: string; name: string }[] | null | undefined,
-    t: (key: string, args?: Record<string, unknown>) => string,
+    t: PdfTranslate,
   ) {
     ensureSpace(doc, 90);
     doc.moveDown(1.5);
@@ -547,28 +570,25 @@ export class AnnualReportsPdfService {
     }
   }
 
-  private drawFooter(
-    doc: PDFKit.PDFDocument,
-    t: (key: string, args?: Record<string, unknown>) => string,
-  ) {
+  private drawFooter(doc: PDFKit.PDFDocument, t: PdfTranslate) {
     drawPageFooters(doc, (current, total) => t('footer', { current, total }), {
       x: PAGE_MARGIN,
       width: CONTENT_WIDTH,
     });
   }
 
-  private drawTextBlock(
+  /** A label followed by one line per entry, or a dash when there are none. */
+  private drawTextLines(
     doc: PDFKit.PDFDocument,
     label: string,
-    value: unknown,
+    lines: string[],
   ) {
     doc.moveDown(0.3);
     doc.font('Helvetica-Bold').text(label, PAGE_MARGIN, doc.y);
-    doc
-      .font('Helvetica')
-      .text(formatManualValue(value), PAGE_MARGIN + 10, doc.y, {
-        width: CONTENT_WIDTH - 10,
-      });
+    doc.font('Helvetica');
+    for (const line of lines.length > 0 ? lines : [EMPTY_FIELD]) {
+      doc.text(line, PAGE_MARGIN + 10, doc.y, { width: CONTENT_WIDTH - 10 });
+    }
   }
 
   private drawKeyValue(doc: PDFKit.PDFDocument, label: string, value: string) {
