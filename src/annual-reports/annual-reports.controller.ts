@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Patch,
   Param,
   Query,
   Body,
@@ -17,7 +16,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
   ApiParam,
   ApiProduces,
 } from '@nestjs/swagger';
@@ -25,12 +23,18 @@ import type { Response } from 'express';
 import { AnnualReportsService } from './annual-reports.service';
 import { AnnualReportsPdfService } from './annual-reports-pdf.service';
 import { monthlyReportContentDisposition } from '../monthly-reports/monthly-report-download-filename';
-import { GenerateAnnualReportDto, UpdateAnnualManualDataDto } from './dto';
+import { GenerateAnnualReportDto, ListAnnualReportsQueryDto } from './dto';
 import {
   AuthorizationResource,
+  ExactGlobalRoles,
   RequirePermissions,
 } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import {
+  GlobalRolesGuard,
+  JwtAuthGuard,
+  PermissionsGuard,
+} from '../common/guards';
+import { GlobalRole } from '../common/authorization/roles';
 
 @ApiTags('annual-reports')
 @ApiBearerAuth()
@@ -55,46 +59,15 @@ export class AnnualReportsController {
     status: 403,
     description: 'Insufficient permissions — requires reports:read',
   })
-  @ApiQuery({ name: 'divisionId', required: false, type: Number })
-  @ApiQuery({ name: 'unionId', required: false, type: Number })
-  @ApiQuery({ name: 'localFieldId', required: false, type: Number })
-  @ApiQuery({ name: 'clubId', required: false, type: Number })
-  @ApiQuery({ name: 'ecclesiasticalYearId', required: false, type: Number })
-  @ApiQuery({
-    name: 'status',
-    required: false,
-    enum: ['draft', 'finalized', 'archived'],
-  })
-  @ApiQuery({ name: 'page', required: false, type: Number })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({
     status: 200,
     description: 'Lista paginada de informes anuales',
   })
-  async listAdmin(
-    @Req() req: any,
-    @Query('divisionId', new ParseIntPipe({ optional: true }))
-    divisionId?: number,
-    @Query('unionId', new ParseIntPipe({ optional: true })) unionId?: number,
-    @Query('localFieldId', new ParseIntPipe({ optional: true }))
-    localFieldId?: number,
-    @Query('clubId', new ParseIntPipe({ optional: true })) clubId?: number,
-    @Query('ecclesiasticalYearId', new ParseIntPipe({ optional: true }))
-    ecclesiasticalYearId?: number,
-    @Query('status') status?: string,
-    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
-  ) {
-    const data = await this.annualReportsService.listForAdmin(req.user.sub, {
-      divisionId,
-      unionId,
-      localFieldId,
-      clubId,
-      ecclesiasticalYearId,
-      status,
-      page,
-      limit,
-    });
+  async listAdmin(@Req() req: any, @Query() query: ListAnnualReportsQueryDto) {
+    const data = await this.annualReportsService.listForAdmin(
+      req.user.sub,
+      query,
+    );
     return { status: 'success', data };
   }
 
@@ -124,37 +97,6 @@ export class AnnualReportsController {
   }
 
   // ========================================
-  // ADMIN: Update manual data
-  // ========================================
-
-  @Patch('admin/annual-reports/:id')
-  @RequirePermissions('reports:update')
-  @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({
-    summary: 'Actualizar datos manuales del informe anual (admin)',
-  })
-  @ApiParam({ name: 'id', type: 'integer' })
-  @ApiResponse({ status: 200, description: 'Datos actualizados' })
-  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({
-    status: 403,
-    description: 'Insufficient permissions — requires reports:update',
-  })
-  @ApiResponse({ status: 404, description: 'Informe no encontrado' })
-  async updateManualData(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateAnnualManualDataDto,
-    @Req() req: any,
-  ) {
-    await this.annualReportsService.assertReportVisibleToActor(
-      req.user.sub,
-      id,
-    );
-    const data = await this.annualReportsService.updateManualData(id, dto);
-    return { status: 'success', data };
-  }
-
-  // ========================================
   // ADMIN: Generate on demand
   // ========================================
 
@@ -164,7 +106,7 @@ export class AnnualReportsController {
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary:
-      'Generar el informe anual de un club y año eclesiástico (admin). Crea el borrador si no existe y recalcula los datos si sigue en borrador; uno finalizado se devuelve sin cambios',
+      'Generar el informe anual de un club y año eclesiástico (admin). Crea el informe si no existe; en borrador se recalcula en vivo, y si el periodo ya pasó la gracia se crea congelado (finalizado). Uno finalizado se devuelve sin cambios',
   })
   @ApiResponse({
     status: 200,
@@ -197,13 +139,16 @@ export class AnnualReportsController {
   // ========================================
 
   @Post('admin/annual-reports/:id/regenerate')
+  @UseGuards(GlobalRolesGuard)
+  @ExactGlobalRoles(GlobalRole.SUPER_ADMIN, GlobalRole.ADMIN)
   @RequirePermissions('reports:update')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
-    summary: 'Regenerar datos calculados del informe anual (admin)',
+    summary:
+      'Recalcular el informe (admin global: super-admin y admin). Funciona también sobre uno finalizado y conserva su estado',
   })
   @ApiParam({ name: 'id', type: 'integer' })
-  @ApiResponse({ status: 200, description: 'Informe regenerado' })
+  @ApiResponse({ status: 200, description: 'Informe recalculado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
@@ -216,31 +161,6 @@ export class AnnualReportsController {
       id,
     );
     const data = await this.annualReportsService.regenerate(id);
-    return { status: 'success', data };
-  }
-
-  // ========================================
-  // ADMIN: Finalize
-  // ========================================
-
-  @Post('admin/annual-reports/:id/finalize')
-  @RequirePermissions('reports:update')
-  @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Finalizar informe anual (admin)' })
-  @ApiParam({ name: 'id', type: 'integer' })
-  @ApiResponse({ status: 200, description: 'Informe finalizado' })
-  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({
-    status: 403,
-    description: 'Insufficient permissions — requires reports:update',
-  })
-  @ApiResponse({ status: 404, description: 'Informe no encontrado' })
-  async finalize(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
-    await this.annualReportsService.assertReportVisibleToActor(
-      req.user.sub,
-      id,
-    );
-    const data = await this.annualReportsService.finalize(id, req.user.sub);
     return { status: 'success', data };
   }
 
@@ -273,6 +193,7 @@ export class AnnualReportsController {
       req.user.sub,
       id,
     );
+    await this.annualReportsService.refreshDraft(id);
     const buffer = await this.annualReportsPdfService.generatePdf(id);
     const filename =
       await this.annualReportsPdfService.resolveDownloadFilename(id);
@@ -302,7 +223,11 @@ export class AnnualReportsController {
     status: 403,
     description: 'Insufficient permissions — requires reports:read',
   })
-  async listForClub(@Param('clubId', ParseIntPipe) clubId: number) {
+  async listForClub(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Req() req: any,
+  ) {
+    await this.annualReportsService.assertPeriodicReportsAccess(req.user.sub);
     const data = await this.annualReportsService.listForClub(clubId);
     return { status: 'success', data };
   }
@@ -327,7 +252,9 @@ export class AnnualReportsController {
   async getForClub(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
   ) {
+    await this.annualReportsService.assertPeriodicReportsAccess(req.user.sub);
     await this.annualReportsService.assertReportBelongsToClub(clubId, id);
     const data = await this.annualReportsService.getReport(id);
     return { status: 'success', data };
@@ -357,9 +284,12 @@ export class AnnualReportsController {
   async downloadPdfUser(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
     @Res() res: Response,
   ) {
+    await this.annualReportsService.assertPeriodicReportsAccess(req.user.sub);
     await this.annualReportsService.assertReportBelongsToClub(clubId, id);
+    await this.annualReportsService.refreshDraft(id);
     const buffer = await this.annualReportsPdfService.generatePdf(id);
     const filename =
       await this.annualReportsPdfService.resolveDownloadFilename(id);

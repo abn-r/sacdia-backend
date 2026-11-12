@@ -48,17 +48,51 @@ export function drawPageFooters(
   doc.fillColor('#000000');
 }
 
-/** Printed in place of a manual field that has no data, so forms read complete. */
+/** Printed in place of a figure that has no data, so forms read complete. */
 export const EMPTY_FIELD = '—';
 
-/**
- * Formats a manual-data value for the printed report: numbers as is, booleans
- * as Sí/No, text trimmed, and anything empty as an em dash.
- */
-export function formatManualValue(value: unknown): string {
-  if (typeof value === 'boolean') return value ? 'Sí' : 'No';
-  if (typeof value === 'number')
-    return Number.isFinite(value) ? String(value) : EMPTY_FIELD;
-  if (typeof value === 'string') return value.trim() || EMPTY_FIELD;
+export type PdfTranslate = (
+  key: string,
+  args?: Record<string, unknown>,
+) => string;
+
+/** A figure computed from monthly reports: the number, or a dash when null. */
+export function formatFigure(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? String(value)
+    : EMPTY_FIELD;
+}
+
+/** Localized Yes/No (`bool.true` / `bool.false` of the report's i18n file); a dash when null. */
+export function formatFlag(
+  value: boolean | null | undefined,
+  t: PdfTranslate,
+): string {
+  if (value === true) return t('bool.true');
+  if (value === false) return t('bool.false');
   return EMPTY_FIELD;
+}
+
+/** Month name in the report locale, first letter capitalized ("Enero"). */
+export function monthName(
+  month: number,
+  year: number,
+  intlLocale: string,
+): string {
+  const name = new Intl.DateTimeFormat(intlLocale, {
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
+  return name.charAt(0).toLocaleUpperCase(intlLocale) + name.slice(1);
+}
+
+/** "Month: text" lines for the per-month narrative entries of monthly data. */
+export function monthlyTextLines(
+  entries: { year: number; month: number; text: string }[] | null | undefined,
+  intlLocale: string,
+): string[] {
+  return (entries ?? []).map(
+    (entry) =>
+      `${monthName(entry.month, entry.year, intlLocale)}: ${entry.text}`,
+  );
 }

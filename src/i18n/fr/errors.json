@@ -1010,5 +1010,6 @@
   "CAMPOREE_ORDER_NOT_DELIVERED_TO_SECTION": "La commande n’a pas encore été livrée à la section du club.",
   "CAMPOREE_ORDER_LINE_NOT_FOUND": "Article de la commande introuvable.",
   "CAMPOREE_ORDER_DISTRIBUTION_FORBIDDEN": "Vous n’avez pas la permission de distribuer les articles de cette commande.",
-  "REPORT_PERIOD_IN_FUTURE": "Impossible de générer un rapport pour une période qui n'a pas encore commencé."
+  "REPORT_PERIOD_IN_FUTURE": "Impossible de générer un rapport pour une période qui n'a pas encore commencé.",
+  "PERIODIC_REPORTS_FORBIDDEN": "Les rapports trimestriels et annuels ne sont pas disponibles pour votre rôle."
 }

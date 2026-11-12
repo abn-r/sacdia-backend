@@ -6,17 +6,13 @@ import { AnnualReportsPdfService } from './annual-reports-pdf.service';
 import { AnnualReportsCronService } from './annual-reports-cron.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
-import { CoordinationModule } from '../coordination/coordination.module';
+import { PeriodicReportDataService } from '../reports/periodic-report-data.service';
 
 @Module({
-  imports: [
-    PrismaModule,
-    CommonModule,
-    CoordinationModule,
-    FinanceAggregationModule,
-  ],
+  imports: [PrismaModule, CommonModule, FinanceAggregationModule],
   controllers: [AnnualReportsController],
   providers: [
+    PeriodicReportDataService,
     AnnualReportsService,
     AnnualReportsPdfService,
     AnnualReportsCronService,

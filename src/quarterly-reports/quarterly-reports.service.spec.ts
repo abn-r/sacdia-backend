@@ -1,414 +1,605 @@
 import { QuarterlyReportsService } from './quarterly-reports.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { createFakeReportStore } from '../reports/fake-report-store.testing';
+import type { PeriodicBaseData } from '../reports/periodic-report-data.service';
+import { aggregateMonthlyData } from '../reports/periodic-monthly-data';
 
-describe('QuarterlyReportsService admin visibility', () => {
-  const mockPrisma = {
-    quarterly_reports: {
-      count: jest.fn(),
-      findMany: jest.fn(),
+const baseData = (over: Partial<PeriodicBaseData> = {}): PeriodicBaseData => ({
+  sectionIds: [7],
+  memberCount: 3,
+  directiva: [{ role: 'director', user_id: 'u1', name: 'Ana' }],
+  honors: [
+    {
+      user_id: 'u1',
+      validate: true,
+      users: { user_id: 'u1', name: 'Ana', paternal_last_name: 'P' },
     },
-  };
-  const mockAuthorizationContext = {
-    resolveUserAuthorization: jest.fn(),
-  };
-
-  const resolvedAuth = () =>
-    ({
-      authorization: {
-        grants: {
-          global_roles: [
-            { role_name: 'director-union', permissions: ['reports:read'] },
-          ],
-          club_assignments: [],
-        },
-        active_assignment: { assignment_id: null },
-        effective: {
-          scope: {
-            global: { union: { id: 20, name: 'Unión' } },
-          },
-        },
-      },
-    }) as any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockPrisma.quarterly_reports.count.mockResolvedValue(0);
-    mockPrisma.quarterly_reports.findMany.mockResolvedValue([]);
-  });
-
-  it('forces union-tier actors to their own union when listing admin quarterly reports', async () => {
-    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
-      resolvedAuth(),
-    );
-    const service = new QuarterlyReportsService(
-      mockPrisma as any,
-      mockAuthorizationContext as any,
-      { getEffectiveCoordinatorSectionIds: jest.fn() } as any,
-    );
-
-    await service.listForAdmin('director-union-user', {
-      unionId: 99,
-      localFieldId: 7,
-    });
-
-    expect(mockPrisma.quarterly_reports.count).toHaveBeenCalledWith({
-      where: {
-        club: {
-          local_field_id: 7,
-          local_fields: { union_id: 20 },
-        },
-      },
-    });
-  });
+    {
+      user_id: 'u2',
+      validate: false,
+      users: { user_id: 'u2', name: 'Beto', paternal_last_name: 'Q' },
+    },
+  ],
+  activitiesTotal: 4,
+  finance: {
+    income: 900,
+    expenses: 400,
+    net: 500,
+    movements: 6,
+    balance: 4200,
+  },
+  monthly: aggregateMonthlyData([]),
+  camporeesAttended: 1,
+  ...over,
 });
 
-describe('QuarterlyReportsService member count', () => {
-  const findAssignments = jest.fn();
-  const mockPrisma = {
-    clubs: { findUnique: jest.fn().mockResolvedValue({ club_id: 10 }) },
-    club_sections: {
-      findMany: jest.fn().mockResolvedValue([{ club_section_id: 7 }]),
+function build(opts: { grace?: number; base?: PeriodicBaseData } = {}) {
+  const store = createFakeReportStore({
+    idField: 'quarterly_report_id',
+    keyFields: ['club_id', 'year', 'quarter'],
+    compoundName: 'club_id_year_quarter',
+  });
+  const prisma: any = {
+    quarterly_reports: store.delegate,
+    clubs: {
+      findUnique: jest.fn().mockResolvedValue({ club_id: 10, active: true }),
+      findFirst: jest.fn().mockResolvedValue({ club_id: 10 }),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     ecclesiastical_years: { findFirst: jest.fn().mockResolvedValue(null) },
-    club_role_assignments: { findMany: findAssignments },
-    users_honors: { findMany: jest.fn().mockResolvedValue([]) },
-    activities: { count: jest.fn().mockResolvedValue(0) },
-    $queryRaw: jest.fn().mockResolvedValue([]),
   };
-  const service = new QuarterlyReportsService(
-    mockPrisma as any,
-    {} as any,
-    {} as any,
-  );
+  const auth: any = { resolveUserAuthorization: jest.fn() };
+  const data: any = {
+    compute: jest.fn().mockResolvedValue(opts.base ?? baseData()),
+    getFreezeGraceDays: jest.fn().mockResolvedValue(opts.grace ?? 15),
+  };
+  const service = new QuarterlyReportsService(prisma, auth, undefined, data);
+  return { service, store, prisma, auth, data };
+}
 
-  it('counts the distinct people with an assignment overlapping the quarter', async () => {
-    findAssignments.mockResolvedValue([{ user_id: 'a' }, { user_id: 'b' }]);
+const at = (iso: string) => jest.useFakeTimers({ now: new Date(iso) });
+
+afterEach(() => jest.useRealTimers());
+
+describe('QuarterlyReportsService.computeData', () => {
+  it('maps the submitted monthly data onto the old manual fields', async () => {
+    const monthly = aggregateMonthlyData([
+      {
+        year: 2026,
+        month: 4,
+        manual_data: {
+          planning_meetings: 2,
+          parent_meetings: 1,
+          youth_council_attendance: 3,
+          church_board_attendance: 4,
+          soul_target: 5,
+          baptized_this_month: 1,
+          total_baptized: 10,
+          club_participation_description: 'Feria',
+          community_service_description: null,
+          certificates_delivered: false,
+        },
+      },
+      {
+        year: 2026,
+        month: 6,
+        manual_data: {
+          planning_meetings: 3,
+          parent_meetings: 0,
+          youth_council_attendance: 1,
+          church_board_attendance: 2,
+          soul_target: 8,
+          baptized_this_month: 2,
+          total_baptized: 12,
+          club_participation_description: null,
+          community_service_description: 'Limpieza',
+          certificates_delivered: true,
+        },
+      },
+    ]);
+    const { service } = build({ base: baseData({ monthly }) });
 
     const data = await service.computeData(10, 2026, 2);
 
-    expect(data.member_count).toBe(2);
-    const { where, distinct } = findAssignments.mock.calls[0][0];
-    expect(distinct).toEqual(['user_id']);
-    expect(where.club_section_id).toEqual({ in: [7] });
-    // Q2 2026: April 1 to June 30, whatever year is active today.
-    expect(where.start_date).toEqual({ lte: new Date('2026-06-30T00:00:00Z') });
-    expect(where.AND).toContainEqual({
-      OR: [
-        { end_date: null },
-        { end_date: { gte: new Date('2026-04-01T00:00:00Z') } },
+    expect(data.monthly_data).toEqual({
+      months_submitted: 2,
+      months_covered: [
+        { year: 2026, month: 4 },
+        { year: 2026, month: 6 },
       ],
+      planning_meetings: 5,
+      parent_meetings: 1,
+      youth_council_attendance: 4,
+      church_board_attendance: 6,
+      soul_target: 8,
+      baptized_this_quarter: 3,
+      club_participation_description: [{ year: 2026, month: 4, text: 'Feria' }],
+      community_service_description: [
+        { year: 2026, month: 6, text: 'Limpieza' },
+      ],
+      certificates_delivered: true,
+      camporees_attended: 1,
     });
-    expect(where.AND).toContainEqual({
-      OR: [{ status: { in: ['active', 'ended'] } }, { status: null }],
-    });
-    expect(where).not.toHaveProperty('active');
-    expect(where).not.toHaveProperty('ecclesiastical_year_id');
-  });
-});
-
-describe('QuarterlyReportsService finances block', () => {
-  const buildPrisma = () => ({
-    clubs: { findUnique: jest.fn().mockResolvedValue({ club_id: 10 }) },
-    club_sections: {
-      findMany: jest.fn().mockResolvedValue([{ club_section_id: 7 }]),
-    },
-    ecclesiastical_years: { findFirst: jest.fn().mockResolvedValue(null) },
-    club_role_assignments: { findMany: jest.fn().mockResolvedValue([]) },
-    users_honors: { findMany: jest.fn().mockResolvedValue([]) },
-    activities: { count: jest.fn().mockResolvedValue(0) },
+    expect(data.missionary.baptized_this_quarter).toBe(3);
   });
 
-  it('takes income, expenses, net and the all-time balance from the shared aggregation over the quarter months', async () => {
-    const aggregation = {
-      aggregate: jest.fn().mockResolvedValue({
+  it('every monthly figure is null (not 0) when no monthly report was submitted', async () => {
+    const { service } = build();
+
+    const { monthly_data, missionary } = await service.computeData(10, 2026, 2);
+
+    expect(monthly_data.months_submitted).toBe(0);
+    expect(monthly_data.months_covered).toEqual([]);
+    for (const key of [
+      'planning_meetings',
+      'parent_meetings',
+      'youth_council_attendance',
+      'church_board_attendance',
+      'soul_target',
+      'baptized_this_quarter',
+      'club_participation_description',
+      'community_service_description',
+      'certificates_delivered',
+    ] as const) {
+      expect(monthly_data[key]).toBeNull();
+    }
+    expect(missionary.baptized_this_quarter).toBeNull();
+  });
+
+  it('keeps the structure: members, board, honors, activities and both balances', async () => {
+    const { service, data } = build();
+
+    const computed = await service.computeData(10, 2026, 2);
+
+    expect(computed).toMatchObject({
+      quarter_label: 'Q2 2026',
+      months_in_quarter: [4, 5, 6],
+      member_count: 3,
+      directiva: [{ role: 'director', user_id: 'u1', name: 'Ana' }],
+      honors: { started: 2, completed: 1 },
+      activities: { total: 4 },
+      finances: {
         income: 900,
         expenses: 400,
-        net: 500,
-        movements: 6,
-        balance: 4200,
-      }),
-    };
-    const service = new QuarterlyReportsService(
-      buildPrisma() as any,
-      {} as any,
-      {} as any,
-      aggregation as any,
-    );
-
-    const data = await service.computeData(10, 2026, 2);
-
-    expect(aggregation.aggregate).toHaveBeenCalledWith([7], {
-      from: { year: 2026, month: 4 },
-      to: { year: 2026, month: 6 },
+        balance: 500,
+        total_balance: 4200,
+        transactions: 6,
+      },
     });
-    expect(data.finances).toEqual({
-      income: 900,
-      expenses: 400,
-      balance: 500,
-      total_balance: 4200,
-      transactions: 6,
+    expect(computed).not.toHaveProperty('ranking_percentile');
+    expect(data.compute.mock.calls[0][1]).toMatchObject({
+      startDate: new Date('2026-04-01T00:00:00Z'),
+      endExclusiveDate: new Date('2026-07-01T00:00:00Z'),
+    });
+  });
+
+  it('rejects an invalid quarter or year', async () => {
+    const { service } = build();
+    await expect(service.computeData(10, 2026, 5)).rejects.toMatchObject({
+      code: ErrorCode.QUARTERLY_REPORT_INVALID_QUARTER,
+    });
+    await expect(service.computeData(10, 2019, 1)).rejects.toMatchObject({
+      code: ErrorCode.QUARTERLY_REPORT_INVALID_YEAR,
     });
   });
 });
 
-describe('QuarterlyReportsService generate on demand', () => {
-  const mockPrisma = {
-    clubs: { findUnique: jest.fn(), findFirst: jest.fn() },
-    quarterly_reports: {
-      findUnique: jest.fn(),
-      findUniqueOrThrow: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-    },
-  };
-  const mockAuthorizationContext = { resolveUserAuthorization: jest.fn() };
+describe('QuarterlyReportsService lifecycle', () => {
+  describe('refreshDraft / getReport', () => {
+    it('recomputes a draft on read and writes only while it is still a draft', async () => {
+      const { service, store } = build();
+      await service.getOrCreateDraft(10, 2026, 2);
 
-  const resolvedAuth = () =>
-    ({
-      authorization: {
-        grants: {
-          global_roles: [
-            { role_name: 'director-union', permissions: ['reports:update'] },
-          ],
-          club_assignments: [],
-        },
-        active_assignment: { assignment_id: null },
-        effective: { scope: { global: { union: { id: 20, name: 'Unión' } } } },
-      },
-    }) as any;
+      await service.getReport(1);
 
-  const makeService = () =>
-    new QuarterlyReportsService(
-      mockPrisma as any,
-      mockAuthorizationContext as any,
-      { getEffectiveCoordinatorSectionIds: jest.fn() } as any,
-    );
-
-  const COMPUTED = { quarter_label: 'Q2 2026' } as any;
-  const FULL_REPORT = {
-    quarterly_report_id: 5,
-    club_id: 10,
-    year: 2026,
-    quarter: 2,
-    status: 'draft',
-  } as any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    jest.useFakeTimers().setSystemTime(new Date('2026-10-29T18:00:00Z'));
-    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
-      resolvedAuth(),
-    );
-    mockPrisma.clubs.findUnique.mockResolvedValue({
-      club_id: 10,
-      active: true,
-    });
-    mockPrisma.clubs.findFirst.mockResolvedValue({ club_id: 10 });
-  });
-
-  afterEach(() => {
-    jest.useRealTimers();
-  });
-
-  describe('regenerate', () => {
-    it('refuses to recompute a finalized report', async () => {
-      const service = makeService();
-      const computeSpy = jest.spyOn(service, 'computeData');
-      mockPrisma.quarterly_reports.findUnique.mockResolvedValue({
-        quarterly_report_id: 5,
-        status: 'finalized',
-      });
-
-      await expect(service.regenerate(5)).rejects.toMatchObject({
-        response: expect.objectContaining({
-          code: 'QUARTERLY_REPORT_NOT_DRAFT',
+      expect(store.delegate.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { quarterly_report_id: 1, status: 'draft' },
         }),
+      );
+      expect(store.rows[0].computed_data).toMatchObject({ quarter: 2 });
+      expect(store.rows[0].status).toBe('draft');
+    });
+
+    it('serves a finalized report as stored, without recomputing', async () => {
+      const { service, store, data } = build();
+      store.rows.push({
+        quarterly_report_id: 1,
+        club_id: 10,
+        year: 2026,
+        quarter: 1,
+        status: 'finalized',
+        computed_data: { frozen: true },
       });
-      expect(computeSpy).not.toHaveBeenCalled();
+
+      await service.getReport(1);
+
+      expect(data.compute).not.toHaveBeenCalled();
+      expect(store.delegate.updateMany).not.toHaveBeenCalled();
+      expect(store.rows[0].computed_data).toEqual({ frozen: true });
+    });
+
+    it('a concurrent freeze is never overwritten by a stale refresh', async () => {
+      const { service, store, data } = build();
+      await service.getOrCreateDraft(10, 2026, 2);
+      // The freeze lands while the refresh is computing.
+      data.compute.mockImplementationOnce(async () => {
+        Object.assign(store.rows[0], {
+          status: 'finalized',
+          computed_data: { frozen: true },
+        });
+        return baseData();
+      });
+
+      await service.refreshDraft(1);
+
+      expect(store.rows[0].computed_data).toEqual({ frozen: true });
+      expect(store.rows[0].status).toBe('finalized');
+    });
+
+    it('answers 404 for an unknown report', async () => {
+      const { service } = build();
+      await expect(service.getReport(99)).rejects.toMatchObject({
+        code: ErrorCode.QUARTERLY_REPORT_NOT_FOUND,
+      });
+    });
+  });
+
+  describe('freezeReport', () => {
+    it('finalizes a draft with no finalizer (automatic)', async () => {
+      const { service, store } = build();
+      await service.getOrCreateDraft(10, 2026, 1);
+
+      await expect(service.freezeReport(1)).resolves.toBe(true);
+
+      expect(store.rows[0]).toMatchObject({
+        status: 'finalized',
+        finalized_by: null,
+        computed_data: expect.objectContaining({ quarter: 1 }),
+      });
+      expect(store.rows[0].finalized_at).toBeInstanceOf(Date);
+      expect(store.delegate.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { quarterly_report_id: 1, status: 'draft' },
+        }),
+      );
+    });
+
+    it('is idempotent: a second freeze changes nothing', async () => {
+      const { service, store, data } = build();
+      await service.getOrCreateDraft(10, 2026, 1);
+      await service.freezeReport(1);
+      const snapshot = { ...store.rows[0] };
+      data.compute.mockClear();
+
+      await expect(service.freezeReport(1)).resolves.toBe(false);
+
+      expect(data.compute).not.toHaveBeenCalled();
+      expect(store.rows[0]).toEqual(snapshot);
+    });
+
+    it('does not report a freeze it lost to a concurrent one', async () => {
+      const { service, store, data } = build();
+      await service.getOrCreateDraft(10, 2026, 1);
+      data.compute.mockImplementationOnce(async () => {
+        Object.assign(store.rows[0], { status: 'finalized' });
+        return baseData();
+      });
+
+      await expect(service.freezeReport(1)).resolves.toBe(false);
+    });
+  });
+
+  describe('regenerate (support escape hatch)', () => {
+    it('recomputes a finalized report and keeps it finalized', async () => {
+      const { service, store } = build();
+      store.rows.push({
+        quarterly_report_id: 1,
+        club_id: 10,
+        year: 2026,
+        quarter: 1,
+        status: 'finalized',
+        finalized_by: null,
+        computed_data: { old: true },
+      });
+
+      await service.regenerate(1);
+
+      expect(store.rows[0].status).toBe('finalized');
+      expect(store.rows[0].computed_data).toMatchObject({ quarter: 1 });
+      expect(store.delegate.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { quarterly_report_id: 1, status: 'finalized' },
+        }),
+      );
+    });
+
+    it('keeps a draft a draft', async () => {
+      const { service, store } = build();
+      await service.getOrCreateDraft(10, 2026, 2);
+
+      await service.regenerate(1);
+
+      expect(store.rows[0].status).toBe('draft');
+    });
+
+    it('retries once when a draft was frozen while it computed', async () => {
+      const { service, store, data } = build();
+      await service.getOrCreateDraft(10, 2026, 2);
+      data.compute.mockImplementationOnce(async () => {
+        Object.assign(store.rows[0], { status: 'finalized' });
+        return baseData();
+      });
+
+      await service.regenerate(1);
+
+      expect(store.rows[0].status).toBe('finalized');
+      expect(store.rows[0].computed_data).toMatchObject({ quarter: 2 });
+    });
+
+    it('404s for an unknown report', async () => {
+      const { service } = build();
+      await expect(service.regenerate(9)).rejects.toMatchObject({
+        code: ErrorCode.QUARTERLY_REPORT_NOT_FOUND,
+      });
     });
   });
 
   describe('generateOnDemand', () => {
-    it('creates the draft when missing and computes its data', async () => {
-      const service = makeService();
-      const computeSpy = jest
-        .spyOn(service, 'computeData')
-        .mockResolvedValue(COMPUTED);
-      mockPrisma.quarterly_reports.findUnique.mockImplementation(
-        ({ where }: any) => {
-          if (where.club_id_year_quarter) return Promise.resolve(null);
-          return Promise.resolve(
-            where.quarterly_report_id === 5 ? FULL_REPORT : null,
-          );
-        },
-      );
-      mockPrisma.quarterly_reports.create.mockResolvedValue({
-        quarterly_report_id: 5,
-        status: 'draft',
-      });
-      mockPrisma.quarterly_reports.update.mockResolvedValue({});
+    it('creates the draft and computes it live while the quarter is open', async () => {
+      at('2026-05-10T12:00:00Z');
+      const { service, store } = build();
 
-      const result = await service.generateOnDemand(10, 2026, 2);
+      const report = await service.generateOnDemand(10, 2026, 2);
 
-      expect(mockPrisma.quarterly_reports.create).toHaveBeenCalledWith({
-        data: { club_id: 10, year: 2026, quarter: 2, status: 'draft' },
-      });
-      expect(computeSpy).toHaveBeenCalledWith(10, 2026, 2);
-      expect(mockPrisma.quarterly_reports.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { quarterly_report_id: 5 },
-          data: expect.objectContaining({ computed_data: COMPUTED }),
-        }),
-      );
-      expect(result).toBe(FULL_REPORT);
+      expect(store.rows).toHaveLength(1);
+      expect(report.status).toBe('draft');
+      expect(store.rows[0].computed_data).toMatchObject({ quarter: 2 });
     });
 
-    it('reads the row created by a concurrent request instead of failing', async () => {
-      const service = makeService();
-      jest.spyOn(service, 'computeData').mockResolvedValue(COMPUTED);
-      mockPrisma.quarterly_reports.findUnique.mockImplementation(
-        ({ where }: any) =>
-          Promise.resolve(where.club_id_year_quarter ? null : FULL_REPORT),
-      );
-      mockPrisma.quarterly_reports.create.mockRejectedValue({ code: 'P2002' });
-      mockPrisma.quarterly_reports.findUniqueOrThrow.mockResolvedValue({
-        quarterly_report_id: 5,
-        status: 'draft',
-      });
-      mockPrisma.quarterly_reports.update.mockResolvedValue({});
+    it('stays a draft inside the grace window after the quarter ended', async () => {
+      at('2026-07-10T12:00:00Z');
+      const { service } = build({ grace: 15 });
 
-      await expect(service.generateOnDemand(10, 2026, 2)).resolves.toBe(
-        FULL_REPORT,
-      );
-      expect(mockPrisma.quarterly_reports.findUniqueOrThrow).toHaveBeenCalled();
+      const report = await service.generateOnDemand(10, 2026, 2);
+
+      expect(report.status).toBe('draft');
     });
 
-    it('recomputes an existing draft', async () => {
-      const service = makeService();
-      const computeSpy = jest
-        .spyOn(service, 'computeData')
-        .mockResolvedValue(COMPUTED);
-      mockPrisma.quarterly_reports.findUnique.mockResolvedValue({
-        quarterly_report_id: 5,
-        club_id: 10,
-        year: 2026,
-        quarter: 2,
-        status: 'draft',
-      });
-      mockPrisma.quarterly_reports.update.mockResolvedValue({});
+    it('is created frozen when the quarter is past the grace period', async () => {
+      at('2026-07-20T12:00:00Z');
+      const { service } = build({ grace: 15 });
 
-      await service.generateOnDemand(10, 2026, 2);
+      const report = await service.generateOnDemand(10, 2026, 2);
 
-      expect(mockPrisma.quarterly_reports.create).not.toHaveBeenCalled();
-      expect(computeSpy).toHaveBeenCalledTimes(1);
-      expect(mockPrisma.quarterly_reports.update).toHaveBeenCalledTimes(1);
+      expect(report.status).toBe('finalized');
+      expect(report.finalized_by).toBeNull();
     });
 
-    it('returns a finalized report without recomputing', async () => {
-      const service = makeService();
-      const computeSpy = jest.spyOn(service, 'computeData');
-      mockPrisma.quarterly_reports.findUnique.mockResolvedValue({
-        quarterly_report_id: 5,
+    it('freezes an existing stale draft of a period past grace', async () => {
+      at('2026-08-01T12:00:00Z');
+      const { service, store } = build();
+      await service.getOrCreateDraft(10, 2026, 2);
+
+      const report = await service.generateOnDemand(10, 2026, 2);
+
+      expect(store.rows).toHaveLength(1);
+      expect(report.status).toBe('finalized');
+    });
+
+    it('returns a finalized report untouched', async () => {
+      at('2026-08-01T12:00:00Z');
+      const { service, store, data } = build();
+      store.rows.push({
+        quarterly_report_id: 1,
         club_id: 10,
         year: 2026,
         quarter: 2,
         status: 'finalized',
+        computed_data: { frozen: true },
       });
 
-      const result = await service.generateOnDemand(10, 2026, 2);
+      await service.generateOnDemand(10, 2026, 2);
 
-      expect(computeSpy).not.toHaveBeenCalled();
-      expect(mockPrisma.quarterly_reports.create).not.toHaveBeenCalled();
-      expect(mockPrisma.quarterly_reports.update).not.toHaveBeenCalled();
-      expect(result).toEqual(expect.objectContaining({ status: 'finalized' }));
+      expect(data.compute).not.toHaveBeenCalled();
+      expect(store.rows[0].computed_data).toEqual({ frozen: true });
+    });
+
+    it('reads the row created by a concurrent request instead of failing', async () => {
+      at('2026-05-10T12:00:00Z');
+      const { service, store } = build();
+      const realFind = store.delegate.findUnique.getMockImplementation()!;
+      // First lookup misses, then the winner's row appears before create.
+      store.delegate.findUnique.mockImplementationOnce(async () => {
+        store.rows.push({
+          quarterly_report_id: 1,
+          club_id: 10,
+          year: 2026,
+          quarter: 2,
+          status: 'draft',
+          computed_data: null,
+        });
+        return null;
+      });
+      store.delegate.findUnique.mockImplementation(realFind);
+
+      await expect(
+        service.generateOnDemand(10, 2026, 2),
+      ).resolves.toMatchObject({
+        quarterly_report_id: 1,
+      });
+      expect(store.rows).toHaveLength(1);
     });
 
     it('rejects a quarter that starts after today', async () => {
-      const service = makeService();
-
-      await expect(service.generateOnDemand(10, 2027, 1)).rejects.toMatchObject(
-        { code: ErrorCode.REPORT_PERIOD_IN_FUTURE, status: 400 },
+      at('2026-05-10T12:00:00Z');
+      const { service } = build();
+      await expect(service.generateOnDemand(10, 2026, 3)).rejects.toMatchObject(
+        {
+          code: ErrorCode.REPORT_PERIOD_IN_FUTURE,
+        },
       );
-      expect(mockPrisma.quarterly_reports.create).not.toHaveBeenCalled();
-    });
-
-    it('allows the quarter in progress', async () => {
-      const service = makeService();
-      jest.spyOn(service, 'computeData').mockResolvedValue(COMPUTED);
-      mockPrisma.quarterly_reports.findUnique.mockResolvedValue({
-        quarterly_report_id: 5,
-        club_id: 10,
-        year: 2026,
-        quarter: 4,
-        status: 'draft',
-      });
-      mockPrisma.quarterly_reports.update.mockResolvedValue({});
-
-      await expect(
-        service.generateOnDemand(10, 2026, 4),
-      ).resolves.toBeDefined();
     });
 
     it('uses the Mexico City calendar day at the quarter boundary', async () => {
-      // 2026-10-01 03:00 UTC is still 2026-09-30 in America/Mexico_City.
-      jest.setSystemTime(new Date('2026-10-01T03:00:00Z'));
-      const service = makeService();
-
+      // 03:00Z on Oct 1 is still Sep 30 evening in Mexico City.
+      at('2026-10-01T03:00:00Z');
+      const { service } = build();
       await expect(service.generateOnDemand(10, 2026, 4)).rejects.toMatchObject(
-        { code: ErrorCode.REPORT_PERIOD_IN_FUTURE },
+        {
+          code: ErrorCode.REPORT_PERIOD_IN_FUTURE,
+        },
       );
     });
   });
+});
 
-  describe('assertClubVisibleToActor', () => {
-    it('passes when the club is inside the actor scope', async () => {
-      await expect(
-        makeService().assertClubVisibleToActor('u1', 10),
-      ).resolves.toBeUndefined();
-      expect(mockPrisma.clubs.findFirst).toHaveBeenCalledWith({
-        where: {
-          club_id: 10,
-          local_fields: { union_id: 20 },
-        },
-        select: { club_id: true },
-      });
+describe('QuarterlyReportsService.freezeDueReports (daily catch-up)', () => {
+  const clubs = [
+    { club_id: 10, name: 'A', created_at: new Date('2020-01-01T00:00:00Z') },
+    { club_id: 11, name: 'B', created_at: new Date('2020-01-01T00:00:00Z') },
+  ];
+
+  function withCatchUp(opts: Parameters<typeof build>[0] = {}) {
+    const ctx = build(opts);
+    ctx.prisma.clubs.findMany.mockResolvedValue(clubs);
+    // Ecclesiastical years: Oct-Sep. Current = 2025-10-01.., previous = 2024-10-01..
+    ctx.prisma.ecclesiastical_years.findFirst.mockImplementation(
+      async ({ where }: any) => {
+        if (where.start_date?.lte) {
+          return { start_date: new Date('2025-10-01T00:00:00Z') };
+        }
+        return { start_date: new Date('2024-10-01T00:00:00Z') };
+      },
+    );
+    return ctx;
+  }
+
+  it('freezes only quarters past grace, from the previous ecclesiastical year on', async () => {
+    const { service, store } = withCatchUp();
+
+    // 2026-04-20: Q1 2026 ended Mar 31 (20 days ago > 15) -> due. Q2 still open.
+    const result = await service.freezeDueReports(
+      15,
+      new Date('2026-04-20T12:00:00Z'),
+    );
+
+    const frozen = store.rows
+      .filter((r) => r.status === 'finalized')
+      .map((r) => `${r.club_id}:${r.year}Q${r.quarter}`)
+      .sort();
+    // Lower bound is 2024-10-01 -> Q4 2024 .. Q1 2026, 2 clubs each.
+    expect(frozen).toContain('10:2026Q1');
+    expect(frozen).toContain('11:2026Q1');
+    expect(frozen).toContain('10:2024Q4');
+    expect(frozen.some((k) => k.includes('2024Q3'))).toBe(false);
+    expect(frozen.some((k) => k.includes('2026Q2'))).toBe(false);
+    expect(result.success).toBe(frozen.length);
+    expect(result.success).toBe(2 * 6);
+    expect(result.errors).toBe(0);
+  });
+
+  it('waits out the grace window: a quarter that ended 10 days ago is not frozen yet', async () => {
+    const { service, store } = withCatchUp();
+
+    await service.freezeDueReports(15, new Date('2026-04-10T12:00:00Z'));
+
+    expect(store.rows.some((r) => r.year === 2026 && r.quarter === 1)).toBe(
+      false,
+    );
+    expect(store.rows.some((r) => r.year === 2025 && r.quarter === 4)).toBe(
+      true,
+    );
+  });
+
+  it('a larger grace pushes the freeze back', async () => {
+    const { service, store } = withCatchUp();
+
+    await service.freezeDueReports(30, new Date('2026-04-20T12:00:00Z'));
+
+    expect(store.rows.some((r) => r.year === 2026 && r.quarter === 1)).toBe(
+      false,
+    );
+  });
+
+  it('is idempotent: a second run freezes nothing and never recomputes finalized rows', async () => {
+    const { service, store, data } = withCatchUp();
+    const now = new Date('2026-04-20T12:00:00Z');
+    await service.freezeDueReports(15, now);
+    const snapshot = JSON.stringify(store.rows);
+    data.compute.mockClear();
+
+    const second = await service.freezeDueReports(15, now);
+
+    expect(second.success).toBe(0);
+    expect(data.compute).not.toHaveBeenCalled();
+    expect(JSON.stringify(store.rows)).toBe(snapshot);
+  });
+
+  it('completes a draft left by a previous partial run', async () => {
+    const { service, store } = withCatchUp();
+    store.rows.push({
+      quarterly_report_id: 100,
+      club_id: 10,
+      year: 2026,
+      quarter: 1,
+      status: 'draft',
+      computed_data: null,
+    });
+    store.delegate.create.mockClear();
+
+    await service.freezeDueReports(15, new Date('2026-04-20T12:00:00Z'));
+
+    expect(store.rows.find((r) => r.quarterly_report_id === 100)!.status).toBe(
+      'finalized',
+    );
+  });
+
+  it('keeps going when one club fails', async () => {
+    const { service, store, data } = withCatchUp();
+    data.compute.mockImplementation(async (clubId: number) => {
+      if (clubId === 10) throw new Error('boom');
+      return baseData();
     });
 
-    it('answers 403 when the club is outside the actor scope', async () => {
-      mockPrisma.clubs.findFirst.mockResolvedValue(null);
+    const result = await service.freezeDueReports(
+      15,
+      new Date('2026-04-20T12:00:00Z'),
+    );
 
-      await expect(
-        makeService().assertClubVisibleToActor('u1', 10),
-      ).rejects.toMatchObject({
-        code: ErrorCode.GUARD_PERMISSION_DENIED,
-        status: 403,
-      });
-    });
+    expect(result.errors).toBe(6);
+    expect(result.success).toBe(6);
+    expect(
+      store.rows.filter((r) => r.club_id === 11 && r.status === 'finalized'),
+    ).toHaveLength(6);
+  });
 
-    it('answers 404 when the club does not exist', async () => {
-      mockPrisma.clubs.findUnique.mockResolvedValue(null);
+  it('skips quarters before the club existed', async () => {
+    const { service, store, prisma } = withCatchUp();
+    prisma.clubs.findMany.mockResolvedValue([
+      {
+        club_id: 12,
+        name: 'New',
+        created_at: new Date('2026-02-10T00:00:00Z'),
+      },
+    ]);
 
-      await expect(
-        makeService().assertClubVisibleToActor('u1', 999),
-      ).rejects.toMatchObject({
-        code: ErrorCode.QUARTERLY_REPORT_CLUB_NOT_FOUND,
-        status: 404,
-      });
-    });
+    await service.freezeDueReports(15, new Date('2026-04-20T12:00:00Z'));
 
-    it('answers 404 when the club is inactive', async () => {
-      mockPrisma.clubs.findUnique.mockResolvedValue({
-        club_id: 10,
-        active: false,
-      });
+    const periods = store.rows.map((r) => `${r.year}Q${r.quarter}`);
+    expect(periods).toEqual(['2026Q1']);
+  });
 
-      await expect(
-        makeService().assertClubVisibleToActor('u1', 10),
-      ).rejects.toMatchObject({
-        code: ErrorCode.QUARTERLY_REPORT_CLUB_NOT_FOUND,
-        status: 404,
-      });
-      expect(mockPrisma.clubs.findFirst).not.toHaveBeenCalled();
-    });
+  it('does nothing when no ecclesiastical year has started', async () => {
+    const { service, prisma, store } = build();
+    prisma.ecclesiastical_years.findFirst.mockResolvedValue(null);
+
+    const result = await service.freezeDueReports(
+      15,
+      new Date('2026-04-20T12:00:00Z'),
+    );
+
+    expect(result).toEqual({ success: 0, skipped: 0, errors: 0 });
+    expect(store.rows).toHaveLength(0);
   });
 });

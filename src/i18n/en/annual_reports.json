@@ -13,24 +13,35 @@
     "activities": "3. CLUB ACTIVITIES",
     "finances": "4. FINANCES",
     "missionary": "5. MISSIONARY ACTIVITY",
-    "ranking": "6. RANKINGS & RECOGNITIONS"
+    "top_achievers": "6. TOP ACHIEVERS"
   },
   "summary": {
     "member_count": "Member count",
     "months_reported": "Months with reports",
     "total_activities": "Total activities for the year",
     "honors_completed": "Honors completed for the year",
-    "honors_started": "Honors started for the year"
+    "honors_started": "Honors started for the year",
+    "directiva": "Board",
+    "meetings_header": "Meetings and attendance",
+    "planning_meetings": "Planning meetings",
+    "parent_meetings": "Parent meetings",
+    "monthly_basis_label": "Data source",
+    "monthly_basis": "Based on {count} months with a submitted monthly report",
+    "monthly_basis_one": "Based on 1 month with a submitted monthly report",
+    "monthly_basis_none": "No monthly reports submitted in the period",
+    "annual_achievements": "Achievements of the year"
   },
   "finances": {
     "total_income": "Total annual income",
     "total_expenses": "Total annual expenses",
-    "annual_balance": "Annual balance",
-    "transaction_count": "Total transactions"
+    "annual_balance": "Net balance of the year",
+    "transaction_count": "Total transactions",
+    "total_balance": "Cumulative balance at year end"
   },
   "ranking": {
-    "percentile": "Performance percentile",
-    "top_achievers_header": "Top achievers"
+    "top_achievers_header": "Top achievers",
+    "member": "Member",
+    "honors": "Honors"
   },
   "status": {
     "draft": "Draft",
@@ -46,5 +57,19 @@
     "true": "Yes",
     "false": "No",
     "null": "N/A"
+  },
+  "roles": {
+    "director": "Director",
+    "deputy-director": "Deputy director",
+    "secretary": "Secretary",
+    "secretary-treasurer": "Secretary-treasurer",
+    "treasurer": "Treasurer"
+  },
+  "missionary": {
+    "baptized_this_year": "Baptized this year",
+    "total_baptized": "Total baptized to date",
+    "camporees_attended": "Camporees attended",
+    "community_service": "Community service",
+    "all_investitures_completed": "All investitures completed"
   }
 }

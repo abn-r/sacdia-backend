@@ -51,8 +51,8 @@ describe('club assignment effectivity inventory', () => {
     expect(() =>
       assertAssignmentQueryInventory(findings, ASSIGNMENT_QUERY_INVENTORY),
     ).not.toThrow();
-    expect(findings).toHaveLength(176);
-    expect(ASSIGNMENT_QUERY_INVENTORY).toHaveLength(69);
+    expect(findings).toHaveLength(173);
+    expect(ASSIGNMENT_QUERY_INVENTORY).toHaveLength(68);
     expect(
       Object.fromEntries(
         ['T08', 'T09', 'allowlist'].map((owner) => [
@@ -62,7 +62,7 @@ describe('club assignment effectivity inventory', () => {
           ).reduce((total, entry) => total + entry.count, 0),
         ]),
       ),
-    ).toEqual({ T08: 57, T09: 63, allowlist: 56 });
+    ).toEqual({ T08: 57, T09: 58, allowlist: 58 });
   });
 
   it('classifies the five indirect query sites exposed by the hardened core', () => {

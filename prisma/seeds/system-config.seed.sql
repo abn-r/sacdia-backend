@@ -14,6 +14,9 @@ INSERT INTO system_config (config_key, config_value, description, config_type) V
   ('investiture.min_monthly_reports', '10', 'Cantidad mínima de reportes mensuales enviados para permitir investidura', 'int'),
   ('reports.auto_generate_day', '5', 'Día del mes para autogenerar reportes mensuales', 'int'),
   ('reports.auto_generate_enabled', 'true', 'Habilitar/deshabilitar autogeneración de reportes', 'boolean'),
+  ('reports.quarterly_auto_generate_enabled', 'true', 'Enable quarterly reports auto-generation cron job', 'boolean'),
+  ('reports.annual_auto_generate_enabled', 'true', 'Enable annual reports auto-generation cron job', 'boolean'),
+  ('reports.periodic_freeze_grace_days', '15', 'Days after a quarter or ecclesiastical year ends before its report is frozen (finalized)', 'int'),
   ('scoring.category_max_points_cap', '20', 'Cap global de puntos máximos permitido por categoría de scoring', 'number')
 ON CONFLICT (config_key) DO UPDATE SET
   config_value = EXCLUDED.config_value,

@@ -11,7 +11,6 @@ describe('AnnualReportsPdfService year label fallback', () => {
           findUnique: jest.fn().mockResolvedValue({
             annual_report_id: 1,
             computed_data: {},
-            manual_data: {},
             club: { name: 'Club' },
             ecclesiastical_year: {
               start_date: new Date('2026-01-01T00:00:00.000Z'),
@@ -38,7 +37,7 @@ describe('AnnualReportsPdfService year label fallback', () => {
         'drawActivities',
         'drawFinances',
         'drawMissionary',
-        'drawRanking',
+        'drawTopAchievers',
         'drawDirectorInfo',
         'drawFooter',
       ]) {
@@ -74,10 +73,20 @@ async function captureText(run: () => Promise<unknown>): Promise<string[]> {
   return lines;
 }
 
-function buildRealService(
-  computedOverrides: Record<string, unknown> = {},
-  manualData: Record<string, unknown> = {},
-) {
+const emptyMonthly = (): Record<string, unknown> => ({
+  months_submitted: 0,
+  months_covered: [],
+  planning_meetings: null,
+  parent_meetings: null,
+  baptized_this_year: null,
+  total_baptized: null,
+  annual_achievements_description: null,
+  community_service_description: null,
+  all_investitures_completed: null,
+  camporees_attended: 0,
+});
+
+function buildRealService(computedOverrides: Record<string, unknown> = {}) {
   const report = {
     annual_report_id: 1,
     computed_data: {
@@ -87,13 +96,18 @@ function buildRealService(
       directiva: [] as { role: string; user_id: string; name: string }[],
       honors: { started: 1, completed: 2 },
       activities: { total: 3 },
-      finances: { income: 10, expenses: 5, balance: 5, transactions: 2 },
-      missionary: { baptized_total: 0 },
-      ranking_percentile: null,
+      finances: {
+        income: 10,
+        expenses: 5,
+        balance: 5,
+        total_balance: 40,
+        transactions: 2,
+      },
+      missionary: { baptized_total: null },
       top_achievers: [],
+      monthly_data: emptyMonthly(),
       ...computedOverrides,
     },
-    manual_data: manualData,
     club: {
       name: 'Club',
       churches: { name: 'Iglesia' },
@@ -145,7 +159,7 @@ describe('AnnualReportsPdfService pagination', () => {
 });
 
 describe('AnnualReportsPdfService directiva roles', () => {
-  it('prints Spanish role labels and falls back to the slug for unknown roles', async () => {
+  it('localizes the role labels through i18n and falls back to the slug for unknown roles', async () => {
     const { service } = buildRealService({
       directiva: [
         { role: 'treasurer', user_id: '1', name: 'Ana' },
@@ -158,8 +172,8 @@ describe('AnnualReportsPdfService directiva roles', () => {
 
     expect(lines).toEqual(
       expect.arrayContaining([
-        '  Tesorero: Ana',
-        '  Secretario: Beto',
+        '  annual_reports.roles.treasurer: Ana',
+        '  annual_reports.roles.secretary: Beto',
         '  counselor: Dani',
       ]),
     );
@@ -196,53 +210,66 @@ describe('AnnualReportsPdfService club director block', () => {
   });
 });
 
-describe('AnnualReportsPdfService manual data and duplicates', () => {
-  it('prints every manual field', async () => {
-    const { service } = buildRealService(
-      {},
-      {
+describe('AnnualReportsPdfService figures from monthly reports', () => {
+  it('prints every figure, with "Month: text" lines in the report locale', async () => {
+    const { service } = buildRealService({
+      monthly_data: {
+        months_submitted: 3,
+        months_covered: [],
         planning_meetings: 21,
         parent_meetings: 22,
         baptized_this_year: 23,
         total_baptized: 24,
-        camporees_attended: 25,
+        annual_achievements_description: [
+          { year: 2026, month: 3, text: 'Medalla distrital' },
+        ],
+        community_service_description: [
+          { year: 2026, month: 2, text: 'Jornadas de limpieza' },
+        ],
         all_investitures_completed: true,
-        annual_achievements_description: 'Medalla distrital',
-        community_service_description: 'Jornadas de limpieza',
+        camporees_attended: 25,
       },
-    );
+    });
 
     const lines = await captureText(() => service.generatePdf(1));
 
     expect(lines).toEqual(
       expect.arrayContaining([
-        'Reuniones de planificación: ',
+        'annual_reports.summary.planning_meetings: ',
         '21',
-        'Reuniones de padres: ',
+        'annual_reports.summary.parent_meetings: ',
         '22',
-        'Bautizados en el año: ',
+        'annual_reports.missionary.baptized_this_year: ',
         '23',
-        'Total bautizados acumulado: ',
+        'annual_reports.missionary.total_baptized: ',
         '24',
-        'Campamentos asistidos: ',
+        'annual_reports.missionary.camporees_attended: ',
         '25',
-        'Todas las investiduras completadas: ',
-        'Sí',
-        'Medalla distrital',
-        'Jornadas de limpieza',
+        'annual_reports.missionary.all_investitures_completed: ',
+        'annual_reports.bool.true',
+        'Marzo: Medalla distrital',
+        'Febrero: Jornadas de limpieza',
       ]),
     );
     expect(lines).not.toContain('—');
   });
 
-  it('prints a dash for every empty manual field', async () => {
+  it('prints a dash for every figure when no monthly report was submitted', async () => {
     const { service } = buildRealService();
 
     const lines = await captureText(() => service.generatePdf(1));
 
-    // planning, parent, achievements, total baptized, camporees, investitures,
-    // community service
+    // planning, parent, achievements, baptized, total baptized,
+    // investitures, community service
+    // (camporees come from registrations and print 0, not a dash)
     expect(lines.filter((line) => line === '—')).toHaveLength(7);
+    expect(lines).toContain('annual_reports.summary.monthly_basis_none');
+  });
+
+  it('still renders a legacy report that has no monthly_data', async () => {
+    const { service } = buildRealService({ monthly_data: undefined });
+
+    await expect(service.generatePdf(1)).resolves.toBeInstanceOf(Buffer);
   });
 
   it('prints honors and activities totals only in their own sections', async () => {
@@ -256,6 +283,73 @@ describe('AnnualReportsPdfService manual data and duplicates', () => {
       'annual_reports.summary.honors_completed: ',
     ]) {
       expect(lines.filter((line) => line === label)).toHaveLength(1);
+    }
+  });
+});
+
+describe('AnnualReportsPdfService finances', () => {
+  it('prints the period net AND the cumulative balance at the end of the year', async () => {
+    const { service } = buildRealService();
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        'annual_reports.finances.annual_balance',
+        '$5.00',
+        'annual_reports.finances.total_balance',
+        '$40.00',
+      ]),
+    );
+  });
+});
+
+describe('AnnualReportsPdfService top achievers', () => {
+  it('has no ranking percentile and keeps the top achievers list under its own title', async () => {
+    const { service, i18n } = buildRealService({
+      ranking_percentile: 80,
+      top_achievers: [{ user_id: 'u1', name: 'Ana P', honors_count: 3 }],
+    });
+
+    const lines = await captureText(() => service.generatePdf(1));
+
+    const keys = i18n.translate.mock.calls.map(([key]: any[]) => key);
+    expect(keys).not.toContain('annual_reports.ranking.percentile');
+    expect(keys).not.toContain('annual_reports.section_titles.ranking');
+    expect(keys).toContain('annual_reports.section_titles.top_achievers');
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        'annual_reports.ranking.member',
+        'annual_reports.ranking.honors',
+        'Ana P',
+        '3',
+      ]),
+    );
+    expect(lines.join('\n')).not.toContain('80%');
+  });
+});
+
+describe('AnnualReportsPdfService labels', () => {
+  it('has no hard-coded Spanish: every label goes through i18n', async () => {
+    const { service } = buildRealService({
+      directiva: [{ role: 'director', user_id: '1', name: 'Ana' }],
+      top_achievers: [{ user_id: 'u1', name: 'Ana P', honors_count: 3 }],
+    });
+
+    const text = (await captureText(() => service.generatePdf(1))).join('\n');
+
+    for (const hardCoded of [
+      'Bautizados en el año',
+      'Campamentos asistidos',
+      'Reuniones de',
+      'Servicio comunitario',
+      'Directiva',
+      'Miembro',
+      'Especialidades',
+      'Logros del año',
+      'investiduras',
+    ]) {
+      expect(text).not.toContain(hardCoded);
     }
   });
 });

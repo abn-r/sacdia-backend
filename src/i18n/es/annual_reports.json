@@ -13,24 +13,35 @@
     "activities": "3. ACTIVIDADES DEL CLUB",
     "finances": "4. FINANZAS",
     "missionary": "5. ACTIVIDAD MISIONERA",
-    "ranking": "6. RANKING Y RECONOCIMIENTOS"
+    "top_achievers": "6. MIEMBROS DESTACADOS"
   },
   "summary": {
     "member_count": "Cantidad de miembros",
     "months_reported": "Meses con informes",
     "total_activities": "Total de actividades en el año",
     "honors_completed": "Especialidades completadas en el año",
-    "honors_started": "Especialidades iniciadas en el año"
+    "honors_started": "Especialidades iniciadas en el año",
+    "directiva": "Directiva",
+    "meetings_header": "Reuniones y asistencia",
+    "planning_meetings": "Reuniones de planificación",
+    "parent_meetings": "Reuniones de padres",
+    "monthly_basis_label": "Fuente de los datos",
+    "monthly_basis": "Basado en {count} meses con informe mensual enviado",
+    "monthly_basis_one": "Basado en 1 mes con informe mensual enviado",
+    "monthly_basis_none": "Sin informes mensuales enviados en el periodo",
+    "annual_achievements": "Logros del año"
   },
   "finances": {
     "total_income": "Total ingresos del año",
     "total_expenses": "Total egresos del año",
-    "annual_balance": "Balance anual",
-    "transaction_count": "Total de transacciones"
+    "annual_balance": "Balance neto del año",
+    "transaction_count": "Total de transacciones",
+    "total_balance": "Saldo acumulado al cierre del año"
   },
   "ranking": {
-    "percentile": "Percentil de desempeño",
-    "top_achievers_header": "Miembros destacados"
+    "top_achievers_header": "Miembros destacados",
+    "member": "Miembro",
+    "honors": "Especialidades"
   },
   "status": {
     "draft": "Borrador",
@@ -46,5 +57,19 @@
     "true": "Sí",
     "false": "No",
     "null": "N/A"
+  },
+  "roles": {
+    "director": "Director",
+    "deputy-director": "Subdirector",
+    "secretary": "Secretario",
+    "secretary-treasurer": "Secretario tesorero",
+    "treasurer": "Tesorero"
+  },
+  "missionary": {
+    "baptized_this_year": "Bautizados en el año",
+    "total_baptized": "Total bautizados acumulado",
+    "camporees_attended": "Campamentos asistidos",
+    "community_service": "Servicio comunitario",
+    "all_investitures_completed": "Todas las investiduras completadas"
   }
 }

@@ -76,7 +76,7 @@ export const CRON_JOB_DEFINITIONS: readonly CronJobDefinition[] = [
     method: 'handleAutoGenerate',
     source: 'annual-reports/annual-reports-cron.service.ts#handleAutoGenerate',
     description:
-      'Genera los informes anuales del año eclesiástico recién terminado (requiere el flag de configuración).',
+      'Diario: congela los informes anuales de los años eclesiásticos que terminaron hace más de reports.periodic_freeze_grace_days días (requiere el flag de configuración).',
   },
   {
     jobName: 'cleanup-expired-records',
@@ -219,7 +219,7 @@ export const CRON_JOB_DEFINITIONS: readonly CronJobDefinition[] = [
     source:
       'quarterly-reports/quarterly-reports-cron.service.ts#handleAutoGenerate',
     description:
-      'Genera los informes trimestrales del trimestre recién terminado (requiere el flag de configuración).',
+      'Diario: congela los informes trimestrales de los trimestres que terminaron hace más de reports.periodic_freeze_grace_days días (requiere el flag de configuración).',
   },
   {
     jobName: 'ecclesiastical-year-cut',

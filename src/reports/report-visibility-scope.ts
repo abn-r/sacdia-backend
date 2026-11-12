@@ -3,31 +3,13 @@ import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ActorScope } from '../common/authorization/actor-scope';
 import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
-import { GlobalRole } from '../common/authorization/roles';
-
-const ALL_REPORTS_ROLES = new Set([
-  GlobalRole.SUPER_ADMIN,
-  GlobalRole.ADMIN,
-  GlobalRole.DIRECTOR_DIA,
-  GlobalRole.ASSISTANT_DIA,
-]);
-
-const UNION_REPORTS_ROLES = new Set([
-  GlobalRole.DIRECTOR_UNION,
-  GlobalRole.ASSISTANT_UNION,
-]);
-
-const LOCAL_FIELD_REPORTS_ROLES = new Set([
-  GlobalRole.ASSISTANT_ADMIN,
-  GlobalRole.DIRECTOR_LF,
-  GlobalRole.ASSISTANT_LF,
-]);
-
-const COORDINATOR_REPORT_ROLES = new Set([
-  GlobalRole.COORDINATOR,
-  GlobalRole.ZONE_COORDINATOR,
-  GlobalRole.GENERAL_COORDINATOR,
-]);
+import {
+  activeGrantSectionId,
+  ALL_REPORTS_ROLES,
+  COORDINATOR_REPORT_ROLES,
+  LOCAL_FIELD_REPORTS_ROLES,
+  UNION_REPORTS_ROLES,
+} from '../common/authorization/periodic-reports-access';
 
 export type ReportVisibilityFilters = {
   divisionId?: number;
@@ -87,10 +69,27 @@ export async function resolveReportVisibilityScopeForActor(
   return resolveReportVisibilityScope(resolved, filters, coordinatorSectionIds);
 }
 
+/**
+ * Quarterly and annual reports are not for coordinators: a coordinator-only
+ * actor (no territorial role, no club section of their own) is denied with
+ * PERIODIC_REPORTS_FORBIDDEN. An actor that also holds a club section keeps
+ * the club-section scope. Monthly reports and compliance keep using
+ * {@link resolveReportVisibilityScopeForActor}.
+ */
+export function resolvePeriodicReportVisibilityScopeForActor(
+  resolved: ResolvedAuthorizationProfile,
+  filters: ReportVisibilityFilters = {},
+): ReportVisibilityScope {
+  return resolveReportVisibilityScope(resolved, filters, undefined, {
+    periodic: true,
+  });
+}
+
 export function resolveReportVisibilityScope(
   resolved: ResolvedAuthorizationProfile,
   filters: ReportVisibilityFilters,
   coordinatorSectionIds?: number[],
+  options: { periodic?: boolean } = {},
 ): ReportVisibilityScope {
   const actor = ActorScope.from(resolved);
 
@@ -133,7 +132,12 @@ export function resolveReportVisibilityScope(
     return { access: 'local_field', localFieldId };
   }
 
-  if (actor.hasAnyRole(COORDINATOR_REPORT_ROLES)) {
+  if (actor.hasAnyRole(COORDINATOR_REPORT_ROLES) && options.periodic) {
+    // Falls through to the club-section scope when the actor has one.
+    if (activeGrantSectionId(resolved) === undefined) {
+      throw new AppForbiddenException(ErrorCode.PERIODIC_REPORTS_FORBIDDEN);
+    }
+  } else if (actor.hasAnyRole(COORDINATOR_REPORT_ROLES)) {
     if (!coordinatorSectionIds || coordinatorSectionIds.length === 0) {
       throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
     }

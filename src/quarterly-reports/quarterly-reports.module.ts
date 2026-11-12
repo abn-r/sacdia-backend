@@ -6,17 +6,13 @@ import { QuarterlyReportsPdfService } from './quarterly-reports-pdf.service';
 import { QuarterlyReportsCronService } from './quarterly-reports-cron.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
-import { CoordinationModule } from '../coordination/coordination.module';
+import { PeriodicReportDataService } from '../reports/periodic-report-data.service';
 
 @Module({
-  imports: [
-    PrismaModule,
-    CommonModule,
-    CoordinationModule,
-    FinanceAggregationModule,
-  ],
+  imports: [PrismaModule, CommonModule, FinanceAggregationModule],
   controllers: [QuarterlyReportsController],
   providers: [
+    PeriodicReportDataService,
     QuarterlyReportsService,
     QuarterlyReportsPdfService,
     QuarterlyReportsCronService,

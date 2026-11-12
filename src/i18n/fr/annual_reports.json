@@ -13,24 +13,35 @@
     "activities": "3. ACTIVITÉS DU CLUB",
     "finances": "4. FINANCES",
     "missionary": "5. ACTIVITÉ MISSIONNAIRE",
-    "ranking": "6. CLASSEMENTS ET RECONNAISSANCES"
+    "top_achievers": "6. MEMBRES DISTINGUÉS"
   },
   "summary": {
     "member_count": "Nombre de membres",
     "months_reported": "Mois avec rapports",
     "total_activities": "Total des activités pour l'année",
     "honors_completed": "Spécialités terminées pour l'année",
-    "honors_started": "Spécialités commencées pour l'année"
+    "honors_started": "Spécialités commencées pour l'année",
+    "directiva": "Comité",
+    "meetings_header": "Réunions et participation",
+    "planning_meetings": "Réunions de planification",
+    "parent_meetings": "Réunions de parents",
+    "monthly_basis_label": "Source des données",
+    "monthly_basis": "Basé sur {count} mois avec un rapport mensuel envoyé",
+    "monthly_basis_one": "Basé sur 1 mois avec un rapport mensuel envoyé",
+    "monthly_basis_none": "Aucun rapport mensuel soumis pendant la période",
+    "annual_achievements": "Réalisations de l'année"
   },
   "finances": {
     "total_income": "Total des recettes annuelles",
     "total_expenses": "Total des dépenses annuelles",
-    "annual_balance": "Solde annuel",
-    "transaction_count": "Total des transactions"
+    "annual_balance": "Solde net de l'année",
+    "transaction_count": "Total des transactions",
+    "total_balance": "Solde cumulé à la fin de l'année"
   },
   "ranking": {
-    "percentile": "Percentile de performance",
-    "top_achievers_header": "Membres distingués"
+    "top_achievers_header": "Membres distingués",
+    "member": "Membre",
+    "honors": "Spécialités"
   },
   "status": {
     "draft": "Brouillon",
@@ -46,5 +57,19 @@
     "true": "Oui",
     "false": "Non",
     "null": "N/A"
+  },
+  "roles": {
+    "director": "Directeur",
+    "deputy-director": "Directeur adjoint",
+    "secretary": "Secrétaire",
+    "secretary-treasurer": "Secrétaire-trésorier",
+    "treasurer": "Trésorier"
+  },
+  "missionary": {
+    "baptized_this_year": "Baptisés cette année",
+    "total_baptized": "Total des baptisés cumulé",
+    "camporees_attended": "Camporees auxquels le club a participé",
+    "community_service": "Service communautaire",
+    "all_investitures_completed": "Toutes les investitures complétées"
   }
 }

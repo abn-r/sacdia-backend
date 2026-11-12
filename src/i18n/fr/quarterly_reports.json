@@ -25,13 +25,25 @@
     "months_covered": "Mois couverts",
     "total_activities": "Total des activités",
     "honors_completed": "Spécialités terminées",
-    "honors_started": "Spécialités commencées"
+    "honors_started": "Spécialités commencées",
+    "directiva": "Comité",
+    "meetings_header": "Réunions et participation",
+    "planning_meetings": "Réunions de planification",
+    "parent_meetings": "Réunions de parents",
+    "monthly_basis_label": "Source des données",
+    "monthly_basis": "Basé sur {count} mois avec un rapport mensuel envoyé",
+    "monthly_basis_one": "Basé sur 1 mois avec un rapport mensuel envoyé",
+    "monthly_basis_none": "Aucun rapport mensuel soumis pendant la période",
+    "youth_council_attendance": "Participation au conseil des jeunes",
+    "church_board_attendance": "Participation au conseil d'église",
+    "participation": "Participation"
   },
   "finances": {
     "total_income": "Total des recettes",
     "total_expenses": "Total des dépenses",
-    "quarter_balance": "Solde du trimestre",
-    "transaction_count": "Total des transactions"
+    "quarter_balance": "Solde net du trimestre",
+    "transaction_count": "Total des transactions",
+    "total_balance": "Solde cumulé à la fin du trimestre"
   },
   "status": {
     "draft": "Brouillon",
@@ -47,5 +59,21 @@
     "true": "Oui",
     "false": "Non",
     "null": "N/A"
+  },
+  "roles": {
+    "director": "Directeur",
+    "deputy-director": "Directeur adjoint",
+    "secretary": "Secrétaire",
+    "secretary-treasurer": "Secrétaire-trésorier",
+    "treasurer": "Trésorier"
+  },
+  "teachings": {
+    "certificates_delivered": "Certificats remis"
+  },
+  "missionary": {
+    "soul_target": "Objectif d'âmes",
+    "baptized_this_quarter": "Baptisés ce trimestre",
+    "camporees_attended": "Camporees auxquels le club a participé",
+    "community_service": "Service communautaire"
   }
 }

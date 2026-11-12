@@ -25,13 +25,25 @@
     "months_covered": "Meses cubiertos",
     "total_activities": "Total de actividades",
     "honors_completed": "Especialidades completadas",
-    "honors_started": "Especialidades iniciadas"
+    "honors_started": "Especialidades iniciadas",
+    "directiva": "Directiva",
+    "meetings_header": "Reuniones y asistencia",
+    "planning_meetings": "Reuniones de planificación",
+    "parent_meetings": "Reuniones de padres",
+    "monthly_basis_label": "Fuente de los datos",
+    "monthly_basis": "Basado en {count} meses con informe mensual enviado",
+    "monthly_basis_one": "Basado en 1 mes con informe mensual enviado",
+    "monthly_basis_none": "Sin informes mensuales enviados en el periodo",
+    "youth_council_attendance": "Asistencia al consejo de jóvenes",
+    "church_board_attendance": "Asistencia a la junta de iglesia",
+    "participation": "Participación"
   },
   "finances": {
     "total_income": "Total ingresos",
     "total_expenses": "Total egresos",
-    "quarter_balance": "Balance del trimestre",
-    "transaction_count": "Total de transacciones"
+    "quarter_balance": "Balance neto del trimestre",
+    "transaction_count": "Total de transacciones",
+    "total_balance": "Saldo acumulado al cierre del trimestre"
   },
   "status": {
     "draft": "Borrador",
@@ -47,5 +59,21 @@
     "true": "Sí",
     "false": "No",
     "null": "N/A"
+  },
+  "roles": {
+    "director": "Director",
+    "deputy-director": "Subdirector",
+    "secretary": "Secretario",
+    "secretary-treasurer": "Secretario tesorero",
+    "treasurer": "Tesorero"
+  },
+  "teachings": {
+    "certificates_delivered": "Certificados entregados"
+  },
+  "missionary": {
+    "soul_target": "Meta de almas",
+    "baptized_this_quarter": "Bautizados en el trimestre",
+    "camporees_attended": "Campamentos asistidos",
+    "community_service": "Servicio comunitario"
   }
 }

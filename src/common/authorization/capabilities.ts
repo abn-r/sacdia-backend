@@ -16,6 +16,7 @@ import {
   LOCAL_FIELD_ROLES,
   UNION_ROLES,
 } from './role-sets';
+import { canViewPeriodicReports } from './periodic-reports-access';
 import { ClubRole, GlobalRole } from './roles';
 import { resolveAllowedTargetRoles } from './user-role-tiers';
 
@@ -71,6 +72,8 @@ export type CapabilityContext = {
   /** `profile.local_field_id` (the person's own field). */
   profileLocalFieldId: number | null;
   assignableGlobalRoles: string[];
+  /** See `canViewPeriodicReports`: reports:read and not coordinator-only. */
+  canViewPeriodicReports: boolean;
 };
 
 export type CapabilityPredicate = (ctx: CapabilityContext) => boolean;
@@ -286,11 +289,20 @@ export const CAPABILITY_DEFINITIONS: Record<
   'rbac.manage': globalRoleIn(SUPER_ADMIN_ONLY),
   'rbac.mutate_global_roles': globalRoleIn(SUPER_ADMIN_ONLY),
   'rbac.view_user_roles': globalRoleIn(PLATFORM_ADMINS),
+  // Recompute a closed quarterly or annual report (support escape hatch).
+  // Mirrors @ExactGlobalRoles(super-admin, admin) on the regenerate routes.
+  'reports.regenerate_periodic': globalRoleIn(PLATFORM_ADMINS),
   'reports.view_all': globalRoleIn([...PLATFORM_ADMINS, ...DIVISION_ROLES]),
   'reports.view_local_field': every(
     globalRoleIn([GlobalRole.ASSISTANT_ADMIN, ...LOCAL_FIELD_ROLES]),
     ({ territory }) => territory.local_field_id !== null,
   ),
+  // Quarterly and annual reports: the actor holds reports:read and reaches a
+  // territorial scope or a club section of their own. Coordinators (coordinator,
+  // zone-coordinator, general-coordinator) with no other role are out, although
+  // they keep reports:read for monthly reports and compliance.
+  'reports.view_periodic': ({ canViewPeriodicReports }) =>
+    canViewPeriodicReports,
   'reports.view_union': every(
     globalRoleIn(UNION_ROLES),
     ({ territory }) => territory.union_id !== null,
@@ -393,6 +405,7 @@ export function buildCapabilityContext(
     ),
     profileLocalFieldId,
     assignableGlobalRoles: assignableGlobalRoles(resolved),
+    canViewPeriodicReports: canViewPeriodicReports(resolved),
   };
 }
 
