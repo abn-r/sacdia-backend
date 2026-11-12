@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { AppForbiddenException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { actorHasGlobalPermission } from '../common/authorization/actor-section-scope';
 import {
@@ -22,13 +25,17 @@ import {
 } from '../monthly-reports/monthly-report-download-filename';
 import {
   FinanceAggregationService,
+  financePeriodKey,
   type FinanceRange,
   type FinanceTotals,
+  type FinanceYearMonth,
 } from './finance-aggregation.service';
-import type {
-  FinanceExportQueryDto,
-  FinanceOverviewQueryDto,
-  FinanceReportQueryDto,
+import {
+  FINANCE_MONTHLY_MAX_MONTHS,
+  type FinanceExportQueryDto,
+  type FinanceMonthlyQueryDto,
+  type FinanceOverviewQueryDto,
+  type FinanceReportQueryDto,
 } from './dto';
 import { requesterRoleLabel } from './finance-requester-role';
 import {
@@ -145,6 +152,68 @@ export class FinanceReportsService {
         income: income.reduce((sum, r) => sum + r.total, 0),
         expenses: expenses.reduce((sum, r) => sum + r.total, 0),
       },
+    };
+  }
+
+  // ========================================
+  // MONTHLY SERIES
+  // ========================================
+
+  /**
+   * Income/expenses/net per month plus the all-time balance at each month end,
+   * zero months included. `to` defaults to the current month; without `from`
+   * the series starts at the first active movement (empty when there is none).
+   */
+  async getMonthlySeries(
+    clubId: number,
+    query: FinanceMonthlyQueryDto,
+    userSectionId?: number | null,
+  ) {
+    const scope = await this.aggregation.resolveClubScope(
+      clubId,
+      query.club_section_id,
+      userSectionId,
+    );
+
+    const now = new Date();
+    const to = query.to
+      ? this.parseYearMonth(query.to)
+      : { year: now.getFullYear(), month: now.getMonth() + 1 };
+
+    let from: FinanceYearMonth | null;
+    if (query.from) {
+      from = this.parseYearMonth(query.from);
+    } else {
+      from = await this.aggregation.firstMovementMonth(scope.sectionIds);
+    }
+
+    const base = {
+      club_id: clubId,
+      club_section_id: query.club_section_id ?? null,
+    };
+
+    if (!from || financePeriodKey(from) > financePeriodKey(to)) {
+      if (query.from) {
+        throw new AppBadRequestException(ErrorCode.VALIDATION_FAILED);
+      }
+      return { ...base, from: null, to: null, items: [] };
+    }
+
+    const span = (to.year - from.year) * 12 + (to.month - from.month) + 1;
+    if (span > FINANCE_MONTHLY_MAX_MONTHS) {
+      throw new AppBadRequestException(ErrorCode.VALIDATION_FAILED);
+    }
+
+    const items = await this.aggregation.aggregateMonthlySeries(
+      scope.sectionIds,
+      from,
+      to,
+    );
+    return {
+      ...base,
+      from: this.periodLabel(from.year, from.month),
+      to: this.periodLabel(to.year, to.month),
+      items,
     };
   }
 
@@ -581,6 +650,11 @@ export class FinanceReportsService {
   // ========================================
   // HELPERS
   // ========================================
+
+  private parseYearMonth(value: string): FinanceYearMonth {
+    const [year, month] = value.split('-').map(Number);
+    return { year, month };
+  }
 
   private periodRange(year: number, month?: number): FinanceRange {
     return month
