@@ -155,6 +155,71 @@ describe('FinanceAggregationService', () => {
     });
   });
 
+  describe('aggregateMonthlySeries', () => {
+    it('maps rows to numbers, computes net and keeps the SQL order', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([
+        { year: 2026, month: 1, income: 500n, expenses: 200n, balance: 1300n },
+        { year: 2026, month: 2, income: 0n, expenses: 0n, balance: 1300n },
+      ]);
+
+      await expect(
+        service.aggregateMonthlySeries(
+          [1, 2],
+          { year: 2026, month: 1 },
+          { year: 2026, month: 2 },
+        ),
+      ).resolves.toEqual([
+        {
+          year: 2026,
+          month: 1,
+          income: 500,
+          expenses: 200,
+          net: 300,
+          balance: 1300,
+        },
+        { year: 2026, month: 2, income: 0, expenses: 0, net: 0, balance: 1300 },
+      ]);
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      const sql = sqlOf(mockPrisma.$queryRaw.mock.calls[0]);
+      expect(sql).toContain('generate_series');
+      expect(sql).toContain('f.active = true');
+    });
+
+    it('skips the query without sections or with an inverted range', async () => {
+      await expect(
+        service.aggregateMonthlySeries(
+          [],
+          { year: 2026, month: 1 },
+          { year: 2026, month: 2 },
+        ),
+      ).resolves.toEqual([]);
+      await expect(
+        service.aggregateMonthlySeries(
+          [1],
+          { year: 2026, month: 5 },
+          { year: 2026, month: 2 },
+        ),
+      ).resolves.toEqual([]);
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('firstMovementMonth', () => {
+    it('decodes the YYYYMM key', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([{ period_key: 202511 }]);
+      await expect(service.firstMovementMonth([1])).resolves.toEqual({
+        year: 2025,
+        month: 11,
+      });
+    });
+
+    it('returns null when there are no movements or no sections', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([{ period_key: null }]);
+      await expect(service.firstMovementMonth([1])).resolves.toBeNull();
+      await expect(service.firstMovementMonth([])).resolves.toBeNull();
+    });
+  });
+
   describe('aggregateByClub', () => {
     it('groups by club and keeps the last movement date', async () => {
       const last = new Date('2026-04-20T10:00:00Z');

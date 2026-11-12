@@ -5,6 +5,7 @@ describe('FinancesController (reports routes)', () => {
   const reports = {
     getOverview: jest.fn(),
     getByCategory: jest.fn(),
+    getMonthlySeries: jest.fn(),
     buildExport: jest.fn(),
   };
   let controller: FinancesController;
@@ -101,6 +102,25 @@ describe('FinancesController (reports routes)', () => {
 
     expect(reports.getByCategory).toHaveBeenCalledWith(1, { year: 2026 }, 7);
     expect(financesService.getSummary).toHaveBeenCalledWith(1, 2026, 3, 7, 9);
+  });
+
+  it('monthly scopes a section member to their section', async () => {
+    reports.getMonthlySeries.mockResolvedValue({ items: [] });
+
+    await controller.getMonthly(
+      1,
+      { from: '2026-01', to: '2026-03' },
+      reqWithSection(7),
+    );
+    await controller.getMonthly(1, {}, reqWithSection());
+
+    expect(reports.getMonthlySeries).toHaveBeenNthCalledWith(
+      1,
+      1,
+      { from: '2026-01', to: '2026-03' },
+      7,
+    );
+    expect(reports.getMonthlySeries).toHaveBeenNthCalledWith(2, 1, {}, null);
   });
 
   it('remove takes the reason from the body first, then from ?reason=', async () => {

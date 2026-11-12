@@ -39,6 +39,17 @@ export interface FinanceCategoryTotal {
   count: number;
 }
 
+export interface FinanceMonthlyPoint {
+  year: number;
+  month: number;
+  income: number;
+  expenses: number;
+  /** income - expenses of the month. */
+  net: number;
+  /** All-time cumulative balance at the end of the month. */
+  balance: number;
+}
+
 export interface FinanceClubTotals extends FinanceTotals {
   club_id: number;
   last_movement_at: Date | null;
@@ -255,6 +266,105 @@ export class FinanceAggregationService {
       total: Number(r.total ?? 0),
       count: Number(r.count ?? 0),
     }));
+  }
+
+  /**
+   * Month of the first active movement of the sections, or null when there is
+   * none. Used as the start of an open-ended ("all time") monthly series.
+   */
+  async firstMovementMonth(
+    sectionIds: number[],
+  ): Promise<FinanceYearMonth | null> {
+    if (sectionIds.length === 0) return null;
+
+    const [row] = await this.prisma.$queryRaw<
+      { period_key: number | bigint | null }[]
+    >`
+      SELECT MIN(f.year * 100 + f.month) AS period_key
+      FROM finances f
+      WHERE f.club_section_id IN (${Prisma.join(sectionIds)})
+        AND f.active = true
+    `;
+
+    const key = row?.period_key == null ? null : Number(row.period_key);
+    if (key == null) return null;
+    return { year: Math.floor(key / 100), month: key % 100 };
+  }
+
+  /**
+   * One row per calendar month from `from` to `to` (inclusive, zero months
+   * included) with the month's income/expenses and the all-time balance at the
+   * end of that month. A single query: the months are generated in SQL and the
+   * running balance sums every movement up to each month (opening balance
+   * before `from` included).
+   */
+  async aggregateMonthlySeries(
+    sectionIds: number[],
+    from: FinanceYearMonth,
+    to: FinanceYearMonth,
+  ): Promise<FinanceMonthlyPoint[]> {
+    if (sectionIds.length === 0) return [];
+
+    const fromKey = financePeriodKey(from);
+    const toKey = financePeriodKey(to);
+    if (fromKey > toKey) return [];
+
+    const rows = await this.prisma.$queryRaw<
+      {
+        year: number | bigint;
+        month: number | bigint;
+        income: bigint | number | null;
+        expenses: bigint | number | null;
+        balance: bigint | number | null;
+      }[]
+    >`
+      WITH mv AS (
+        SELECT (f.year * 100 + f.month) AS period_key,
+               COALESCE(SUM(f.amount) FILTER (WHERE fc.type = 0), 0)::bigint AS income,
+               COALESCE(SUM(f.amount) FILTER (WHERE fc.type <> 0), 0)::bigint AS expenses
+        FROM finances f
+        JOIN finances_categories fc
+          ON fc.finance_category_id = f.finance_category_id
+        WHERE f.club_section_id IN (${Prisma.join(sectionIds)})
+          AND f.active = true
+          AND (f.year * 100 + f.month) <= ${toKey}
+        GROUP BY (f.year * 100 + f.month)
+      ),
+      months AS (
+        SELECT EXTRACT(YEAR FROM d)::int AS year,
+               EXTRACT(MONTH FROM d)::int AS month,
+               (EXTRACT(YEAR FROM d)::int * 100 + EXTRACT(MONTH FROM d)::int) AS period_key
+        FROM generate_series(
+          make_date(${from.year}::int, ${from.month}::int, 1),
+          make_date(${to.year}::int, ${to.month}::int, 1),
+          interval '1 month'
+        ) AS d
+      )
+      SELECT m.year, m.month,
+             COALESCE(cur.income, 0)::bigint AS income,
+             COALESCE(cur.expenses, 0)::bigint AS expenses,
+             COALESCE((
+               SELECT SUM(prev.income - prev.expenses)
+               FROM mv prev
+               WHERE prev.period_key <= m.period_key
+             ), 0)::bigint AS balance
+      FROM months m
+      LEFT JOIN mv cur ON cur.period_key = m.period_key
+      ORDER BY m.period_key ASC
+    `;
+
+    return rows.map((r) => {
+      const income = Number(r.income ?? 0);
+      const expenses = Number(r.expenses ?? 0);
+      return {
+        year: Number(r.year),
+        month: Number(r.month),
+        income,
+        expenses,
+        net: income - expenses,
+        balance: Number(r.balance ?? 0),
+      };
+    });
   }
 
   /** Totals per club (all sections of each club together). */

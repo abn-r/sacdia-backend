@@ -34,6 +34,7 @@ import {
   UpdateFinanceDto,
   GetAllTransactionsDto,
   FinanceExportQueryDto,
+  FinanceMonthlyQueryDto,
   FinanceOverviewQueryDto,
   FinanceReportQueryDto,
   RemoveFinanceDto,
@@ -320,6 +321,41 @@ export class FinancesController {
         number | undefined) ?? null;
 
     return this.financeReportsService.getByCategory(
+      clubId,
+      query,
+      userSectionId,
+    );
+  }
+
+  @Get('clubs/:clubId/finances/monthly')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Serie mensual de ingresos, egresos y saldo',
+    description:
+      'Un elemento por mes (incluye meses sin movimientos) con income, expenses, net y balance acumulado al cierre del mes. Sin from arranca en el primer movimiento activo; to por defecto es el mes actual. Máximo 120 meses.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiQuery({ name: 'from', required: false, type: String, example: '2026-01' })
+  @ApiQuery({ name: 'to', required: false, type: String, example: '2026-06' })
+  @ApiQuery({ name: 'club_section_id', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Serie mensual' })
+  @ApiResponse({
+    status: 400,
+    description: 'Rango inválido o mayor a 120 meses',
+  })
+  @ApiResponse({ status: 403, description: 'Sección fuera de tu alcance' })
+  @ApiResponse({ status: 404, description: 'Club o sección no encontrados' })
+  async getMonthly(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Query() query: FinanceMonthlyQueryDto,
+    @Request() req?: any,
+  ) {
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        number | undefined) ?? null;
+
+    return this.financeReportsService.getMonthlySeries(
       clubId,
       query,
       userSectionId,

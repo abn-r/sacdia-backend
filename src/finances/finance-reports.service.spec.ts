@@ -4,6 +4,7 @@ import {
   FinanceReportsService,
 } from './finance-reports.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AppBadRequestException } from '../common/errors/app.exception';
 import * as pdfModule from './finance-export-pdf';
 
 type Role = { role: string; permissions?: string[] };
@@ -58,6 +59,8 @@ describe('FinanceReportsService', () => {
     resolveClubScope: jest.fn(),
     aggregate: jest.fn(),
     aggregateByCategory: jest.fn(),
+    aggregateMonthlySeries: jest.fn(),
+    firstMovementMonth: jest.fn(),
     aggregateByClub: jest.fn(),
   };
   const mockScore = { getMonthsStatus: jest.fn() };
@@ -168,6 +171,104 @@ describe('FinanceReportsService', () => {
         service.getByCategory(1, { year: 2026, club_section_id: 11 }, 10),
       ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
       expect(mockAggregation.aggregateByCategory).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMonthlySeries', () => {
+    const points = [
+      { year: 2026, month: 1, income: 5, expenses: 2, net: 3, balance: 3 },
+    ];
+
+    beforeEach(() => {
+      mockAggregation.resolveClubScope.mockResolvedValue(scope);
+      mockAggregation.aggregateMonthlySeries.mockResolvedValue(points);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('uses the explicit range and the scoped sections', async () => {
+      const result = await service.getMonthlySeries(
+        1,
+        { from: '2026-01', to: '2026-03', club_section_id: 10 },
+        null,
+      );
+
+      expect(mockAggregation.resolveClubScope).toHaveBeenCalledWith(
+        1,
+        10,
+        null,
+      );
+      expect(mockAggregation.aggregateMonthlySeries).toHaveBeenCalledWith(
+        [10, 11],
+        { year: 2026, month: 1 },
+        { year: 2026, month: 3 },
+      );
+      expect(result).toEqual({
+        club_id: 1,
+        club_section_id: 10,
+        from: '2026-01',
+        to: '2026-03',
+        items: points,
+      });
+    });
+
+    it('defaults `to` to the current month and `from` to the first movement', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(2026, 10, 12));
+      mockAggregation.firstMovementMonth.mockResolvedValue({
+        year: 2026,
+        month: 9,
+      });
+
+      const result = await service.getMonthlySeries(1, {}, 7);
+
+      expect(mockAggregation.resolveClubScope).toHaveBeenCalledWith(
+        1,
+        undefined,
+        7,
+      );
+      expect(mockAggregation.aggregateMonthlySeries).toHaveBeenCalledWith(
+        [10, 11],
+        { year: 2026, month: 9 },
+        { year: 2026, month: 11 },
+      );
+      expect(result.from).toBe('2026-09');
+      expect(result.to).toBe('2026-11');
+    });
+
+    it('returns an empty list when there are no movements', async () => {
+      mockAggregation.firstMovementMonth.mockResolvedValue(null);
+
+      await expect(service.getMonthlySeries(1, {})).resolves.toEqual({
+        club_id: 1,
+        club_section_id: null,
+        from: null,
+        to: null,
+        items: [],
+      });
+      expect(mockAggregation.aggregateMonthlySeries).not.toHaveBeenCalled();
+    });
+
+    it('rejects an inverted explicit range', async () => {
+      await expect(
+        service.getMonthlySeries(1, { from: '2026-05', to: '2026-02' }),
+      ).rejects.toBeInstanceOf(AppBadRequestException);
+    });
+
+    it('rejects more than 120 months and accepts exactly 120', async () => {
+      await expect(
+        service.getMonthlySeries(1, { from: '2016-01', to: '2026-01' }),
+      ).rejects.toBeInstanceOf(AppBadRequestException);
+      await expect(
+        service.getMonthlySeries(1, { from: '2016-01', to: '2025-12' }),
+      ).resolves.toMatchObject({ from: '2016-01', to: '2025-12' });
+    });
+
+    it('propagates scope errors (403/404) without querying', async () => {
+      mockAggregation.resolveClubScope.mockRejectedValue(new Error('403'));
+      await expect(service.getMonthlySeries(1, {})).rejects.toThrow('403');
+      expect(mockAggregation.aggregateMonthlySeries).not.toHaveBeenCalled();
     });
   });
 

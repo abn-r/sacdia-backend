@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 import { MaxLengthIfString } from '../../common/validation/max-length-if-string.decorator';
 
 /** Query of `by-category` and `export`: calendar year, optional month and section. */
@@ -21,6 +29,40 @@ export class FinanceReportQueryDto {
   @Min(1)
   @Max(12)
   month?: number;
+
+  @ApiPropertyOptional({
+    description: 'Limita el resultado a una sección del club',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  club_section_id?: number;
+}
+
+/** Longest span the monthly series may cover. */
+export const FINANCE_MONTHLY_MAX_MONTHS = 120;
+
+const YEAR_MONTH_PATTERN = /^(20\d{2}|2100)-(0[1-9]|1[0-2])$/;
+
+/** Query of `monthly`: inclusive month range (`YYYY-MM`) and optional section. */
+export class FinanceMonthlyQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Primer mes (YYYY-MM). Sin él arranca en el mes del primer movimiento activo (serie completa).',
+    example: '2026-01',
+  })
+  @IsOptional()
+  @Matches(YEAR_MONTH_PATTERN, { message: 'from must be YYYY-MM' })
+  from?: string;
+
+  @ApiPropertyOptional({
+    description: 'Último mes (YYYY-MM). Por defecto el mes actual.',
+    example: '2026-06',
+  })
+  @IsOptional()
+  @Matches(YEAR_MONTH_PATTERN, { message: 'to must be YYYY-MM' })
+  to?: string;
 
   @ApiPropertyOptional({
     description: 'Limita el resultado a una sección del club',
