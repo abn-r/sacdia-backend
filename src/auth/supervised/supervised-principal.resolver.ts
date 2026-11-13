@@ -15,6 +15,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { FamilyFeatureFlagsService } from '../../guardianships/family-feature-flags.service';
 import {
   SUPERVISED_STATE_MEMO,
+  TEEN_PENDING_FROZEN_SCOPES,
   TEEN_PENDING_SCOPES,
   TEEN_SCOPES,
   type ActingForScope,
@@ -26,6 +27,7 @@ import {
   type SupervisedState,
 } from './supervised-principal.cache';
 import { GlobalRole } from '../../common/authorization/roles';
+import { PENDING_GUARDIAN_FROZEN_REASON } from '../../guardianships/guardianships.constants';
 
 export interface ResolvedFromDatabase {
   state: SupervisedState;
@@ -50,8 +52,10 @@ function loginMethodOf(login: { method: string } | null): {
 /** Scope set a supervised principal carries for each supervision status. */
 export function scopesForSupervision(
   supervision: SupervisionStatus,
+  frozen = false,
 ): readonly ActingForScope[] {
-  return supervision === 'active' ? TEEN_SCOPES : TEEN_PENDING_SCOPES;
+  if (supervision === 'active') return TEEN_SCOPES;
+  return frozen ? TEEN_PENDING_FROZEN_SCOPES : TEEN_PENDING_SCOPES;
 }
 
 const ADULT: SupervisedState = { state: 'adult' };
@@ -184,7 +188,14 @@ export function deriveSupervisedState(
   }
 
   const profile = user.dependent_profile;
-  if (profile && (profile.frozen_at || profile.purged_at)) {
+  // A teen frozen as `pending_guardian` is paused, not cut: it still logs in to
+  // see its status, link a guardian and delete the account (ruling 2026-11-13).
+  const pausedTeen =
+    !!profile &&
+    !profile.purged_at &&
+    !!profile.frozen_at &&
+    profile.frozen_reason === PENDING_GUARDIAN_FROZEN_REASON;
+  if (profile && !pausedTeen && (profile.frozen_at || profile.purged_at)) {
     return {
       state: { state: 'blocked', cause: 'frozen' },
       timeZone: policy.timeZone,
@@ -200,7 +211,12 @@ export function deriveSupervisedState(
   const supervision: SupervisionStatus =
     user.guardianships_as_dependent.length > 0 ? 'active' : 'pending_guardian';
   return {
-    state: { state: 'supervised', supervision, ...loginMethod },
+    state: {
+      state: 'supervised',
+      supervision,
+      ...(pausedTeen ? { frozen: true as const } : {}),
+      ...loginMethod,
+    },
     timeZone: policy.timeZone,
   };
 }
@@ -221,8 +237,12 @@ export function deriveSupervisedState(
  *                 scope set until step 2 saves the birthday. An adult birthday
  *                 makes it a full adult right away (the app forces the rest of
  *                 the post-registration anyway); a minor one, a teen.
- *  - blocked:     a minor whose dependent profile is frozen/purged, or whose
- *                 supervised login was disabled.
+ *  - blocked:     a minor whose dependent profile is purged or frozen for any
+ *                 reason but `pending_guardian`, or whose supervised login was
+ *                 disabled. A teen frozen as `pending_guardian` (day-90 freeze,
+ *                 never auto-deleted) is NOT blocked: it resolves as
+ *                 supervised + `frozen`, keeps logging in and gains
+ *                 `account:manage` to delete its own account.
  *  - released (Phase 4, flag FAMILY_MAJORITY_RELEASE_ENABLED): a TRACKED
  *                 person (dependent_profiles row) of age who has not
  *                 completed the release. `pending` until they accept the

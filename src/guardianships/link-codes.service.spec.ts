@@ -1047,6 +1047,34 @@ describe('LinkCodesService.issueTeenGuardianLink (phase 3a)', () => {
     ).toBe(ErrorCode.GUARDIANSHIP_NOT_FOUND);
   });
 
+  it('a teen PAUSED as pending_guardian can still get a code (the verified link thaws it)', async () => {
+    const paused = arrange(
+      teenRow({
+        dependent_profile: {
+          frozen_at: new Date(),
+          frozen_reason: 'pending_guardian',
+          purged_at: null,
+        },
+      }),
+    );
+    await expect(
+      paused.service.issueTeenGuardianLink(TEEN),
+    ).resolves.toBeDefined();
+    // Purged stays dead even with that reason.
+    const purged = arrange(
+      teenRow({
+        dependent_profile: {
+          frozen_at: new Date(),
+          frozen_reason: 'pending_guardian',
+          purged_at: new Date(),
+        },
+      }),
+    );
+    expect(
+      (await errorOf(purged.service.issueTeenGuardianLink(TEEN)))?.code,
+    ).toBe(ErrorCode.GUARDIANSHIP_NOT_FOUND);
+  });
+
   it('a teen who already has a guardian (even a pending link) gets 409 GUARDIANSHIP_ALREADY_GUARDIAN', async () => {
     const { service, tx } = arrange(teenRow(), 1);
     const error = await errorOf(service.issueTeenGuardianLink(TEEN));
@@ -1279,6 +1307,21 @@ describe('LinkCodesService.redeem: teen_guardian_link (phase 3a)', () => {
       expect(created).toHaveLength(0);
     },
   );
+
+  it('a teen PAUSED as pending_guardian can be linked: the redeem goes through (pending link, the verification thaws it)', async () => {
+    const { service, committed, created } = arrange({
+      teen: teenRow({
+        dependent_profile: {
+          frozen_at: new Date(),
+          frozen_reason: 'pending_guardian',
+          purged_at: null,
+        },
+      }),
+    });
+    await expect(service.redeem(REDEEMER, redeemDto())).resolves.toBeDefined();
+    expect(committed.codeConsumed).toBe(true);
+    expect(created).toHaveLength(1);
+  });
 
   it('is invalid when somebody linked the teen first (already has an active user guardian)', async () => {
     const { service, committed, created } = arrange({

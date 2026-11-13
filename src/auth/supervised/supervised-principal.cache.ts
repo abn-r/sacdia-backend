@@ -30,6 +30,11 @@ export type SupervisedState =
   | {
       state: 'supervised';
       supervision: SupervisionStatus;
+      /**
+       * The teen is frozen as `pending_guardian` (paused, never auto-deleted):
+       * it still logs in. Absent = not frozen.
+       */
+      frozen?: true;
       login_method?: SupervisedLoginMethod;
     }
   | { state: 'blocked'; cause: SupervisedBlockCause }

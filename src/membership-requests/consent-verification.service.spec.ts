@@ -77,6 +77,8 @@ function setup() {
     },
     dependent_profiles: {
       findUnique: jest.fn().mockResolvedValue({ user_id: DEPENDENT }),
+      // The thaw of a teen paused as pending_guardian (nothing to thaw: 0).
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     // A guardian-managed child has no account; a teen does (see the teen block).
     account: {
@@ -1116,6 +1118,61 @@ describe('ConsentVerificationService.verify for teens and active memberships (ph
       expect(
         s.tx.supervised_logins.createMany.mock.calls[0][0].skipDuplicates,
       ).toBe(true);
+    });
+
+    it('a teen paused as pending_guardian is NOT dead data: the verification goes through and thaws it, audited', async () => {
+      const s = setup();
+      s.tx.account.count.mockResolvedValue(1);
+      s.tx.dependent_profiles.findUnique.mockResolvedValue({
+        user_id: DEPENDENT,
+        frozen_at: new Date('2026-10-20'),
+        frozen_reason: 'pending_guardian',
+        purged_at: null,
+      });
+      s.tx.dependent_profiles.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await s.service.verify(
+        SECTION,
+        ASSIGNMENT,
+        DIRECTOR,
+        dto(),
+      );
+
+      expect(result.guardianship.consent_status).toBe('verified');
+      expect(s.tx.dependent_profiles.updateMany).toHaveBeenCalledWith({
+        where: {
+          user_id: DEPENDENT,
+          purged_at: null,
+          frozen_reason: 'pending_guardian',
+        },
+        data: { frozen_at: null, frozen_reason: null, purge_after: null },
+      });
+      const actions = s.tx.audit_logs.create.mock.calls.map(
+        ([arg]: any) => arg.data.action,
+      );
+      expect(actions).toEqual([
+        'family.pending_guardian.thawed',
+        'consent_verified',
+      ]);
+      // The epoch bump after the commit refreshes the supervised state.
+      expect(s.actingCache.bump).toHaveBeenCalledWith(DEPENDENT);
+    });
+
+    it('a frozen teen with ANOTHER reason (or none) is still dead data', async () => {
+      const s = setup();
+      s.tx.dependent_profiles.findUnique.mockResolvedValue({
+        user_id: DEPENDENT,
+        frozen_at: new Date('2026-10-20'),
+        frozen_reason: 'majority_release',
+        purged_at: null,
+      });
+
+      const error = await rejection(
+        s.service.verify(SECTION, ASSIGNMENT, DIRECTOR, dto()),
+      );
+
+      expect(error.code).toBe(ErrorCode.MR_NOT_FOUND);
+      expect(s.tx.dependent_profiles.updateMany).not.toHaveBeenCalled();
     });
 
     it('a guardian-managed child without an account gets no supervised row', async () => {

@@ -83,11 +83,13 @@ describe('supervised_logins.disabled_reason writes stay inside the DB CHECK', ()
     expect(allowed).toHaveLength(4);
   });
 
-  it('the scanner sees the known writers (sanity: guardian disable, cron freeze)', () => {
+  it('the scanner sees the known writers (sanity: guardian and admin disable)', () => {
     const values = writtenReasons().map((w) => w.value);
-    expect(values).toEqual(
-      expect.arrayContaining(['guardian', 'unlinked_purged']),
-    );
+    expect(values).toEqual(expect.arrayContaining(['guardian', 'admin']));
+    // The day-90 freeze no longer disables the login (ruling 2026-11-13): the
+    // paused teen still signs in. 'unlinked_purged' stays in the CHECK only for
+    // the legacy rows the migration 20261114120000 lifts.
+    expect(values).not.toContain('unlinked_purged');
   });
 
   it('every disabled_reason literal written by the code is allowed by the CHECK', () => {

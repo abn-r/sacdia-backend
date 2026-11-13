@@ -203,6 +203,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         payload,
         basePrincipal,
         supervised.supervision,
+        supervised.frozen === true,
       );
     }
 
@@ -432,6 +433,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     payload: JwtPayload,
     basePrincipal: AuthPrincipal,
     supervision: SupervisionStatus,
+    frozen = false,
   ): Promise<AuthPrincipal> {
     if (req.headers?.[ACTING_FOR_HEADER] !== undefined) {
       this.logActingDenied(payload.sub, payload.sub, 'supervised_token');
@@ -461,7 +463,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       ...basePrincipal,
       kind: 'supervised_user',
-      scopes: scopesForSupervision(supervision),
+      scopes: scopesForSupervision(supervision, frozen),
       supervision,
     };
   }

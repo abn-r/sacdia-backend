@@ -1,6 +1,9 @@
 import type { Prisma } from '@prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
-import { LIVE_ASSIGNMENT_STATUSES } from './guardianships.constants';
+import {
+  LIVE_ASSIGNMENT_STATUSES,
+  PENDING_GUARDIAN_FROZEN_REASON,
+} from './guardianships.constants';
 import type { DependentClubMembership } from './guardianships.types';
 
 export type Db = Prisma.TransactionClient | PrismaService;
@@ -23,6 +26,48 @@ export const ACTIVE_USER_GUARDIAN = {
 export const VISIBLE_DEPENDENT = {
   dependent_profile: { is: { frozen_at: null, purged_at: null } },
 } as const satisfies Prisma.usersWhereInput;
+
+/**
+ * A dependent that can still be reached to LINK and VERIFY a guardian: visible
+ * (not frozen) OR a self-registered teen frozen only for lack of a verified
+ * guardian (`frozen_reason = 'pending_guardian'`, never auto-purged). It is NOT
+ * visible to club lists, rankings or guardian-managed flows: it only widens the
+ * link / evidence / consent-verification path that thaws the teen.
+ */
+export const REACHABLE_FOR_GUARDIAN_LINK = {
+  dependent_profile: {
+    is: {
+      purged_at: null,
+      OR: [
+        { frozen_at: null },
+        { frozen_reason: PENDING_GUARDIAN_FROZEN_REASON },
+      ],
+    },
+  },
+} as const satisfies Prisma.usersWhereInput;
+
+/**
+ * Pure twin of {@link REACHABLE_FOR_GUARDIAN_LINK} for an already loaded
+ * profile: true when the profile is purged, or frozen for any reason other than
+ * `pending_guardian`. A missing profile is not dead.
+ */
+export function isDeadDependentProfile(
+  profile:
+    | {
+        frozen_at?: Date | null;
+        purged_at?: Date | null;
+        frozen_reason?: string | null;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!profile) return false;
+  if (profile.purged_at) return true;
+  return (
+    !!profile.frozen_at &&
+    profile.frozen_reason !== PENDING_GUARDIAN_FROZEN_REASON
+  );
+}
 
 /**
  * A dependent whose GUARDIAN still manages it (family-profiles 3a, design 3.7):

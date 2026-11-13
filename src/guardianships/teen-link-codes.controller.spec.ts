@@ -151,6 +151,7 @@ describe('TeenLinkCodesController', () => {
         open_link_code: null,
         summary_visible_to_guardians: true,
         days_left: null,
+        frozen_at: null,
       });
       expect(supervision.describe).not.toHaveBeenCalled();
       expect(supervision.openLinkCode).not.toHaveBeenCalled();

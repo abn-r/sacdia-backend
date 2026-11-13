@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { MAJORITY_RELEASE_FROZEN_REASON } from './guardianships.constants';
+import { RELEASE_THAWABLE_FROZEN_REASONS } from './guardianships.constants';
 
 export interface ReleaseCompletionResult {
   /** The release is complete after this call (accepted AND email on file). */
@@ -18,7 +18,9 @@ export interface ReleaseCompletionResult {
  *
  * Ruling R1 (THAW) + R6: a person frozen by the release
  * (`frozen_reason = 'majority_release'`) completes the same way and is
- * unfrozen: `frozen_at`, `purge_after` and `frozen_reason` are cleared. A
+ * unfrozen: `frozen_at`, `purge_after` and `frozen_reason` are cleared. The same
+ * goes for a teen paused as `pending_guardian` (ruling 2026-11-13) who reached
+ * the age of majority: no guardian is needed anymore. A
  * legacy freeze (`frozen_reason` NULL, a minor frozen for lack of a guardian)
  * is NEVER thawed here.
  *
@@ -54,7 +56,9 @@ export class ReleaseCompletionService {
     }
     const legacyFreeze =
       profile.frozen_at !== null &&
-      profile.frozen_reason !== MAJORITY_RELEASE_FROZEN_REASON;
+      !(RELEASE_THAWABLE_FROZEN_REASONS as readonly (string | null)[]).includes(
+        profile.frozen_reason,
+      );
     if (legacyFreeze) {
       return { completed: false, thawed: false };
     }
@@ -76,7 +80,7 @@ export class ReleaseCompletionService {
         release_accepted_at: { not: null },
         OR: [
           { frozen_at: null },
-          { frozen_reason: MAJORITY_RELEASE_FROZEN_REASON },
+          { frozen_reason: { in: [...RELEASE_THAWABLE_FROZEN_REASONS] } },
         ],
       },
       data: {

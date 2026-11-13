@@ -98,6 +98,33 @@ describe('ReleaseCompletionService.tryComplete', () => {
     );
   });
 
+  it('THAW: a teen paused as pending_guardian that reached majority also thaws on completion', async () => {
+    const { service, tx } = setup(
+      {
+        ...accepted,
+        frozen_at: new Date('2026-11-05T00:00:00.000Z'),
+        frozen_reason: 'pending_guardian',
+      },
+      'a@b.c',
+    );
+    await expect(service.tryComplete(tx as never, 'u1', NOW)).resolves.toEqual({
+      completed: true,
+      thawed: true,
+    });
+    expect(tx.dependent_profiles.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { frozen_at: null },
+            {
+              frozen_reason: { in: ['majority_release', 'pending_guardian'] },
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
   it('accepted but frozen WITHOUT email stays frozen-with-acceptance (no completion)', async () => {
     const { service, tx } = setup(
       {

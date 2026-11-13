@@ -753,6 +753,30 @@ describe('GuardianEvidenceService', () => {
       expect(codeOf(error)).toBe(ErrorCode.MR_NOT_FOUND);
     });
 
+    it('a request of a teen PAUSED as pending_guardian is NOT dead data: the form can be read', async () => {
+      const { service, prisma, asDirector } = setup();
+      asDirector({
+        assignment_id: ASSIGNMENT,
+        club_section_id: SECTION,
+        user_id: DEPENDENT,
+        status: 'pending',
+        active: true,
+      });
+      prisma.dependent_profiles.findUnique.mockResolvedValue({
+        user_id: DEPENDENT,
+        frozen_at: new Date('2026-10-20'),
+        frozen_reason: 'pending_guardian',
+        purged_at: null,
+      });
+      prisma.guardianship_consent_evidences.findFirst.mockResolvedValue(
+        currentEvidence(),
+      );
+
+      await expect(
+        service.getForDirector(DIRECTOR, SECTION, ASSIGNMENT),
+      ).resolves.toBeDefined();
+    });
+
     it('a request of a non-dependent has no consent form: 404 GUARDIANSHIP_NOT_FOUND', async () => {
       const { service, prisma, asDirector } = setup();
       asDirector();

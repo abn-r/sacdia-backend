@@ -17,8 +17,10 @@ import { GuardianNotificationsService } from '../guardianships/guardian-notifica
 import {
   NOT_REVOKED,
   findSectionAssignment,
+  isDeadDependentProfile,
   lockDependent,
 } from '../guardianships/guardianship-queries';
+import { PENDING_GUARDIAN_FROZEN_REASON } from '../guardianships/guardianships.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CUSTODY_TRIGGER_REASONS,
@@ -233,11 +235,18 @@ export class ConsentVerificationService {
     const dependentId = probe.user_id;
     const profile = await tx.dependent_profiles.findUnique({
       where: { user_id: dependentId },
-      select: { user_id: true, frozen_at: true, purged_at: true },
+      select: {
+        user_id: true,
+        frozen_at: true,
+        frozen_reason: true,
+        purged_at: true,
+      },
     });
-    if (profile?.frozen_at || profile?.purged_at) {
+    if (isDeadDependentProfile(profile)) {
       // Frozen or purged: the request is dead data, hidden from every list.
       // The same 404 as an unknown request, for every kind of reviewer.
+      // EXCEPT a teen frozen as `pending_guardian` (ruling 2026-11-13): its
+      // request stays reachable because THIS verification is what thaws it.
       throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
     }
     if (!profile) {
@@ -358,7 +367,7 @@ export class ConsentVerificationService {
     );
 
     if (!row.is_custodian) {
-      await this.syncSupervisedLogin(tx, dependentId);
+      await this.syncSupervisedLogin(tx, dependentId, verifierId, now);
     }
 
     await this.recordAudit(tx, {
@@ -394,11 +403,14 @@ export class ConsentVerificationService {
    * account (a teen): make sure the `supervised_logins` row exists (method
    * 'email', so the guardian can see, disable or reset it) and stop the
    * guardian-less clock. Idempotent. Club custody never reaches this: custody
-   * is not a guardian, so a custody-only teen keeps running the clock.
+   * is not a guardian, so a custody-only teen keeps running the clock. A teen
+   * paused at day 90 (`frozen_reason = 'pending_guardian'`) thaws here too.
    */
   private async syncSupervisedLogin(
     tx: Prisma.TransactionClient,
     dependentId: string,
+    verifierId: string,
+    at: Date,
   ): Promise<void> {
     const holdsAccount =
       (await tx.account.count({ where: { userId: dependentId } })) > 0;
@@ -419,6 +431,50 @@ export class ConsentVerificationService {
     await tx.supervised_logins.updateMany({
       where: { user_id: dependentId, pending_since: { not: null } },
       data: { pending_since: null, pending_reminder_level: 0 },
+    });
+    await this.thawPendingGuardianTeen(tx, dependentId, verifierId, at);
+  }
+
+  /**
+   * A teen frozen at day 90 for lack of a guardian (`frozen_reason =
+   * 'pending_guardian'`, ruling 2026-11-13) thaws the moment a real guardian's
+   * consent is verified: `frozen_at`, `frozen_reason` and `purge_after` are
+   * cleared. Matches nothing for any other freeze (custody minors, released
+   * adults) or an unfrozen teen. Runs under the dependent lock; the caller's
+   * `ActingForCache.bump` after the commit refreshes the supervised state.
+   * Audited in the same transaction.
+   */
+  private async thawPendingGuardianTeen(
+    tx: Prisma.TransactionClient,
+    dependentId: string,
+    verifierId: string,
+    at: Date,
+  ): Promise<void> {
+    const { count } = await tx.dependent_profiles.updateMany({
+      where: {
+        user_id: dependentId,
+        purged_at: null,
+        frozen_reason: PENDING_GUARDIAN_FROZEN_REASON,
+      },
+      data: { frozen_at: null, frozen_reason: null, purge_after: null },
+    });
+    if (count === 0) return;
+    await tx.audit_logs.create({
+      data: {
+        entity_type: 'dependent_profile',
+        entity_id: dependentId,
+        action: 'family.pending_guardian.thawed',
+        actor_user_id: verifierId,
+        actor_kind: 'user',
+        target_user_id: dependentId,
+        summary:
+          'Cuenta del adolescente reactivada al verificarse el consentimiento de un tutor',
+        changes: { frozen_reason: PENDING_GUARDIAN_FROZEN_REASON },
+        result: 'succeeded',
+        source: 'service',
+        correlation_id: getAuditCorrelationId() ?? null,
+        effective_at: at,
+      },
     });
   }
 

@@ -534,7 +534,8 @@ describe('LegalService.acceptMajorityRelease (Phase 4)', () => {
     const where = tx.dependent_profiles.updateMany.mock.calls[0][0].where;
     expect(where.OR).toEqual([
       { frozen_at: null },
-      { frozen_reason: 'majority_release' },
+      // A teen paused as pending_guardian who reached majority accepts too.
+      { frozen_reason: { in: ['majority_release', 'pending_guardian'] } },
     ]);
   });
 });

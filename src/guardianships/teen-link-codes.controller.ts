@@ -75,12 +75,12 @@ export class TeenLinkCodesController {
   @ApiOperation({
     summary: 'What the teen sees about their own supervision',
     description:
-      'Status, the guardian-less clock, linked guardians (name and relationship only, no contact data), the open link code (expiry only) and the transparency flag. Adults get status null.',
+      'Status, the guardian-less clock (days_left counts to the PAUSE; frozen_at is set once paused: the account is never deleted automatically and thaws when a guardian is verified), linked guardians (name and relationship only, no contact data), the open link code (expiry only) and the transparency flag. Adults get status null.',
   })
   @ApiResponse({
     status: 200,
     description:
-      '{ status, pending_since, guardians, open_link_code, summary_visible_to_guardians, days_left }',
+      '{ status, pending_since, guardians, open_link_code, summary_visible_to_guardians, days_left, frozen_at }',
   })
   async getSupervision(@CurrentUser() user: AuthPrincipal) {
     if (user.kind !== 'supervised_user' || !user.supervision) {
@@ -93,6 +93,7 @@ export class TeenLinkCodesController {
           open_link_code: null,
           summary_visible_to_guardians: true,
           days_left: null,
+          frozen_at: null,
         },
       };
     }
