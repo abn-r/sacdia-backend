@@ -152,7 +152,7 @@ describe('ClassEnrollmentPolicyService', () => {
     });
   });
 
-  it('D02 blocks GM multi-year classes until the rule is defined', async () => {
+  it('annual mode no longer dead-ends on multi-year classes (resolver decides keep/next/reopen)', async () => {
     prisma.classes.findUnique.mockResolvedValue({
       class_id: CLASS_ID,
       club_type_id: 3,
@@ -160,10 +160,11 @@ describe('ClassEnrollmentPolicyService', () => {
       active: true,
       minimum_age: 16,
       requires_invested_gm: false,
-      max_duration_years: 2,
+      max_duration_years: 3,
       available_from_year: null,
       available_until_year: null,
     });
+    prisma.class_prerequisites.findMany.mockResolvedValue([]);
 
     const decision = await service.evaluate(prisma as never, {
       userId: USER_ID,
@@ -172,9 +173,48 @@ describe('ClassEnrollmentPolicyService', () => {
       mode: 'annual',
     });
 
-    expect(decision).toEqual({
-      kind: 'configuration_error',
-      code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+    expect(decision).toEqual({ kind: 'ok' });
+  });
+
+  it('keep continuation skips the start gates but still rejects an inactive class', async () => {
+    prisma.classes.findUnique.mockResolvedValue({
+      class_id: CLASS_ID,
+      club_type_id: 3,
+      display_order: 2,
+      active: true,
+      minimum_age: 16,
+      requires_invested_gm: true,
+      max_duration_years: 3,
+      available_from_year: null,
+      available_until_year: { start_date: new Date('2000-01-01') },
+    });
+
+    await expect(
+      service.evaluate(prisma as never, {
+        userId: USER_ID,
+        classId: CLASS_ID,
+        year: YEAR,
+        mode: 'annual',
+        continuation: 'keep',
+      }),
+    ).resolves.toEqual({ kind: 'ok' });
+    expect(prisma.enrollments.findFirst).not.toHaveBeenCalled();
+
+    prisma.classes.findUnique.mockResolvedValue({
+      class_id: CLASS_ID,
+      active: false,
+    });
+    await expect(
+      service.evaluate(prisma as never, {
+        userId: USER_ID,
+        classId: CLASS_ID,
+        year: YEAR,
+        mode: 'annual',
+        continuation: 'keep',
+      }),
+    ).resolves.toEqual({
+      kind: 'policy_blocked',
+      code: ErrorCode.CLASS_NOT_FOUND,
     });
   });
 

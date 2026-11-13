@@ -23,6 +23,7 @@ function makeMock() {
     },
     ecclesiastical_years: {
       findUnique: jest.fn(),
+      count: jest.fn(),
     },
     users: {
       findUnique: jest.fn(),
@@ -565,5 +566,259 @@ describe('NextClassResolver', () => {
     await resolver.resolve(USER_ID, SECTION_AV.club_section_id, YEAR_ID);
 
     expect(Object.keys(mock.enrollments)).toEqual(['findMany']);
+  });
+
+  describe('multi-year Guía Mayor classes', () => {
+    const GM_CLASS = {
+      class_id: 308,
+      display_order: 8,
+      club_type_id: GM_TYPE_ID,
+      min_duration_years: 2,
+      max_duration_years: 3,
+    };
+    const GM_ADV = {
+      class_id: 309,
+      display_order: 9,
+      club_type_id: GM_TYPE_ID,
+    };
+    const YEAR_STARTS = [2022, 2023, 2024, 2025, 2026].map(
+      (y) => new Date(`${y}-01-01`),
+    );
+    const yearOf = (y: number) => ({
+      year_id: y,
+      start_date: new Date(`${y}-01-01`),
+      end_date: new Date(`${y}-12-31`),
+    });
+
+    const mkGm = (
+      lastYear: number,
+      extras: {
+        investiture_status?: string;
+        originYear?: number;
+        cls?: typeof GM_CLASS;
+        record_kind?: string;
+        active?: boolean;
+      } = {},
+    ) => ({
+      enrollment_id: 77,
+      user_id: USER_ID,
+      investiture_status: extras.investiture_status ?? 'IN_PROGRESS',
+      cross_type_enrollment: false,
+      active: extras.active ?? true,
+      record_kind: extras.record_kind ?? 'OPERATIONAL',
+      classes: extras.cls ?? GM_CLASS,
+      ecclesiastical_year: yearOf(lastYear),
+      duration_start_year:
+        extras.originYear != null ? yearOf(extras.originYear) : null,
+    });
+
+    beforeEach(() => {
+      (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(
+        SECTION_GM,
+      );
+      (mock.ecclesiastical_years.count as jest.Mock).mockImplementation(
+        (args: { where: { start_date: { gte: Date; lte: Date } } }) =>
+          Promise.resolve(
+            YEAR_STARTS.filter(
+              (d) =>
+                d >= args.where.start_date.gte &&
+                d <= args.where.start_date.lte,
+            ).length,
+          ),
+      );
+      (mock.classes.findFirst as jest.Mock).mockResolvedValue(GM_ADV);
+      (mock.club_types.findUnique as jest.Mock).mockResolvedValue(GM_TYPE);
+    });
+
+    const setTarget = (year: number) =>
+      (mock.ecclesiastical_years.findUnique as jest.Mock).mockResolvedValue(
+        yearOf(year),
+      );
+
+    it('year 2 keeps the same enrollment (no new class, years keep counting)', async () => {
+      setTarget(2026);
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([mkGm(2025)]);
+
+      const result = await resolver.resolve(USER_ID, 30, 2026);
+
+      expect(result).toMatchObject({
+        kind: 'next_class',
+        class_id: 308,
+        crossed_type: false,
+        continuation: { mode: 'keep', enrollment_id: 77 },
+      });
+    });
+
+    it('year 3 keeps a carried enrollment, counting from the original start year', async () => {
+      setTarget(2026);
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2025, { originYear: 2024 }),
+      ]);
+
+      const result = await resolver.resolve(USER_ID, 30, 2026);
+
+      expect(result).toMatchObject({
+        class_id: 308,
+        continuation: { mode: 'keep', enrollment_id: 77 },
+      });
+    });
+
+    it('invested GM is the cap: journey complete, never Avanzado/Instructor', async () => {
+      setTarget(2026);
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2025, { investiture_status: 'INVESTIDO', originYear: 2024 }),
+      ]);
+
+      const result = await resolver.resolve(USER_ID, 30, 2026);
+
+      expect(result).toEqual({ kind: 'journey_complete' });
+      expect(mock.classes.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('invested GM stays complete even before the min duration is met', async () => {
+      setTarget(2025);
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2024, { investiture_status: 'INVESTIDO' }),
+      ]);
+
+      expect(await resolver.resolve(USER_ID, 30, 2025)).toEqual({
+        kind: 'journey_complete',
+      });
+    });
+
+    it('legacy APPROVED GM counts as invested', async () => {
+      setTarget(2026);
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2025, { investiture_status: 'APPROVED' }),
+      ]);
+
+      expect(await resolver.resolve(USER_ID, 30, 2026)).toEqual({
+        kind: 'journey_complete',
+      });
+    });
+
+    it('past max duration without investiture expires the old enrollment and reopens the class', async () => {
+      setTarget(2026);
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2025, { originYear: 2023 }),
+      ]);
+
+      const result = await resolver.resolve(USER_ID, 30, 2026);
+
+      expect(result).toMatchObject({
+        class_id: 308,
+        continuation: { mode: 'reopen', expire_enrollment_id: 77 },
+      });
+    });
+
+    it('an already EXPIRED enrollment reopens the class without expiring again', async () => {
+      setTarget(2026);
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2025, { investiture_status: 'EXPIRED', originYear: 2022 }),
+      ]);
+
+      const result = await resolver.resolve(USER_ID, 30, 2026);
+
+      expect(result).toMatchObject({
+        class_id: 308,
+        continuation: { mode: 'reopen', expire_enrollment_id: null },
+      });
+    });
+
+    it('a legacy Instructor enrollment already invested ends the journey', async () => {
+      setTarget(2026);
+      const INSTRUCTOR = {
+        class_id: 310,
+        display_order: 10,
+        club_type_id: GM_TYPE_ID,
+        min_duration_years: 2,
+        max_duration_years: 3,
+      };
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2025, {
+          investiture_status: 'INVESTIDO',
+          originYear: 2024,
+          cls: INSTRUCTOR,
+        }),
+      ]);
+
+      expect(await resolver.resolve(USER_ID, 30, 2026)).toEqual({
+        kind: 'journey_complete',
+      });
+    });
+
+    it('a legacy Avanzado enrollment still inside its window keeps continuing', async () => {
+      setTarget(2026);
+      const ADV = { ...GM_CLASS, class_id: 309, display_order: 9 };
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2025, { cls: ADV }),
+      ]);
+
+      expect(await resolver.resolve(USER_ID, 30, 2026)).toMatchObject({
+        class_id: 309,
+        continuation: { mode: 'keep', enrollment_id: 77 },
+      });
+    });
+
+    it('legacy statuses past max duration cannot be expired and stay unresolved', async () => {
+      setTarget(2026);
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2025, {
+          investiture_status: 'SUBMITTED_FOR_VALIDATION',
+          originYear: 2023,
+        }),
+      ]);
+
+      const result = await resolver.resolve(USER_ID, 30, 2026);
+
+      expect(result).toEqual({
+        kind: 'configuration_error',
+        code: ErrorCode.ANNUAL_CLASS_POLICY_UNRESOLVED,
+      });
+    });
+
+    it('single-year classes are unchanged (no continuation, plain next class)', async () => {
+      setTarget(2026);
+      (mock.club_sections.findUnique as jest.Mock).mockResolvedValue(
+        SECTION_CQ,
+      );
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        {
+          ...mkEnrollment(CLASS_CQ_3),
+          active: true,
+          record_kind: 'OPERATIONAL',
+          classes: {
+            ...CLASS_CQ_3,
+            min_duration_years: 1,
+            max_duration_years: 1,
+          },
+        },
+      ]);
+      (mock.classes.findFirst as jest.Mock).mockResolvedValue(CLASS_CQ_4);
+      (mock.club_types.findUnique as jest.Mock).mockResolvedValue(CQ_TYPE);
+
+      const result = await resolver.resolve(USER_ID, 20, 2026);
+
+      expect(result).toMatchObject({ kind: 'next_class', class_id: 204 });
+      expect(
+        (result as { continuation?: unknown }).continuation,
+      ).toBeUndefined();
+      expect(mock.ecclesiastical_years.count).not.toHaveBeenCalled();
+    });
+
+    it('a certificate-imported (historical) GM row is the cap: journey complete', async () => {
+      setTarget(2026);
+      (mock.enrollments.findMany as jest.Mock).mockResolvedValue([
+        mkGm(2025, {
+          investiture_status: 'INVESTIDO',
+          record_kind: 'HISTORICAL_CERTIFICATE',
+        }),
+      ]);
+
+      expect(await resolver.resolve(USER_ID, 30, 2026)).toEqual({
+        kind: 'journey_complete',
+      });
+      expect(mock.classes.findFirst).not.toHaveBeenCalled();
+    });
   });
 });

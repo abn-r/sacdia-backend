@@ -1206,6 +1206,7 @@ model ecclesiastical_years {
   class_sections_available_from  class_sections[]            @relation("class_sections_available_from_year")
   class_sections_available_until class_sections[]            @relation("class_sections_available_until_year")
   enrollments_relation        enrollments[]
+  enrollments_duration_start  enrollments[]                @relation("enrollment_duration_start_year")
   folders                     folders[]
   investiture_configs         investiture_config[]
   local_camporees_relation    local_camporees[]             @relation("local_camporees_ecclesiastical_yearToecclesiastical_year")
@@ -1236,6 +1237,10 @@ model enrollments {
   user_id                  String                           @db.Uuid
   class_id                 Int
   ecclesiastical_year_id   Int
+  // Multi-year classes (Guía Mayor family): the open enrollment is carried into
+  // each new year (ecclesiastical_year_id moves forward, same row, same progress).
+  // This is the year the class started counting; NULL = ecclesiastical_year_id.
+  duration_start_year_id   Int?
   enrollment_date          DateTime                         @default(now()) @db.Timestamptz(6)
   investiture_status       investiture_status_enum          @default(IN_PROGRESS)
   submitted_for_validation Boolean                          @default(false)
@@ -1259,6 +1264,7 @@ model enrollments {
   enrollment_rankings      EnrollmentRanking[]
   classes                  classes                          @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
   ecclesiastical_year      ecclesiastical_years             @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  duration_start_year      ecclesiastical_years?            @relation("enrollment_duration_start_year", fields: [duration_start_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   users                    users                            @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   validator                users?                           @relation("enrollment_validator", fields: [validated_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   investiture_history      investiture_validation_history[]

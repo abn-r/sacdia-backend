@@ -2,6 +2,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { isInstitutionalInvestitureClass } from '../certificate-bulk-imports/institutional-class-codes';
 import type { ClassRequirementEligibilityResult } from '../classes/class-requirement-eligibility.service';
 import type { PresentationBlockedCode } from './investiture-presentation-context';
+import { durationStartDate } from '../classes/enrollment-duration';
 import { enrollmentOnLegacyInvestiturePipeline } from './investiture-request-lock';
 
 export const GM_TYPE_NAME = 'Guías Mayores';
@@ -24,6 +25,8 @@ export type PresentationEnrollment = {
     asset_code?: string | null;
   } | null;
   ecclesiastical_year: { start_date: Date } | null;
+  /** Set when a multi-year enrollment was carried into a later year. */
+  duration_start_year?: { start_date: Date } | null;
 };
 
 export type PresentationVerdict =
@@ -143,7 +146,10 @@ export async function evaluatePresentation(
     return blockedPresentation(ErrorCode.INVESTITURE_DURATION_EXPIRED);
   }
   const elapsed = await facts.elapsedYears(
-    enrollment.ecclesiastical_year.start_date,
+    durationStartDate({
+      ecclesiastical_year: enrollment.ecclesiastical_year,
+      duration_start_year: enrollment.duration_start_year,
+    }),
   );
   if (elapsed < enrollment.classes.min_duration_years) {
     return blockedPresentation(ErrorCode.INVESTITURE_DURATION_MIN_NOT_MET);
