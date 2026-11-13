@@ -9,6 +9,7 @@ import { DataExportService } from '../../data-export/data-export.service';
 import { FinancePeriodService } from '../../finances/finance-period.service';
 import { FinanceReminderService } from '../../finances/finance-reminder.service';
 import { DependentProfilesPurgeCronService } from '../../guardianships/dependent-profiles-purge-cron.service';
+import { FamilyMajorityReleaseCronService } from '../../guardianships/family-majority-release-cron.service';
 import { FamilyAgeTransitionsCronService } from '../../guardianships/family-age-transitions-cron.service';
 import { PendingTeenCronService } from '../../guardianships/pending-teen-cron.service';
 import { InvestitureAchievementIntentReconciler } from '../../investiture-requests/investiture-achievement-intent.reconciler';
@@ -141,6 +142,14 @@ export const CRON_JOB_DEFINITIONS: readonly CronJobDefinition[] = [
     source: 'guardianships/family-age-transitions-cron.service.ts#handleDaily',
     description:
       'Avisa del cumpleaños 13 y revoca dispositivos vinculados al llegar a la mayoría de edad o al vencer.',
+  },
+  {
+    jobName: 'family-majority-release',
+    target: FamilyMajorityReleaseCronService,
+    method: 'handleDaily',
+    source: 'guardianships/family-majority-release-cron.service.ts#handleDaily',
+    description:
+      'Avisa 30 dias antes de la mayoria de edad, libera a los tutores al cumplirla, recuerda y congela a quien no acepte en 30 dias.',
   },
   {
     jobName: 'pending-teen-guardian',

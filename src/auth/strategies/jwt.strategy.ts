@@ -42,7 +42,10 @@ import {
   AGE_UNKNOWN_SCOPES,
   DEVICE_SCOPES,
   LINKED_DEVICE_MEMO,
+  RELEASED_FROZEN_SCOPES,
+  RELEASED_PENDING_SCOPES,
   type AuthPrincipal,
+  type ReleasePhase,
   type SupervisionStatus,
 } from '../acting-for/auth-principal';
 import { FamilyFeatureFlagsService } from '../../guardianships/family-feature-flags.service';
@@ -205,6 +208,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (supervised.state === 'profile_incomplete') {
       return this.buildAgeUnknownPrincipal(req, payload, basePrincipal);
+    }
+
+    // Phase 4: a released adult (not blocked: frozen still logs in, R6).
+    if (supervised.state === 'released') {
+      return this.buildReleasedPrincipal(
+        req,
+        payload,
+        basePrincipal,
+        supervised.phase,
+      );
     }
 
     const dependentId = this.readActingForHeader(req);
@@ -473,6 +486,37 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ...basePrincipal,
       kind: 'age_unknown_user',
       scopes: AGE_UNKNOWN_SCOPES,
+    };
+  }
+
+  /**
+   * Phase 4: an adult released from guardianship at majority who has not
+   * completed the release (fresh terms + email). Their OWN account: no
+   * substitution, `X-Acting-For` refused (a released person is nobody's
+   * guardian here). NOT blacklisted and NOT blocked: a frozen person must still
+   * be able to log in, accept and add an email (thaw), export or delete.
+   */
+  private buildReleasedPrincipal(
+    req: Request,
+    payload: JwtPayload,
+    basePrincipal: AuthPrincipal,
+    phase: ReleasePhase,
+  ): AuthPrincipal {
+    if (req.headers?.[ACTING_FOR_HEADER] !== undefined) {
+      this.logActingDenied(payload.sub, payload.sub, 'released_token');
+      throw actingForForbidden();
+    }
+    setAuditActingFor({
+      actorUserId: payload.sub,
+      subjectUserId: payload.sub,
+      kind: 'released_user',
+    });
+    return {
+      ...basePrincipal,
+      kind: 'released_user',
+      scopes:
+        phase === 'frozen' ? RELEASED_FROZEN_SCOPES : RELEASED_PENDING_SCOPES,
+      release_phase: phase,
     };
   }
 

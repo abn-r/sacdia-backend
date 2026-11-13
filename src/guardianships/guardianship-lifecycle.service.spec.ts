@@ -535,6 +535,19 @@ describe('GuardianshipLifecycleService.deletionImpact', () => {
       dependent_profile: { is: { frozen_at: null, purged_at: null } },
     });
   });
+
+  it('Phase 4: a guardian whose people were all RELEASED has nothing to acknowledge (revoked rows are never listed)', async () => {
+    const { service, prisma } = setup();
+    prisma.guardianships.findMany.mockResolvedValue([]);
+
+    await expect(service.deletionImpact(G1)).resolves.toEqual({
+      dependents: [],
+    });
+    // Released rows are revoked: the NOT_REVOKED fragment keeps them out.
+    expect(prisma.guardianships.findMany.mock.calls[0][0].where).toMatchObject({
+      consent_status: { not: 'revoked' },
+    });
+  });
 });
 
 describe('GuardianshipLifecycleService: teens and linked devices (phase 3a)', () => {

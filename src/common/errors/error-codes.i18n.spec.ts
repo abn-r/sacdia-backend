@@ -34,6 +34,15 @@ const PHASE_3B_CODES: ErrorCode[] = [
 /** Codes introduced by family profiles phase 3c (each needs the 4 locales). */
 const PHASE_3C_CODES: ErrorCode[] = [ErrorCode.MR_APPROVE_PERMISSION_REQUIRED];
 
+/** Codes introduced by family profiles phase 4, majority release (each needs the 4 locales). */
+const PHASE_4_CODES: ErrorCode[] = [
+  ErrorCode.FAMILY_RELEASE_NOT_PENDING,
+  ErrorCode.FAMILY_RELEASE_EMAIL_UNAVAILABLE,
+  ErrorCode.FAMILY_RELEASE_EMAIL_ALREADY_SET,
+  ErrorCode.FAMILY_ADULT_CLAIM_EMAIL_UNAVAILABLE,
+  ErrorCode.FAMILY_ADULT_CLAIM_NOT_RELEASED,
+];
+
 /** Second-factor lockout (each needs the 4 locales). */
 const MFA_LOCK_CODES: ErrorCode[] = [ErrorCode.AUTH_MFA_LOCKED];
 
@@ -62,6 +71,14 @@ describe('phase 3c error codes i18n parity', () => {
   it.each(LOCALES)('every phase 3c code has a message in %s', (locale) => {
     const catalog = load(locale);
     const missing = PHASE_3C_CODES.filter((code) => !catalog[code]?.trim());
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('phase 4 error codes i18n parity', () => {
+  it.each(LOCALES)('every phase 4 code has a message in %s', (locale) => {
+    const catalog = load(locale);
+    const missing = PHASE_4_CODES.filter((code) => !catalog[code]?.trim());
     expect(missing).toEqual([]);
   });
 });

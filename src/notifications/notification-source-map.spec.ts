@@ -157,25 +157,43 @@ describe('notification-source-map', () => {
     });
   });
 
+  describe('phase 4 majority release sources', () => {
+    it.each([
+      ['family:majority:notice', 'approvals'],
+      ['family:majority:released', 'approvals'],
+      ['family:majority:reminder', 'reminders'],
+      ['family:majority:frozen', 'approvals'],
+      ['family:majority:handover', 'approvals'],
+    ])('maps %s to %s', (source, category) => {
+      expect(getCategoryForSource(source)).toBe(category);
+    });
+  });
+
   describe('mandatory sources', () => {
-    it('lists admin and family:security', () => {
+    it('lists admin, family:security and family:majority', () => {
       expect([...MANDATORY_SOURCE_PREFIXES]).toEqual([
         'admin',
         'family:security',
+        'family:majority',
       ]);
     });
 
-    it.each(['admin', 'admin:broadcast', 'family:security'])(
-      '%s is mandatory',
-      (source) => {
-        expect(isMandatorySource(source)).toBe(true);
-      },
-    );
+    it.each([
+      'admin',
+      'admin:broadcast',
+      'family:security',
+      'family:majority:notice',
+      'family:majority:reminder',
+      'family:majority:frozen',
+    ])('%s is mandatory', (source) => {
+      expect(isMandatorySource(source)).toBe(true);
+    });
 
     it.each([
       'family:evidence_uploaded',
       'family:consent_verified',
       'family:securityx',
+      'family:majorityx',
       'administrator',
       'activities:created',
       '',

@@ -16,7 +16,7 @@ import type { NextFunction, Request, Response } from 'express';
  *   (actor = guardian), a supervised teen or a linked device (actor = subject).
  */
 export type AuditActorKind =
-  'guardian_acting' | 'supervised_user' | 'linked_device';
+  'guardian_acting' | 'supervised_user' | 'linked_device' | 'released_user';
 
 export interface AuditActingFor {
   /** The real person: the guardian when acting, the subject itself otherwise. */

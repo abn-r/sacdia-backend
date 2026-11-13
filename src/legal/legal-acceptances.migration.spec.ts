@@ -180,9 +180,15 @@ describe('legal acceptances migration (20261015120000)', () => {
         'accepted_by',
       ]),
     );
-    expect(schema).toMatch(
-      /model legal_acceptances \{[\s\S]*?@@unique\(\[user_id, document_type, document_version\], map: "uq_legal_acceptances_user_doc_version"\)[\s\S]*?\}/,
-    );
+    // Phase 4 (migration 20261113110000): the unique key became two PARTIAL
+    // indexes, so the Prisma model no longer declares @@unique.
+    const modelBody = /model legal_acceptances \{[\s\S]*?\n\}/.exec(
+      schema,
+    )?.[0];
+    expect(modelBody).toBeDefined();
+    expect(modelBody).not.toMatch(/@@unique/);
+    expect(modelBody).toMatch(/uq_legal_acceptances_user_doc_version/);
+    expect(modelBody).toMatch(/uq_legal_acceptances_release_user_doc_version/);
     expect(schema).toMatch(
       /onDelete: NoAction, onUpdate: NoAction, map: "legal_acceptances_user_id_fkey"/,
     );

@@ -12,6 +12,7 @@ const mockLegalService = {
   getCurrent: jest.fn(),
   getStatus: jest.fn(),
   accept: jest.fn(),
+  acceptMajorityRelease: jest.fn(),
 };
 
 const reflect = (key: string, target: object) =>
@@ -97,6 +98,43 @@ describe('LegalAcceptanceController', () => {
       headers: {},
     });
     expect(mockLegalService.getStatus).toHaveBeenCalledWith('user-1');
+    expect(result).toEqual({ status: 'success', data: status });
+  });
+
+  it('GET for a released_user only counts majority_release rows', async () => {
+    mockLegalService.getStatus.mockResolvedValue({
+      requires_acceptance: true,
+      documents: [],
+    });
+    await controller.getStatus({
+      user: { sub: 'rel-1', kind: 'released_user' },
+      headers: {},
+    });
+    expect(mockLegalService.getStatus).toHaveBeenCalledWith(
+      'rel-1',
+      undefined,
+      { releaseOnly: true },
+    );
+  });
+
+  it('POST for a released_user goes to acceptMajorityRelease (never the gate acceptance)', async () => {
+    const status = { requires_acceptance: false, documents: [] };
+    mockLegalService.acceptMajorityRelease.mockResolvedValue(status);
+    const result = await controller.accept(
+      {
+        user: { sub: 'rel-1', kind: 'released_user' },
+        headers: { 'user-agent': 'SACDIA/1.0' },
+        ip: '203.0.113.45',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      { terms_version: '2.0.0-family', privacy_version: '2.0.0-family' },
+    );
+    expect(mockLegalService.acceptMajorityRelease).toHaveBeenCalledWith(
+      'rel-1',
+      { terms: '2.0.0-family', privacy: '2.0.0-family' },
+      expect.objectContaining({ userAgent: 'SACDIA/1.0' }),
+    );
+    expect(mockLegalService.accept).not.toHaveBeenCalled();
     expect(result).toEqual({ status: 'success', data: status });
   });
 

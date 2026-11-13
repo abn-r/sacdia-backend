@@ -40,7 +40,7 @@ describe('AdminUsersService', () => {
     enrollments: {
       findMany: jest.fn(),
     },
-    // Family block of the user detail (legal_representative:read readers).
+    // Family block of the user detail (guardianship:read readers).
     guardianships: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -235,18 +235,6 @@ describe('AdminUsersService', () => {
         },
       },
     ],
-    legal_representative: {
-      id: 41,
-      representative_user_id: null,
-      relationship_type_id: 8,
-      name: 'Carlos',
-      paternal_last_name: 'Tutor',
-      maternal_last_name: 'Perez',
-      phone: '555-2222',
-      relationship_types: {
-        name: 'Padre',
-      },
-    },
     users_allergies: [
       {
         allergy_id: 1,
@@ -968,7 +956,6 @@ describe('AdminUsersService', () => {
         enrollments: [],
         club_role_assignments: [],
         emergency_contact: [],
-        legal_representative: null,
       });
 
       const result = await service.getUserById('actor-super', 'user-1');
@@ -1096,7 +1083,6 @@ describe('AdminUsersService', () => {
         enrollments: [],
         club_role_assignments: [],
         emergency_contact: [],
-        legal_representative: null,
       });
 
       const result = await service.getUserById(
@@ -1252,11 +1238,6 @@ describe('AdminUsersService', () => {
           ['emergency_contacts:read'],
           'emergency_contacts',
         ],
-        [
-          'legal_representative',
-          ['legal_representative:read'],
-          'legal_representative',
-        ],
         ['post_registration', ['post_registration:read'], 'post_registration'],
       ])(
         'should expose only %s block for fine-grained readers',
@@ -1277,11 +1258,6 @@ describe('AdminUsersService', () => {
           expect(result.emergency_contacts).toEqual(
             visibleBlock === 'emergency_contacts'
               ? buildAdminDetailRecord().emergency_contact
-              : null,
-          );
-          expect(result.legal_representative).toEqual(
-            visibleBlock === 'legal_representative'
-              ? buildAdminDetailRecord().legal_representative
               : null,
           );
           expect(result.post_registration).toEqual(
@@ -1307,9 +1283,6 @@ describe('AdminUsersService', () => {
         expect(result.emergency_contacts).toEqual(
           buildAdminDetailRecord().emergency_contact,
         );
-        expect(result.legal_representative).toEqual(
-          buildAdminDetailRecord().legal_representative,
-        );
         expect(result.post_registration).toEqual(definedPostRegistration());
       });
 
@@ -1326,7 +1299,7 @@ describe('AdminUsersService', () => {
 
         expect(result.health).toBeNull();
         expect(result.emergency_contacts).toBeNull();
-        expect(result.legal_representative).toBeNull();
+        expect(result).not.toHaveProperty('legal_representative');
         expect(result.post_registration).toBeNull();
       });
     });
@@ -1355,8 +1328,20 @@ describe('AdminUsersService', () => {
         );
       });
 
+      it('a role with only the legacy users:read_detail still reads the guardianships block (fallback until 2027-03-31)', async () => {
+        readerOf(['users:read_detail']);
+        mockPrismaService.guardianships.findMany.mockResolvedValue([]);
+        mockPrismaService.guardianships.findFirst.mockResolvedValue(null);
+        mockPrismaService.dependent_profiles.findUnique.mockResolvedValue(null);
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.guardianships).not.toBeNull();
+        expect(result).not.toHaveProperty('legal_representative');
+      });
+
       it('lists the guardians of a dependent with consent, verifier, form and test-data flags', async () => {
-        readerOf(['legal_representative:read']);
+        readerOf(['guardianship:read']);
         mockPrismaService.guardianships.findMany
           .mockResolvedValueOnce([
             {
@@ -1395,6 +1380,13 @@ describe('AdminUsersService', () => {
           created_by_user_id: 'u-mom',
           frozen_at: null,
           purge_after: null,
+          majority_notice_sent_at: new Date('2026-10-02T10:00:00.000Z'),
+          released_at: new Date('2026-11-01T10:00:00.000Z'),
+          release_deadline_at: new Date('2026-12-01T10:00:00.000Z'),
+          release_accepted_at: null,
+          release_completed_at: null,
+          release_source: 'cron',
+          frozen_reason: null,
         });
 
         const result = await service.getUserById('actor-admin', 'user-1');
@@ -1430,6 +1422,13 @@ describe('AdminUsersService', () => {
             created_by_user_id: 'u-mom',
             frozen_at: null,
             purge_after: null,
+            majority_notice_sent_at: new Date('2026-10-02T10:00:00.000Z'),
+            released_at: new Date('2026-11-01T10:00:00.000Z'),
+            release_deadline_at: new Date('2026-12-01T10:00:00.000Z'),
+            release_accepted_at: null,
+            release_completed_at: null,
+            release_source: 'cron',
+            frozen_reason: null,
           },
         });
         // The user is read through the dependent side with the full history.
@@ -1439,7 +1438,7 @@ describe('AdminUsersService', () => {
       });
 
       it('shows a custodian row with the club and no guardian, and keeps revoked history', async () => {
-        readerOf(['legal_representative:read']);
+        readerOf(['guardianship:read']);
         mockPrismaService.guardianships.findMany
           .mockResolvedValueOnce([
             {
@@ -1507,7 +1506,7 @@ describe('AdminUsersService', () => {
       });
 
       it('lists the dependents of a guardian (live, non-custodian rows only)', async () => {
-        readerOf(['legal_representative:read']);
+        readerOf(['guardianship:read']);
         mockPrismaService.guardianships.findMany
           .mockResolvedValueOnce([])
           .mockResolvedValueOnce([
@@ -1562,7 +1561,7 @@ describe('AdminUsersService', () => {
       });
 
       it.each([['health:read'], ['emergency_contacts:read'], ['users:read']])(
-        'is null and never queried for a reader without the legal_representative family (%s)',
+        'is null and never queried for a reader without the guardianship family (%s)',
         async (permission) => {
           readerOf([permission]);
 
@@ -1579,7 +1578,7 @@ describe('AdminUsersService', () => {
       );
 
       it('a dependent without e-mail does not break the detail (email null)', async () => {
-        readerOf(['legal_representative:read']);
+        readerOf(['guardianship:read']);
         mockPrismaService.users.findFirst.mockResolvedValue({
           ...buildAdminDetailRecord(),
           email: null,
@@ -1652,7 +1651,7 @@ describe('AdminUsersService', () => {
       });
 
       it('a handle teen with a verified guardian: active login with the handle, who enabled it, and no devices', async () => {
-        readerOf(['legal_representative:read']);
+        readerOf(['guardianship:read']);
         mockPrismaService.supervised_logins.findUnique.mockResolvedValue(
           loginRow(),
         );
@@ -1693,7 +1692,7 @@ describe('AdminUsersService', () => {
       });
 
       it('a self-registered email teen with no verified guardian: pending_guardian, no handle, nobody enabled it', async () => {
-        readerOf(['legal_representative:read']);
+        readerOf(['guardianship:read']);
         mockPrismaService.supervised_logins.findUnique.mockResolvedValue(
           loginRow({
             method: 'email',
@@ -1722,7 +1721,7 @@ describe('AdminUsersService', () => {
       });
 
       it('a disabled login reads as disabled with the reason and keeps the supervision state', async () => {
-        readerOf(['legal_representative:read']);
+        readerOf(['guardianship:read']);
         mockPrismaService.supervised_logins.findUnique.mockResolvedValue(
           loginRow({
             disabled_at: new Date('2026-10-18T10:00:00.000Z'),
@@ -1746,7 +1745,7 @@ describe('AdminUsersService', () => {
       });
 
       it('lists the devices of a child with the pairer, expiry and recent revokes (30 days)', async () => {
-        readerOf(['legal_representative:read']);
+        readerOf(['guardianship:read']);
         mockPrismaService.linked_devices.findMany.mockResolvedValue([
           deviceRow(),
           deviceRow({
@@ -1798,7 +1797,7 @@ describe('AdminUsersService', () => {
       });
 
       it('a user with neither login nor devices still gets the (empty) block when the reader may see it', async () => {
-        readerOf(['legal_representative:read']);
+        readerOf(['guardianship:read']);
 
         const result = await service.getUserById('actor-admin', 'user-1');
 
@@ -1827,7 +1826,7 @@ describe('AdminUsersService', () => {
       });
 
       it.each([['health:read'], ['emergency_contacts:read'], ['users:read']])(
-        'is null, with the handle never read, for a reader without the legal_representative family (%s)',
+        'is null, with the handle never read, for a reader without the guardianship family (%s)',
         async (permission) => {
           readerOf([permission]);
           mockPrismaService.supervised_logins.findUnique.mockResolvedValue(

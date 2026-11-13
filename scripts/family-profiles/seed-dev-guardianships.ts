@@ -11,7 +11,6 @@
  *
  * Dry-run (default once a mode is chosen — plans rows, writes NOTHING):
  *   npx tsx scripts/family-profiles/seed-dev-guardianships.ts --placeholders
- *   npx tsx scripts/family-profiles/seed-dev-guardianships.ts --from-legal-reps
  *
  * Write the planned rows (needs a mode flag AND --apply):
  *   npx tsx scripts/family-profiles/seed-dev-guardianships.ts --placeholders --apply
@@ -21,27 +20,12 @@
  * --placeholders     Dependents without an active guardianship get a TEST row:
  *                    is_test_data=true, verification_method='test_placeholder'.
  *                    Test rows never count as consent (resolver and approve gate ignore them).
- * --from-legal-reps  legal_representatives rows become `pending` guardianships with
- *                    verification_method='legacy_import'. External representatives get
- *                    guardian_user_id NULL plus external_name / external_phone.
- *
  * Requires DATABASE_URL (loaded from .env). Refuses to run when NODE_ENV=production.
  */
 
 export interface SeedOptions {
   placeholders: boolean;
-  fromLegalReps: boolean;
   apply: boolean;
-}
-
-export interface LegalRepresentativeRow {
-  userId: string;
-  representativeUserId: string | null;
-  name: string | null;
-  paternalLastName: string | null;
-  maternalLastName: string | null;
-  phone: string | null;
-  relationshipTypeId: string | null;
 }
 
 export interface GuardianshipSeedRow {
@@ -61,10 +45,6 @@ export interface GuardianshipSeedRow {
 export interface SeedStore {
   /** Dependent profiles that have no non-revoked guardianship row. */
   listDependentsWithoutGuardianship(): Promise<string[]>;
-  /** Legal representatives whose user has no non-revoked guardianship row. */
-  listLegalRepresentativesWithoutGuardianship(): Promise<
-    LegalRepresentativeRow[]
-  >;
   insertGuardianship(row: GuardianshipSeedRow): Promise<void>;
 }
 
@@ -77,24 +57,14 @@ export interface SeedResult {
 export function parseSeedArgs(args: string[]): SeedOptions {
   const options: SeedOptions = {
     placeholders: false,
-    fromLegalReps: false,
     apply: false,
   };
   for (const arg of args) {
     if (arg === '--placeholders') options.placeholders = true;
-    else if (arg === '--from-legal-reps') options.fromLegalReps = true;
     else if (arg === '--apply') options.apply = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
   return options;
-}
-
-function externalNameOf(row: LegalRepresentativeRow): string | null {
-  const full = [row.name, row.paternalLastName, row.maternalLastName]
-    .filter((part): part is string => Boolean(part && part.trim()))
-    .join(' ')
-    .trim();
-  return full.length > 0 ? full.slice(0, 150) : null;
 }
 
 export async function planSeed(
@@ -102,37 +72,8 @@ export async function planSeed(
   store: SeedStore,
 ): Promise<GuardianshipSeedRow[]> {
   const planned: GuardianshipSeedRow[] = [];
-  const covered = new Set<string>();
-
-  if (options.fromLegalReps) {
-    for (const row of await store.listLegalRepresentativesWithoutGuardianship()) {
-      if (row.representativeUserId === row.userId) continue;
-      const externalName = row.representativeUserId
-        ? null
-        : externalNameOf(row);
-      // The holder CHECK needs a guardian user or an external name.
-      if (!row.representativeUserId && !externalName) continue;
-      covered.add(row.userId);
-      planned.push({
-        dependentUserId: row.userId,
-        guardianUserId: row.representativeUserId,
-        relationshipTypeId: row.relationshipTypeId,
-        isPrimary: true,
-        consentStatus: 'pending',
-        verificationMethod: 'legacy_import',
-        verifiedAt: null,
-        externalName,
-        externalPhone: row.representativeUserId
-          ? null
-          : (row.phone?.slice(0, 20) ?? null),
-        isTestData: false,
-      });
-    }
-  }
-
   if (options.placeholders) {
     for (const userId of await store.listDependentsWithoutGuardianship()) {
-      if (covered.has(userId)) continue;
       planned.push({
         dependentUserId: userId,
         guardianUserId: null,
@@ -159,7 +100,7 @@ export async function runSeed(
   options: SeedOptions,
   store: SeedStore,
 ): Promise<SeedResult> {
-  if (!options.placeholders && !options.fromLegalReps) {
+  if (!options.placeholders) {
     return { mode: 'noop', planned: [], written: 0 };
   }
 
@@ -204,26 +145,6 @@ async function createPrismaStore(): Promise<{
       });
       return rows.map((row) => row.user_id);
     },
-    async listLegalRepresentativesWithoutGuardianship() {
-      const rows = await prisma.legal_representatives.findMany({
-        where: {
-          users: {
-            guardianships_as_dependent: {
-              none: { consent_status: { not: 'revoked' } },
-            },
-          },
-        },
-      });
-      return rows.map((row) => ({
-        userId: row.user_id,
-        representativeUserId: row.representative_user_id,
-        name: row.name,
-        paternalLastName: row.paternal_last_name,
-        maternalLastName: row.maternal_last_name,
-        phone: row.phone,
-        relationshipTypeId: row.relationship_type_id,
-      }));
-    },
     async insertGuardianship(row) {
       await prisma.guardianships.create({
         data: {
@@ -256,10 +177,8 @@ async function main(): Promise<void> {
     throw new Error('seed-dev-guardianships is dev-only; refusing to run.');
   }
   const options = parseSeedArgs(process.argv.slice(2));
-  if (!options.placeholders && !options.fromLegalReps) {
-    console.log(
-      'Nothing to do. Pass --placeholders and/or --from-legal-reps (add --apply to write).',
-    );
+  if (!options.placeholders) {
+    console.log('Nothing to do. Pass --placeholders (add --apply to write).');
     return;
   }
 

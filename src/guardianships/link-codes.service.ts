@@ -28,6 +28,7 @@ import {
   lockDependent,
 } from './guardianship-queries';
 import {
+  ADULT_CLAIM_CODE_TTL_MS,
   DIRECTOR_CLAIM_CODE_TTL_MS,
   LINK_CODE_MAX_FAILURES,
   MAX_DEPENDENTS_PER_GUARDIAN,
@@ -266,6 +267,30 @@ export class LinkCodesService {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Issue: adult claim (Phase 4)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Stores and returns a fresh `adult_claim` code for a released, account-less
+   * adult (ruling R6: no deadline, so a flat 14 days from issue, also while the
+   * person is frozen). WHO may issue and WHAT the person must look like is
+   * decided by AdultClaimIssueService; this only mints the code.
+   */
+  issueAdultClaimCode(input: {
+    dependentId: string;
+    issuedBy: string;
+    clubSectionId: number | null;
+  }): Promise<IssuedLinkCode> {
+    return this.createCode({
+      purpose: 'adult_claim',
+      dependentId: input.dependentId,
+      issuedBy: input.issuedBy,
+      ttlMs: ADULT_CLAIM_CODE_TTL_MS,
+      clubSectionId: input.clubSectionId,
+    });
+  }
+
   private async createCode(input: {
     purpose: LinkCodePurpose;
     dependentId: string;
@@ -394,7 +419,9 @@ export class LinkCodesService {
         expires_at: { gt: now },
       },
     });
-    if (!code) {
+    if (!code || code.purpose === 'adult_claim') {
+      // An adult-claim code belongs to POST /auth/adult-claim/redeem only: here
+      // it is indistinguishable from an unknown one (same uniform 400).
       throw invalidCode();
     }
 

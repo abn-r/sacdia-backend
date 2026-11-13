@@ -26,7 +26,6 @@ import { InventoryController } from '../../inventory/inventory.controller';
 import { InvestitureController } from '../../investiture/investiture.controller';
 import { RankingsController } from '../../annual-folders/rankings.controller';
 import { EmergencyContactsController } from '../../emergency-contacts/emergency-contacts.controller';
-import { LegalRepresentativesController } from '../../legal-representatives/legal-representatives.controller';
 import { NotificationsController } from '../../notifications/notifications.controller';
 import { PostRegistrationController } from '../../post-registration/post-registration.controller';
 import { RbacController } from '../../rbac/rbac.controller';
@@ -47,11 +46,11 @@ class SensitiveUserSubresourceMetadataFixture {
   @SensitiveUserSubresource('emergency_contacts', 'update')
   emergencyContactsUpdate() {}
 
-  @SensitiveUserSubresource('legal_representative', 'read')
-  legalRepresentativeRead() {}
+  @SensitiveUserSubresource('guardianship', 'read')
+  guardianshipRead() {}
 
-  @SensitiveUserSubresource('legal_representative', 'update')
-  legalRepresentativeUpdate() {}
+  @SensitiveUserSubresource('guardianship', 'update')
+  guardianshipUpdate() {}
 
   @SensitiveUserSubresource('post_registration', 'read')
   postRegistrationRead() {}
@@ -309,19 +308,6 @@ describe('Permissions metadata', () => {
         UsersController.prototype.getAge,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        UsersController.prototype.requiresLegalRepresentative,
-      ),
-    ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        UsersController.prototype.requiresLegalRepresentative,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
   });
 
   it.each([
@@ -346,15 +332,14 @@ describe('Permissions metadata', () => {
       { family: 'emergency_contacts', mode: 'update' },
     ],
     [
-      SensitiveUserSubresourceMetadataFixture.prototype.legalRepresentativeRead,
-      'legal_representative:read',
-      { family: 'legal_representative', mode: 'read' },
+      SensitiveUserSubresourceMetadataFixture.prototype.guardianshipRead,
+      'guardianship:read',
+      { family: 'guardianship', mode: 'read' },
     ],
     [
-      SensitiveUserSubresourceMetadataFixture.prototype
-        .legalRepresentativeUpdate,
-      'legal_representative:update',
-      { family: 'legal_representative', mode: 'update' },
+      SensitiveUserSubresourceMetadataFixture.prototype.guardianshipUpdate,
+      'guardianship:update',
+      { family: 'guardianship', mode: 'update' },
     ],
     [
       SensitiveUserSubresourceMetadataFixture.prototype.postRegistrationRead,
@@ -478,27 +463,6 @@ describe('Permissions metadata', () => {
         EmergencyContactsController.prototype.remove,
       ),
     ).toEqual({ family: 'emergency_contacts', mode: 'update' });
-  });
-
-  it('marks legal representative routes as owner-aware sensitive user resources', () => {
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        LegalRepresentativesController.prototype.findOne,
-      ),
-    ).toEqual({ permissions: ['legal_representative:read'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        LegalRepresentativesController.prototype.findOne,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-    expect(
-      Reflect.getMetadata(
-        SENSITIVE_USER_SUBRESOURCE_KEY,
-        LegalRepresentativesController.prototype.findOne,
-      ),
-    ).toEqual({ family: 'legal_representative', mode: 'read' });
   });
 
   it('marks inventory creation as instance-scoped inventory permission', () => {
@@ -899,7 +863,7 @@ describe('Permissions metadata', () => {
     const families: SensitiveUserSubresourceFamily[] = [
       'health',
       'emergency_contacts',
-      'legal_representative',
+      'guardianship',
       'post_registration',
     ];
     for (const family of families) {

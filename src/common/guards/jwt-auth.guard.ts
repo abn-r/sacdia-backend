@@ -113,7 +113,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     // set, so it must stay reachable.
     if (
       skipMfaCheck &&
-      (user.kind === 'supervised_user' || user.kind === 'age_unknown_user') &&
+      (user.kind === 'supervised_user' ||
+        user.kind === 'age_unknown_user' ||
+        user.kind === 'released_user') &&
       user.mfa_pending === true
     ) {
       return user;

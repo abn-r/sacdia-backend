@@ -5,6 +5,8 @@ import {
   calendarDateIn,
   DEFAULT_AGE_TIMEZONE,
   isBirthdayInFuture,
+  isInMajorityNoticeWindow,
+  majorityDateOf,
   parseCalendarDate,
   toDateValue,
 } from './age.util';
@@ -164,6 +166,98 @@ describe('age.util', () => {
       '',
     ])('returns null for %j', (value) => {
       expect(parseCalendarDate(value)).toBeNull();
+    });
+  });
+});
+
+describe('majority release age math', () => {
+  const iso = (d: Date | null) => d?.toISOString().slice(0, 10);
+
+  it('Feb-29 birth reaches 18 on Mar-1 of a non-leap year (matches ageAt)', () => {
+    const born = day('2008-02-29');
+    const majority = majorityDateOf(born, 18);
+    expect(iso(majority)).toBe('2026-03-01');
+    expect(ageAt(born, day('2026-02-28'))).toBe(17);
+    expect(ageAt(born, day('2026-03-01'))).toBe(18);
+  });
+
+  it('Feb-29 birth with a leap target year stays on Feb-29', () => {
+    expect(iso(majorityDateOf(day('2004-02-29'), 20))).toBe('2024-02-29');
+    expect(iso(majorityDateOf(day('2004-02-29'), 18))).toBe('2022-03-01');
+  });
+
+  it('supports an age of majority of 21', () => {
+    expect(iso(majorityDateOf(day('2005-06-15'), 21))).toBe('2026-06-15');
+  });
+
+  it('agrees with ageAt for the first day it reaches the age', () => {
+    for (const b of ['2008-01-31', '2008-02-29', '2007-12-31', '2010-03-01']) {
+      const majority = majorityDateOf(day(b), 18) as Date;
+      expect(ageAt(day(b), majority)).toBe(18);
+      expect(
+        ageAt(day(b), new Date(majority.getTime() - 24 * 3600 * 1000)),
+      ).toBe(17);
+    }
+  });
+
+  it('returns null for an unreadable birthday', () => {
+    expect(majorityDateOf('nope', 18)).toBeNull();
+  });
+
+  describe('isInMajorityNoticeWindow', () => {
+    it('Feb-29 birth: window opens 2026-01-30 and closes on majority 2026-03-01', () => {
+      const born = day('2008-02-29');
+      const at = (s: string) => new Date(`${s}T15:00:00.000Z`);
+      const check = (s: string) =>
+        isInMajorityNoticeWindow(born, 18, 'UTC', 30, at(s));
+      expect(check('2026-01-29')).toBe(false);
+      expect(check('2026-01-30')).toBe(true);
+      expect(check('2026-02-28')).toBe(true);
+      expect(check('2026-03-01')).toBe(false);
+    });
+
+    it('majority 2027-03-31: 2027-03-01 is inside, 2027-02-28 is not', () => {
+      const born = day('2009-03-31');
+      const at = (s: string) => new Date(`${s}T15:00:00.000Z`);
+      expect(
+        isInMajorityNoticeWindow(born, 18, 'UTC', 30, at('2027-03-01')),
+      ).toBe(true);
+      expect(
+        isInMajorityNoticeWindow(born, 18, 'UTC', 30, at('2027-02-28')),
+      ).toBe(false);
+    });
+
+    it('uses the person calendar: Mexico_City vs UTC around midnight', () => {
+      const born = day('2008-03-31');
+      // 2026-03-01T03:00Z is still 2026-02-28 in Mexico_City (UTC-6).
+      const now = new Date('2026-03-01T03:00:00.000Z');
+      expect(isInMajorityNoticeWindow(born, 18, 'UTC', 30, now)).toBe(true);
+      expect(
+        isInMajorityNoticeWindow(born, 18, 'America/Mexico_City', 30, now),
+      ).toBe(false);
+    });
+
+    it('Pacific/Auckland is ahead of UTC', () => {
+      const born = day('2008-03-31');
+      // 2026-02-28T12:00Z is already 2026-03-01 in Auckland (UTC+13).
+      const now = new Date('2026-02-28T12:00:00.000Z');
+      expect(isInMajorityNoticeWindow(born, 18, 'UTC', 30, now)).toBe(false);
+      expect(
+        isInMajorityNoticeWindow(born, 18, 'Pacific/Auckland', 30, now),
+      ).toBe(true);
+    });
+
+    it('is false once of age and for an unreadable birthday', () => {
+      expect(
+        isInMajorityNoticeWindow(
+          day('2008-02-01'),
+          18,
+          'UTC',
+          30,
+          new Date('2026-03-15T00:00:00.000Z'),
+        ),
+      ).toBe(false);
+      expect(isInMajorityNoticeWindow('nope', 18, 'UTC', 30)).toBe(false);
     });
   });
 });

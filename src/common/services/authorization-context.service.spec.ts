@@ -128,13 +128,13 @@ describe('AuthorizationContextService', () => {
   });
 
   it('uses versioned cache keys so stale legacy snapshots are bypassed', () => {
-    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v8:user-123');
+    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v9:user-123');
   });
 
   it('invalidates both current and legacy authorization cache keys', async () => {
     await service.invalidateUserAuthorizationCache('user-123');
 
-    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v8:user-123');
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v9:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v7:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v6:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v5:user-123');
@@ -216,7 +216,7 @@ describe('AuthorizationContextService', () => {
       await expect(
         bare.invalidateUserAuthorizationCache('user-123'),
       ).resolves.toBeUndefined();
-      expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v8:user-123');
+      expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v9:user-123');
       expect(mockNotifications.sendSilentToUser).not.toHaveBeenCalled();
     });
   });
@@ -1607,7 +1607,7 @@ describe('AuthorizationContextService', () => {
       );
       await service.resolveUserAuthorization('user-temporal');
       expect(cacheManager.set).toHaveBeenCalledWith(
-        'auth:context:v8:user-temporal',
+        'auth:context:v9:user-temporal',
         expect.anything(),
         300_000,
       );
@@ -1623,7 +1623,7 @@ describe('AuthorizationContextService', () => {
       );
       await service.resolveUserAuthorization('user-temporal');
       expect(cacheManager.set).toHaveBeenCalledWith(
-        'auth:context:v8:user-temporal',
+        'auth:context:v9:user-temporal',
         expect.anything(),
         90_000,
       );

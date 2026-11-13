@@ -21,6 +21,7 @@ import {
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { namedThrottle } from '../config/throttler.helpers';
+import { AdultClaimIssueService } from './adult-claim-issue.service';
 import { LinkCodesService } from './link-codes.service';
 
 /**
@@ -56,6 +57,51 @@ export class DependentClaimCodesController {
     return {
       status: 'success',
       data: await this.linkCodes.issueDirectorClaimCode(
+        user.sub,
+        clubSectionId,
+        dependentId,
+      ),
+    };
+  }
+}
+
+/**
+ * A club director issues the access code a released, account-less adult
+ * redeems to claim their own account (Phase 4). Same permission as approving
+ * members, scoped to the section; the service checks the person belongs to that
+ * section and that the director is the right issuer (custody origin, or no
+ * former guardian user). Works at any time after the release, also while the
+ * person is frozen (ruling R6).
+ */
+@ApiTags('guardianships')
+@Controller('club-sections/:clubSectionId/dependents/:userId/adult-claim-codes')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@ApiBearerAuth()
+export class DependentAdultClaimCodesController {
+  constructor(private readonly adultClaims: AdultClaimIssueService) {}
+
+  @Post()
+  @RequirePermissions('club_members:approve')
+  @AuthorizationResource({ type: 'club_section', idParam: 'clubSectionId' })
+  @Throttle(namedThrottle({ ttl: 3_600_000, limit: 10 }))
+  @ApiOperation({
+    summary:
+      'Issue an access code for a released adult without an account (14 days)',
+  })
+  @ApiParam({ name: 'clubSectionId', type: Number })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiResponse({ status: 201, description: '{ code, expires_at }' })
+  @ApiResponse({ status: 403, description: 'Missing club_members:approve' })
+  @ApiResponse({ status: 404, description: 'GUARDIANSHIP_NOT_FOUND' })
+  @ApiResponse({ status: 409, description: 'FAMILY_ADULT_CLAIM_NOT_RELEASED' })
+  async issue(
+    @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
+    @Param('userId', ParseUuidParamPipe) dependentId: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    return {
+      status: 'success',
+      data: await this.adultClaims.issueForDirector(
         user.sub,
         clubSectionId,
         dependentId,

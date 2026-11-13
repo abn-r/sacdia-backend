@@ -78,3 +78,19 @@ export interface DeletionImpactEntry {
   display_name: string;
   outcome: DependentOutcome;
 }
+
+/** One person a guardian used to manage, released at majority (Phase 4). Minimal on purpose. */
+export interface ReleasedHistoryEntry {
+  guardianship_id: string;
+  dependent_user_id: string;
+  /** Null once the person was purged. */
+  display_name: string | null;
+  relationship_type_name: string | null;
+  released_at: string;
+  /** Account-less and still able to claim an account (also while frozen). */
+  can_issue_claim: boolean;
+}
+
+export interface ReleasedHistory {
+  released: ReleasedHistoryEntry[];
+}

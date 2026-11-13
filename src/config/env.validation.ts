@@ -263,6 +263,10 @@ export const envValidationSchema = Joi.object({
   FAMILY_LINKED_DEVICE_ENABLED: Joi.boolean().default(false),
   // FAMILY_DIRECTOR_CREATE_MINOR_ENABLED: POST /club-sections/:id/dependents (3c).
   FAMILY_DIRECTOR_CREATE_MINOR_ENABLED: Joi.boolean().default(false),
+  // FAMILY_MAJORITY_RELEASE_ENABLED: Phase 4 release of guardians at majority (cron + gate).
+  FAMILY_MAJORITY_RELEASE_ENABLED: Joi.boolean().default(false),
+  // FAMILY_MAJORITY_RELEASE_DRY_RUN: the release cron computes and logs only.
+  FAMILY_MAJORITY_RELEASE_DRY_RUN: Joi.boolean().default(false),
 
   // BullMQ workers - idle Redis command budget (see bullmq-workers.config.ts).
   // Master switch: false creates no worker in this process (producers still

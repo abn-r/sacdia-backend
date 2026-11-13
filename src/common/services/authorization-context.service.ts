@@ -210,15 +210,17 @@ type ClubAssignmentRecord = {
 /**
  * Cache key for a user's resolved authorization context.
  * Versioned so deployments can bypass stale snapshots produced by older
- * authorization-resolution semantics.
+ * authorization-resolution semantics. v9 (family Phase 4): cached permission
+ * name sets carried `legal_representative:*`, renamed to `guardianship:*`.
  */
 export const AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
-  `auth:context:v8:${userId}`;
+  `auth:context:v9:${userId}`;
 
 const LEGACY_AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
   `auth:context:${userId}`;
 
 const PREVIOUS_AUTH_CONTEXT_CACHE_KEYS = (userId: string): string[] => [
+  `auth:context:v8:${userId}`,
   `auth:context:v7:${userId}`,
   `auth:context:v6:${userId}`,
   `auth:context:v5:${userId}`,

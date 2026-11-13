@@ -66,7 +66,7 @@ Repeat the matrix on `/users/:userId/certifications/:certId` (POST enroll, PATCH
 ### Step 2 — Admin (sacdia-admin)
 
 Deploy Next.js panel with `permission-utils.ts` swap:
-- `SENSITIVE_USER_UPDATE_KEYS` entries (health, emergency_contacts, legal_representative, post_registration) now reference `USERS_UPDATE_PROFILE`.
+- `SENSITIVE_USER_UPDATE_KEYS` entries (health, emergency_contacts, guardianship [formerly legal_representative, renamed in family Phase 4], post_registration) now reference `USERS_UPDATE_PROFILE`.
 
 Smoke: load a user detail page and confirm the four sensitive cards still render edit affordances for an admin session and remain hidden for a non-privileged session.
 

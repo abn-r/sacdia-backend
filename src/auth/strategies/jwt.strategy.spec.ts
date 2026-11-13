@@ -17,6 +17,8 @@ import { SupervisedPrincipalResolver } from '../supervised/supervised-principal.
 import {
   ACTING_GRANT_MEMO,
   AGE_UNKNOWN_SCOPES,
+  RELEASED_FROZEN_SCOPES,
+  RELEASED_PENDING_SCOPES,
   DEVICE_SCOPES,
   GUARDIAN_PENDING_SCOPES,
   GUARDIAN_VERIFIED_SCOPES,
@@ -1027,6 +1029,82 @@ describe('JwtStrategy', () => {
 
         expect(getAuditContext()?.actingFor).toBeUndefined();
       });
+    });
+  });
+
+  describe('released adult (Phase 4)', () => {
+    const RELEASED = '88888888-8888-4888-8888-888888888888';
+
+    it.each([
+      ['pending', RELEASED_PENDING_SCOPES],
+      ['frozen', RELEASED_FROZEN_SCOPES],
+    ] as const)(
+      'builds a released_user (%s) with its scope set; it is not blocked and not session-checked',
+      async (phase, scopes) => {
+        mockSupervisedResolver.resolveForRequest.mockResolvedValue({
+          state: 'released',
+          phase,
+        });
+
+        await runWithAuditContext(async () => {
+          const result = await buildStrategy().validate(
+            buildReq('t'),
+            accessPayload({ sub: RELEASED }),
+          );
+
+          expect(result).toMatchObject({
+            sub: RELEASED,
+            actor_sub: RELEASED,
+            kind: 'released_user',
+            acting_for: false,
+            scopes,
+            release_phase: phase,
+          });
+          expect(getAuditContext()?.actingFor).toMatchObject({
+            kind: 'released_user',
+            actorUserId: RELEASED,
+            subjectUserId: RELEASED,
+          });
+        });
+        expect(mockSupervisedResolver.isSessionActive).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses X-Acting-For with the uniform 403 before any grant lookup', async () => {
+      mockSupervisedResolver.resolveForRequest.mockResolvedValue({
+        state: 'released',
+        phase: 'pending',
+      });
+
+      await expect(
+        buildStrategy().validate(
+          buildReq('t', {
+            'x-acting-for': '22222222-2222-4222-8222-222222222222',
+          }),
+          accessPayload({ sub: RELEASED }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACTING_FOR_FORBIDDEN,
+        status: 403,
+      });
+      expect(mockActingResolver.resolve).not.toHaveBeenCalled();
+    });
+
+    it('a token issued before the release is gated on the NEXT request (state is server-side, never a claim)', async () => {
+      mockSupervisedResolver.resolveForRequest
+        .mockResolvedValueOnce({ state: 'adult' })
+        .mockResolvedValueOnce({ state: 'released', phase: 'pending' });
+
+      const first = await buildStrategy().validate(
+        buildReq('t'),
+        accessPayload({ sub: RELEASED, kind: 'released_user' }),
+      );
+      expect(first.kind).toBe('user');
+      const second = await buildStrategy().validate(
+        buildReq('t'),
+        accessPayload({ sub: RELEASED }),
+      );
+      expect(second.kind).toBe('released_user');
     });
   });
 

@@ -27,6 +27,7 @@ import {
   DataExportRateLimitResponseDto,
 } from './dto/data-export-response.dto';
 import { JwtAuthGuard } from '../common/guards';
+import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 import { SkipPermissions } from '../common/decorators/skip-permissions.decorator';
 import { resolveClientIp } from '../config/client-ip';
 
@@ -50,6 +51,7 @@ export class DataExportController {
    * Returns 201 (new export created), 200 (existing in-progress), or 429 (cooldown).
    */
   @Post('data-export')
+  @ActingScope('data:export')
   @Throttle({
     short: { limit: 1, ttl: 60000 },
     medium: { limit: 2, ttl: 3600000 },
@@ -97,6 +99,7 @@ export class DataExportController {
    * List all data export requests for the authenticated user.
    */
   @Get('data-exports')
+  @ActingScope('data:export')
   @ApiOperation({
     summary: 'List all data export requests for the current user',
     description:
@@ -127,6 +130,7 @@ export class DataExportController {
    *   422 — failed
    */
   @Get('data-exports/:exportId/download')
+  @ActingScope('data:export')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Get presigned download URL for a ready export',

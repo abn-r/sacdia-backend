@@ -49,11 +49,11 @@ describe('SupervisedPrincipalCache', () => {
     };
   };
 
-  it('stores the state under supv:v3:{user}:{epoch} with the adult TTL', async () => {
+  it('stores the state under supv:v4:{user}:{epoch} with the adult TTL', async () => {
     const { manager, cache } = build();
     await cache.setState('u1', 5, { state: 'adult' }, null);
     expect(manager.set).toHaveBeenCalledWith(
-      'supv:v3:u1:5',
+      'supv:v4:u1:5',
       { state: 'adult' },
       SUPERVISED_ADULT_TTL_MS,
     );
@@ -78,13 +78,13 @@ describe('SupervisedPrincipalCache', () => {
     );
     expect(manager.set).toHaveBeenNthCalledWith(
       1,
-      'supv:v3:u1:1',
+      'supv:v4:u1:1',
       expect.anything(),
       SUPERVISED_ACTIVE_TTL_MS,
     );
     expect(manager.set).toHaveBeenNthCalledWith(
       2,
-      'supv:v3:u1:2',
+      'supv:v4:u1:2',
       expect.anything(),
       SUPERVISED_BLOCKED_TTL_MS,
     );
@@ -94,7 +94,7 @@ describe('SupervisedPrincipalCache', () => {
     const { manager, cache } = build();
     await cache.setState('u1', 1, { state: 'profile_incomplete' }, null);
     expect(manager.set).toHaveBeenCalledWith(
-      'supv:v3:u1:1',
+      'supv:v4:u1:1',
       { state: 'profile_incomplete' },
       SUPERVISED_ACTIVE_TTL_MS,
     );
@@ -119,7 +119,7 @@ describe('SupervisedPrincipalCache', () => {
       await cache.setState('u1', 1, { state: 'adult' }, 'America/Mexico_City');
       // 30s left before 00:00 in Mexico City; the 1h adult TTL is capped.
       expect(manager.set).toHaveBeenCalledWith(
-        'supv:v3:u1:1',
+        'supv:v4:u1:1',
         { state: 'adult' },
         30_000,
       );

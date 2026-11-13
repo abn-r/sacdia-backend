@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AppBadRequestException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppException,
+} from '../common/errors/app.exception';
+import { HttpStatus } from '@nestjs/common';
+import { ActingForCache } from '../auth/acting-for/acting-for.cache';
+import { ReleaseCompletionService } from '../guardianships/release-completion.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import type { SessionRequestContext } from '../better-auth/better-auth.service';
 import {
@@ -24,7 +30,11 @@ import type {
  */
 @Injectable()
 export class LegalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly releaseCompletion: ReleaseCompletionService,
+    private readonly actingForCache: ActingForCache,
+  ) {}
 
   /** Current documents, always ordered terms then privacy. */
   getCurrent(): LegalDocument[] {
@@ -48,13 +58,21 @@ export class LegalService {
     }
   }
 
+  /**
+   * `releaseOnly` (Phase 4, released_user principal): ONLY `method =
+   * 'majority_release'` rows count. The guardian-on-behalf rows and the
+   * person's own pre-release rows do NOT satisfy the fresh acceptance a
+   * released adult owes. Without it the predicate is unchanged.
+   */
   async getStatus(
     userId: string,
     client: Prisma.TransactionClient | PrismaService = this.prisma,
+    opts: { releaseOnly?: boolean } = {},
   ): Promise<LegalStatus> {
     const accepted = await client.legal_acceptances.findMany({
       where: {
         user_id: userId,
+        ...(opts.releaseOnly ? { method: 'majority_release' } : {}),
         OR: LEGAL_DOCUMENT_TYPES.map((type) => ({
           document_type: type,
           document_version: CURRENT_LEGAL_DOCUMENTS[type].version,
@@ -99,6 +117,65 @@ export class LegalService {
       skipDuplicates: true,
     });
     return this.getStatus(userId);
+  }
+
+  /**
+   * Phase 4: a released adult accepts the CURRENT documents (per-person row,
+   * method 'majority_release', `accepted_by_user_id` NULL). Idempotent: a second
+   * accept is a 200 with no duplicate row. Marks `release_accepted_at` and, when
+   * an email is on file, completes the release (and thaws a frozen person, R1).
+   * 409 FAMILY_RELEASE_NOT_PENDING when the person has no live release.
+   */
+  async acceptMajorityRelease(
+    userId: string,
+    versions: AcceptedLegalVersions,
+    context?: SessionRequestContext,
+  ): Promise<LegalStatus> {
+    this.assertCurrentVersions(versions);
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.legal_acceptances.createMany({
+        data: this.rows(userId, versions, 'majority_release', context),
+        skipDuplicates: true,
+      });
+      const claimed = await tx.dependent_profiles.updateMany({
+        where: {
+          user_id: userId,
+          purged_at: null,
+          release_accepted_at: null,
+          // A legacy freeze (minor without a guardian) is not a release.
+          OR: [{ frozen_at: null }, { frozen_reason: 'majority_release' }],
+        },
+        data: { release_accepted_at: now },
+      });
+      if (claimed.count === 0) {
+        const profile = await tx.dependent_profiles.findUnique({
+          where: { user_id: userId },
+          select: {
+            purged_at: true,
+            release_accepted_at: true,
+            frozen_at: true,
+            frozen_reason: true,
+          },
+        });
+        const live =
+          profile !== null &&
+          profile.purged_at === null &&
+          profile.release_accepted_at !== null &&
+          (profile.frozen_at === null ||
+            profile.frozen_reason === 'majority_release');
+        if (!live) {
+          throw new AppException(
+            ErrorCode.FAMILY_RELEASE_NOT_PENDING,
+            HttpStatus.CONFLICT,
+          );
+        }
+      }
+      return this.releaseCompletion.tryComplete(tx, userId, now);
+    });
+    // After the commit: acting grants and the supervised state moved.
+    await this.actingForCache.bump(userId);
+    return this.getStatus(userId, this.prisma, { releaseOnly: true });
   }
 
   /** Register acceptance: runs inside the register transaction. */

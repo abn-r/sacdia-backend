@@ -30,6 +30,7 @@ export const EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED =
   'email.account-deletion-confirmed';
 export const EMAIL_JOB_CRON_ALERT = 'email.cron-alert';
 export const EMAIL_JOB_INVESTITURE_NOTICE = 'email.investiture-notice';
+export const EMAIL_JOB_MAJORITY_RELEASE = 'email.majority-release';
 
 export type EmailJobType =
   | typeof EMAIL_JOB_DATA_EXPORT_READY
@@ -37,7 +38,8 @@ export type EmailJobType =
   | typeof EMAIL_JOB_PASSWORD_RESET
   | typeof EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED
   | typeof EMAIL_JOB_CRON_ALERT
-  | typeof EMAIL_JOB_INVESTITURE_NOTICE;
+  | typeof EMAIL_JOB_INVESTITURE_NOTICE
+  | typeof EMAIL_JOB_MAJORITY_RELEASE;
 
 // ---------------------------------------------------------------------------
 // Job payload shapes
@@ -91,13 +93,29 @@ export interface InvestitureNoticeJobPayload {
   link?: string | null;
 }
 
+export type MajorityReleaseEmailKind =
+  'notice' | 'released' | 'reminder' | 'frozen';
+
+export interface MajorityReleaseJobPayload {
+  to: string;
+  kind: MajorityReleaseEmailKind;
+  /** Reminder only: whole days left to accept. */
+  daysLeft?: number;
+  /** ISO string (Date is not serializable over BullMQ). */
+  deadlineAt?: string;
+  /** Notice only: ISO date (YYYY-MM-DD) of the majority. */
+  majorityDate?: string;
+  lang?: SupportedEmailLocale;
+}
+
 export type EmailJobPayload =
   | DataExportReadyJobPayload
   | EmailVerificationJobPayload
   | PasswordResetJobPayload
   | AccountDeletionConfirmedJobPayload
   | CronAlertJobPayload
-  | InvestitureNoticeJobPayload;
+  | InvestitureNoticeJobPayload
+  | MajorityReleaseJobPayload;
 
 /**
  * BullMQ producer for the `emails` queue.

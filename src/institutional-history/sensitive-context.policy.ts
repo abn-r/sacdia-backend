@@ -12,8 +12,6 @@ export const PROHIBITED_HIERARCHY_CONTEXT_KEYS = [
   'phone',
   'emergency_contact',
   'emergency_contacts',
-  'legal_representative',
-  'legal_representatives',
   'document',
   'documents',
   'password',

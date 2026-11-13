@@ -314,8 +314,8 @@ describe('PermissionsGuard', () => {
       ['health:update', 'users:update_profile', 'update'],
       ['emergency_contacts:read', 'users:read_detail', 'read'],
       ['emergency_contacts:update', 'users:update_profile', 'update'],
-      ['legal_representative:read', 'users:read_detail', 'read'],
-      ['legal_representative:update', 'users:update_profile', 'update'],
+      ['guardianship:read', 'users:read_detail', 'read'],
+      ['guardianship:update', 'users:update_profile', 'update'],
       ['post_registration:read', 'users:read_detail', 'read'],
       ['post_registration:update', 'users:update_profile', 'update'],
     ] as const)(
@@ -1367,7 +1367,7 @@ describe('PermissionsGuard', () => {
     it.each([
       'health',
       'emergency_contacts',
-      'legal_representative',
+      'guardianship',
       'post_registration',
     ])(
       'allows %s:read from the active club assignment for an active member of the active section',
@@ -2129,8 +2129,8 @@ describe('PermissionsGuard', () => {
       'emergency_contacts:update',
       'health:read',
       'health:update',
-      'legal_representative:read',
-      'legal_representative:update',
+      'guardianship:read',
+      'guardianship:update',
       'classes:read',
       'user_honors:read',
       'user_honors:create',
@@ -2187,13 +2187,13 @@ describe('PermissionsGuard', () => {
         'update',
       ),
       sensitive(
-        'GET /users/:userId/legal-representative',
-        'legal_representative',
+        'GET /admin/users/:userId/guardianships/:guardianshipId/consent-evidence',
+        'guardianship',
         'read',
       ),
       sensitive(
-        'PATCH /users/:userId/legal-representative',
-        'legal_representative',
+        'POST /admin/users/:userId/supervised-login/disable',
+        'guardianship',
         'update',
       ),
       sensitive(

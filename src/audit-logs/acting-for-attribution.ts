@@ -16,7 +16,7 @@ export interface ActingForAttributable {
  *  - `guardian_acting`: the real actor becomes the guardian
  *    (`actor_kind = 'guardian_acting'`) and the dependent moves to
  *    `target_user_id`;
- *  - `supervised_user` / `linked_device`: the actor IS the subject, so only
+ *  - `supervised_user` / `linked_device` / `released_user`: the actor IS the subject, so only
  *    `actor_kind` is set (a device also records `linked_device_id` in the
  *    request context).
  * A row whose actor is somebody else (e.g. a director reviewing the dependent)

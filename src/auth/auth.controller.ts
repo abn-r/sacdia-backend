@@ -262,7 +262,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   // Rate limit: max 3 sends per minute to prevent token farming
-  @ActingScope('self:password')
+  @ActingScope(['self:password', 'release:email'])
   @Throttle(namedThrottle({ ttl: 60000, limit: 3 }))
   @ApiOperation({
     summary: 'Enviar email de verificación al usuario autenticado',
@@ -330,7 +330,7 @@ export class AuthController {
   }
 
   @Get('me')
-  @ActingScope('self:read')
+  @ActingScope(['self:read', 'release:read'])
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener perfil del usuario autenticado' })
@@ -512,6 +512,7 @@ export class AuthController {
                     'supervised_user',
                     'linked_device',
                     'age_unknown_user',
+                    'released_user',
                   ],
                 },
                 scopes: {
@@ -587,9 +588,10 @@ export class AuthController {
                 'teen_pending',
                 'teen_supervised',
                 'profile_incomplete',
+                'released',
               ],
               description:
-                'profile_incomplete: edad desconocida (sin fecha de nacimiento y post-registro abierto, p. ej. alta con Google/Apple antes del paso 2). Solo puede terminar el post-registro; el resto responde 403 PRINCIPAL_SCOPE_DENIED.',
+                'profile_incomplete: edad desconocida (sin fecha de nacimiento y post-registro abierto, p. ej. alta con Google/Apple antes del paso 2). Solo puede terminar el post-registro; el resto responde 403 PRINCIPAL_SCOPE_DENIED. released: adulto liberado al cumplir la mayoría de edad que aún no acepta los términos vigentes (o los aceptó pero falta el correo); ver principal.release.',
             },
             family_features: {
               type: 'object',
@@ -597,6 +599,7 @@ export class AuthController {
                 teen_login: { type: 'boolean' },
                 linked_device: { type: 'boolean' },
                 director_create_minor: { type: 'boolean' },
+                majority_release: { type: 'boolean' },
               },
             },
             analytics_anonymous: {

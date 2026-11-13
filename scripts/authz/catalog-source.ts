@@ -12,6 +12,11 @@
  *    (chronological by directory name)
  *  - prisma/seeds/permissions.seed.sql
  *
+ * A migration that RENAMES a permission declares it with a marker comment
+ * `-- authz:rename old:key -> new:key`: the old key leaves the catalog (it no
+ * longer exists in the database, unlike a retired key) and the new key is
+ * expected from the seed.
+ *
  * Within each source, `UPDATE permissions SET active = false ... WHERE
  * permission_name IN (...)` statements retire keys after the inserts, so a
  * key the seed inserts and then retires ends up inactive, as it is in the DB.
@@ -33,6 +38,8 @@ const TUPLE_RE =
 const RETIRE_RE =
   /UPDATE\s+"?permissions"?\s+SET\s+active\s*=\s*false\b[^;]*?WHERE\s+permission_name\s+IN\s*\(([^)]*)\)/gi;
 const KEY_RE = /'([a-z_-]+:[a-z_-]+)'/g;
+const RENAME_RE =
+  /^--\s*authz:rename\s+([a-z_-]+:[a-z_-]+)\s*->\s*([a-z_-]+:[a-z_-]+)\s*$/gm;
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of fs
@@ -85,6 +92,9 @@ export function loadPermissionCatalog(root: string): CatalogPermission[] {
       add(stmt[0], rel(root, file));
     }
     retire(sql, rel(root, file));
+    for (const m of sql.matchAll(RENAME_RE)) {
+      byKey.delete(m[1]);
+    }
   }
 
   const seedFile = path.join(root, 'prisma/seeds/permissions.seed.sql');

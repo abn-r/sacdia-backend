@@ -103,6 +103,7 @@ describe('AuthService', () => {
     },
     guardianships: {
       count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     countries: {
       findUnique: jest.fn().mockResolvedValue({ country_id: 9 }),
@@ -217,10 +218,12 @@ describe('AuthService', () => {
     teen_login: true,
     linked_device: false,
     director_create_minor: false,
+    majority_release: false,
   };
 
   const mockFamilyFlags = {
     getAll: jest.fn(),
+    isEnabled: jest.fn(),
   };
 
   const mockSupervisionState = {
@@ -254,6 +257,7 @@ describe('AuthService', () => {
 
   beforeEach(async () => {
     mockFamilyFlags.getAll.mockReset().mockReturnValue(FAMILY_FEATURES);
+    mockFamilyFlags.isEnabled.mockReset().mockReturnValue(false);
     mockSupervisionState.describe.mockReset();
     mockLoginFailures.check.mockReset().mockResolvedValue({ locked: false });
     mockLoginFailures.recordFailure
@@ -2477,6 +2481,55 @@ describe('AuthService', () => {
         });
       });
 
+      it('flag on: the family summary drops dependents already of age (pre-cron window)', async () => {
+        mockFamilyFlags.isEnabled.mockReturnValue(true);
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedProfile('guardian-1'),
+        );
+        const daysAgo = (years: number, extraDays = 0) => {
+          const d = new Date();
+          d.setFullYear(d.getFullYear() - years);
+          d.setDate(d.getDate() - extraDays);
+          return d;
+        };
+        mockPrismaService.guardianships.findMany.mockResolvedValueOnce([
+          { dependent: { birthday: daysAgo(10), country_id: 9 } },
+          { dependent: { birthday: daysAgo(18, 1), country_id: 9 } },
+          { dependent: { birthday: null, country_id: 9 } },
+        ]);
+
+        const result = await service.getProfile('guardian-1', {
+          acting_for: false,
+          actor_sub: 'guardian-1',
+          scopes: null,
+        });
+
+        expect(result.data.family).toEqual({
+          is_guardian: true,
+          dependents_count: 2,
+        });
+        expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
+      });
+
+      it('flag on: a guardian whose only dependent is of age is not a guardian', async () => {
+        mockFamilyFlags.isEnabled.mockReturnValue(true);
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedProfile('guardian-1'),
+        );
+        const adult = new Date();
+        adult.setFullYear(adult.getFullYear() - 25);
+        mockPrismaService.guardianships.findMany.mockResolvedValueOnce([
+          { dependent: { birthday: adult, country_id: 9 } },
+        ]);
+
+        const result = await service.getProfile('guardian-1');
+
+        expect(result.data.family).toEqual({
+          is_guardian: false,
+          dependents_count: 0,
+        });
+      });
+
       it('reports is_guardian false when the user has no dependents', async () => {
         mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
           resolvedProfile('user-1'),
@@ -2840,6 +2893,109 @@ describe('AuthService', () => {
         expect(result.data.analytics_anonymous).toBe(true);
         expect(mockSupervisionState.describe).not.toHaveBeenCalled();
         expect(mockPrismaService.guardianships.count).not.toHaveBeenCalled();
+      });
+
+      it('released adult (Phase 4): kind released_user, mode released, release block, family hidden, anonymous-safe, legal counts only release rows', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(19)),
+        );
+        const released = new Date('2026-10-01T00:00:00.000Z');
+        const deadline = new Date('2026-10-31T00:00:00.000Z');
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          email: null,
+          email_verified: false,
+          supervised_login: { method: 'handle' },
+          dependent_profile: {
+            released_at: released,
+            release_deadline_at: deadline,
+            release_accepted_at: null,
+            frozen_at: null,
+            purge_after: null,
+          },
+        });
+
+        const result = await service.getProfile('rel-1', {
+          acting_for: false,
+          actor_sub: 'rel-1',
+          scopes: ['self:read', 'release:read'],
+          kind: 'released_user',
+        });
+
+        expect(result.data.principal).toEqual({
+          kind: 'released_user',
+          scopes: ['self:read', 'release:read'],
+          supervision: null,
+          release: {
+            status: 'pending',
+            released_at: released.toISOString(),
+            deadline_at: deadline.toISOString(),
+            frozen_at: null,
+            purge_after: null,
+            needs_acceptance: true,
+            needs_email: true,
+            login_method: 'handle',
+          },
+        });
+        expect(result.data.mode).toBe('released');
+        // FP4-21: an adult by age, but anonymous for analytics until completed.
+        expect(result.data.analytics_anonymous).toBe(true);
+        expect(result.data.family).toBeNull();
+        expect(mockLegalService.getStatus).toHaveBeenCalledWith(
+          'rel-1',
+          undefined,
+          { releaseOnly: true },
+        );
+        expect(mockSupervisionState.describe).not.toHaveBeenCalled();
+      });
+
+      it('frozen released adult: status frozen and never a purge date (R6)', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(19)),
+        );
+        const frozenAt = new Date('2026-11-01T00:00:00.000Z');
+        mockPrismaService.users.findUnique.mockResolvedValue({
+          email: 'a@b.c',
+          email_verified: false,
+          supervised_login: null,
+          dependent_profile: {
+            released_at: new Date('2026-10-01T00:00:00.000Z'),
+            release_deadline_at: new Date('2026-10-31T00:00:00.000Z'),
+            release_accepted_at: null,
+            frozen_at: frozenAt,
+            purge_after: null,
+          },
+        });
+
+        const result = await service.getProfile('rel-1', {
+          acting_for: false,
+          actor_sub: 'rel-1',
+          scopes: ['self:read'],
+          kind: 'released_user',
+        });
+
+        expect(result.data.principal).toMatchObject({
+          release: {
+            status: 'frozen',
+            frozen_at: frozenAt.toISOString(),
+            purge_after: null,
+            needs_acceptance: true,
+            needs_email: false,
+            login_method: null,
+          },
+        });
+      });
+
+      it('a non-released principal carries no release block', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          resolvedWith(yearsAgo(30)),
+        );
+        const result = await service.getProfile('u-1', {
+          acting_for: false,
+          actor_sub: 'u-1',
+          scopes: null,
+          kind: 'user',
+        });
+        expect(result.data.principal).not.toHaveProperty('release');
       });
 
       it('no principal at all behaves as an adult user', async () => {

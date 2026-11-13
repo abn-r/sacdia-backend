@@ -39,11 +39,13 @@ const REMOVED_PERMISSIONS = [
 
 /**
  * Removed permissions that no route uses anymore. Family profiles made legal
- * representatives read-only (the POST/PATCH/DELETE routes were removed), so
- * `legal_representative:update` backs no route; removing it from the base
- * role is still correct.
+ * representatives read-only and Phase 4 deleted the module and renamed both
+ * permissions to `guardianship:read|update` (migration
+ * 20261113130000), so the historical `legal_representative:*` names back no
+ * route; removing them from the base role is still correct.
  */
 const ROUTE_RETIRED_PERMISSIONS: ReadonlySet<string> = new Set([
+  'legal_representative:read',
   'legal_representative:update',
 ]);
 

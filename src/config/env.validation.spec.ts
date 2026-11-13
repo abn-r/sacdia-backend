@@ -673,14 +673,16 @@ describe('THROTTLER_REDIS_FALLBACK validation', () => {
   });
 });
 
-describe('family profiles phase 3 flags', () => {
+describe('family profiles phase 3 and 4 flags', () => {
   const FLAGS = [
     'FAMILY_TEEN_LOGIN_ENABLED',
     'FAMILY_LINKED_DEVICE_ENABLED',
     'FAMILY_DIRECTOR_CREATE_MINOR_ENABLED',
+    'FAMILY_MAJORITY_RELEASE_ENABLED',
+    'FAMILY_MAJORITY_RELEASE_DRY_RUN',
   ] as const;
 
-  it('defaults all three flags to false', () => {
+  it('defaults every flag to false', () => {
     const { error, value } = validate();
 
     expect(error).toBeUndefined();

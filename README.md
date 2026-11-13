@@ -24,7 +24,7 @@ API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Neon).
 `src/` tiene un módulo NestJS por dominio (unos 70). Agrupados:
 
 - **Plataforma**: `prisma`, `config`, `common` (guards, decoradores, errores, servicios compartidos), `health`, `i18n`, `background-jobs`, `audit-logs`, `system-config`, `data-export`, `support`.
-- **Auth y autorización**: `auth`, `better-auth`, `rbac`, `admin`, `users`, `post-registration`, `emergency-contacts`, `legal-representatives`, `qr`.
+- **Auth y autorización**: `auth`, `better-auth`, `rbac`, `admin`, `users`, `post-registration`, `emergency-contacts`, `qr`.
 - **Estructura institucional y clubes**: `catalogs`, `clubs`, `units`, `club-enrollments`, `membership-requests`, `annual-membership`, `coordination`, `institutional-history`, `requests`.
 - **Formación**: `classes`, `honors`, `certifications`, `certificate-bulk-imports`, `investiture`, `validation`, `evidence-review`, `materials`, `resources`.
 - **Operación de club**: `activities`, `finances`, `payment-obligations`, `field-payment-orders`, `inventory`, `insurance`, `notifications`, `dashboard`.

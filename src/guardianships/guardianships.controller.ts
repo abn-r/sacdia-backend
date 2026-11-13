@@ -42,6 +42,7 @@ import {
   RevokeGuardianshipDto,
   SetSupervisedPasswordDto,
 } from './dto';
+import { AdultClaimIssueService } from './adult-claim-issue.service';
 import { GuardianEvidenceService } from './guardian-evidence.service';
 import { DevicePairingService } from './device-pairing.service';
 import { GuardianshipLifecycleService } from './guardianship-lifecycle.service';
@@ -81,6 +82,7 @@ export class GuardianshipsController {
     private readonly supervisedLogins: SupervisedLoginsService,
     private readonly devicePairing: DevicePairingService,
     private readonly linkedDevices: LinkedDevicesService,
+    private readonly adultClaims: AdultClaimIssueService,
   ) {}
 
   @Get('relationship-types')
@@ -108,6 +110,60 @@ export class GuardianshipsController {
     return {
       status: 'success',
       data: await this.guardianships.listForGuardian(user.sub),
+    };
+  }
+
+  @Get('me/history')
+  @ApiOperation({
+    summary: 'People released at majority (minimal history, Phase 4)',
+    description:
+      'The former guardian sees WHO they used to manage and when they were released, nothing else (no health, club, progress or contact data). Hidden from the default dependents list; the app shows it collapsed. At most 50, newest first. `display_name` is null once the person was purged. `can_issue_claim` is true while the person has no account and can still claim one (also while frozen).',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      '{ status: "success", data: { released: [{ guardianship_id, dependent_user_id, display_name, relationship_type_name, released_at, can_issue_claim }] } }',
+  })
+  async history(@CurrentUser() user: CurrentUserPayload) {
+    return {
+      status: 'success',
+      data: await this.guardianships.listReleasedHistory(user.sub),
+    };
+  }
+
+  @Post('me/released/:dependentId/adult-claim-code')
+  @Throttle(namedThrottle({ ttl: HOUR_MS, limit: 10 }))
+  @ApiOperation({
+    summary:
+      'A former guardian issues an access code for a released adult (14 days)',
+    description:
+      'For a person released at majority who has no account. The person redeems it with POST /auth/adult-claim/redeem. Works at any time after the release, also while frozen. A new code replaces the open one; the plain code is returned once.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '{ code: "XXXX-XXXX", expires_at }',
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'GUARDIANSHIP_NOT_FOUND (not a former guardian of this person)',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'FAMILY_ADULT_CLAIM_NOT_RELEASED (already has an account, or not claimable)',
+  })
+  @ApiResponse({ status: 429, description: '10 codes per hour' })
+  async issueAdultClaimCode(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('dependentId', ParseUuidParamPipe) dependentId: string,
+  ) {
+    return {
+      status: 'success',
+      data: await this.adultClaims.issueForFormerGuardian(
+        user.sub,
+        dependentId,
+      ),
     };
   }
 

@@ -344,22 +344,6 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
       },
     },
   },
-  legal_representative: {
-    select: {
-      id: true,
-      representative_user_id: true,
-      relationship_type_id: true,
-      name: true,
-      paternal_last_name: true,
-      maternal_last_name: true,
-      phone: true,
-      relationship_types: {
-        select: {
-          name: true,
-        },
-      },
-    },
-  },
   users_allergies: {
     where: { active: true },
     orderBy: { allergy_id: 'asc' },
@@ -519,9 +503,8 @@ export interface AdminGuardianshipAsGuardian {
 
 /**
  * Family block of the user detail. `custodian_club` replaces `guardian` when
- * the club holds a minor. Gated by the same sensitive family as the legal
- * representative: `legal_representative:read` (or the transitional
- * `users:read_detail`).
+ * the club holds a minor. Gated by the sensitive family `guardianship:read`
+ * (or the transitional `users:read_detail`).
  */
 export interface AdminGuardianshipsBlock {
   as_dependent: AdminGuardianshipAsDependent[];
@@ -531,12 +514,21 @@ export interface AdminGuardianshipsBlock {
     created_by_user_id: string;
     frozen_at: Date | null;
     purge_after: Date | null;
+    /** Majority release (Phase 4). Read-only: no admin edit, no unfreeze. */
+    majority_notice_sent_at: Date | null;
+    released_at: Date | null;
+    release_deadline_at: Date | null;
+    release_accepted_at: Date | null;
+    release_completed_at: Date | null;
+    release_source: string | null;
+    /** `majority_release` when frozen by the release; null for a legacy freeze. */
+    frozen_reason: string | null;
   } | null;
 }
 
 /**
  * Own login and paired phones of a minor (family profiles 3c, FP3-65). Only for
- * readers who pass `canReadSensitiveFamily('legal_representative')`: it carries
+ * readers who pass `canReadSensitiveFamily('guardianship')`: it carries
  * the login handle. `supervision` is derived from what is STORED (a login row +
  * a verified, non-test, non-revoked guardianship, custody included), exactly
  * like the request-time resolver, but it does not look at the age.
@@ -601,7 +593,6 @@ interface AdminUserDetail extends AdminUserListItem {
   }>;
   health: SensitiveHealthBlock | null;
   emergency_contacts: AdminUserDetailRecord['emergency_contact'] | null;
-  legal_representative: AdminUserDetailRecord['legal_representative'] | null;
   guardianships: AdminGuardianshipsBlock | null;
   family_access: AdminFamilyAccessBlock | null;
   post_registration: MinimalPostRegistrationBlock | null;
@@ -732,7 +723,7 @@ export class AdminUsersService {
     );
     const guardianships = this.canReadSensitiveFamily(
       actorGlobalPermissions,
-      'legal_representative',
+      'guardianship',
     )
       ? await this.buildGuardianshipsBlock(user.user_id)
       : null;
@@ -740,7 +731,7 @@ export class AdminUsersService {
     // guardian data.
     const familyAccess = this.canReadSensitiveFamily(
       actorGlobalPermissions,
-      'legal_representative',
+      'guardianship',
     )
       ? await this.buildFamilyAccessBlock(user.user_id)
       : null;
@@ -777,7 +768,6 @@ export class AdminUsersService {
       })),
       health: sensitiveBlocks.health,
       emergency_contacts: sensitiveBlocks.emergency_contacts,
-      legal_representative: sensitiveBlocks.legal_representative,
       guardianships,
       family_access: familyAccess,
       post_registration: sensitiveBlocks.post_registration,
@@ -1079,7 +1069,6 @@ export class AdminUsersService {
   ): {
     health: SensitiveHealthBlock | null;
     emergency_contacts: AdminUserDetailRecord['emergency_contact'] | null;
-    legal_representative: AdminUserDetailRecord['legal_representative'] | null;
     post_registration: MinimalPostRegistrationBlock | null;
   } {
     return {
@@ -1091,12 +1080,6 @@ export class AdminUsersService {
         'emergency_contacts',
       )
         ? user.emergency_contact
-        : null,
-      legal_representative: this.canReadSensitiveFamily(
-        actorGlobalPermissions,
-        'legal_representative',
-      )
-        ? user.legal_representative
         : null,
       post_registration: this.canReadSensitiveFamily(
         actorGlobalPermissions,
@@ -1187,6 +1170,13 @@ export class AdminUsersService {
           created_by_user_id: true,
           frozen_at: true,
           purge_after: true,
+          majority_notice_sent_at: true,
+          released_at: true,
+          release_deadline_at: true,
+          release_accepted_at: true,
+          release_completed_at: true,
+          release_source: true,
+          frozen_reason: true,
         },
       }),
     ]);

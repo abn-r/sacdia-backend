@@ -374,6 +374,52 @@ describe('LinkCodesService.redeem: second guardian', () => {
     ).toBe(hashLinkCode('7KQ4M9TX', KEY));
   });
 
+  it('an adult_claim code on THIS endpoint is the identical uniform 400 and is never consumed (Phase 4)', async () => {
+    const { service, tx, committed } = setup();
+    tx.guardianship_link_codes.findFirst.mockResolvedValue(
+      codeRow({ purpose: 'adult_claim' }),
+    );
+
+    const error = await errorOf(service.redeem(REDEEMER, redeemDto()));
+
+    expect(error?.code).toBe(ErrorCode.GUARDIANSHIP_LINK_CODE_INVALID);
+    expect(error?.getStatus?.()).toBe(400);
+    expect(tx.guardianship_link_codes.updateMany).not.toHaveBeenCalled();
+    expect(tx.guardianships.create).not.toHaveBeenCalled();
+    expect(committed.codeConsumed).toBe(false);
+  });
+
+  it('issueAdultClaimCode mints a 14-day adult_claim code replacing the open ones', async () => {
+    const { service, tx } = setup();
+    const before = Date.now();
+
+    const issued = await service.issueAdultClaimCode({
+      dependentId: DEPENDENT,
+      issuedBy: INVITER,
+      clubSectionId: 7,
+    });
+
+    expect(issued.code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+    expect(
+      new Date(issued.expires_at).getTime() - before,
+    ).toBeGreaterThanOrEqual(14 * 24 * HOUR - 5_000);
+    expect(
+      tx.guardianship_link_codes.updateMany.mock.calls[0][0].where,
+    ).toMatchObject({
+      dependent_user_id: DEPENDENT,
+      purpose: 'adult_claim',
+      consumed_at: null,
+      revoked_at: null,
+    });
+    expect(
+      tx.guardianship_link_codes.create.mock.calls[0][0].data,
+    ).toMatchObject({
+      purpose: 'adult_claim',
+      issued_by_user_id: INVITER,
+      issued_for_club_section_id: 7,
+    });
+  });
+
   it('single use: the loser of a race gets the uniform 400 and the code stays with the winner', async () => {
     const { service, tx } = setup();
     tx.guardianship_link_codes.updateMany.mockResolvedValue({ count: 0 });

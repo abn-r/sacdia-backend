@@ -7,6 +7,7 @@ import {
   EMAIL_JOB_PASSWORD_RESET,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_INVESTITURE_NOTICE,
+  EMAIL_JOB_MAJORITY_RELEASE,
 } from './email.queue';
 
 const mockEnqueue = jest.fn().mockResolvedValue(undefined);
@@ -150,6 +151,25 @@ describe('EmailService', () => {
           to: 'bye@example.com',
         }),
       );
+    });
+  });
+
+  describe('sendMajorityRelease', () => {
+    it('enqueues the majority release job with serializable fields', async () => {
+      await service.sendMajorityRelease({
+        to: 'ana@example.com',
+        kind: 'reminder',
+        daysLeft: 7,
+        deadlineAt: new Date('2030-01-01T00:00:00Z'),
+      });
+
+      expect(mockEnqueue).toHaveBeenCalledWith(EMAIL_JOB_MAJORITY_RELEASE, {
+        to: 'ana@example.com',
+        kind: 'reminder',
+        daysLeft: 7,
+        deadlineAt: '2030-01-01T00:00:00.000Z',
+        majorityDate: undefined,
+      });
     });
   });
 

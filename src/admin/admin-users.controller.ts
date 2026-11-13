@@ -250,12 +250,12 @@ export class AdminUsersController {
 
   @Get('users/:userId/guardianships/:guardianshipId/consent-evidence')
   @GlobalRoles(...USER_MANAGEMENT_ROLES)
-  @SensitiveUserSubresource('legal_representative', 'read')
+  @SensitiveUserSubresource('guardianship', 'read')
   @ApiOperation({
     summary:
       'URL firmada (15 min) de la ficha de consentimiento firmada de un menor',
     description:
-      'Requiere users:read_detail o legal_representative:read. El usuario debe estar dentro del alcance territorial del actor y la tutoría debe pertenecer a ese usuario como menor. Cada lectura queda auditada.',
+      'Requiere users:read_detail o guardianship:read. El usuario debe estar dentro del alcance territorial del actor y la tutoría debe pertenecer a ese usuario como menor. Cada lectura queda auditada.',
   })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'guardianshipId', type: String })
@@ -296,11 +296,11 @@ export class AdminUsersController {
   @Post('users/:userId/supervised-login/disable')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('users:update_admin')
-  @SensitiveUserSubresource('legal_representative', 'update')
+  @SensitiveUserSubresource('guardianship', 'update')
   @ApiOperation({
     summary: 'Desactivar el acceso propio (supervised login) de un menor',
     description:
-      'Requiere users:update_admin y el permiso sensible legal_representative:update. ' +
+      'Requiere users:update_admin y el permiso sensible guardianship:update. ' +
       'El motivo (min. 5 caracteres) es obligatorio y solo se guarda en la auditoría ' +
       '(`admin.supervised_login.disabled`). Efectos iguales a los del tutor: sesiones ' +
       'eliminadas, la siguiente petición del menor es 401, todos los tutores verificados ' +
@@ -342,11 +342,11 @@ export class AdminUsersController {
   @Post('users/:userId/linked-devices/:deviceId/revoke')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('users:update_admin')
-  @SensitiveUserSubresource('legal_representative', 'update')
+  @SensitiveUserSubresource('guardianship', 'update')
   @ApiOperation({
     summary: 'Revocar un dispositivo vinculado de un menor',
     description:
-      'Requiere users:update_admin y el permiso sensible legal_representative:update. ' +
+      'Requiere users:update_admin y el permiso sensible guardianship:update. ' +
       'El motivo (min. 5 caracteres) es obligatorio y solo se guarda en la auditoría ' +
       '(`admin.linked_device.revoked`). Idempotente. Efectos iguales a los del tutor: ' +
       'sesión eliminada, limpieza de FCM, la siguiente petición del dispositivo es 401, ' +

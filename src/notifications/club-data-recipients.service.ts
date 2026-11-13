@@ -8,6 +8,7 @@ import {
   SUPERVISED_STATE_USER_SELECT,
   deriveSupervisedState,
 } from '../auth/supervised/supervised-principal.resolver';
+import { FamilyFeatureFlagsService } from '../guardianships/family-feature-flags.service';
 import { principalSeesClubData } from '../auth/acting-for/auth-principal';
 
 /**
@@ -43,6 +44,7 @@ export class ClubDataRecipientsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly countryAgePolicy: CountryAgePolicyService,
+    private readonly familyFlags: FamilyFeatureFlagsService,
   ) {}
 
   /** `userIds` without the recipients that must not receive club data. Order kept. */
@@ -80,14 +82,18 @@ export class ClubDataRecipientsService {
       policies.set(countryId, await this.countryAgePolicy.getPolicy(countryId));
     }
 
+    const releaseEnabled = this.familyFlags.isEnabled('majority_release');
     const denied = new Set<string>();
     for (const row of rows) {
       const { state } = deriveSupervisedState(
         row,
         row.birthday ? (policies.get(row.country_id) ?? null) : null,
+        { releaseEnabled },
       );
 
-      if (state.state === 'profile_incomplete') {
+      // Phase 4: a released (pending or frozen) adult is not operating in the
+      // club, so no club push/inbox either (principalSeesClubData = false).
+      if (state.state === 'profile_incomplete' || state.state === 'released') {
         denied.add(row.user_id);
         continue;
       }

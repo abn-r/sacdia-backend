@@ -26,7 +26,12 @@ import { LegalService } from './legal.service';
 import { ActingScope } from '../auth/acting-for/acting-scope.decorator';
 
 type LegalRequest = SessionContextRequest & {
-  user: { sub: string; actor_sub?: string; acting_for?: boolean };
+  user: {
+    sub: string;
+    actor_sub?: string;
+    acting_for?: boolean;
+    kind?: string;
+  };
 };
 
 @ApiTags('legal')
@@ -42,14 +47,20 @@ export class LegalAcceptanceController {
    * Acceptance status of the authenticated user for the CURRENT versions.
    */
   @Get('legal-acceptance')
-  @ActingScope('self:read')
+  @ActingScope(['self:read', 'release:read'])
   @Throttle(namedThrottle({ ttl: 60000, limit: 30 }))
   @ApiOperation({ summary: 'Legal acceptance status of the current user' })
   @ApiResponse({ status: 200, description: 'LegalStatus block' })
   async getStatus(@Req() req: LegalRequest) {
+    const releasedOnly = req.user.kind === 'released_user';
     return {
       status: 'success',
-      data: await this.legalService.getStatus(req.user.sub),
+      // A released adult (Phase 4) only counts their own majority_release rows.
+      data: releasedOnly
+        ? await this.legalService.getStatus(req.user.sub, undefined, {
+            releaseOnly: true,
+          })
+        : await this.legalService.getStatus(req.user.sub),
     };
   }
 
@@ -71,6 +82,17 @@ export class LegalAcceptanceController {
     description: 'LEGAL_VERSION_MISMATCH or validation error',
   })
   async accept(@Req() req: LegalRequest, @Body() dto: AcceptLegalDocumentsDto) {
+    if (req.user.kind === 'released_user') {
+      // Phase 4: per-person acceptance after the release (also thaws, R1).
+      return {
+        status: 'success',
+        data: await this.legalService.acceptMajorityRelease(
+          req.user.sub,
+          { terms: dto.terms_version, privacy: dto.privacy_version },
+          sessionContextFromRequest(req),
+        ),
+      };
+    }
     return {
       status: 'success',
       data: await this.legalService.accept(

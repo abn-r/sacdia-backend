@@ -212,12 +212,12 @@ describe('AdminUsersController', () => {
       user: { sub: string };
     };
 
-    it('needs the legal_representative sensitive read (users:read_detail fallback) on the target user', () => {
+    it('needs the guardianship sensitive read (users:read_detail fallback) on the target user', () => {
       expect(
         Reflect.getMetadata(SENSITIVE_USER_SUBRESOURCE_KEY, handler),
-      ).toEqual({ family: 'legal_representative', mode: 'read' });
+      ).toEqual({ family: 'guardianship', mode: 'read' });
       expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
-        permissions: ['legal_representative:read'],
+        permissions: ['guardianship:read'],
         mode: 'all',
       });
       expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
@@ -281,7 +281,7 @@ describe('AdminUsersController', () => {
       ['disable the own login', disable],
       ['revoke a paired device', revoke],
     ])(
-      'to %s needs users:update_admin + the legal_representative sensitive WRITE on the target user, admin roles only',
+      'to %s needs users:update_admin + the guardianship sensitive WRITE on the target user, admin roles only',
       (_label, handler) => {
         expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
           permissions: ['users:update_admin'],
@@ -289,7 +289,7 @@ describe('AdminUsersController', () => {
         });
         expect(
           Reflect.getMetadata(SENSITIVE_USER_SUBRESOURCE_KEY, handler),
-        ).toEqual({ family: 'legal_representative', mode: 'update' });
+        ).toEqual({ family: 'guardianship', mode: 'update' });
         expect(
           Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler),
         ).toEqual({ type: 'user', ownerParam: 'userId' });

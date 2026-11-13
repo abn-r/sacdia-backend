@@ -60,6 +60,25 @@ export const PURGED_GUARDIAN_NAME = 'Tutor';
 /** A revoked device stays listed for the guardians this long (history). */
 export const REVOKED_DEVICE_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * Majority release (Phase 4). The released adult has this many days to accept
+ * the fresh terms (and add an email when missing) before being frozen.
+ */
+export const RELEASE_ACCEPTANCE_DAYS = 30;
+/** Coarse SQL prefilter: no country has an age of majority below this. */
+export const MIN_MAJORITY_PREFILTER_YEARS = 15;
+/** Days before the majority date on which the notice goes out. */
+export const MAJORITY_NOTICE_DAYS = 30;
+/** An adult-claim code lives this long (also capped at the release deadline). */
+export const ADULT_CLAIM_CODE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+/**
+ * Release reminders (ruling R2): deadline-7d and deadline-1d, i.e. level 1 at
+ * >=23 days since the release and level 2 at >=29 days.
+ */
+export const RELEASE_REMINDER_DAYS = [23, 29] as const;
+/** Why a dependent profile was frozen by the majority release (never auto-purged, ruling R6). */
+export const MAJORITY_RELEASE_FROZEN_REASON = 'majority_release';
+
 /** A frozen dependent is purged this long after the freeze. */
 export const FROZEN_PURGE_AFTER_DAYS = 90;
 
@@ -87,7 +106,11 @@ export type GuardianshipRevokedReason =
   | 'removed_by_dependent';
 
 export type LinkCodePurpose =
-  'second_guardian' | 'director_claim' | 'teen_guardian_link';
+  | 'second_guardian'
+  | 'director_claim'
+  | 'teen_guardian_link'
+  /** Phase 4: lets a released, account-less adult claim their own account. */
+  | 'adult_claim';
 
 /**
  * Guardian-less teen clock (Phase 3a, ruling R1): reminders to the TEEN at
